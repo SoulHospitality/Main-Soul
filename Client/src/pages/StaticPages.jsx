@@ -33,14 +33,6 @@ export function CompoundsPage() {
   );
 }
 
-export function ContactPage() {
-  return (
-    <StaticPage title="Contact">
-      <p>Reach us on WhatsApp from the site header, or email the team for partnerships and hosting inquiries.</p>
-    </StaticPage>
-  );
-}
-
 export function FaqPage() {
   return (
     <StaticPage title="FAQ">

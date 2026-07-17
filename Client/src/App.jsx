@@ -19,11 +19,12 @@ import SalesRoutes from './pages/sales/SalesRoutes';
 import AdminApp from './admin/App';
 import {
   CompoundsPage,
-  ContactPage,
   FaqPage,
   LegalPage,
   OwnersPage,
 } from './pages/StaticPages';
+import ContactPage from './pages/ContactPage';
+import WhatsAppFAB from './components/layout/WhatsAppFAB';
 
 export default function App() {
   return (
@@ -58,6 +59,7 @@ export default function App() {
             <Route path="/admin/*" element={<AdminApp />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          <WhatsAppFAB />
         </BrowserRouter>
       </CurrencyProvider>
     </AuthProvider>

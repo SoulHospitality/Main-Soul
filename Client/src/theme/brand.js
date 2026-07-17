@@ -9,10 +9,22 @@ export const brand = {
     muted: '#5D6A83',
   },
   whatsapp: import.meta.env.VITE_WHATSAPP_NUMBER || '+201500009344',
-  copyright: '© 2026 Soul Hospitality.',
+  phoneDisplay: '01500009344',
+  email: 'info@soulhospitality.co',
+  address: 'New Cairo - Sadat Axis',
+  mapsUrl: 'https://maps.app.goo.gl/faiBKHKQtouzMC6q7',
+  social: {
+    facebook: 'https://www.facebook.com/shaheenzhospitality/',
+    instagram: 'https://www.instagram.com/soulhospitalityy/',
+  },
+  copyright: '© 2026 Soul Hospitality. All rights reserved.',
 };
 
-export function whatsappHref(text = 'Hi Soul — I have a question') {
+/** Empty string = plain wa.me link (no prefilled text). Undefined = default greeting. */
+export function whatsappHref(text) {
   const n = brand.whatsapp.replace(/\D/g, '');
-  return `https://wa.me/${n}?text=${encodeURIComponent(text)}`;
+  const base = `https://wa.me/${n}`;
+  const message = text === undefined ? 'Hi Soul — I have a question' : text;
+  if (!message) return base;
+  return `${base}?text=${encodeURIComponent(message)}`;
 }
