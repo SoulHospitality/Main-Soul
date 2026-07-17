@@ -8,7 +8,11 @@ import { whatsappHref } from '../../theme/brand';
 export default function WhatsAppFAB({ message = '' }) {
   const { pathname } = useLocation();
 
-  if (pathname.startsWith('/admin') || pathname.startsWith('/sales')) {
+  if (
+    pathname === '/' ||
+    pathname.startsWith('/admin') ||
+    pathname.startsWith('/sales')
+  ) {
     return null;
   }
 
