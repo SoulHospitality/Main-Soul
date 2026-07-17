@@ -1,0 +1,119 @@
+const express = require('express');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const { query } = require('../config/db');
+const { authStaff } = require('../middleware/auth');
+const {
+  passwordPolicyOk,
+  passwordPolicyMessage,
+} = require('../lib/staffIdentity');
+
+const router = express.Router();
+
+const STAFF_PUBLIC_FIELDS = `
+  id, username, email, full_name, role, is_active,
+  sales_commission_pct, petty_cash_location,
+  staff_code, base_salary, pending_base_salary, salary_change_status,
+  is_first_login
+`;
+
+function toPublicUser(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    username: row.username,
+    email: row.email,
+    full_name: row.full_name,
+    role: row.role,
+    is_active: row.is_active,
+    sales_commission_pct: row.sales_commission_pct,
+    petty_cash_location: row.petty_cash_location,
+    staff_code: row.staff_code,
+    base_salary: row.base_salary,
+    pending_base_salary: row.pending_base_salary,
+    salary_change_status: row.salary_change_status || 'none',
+    is_first_login: Boolean(Number(row.is_first_login)),
+  };
+}
+
+function signStaff(user) {
+  return jwt.sign(
+    { kind: 'staff', sub: user.id, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+  );
+}
+
+router.post('/login', async (req, res, next) => {
+  try {
+    const identity = String(req.body.username || req.body.email || req.body.identity || '').trim();
+    const { password } = req.body;
+    if (!identity || !password) {
+      return res.status(400).json({ error: 'Username and password required' });
+    }
+
+    const { rows } = await query(
+      `SELECT * FROM staff_users
+       WHERE is_active = 1
+         AND (
+           lower(username) = lower($1)
+           OR lower(COALESCE(email, '')) = lower($1)
+           OR lower(COALESCE(staff_code, '')) = lower($1)
+         )
+       LIMIT 1`,
+      [identity]
+    );
+    const user = rows[0];
+    if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const publicUser = toPublicUser(user);
+    const token = signStaff(user);
+    const forcePasswordChange = publicUser.is_first_login;
+
+    res.json({
+      token,
+      user: publicUser,
+      forcePasswordChange,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/me', authStaff, (req, res) => {
+  res.json({ user: toPublicUser(req.user) });
+});
+
+router.patch('/change-password', authStaff, async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Current and new password required' });
+    }
+    if (!passwordPolicyOk(newPassword)) {
+      return res.status(400).json({ error: passwordPolicyMessage() });
+    }
+
+    const { rows } = await query('SELECT password_hash FROM staff_users WHERE id = $1', [req.user.id]);
+    if (!(await bcrypt.compare(currentPassword, rows[0].password_hash))) {
+      return res.status(400).json({ error: 'Current password incorrect' });
+    }
+
+    const hash = await bcrypt.hash(newPassword, 10);
+    const { rows: updated } = await query(
+      `UPDATE staff_users
+       SET password_hash = $1, is_first_login = 0, updated_at = now()
+       WHERE id = $2
+       RETURNING ${STAFF_PUBLIC_FIELDS}`,
+      [hash, req.user.id]
+    );
+
+    res.json({ ok: true, user: toPublicUser(updated[0]) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+module.exports = router;

@@ -1,0 +1,187 @@
+const { query } = require('../config/db');
+const { emitSalesNotification } = require('../config/socket');
+
+async function pickSalesAssignee() {
+  const { rows } = await query(
+    `SELECT id, sales_commission_pct FROM staff_users
+     WHERE is_active = 1 AND role IN ('reservations','admin')
+     ORDER BY sales_commission_pct DESC NULLS LAST, id ASC`
+  );
+  if (!rows.length) return null;
+  // Lightweight weighted pick by commission % (fallback equal weight)
+  const weights = rows.map((r) => Math.max(1, Number(r.sales_commission_pct) || 1));
+  const total = weights.reduce((a, b) => a + b, 0);
+  let r = Math.random() * total;
+  for (let i = 0; i < rows.length; i++) {
+    r -= weights[i];
+    if (r <= 0) return rows[i].id;
+  }
+  return rows[0].id;
+}
+
+async function acceptWebsiteBooking(bookingId, staffUser) {
+  const { rows } = await query(`SELECT * FROM bookings WHERE id = $1`, [bookingId]);
+  const booking = rows[0];
+  if (!booking) {
+    const err = new Error('Booking not found');
+    err.status = 404;
+    throw err;
+  }
+  if (!['pending', 'held'].includes(booking.status)) {
+    const err = new Error(`Cannot accept booking in status ${booking.status}`);
+    err.status = 409;
+    throw err;
+  }
+
+  let commissionNote = null;
+  if (booking.unit_id) {
+    const { rows: units } = await query(`SELECT * FROM units WHERE id = $1`, [booking.unit_id]);
+    const unit = units[0];
+    if (unit) {
+      commissionNote = JSON.stringify({
+        commission_mode: unit.commission_mode,
+        company_commission_pct: unit.company_commission_pct,
+        company_commission_owner_pct: unit.company_commission_owner_pct,
+        commission_tenant_pct: unit.commission_tenant_pct,
+        accepted_by: staffUser?.id || null,
+        accepted_at: new Date().toISOString(),
+      });
+    }
+  }
+
+  const assignee = staffUser?.id || (await pickSalesAssignee());
+
+  const { rows: updated } = await query(
+    `UPDATE bookings SET
+       status = 'confirmed',
+       hold_expires_at = NULL,
+       notes = CASE
+         WHEN $2::text IS NULL THEN notes
+         ELSE COALESCE(notes || E'\n', '') || ('[commission] ' || $2::text)
+       END
+     WHERE id = $1
+     RETURNING *`,
+    [bookingId, commissionNote]
+  );
+
+  // Mirror into PMS reservations when linked to a unit
+  if (booking.unit_id) {
+    const nights = Math.max(
+      1,
+      Math.round((new Date(booking.checkout) - new Date(booking.checkin)) / 86400000)
+    );
+    const createdBy = staffUser?.id || assignee;
+    if (!createdBy) {
+      const err = new Error('No staff user available to own reservation');
+      err.status = 400;
+      throw err;
+    }
+    const existing = await query(`SELECT id FROM reservations WHERE booking_id = $1`, [bookingId]);
+    if (!existing.rows[0]) {
+      const pricePerNight = nights > 0 ? (Number(booking.total_egp) || 0) / nights : 0;
+      let utilitiesAmount = 0;
+      if (booking.unit_id) {
+        const { rows: units } = await query(`SELECT utilities_cost FROM units WHERE id = $1`, [booking.unit_id]);
+        const costPerNight = parseFloat(units[0]?.utilities_cost) || 0;
+        if (costPerNight > 0) utilitiesAmount = costPerNight * nights;
+      }
+      await query(
+        `INSERT INTO reservations (
+           unit_id, guest_name, guest_email, guest_phone, check_in, check_out, nights,
+           total_amount, amount_paid, payment_status, booking_source, sales_person_id,
+           status, notes, booking_id, created_by, id_photo_urls, price_per_night, utilities_amount
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'Website',$11,'confirmed',$12,$13,$14,$15,$16,$17)`,
+        [
+          booking.unit_id,
+          booking.guest_name,
+          booking.guest_email,
+          booking.guest_phone,
+          booking.checkin,
+          booking.checkout,
+          nights,
+          booking.total_egp || 0,
+          booking.payment_status === 'paid' ? booking.total_egp || 0 : 0,
+          booking.payment_status === 'paid' ? 'paid' : 'pending',
+          assignee || createdBy,
+          booking.notes,
+          bookingId,
+          createdBy,
+          booking.id_photo_urls || [],
+          pricePerNight,
+          utilitiesAmount,
+        ]
+      );
+    } else {
+      await query(
+        `UPDATE reservations SET status = 'confirmed', updated_at = now() WHERE booking_id = $1`,
+        [bookingId]
+      );
+    }
+  }
+
+  return updated[0];
+}
+
+async function rejectWebsiteBooking(bookingId, reason = 'rejected_by_staff') {
+  const { rows } = await query(`SELECT * FROM bookings WHERE id = $1`, [bookingId]);
+  const booking = rows[0];
+  if (!booking) {
+    const err = new Error('Booking not found');
+    err.status = 404;
+    throw err;
+  }
+  if (!['pending', 'held'].includes(booking.status)) {
+    const err = new Error(`Cannot reject booking in status ${booking.status}`);
+    err.status = 409;
+    throw err;
+  }
+
+  const { rows: updated } = await query(
+    `UPDATE bookings SET
+       status = 'cancelled',
+       hold_expires_at = NULL,
+       cancellation_reason = $2,
+       payment_status = CASE
+         WHEN payment_status = 'paid' THEN 'refund_noted'
+         ELSE payment_status
+       END
+     WHERE id = $1
+     RETURNING *`,
+    [bookingId, reason]
+  );
+
+  await query(
+    `UPDATE reservations SET status = 'cancelled', updated_at = now() WHERE booking_id = $1`,
+    [bookingId]
+  );
+
+  return updated[0];
+}
+
+async function assignSalesOnCreate(bookingId) {
+  const assignee = await pickSalesAssignee();
+  if (!assignee) return null;
+  await query(
+    `INSERT INTO sales_notifications (user_id, title, message, meta)
+     VALUES ($1,$2,$3,$4)`,
+    [
+      assignee,
+      'New website booking',
+      'A guest request was assigned to you',
+      JSON.stringify({ booking_id: bookingId, assigned: true }),
+    ]
+  );
+  emitSalesNotification(assignee, {
+    title: 'New website booking',
+    message: 'A guest request was assigned to you',
+    bookingId,
+  });
+  return assignee;
+}
+
+module.exports = {
+  acceptWebsiteBooking,
+  rejectWebsiteBooking,
+  pickSalesAssignee,
+  assignSalesOnCreate,
+};

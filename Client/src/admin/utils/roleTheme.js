@@ -1,0 +1,98 @@
+/** Visual identity for each PMS role — aligned with guest Soul brand. */
+
+export const ROLE_THEMES = {
+  admin: {
+    id: 'admin',
+    eyebrow: 'Command center',
+    sidebarFrom: '#020617',
+    sidebarVia: '#16233a',
+    sidebarTo: '#283f5e',
+    accent: '#F28C28',
+    accentHover: '#d9781c',
+    accentSoft: 'rgba(242, 140, 40, 0.18)',
+    accentText: '#9a4e0a',
+    surface: '#f7f4ee',
+    surfaceDeep: '#efe9dc',
+    headerTint: 'rgba(242, 140, 40, 0.06)',
+    avatarBg: '#F28C28',
+    badgeClass: 'badge-soul-accent',
+    chipClass: 'bg-[#fff4e8] text-[#9a4e0a]',
+    navGlow: 'rgba(242, 140, 40, 0.22)',
+  },
+  reservations: {
+    id: 'reservations',
+    eyebrow: 'Front desk',
+    sidebarFrom: '#1a2d45',
+    sidebarVia: '#283f5e',
+    sidebarTo: '#34506f',
+    accent: '#e8913a',
+    accentHover: '#d07a28',
+    accentSoft: 'rgba(232, 145, 58, 0.2)',
+    accentText: '#8a4d12',
+    surface: '#faf7f2',
+    surfaceDeep: '#f3ebe0',
+    headerTint: 'rgba(232, 145, 58, 0.07)',
+    avatarBg: '#e8913a',
+    badgeClass: 'badge-soul-orange',
+    chipClass: 'bg-orange-50 text-orange-800',
+    navGlow: 'rgba(232, 145, 58, 0.28)',
+  },
+  resale: {
+    id: 'resale',
+    eyebrow: 'Portfolio desk',
+    sidebarFrom: '#0a2a33',
+    sidebarVia: '#134e5e',
+    sidebarTo: '#1b687a',
+    accent: '#2a9d8f',
+    accentHover: '#21867a',
+    accentSoft: 'rgba(42, 157, 143, 0.18)',
+    accentText: '#0f5c54',
+    surface: '#f2f7f7',
+    surfaceDeep: '#e4efef',
+    headerTint: 'rgba(42, 157, 143, 0.07)',
+    avatarBg: '#134e5e',
+    badgeClass: 'badge-soul-teal',
+    chipClass: 'bg-teal-50 text-teal-900',
+    navGlow: 'rgba(42, 157, 143, 0.28)',
+  },
+  hr: {
+    id: 'hr',
+    eyebrow: 'People & talent',
+    sidebarFrom: '#1c283d',
+    sidebarVia: '#2c3e56',
+    sidebarTo: '#3d5270',
+    accent: '#6b8cae',
+    accentHover: '#557494',
+    accentSoft: 'rgba(107, 140, 174, 0.2)',
+    accentText: '#2f4560',
+    surface: '#eef2f7',
+    surfaceDeep: '#e2e8f0',
+    headerTint: 'rgba(107, 140, 174, 0.08)',
+    avatarBg: '#5c6b83',
+    badgeClass: 'badge-soul-slate',
+    chipClass: 'bg-slate-100 text-slate-700',
+    navGlow: 'rgba(107, 140, 174, 0.28)',
+  },
+};
+
+export function getRoleTheme(role) {
+  return ROLE_THEMES[role] || ROLE_THEMES.admin;
+}
+
+export function roleThemeVars(role) {
+  const t = getRoleTheme(role);
+  return {
+    '--pms-sidebar-from': t.sidebarFrom,
+    '--pms-sidebar-via': t.sidebarVia,
+    '--pms-sidebar-to': t.sidebarTo,
+    '--pms-accent': t.accent,
+    '--pms-accent-hover': t.accentHover,
+    '--pms-accent-soft': t.accentSoft,
+    '--pms-accent-text': t.accentText,
+    '--pms-surface': t.surface,
+    '--pms-surface-deep': t.surfaceDeep,
+    '--pms-header-tint': t.headerTint,
+    '--pms-avatar': t.avatarBg,
+    '--pms-nav-glow': t.navGlow,
+  };
+}
