@@ -24,7 +24,7 @@ function SalesShell() {
   }
 
   return (
-    <div className="min-h-screen bg-soul-ivory">
+    <div className="sales-shell min-h-screen bg-soul-ivory">
       <header className="bg-soul-blue-dark text-white px-5 h-14 flex items-center justify-between">
         <div className="flex gap-6 text-sm font-medium">
           <Link to="/sales">Dashboard</Link>
@@ -97,7 +97,7 @@ function Stat({ label, value }) {
   return (
     <div className="bg-white rounded-2xl border border-soul-line p-5">
       <div className="text-sm text-soul-muted">{label}</div>
-      <div className="font-display text-3xl mt-2">{value ?? '—'}</div>
+      <div className="font-num text-3xl font-semibold mt-2 tracking-tight">{value ?? '—'}</div>
     </div>
   );
 }

@@ -9,7 +9,7 @@ export default function OwnerLayout({ children }) {
   const handleLogout = () => { logout(); navigate('/sign-in'); };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="pms-shell min-h-screen bg-gray-50">
       {/* Minimal top bar */}
       <header className="fixed top-0 left-0 right-0 z-40 h-16 bg-gradient-to-r from-primary-900 to-primary-800 flex items-center justify-between px-6 shadow-lg">
         {/* Brand */}

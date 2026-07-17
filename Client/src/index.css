@@ -36,6 +36,38 @@ h1, h2, h3, h4, .font-display {
   line-height: 1.15;
 }
 
+/* Casual sans for prices, ratings, beds/baths, and other figures on the guest site */
+.font-num {
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.015em;
+  line-height: 1.15;
+}
+
+/* PMS admin + sales: no royal display type — Outfit everywhere */
+.pms-shell,
+.sales-shell {
+  font-family: 'Outfit', system-ui, sans-serif;
+  letter-spacing: 0.01em;
+}
+
+.pms-shell h1,
+.pms-shell h2,
+.pms-shell h3,
+.pms-shell h4,
+.pms-shell .font-display,
+.pms-shell .page-title,
+.sales-shell h1,
+.sales-shell h2,
+.sales-shell h3,
+.sales-shell h4,
+.sales-shell .font-display {
+  font-family: 'Outfit', system-ui, sans-serif !important;
+  letter-spacing: -0.015em;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
 .soul-glass {
   background: rgba(255, 255, 255, 0.82);
   backdrop-filter: blur(14px);
@@ -223,10 +255,8 @@ tr.cancelled-row td span[class*="inline-flex"] {
 
   .page-header { @apply mb-6; }
   .page-title {
-    @apply text-2xl sm:text-3xl text-soul-blue;
-    font-family: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
-    font-weight: 500;
-    letter-spacing: 0.03em;
+    @apply text-2xl sm:text-3xl font-semibold text-soul-blue tracking-tight;
+    font-family: 'Outfit', system-ui, sans-serif;
   }
   .page-subtitle { @apply text-sm text-soul-muted mt-1; }
 

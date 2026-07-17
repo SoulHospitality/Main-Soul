@@ -249,7 +249,7 @@ export default function PaymentPage() {
                   ) : null}
                   <div className="mt-2 flex items-baseline justify-between border-t border-soul-line pt-3">
                     <span className="text-sm font-bold text-soul-blue">Final total</span>
-                    <span className="font-display text-xl font-semibold text-soul-blue">
+                    <span className="font-num text-xl font-semibold text-soul-blue">
                       {money(finalTotalAmount)}
                     </span>
                   </div>

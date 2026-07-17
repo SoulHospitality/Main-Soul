@@ -135,7 +135,7 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
         <div className="mt-1.5 flex flex-wrap items-baseline gap-1.5">
           {priceCore ? (
             <>
-              <span className="font-display text-[19px] font-semibold leading-tight text-soul-blue">
+              <span className="font-num text-[19px] font-semibold leading-tight text-soul-blue">
                 {priceCore}
               </span>
               <span className="text-[12.5px] text-soul-muted">/ night</span>
@@ -165,7 +165,7 @@ function Spec({ icon: Icon, value }) {
   return (
     <span className="inline-flex items-center gap-1 whitespace-nowrap">
       <Icon size={14} strokeWidth={2} className="text-soul-blue/70" />
-      <span className="font-medium text-soul-blue">{value}</span>
+      <span className="font-num font-medium text-soul-blue">{value}</span>
     </span>
   );
 }

@@ -33,6 +33,7 @@ export default {
       fontFamily: {
         display: ['"Cormorant Garamond"', 'Georgia', 'Times New Roman', 'serif'],
         sans: ['"Outfit"', 'system-ui', 'sans-serif'],
+        num: ['"Outfit"', 'system-ui', 'sans-serif'],
       },
       letterSpacing: {
         royal: '0.08em',

@@ -56,7 +56,7 @@ export default function UnitReviewsDisplay({
       <div className="rounded-3xl border border-soul-line bg-white p-5 shadow-[0_20px_50px_-35px_rgba(40,63,94,0.35)]">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-soul-muted">Guest Feedback</p>
         <div className="mt-2 flex flex-wrap items-end gap-3">
-          <div className="font-display text-3xl font-semibold text-soul-blue">
+          <div className="font-num text-3xl font-semibold text-soul-blue">
             {summary.averageRating.toFixed(1)}
           </div>
           <ReviewStars value={summary.averageRating} />

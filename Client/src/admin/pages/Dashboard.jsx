@@ -40,7 +40,7 @@ function StatCard({ icon: Icon, iconBg, iconColor, title, value, sub }) {
       </div>
       <div className="min-w-0">
         <p className="text-xs text-soul-muted uppercase tracking-[0.14em] font-medium">{title}</p>
-        <p className="text-2xl font-semibold text-soul-blue leading-tight font-display tracking-wide">{value}</p>
+        <p className="text-2xl font-semibold text-soul-blue leading-tight font-num tracking-tight">{value}</p>
         {sub && <p className="text-xs text-soul-muted/80 mt-0.5">{sub}</p>}
       </div>
     </div>

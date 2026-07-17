@@ -72,7 +72,7 @@ export default function ListingBookingCard({
       <div className="md:sticky md:top-[116px] flex flex-col gap-4 rounded-3xl border border-soul-line bg-white p-6 shadow-[0_30px_70px_-35px_rgba(40,63,94,0.4)]">
         <div className="space-y-2 border-b border-soul-line pb-4">
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-soul-muted">Reservation</p>
-          <div className="font-display text-3xl font-semibold text-soul-blue">
+          <div className="font-num text-3xl font-semibold text-soul-blue">
             {pricePerNight != null ? money(pricePerNight) : 'Rates on request'}
           </div>
           <p className="text-sm text-soul-muted">Housekeeping Fee: {money(cleaning)} (mandatory)</p>

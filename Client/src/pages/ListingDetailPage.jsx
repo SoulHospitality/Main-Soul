@@ -42,7 +42,7 @@ function CheckIcon() {
 function Spec({ num, label }) {
   return (
     <div className="text-center py-3 border border-soul-line rounded-[14px]">
-      <div className="font-display text-[28px] font-semibold leading-none text-soul-blue">{num}</div>
+      <div className="font-num text-[28px] font-semibold leading-none text-soul-blue">{num}</div>
       <div className="text-[12px] text-soul-muted mt-1.5 uppercase tracking-wider font-semibold">{label}</div>
     </div>
   );

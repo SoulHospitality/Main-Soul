@@ -556,7 +556,7 @@ export default function BookingDrawer({
               )}
               <div className="flex items-center justify-between text-sm text-soul-muted border-t border-soul-line pt-3">
                 <span>Estimated total</span>
-                <span className="text-lg font-bold text-soul-blue">
+                <span className="font-num text-lg font-bold text-soul-blue">
                   {quoteLoading ? '…' : money(finalTotal)}
                 </span>
               </div>
