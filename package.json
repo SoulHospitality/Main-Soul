@@ -5,6 +5,7 @@
   "description": "Soul Hospitality — Client/Server monorepo (guest + admin SPA, Express server + DB migrations)",
   "scripts": {
     "install:all": "npm install --prefix Server && npm install --prefix Client",
+    "postinstall": "npm install --omit=dev --prefix Server",
     "dev:server": "npm run dev --prefix Server",
     "dev:client": "npm run dev --prefix Client",
     "dev:backend": "npm run dev --prefix Server",
