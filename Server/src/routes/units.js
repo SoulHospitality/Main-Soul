@@ -24,7 +24,7 @@ router.get('/', async (req, res, next) => {
       offset = 0,
     } = req.query;
 
-    const where = ['status = $1'];
+    const where = ['u.status = $1'];
     const params = [status];
     let i = 2;
 
@@ -33,24 +33,24 @@ router.get('/', async (req, res, next) => {
     const areaFilter = area || destination;
 
     if (compoundFilter) {
-      where.push(`compound ILIKE $${i++}`);
+      where.push(`u.compound ILIKE $${i++}`);
       params.push(compoundFilter);
     }
     if (areaFilter) {
-      where.push(`area ILIKE $${i++}`);
+      where.push(`u.area ILIKE $${i++}`);
       params.push(areaFilter);
     }
     if (beds) {
-      where.push(`beds >= $${i++}`);
+      where.push(`u.beds >= $${i++}`);
       params.push(Number(beds));
     }
     if (guests) {
-      where.push(`guests >= $${i++}`);
+      where.push(`u.guests >= $${i++}`);
       params.push(Number(guests));
     }
-    if (featured === 'true') where.push('featured = true');
+    if (featured === 'true') where.push('u.featured = true');
     if (q) {
-      where.push(`(title ILIKE $${i} OR compound ILIKE $${i} OR short_description ILIKE $${i})`);
+      where.push(`(u.title ILIKE $${i} OR u.compound ILIKE $${i} OR u.short_description ILIKE $${i})`);
       params.push(`%${q}%`);
       i++;
     }
@@ -61,28 +61,33 @@ router.get('/', async (req, res, next) => {
       .map((t) => t.trim())
       .filter(Boolean);
     if (typeList.length === 1) {
-      where.push(`property_type ILIKE $${i++}`);
+      where.push(`u.property_type ILIKE $${i++}`);
       params.push(typeList[0]);
     } else if (typeList.length > 1) {
       const placeholders = typeList.map(() => `$${i++}`);
-      where.push(`property_type ILIKE ANY(ARRAY[${placeholders.join(', ')}])`);
+      where.push(`u.property_type ILIKE ANY(ARRAY[${placeholders.join(', ')}])`);
       params.push(...typeList);
     }
 
     params.push(Number(limit), Number(offset));
     const sql = `
-      SELECT id, slug, title, status, compound, area, city, beds, baths, guests, size_m2,
-             cover_url, photo_urls, short_description, amenities, wp_post_id, featured,
-             price_currency, min_nights, cleaning_fee_egp, service_fee_percent,
-             security_deposit_egp, lat, lng, property_type, view, floor, price_fallback,
-             created_at
-      FROM units
+      SELECT u.id, u.slug, u.title, u.status, u.compound, u.area, u.city, u.beds, u.baths, u.guests, u.size_m2,
+             u.cover_url, u.photo_urls, u.short_description, u.amenities, u.wp_post_id, u.featured,
+             u.price_currency, u.min_nights, u.cleaning_fee_egp, u.service_fee_percent,
+             u.security_deposit_egp, u.lat, u.lng, u.property_type, u.view, u.floor, u.price_fallback,
+             u.created_at,
+             COALESCE(u.average_rating, 0) AS average_rating,
+             COALESCE(u.review_count, 0) AS review_count
+      FROM units u
       WHERE ${where.join(' AND ')}
-      ORDER BY featured DESC, created_at DESC
+      ORDER BY u.featured DESC, u.created_at DESC
       LIMIT $${i++} OFFSET $${i}
     `;
     const { rows } = await query(sql, params);
-    const countRes = await query(`SELECT count(*)::int AS c FROM units WHERE ${where.join(' AND ')}`, params.slice(0, -2));
+    const countRes = await query(
+      `SELECT count(*)::int AS c FROM units u WHERE ${where.join(' AND ')}`,
+      params.slice(0, -2)
+    );
     res.json({ items: rows, total: countRes.rows[0].c });
   } catch (err) {
     next(err);
@@ -180,12 +185,17 @@ router.get('/:idOrSlug/reviews', async (req, res, next) => {
   try {
     const unit = await loadUnit(req.params.idOrSlug);
     if (!unit) return res.status(404).json({ error: 'Unit not found' });
+    const { mapReview } = require('./reviews');
     const { rows } = await query(
       `SELECT * FROM reviews WHERE (unit_id = $1 OR listing_wp_id = $2) AND published = true
        ORDER BY created_at DESC`,
       [unit.id, unit.wp_post_id]
     );
-    res.json({ items: rows });
+    res.json({
+      items: rows.map(mapReview),
+      average_rating: Number(unit.average_rating || 0),
+      review_count: Number(unit.review_count || 0),
+    });
   } catch (err) {
     next(err);
   }

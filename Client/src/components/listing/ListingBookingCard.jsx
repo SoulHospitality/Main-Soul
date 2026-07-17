@@ -3,18 +3,8 @@ import BookingDrawer from '../booking/BookingDrawer';
 import { BOOKING_POLICIES } from '../../constants/bookingPolicies';
 import { getMinimumStayNights } from '../../utils/bookingRules';
 import { localDateToIso } from './ListingDatePicker';
-
-function money(n) {
-  if (n == null || Number.isNaN(Number(n))) return 'EGP —';
-  return `EGP ${Number(n).toLocaleString('en-US')}`;
-}
-
-function housekeepingFee(unit) {
-  const configured = Number(unit?.cleaning_fee_egp);
-  if (configured > 0) return configured;
-  const type = String(unit?.property_type || '').toLowerCase();
-  return type === 'villa' ? 2500 : 1500;
-}
+import { useCurrency } from '../../context/CurrencyContext';
+import { housekeepingFeeForUnit } from '../../utils/housekeeping';
 
 /**
  * SoulHospitality-style sticky reservation card.
@@ -28,6 +18,8 @@ export default function ListingBookingCard({
   initialCheckout,
   initialGuests,
 }) {
+  const { formatPrice } = useCurrency();
+  const money = (n) => formatPrice(n, { perNight: false }) || '—';
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const pricePerNight = useMemo(() => {
@@ -37,7 +29,7 @@ export default function ListingBookingCard({
     return fb > 0 ? fb : null;
   }, [dailyPrices, unit]);
 
-  const cleaning = housekeepingFee(unit);
+  const cleaning = housekeepingFeeForUnit(unit);
   const beachBase = Number(unit?.access_fee_per_adult_egp || unit?.beach_access_price || 0);
   const beachExtra = Number(unit?.access_fee_per_teen_egp || unit?.beach_access_extra_guest || beachBase || 0);
   const beachDays = Number(unit?.access_card_count_included || unit?.beach_access_days || 7) || 7;

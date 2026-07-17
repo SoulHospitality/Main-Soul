@@ -2,11 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Minus, Plus, ShieldCheck, UserRound, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useCurrency } from '../../context/CurrencyContext';
 import api, { validatePromoCode } from '../../api/http';
 import ListingDatePicker, { isoToLocalDate, localDateToIso } from '../listing/ListingDatePicker';
 import { getMinimumStayNights } from '../../utils/bookingRules';
-
-const money = (n) => `EGP ${Number(n || 0).toLocaleString('en-US')}`;
 
 /** Adults = 1, children = 0.5 — same load rules as SoulHospitality. */
 function getGuestLoad(adults, children) {
@@ -69,6 +68,8 @@ export default function BookingDrawer({
 }) {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { formatPrice } = useCurrency();
+  const money = (n) => formatPrice(n, { perNight: false }) || '—';
   const [message, setMessage] = useState('');
   const [promoCodeInput, setPromoCodeInput] = useState('');
   const [promo, setPromo] = useState({ code: '', percentage: 0, discountAmount: 0, isValid: false, loading: false });

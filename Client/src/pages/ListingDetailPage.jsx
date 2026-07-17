@@ -4,7 +4,10 @@ import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
 import ListingCard from '../components/ListingCard';
 import ListingBookingCard from '../components/listing/ListingBookingCard';
-import api from '../api/http';
+import AddReviewForm from '../components/reviews/AddReviewForm';
+import UnitReviewsDisplay from '../components/reviews/UnitReviewsDisplay';
+import { useAuth } from '../context/AuthContext';
+import api, { createUnitReview, fetchUnitReviews } from '../api/http';
 
 const localISO = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -69,12 +72,18 @@ function ExpandableText({ text, limit = 320 }) {
 export default function ListingDetailPage() {
   const { slug } = useParams();
   const [params] = useSearchParams();
+  const { user } = useAuth();
   const [unit, setUnit] = useState(null);
   const [blocked, setBlocked] = useState([]);
   const [prices, setPrices] = useState({});
   const [similar, setSimilar] = useState([]);
   const [lightbox, setLightbox] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  const [reviews, setReviews] = useState([]);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [reviewsError, setReviewsError] = useState('');
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewMessage, setReviewMessage] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -135,6 +144,66 @@ export default function ListingDetailPage() {
       cancelled = true;
     };
   }, [unit]);
+
+  useEffect(() => {
+    if (!unit?.id && !unit?.slug) return undefined;
+    let cancelled = false;
+    setReviewsLoading(true);
+    setReviewsError('');
+    fetchUnitReviews(unit.slug || unit.id)
+      .then((data) => {
+        if (cancelled) return;
+        setReviews(data.items || []);
+        setUnit((current) =>
+          current
+            ? {
+                ...current,
+                average_rating: data.average_rating ?? current.average_rating,
+                review_count: data.review_count ?? current.review_count,
+              }
+            : current
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setReviewsError('Unable to load reviews right now.');
+      })
+      .finally(() => {
+        if (!cancelled) setReviewsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [unit?.id, unit?.slug]);
+
+  const handleReviewSubmit = async ({ rating, comment }) => {
+    if (!unit) return false;
+    setReviewSubmitting(true);
+    setReviewMessage('');
+    try {
+      const guestName =
+        user?.full_name || user?.fullName || user?.user_metadata?.full_name || user?.email || 'Guest';
+      const data = await createUnitReview(unit.id || unit.slug, { rating, comment, guestName });
+      if (data.review) {
+        setReviews((prev) => [data.review, ...prev]);
+      }
+      setUnit((current) =>
+        current
+          ? {
+              ...current,
+              average_rating: data.average_rating ?? current.average_rating,
+              review_count: data.review_count ?? current.review_count,
+            }
+          : current
+      );
+      setReviewMessage('Thanks — your review was posted.');
+      return true;
+    } catch (err) {
+      setReviewMessage(err.response?.data?.error || 'Could not post review. Please try again.');
+      return false;
+    } finally {
+      setReviewSubmitting(false);
+    }
+  };
 
   const photos = useMemo(() => {
     if (!unit) return [];
@@ -229,6 +298,12 @@ export default function ListingDetailPage() {
                 <strong className="text-soul-blue">{locationParts[0] || 'Egypt'}</strong>
                 {locationParts.length > 1 ? `, ${locationParts.slice(1).join(', ')}` : ''}
               </div>
+              {Number(unit.review_count || 0) > 0 ? (
+                <p className="mt-2 text-sm text-soul-blue">
+                  <span className="font-semibold text-amber-600">★ {Number(unit.average_rating || 0).toFixed(1)}</span>
+                  <span className="text-soul-muted"> · {unit.review_count} review{Number(unit.review_count) === 1 ? '' : 's'}</span>
+                </p>
+              ) : null}
             </div>
           </div>
 
@@ -290,6 +365,9 @@ export default function ListingDetailPage() {
               </a>
               <a href="#features" className="py-3 hover:text-soul-blue transition-colors">
                 Amenities
+              </a>
+              <a href="#reviews" className="py-3 hover:text-soul-blue transition-colors">
+                Reviews
               </a>
               <a href="#rules" className="py-3 hover:text-soul-blue transition-colors">
                 House rules
@@ -365,6 +443,39 @@ export default function ListingDetailPage() {
                 {!amenities.length && !facilities.length && (
                   <p className="text-sm text-soul-muted m-0">Amenities will appear here once added in the PMS.</p>
                 )}
+              </section>
+
+              <section id="reviews" className="scroll-mt-[130px] pb-8 border-b border-soul-line mb-8">
+                <h2 className="font-display text-2xl font-semibold mb-5 text-soul-blue">Reviews</h2>
+                <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+                  <div className="space-y-3">
+                    {user ? (
+                      <AddReviewForm onSubmit={handleReviewSubmit} submitting={reviewSubmitting} />
+                    ) : (
+                      <div className="rounded-3xl border border-soul-line bg-soul-ivory/40 p-5">
+                        <p className="text-sm text-soul-blue">
+                          Please{' '}
+                          <Link to="/sign-in" className="font-semibold underline">
+                            sign in
+                          </Link>{' '}
+                          to submit a review for this unit.
+                        </p>
+                      </div>
+                    )}
+                    {reviewMessage ? (
+                      <p className={`text-sm ${reviewMessage.startsWith('Thanks') ? 'text-emerald-700' : 'text-red-600'}`}>
+                        {reviewMessage}
+                      </p>
+                    ) : null}
+                  </div>
+                  <UnitReviewsDisplay
+                    reviews={reviews}
+                    unitAverageRating={unit.average_rating}
+                    unitReviewCount={unit.review_count}
+                    loading={reviewsLoading}
+                    error={reviewsError}
+                  />
+                </div>
               </section>
 
               {similar.length > 0 && (

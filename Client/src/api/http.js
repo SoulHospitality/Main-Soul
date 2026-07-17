@@ -34,4 +34,14 @@ export async function createBookingCheckout(payload) {
   return data;
 }
 
+export async function fetchUnitReviews(unitIdOrSlug) {
+  const { data } = await api.get(`/units/${unitIdOrSlug}/reviews`);
+  return data;
+}
+
+export async function createUnitReview(unitIdOrSlug, payload) {
+  const { data } = await api.post(`/reviews/unit/${unitIdOrSlug}`, payload);
+  return data;
+}
+
 export default api;

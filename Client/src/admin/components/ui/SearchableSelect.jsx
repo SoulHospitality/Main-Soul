@@ -28,11 +28,11 @@ export default function SearchableSelect({
   const containerRef = useRef(null);
   const inputRef     = useRef(null);
 
-  // Keep input text in sync when value changes externally
+  // Keep input text in sync when value changes externally (not on every options identity change)
   useEffect(() => {
     const opt = options.find(o => String(o.value) === String(value));
     setInputValue(opt?.label ?? '');
-  }, [value, options]);
+  }, [value]); // eslint-disable-line react-hooks/exhaustive-deps -- options compared by selected label only
 
   // Close on outside click
   useEffect(() => {

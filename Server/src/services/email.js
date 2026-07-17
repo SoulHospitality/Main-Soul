@@ -1,26 +1,39 @@
+const { Resend } = require('resend');
 const nodemailer = require('nodemailer');
 
+function getResendClient() {
+  const apiKey = String(process.env.RESEND_API_KEY || '').trim();
+  if (!apiKey || apiKey.includes('xxxxxxxxx')) return null;
+  return new Resend(apiKey);
+}
+
+function defaultFrom() {
+  return (
+    process.env.MAIL_FROM ||
+    process.env.INQUIRY_FROM_EMAIL ||
+    'Soul Hospitality <onboarding@resend.dev>'
+  );
+}
+
+/**
+ * Send transactional email via Resend (preferred) or SMTP.
+ * Set RESEND_API_KEY in Server/.env — never hardcode the key.
+ */
 async function sendEmail({ to, subject, html, text }) {
-  if (process.env.RESEND_API_KEY) {
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: process.env.INQUIRY_FROM_EMAIL || 'Soul Hospitality <onboarding@resend.dev>',
-        to: [to],
-        subject,
-        html,
-        text,
-      }),
+  const resend = getResendClient();
+
+  if (resend) {
+    const { data, error } = await resend.emails.send({
+      from: defaultFrom(),
+      to: Array.isArray(to) ? to : [to],
+      subject,
+      html,
+      text,
     });
-    if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`Resend failed: ${body}`);
+    if (error) {
+      throw new Error(`Resend failed: ${error.message || JSON.stringify(error)}`);
     }
-    return res.json();
+    return data;
   }
 
   if (!process.env.SMTP_HOST) {
@@ -38,7 +51,7 @@ async function sendEmail({ to, subject, html, text }) {
   });
 
   return transporter.sendMail({
-    from: process.env.MAIL_FROM || process.env.INQUIRY_FROM_EMAIL,
+    from: defaultFrom(),
     to,
     subject,
     html,
@@ -46,4 +59,4 @@ async function sendEmail({ to, subject, html, text }) {
   });
 }
 
-module.exports = { sendEmail };
+module.exports = { sendEmail, getResendClient, defaultFrom };

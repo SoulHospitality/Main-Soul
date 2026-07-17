@@ -288,14 +288,16 @@ export default function PaymentPage() {
                     badgeActive="bg-indigo-100 text-indigo-700"
                   />
                   <MethodCard
-                    active={selectedMethod === 'paymob_card'}
-                    onClick={() => { setSelectedMethod('paymob_card'); setMessage(''); }}
+                    disabled
+                    comingSoon
+                    active={false}
+                    onClick={() => {}}
                     icon={<CreditCard className="h-6 w-6" strokeWidth={1.8} />}
-                    iconClass="bg-blue-50 text-blue-600"
-                    activeClass="border-blue-600 bg-blue-50/20 ring-blue-600/10"
+                    iconClass="bg-slate-100 text-slate-400"
+                    activeClass=""
                     title="Card (Paymob)"
                     subtitle="Debit or credit card"
-                    badgeActive="bg-blue-100 text-blue-700"
+                    badgeActive=""
                   />
                   <MethodCard
                     active={selectedMethod === 'cash'}
@@ -347,26 +349,52 @@ export default function PaymentPage() {
   );
 }
 
-function MethodCard({ active, onClick, icon, iconClass, activeClass, title, subtitle, badgeActive }) {
+function MethodCard({
+  active,
+  onClick,
+  icon,
+  iconClass,
+  activeClass,
+  title,
+  subtitle,
+  badgeActive,
+  disabled = false,
+  comingSoon = false,
+}) {
   return (
     <button
       type="button"
-      onClick={onClick}
-      className={`flex flex-col items-center justify-between rounded-3xl border-2 p-5 text-center transition-all ${
-        active ? `${activeClass} shadow-md ring-2` : 'border-soul-line bg-white hover:border-soul-blue/40 hover:shadow-sm'
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+      aria-disabled={disabled}
+      className={`relative flex flex-col items-center justify-between rounded-3xl border-2 p-5 text-center transition-all ${
+        disabled
+          ? 'cursor-not-allowed border-soul-line/70 bg-slate-50 opacity-55'
+          : active
+            ? `${activeClass} shadow-md ring-2`
+            : 'border-soul-line bg-white hover:border-soul-blue/40 hover:shadow-sm'
       }`}
     >
+      {comingSoon ? (
+        <span className="absolute right-3 top-3 rounded-full bg-slate-200/90 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600">
+          Coming soon
+        </span>
+      ) : null}
       <div className={`flex h-12 w-12 items-center justify-center rounded-full ${iconClass}`}>{icon}</div>
       <div className="mt-4">
-        <h3 className="text-sm font-bold text-soul-blue">{title}</h3>
+        <h3 className={`text-sm font-bold ${disabled ? 'text-slate-500' : 'text-soul-blue'}`}>{title}</h3>
         <p className="mt-1 text-xs text-soul-muted">{subtitle}</p>
       </div>
       <span
         className={`mt-4 rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${
-          active ? badgeActive : 'bg-soul-blue-50 text-soul-muted'
+          comingSoon
+            ? 'bg-slate-200 text-slate-600'
+            : active
+              ? badgeActive
+              : 'bg-soul-blue-50 text-soul-muted'
         }`}
       >
-        {active ? 'Selected' : 'Select'}
+        {comingSoon ? 'Coming soon' : active ? 'Selected' : 'Select'}
       </span>
     </button>
   );

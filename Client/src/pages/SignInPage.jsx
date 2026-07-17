@@ -118,7 +118,13 @@ export default function SignInPage() {
         </AuthSubmit>
       </form>
 
-      <p className="mt-8 text-center text-sm text-soul-muted">
+      <p className="mt-4 text-center text-sm">
+        <Link to="/forgot-password" className="font-medium text-soul-muted hover:text-soul-blue">
+          Forgot password?
+        </Link>
+      </p>
+
+      <p className="mt-6 text-center text-sm text-soul-muted">
         Don&apos;t have an account?{' '}
         <Link to="/sign-up" className="font-semibold text-soul-blue transition-colors hover:text-soul-blue-dark">
           Sign up now

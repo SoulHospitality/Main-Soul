@@ -15,6 +15,13 @@ import SortTh from '../components/ui/SortTh';
 import { currency, UNIT_TYPES } from '../utils/formatters';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import { useProjectCatalog } from '../../hooks/useProjectCatalog';
+import { AREAS, COMPOUNDS } from '../../data/compounds';
+
+const FALLBACK_PROJECTS_BY_DEST = COMPOUNDS.reduce((acc, c) => {
+  if (!acc[c.area]) acc[c.area] = [];
+  if (!acc[c.area].includes(c.name)) acc[c.area].push(c.name);
+  return acc;
+}, {});
 
 const COMMISSION_MODES = [
   { value: 'A', label: 'Fixed Rate', desc: 'Commission = nightly rate × % (all bookings)' },
@@ -77,6 +84,7 @@ const EMPTY_FORM = {
   price_per_night: '',
   utilities_cost: '',
   ops_status: 'available',
+  listing_status: 'draft',
   view: '',
   description: '',
   amenities: [],
@@ -274,7 +282,10 @@ function UnitForm({ form, setForm }) {
   const { isAdmin, canManageUnits } = usePermissions();
   const canSeeOwner = isAdmin || canManageUnits;
   const { destinations, projectsByDestination } = useProjectCatalog();
-  const projectOptions = projectsByDestination[form.destination] || [];
+  const effectiveDestinations = destinations.length ? destinations : AREAS;
+  const catalogProjects = projectsByDestination[form.destination] || [];
+  const fallbackProjects = FALLBACK_PROJECTS_BY_DEST[form.destination] || [];
+  const projectOptions = catalogProjects.length ? catalogProjects : fallbackProjects;
 
   return (
     <div className="space-y-4">
@@ -293,9 +304,12 @@ function UnitForm({ form, setForm }) {
             }))}
           >
             <option value="">Select destination…</option>
-            {destinations.map((d) => (
+            {effectiveDestinations.map((d) => (
               <option key={d} value={d}>{d}</option>
             ))}
+            {form.destination && !effectiveDestinations.includes(form.destination) && (
+              <option value={form.destination}>{form.destination}</option>
+            )}
           </select>
         </div>
         <div>
@@ -439,6 +453,20 @@ function UnitForm({ form, setForm }) {
               options={[{ value: 'available', label: 'Available' }, { value: 'occupied', label: 'Occupied' }, { value: 'maintenance', label: 'Maintenance' }]}
             />
           </div>
+          <div>
+            <label className="label">Listing status</label>
+            <SearchableSelect
+              value={form.listing_status || 'draft'}
+              onChange={(v) => setForm((f) => ({ ...f, listing_status: v }))}
+              options={[
+                { value: 'draft', label: 'Draft' },
+                { value: 'published', label: 'Published' },
+              ]}
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Published requires a price (fallback nightly or daily pricing).
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -504,7 +532,16 @@ export default function Units() {
     onError: (e) => toast.error(e.response?.data?.error || 'Error deleting unit'),
   });
 
-  const openAdd = () => { setForm(EMPTY_FORM); setEditId(null); setModal('add'); };
+  const openAdd = () => {
+    setForm({
+      ...EMPTY_FORM,
+      amenities: [],
+      facilities: [],
+      photo_urls: [],
+    });
+    setEditId(null);
+    setModal('add');
+  };
   const openEdit = (u) => {
     let facilities = toTagList(u.facilities);
     if (!facilities.length && u.other_details) {
@@ -533,6 +570,7 @@ export default function Units() {
       price_per_night: u.price_per_night || u.price_fallback || '',
       utilities_cost: u.utilities_cost || '',
       ops_status: u.ops_status || 'available',
+      listing_status: u.status || 'draft',
       view: u.view || '',
       description: u.the_property || u.short_description || '',
       amenities: toTagList(u.amenities),
@@ -545,7 +583,24 @@ export default function Units() {
     });
     setEditId(u.id); setModal('edit');
   };
-  const handleSave = () =>
+  const handleSave = () => {
+    if (!String(form.name || '').trim()) {
+      toast.error('Unit name is required');
+      return;
+    }
+    if (!String(form.destination || '').trim()) {
+      toast.error('Destination is required');
+      return;
+    }
+    if (!String(form.project || '').trim()) {
+      toast.error('Project is required');
+      return;
+    }
+    const hasFallbackPrice = Number(form.price_per_night) > 0;
+    if (form.listing_status === 'published' && !hasFallbackPrice && !editId) {
+      toast.error('Add a fallback nightly price before publishing, or keep as draft and set daily prices first.');
+      return;
+    }
     saveMutation.mutate({
       ...form,
       title: form.name,
@@ -555,7 +610,7 @@ export default function Units() {
       project: form.project,
       compound: form.project,
       projectName: form.project,
-      ...(editId ? {} : { status: 'draft' }),
+      status: form.listing_status || (editId ? undefined : 'draft'),
       ops_status: form.ops_status,
       property_type: form.type,
       type: form.type,
@@ -567,12 +622,14 @@ export default function Units() {
       access_fee_per_adult_egp: form.beach_access_price || null,
       access_fee_per_teen_egp: form.beach_access_extra_guest || null,
       access_card_count_included: form.beach_access_days || 7,
-      beach_access_price: form.beach_access_price,
-      beach_access_days: form.beach_access_days,
-      beach_access_extra_guest: form.beach_access_extra_guest,
+      beach_access_price: form.beach_access_price === '' ? null : form.beach_access_price,
+      beach_access_days: form.beach_access_days === '' ? null : form.beach_access_days,
+      beach_access_extra_guest: form.beach_access_extra_guest === '' ? null : form.beach_access_extra_guest,
+      price_per_night: form.price_per_night === '' ? null : form.price_per_night,
+      utilities_cost: form.utilities_cost === '' ? null : form.utilities_cost,
     });
+  };
   const canWrite = canManageUnits;
-
   const { sorted, sortKey, sortDir, handleSort } = useSortableTable(units, 'name', 'asc');
 
   return (
@@ -728,7 +785,11 @@ export default function Units() {
         size="lg"
         footer={<>
           <button onClick={() => setModal(null)} className="btn-secondary">Cancel</button>
-          <button onClick={handleSave} disabled={saveMutation.isPending || !form.name} className="btn-primary">
+          <button
+            onClick={handleSave}
+            disabled={saveMutation.isPending || !form.name || !form.destination || !form.project}
+            className="btn-primary"
+          >
             {saveMutation.isPending ? 'Saving...' : modal === 'edit' ? 'Save Changes' : 'Create draft'}
           </button>
         </>}

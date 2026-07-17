@@ -64,6 +64,20 @@ function normalizeTagList(value) {
     .filter(Boolean);
 }
 
+/** Empty string / NaN → null; otherwise number (or integer when opts.int). */
+function toNum(value, { int = false, fallback = null } = {}) {
+  if (value === undefined || value === null || value === '') return fallback;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return int ? Math.round(n) : n;
+}
+
+function toText(value, fallback = null) {
+  if (value === undefined || value === null) return fallback;
+  const s = String(value).trim();
+  return s || fallback;
+}
+
 function mapUnitRow(u) {
   const details = parseOtherDetails(u.other_details);
   return {
@@ -91,6 +105,39 @@ async function resolvePhotosFromBody(b) {
   if (!folderUrl) return { folderUrl: null, urls: null };
   const resolved = await resolveDriveFolderPhotos(folderUrl);
   return { folderUrl: String(folderUrl).trim(), urls: resolved.urls };
+}
+
+async function unitHasPrice(unitId, { priceFallback, wpPostId } = {}) {
+  let fallback = Number(priceFallback);
+  let postId = wpPostId;
+  if (unitId && (priceFallback === undefined || wpPostId === undefined)) {
+    const { rows } = await query(
+      `SELECT price_fallback, wp_post_id FROM units WHERE id = $1`,
+      [unitId]
+    );
+    if (!rows[0]) return false;
+    if (priceFallback === undefined) fallback = Number(rows[0].price_fallback);
+    if (wpPostId === undefined) postId = rows[0].wp_post_id;
+  }
+  if (Number(fallback) > 0) return true;
+  if (!postId) return false;
+  const { rows: priced } = await query(
+    `SELECT 1 FROM unit_daily_prices WHERE wp_post_id = $1 AND price > 0 LIMIT 1`,
+    [postId]
+  );
+  return Boolean(priced[0]);
+}
+
+async function enforceDraftWithoutPrice(unitId) {
+  const hasPrice = await unitHasPrice(unitId);
+  if (hasPrice) return { demoted: false, hasPrice: true };
+  const { rows } = await query(
+    `UPDATE units SET status = 'draft', updated_at = now()
+     WHERE id = $1 AND status = 'published'
+     RETURNING id, status`,
+    [unitId]
+  );
+  return { demoted: Boolean(rows[0]), hasPrice: false, unit: rows[0] || null };
 }
 
 // ── Users (Admin + HR staff management) ─────────────────────
@@ -425,12 +472,27 @@ router.get('/units/projects', async (_req, res, next) => {
 router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) => {
   try {
     const b = req.body;
-    const slug = b.slug || slugify(b.title || b.name || `unit-${Date.now()}`);
+    const title = toText(b.title || b.name);
+    const compound = toText(b.compound || b.project || b.projectName);
+    const area = toText(b.area || b.destination, 'North Coast');
+    if (!title) return res.status(400).json({ error: 'Unit name is required' });
+    if (!compound) return res.status(400).json({ error: 'Project is required' });
+
+    const { housekeepingFeeForType } = require('../../lib/housekeeping');
+    const propertyType = toText(b.property_type || b.type);
+    const cleaningFee = housekeepingFeeForType(propertyType);
+    const priceFallback = toNum(b.price_per_night || b.price_fallback, { int: true });
+    let status = b.status || 'draft';
+    if (status === 'published' && !(priceFallback > 0)) {
+      status = 'draft';
+    }
+
+    const slug = toText(b.slug) || slugify(title || `unit-${Date.now()}`);
     const amenities = normalizeTagList(b.amenities);
     const facilities = normalizeTagList(b.facilities);
-    const beachPrice = b.beach_access_price ?? b.access_fee_per_adult_egp ?? null;
-    const beachExtra = b.beach_access_extra_guest ?? b.access_fee_per_teen_egp ?? null;
-    const beachDays = b.beach_access_days ?? b.access_card_count_included ?? 7;
+    const beachPrice = toNum(b.beach_access_price ?? b.access_fee_per_adult_egp, { int: true });
+    const beachExtra = toNum(b.beach_access_extra_guest ?? b.access_fee_per_teen_egp, { int: true });
+    const beachDays = toNum(b.beach_access_days ?? b.access_card_count_included, { int: true, fallback: 7 });
 
     let photoUrls = Array.isArray(b.photo_urls) ? b.photo_urls : [];
     let coverUrl = b.cover_url || photoUrls[0] || null;
@@ -449,49 +511,50 @@ router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) =>
          owner_name, owner_email, owner_phone,
          company_commission_pct, company_commission_owner_pct, commission_mode, commission_tenant_pct,
          utilities_cost, ops_status, unit_number, internal_code, created_by_staff, price_fallback,
-         property_type, view, floor, source_url, min_nights,
+         property_type, view, floor, source_url, min_nights, cleaning_fee_egp,
          access_fee_per_adult_egp, access_fee_per_teen_egp, access_card_count_included
        ) VALUES (
          $1,$2,COALESCE($3,'draft'),'manual',$4,COALESCE($5,$4),COALESCE($6,'North Coast'),
          $7,$8,$9,$10,$11,COALESCE($12,'{}'),COALESCE($13,'{}'),$14,$15,$16,
          $17,$18,$19,$20,$21,$22,$23,$24,COALESCE($25,'available'),$26,$27,$28,$29,
-         $30,$31,$32,$33,$34,$35,$36,$37
+         $30,$31,$32,$33,$34,$35,$36,$37,$38
        ) RETURNING *`,
       [
         slug,
-        b.title || b.name,
-        b.status || 'draft',
-        b.compound || b.project || b.projectName,
-        b.project || b.projectName || b.compound,
-        b.area || b.destination || 'North Coast',
-        b.beds ?? b.bedrooms ?? 1,
-        b.baths ?? b.bathrooms ?? 1,
-        b.guests || b.capacity || 2,
-        b.size_m2 || b.area_sqft || null,
+        title,
+        status,
+        compound,
+        toText(b.project || b.projectName || b.compound, compound),
+        area,
+        toNum(b.beds ?? b.bedrooms, { int: true, fallback: 1 }),
+        toNum(b.baths ?? b.bathrooms, { int: true, fallback: 1 }),
+        toNum(b.guests || b.capacity, { int: true, fallback: 2 }),
+        toNum(b.size_m2 || b.area_sqft, { int: true }),
         coverUrl,
         photoUrls,
         amenities,
         buildOtherDetails({ facilities, photos_folder_url: folderUrl }),
-        b.short_description || null,
-        b.the_property || b.description || null,
-        b.owner_name,
-        b.owner_email,
-        b.owner_phone,
-        b.company_commission_pct ?? 20,
-        b.company_commission_owner_pct ?? 10,
+        toText(b.short_description),
+        toText(b.the_property || b.description),
+        toText(b.owner_name),
+        toText(b.owner_email),
+        toText(b.owner_phone),
+        toNum(b.company_commission_pct, { fallback: 20 }),
+        toNum(b.company_commission_owner_pct, { fallback: 10 }),
         b.commission_mode || 'A',
-        b.commission_tenant_pct || 0,
-        b.utilities_cost || 0,
+        toNum(b.commission_tenant_pct, { fallback: 0 }),
+        toNum(b.utilities_cost, { fallback: 0 }),
         b.ops_status || (['available', 'occupied', 'maintenance'].includes(b.status) ? b.status : 'available'),
-        b.unit_number,
-        b.internal_code || b.uniqueId || null,
+        toText(b.unit_number),
+        toText(b.internal_code || b.uniqueId),
         req.user.id,
-        b.price_per_night || b.price_fallback || null,
-        b.property_type || b.type || null,
-        b.view || null,
-        b.floor != null ? String(b.floor) : null,
-        b.location_link || b.source_url || null,
-        b.min_nights || 1,
+        priceFallback,
+        propertyType,
+        toText(b.view),
+        b.floor != null && b.floor !== '' ? String(b.floor) : null,
+        toText(b.location_link || b.source_url),
+        toNum(b.min_nights, { int: true, fallback: 1 }),
+        cleaningFee,
         beachPrice,
         beachExtra,
         beachDays,
@@ -508,19 +571,63 @@ async function updateUnitHandler(req, res, next) {
     const b = req.body;
     const amenities = b.amenities == null ? null : normalizeTagList(b.amenities);
     const facilities = b.facilities == null ? null : normalizeTagList(b.facilities);
+    const { housekeepingFeeForType } = require('../../lib/housekeeping');
 
-    const listingStatus = ['draft', 'published', 'cancelled', 'archived', 'delisted'].includes(b.status)
+    let listingStatus = ['draft', 'published', 'cancelled', 'archived', 'delisted'].includes(b.status)
       ? b.status
       : b.listing_status || null;
     const opsStatus = b.ops_status
       || (['available', 'occupied', 'maintenance'].includes(b.status) ? b.status : null);
 
-    const beachPrice = b.beach_access_price ?? b.access_fee_per_adult_egp ?? null;
-    const beachExtra = b.beach_access_extra_guest ?? b.access_fee_per_teen_egp ?? null;
-    const beachDays = b.beach_access_days ?? b.access_card_count_included ?? null;
+    const beachPrice = b.beach_access_price !== undefined || b.access_fee_per_adult_egp !== undefined
+      ? toNum(b.beach_access_price ?? b.access_fee_per_adult_egp, { int: true })
+      : null;
+    const beachExtra = b.beach_access_extra_guest !== undefined || b.access_fee_per_teen_egp !== undefined
+      ? toNum(b.beach_access_extra_guest ?? b.access_fee_per_teen_egp, { int: true })
+      : null;
+    const beachDays = b.beach_access_days !== undefined || b.access_card_count_included !== undefined
+      ? toNum(b.beach_access_days ?? b.access_card_count_included, { int: true })
+      : null;
 
-    const { rows: existingRows } = await query(`SELECT other_details FROM units WHERE id = $1`, [req.params.id]);
+    const { rows: existingRows } = await query(
+      `SELECT other_details, price_fallback, wp_post_id, property_type, status FROM units WHERE id = $1`,
+      [req.params.id]
+    );
     if (!existingRows[0]) return res.status(404).json({ error: 'Not found' });
+
+    const propertyType = toText(b.property_type || b.type) || existingRows[0].property_type;
+    const cleaningFee = housekeepingFeeForType(propertyType);
+    const nextFallback =
+      b.price_per_night !== undefined || b.price_fallback !== undefined
+        ? toNum(b.price_per_night ?? b.price_fallback, { int: true })
+        : Number(existingRows[0].price_fallback);
+
+    const wantsPublished =
+      listingStatus === 'published' || (!listingStatus && existingRows[0].status === 'published');
+    if (wantsPublished) {
+      const hasPrice = await unitHasPrice(req.params.id, {
+        priceFallback: nextFallback,
+        wpPostId: existingRows[0].wp_post_id,
+      });
+      if (!hasPrice) {
+        if (listingStatus === 'published') {
+          return res.status(400).json({
+            error: 'Cannot publish a unit without a price. Add a fallback nightly rate or daily prices first.',
+          });
+        }
+        listingStatus = 'draft';
+      }
+    }
+    if (
+      (b.price_per_night !== undefined || b.price_fallback !== undefined) &&
+      !(nextFallback > 0)
+    ) {
+      const stillHasDaily = await unitHasPrice(req.params.id, {
+        priceFallback: 0,
+        wpPostId: existingRows[0].wp_post_id,
+      });
+      if (!stillHasDaily) listingStatus = 'draft';
+    }
 
     let photoUrls = b.photo_urls ?? null;
     let coverUrl = b.cover_url ?? null;
@@ -580,49 +687,59 @@ async function updateUnitHandler(req, res, next) {
          access_fee_per_adult_egp = COALESCE($33, access_fee_per_adult_egp),
          access_fee_per_teen_egp = COALESCE($34, access_fee_per_teen_egp),
          access_card_count_included = COALESCE($35, access_card_count_included),
+         cleaning_fee_egp = $36,
          updated_at = now()
-       WHERE id = $36 RETURNING *`,
+       WHERE id = $37 RETURNING *`,
       [
-        b.title || b.name || null,
+        toText(b.title || b.name),
         listingStatus,
-        b.compound || b.project || b.projectName || null,
-        b.project || b.projectName || b.compound || null,
-        b.area || b.destination || null,
-        b.beds ?? b.bedrooms ?? null,
-        b.baths ?? b.bathrooms ?? null,
-        b.guests || b.capacity || null,
-        b.size_m2 || b.area_sqft || null,
+        toText(b.compound || b.project || b.projectName),
+        toText(b.project || b.projectName || b.compound),
+        toText(b.area || b.destination),
+        toNum(b.beds ?? b.bedrooms, { int: true }),
+        toNum(b.baths ?? b.bathrooms, { int: true }),
+        toNum(b.guests || b.capacity, { int: true }),
+        toNum(b.size_m2 || b.area_sqft, { int: true }),
         coverUrl,
         photoUrls,
         amenities,
         otherDetails,
-        b.short_description || null,
-        b.the_property || b.description || null,
-        b.owner_name || null,
-        b.owner_email || null,
-        b.owner_phone || null,
+        b.short_description !== undefined ? toText(b.short_description) : null,
+        b.the_property !== undefined || b.description !== undefined
+          ? toText(b.the_property || b.description)
+          : null,
+        b.owner_name !== undefined ? toText(b.owner_name) : null,
+        b.owner_email !== undefined ? toText(b.owner_email) : null,
+        b.owner_phone !== undefined ? toText(b.owner_phone) : null,
         b.commission_mode || null,
-        b.company_commission_pct ?? null,
-        b.company_commission_owner_pct ?? null,
-        b.commission_tenant_pct ?? null,
-        b.utilities_cost ?? null,
+        toNum(b.company_commission_pct),
+        toNum(b.company_commission_owner_pct),
+        toNum(b.commission_tenant_pct),
+        toNum(b.utilities_cost),
         opsStatus,
-        b.unit_number || null,
-        b.internal_code || null,
-        b.price_per_night ?? b.price_fallback ?? null,
-        b.property_type || b.type || null,
-        b.view || null,
-        b.floor != null ? String(b.floor) : null,
-        b.location_link || b.source_url || null,
-        b.min_nights ?? null,
+        b.unit_number !== undefined ? toText(b.unit_number) : null,
+        b.internal_code !== undefined ? toText(b.internal_code) : null,
+        b.price_per_night !== undefined || b.price_fallback !== undefined
+          ? toNum(b.price_per_night ?? b.price_fallback, { int: true })
+          : null,
+        toText(b.property_type || b.type),
+        b.view !== undefined ? toText(b.view) : null,
+        b.floor != null && b.floor !== '' ? String(b.floor) : null,
+        b.location_link !== undefined || b.source_url !== undefined
+          ? toText(b.location_link || b.source_url)
+          : null,
+        toNum(b.min_nights, { int: true }),
         beachPrice,
         beachExtra,
         beachDays,
+        cleaningFee,
         req.params.id,
       ]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Not found' });
-    res.json(mapUnitRow(rows[0]));
+    await enforceDraftWithoutPrice(req.params.id);
+    const { rows: fresh } = await query(`SELECT * FROM units WHERE id = $1`, [req.params.id]);
+    res.json(mapUnitRow(fresh[0] || rows[0]));
   } catch (e) {
     next(e);
   }
@@ -752,13 +869,21 @@ router.post('/reservations', requireRoles('admin', 'reservations'), async (req, 
       ? parseFloat(b.utilities_cost_override)
       : null;
     let utilitiesAmount = parseFloat(b.utilities_amount) || 0;
-    if (!utilitiesAmount && b.unit_id) {
-      const { rows: units } = await query(`SELECT utilities_cost FROM units WHERE id = $1`, [b.unit_id]);
-      const costPerNight = utilitiesOverride != null && !Number.isNaN(utilitiesOverride)
-        ? utilitiesOverride
-        : parseFloat(units[0]?.utilities_cost) || 0;
-      if (costPerNight > 0 && !b.is_owner_reservation) {
-        utilitiesAmount = costPerNight * nights;
+    let housekeepingFees = 0;
+    if (b.unit_id) {
+      const { rows: units } = await query(
+        `SELECT utilities_cost, property_type FROM units WHERE id = $1`,
+        [b.unit_id]
+      );
+      const { housekeepingFeeForUnit } = require('../../lib/housekeeping');
+      housekeepingFees = housekeepingFeeForUnit(units[0]);
+      if (!utilitiesAmount) {
+        const costPerNight = utilitiesOverride != null && !Number.isNaN(utilitiesOverride)
+          ? utilitiesOverride
+          : parseFloat(units[0]?.utilities_cost) || 0;
+        if (costPerNight > 0 && !b.is_owner_reservation) {
+          utilitiesAmount = costPerNight * nights;
+        }
       }
     }
 
@@ -791,7 +916,7 @@ router.post('/reservations', requireRoles('admin', 'reservations'), async (req, 
         req.user.id,
         b.booking_id || null,
         pricePerNight,
-        parseFloat(b.housekeeping_fees) || 0,
+        housekeepingFees,
         parseFloat(b.insurance) || 0,
         parseFloat(b.down_payment) || 0,
         utilitiesAmount,
@@ -826,8 +951,13 @@ router.patch('/reservations/:id', requireRoles('admin', 'reservations'), async (
 router.delete('/reservations/:id', requireRoles('admin', 'reservations'), async (req, res, next) => {
   try {
     const id = req.params.id;
-    const { rows: existing } = await query(`SELECT id FROM reservations WHERE id = $1`, [id]);
+    const { rows: existing } = await query(
+      `SELECT id, booking_id FROM reservations WHERE id = $1`,
+      [id]
+    );
     if (!existing[0]) return res.status(404).json({ error: 'Not found' });
+
+    const bookingId = existing[0].booking_id;
 
     await query(`DELETE FROM commissions WHERE reservation_id = $1`, [id]);
     await query(`DELETE FROM payments WHERE reservation_id = $1`, [id]);
@@ -836,6 +966,15 @@ router.delete('/reservations/:id', requireRoles('admin', 'reservations'), async 
       [id]
     );
     const { rows } = await query(`DELETE FROM reservations WHERE id = $1 RETURNING *`, [id]);
+
+    // Free guest calendar / My Trips / public iCal for linked website bookings
+    if (bookingId) {
+      const { cancelWebsiteBooking } = require('../../services/bookingWorkflow');
+      await cancelWebsiteBooking(bookingId, req.body?.cancel_type
+        ? `cancelled_by_staff:${req.body.cancel_type}`
+        : 'cancelled_by_staff');
+    }
+
     res.json(rows[0]);
   } catch (e) {
     next(e);
@@ -858,6 +997,12 @@ router.post('/reservations/:id/cancel-request', requireRoles('admin', 'reservati
       [reason || null, req.params.id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Not found' });
+
+    if (rows[0].booking_id) {
+      const { cancelWebsiteBooking } = require('../../services/bookingWorkflow');
+      await cancelWebsiteBooking(rows[0].booking_id, reason || 'cancel_request');
+    }
+
     res.json(rows[0]);
   } catch (e) {
     next(e);
@@ -875,6 +1020,19 @@ router.post('/reservations/:id/reject-cancel', requireRoles('admin'), async (req
       [req.params.id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Not found' });
+
+    // Restore linked website booking so guest calendar / trips stay consistent
+    if (rows[0].booking_id) {
+      await query(
+        `UPDATE bookings SET
+           status = 'confirmed',
+           hold_expires_at = NULL,
+           cancellation_reason = NULL
+         WHERE id = $1 AND status = 'cancelled'`,
+        [rows[0].booking_id]
+      );
+    }
+
     res.json(rows[0]);
   } catch (e) {
     next(e);

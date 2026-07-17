@@ -75,6 +75,8 @@ function createApp() {
   app.use('/api/sales', salesRoutes);
   app.use('/api/calendar', icalRoutes);
   app.use('/api/pms', pmsRoutes);
+  app.use('/api/fx', require('./routes/fx'));
+  app.use('/api/reviews', require('./routes/reviews').router);
 
   // Cron trigger (Vercel-style / manual)
   app.get('/api/cron/refresh-ical-blocks', async (req, res, next) => {

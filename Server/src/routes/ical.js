@@ -15,6 +15,12 @@ router.get('/:slug.ics', async (req, res, next) => {
        WHERE listing_slug = $1 AND status IN ('confirmed','pending','held')`,
       [unit.slug]
     );
+    const { rows: reservations } = await query(
+      `SELECT check_in AS checkin, check_out AS checkout, id
+       FROM reservations
+       WHERE unit_id = $1 AND status <> 'cancelled'`,
+      [unit.id]
+    );
 
     const lines = [
       'BEGIN:VCALENDAR',
@@ -29,6 +35,18 @@ router.get('/:slug.ics', async (req, res, next) => {
       lines.push(
         'BEGIN:VEVENT',
         `UID:${b.id}@soulhospitality.co`,
+        `DTSTART;VALUE=DATE:${dtStart}`,
+        `DTEND;VALUE=DATE:${dtEnd}`,
+        `SUMMARY:Booked`,
+        'END:VEVENT'
+      );
+    }
+    for (const r of reservations) {
+      const dtStart = String(r.checkin).replace(/-/g, '');
+      const dtEnd = String(r.checkout).replace(/-/g, '');
+      lines.push(
+        'BEGIN:VEVENT',
+        `UID:res-${r.id}@soulhospitality.co`,
         `DTSTART;VALUE=DATE:${dtStart}`,
         `DTEND;VALUE=DATE:${dtEnd}`,
         `SUMMARY:Booked`,

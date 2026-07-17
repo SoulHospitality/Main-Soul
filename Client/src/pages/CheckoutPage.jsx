@@ -16,7 +16,7 @@ export default function CheckoutPage() {
     guest_name: '',
     guest_email: '',
     guest_phone: '',
-    payment_method: 'paymob_card',
+    payment_method: 'instapay',
     promo_code: '',
     notes: '',
   });
@@ -79,9 +79,11 @@ export default function CheckoutPage() {
               value={form.payment_method}
               onChange={(e) => setForm({ ...form, payment_method: e.target.value })}
             >
-              <option value="paymob_card">Card (Paymob)</option>
               <option value="instapay">InstaPay</option>
               <option value="cash">Cash / Hold</option>
+              <option value="paymob_card" disabled>
+                Card (Paymob) — Coming soon
+              </option>
             </select>
           </label>
           <label className="block text-sm">
@@ -103,11 +105,7 @@ export default function CheckoutPage() {
           </label>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <button disabled={busy || !slug} className="w-full btn-pill bg-soul-blue text-white py-3 font-semibold disabled:opacity-40">
-            {busy
-              ? 'Processing…'
-              : form.payment_method === 'paymob_card'
-                ? 'Pay with Paymob'
-                : 'Submit request'}
+            {busy ? 'Processing…' : 'Submit request'}
           </button>
           <p className="text-xs text-soul-muted text-center">
             Requests stay pending until Soul staff accepts. Unpaid holds expire automatically.

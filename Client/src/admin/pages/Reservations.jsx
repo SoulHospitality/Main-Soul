@@ -19,6 +19,7 @@ import BookingCalendar from '../components/ui/BookingCalendar';
 import { currency, formatDate, nightsText, BOOKING_SOURCES, PAYMENT_METHODS, PAYMENT_METHOD_LABELS } from '../utils/formatters';
 import { calcReservationFinancials, commissionModeLabel, appliedPctLabel } from '../utils/commission';
 import WebsiteBookingRequests from '../components/WebsiteBookingRequests';
+import { housekeepingFeeForUnit } from '../../utils/housekeeping';
 
 const EMPTY_FORM = {
   unit_id: '', guest_name: '', guest_email: '', guest_phone: '', guest_nationality: '',
@@ -49,6 +50,13 @@ function ReservationForm({ form, setForm, units, users, isNew, transferProof, on
     }
   }, [form.unit_id]);
 
+  // Fixed housekeeping by property type (villa 2500, else 1500)
+  useEffect(() => {
+    if (!selectedUnit) return;
+    const fee = housekeepingFeeForUnit(selectedUnit);
+    setForm((f) => (Number(f.housekeeping_fees) === fee ? f : { ...f, housekeeping_fees: String(fee) }));
+  }, [form.unit_id, selectedUnit?.property_type, selectedUnit?.type]);
+
   const nights = calcNights(form.check_in, form.check_out);
 
   // Auto-calculate total when nights or price changes
@@ -61,7 +69,9 @@ function ReservationForm({ form, setForm, units, users, isNew, transferProof, on
 
   const total = parseFloat(form.total_amount) || 0;
   const downPmt = parseFloat(form.down_payment) || 0;
-  const hkFees  = parseFloat(form.housekeeping_fees) || 0;
+  const hkFees = selectedUnit
+    ? housekeepingFeeForUnit(selectedUnit)
+    : (parseFloat(form.housekeeping_fees) || 0);
   const ins     = parseFloat(form.insurance) || 0;
   const ownerCollectedAmt = parseFloat(form.owner_collected_amount) || 0;
 
@@ -166,8 +176,12 @@ function ReservationForm({ form, setForm, units, users, isNew, transferProof, on
           </div>
           <div>
             <label className="label">Housekeeping Fees (EGP)</label>
-            <input type="number" min="0" step="0.01" className="input" value={form.housekeeping_fees}
-              onChange={e => setForm(f => ({ ...f, housekeeping_fees: e.target.value }))} placeholder="0.00" />
+            <div className="input bg-gray-50 text-gray-700 font-medium">
+              {selectedUnit
+                ? `EGP ${hkFees.toLocaleString('en-EG')} (${String(selectedUnit.type || selectedUnit.property_type || '').toLowerCase() === 'villa' ? 'Villa' : 'Standard'})`
+                : 'Select a unit'}
+            </div>
+            <p className="text-xs text-gray-400 mt-1">Fixed: 1,500 EGP · Villas 2,500 EGP</p>
           </div>
           <div>
             <label className="label">Insurance (EGP)</label>
@@ -1099,16 +1113,23 @@ export default function Reservations() {
       return toast.error('Mobile number is required');
     if (!form.is_owner_reservation && !form.sales_person_id)
       return toast.error('Please select a Sales Person or mark as Owner Reservation');
+    const selectedUnit = units.find((u) => String(u.id) === String(form.unit_id));
+    const payload = {
+      ...form,
+      housekeeping_fees: selectedUnit
+        ? housekeepingFeeForUnit(selectedUnit)
+        : form.housekeeping_fees,
+    };
     if (!editId && transferProof) {
       const fd = new FormData();
-      Object.entries(form).forEach(([k, v]) => {
+      Object.entries(payload).forEach(([k, v]) => {
         if (v !== '' && v !== null && v !== undefined)
           fd.append(k, typeof v === 'boolean' ? (v ? '1' : '0') : v);
       });
       fd.append('transfer_proof', transferProof);
       saveMutation.mutate(fd);
     } else {
-      saveMutation.mutate(form);
+      saveMutation.mutate(payload);
     }
   };
 

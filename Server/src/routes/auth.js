@@ -7,8 +7,13 @@ const { getServiceClient, getAnonClient } = require('../config/supabase');
 const { authGuest } = require('../middleware/auth');
 
 const { passwordPolicyOk, passwordPolicyMessage } = require('../lib/staffIdentity');
+const { sendPasswordResetEmail } = require('../services/guestEmails');
 
 const router = express.Router();
+
+function hashResetToken(token) {
+  return crypto.createHash('sha256').update(String(token)).digest('hex');
+}
 
 function signGuest(user) {
   return jwt.sign(
@@ -252,17 +257,108 @@ router.post('/refresh', async (req, res, next) => {
   }
 });
 
-router.post('/forgot-password', async (req, res) => {
+router.post('/forgot-password', async (req, res, next) => {
   // Never reveal whether email exists
-  if (supabaseAuthEnabled()) {
-    const supabase = getAnonClient();
-    await supabase.auth
-      .resetPasswordForEmail(req.body.email, {
-        redirectTo: `${process.env.FRONTEND_URL}/reset-password`,
-      })
-      .catch(() => {});
+  try {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    if (!email) return res.json({ ok: true });
+
+    if (supabaseAuthEnabled()) {
+      const supabase = getAnonClient();
+      await supabase.auth
+        .resetPasswordForEmail(email, {
+          redirectTo: `${process.env.FRONTEND_URL}/reset-password`,
+        })
+        .catch(() => {});
+    }
+
+    const { rows } = await query(
+      `SELECT id, email, full_name, password_hash
+       FROM profiles
+       WHERE lower(email) = lower($1)
+       LIMIT 1`,
+      [email]
+    );
+    const profile = rows[0];
+
+    if (profile?.password_hash) {
+      const token = crypto.randomBytes(32).toString('hex');
+      const tokenHash = hashResetToken(token);
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+      await query(
+        `UPDATE profiles
+         SET password_reset_token_hash = $1,
+             password_reset_expires_at = $2,
+             updated_at = now()
+         WHERE id = $3`,
+        [tokenHash, expiresAt.toISOString(), profile.id]
+      );
+
+      const frontend = process.env.FRONTEND_URL || 'http://localhost:5173';
+      const resetUrl = `${frontend.replace(/\/$/, '')}/reset-password?token=${token}`;
+      try {
+        await sendPasswordResetEmail({
+          email: profile.email,
+          fullName: profile.full_name,
+          resetUrl,
+        });
+      } catch (emailErr) {
+        console.error('[email] Password reset email failed:', emailErr.message);
+      }
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
   }
-  res.json({ ok: true });
+});
+
+router.post('/reset-password', async (req, res, next) => {
+  try {
+    const token = String(req.body?.token || '').trim();
+    const newPassword = req.body?.password || req.body?.newPassword;
+    if (!token || !newPassword) {
+      return res.status(400).json({ error: 'Token and new password are required' });
+    }
+    if (!passwordPolicyOk(newPassword)) {
+      return res.status(400).json({ error: passwordPolicyMessage() });
+    }
+
+    const tokenHash = hashResetToken(token);
+    const { rows } = await query(
+      `SELECT id, email, full_name, phone
+       FROM profiles
+       WHERE password_reset_token_hash = $1
+         AND password_reset_expires_at IS NOT NULL
+         AND password_reset_expires_at > now()
+       LIMIT 1`,
+      [tokenHash]
+    );
+    if (!rows[0]) {
+      return res.status(400).json({ error: 'Reset link is invalid or has expired' });
+    }
+
+    const password_hash = await bcrypt.hash(newPassword, 10);
+    await query(
+      `UPDATE profiles
+       SET password_hash = $1,
+           password_reset_token_hash = NULL,
+           password_reset_expires_at = NULL,
+           updated_at = now()
+       WHERE id = $2`,
+      [password_hash, rows[0].id]
+    );
+
+    const user = publicUser(rows[0]);
+    res.json({
+      ok: true,
+      user,
+      accessToken: signGuest(user),
+      refreshToken: signGuestRefresh(user),
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 router.get('/me', authGuest, async (req, res, next) => {

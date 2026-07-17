@@ -152,7 +152,8 @@ router.get('/mine', authGuest, async (req, res, next) => {
     const { rows } = await query(
       `SELECT b.* FROM bookings b
        LEFT JOIN profiles p ON p.email = b.guest_email
-       WHERE p.id = $1 OR b.guest_email = $2
+       WHERE (p.id = $1 OR b.guest_email = $2)
+         AND b.status <> 'cancelled'
        ORDER BY b.created_at DESC`,
       [req.guest.id, req.guest.email]
     );

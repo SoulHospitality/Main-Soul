@@ -1,5 +1,6 @@
 const { query } = require('../config/db');
 const { emitSalesNotification } = require('../config/socket');
+const { sendBookingAcceptedEmail } = require('./guestEmails');
 
 async function pickSalesAssignee() {
   const { rows } = await query(
@@ -80,8 +81,14 @@ async function acceptWebsiteBooking(bookingId, staffUser) {
     if (!existing.rows[0]) {
       const pricePerNight = nights > 0 ? (Number(booking.total_egp) || 0) / nights : 0;
       let utilitiesAmount = 0;
+      let housekeepingFees = 0;
       if (booking.unit_id) {
-        const { rows: units } = await query(`SELECT utilities_cost FROM units WHERE id = $1`, [booking.unit_id]);
+        const { rows: units } = await query(
+          `SELECT utilities_cost, property_type FROM units WHERE id = $1`,
+          [booking.unit_id]
+        );
+        const { housekeepingFeeForUnit } = require('../lib/housekeeping');
+        housekeepingFees = housekeepingFeeForUnit(units[0]);
         const costPerNight = parseFloat(units[0]?.utilities_cost) || 0;
         if (costPerNight > 0) utilitiesAmount = costPerNight * nights;
       }
@@ -89,8 +96,9 @@ async function acceptWebsiteBooking(bookingId, staffUser) {
         `INSERT INTO reservations (
            unit_id, guest_name, guest_email, guest_phone, check_in, check_out, nights,
            total_amount, amount_paid, payment_status, booking_source, sales_person_id,
-           status, notes, booking_id, created_by, id_photo_urls, price_per_night, utilities_amount
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'Website',$11,'confirmed',$12,$13,$14,$15,$16,$17)`,
+           status, notes, booking_id, created_by, id_photo_urls, price_per_night,
+           utilities_amount, housekeeping_fees
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'Website',$11,'confirmed',$12,$13,$14,$15,$16,$17,$18)`,
         [
           booking.unit_id,
           booking.guest_name,
@@ -109,6 +117,7 @@ async function acceptWebsiteBooking(bookingId, staffUser) {
           booking.id_photo_urls || [],
           pricePerNight,
           utilitiesAmount,
+          housekeepingFees,
         ]
       );
     } else {
@@ -119,7 +128,38 @@ async function acceptWebsiteBooking(bookingId, staffUser) {
     }
   }
 
+  try {
+    await sendBookingAcceptedEmail(updated[0]);
+  } catch (emailErr) {
+    console.error('[email] Acceptance email failed:', emailErr.message);
+  }
+
   return updated[0];
+}
+
+/**
+ * Cancel a guest website booking (any active status).
+ * Used when staff delete/cancel a PMS reservation so availability + My Trips stay in sync.
+ */
+async function cancelWebsiteBooking(bookingId, reason = 'cancelled_by_staff') {
+  if (!bookingId) return null;
+
+  const { rows: updated } = await query(
+    `UPDATE bookings SET
+       status = 'cancelled',
+       hold_expires_at = NULL,
+       cancellation_reason = COALESCE($2, cancellation_reason),
+       payment_status = CASE
+         WHEN payment_status = 'paid' THEN 'refund_noted'
+         ELSE payment_status
+       END
+     WHERE id = $1
+       AND status IN ('confirmed', 'pending', 'held')
+     RETURNING *`,
+    [bookingId, reason]
+  );
+
+  return updated[0] || null;
 }
 
 async function rejectWebsiteBooking(bookingId, reason = 'rejected_by_staff') {
@@ -136,26 +176,14 @@ async function rejectWebsiteBooking(bookingId, reason = 'rejected_by_staff') {
     throw err;
   }
 
-  const { rows: updated } = await query(
-    `UPDATE bookings SET
-       status = 'cancelled',
-       hold_expires_at = NULL,
-       cancellation_reason = $2,
-       payment_status = CASE
-         WHEN payment_status = 'paid' THEN 'refund_noted'
-         ELSE payment_status
-       END
-     WHERE id = $1
-     RETURNING *`,
-    [bookingId, reason]
-  );
+  const updated = await cancelWebsiteBooking(bookingId, reason);
 
   await query(
     `UPDATE reservations SET status = 'cancelled', updated_at = now() WHERE booking_id = $1`,
     [bookingId]
   );
 
-  return updated[0];
+  return updated;
 }
 
 async function assignSalesOnCreate(bookingId) {
@@ -182,6 +210,7 @@ async function assignSalesOnCreate(bookingId) {
 module.exports = {
   acceptWebsiteBooking,
   rejectWebsiteBooking,
+  cancelWebsiteBooking,
   pickSalesAssignee,
   assignSalesOnCreate,
 };

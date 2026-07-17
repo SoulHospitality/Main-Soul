@@ -112,6 +112,26 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
         </h3>
         <div className="truncate text-[13px] text-soul-muted">{location}</div>
 
+        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+          {Number(listing.review_count || listing.reviewCount || 0) > 0 ? (
+            <>
+              <span className="rounded-md border border-amber-100 bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-700">
+                ★ {Number(listing.average_rating || listing.averageRating || listing.rating || 0).toFixed(1)}
+              </span>
+              <span className="text-[11px] font-medium text-soul-muted">
+                ({listing.review_count || listing.reviewCount} reviews)
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="rounded-md border border-soul-line bg-soul-ivory/60 px-2 py-0.5 text-[11px] font-bold text-soul-muted">
+                ★ —
+              </span>
+              <span className="text-[11px] italic text-soul-muted">No reviews yet</span>
+            </>
+          )}
+        </div>
+
         <div className="mt-1.5 flex flex-wrap items-baseline gap-1.5">
           {priceCore ? (
             <>

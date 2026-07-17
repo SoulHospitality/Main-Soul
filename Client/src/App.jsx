@@ -10,6 +10,8 @@ import PaymentCallbackPage from './pages/PaymentCallbackPage';
 import BookingSuccessPage from './pages/BookingSuccessPage';
 import SignInPage from './pages/SignInPage';
 import SignUpPage from './pages/SignUpPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import AccountPage, { WishlistPage } from './pages/AccountPage';
 import CareersPage from './pages/CareersPage';
 import AboutPage from './pages/AboutPage';
@@ -38,6 +40,8 @@ export default function App() {
             <Route path="/booking-success" element={<BookingSuccessPage />} />
             <Route path="/sign-in" element={<SignInPage />} />
             <Route path="/sign-up" element={<SignUpPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/account" element={<AccountPage />} />
             <Route path="/wishlist" element={<WishlistPage />} />
             <Route path="/careers" element={<CareersPage />} />

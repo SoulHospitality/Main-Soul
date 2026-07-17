@@ -68,7 +68,8 @@ async function getDailyPriceMap(wpPostId, from, to) {
 }
 
 function computeFees(unit, { nights, subtotal, adults = 1, teens = 0 }) {
-  const cleaning = Number(unit?.cleaning_fee_egp || 0);
+  const { housekeepingFeeForUnit } = require('../lib/housekeeping');
+  const cleaning = housekeepingFeeForUnit(unit);
   const accessAdult = Number(unit?.access_fee_per_adult_egp || 0) * Math.max(0, Number(adults) || 0);
   const accessTeen = Number(unit?.access_fee_per_teen_egp || 0) * Math.max(0, Number(teens) || 0);
   const access = accessAdult + accessTeen;
@@ -76,7 +77,7 @@ function computeFees(unit, { nights, subtotal, adults = 1, teens = 0 }) {
   const service = Math.round(subtotal * (servicePct / 100));
   const deposit = Number(unit?.security_deposit_egp || 0);
   const lines = [];
-  if (cleaning > 0) lines.push({ key: 'cleaning', label: 'Cleaning fee', amount: cleaning });
+  if (cleaning > 0) lines.push({ key: 'cleaning', label: 'Housekeeping fee', amount: cleaning });
   if (access > 0) lines.push({ key: 'access', label: 'Access cards', amount: access });
   if (service > 0) lines.push({ key: 'service', label: `Service (${servicePct}%)`, amount: service });
   return {
@@ -151,7 +152,8 @@ async function isDateBlocked(wpPostId, dateStr) {
 
 /**
  * Blocked nights for guest calendar / quote.
- * Sources: manual blocks, live OTA iCal, pending/confirmed bookings, unpriced nights.
+ * Sources: manual blocks, live OTA iCal, pending/confirmed bookings,
+ * active PMS reservations, unpriced nights.
  * `unit_ical_blocks` is NOT used for guest truth (admin cache only).
  */
 async function getBlockedDates(wpPostId, from, to, { includeUnpriced = true } = {}) {
@@ -179,6 +181,18 @@ async function getBlockedDates(wpPostId, from, to, { includeUnpriced = true } = 
     [wpPostId, from, to]
   );
   for (const r of bookings) push(r.date, 'booking');
+
+  // PMS reservations (admin/owner stays) so delete frees the guest calendar
+  const { rows: reservations } = await query(
+    `SELECT d::text AS date FROM reservations r
+       JOIN units u ON u.id = r.unit_id
+       , generate_series(r.check_in, r.check_out - 1, interval '1 day') d
+     WHERE u.wp_post_id = $1
+       AND r.status <> 'cancelled'
+       AND d >= $2::date AND d < $3::date`,
+    [wpPostId, from, to]
+  );
+  for (const r of reservations) push(r.date, 'reservation');
 
   try {
     const live = await fetchUpstreamBusyDates(wpPostId, from, to);
