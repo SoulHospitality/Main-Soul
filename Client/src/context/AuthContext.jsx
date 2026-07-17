@@ -30,7 +30,9 @@ export function AuthProvider({ children }) {
     setUser(null);
   }, []);
 
-  const signIn = useCallback(async (identity, password) => {
+  const signIn = useCallback(async (identity, password, options = {}) => {
+    const staffOnly = Boolean(options.staffOnly);
+
     const tryStaff = async () => {
       const { data } = await api.post('/staff/auth/login', {
         username: identity.trim(),
@@ -57,6 +59,10 @@ export function AuthProvider({ children }) {
       setUser(data.user);
       return { kind: 'guest', user: data.user };
     };
+
+    if (staffOnly) {
+      return tryStaff();
+    }
 
     const looksLikeEmail = identity.includes('@');
     if (looksLikeEmail) {

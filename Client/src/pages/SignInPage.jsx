@@ -9,6 +9,7 @@ export default function SignInPage() {
   const { signIn, user } = useAuth();
   const navigate = useNavigate();
   const [params] = useSearchParams();
+  const staffOnly = params.get('staff') === '1';
   const nextPath = params.get('next') || '/account';
   const [identity, setIdentity] = useState('');
   const [password, setPassword] = useState('');
@@ -17,7 +18,7 @@ export default function SignInPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (user) {
+    if (!staffOnly && user) {
       navigate(nextPath.startsWith('/') ? nextPath : '/account', { replace: true });
       return;
     }
@@ -33,13 +34,13 @@ export default function SignInPage() {
     } catch {
       /* ignore */
     }
-  }, [user, navigate, nextPath]);
+  }, [user, navigate, nextPath, staffOnly]);
 
   return (
     <AuthShell
       imageSrc="/soul-brand/coast-hero-2.jpg"
-      eyebrow="Let's get started"
-      title="Find your next coastal getaway"
+      eyebrow={staffOnly ? 'Staff access' : "Let's get started"}
+      title={staffOnly ? 'Soul Hospitality PMS' : 'Find your next coastal getaway'}
       imageAlt="Soul Hospitality North Coast"
     >
       <div className="mb-8 text-center">
@@ -51,9 +52,13 @@ export default function SignInPage() {
             e.currentTarget.style.display = 'none';
           }}
         />
-        <h1 className="font-display text-3xl font-semibold text-soul-blue sm:text-4xl">Welcome back</h1>
+        <h1 className="font-display text-3xl font-semibold text-soul-blue sm:text-4xl">
+          {staffOnly ? 'Staff sign in' : 'Welcome back'}
+        </h1>
         <p className="mt-2 text-sm text-soul-muted">
-          Sign in, Explore More.
+          {staffOnly
+            ? 'Team members only — guest accounts cannot sign in here.'
+            : 'Sign in, Explore More.'}
         </p>
       </div>
 
@@ -64,30 +69,36 @@ export default function SignInPage() {
           setError('');
           setLoading(true);
           try {
-            const result = await signIn(identity, password);
+            const result = await signIn(identity, password, { staffOnly });
             if (result.kind === 'staff') {
               if (result.forcePasswordChange || result.user?.is_first_login) {
                 navigate(ADMIN_CHANGE_PASSWORD, { replace: true });
               } else {
                 navigate(defaultAdminPage(result.user.role), { replace: true });
               }
-            } else {
+            } else if (!staffOnly) {
               navigate(nextPath.startsWith('/') ? nextPath : '/account', { replace: true });
+            } else {
+              setError('Staff credentials required.');
             }
           } catch (err) {
-            setError(err.response?.data?.error || err.message || 'Sign in failed');
+            setError(
+              staffOnly
+                ? err.response?.data?.error || err.message || 'Invalid staff username or password'
+                : err.response?.data?.error || err.message || 'Sign in failed'
+            );
           } finally {
             setLoading(false);
           }
         }}
       >
         <AuthField
-          label="Email or Username"
+          label={staffOnly ? 'Username' : 'Email or Username'}
           icon={User}
           name="identity"
           value={identity}
           onChange={(e) => setIdentity(e.target.value)}
-          placeholder="Enter Email or Username"
+          placeholder={staffOnly ? 'Staff username' : 'Enter Email or Username'}
           autoComplete="username"
         />
 
@@ -114,22 +125,37 @@ export default function SignInPage() {
 
         <AuthError message={error} />
         <AuthSubmit loading={loading} loadingLabel="Signing in…">
-          Sign in
+          {staffOnly ? 'Sign in to PMS' : 'Sign in'}
         </AuthSubmit>
       </form>
 
-      <p className="mt-4 text-center text-sm">
-        <Link to="/forgot-password" className="font-medium text-soul-muted hover:text-soul-blue">
-          Forgot password?
-        </Link>
-      </p>
+      {!staffOnly && (
+        <>
+          <p className="mt-4 text-center text-sm">
+            <Link to="/forgot-password" className="font-medium text-soul-muted hover:text-soul-blue">
+              Forgot password?
+            </Link>
+          </p>
 
-      <p className="mt-6 text-center text-sm text-soul-muted">
-        Don&apos;t have an account?{' '}
-        <Link to="/sign-up" className="font-semibold text-soul-blue transition-colors hover:text-soul-blue-dark">
-          Sign up now
-        </Link>
-      </p>
+          <p className="mt-6 text-center text-sm text-soul-muted">
+            Don&apos;t have an account?{' '}
+            <Link
+              to="/sign-up"
+              className="font-semibold text-soul-blue transition-colors hover:text-soul-blue-dark"
+            >
+              Sign up now
+            </Link>
+          </p>
+        </>
+      )}
+
+      {staffOnly && (
+        <p className="mt-6 text-center text-sm text-soul-muted">
+          <Link to="/" className="font-medium text-soul-muted hover:text-soul-blue">
+            ← Back to coming soon
+          </Link>
+        </p>
+      )}
     </AuthShell>
   );
 }

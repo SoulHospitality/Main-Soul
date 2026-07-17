@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { brand, whatsappHref } from '../theme/brand';
 
 const HERO = '/soul-brand/coast-hero-2.jpg';
@@ -40,15 +41,22 @@ export default function ComingSoonPage() {
 
       <div className="relative z-10 flex min-h-[100dvh] flex-col">
         <header
-          className={`flex items-center justify-center px-6 pt-10 transition-all duration-1000 sm:pt-12 ${
+          className={`flex items-center justify-between px-6 pt-8 sm:px-10 sm:pt-10 transition-all duration-1000 ${
             entered ? 'translate-y-0 opacity-100' : '-translate-y-3 opacity-0'
           }`}
         >
+          <span className="w-24 sm:w-28" aria-hidden="true" />
           <img
             src="/soul-brand/soul-logo.png"
             alt={brand.name}
-            className="h-16 w-auto object-contain brightness-0 invert sm:h-20"
+            className="h-14 w-auto object-contain brightness-0 invert sm:h-16"
           />
+          <Link
+            to="/sign-in?staff=1"
+            className="w-24 sm:w-28 text-right text-[11px] font-medium uppercase tracking-[0.18em] text-white/45 transition hover:text-white/85"
+          >
+            Staff login
+          </Link>
         </header>
 
         <main className="flex flex-1 flex-col items-center justify-center px-6 pb-28 text-center sm:px-8">
@@ -78,7 +86,7 @@ export default function ComingSoonPage() {
           </p>
 
           <div
-            className={`mt-10 transition-all delay-700 duration-1000 ${
+            className={`mt-10 flex flex-col items-center gap-4 transition-all delay-700 duration-1000 ${
               entered ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'
             }`}
           >
