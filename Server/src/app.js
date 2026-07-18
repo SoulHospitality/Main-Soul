@@ -56,8 +56,35 @@ function createApp() {
     })
   );
 
-  app.get('/api/health', (_req, res) => {
-    res.json({ ok: true, service: 'main-soul-backend', ts: new Date().toISOString() });
+  app.get('/api/health', async (_req, res) => {
+    let unitCounts = [];
+    let migrations = [];
+    try {
+      const { rows } = await require('./config/db').query(
+        `SELECT status, COUNT(*)::int AS count FROM units GROUP BY status ORDER BY status`
+      );
+      unitCounts = rows;
+    } catch {
+      /* ignore */
+    }
+    try {
+      migrations = await require('./config/db').listAppliedMigrations();
+    } catch {
+      /* ignore */
+    }
+    res.json({
+      ok: true,
+      service: 'main-soul-backend',
+      ts: new Date().toISOString(),
+      commit:
+        process.env.RAILWAY_GIT_COMMIT_SHA ||
+        process.env.RAILWAY_GIT_COMMIT_SHA_SHORT ||
+        process.env.RENDER_GIT_COMMIT ||
+        null,
+      unitCounts,
+      migrationsApplied: migrations.map((m) => m.id),
+      latestMigration: migrations.length ? migrations[migrations.length - 1].id : null,
+    });
   });
 
   app.get('/health', (_req, res) => res.json({ ok: true }));

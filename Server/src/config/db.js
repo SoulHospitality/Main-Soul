@@ -19,11 +19,13 @@ async function query(text, params) {
 
 async function runMigrations() {
   const migrationsDir = path.join(__dirname, '../../supabase/migrations');
+  console.log(`[db] Migrations dir: ${migrationsDir}`);
   if (!fs.existsSync(migrationsDir)) {
     console.warn('[db] No migrations directory found, skipping auto-migrate');
     return;
   }
   const files = fs.readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort();
+  console.log(`[db] Found ${files.length} migration file(s)`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS public._schema_migrations (
       id text PRIMARY KEY,
@@ -49,11 +51,24 @@ async function runMigrations() {
           '[db] Hint: your DATABASE_URL may point at the old PMS schema. Migration 000 archives legacy tables, then 001 creates the unified schema. Restart the server after pulling the latest migrations.'
         );
       }
-      throw err;
+      // Do not abort boot — keep serving so a bad data migration cannot block deploys.
+      // Failed files are not recorded and will retry on the next restart.
+      console.error(`[db] Continuing boot without ${file}; will retry next restart`);
     } finally {
       client.release();
     }
   }
 }
 
-module.exports = { pool, query, runMigrations };
+async function listAppliedMigrations() {
+  try {
+    const { rows } = await query(
+      `SELECT id, applied_at FROM public._schema_migrations ORDER BY id`
+    );
+    return rows;
+  } catch {
+    return [];
+  }
+}
+
+module.exports = { pool, query, runMigrations, listAppliedMigrations };

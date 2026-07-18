@@ -8,6 +8,7 @@ const { runMigrations, query } = require('./config/db');
 const { initSocket } = require('./config/socket');
 const { startBookingHoldExpiryJob } = require('./jobs/bookingHoldExpiry');
 const { startPmsReminderJobs } = require('./jobs/pmsReminders');
+const { syncAllUnitListingStatusesOnBoot } = require('./lib/bootUnitStatusSync');
 
 async function seedAdmin() {
   const username = process.env.ADMIN_USERNAME || 'admin';
@@ -41,6 +42,11 @@ async function main() {
   } else {
     await runMigrations();
     await seedAdmin();
+    try {
+      await syncAllUnitListingStatusesOnBoot();
+    } catch (err) {
+      console.error('[boot] Unit listing sync failed:', err.message);
+    }
   }
 
   const app = createApp();
@@ -52,6 +58,9 @@ async function main() {
   const port = Number(process.env.PORT || 5000);
   server.listen(port, () => {
     console.log(`[main-soul] API listening on :${port}`);
+    console.log(
+      `[main-soul] commit=${process.env.RAILWAY_GIT_COMMIT_SHA || process.env.RENDER_GIT_COMMIT || 'local'}`
+    );
   });
 }
 
