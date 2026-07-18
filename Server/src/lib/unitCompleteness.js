@@ -1,6 +1,7 @@
 /**
  * Guest-listing completeness: incomplete units stay draft and never appear to guests.
  * Every guest-facing attribute on the unit form must be filled before publish.
+ * Status is automatic: complete → published, incomplete → draft.
  */
 
 function hasText(v) {
@@ -74,50 +75,30 @@ function assessUnitCompleteness(unit, { hasPrice = false } = {}) {
 }
 
 /**
- * Resolve guest listing status.
- * - Incomplete → always draft (hidden from guests)
- * - Complete on create → published
- * - Complete + explicit draft on update → draft (admin can hold)
- * - Complete + published / previously published → published
- * - Terminal statuses (archived/cancelled/delisted) preserved when requested
+ * Resolve guest listing status automatically from completeness.
+ * - Incomplete → draft (hidden from guests)
+ * - Complete → published
+ * - Terminal statuses (archived/cancelled/delisted) preserved when already set / requested
  */
 function resolveListingStatus({
   unit,
   hasPrice = false,
   requestedStatus = null,
   previousStatus = null,
-  isCreate = false,
 } = {}) {
   const terminal = new Set(['archived', 'cancelled', 'delisted']);
   if (requestedStatus && terminal.has(requestedStatus)) {
     return { status: requestedStatus, ...assessUnitCompleteness(unit, { hasPrice }) };
   }
+  if (previousStatus && terminal.has(previousStatus) && !requestedStatus) {
+    return { status: previousStatus, ...assessUnitCompleteness(unit, { hasPrice }) };
+  }
 
   const assessment = assessUnitCompleteness(unit, { hasPrice });
-  if (!assessment.complete) {
-    return { status: 'draft', ...assessment };
-  }
-
-  // Create: complete units go live for guests
-  if (isCreate) {
-    return { status: 'published', ...assessment };
-  }
-
-  if (requestedStatus === 'draft') {
-    return { status: 'draft', ...assessment };
-  }
-  if (requestedStatus === 'published') {
-    return { status: 'published', ...assessment };
-  }
-
-  // Update without status change: keep previous if still valid
-  if (previousStatus === 'published') {
-    return { status: 'published', ...assessment };
-  }
-  if (previousStatus && terminal.has(previousStatus)) {
-    return { status: previousStatus, ...assessment };
-  }
-  return { status: previousStatus || 'draft', ...assessment };
+  return {
+    status: assessment.complete ? 'published' : 'draft',
+    ...assessment,
+  };
 }
 
 module.exports = {

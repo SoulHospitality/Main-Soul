@@ -455,16 +455,11 @@ function UnitForm({ form, setForm }) {
           </div>
           <div>
             <label className="label">Listing status</label>
-            <SearchableSelect
-              value={form.listing_status || 'published'}
-              onChange={(v) => setForm((f) => ({ ...f, listing_status: v }))}
-              options={[
-                { value: 'draft', label: 'Draft' },
-                { value: 'published', label: 'Published' },
-              ]}
-            />
+            <div className="input bg-gray-50 text-sm text-gray-700 flex items-center">
+              Auto — published when every field is filled, otherwise draft
+            </div>
             <p className="text-xs text-gray-400 mt-1">
-              Incomplete units stay draft (hidden from guests). Fill every field: price, description, beach access, photos, amenities, location, view, utilities, etc.
+              Status is set automatically. Missing any field (price, description, beach access, photos, amenities, location, view, utilities, etc.) keeps the unit as draft and hidden from guests.
             </p>
           </div>
         </div>
@@ -620,7 +615,7 @@ export default function Units() {
       project: form.project,
       compound: form.project,
       projectName: form.project,
-      status: form.listing_status || (editId ? undefined : 'published'),
+      status: undefined,
       ops_status: form.ops_status,
       property_type: form.type,
       type: form.type,

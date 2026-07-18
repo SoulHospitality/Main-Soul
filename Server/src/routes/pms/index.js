@@ -515,7 +515,7 @@ router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) =>
         photo_urls: photoUrls,
       },
       hasPrice: Number(priceFallback) > 0,
-      requestedStatus: b.status || b.listing_status || null,
+      requestedStatus: null,
       isCreate: true,
     });
     const status = completeness.status;
@@ -598,6 +598,10 @@ async function updateUnitHandler(req, res, next) {
     let listingStatus = ['draft', 'published', 'cancelled', 'archived', 'delisted'].includes(b.status)
       ? b.status
       : b.listing_status || null;
+    // draft/published are automatic from completeness — ignore client choice
+    if (listingStatus === 'draft' || listingStatus === 'published') {
+      listingStatus = null;
+    }
     const opsStatus = b.ops_status
       || (['available', 'occupied', 'maintenance'].includes(b.status) ? b.status : null);
 
@@ -729,7 +733,7 @@ async function updateUnitHandler(req, res, next) {
     );
     if (!rows[0]) return res.status(404).json({ error: 'Not found' });
     const synced = await syncUnitListingStatus(req.params.id, {
-      requestedStatus: listingStatus || rows[0].status,
+      requestedStatus: listingStatus || null,
     });
     const payload = mapUnitRow(synced || rows[0]);
     if (synced?._completeness) {

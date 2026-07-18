@@ -47,35 +47,40 @@ assert(incomplete.missing.includes('price (fallback or daily rates)'), 'missing 
 assert(incomplete.missing.includes('description'), 'missing description');
 assert(incomplete.missing.includes('beach access price'), 'missing beach');
 
-const createIncomplete = resolveListingStatus({
-  unit: completeUnit({ the_property: '' }),
-  hasPrice: true,
-  requestedStatus: 'published',
-  isCreate: true,
-});
-assert(createIncomplete.status === 'draft', 'incomplete create must be draft');
+assert(
+  resolveListingStatus({
+    unit: completeUnit({ the_property: '' }),
+    hasPrice: true,
+    requestedStatus: 'published',
+  }).status === 'draft',
+  'incomplete must be draft'
+);
 
-const createComplete = resolveListingStatus({
-  unit: completeUnit(),
-  hasPrice: true,
-  requestedStatus: 'draft',
-  isCreate: true,
-});
-assert(createComplete.status === 'published', 'complete create publishes even if draft requested');
+assert(
+  resolveListingStatus({
+    unit: completeUnit(),
+    hasPrice: true,
+    requestedStatus: 'draft',
+    previousStatus: 'draft',
+  }).status === 'published',
+  'complete auto-publishes even from draft'
+);
 
-const demote = resolveListingStatus({
-  unit: completeUnit({ access_fee_per_adult_egp: null }),
-  hasPrice: true,
-  requestedStatus: 'published',
-  previousStatus: 'published',
-  isCreate: false,
-});
-assert(demote.status === 'draft', 'incomplete update demotes published');
+assert(
+  resolveListingStatus({
+    unit: completeUnit({ access_fee_per_adult_egp: null }),
+    hasPrice: true,
+    previousStatus: 'published',
+  }).status === 'draft',
+  'incomplete demotes published'
+);
 
-const zeroBeachOk = assessUnitCompleteness(completeUnit({
-  access_fee_per_adult_egp: 0,
-  access_fee_per_teen_egp: 0,
-}));
-assert(zeroBeachOk.complete, 'zero beach fees count as filled');
+assert(
+  assessUnitCompleteness(completeUnit({
+    access_fee_per_adult_egp: 0,
+    access_fee_per_teen_egp: 0,
+  })).complete,
+  'zero beach fees count as filled'
+);
 
 console.log('unitCompleteness tests passed');

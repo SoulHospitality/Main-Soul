@@ -27,9 +27,13 @@ async function syncUnitListingStatus(unitId, { requestedStatus = null } = {}) {
   const { rows } = await query(`SELECT * FROM units WHERE id = $1`, [unitId]);
   const unit = rows[0];
   if (!unit) return null;
-  if (['archived', 'cancelled', 'delisted'].includes(unit.status) && !requestedStatus) {
+
+  const terminal = new Set(['archived', 'cancelled', 'delisted']);
+  // Leave terminal units alone unless an explicit terminal change is requested
+  if (terminal.has(unit.status) && !(requestedStatus && terminal.has(requestedStatus))) {
     return unit;
   }
+
   const hasPrice = await unitHasPrice(unitId, {
     priceFallback: unit.price_fallback,
     wpPostId: unit.wp_post_id,
@@ -37,9 +41,8 @@ async function syncUnitListingStatus(unitId, { requestedStatus = null } = {}) {
   const resolved = resolveListingStatus({
     unit,
     hasPrice,
-    requestedStatus: requestedStatus || unit.status,
+    requestedStatus,
     previousStatus: unit.status,
-    isCreate: false,
   });
   if (resolved.status === unit.status) {
     return { ...unit, _completeness: resolved };
