@@ -475,16 +475,42 @@ router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) =>
       coverUrl = photoUrls[0] || null;
     }
 
+    const minNights = toNum(b.min_nights, { int: true, fallback: 1 });
+    const utilitiesCost = toNum(b.utilities_cost);
+    const unitNumber = toText(b.unit_number);
+    const view = toText(b.view);
+    const floorRaw = b.floor != null && b.floor !== '' ? b.floor : null;
+    const description = toText(b.the_property || b.description || b.short_description);
+    const locationLink = toText(b.location_link || b.source_url);
+
     const completeness = resolveListingStatus({
       unit: {
         title,
         compound,
         project: toText(b.project || b.projectName || b.compound, compound),
+        area,
+        destination: area,
         property_type: propertyType,
+        unit_number: unitNumber,
+        view,
         beds,
         baths,
+        floor: floorRaw,
         guests,
+        min_nights: minNights,
         price_fallback: priceFallback,
+        utilities_cost: utilitiesCost,
+        access_fee_per_adult_egp: beachPrice,
+        access_fee_per_teen_egp: beachExtra,
+        access_card_count_included: beachDays,
+        beach_access_price: beachPrice,
+        beach_access_extra_guest: beachExtra,
+        beach_access_days: beachDays,
+        the_property: description,
+        description,
+        amenities,
+        source_url: locationLink,
+        location_link: locationLink,
         cover_url: coverUrl,
         photo_urls: photoUrls,
       },
@@ -525,7 +551,7 @@ router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) =>
         amenities,
         buildOtherDetails({ facilities, photos_folder_url: folderUrl }),
         toText(b.short_description),
-        toText(b.the_property || b.description),
+        description,
         toText(b.owner_name),
         toText(b.owner_email),
         toText(b.owner_phone),
@@ -533,17 +559,17 @@ router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) =>
         toNum(b.company_commission_owner_pct, { fallback: 10 }),
         b.commission_mode || 'A',
         toNum(b.commission_tenant_pct, { fallback: 0 }),
-        toNum(b.utilities_cost, { fallback: 0 }),
+        toNum(b.utilities_cost),
         b.ops_status || (['available', 'occupied', 'maintenance'].includes(b.status) ? b.status : 'available'),
-        toText(b.unit_number),
+        unitNumber,
         toText(b.internal_code || b.uniqueId),
         req.user.id,
         priceFallback,
         propertyType,
-        toText(b.view),
-        b.floor != null && b.floor !== '' ? String(b.floor) : null,
-        toText(b.location_link || b.source_url),
-        toNum(b.min_nights, { int: true, fallback: 1 }),
+        view,
+        floorRaw != null ? String(floorRaw) : null,
+        locationLink,
+        minNights,
         cleaningFee,
         beachPrice,
         beachExtra,

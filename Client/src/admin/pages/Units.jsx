@@ -464,7 +464,7 @@ function UnitForm({ form, setForm }) {
               ]}
             />
             <p className="text-xs text-gray-400 mt-1">
-              Incomplete units are saved as draft and hidden from guests. Fill title, project, type, beds, baths, guests, price, and photos to publish.
+              Incomplete units stay draft (hidden from guests). Fill every field: price, description, beach access, photos, amenities, location, view, utilities, etc.
             </p>
           </div>
         </div>
