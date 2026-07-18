@@ -4,6 +4,44 @@ const { quoteStay, getBlockedDates } = require('../services/pricing');
 
 const router = express.Router();
 
+/** Fields guests must never see (ops / owner / unit codes). */
+const GUEST_UNIT_OMIT = new Set([
+  'unit_number',
+  'internal_code',
+  'operator_unit_code',
+  'source_code',
+  'source_unit',
+  'source_url',
+  'owner_name',
+  'owner_email',
+  'owner_phone',
+  'company_commission_pct',
+  'company_commission_owner_pct',
+  'commission_mode',
+  'commission_tenant_pct',
+  'utilities_cost',
+  'ops_status',
+  'created_by_staff',
+  'notes',
+  'other_details',
+  'last_scrape_at',
+  'last_scrape_status',
+  'consecutive_scrape_failures',
+  'last_failure_reason',
+  'last_failure_at',
+  'consecutive_missing_from_discovery',
+]);
+
+function toPublicUnit(row) {
+  if (!row) return row;
+  const out = {};
+  for (const [k, v] of Object.entries(row)) {
+    if (GUEST_UNIT_OMIT.has(k)) continue;
+    out[k] = v;
+  }
+  return out;
+}
+
 router.get('/', async (req, res, next) => {
   try {
     const {
@@ -88,7 +126,7 @@ router.get('/', async (req, res, next) => {
       `SELECT count(*)::int AS c FROM units u WHERE ${where.join(' AND ')}`,
       params.slice(0, -2)
     );
-    res.json({ items: rows, total: countRes.rows[0].c });
+    res.json({ items: rows.map(toPublicUnit), total: countRes.rows[0].c });
   } catch (err) {
     next(err);
   }
@@ -116,7 +154,7 @@ router.get('/:idOrSlug', async (req, res, next) => {
       [key]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Unit not found' });
-    res.json(rows[0]);
+    res.json(toPublicUnit(rows[0]));
   } catch (err) {
     next(err);
   }
