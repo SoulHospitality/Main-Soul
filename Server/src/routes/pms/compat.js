@@ -1,6 +1,7 @@
 const express = require('express');
 const { query } = require('../../config/db');
 const { authStaff, requireRoles } = require('../../middleware/auth');
+const { syncUnitListingStatus } = require('../../lib/unitListingStatus');
 
 /** Extra PMS endpoints expected by the legacy admin SPA (stubs + thin adapters). */
 const router = express.Router();
@@ -325,22 +326,8 @@ router.post('/daily-prices/batch', requireRoles('admin'), async (req, res, next)
         ]);
         n++;
       }
-      // Units with no remaining price must stay draft
-      const { rows: unitRow } = await query(
-        `SELECT id, price_fallback FROM units WHERE id = $1`,
-        [unit_id]
-      );
-      const hasFallback = Number(unitRow[0]?.price_fallback) > 0;
-      const { rows: still } = await query(
-        `SELECT 1 FROM unit_daily_prices WHERE wp_post_id = $1 AND price > 0 LIMIT 1`,
-        [u[0].wp_post_id]
-      );
-      if (!hasFallback && !still[0]) {
-        await query(
-          `UPDATE units SET status = 'draft', updated_at = now() WHERE id = $1 AND status = 'published'`,
-          [unit_id]
-        );
-      }
+      // Incomplete / unpriced units must stay draft (hidden from guests)
+      await syncUnitListingStatus(unit_id);
       return res.json({ ok: true, cleared: n });
     }
     for (const dateStr of dates) {
@@ -353,6 +340,7 @@ router.post('/daily-prices/batch', requireRoles('admin'), async (req, res, next)
       );
       n++;
     }
+    await syncUnitListingStatus(unit_id);
     res.json({ ok: true, count: n });
   } catch (e) {
     next(e);

@@ -84,7 +84,7 @@ const EMPTY_FORM = {
   price_per_night: '',
   utilities_cost: '',
   ops_status: 'available',
-  listing_status: 'draft',
+  listing_status: 'published',
   view: '',
   description: '',
   amenities: [],
@@ -456,7 +456,7 @@ function UnitForm({ form, setForm }) {
           <div>
             <label className="label">Listing status</label>
             <SearchableSelect
-              value={form.listing_status || 'draft'}
+              value={form.listing_status || 'published'}
               onChange={(v) => setForm((f) => ({ ...f, listing_status: v }))}
               options={[
                 { value: 'draft', label: 'Draft' },
@@ -464,7 +464,7 @@ function UnitForm({ form, setForm }) {
               ]}
             />
             <p className="text-xs text-gray-400 mt-1">
-              Published requires a price (fallback nightly or daily pricing).
+              Incomplete units are saved as draft and hidden from guests. Fill title, project, type, beds, baths, guests, price, and photos to publish.
             </p>
           </div>
         </div>
@@ -515,13 +515,28 @@ export default function Units() {
       qc.invalidateQueries({ queryKey: ['units'] });
       qc.invalidateQueries({ queryKey: ['unit-projects'] });
       const n = unit?.photo_urls?.length || 0;
-      toast.success(
-        editId
-          ? (n ? `Unit updated · ${n} photos from Drive` : 'Unit updated')
-          : (n ? `Unit created · ${n} photos from Drive` : 'Unit created as draft')
-      );
+      const missing = unit?.listing_completeness?.missing || [];
+      if (unit?.status === 'draft' && missing.length) {
+        toast.success(
+          `Saved as draft (hidden from guests). Missing: ${missing.join(', ')}`
+        );
+        if (unit?.id) setHandoffUnit(unit);
+      } else if (unit?.status === 'published') {
+        toast.success(
+          editId
+            ? (n ? `Unit published · ${n} photos from Drive` : 'Unit published')
+            : (n ? `Unit created & published · ${n} photos from Drive` : 'Unit created & published')
+        );
+        setHandoffUnit(null);
+      } else {
+        toast.success(
+          editId
+            ? (n ? `Unit updated · ${n} photos from Drive` : 'Unit updated')
+            : (n ? `Unit created · ${n} photos from Drive` : 'Unit created as draft')
+        );
+        if (unit?.id && unit.status === 'draft') setHandoffUnit(unit);
+      }
       setModal(null);
-      if (unit?.id && (unit.status === 'draft' || !editId)) setHandoffUnit(unit);
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Error saving unit'),
   });
@@ -596,11 +611,6 @@ export default function Units() {
       toast.error('Project is required');
       return;
     }
-    const hasFallbackPrice = Number(form.price_per_night) > 0;
-    if (form.listing_status === 'published' && !hasFallbackPrice && !editId) {
-      toast.error('Add a fallback nightly price before publishing, or keep as draft and set daily prices first.');
-      return;
-    }
     saveMutation.mutate({
       ...form,
       title: form.name,
@@ -610,7 +620,7 @@ export default function Units() {
       project: form.project,
       compound: form.project,
       projectName: form.project,
-      status: form.listing_status || (editId ? undefined : 'draft'),
+      status: form.listing_status || (editId ? undefined : 'published'),
       ops_status: form.ops_status,
       property_type: form.type,
       type: form.type,
@@ -637,7 +647,10 @@ export default function Units() {
       {handoffUnit && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 flex flex-wrap items-center justify-between gap-3">
           <span>
-            <strong>{handoffUnit.name || handoffUnit.title}</strong> saved. Complete nightly prices, then publish.
+            <strong>{handoffUnit.name || handoffUnit.title}</strong> saved as draft
+            {handoffUnit.listing_completeness?.missing?.length
+              ? ` (missing: ${handoffUnit.listing_completeness.missing.join(', ')})`
+              : ''}. Complete the listing, then it can appear to guests.
           </span>
           <div className="flex gap-2">
             <a href="/admin/pricing" className="btn-secondary text-xs">Pricing</a>

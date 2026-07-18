@@ -12,6 +12,10 @@ const {
 } = require('../../lib/staffIdentity');
 
 const { resolveDriveFolderPhotos } = require('../../services/drivePhotos');
+const { resolveListingStatus } = require('../../lib/unitCompleteness');
+const {
+  syncUnitListingStatus,
+} = require('../../lib/unitListingStatus');
 
 const router = express.Router();
 router.use(authStaff);
@@ -105,39 +109,6 @@ async function resolvePhotosFromBody(b) {
   if (!folderUrl) return { folderUrl: null, urls: null };
   const resolved = await resolveDriveFolderPhotos(folderUrl);
   return { folderUrl: String(folderUrl).trim(), urls: resolved.urls };
-}
-
-async function unitHasPrice(unitId, { priceFallback, wpPostId } = {}) {
-  let fallback = Number(priceFallback);
-  let postId = wpPostId;
-  if (unitId && (priceFallback === undefined || wpPostId === undefined)) {
-    const { rows } = await query(
-      `SELECT price_fallback, wp_post_id FROM units WHERE id = $1`,
-      [unitId]
-    );
-    if (!rows[0]) return false;
-    if (priceFallback === undefined) fallback = Number(rows[0].price_fallback);
-    if (wpPostId === undefined) postId = rows[0].wp_post_id;
-  }
-  if (Number(fallback) > 0) return true;
-  if (!postId) return false;
-  const { rows: priced } = await query(
-    `SELECT 1 FROM unit_daily_prices WHERE wp_post_id = $1 AND price > 0 LIMIT 1`,
-    [postId]
-  );
-  return Boolean(priced[0]);
-}
-
-async function enforceDraftWithoutPrice(unitId) {
-  const hasPrice = await unitHasPrice(unitId);
-  if (hasPrice) return { demoted: false, hasPrice: true };
-  const { rows } = await query(
-    `UPDATE units SET status = 'draft', updated_at = now()
-     WHERE id = $1 AND status = 'published'
-     RETURNING id, status`,
-    [unitId]
-  );
-  return { demoted: Boolean(rows[0]), hasPrice: false, unit: rows[0] || null };
 }
 
 // ── Users (Admin + HR staff management) ─────────────────────
@@ -482,10 +453,9 @@ router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) =>
     const propertyType = toText(b.property_type || b.type);
     const cleaningFee = housekeepingFeeForType(propertyType);
     const priceFallback = toNum(b.price_per_night || b.price_fallback, { int: true });
-    let status = b.status || 'draft';
-    if (status === 'published' && !(priceFallback > 0)) {
-      status = 'draft';
-    }
+    const beds = toNum(b.beds ?? b.bedrooms, { int: true, fallback: 1 });
+    const baths = toNum(b.baths ?? b.bathrooms, { int: true, fallback: 1 });
+    const guests = toNum(b.guests || b.capacity, { int: true, fallback: 2 });
 
     const slug = toText(b.slug) || slugify(title || `unit-${Date.now()}`);
     const amenities = normalizeTagList(b.amenities);
@@ -503,6 +473,25 @@ router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) =>
       photoUrls = resolved.urls || [];
       coverUrl = photoUrls[0] || null;
     }
+
+    const completeness = resolveListingStatus({
+      unit: {
+        title,
+        compound,
+        project: toText(b.project || b.projectName || b.compound, compound),
+        property_type: propertyType,
+        beds,
+        baths,
+        guests,
+        price_fallback: priceFallback,
+        cover_url: coverUrl,
+        photo_urls: photoUrls,
+      },
+      hasPrice: Number(priceFallback) > 0,
+      requestedStatus: b.status || b.listing_status || null,
+      isCreate: true,
+    });
+    const status = completeness.status;
 
     const { rows } = await query(
       `INSERT INTO units (
@@ -526,9 +515,9 @@ router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) =>
         compound,
         toText(b.project || b.projectName || b.compound, compound),
         area,
-        toNum(b.beds ?? b.bedrooms, { int: true, fallback: 1 }),
-        toNum(b.baths ?? b.bathrooms, { int: true, fallback: 1 }),
-        toNum(b.guests || b.capacity, { int: true, fallback: 2 }),
+        beds,
+        baths,
+        guests,
         toNum(b.size_m2 || b.area_sqft, { int: true }),
         coverUrl,
         photoUrls,
@@ -560,7 +549,13 @@ router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) =>
         beachDays,
       ]
     );
-    res.status(201).json(mapUnitRow(rows[0]));
+    const payload = mapUnitRow(rows[0]);
+    payload.listing_completeness = {
+      complete: completeness.complete,
+      missing: completeness.missing,
+      status,
+    };
+    res.status(201).json(payload);
   } catch (e) {
     next(e);
   }
@@ -597,37 +592,6 @@ async function updateUnitHandler(req, res, next) {
 
     const propertyType = toText(b.property_type || b.type) || existingRows[0].property_type;
     const cleaningFee = housekeepingFeeForType(propertyType);
-    const nextFallback =
-      b.price_per_night !== undefined || b.price_fallback !== undefined
-        ? toNum(b.price_per_night ?? b.price_fallback, { int: true })
-        : Number(existingRows[0].price_fallback);
-
-    const wantsPublished =
-      listingStatus === 'published' || (!listingStatus && existingRows[0].status === 'published');
-    if (wantsPublished) {
-      const hasPrice = await unitHasPrice(req.params.id, {
-        priceFallback: nextFallback,
-        wpPostId: existingRows[0].wp_post_id,
-      });
-      if (!hasPrice) {
-        if (listingStatus === 'published') {
-          return res.status(400).json({
-            error: 'Cannot publish a unit without a price. Add a fallback nightly rate or daily prices first.',
-          });
-        }
-        listingStatus = 'draft';
-      }
-    }
-    if (
-      (b.price_per_night !== undefined || b.price_fallback !== undefined) &&
-      !(nextFallback > 0)
-    ) {
-      const stillHasDaily = await unitHasPrice(req.params.id, {
-        priceFallback: 0,
-        wpPostId: existingRows[0].wp_post_id,
-      });
-      if (!stillHasDaily) listingStatus = 'draft';
-    }
 
     let photoUrls = b.photo_urls ?? null;
     let coverUrl = b.cover_url ?? null;
@@ -737,9 +701,18 @@ async function updateUnitHandler(req, res, next) {
       ]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Not found' });
-    await enforceDraftWithoutPrice(req.params.id);
-    const { rows: fresh } = await query(`SELECT * FROM units WHERE id = $1`, [req.params.id]);
-    res.json(mapUnitRow(fresh[0] || rows[0]));
+    const synced = await syncUnitListingStatus(req.params.id, {
+      requestedStatus: listingStatus || rows[0].status,
+    });
+    const payload = mapUnitRow(synced || rows[0]);
+    if (synced?._completeness) {
+      payload.listing_completeness = {
+        complete: synced._completeness.complete,
+        missing: synced._completeness.missing,
+        status: synced.status,
+      };
+    }
+    res.json(payload);
   } catch (e) {
     next(e);
   }
@@ -773,7 +746,12 @@ router.post('/units/:id/photos', requireRoles('admin', 'resale'), upload.array('
        WHERE id = $3 RETURNING id, cover_url, photo_urls`,
       [urls, urls[0] || null, req.params.id]
     );
-    res.json(rows[0]);
+    const synced = await syncUnitListingStatus(req.params.id);
+    res.json({
+      ...(rows[0] || {}),
+      status: synced?.status,
+      listing_completeness: synced?._completeness,
+    });
   } catch (e) {
     next(e);
   }
@@ -816,6 +794,7 @@ router.put('/daily-prices/:unitId', requireRoles('admin'), async (req, res, next
         [u[0].wp_post_id, item.date, item.price, item.currency, item.source || 'manual-admin']
       );
     }
+    await syncUnitListingStatus(req.params.unitId);
     res.json({ ok: true, count: items.length });
   } catch (e) {
     next(e);
