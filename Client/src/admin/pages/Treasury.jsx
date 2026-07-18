@@ -18,6 +18,7 @@ import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
 import SortTh from '../components/ui/SortTh';
 import { currency, formatDate } from '../utils/formatters';
+import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
 import * as XLSX from 'xlsx';
 import { usePermissions } from '../hooks/usePermissions';
 import SearchableSelect from '../components/ui/SearchableSelect';
@@ -156,7 +157,7 @@ export default function Treasury() {
   const qc = useQueryClient();
 
   // ── Filter states
-  const [fromDate,    setFromDate]    = useState('');
+  const [fromDate,    setFromDate]    = useState(FINANCIAL_EPOCH);
   const [toDate,      setToDate]      = useState('');
   const [typeFilter,  setTypeFilter]  = useState('');
   const [catFilter,   setCatFilter]   = useState('');

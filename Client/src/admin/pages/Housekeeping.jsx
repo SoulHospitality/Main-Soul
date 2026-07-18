@@ -7,6 +7,7 @@ import SearchableSelect from '../components/ui/SearchableSelect';
 import { usePermissions } from '../hooks/usePermissions';
 import { useSortableTable } from '../hooks/useSortableTable';
 import SortTh from '../components/ui/SortTh';
+import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const fmt = n => Number(n || 0).toLocaleString('en-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -16,9 +17,10 @@ function todayStr() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
-function monthStart() {
+function booksFrom() {
   const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  const monthStart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  return monthStart < FINANCIAL_EPOCH ? FINANCIAL_EPOCH : monthStart;
 }
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
@@ -56,7 +58,7 @@ function SummaryCard({ icon: Icon, label, value, color }) {
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function Housekeeping() {
   const { isAdmin } = usePermissions();
-  const [fromDate, setFromDate] = useState(monthStart());
+  const [fromDate, setFromDate] = useState(booksFrom());
   const [toDate,   setToDate]   = useState(todayStr());
   const [unitId,   setUnitId]   = useState('');
   const [project,  setProject]  = useState('');

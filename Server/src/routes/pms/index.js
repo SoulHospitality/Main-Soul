@@ -16,6 +16,7 @@ const { resolveListingStatus } = require('../../lib/unitCompleteness');
 const {
   syncUnitListingStatus,
 } = require('../../lib/unitListingStatus');
+const { FINANCIAL_EPOCH, clampFromDate } = require('../../lib/financialEpoch');
 
 const router = express.Router();
 router.use(authStaff);
@@ -1132,9 +1133,20 @@ router.get('/reservations/schedule', async (req, res, next) => {
 });
 
 // ── Payments ────────────────────────────────────────────────
-router.get('/payments', requireRoles('admin'), async (_req, res, next) => {
+router.get('/payments', requireRoles('admin'), async (req, res, next) => {
   try {
-    const { rows } = await query(`SELECT * FROM payments ORDER BY created_at DESC LIMIT 200`);
+    const from = clampFromDate(req.query.from_date);
+    const to = req.query.to_date || null;
+    const params = [from];
+    let where = `COALESCE(payment_date, created_at::date) >= $1::date`;
+    if (to) {
+      params.push(to);
+      where += ` AND COALESCE(payment_date, created_at::date) <= $${params.length}::date`;
+    }
+    const { rows } = await query(
+      `SELECT * FROM payments WHERE ${where} ORDER BY payment_date DESC NULLS LAST, created_at DESC LIMIT 200`,
+      params
+    );
     sendList(res, rows);
   } catch (e) {
     next(e);
@@ -1184,9 +1196,28 @@ router.post('/payments/:id/approve', requireRoles('admin'), async (req, res, nex
 });
 
 // ── Expenses / commissions / dashboard snippets ─────────────
-router.get('/expenses', async (_req, res, next) => {
+router.get('/expenses', async (req, res, next) => {
   try {
-    const { rows } = await query(`SELECT * FROM expenses ORDER BY created_at DESC LIMIT 200`);
+    const from = clampFromDate(req.query.from_date);
+    const to = req.query.to_date || null;
+    const params = [from];
+    let where = `COALESCE(expense_date, created_at::date) >= $1::date`;
+    if (to) {
+      params.push(to);
+      where += ` AND COALESCE(expense_date, created_at::date) <= $${params.length}::date`;
+    }
+    if (req.query.unit_id) {
+      params.push(req.query.unit_id);
+      where += ` AND unit_id = $${params.length}`;
+    }
+    if (req.query.paid_by) {
+      params.push(req.query.paid_by);
+      where += ` AND paid_by = $${params.length}`;
+    }
+    const { rows } = await query(
+      `SELECT * FROM expenses WHERE ${where} ORDER BY expense_date DESC NULLS LAST, created_at DESC LIMIT 200`,
+      params
+    );
     sendList(res, rows);
   } catch (e) {
     next(e);
@@ -1225,7 +1256,8 @@ router.get('/dashboard/stats', async (req, res, next) => {
     const role = req.user?.role;
     const now = new Date();
     const today = now.toISOString().slice(0, 10);
-    const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    const calendarMonthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    const monthStart = clampFromDate(calendarMonthStart);
     const nextWeek = new Date(now);
     nextWeek.setDate(nextWeek.getDate() + 7);
     const nextWeekStr = nextWeek.toISOString().slice(0, 10);
@@ -1319,24 +1351,32 @@ router.get('/dashboard/stats', async (req, res, next) => {
     let finance = null;
     let monthlyRevenue = [];
     if (role === 'admin') {
+      // Before books open, show zeros for this month
+      const booksOpen = today >= FINANCIAL_EPOCH;
       const [monthRevenue, monthPaid, pendingPayments] = await Promise.all([
-        query(
-          `SELECT COALESCE(SUM(total_amount), 0)::float AS total
-           FROM reservations
-           WHERE status <> 'cancelled' AND check_in >= $1::date`,
-          [monthStart]
-        ),
-        query(
-          `SELECT COALESCE(SUM(amount), 0)::float AS total
-           FROM payments
-           WHERE payment_date >= $1::date
-             AND status IN ('successful', 'pending')`,
-          [monthStart]
-        ),
+        booksOpen
+          ? query(
+              `SELECT COALESCE(SUM(total_amount), 0)::float AS total
+               FROM reservations
+               WHERE status <> 'cancelled' AND check_in >= $1::date`,
+              [monthStart]
+            )
+          : Promise.resolve({ rows: [{ total: 0 }] }),
+        booksOpen
+          ? query(
+              `SELECT COALESCE(SUM(amount), 0)::float AS total
+               FROM payments
+               WHERE payment_date >= $1::date
+                 AND status IN ('successful', 'pending')`,
+              [monthStart]
+            )
+          : Promise.resolve({ rows: [{ total: 0 }] }),
         query(
           `SELECT COALESCE(SUM(GREATEST(total_amount - COALESCE(amount_paid, 0), 0)), 0)::float AS total
            FROM reservations
-           WHERE payment_status <> 'paid' AND status <> 'cancelled'`
+           WHERE payment_status <> 'paid' AND status <> 'cancelled'
+             AND check_in >= $1::date`,
+          [FINANCIAL_EPOCH]
         ),
       ]);
 
@@ -1351,6 +1391,10 @@ router.get('/dashboard/stats', async (req, res, next) => {
         const y = d.getFullYear();
         const m = String(d.getMonth() + 1).padStart(2, '0');
         const start = `${y}-${m}-01`;
+        if (start < FINANCIAL_EPOCH) {
+          monthlyRevenue.push({ month: `${y}-${m}`, revenue: 0 });
+          continue;
+        }
         const lastDay = new Date(y, d.getMonth() + 1, 0).toISOString().slice(0, 10);
         const rev = await query(
           `SELECT COALESCE(SUM(total_amount), 0)::float AS total
@@ -1432,14 +1476,15 @@ router.post('/tasks', async (req, res, next) => {
 
 router.get('/petty-cash', requireRoles('admin'), async (req, res, next) => {
   try {
+    const from = clampFromDate(req.query.from_date);
     const location = req.query.location;
-    const params = [];
-    let sql = 'SELECT * FROM petty_cash';
+    const params = [from];
+    let sql = `SELECT * FROM petty_cash WHERE entry_date >= $1::date`;
     if (location) {
       params.push(location);
-      sql += ` WHERE location = $1`;
+      sql += ` AND location = $${params.length}`;
     }
-    sql += ' ORDER BY created_at DESC LIMIT 200';
+    sql += ' ORDER BY entry_date DESC, created_at DESC LIMIT 200';
     const { rows } = await query(sql, params);
     sendList(res, rows);
   } catch (e) {
@@ -1461,12 +1506,24 @@ router.post('/petty-cash', requireRoles('admin'), async (req, res, next) => {
   }
 });
 
-router.get('/cashflow', requireRoles('admin'), async (_req, res, next) => {
+router.get('/cashflow', requireRoles('admin'), async (req, res, next) => {
   try {
+    const from = clampFromDate(req.query.from_date);
+    const to = req.query.to_date || null;
+    const params = [from];
+    let where = `entry_date >= $1::date`;
+    if (to) {
+      params.push(to);
+      where += ` AND entry_date <= $${params.length}::date`;
+    }
     const { rows } = await query(
-      `SELECT entry_type, sum(amount)::real AS total FROM cash_ledger GROUP BY entry_type`
+      `SELECT entry_type, sum(amount)::real AS total FROM cash_ledger WHERE ${where} GROUP BY entry_type`,
+      params
     );
-    const { rows: recent } = await query(`SELECT * FROM cash_ledger ORDER BY entry_date DESC LIMIT 50`);
+    const { rows: recent } = await query(
+      `SELECT * FROM cash_ledger WHERE ${where} ORDER BY entry_date DESC LIMIT 50`,
+      params
+    );
     res.json({ summary: rows, recent });
   } catch (e) {
     next(e);

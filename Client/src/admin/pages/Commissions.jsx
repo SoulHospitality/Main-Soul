@@ -10,13 +10,14 @@ import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
 import SortTh from '../components/ui/SortTh';
 import { currency, formatDate } from '../utils/formatters';
+import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
 import * as XLSX from 'xlsx';
 
 const normDate = d => String(d).split('T')[0];
 
 export default function Commissions() {
   const { isAdmin } = usePermissions();
-  const [fromDate, setFromDate] = useState('');
+  const [fromDate, setFromDate] = useState(FINANCIAL_EPOCH);
   const [toDate,   setToDate]   = useState('');
 
   const { data, isLoading } = useQuery({

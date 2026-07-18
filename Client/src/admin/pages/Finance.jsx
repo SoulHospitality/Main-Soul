@@ -8,6 +8,7 @@ import {
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import { currency } from '../utils/formatters';
+import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
 
 function MetricCard({ icon: Icon, label, value, href, tone = 'slate', sub, emphasize }) {
   const tones = {
@@ -43,7 +44,7 @@ function MetricCard({ icon: Icon, label, value, href, tone = 'slate', sub, empha
 }
 
 export default function Finance() {
-  const [fromDate, setFromDate] = useState('');
+  const [fromDate, setFromDate] = useState(FINANCIAL_EPOCH);
   const [toDate, setToDate] = useState('');
 
   const { data, isLoading, error } = useQuery({
@@ -77,7 +78,7 @@ export default function Finance() {
         <div className="page-header mb-0">
           <h1 className="page-title">Finance</h1>
           <p className="page-subtitle">
-            Company revenue overview — housekeeping, utilities, salaries, and petty cash are treated as expenses
+            Company books start {FINANCIAL_EPOCH}. July and earlier payments are excluded from totals.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

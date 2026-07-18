@@ -13,6 +13,7 @@ import SearchFilter from '../components/ui/SearchFilter';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import SortTh from '../components/ui/SortTh';
 import { currency, formatDate } from '../utils/formatters';
+import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
 import * as XLSX from 'xlsx';
 
 const EMPTY_FORM = { unit_id:'', description:'', amount:'', paid_by:'company', expense_date: new Date().toISOString().split('T')[0], notes:'' };
@@ -54,7 +55,7 @@ export default function Expenses() {
   const [search, setSearch] = useState('');
   const [filterUnit, setFilterUnit] = useState('');
   const [filterPaidBy, setFilterPaidBy] = useState('');
-  const [fromDate, setFromDate] = useState('');
+  const [fromDate, setFromDate] = useState(FINANCIAL_EPOCH);
   const [toDate, setToDate] = useState('');
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);

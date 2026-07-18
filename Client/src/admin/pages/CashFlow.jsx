@@ -15,6 +15,7 @@ import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
 import SortTh from '../components/ui/SortTh';
 import { currency, formatDate } from '../utils/formatters';
+import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
 import * as XLSX from 'xlsx';
 import SearchableSelect from '../components/ui/SearchableSelect';
 
@@ -113,7 +114,9 @@ export default function CashFlow() {
   thirtyAgo.setDate(today.getDate() - 30);
   const fmt = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-  const [fromDate,  setFromDate]  = useState(fmt(thirtyAgo));
+  const [fromDate,  setFromDate]  = useState(
+    fmt(thirtyAgo) < FINANCIAL_EPOCH ? FINANCIAL_EPOCH : fmt(thirtyAgo)
+  );
   const [toDate,    setToDate]    = useState(fmt(today));
   const [unitId,    setUnitId]    = useState('');
   const [flowType,  setFlowType]  = useState('');   // '' | 'inflow' | 'outflow'

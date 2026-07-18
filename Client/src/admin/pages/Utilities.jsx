@@ -8,10 +8,11 @@ import EmptyState from '../components/ui/EmptyState';
 import SearchFilter from '../components/ui/SearchFilter';
 import SortTh from '../components/ui/SortTh';
 import { currency, formatDate } from '../utils/formatters';
+import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
 import SearchableSelect from '../components/ui/SearchableSelect';
 
 export default function Utilities() {
-  const [filterFromDate, setFilterFromDate] = useState('');
+  const [filterFromDate, setFilterFromDate] = useState(FINANCIAL_EPOCH);
   const [filterToDate, setFilterToDate] = useState('');
   const [filterProject, setFilterProject] = useState('');
   const [filterUnit, setFilterUnit] = useState('');

@@ -10,6 +10,7 @@ import {
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import { currency } from '../utils/formatters';
+import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
 
 function Row({ label, value, href, negative }) {
   const inner = (
@@ -31,7 +32,7 @@ function Row({ label, value, href, negative }) {
 }
 
 export default function Profit() {
-  const [fromDate, setFromDate] = useState('');
+  const [fromDate, setFromDate] = useState(FINANCIAL_EPOCH);
   const [toDate, setToDate] = useState('');
 
   const { data, isLoading, error } = useQuery({

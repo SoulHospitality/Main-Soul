@@ -10,13 +10,14 @@ import SearchFilter from '../components/ui/SearchFilter';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import SortTh from '../components/ui/SortTh';
 import { currency, formatDate, PAYMENT_METHODS, PAYMENT_METHOD_LABELS } from '../utils/formatters';
+import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
 import * as XLSX from 'xlsx';
 
 export default function Payments() {
   const { isAdmin } = usePermissions();
   const [search, setSearch] = useState('');
   const [method, setMethod] = useState('');
-  const [fromDate, setFromDate] = useState('');
+  const [fromDate, setFromDate] = useState(FINANCIAL_EPOCH);
   const [toDate, setToDate] = useState('');
 
   const { data: payments = [], isLoading } = useQuery({

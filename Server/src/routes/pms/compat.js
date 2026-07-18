@@ -2,6 +2,7 @@ const express = require('express');
 const { query } = require('../../config/db');
 const { authStaff, requireRoles } = require('../../middleware/auth');
 const { syncUnitListingStatus } = require('../../lib/unitListingStatus');
+const { FINANCIAL_EPOCH, clampFromDate } = require('../../lib/financialEpoch');
 
 /** Extra PMS endpoints expected by the legacy admin SPA (stubs + thin adapters). */
 const router = express.Router();
@@ -21,7 +22,23 @@ router.get('/users/sales', async (_req, res, next) => {
 
 router.get('/payments/all', requireRoles('admin'), async (req, res, next) => {
   try {
-    const { rows } = await query(`SELECT * FROM payments ORDER BY created_at DESC LIMIT 300`);
+    const from = clampFromDate(req.query.from_date);
+    const to = req.query.to_date || null;
+    const method = req.query.payment_method || null;
+    const params = [from];
+    let where = `COALESCE(payment_date, created_at::date) >= $1::date`;
+    if (to) {
+      params.push(to);
+      where += ` AND COALESCE(payment_date, created_at::date) <= $${params.length}::date`;
+    }
+    if (method) {
+      params.push(method);
+      where += ` AND payment_method = $${params.length}`;
+    }
+    const { rows } = await query(
+      `SELECT * FROM payments WHERE ${where} ORDER BY payment_date DESC NULLS LAST, created_at DESC LIMIT 500`,
+      params
+    );
     res.json(rows);
   } catch (e) {
     next(e);
@@ -30,13 +47,10 @@ router.get('/payments/all', requireRoles('admin'), async (req, res, next) => {
 
 router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, next) => {
   try {
-    const { from_date, to_date } = req.query;
-    const params = [];
-    let where = `r.status <> 'cancelled'`;
-    if (from_date) {
-      params.push(from_date);
-      where += ` AND r.check_in >= $${params.length}::date`;
-    }
+    const from_date = clampFromDate(req.query.from_date);
+    const { to_date } = req.query;
+    const params = [from_date];
+    let where = `r.status <> 'cancelled' AND r.check_in >= $1::date`;
     if (to_date) {
       params.push(to_date);
       where += ` AND r.check_out <= $${params.length}::date`;
@@ -126,15 +140,12 @@ router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, nex
  */
 router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => {
   try {
-    const { from_date, to_date } = req.query;
+    const from_date = clampFromDate(req.query.from_date);
+    const to_date = req.query.to_date || null;
     const { calcReservationFinancials, round2 } = require('../../lib/commission');
 
-    const resParams = [];
-    let resWhere = `r.status <> 'cancelled'`;
-    if (from_date) {
-      resParams.push(from_date);
-      resWhere += ` AND r.check_in >= $${resParams.length}::date`;
-    }
+    const resParams = [from_date];
+    let resWhere = `r.status <> 'cancelled' AND r.check_in >= $1::date`;
     if (to_date) {
       resParams.push(to_date);
       resWhere += ` AND r.check_out <= $${resParams.length}::date`;
@@ -176,12 +187,8 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
       utilities += fin.utilitiesDeduction || utilitiesAmount;
     }
 
-    const expParams = [];
-    let expWhere = 'TRUE';
-    if (from_date) {
-      expParams.push(from_date);
-      expWhere += ` AND expense_date >= $${expParams.length}::date`;
-    }
+    const expParams = [from_date];
+    let expWhere = `expense_date >= $1::date`;
     if (to_date) {
       expParams.push(to_date);
       expWhere += ` AND expense_date <= $${expParams.length}::date`;
@@ -192,12 +199,8 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
     );
     const expenses = Number(expenseRows[0]?.total) || 0;
 
-    const pcParams = [];
-    let pcWhere = `entry_type = 'out'`;
-    if (from_date) {
-      pcParams.push(from_date);
-      pcWhere += ` AND entry_date >= $${pcParams.length}::date`;
-    }
+    const pcParams = [from_date];
+    let pcWhere = `entry_type = 'out' AND entry_date >= $1::date`;
     if (to_date) {
       pcParams.push(to_date);
       pcWhere += ` AND entry_date <= $${pcParams.length}::date`;
@@ -208,18 +211,19 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
     );
     const pettyCash = Number(pettyRows[0]?.total) || 0;
 
-    const { rows: salaryRows } = await query(
-      `SELECT COALESCE(SUM(base_salary), 0)::float AS total
-       FROM employees WHERE COALESCE(is_active, 1) = 1`
-    );
-    const salaries = Number(salaryRows[0]?.total) || 0;
-
-    const cfParams = [];
-    let cfWhere = 'TRUE';
-    if (from_date) {
-      cfParams.push(from_date);
-      cfWhere += ` AND entry_date >= $${cfParams.length}::date`;
+    // Salaries count only after books open (Aug 2026+)
+    let salaries = 0;
+    const todayIso = new Date().toISOString().slice(0, 10);
+    if (todayIso >= FINANCIAL_EPOCH) {
+      const { rows: salaryRows } = await query(
+        `SELECT COALESCE(SUM(base_salary), 0)::float AS total
+         FROM employees WHERE COALESCE(is_active, 1) = 1`
+      );
+      salaries = Number(salaryRows[0]?.total) || 0;
     }
+
+    const cfParams = [from_date];
+    let cfWhere = `entry_date >= $1::date`;
     if (to_date) {
       cfParams.push(to_date);
       cfWhere += ` AND entry_date <= $${cfParams.length}::date`;
@@ -245,8 +249,9 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
     const profit = round2(totalRevenue - deductibleExpenses);
 
     res.json({
-      from_date: from_date || null,
+      from_date,
       to_date: to_date || null,
+      financial_epoch: FINANCIAL_EPOCH,
       totalRevenue: round2(totalRevenue),
       companyCommission: round2(companyCommission),
       tenantCommission: round2(tenantCommission),
@@ -605,7 +610,18 @@ router.put('/petty-cash/settings', requireRoles('admin'), async (req, res, next)
 
 router.get('/treasury', requireRoles('admin'), async (req, res, next) => {
   try {
-    const { rows } = await query(`SELECT * FROM cash_ledger ORDER BY entry_date DESC LIMIT 200`);
+    const from = clampFromDate(req.query.from_date);
+    const to = req.query.to_date || null;
+    const params = [from];
+    let where = `entry_date >= $1::date`;
+    if (to) {
+      params.push(to);
+      where += ` AND entry_date <= $${params.length}::date`;
+    }
+    const { rows } = await query(
+      `SELECT * FROM cash_ledger WHERE ${where} ORDER BY entry_date DESC LIMIT 200`,
+      params
+    );
     res.json(rows);
   } catch (e) {
     next(e);
@@ -614,14 +630,11 @@ router.get('/treasury', requireRoles('admin'), async (req, res, next) => {
 
 router.get('/utilities', async (req, res, next) => {
   try {
-    const { from_date, to_date, project, unit_id } = req.query;
-    const params = [];
-    const conditions = [`r.status <> 'cancelled'`];
+    const from_date = clampFromDate(req.query.from_date);
+    const { to_date, project, unit_id } = req.query;
+    const params = [from_date];
+    const conditions = [`r.status <> 'cancelled'`, `r.check_in >= $1::date`];
 
-    if (from_date) {
-      params.push(from_date);
-      conditions.push(`r.check_in >= $${params.length}::date`);
-    }
     if (to_date) {
       params.push(to_date);
       conditions.push(`r.check_out <= $${params.length}::date`);
@@ -678,14 +691,15 @@ router.get('/utilities', async (req, res, next) => {
 
 router.get('/housekeeping', async (req, res, next) => {
   try {
-    const { from_date, to_date, unit_id, project } = req.query;
-    const params = [];
-    const conditions = [`r.status <> 'cancelled'`, `COALESCE(r.housekeeping_fees, 0) > 0`];
+    const from_date = clampFromDate(req.query.from_date);
+    const { to_date, unit_id, project } = req.query;
+    const params = [from_date];
+    const conditions = [
+      `r.status <> 'cancelled'`,
+      `COALESCE(r.housekeeping_fees, 0) > 0`,
+      `r.check_in >= $1::date`,
+    ];
 
-    if (from_date) {
-      params.push(from_date);
-      conditions.push(`r.check_in >= $${params.length}::date`);
-    }
     if (to_date) {
       params.push(to_date);
       conditions.push(`r.check_in <= $${params.length}::date`);
