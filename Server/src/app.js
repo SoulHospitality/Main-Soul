@@ -20,6 +20,8 @@ const { refreshIcalBlocks } = require('./services/ical');
 
 function createApp() {
   const app = express();
+  // Railway / reverse proxies set X-Forwarded-For; required by express-rate-limit
+  app.set('trust proxy', 1);
 
   const origins = (process.env.CORS_ORIGIN || process.env.FRONTEND_URL || 'http://localhost:5173')
     .split(',')
