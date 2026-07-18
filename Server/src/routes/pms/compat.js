@@ -438,7 +438,15 @@ router.get('/calendar-blocks', async (req, res, next) => {
        SELECT u.id AS unit_id, b.wp_post_id, b.date::text AS date, COALESCE(b.source,'manual') AS source
        FROM unit_blocked_dates b
        JOIN units u ON u.wp_post_id = b.wp_post_id
-       WHERE b.date >= $1 AND b.date < $2 ${filter}`,
+       WHERE b.date >= $1 AND b.date < $2 ${filter}
+       UNION ALL
+       SELECT u.id AS unit_id, u.wp_post_id, d::text AS date, 'reservation' AS source
+       FROM reservations r
+       JOIN units u ON u.id = r.unit_id
+       , generate_series(r.check_in, r.check_out - 1, interval '1 day') d
+       WHERE r.status <> 'cancelled'
+         AND d >= $1::date AND d < $2::date
+         ${wpPostId != null ? 'AND u.wp_post_id = $3' : ''}`,
       params
     );
     res.json(rows);
@@ -748,7 +756,38 @@ router.get('/reports/by-employee', async (_req, res) => res.json([]));
 router.get('/reports/by-unit', async (_req, res) => res.json([]));
 router.get('/reports/daily-reservations', async (_req, res) => res.json([]));
 router.get('/reports/owner-statement', async (_req, res) => res.json({ lines: [], totals: {} }));
-router.get('/reservations/blocked-dates', async (_req, res) => res.json([]));
+router.get('/reservations/blocked-dates', async (req, res, next) => {
+  try {
+    const unitId = req.query.unit_id;
+    if (!unitId) return res.json([]);
+
+    const params = [unitId];
+    let excludeSql = '';
+    if (req.query.exclude_id) {
+      params.push(Number(req.query.exclude_id));
+      excludeSql = `AND r.id <> $${params.length}`;
+    }
+
+    const { rows } = await query(
+      `SELECT r.id,
+              r.check_in::text AS check_in,
+              r.check_out::text AS check_out,
+              r.status,
+              r.guest_name,
+              r.is_owner_reservation,
+              r.total_amount
+       FROM public.reservations r
+       WHERE r.unit_id = $1::uuid
+         AND r.status <> 'cancelled'
+         ${excludeSql}
+       ORDER BY r.check_in`,
+      params
+    );
+    res.json(rows);
+  } catch (e) {
+    next(e);
+  }
+});
 
 router.post('/hr/deductions', requireRoles('admin', 'hr'), async (req, res, next) => {
   try {
