@@ -19,6 +19,7 @@ const {
 const { FINANCIAL_EPOCH, clampFromDate } = require('../../lib/financialEpoch');
 const { getMinimumStayNights } = require('../../lib/minStay');
 const { normalizeProjectName } = require('../../lib/projectNames');
+const { guestsFromBedrooms } = require('../../lib/guestCapacity');
 
 const router = express.Router();
 router.use(authStaff);
@@ -461,7 +462,7 @@ router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) =>
     const priceFallback = toNum(b.price_per_night || b.price_fallback, { int: true });
     const beds = toNum(b.beds ?? b.bedrooms, { int: true, fallback: 1 });
     const baths = toNum(b.baths ?? b.bathrooms, { int: true, fallback: 1 });
-    const guests = toNum(b.guests || b.capacity, { int: true, fallback: 2 });
+    const guests = guestsFromBedrooms(beds);
 
     const slug = toText(b.slug) || slugify(title || `unit-${Date.now()}`);
     const amenities = normalizeTagList(b.amenities);
@@ -627,7 +628,7 @@ async function updateUnitHandler(req, res, next) {
 
     const { rows: existingRows } = await query(
       `SELECT other_details, price_fallback, wp_post_id, property_type, status,
-              project, compound, area
+              project, compound, area, beds
        FROM units WHERE id = $1`,
       [req.params.id]
     );
@@ -683,7 +684,7 @@ async function updateUnitHandler(req, res, next) {
          area = COALESCE($5, area),
          beds = COALESCE($6, beds),
          baths = COALESCE($7, baths),
-         guests = COALESCE($8, guests),
+         guests = $8,
          size_m2 = COALESCE($9, size_m2),
          cover_url = COALESCE($10, cover_url),
          photo_urls = COALESCE($11, photo_urls),
@@ -722,7 +723,14 @@ async function updateUnitHandler(req, res, next) {
         toText(b.area || b.destination),
         toNum(b.beds ?? b.bedrooms, { int: true }),
         toNum(b.baths ?? b.bathrooms, { int: true }),
-        toNum(b.guests || b.capacity, { int: true }),
+        (() => {
+          const bedsNum = toNum(b.beds ?? b.bedrooms, { int: true });
+          const nextBeds =
+            bedsNum != null ? bedsNum : Number(existingRows[0]?.beds);
+          return guestsFromBedrooms(
+            Number.isFinite(nextBeds) ? nextBeds : existingRows[0]?.beds
+          );
+        })(),
         toNum(b.size_m2 || b.area_sqft, { int: true }),
         coverUrl,
         photoUrls,

@@ -96,6 +96,13 @@ const EMPTY_FORM = {
   beach_access_extra_guest: '',
 };
 
+/** Capacity rule: studio (0 BR) → 2 guests; otherwise 2 × bedrooms. */
+function guestsFromBedrooms(bedrooms) {
+  const n = Number(bedrooms);
+  if (!Number.isFinite(n) || n <= 0) return 2;
+  return Math.round(n) * 2;
+}
+
 function toTagList(value) {
   if (Array.isArray(value)) return value.filter(Boolean);
   if (typeof value === 'string' && value.trim()) {
@@ -350,10 +357,26 @@ function UnitForm({ form, setForm }) {
             ))}
           </select>
         </div>
-        <div><label className="label">Bedrooms</label><input type="number" min="0" className="input" value={form.bedrooms} onChange={e => setForm(f => ({ ...f, bedrooms: e.target.value }))} /></div>
+        <div>
+          <label className="label">Bedrooms</label>
+          <input
+            type="number"
+            min="0"
+            className="input"
+            value={form.bedrooms}
+            onChange={(e) => {
+              const bedrooms = e.target.value;
+              setForm((f) => ({ ...f, bedrooms, guests: guestsFromBedrooms(bedrooms) }));
+            }}
+          />
+        </div>
         <div><label className="label">Bathrooms</label><input type="number" min="0" className="input" value={form.bathrooms} onChange={e => setForm(f => ({ ...f, bathrooms: e.target.value }))} /></div>
         <div><label className="label">Floor</label><input type="number" className="input" value={form.floor} onChange={e => setForm(f => ({ ...f, floor: e.target.value }))} /></div>
-        <div><label className="label">Guests / capacity</label><input type="number" min="1" className="input" value={form.guests} onChange={e => setForm(f => ({ ...f, guests: e.target.value }))} /></div>
+        <div>
+          <label className="label">Guests / capacity</label>
+          <input type="number" className="input bg-gray-50" value={guestsFromBedrooms(form.bedrooms)} readOnly />
+          <p className="text-xs text-gray-400 mt-1">Auto: 2 × bedrooms (studio = 2)</p>
+        </div>
         <div>
           <label className="label">Fallback nightly (EGP)</label>
           <input type="number" min="0" step="0.01" className="input" value={form.price_per_night} onChange={e => setForm(f => ({ ...f, price_per_night: e.target.value }))} placeholder="Display only — bookable prices on Pricing" />
@@ -568,7 +591,7 @@ export default function Units() {
       bedrooms: u.bedrooms ?? u.beds ?? 1,
       bathrooms: u.bathrooms ?? u.baths ?? 1,
       floor: u.floor || 0,
-      guests: u.guests || 2,
+      guests: guestsFromBedrooms(u.bedrooms ?? u.beds ?? 1),
       owner_name: u.owner_name || '', owner_email: u.owner_email || '', owner_phone: u.owner_phone || '',
       commission_mode: u.commission_mode || 'A',
       company_commission_pct: u.company_commission_pct,
@@ -617,6 +640,10 @@ export default function Units() {
       ops_status: form.ops_status,
       property_type: form.type,
       type: form.type,
+      bedrooms: form.bedrooms,
+      beds: form.bedrooms,
+      guests: guestsFromBedrooms(form.bedrooms),
+      capacity: guestsFromBedrooms(form.bedrooms),
       the_property: form.description,
       description: form.description,
       amenities: form.amenities,
