@@ -791,13 +791,49 @@ router.put('/units/:id', requireRoles('admin', 'resale'), updateUnitHandler);
 
 router.delete('/units/:id', requireRoles('admin', 'resale'), async (req, res, next) => {
   try {
-    const { rows } = await query(
-      `UPDATE units SET status = 'archived', ops_status = 'maintenance', updated_at = now()
-       WHERE id = $1 RETURNING id, status`,
-      [req.params.id]
-    );
-    if (!rows[0]) return res.status(404).json({ error: 'Not found' });
-    res.json(rows[0]);
+    const unitId = req.params.id;
+    const { rows: existing } = await query(`SELECT id, wp_post_id FROM units WHERE id = $1`, [unitId]);
+    if (!existing[0]) return res.status(404).json({ error: 'Not found' });
+
+    await query('BEGIN');
+    try {
+      // Detach / remove dependents that block units FK (reservations.unit_id is NOT NULL)
+      const { rows: reservationIds } = await query(
+        `SELECT id FROM reservations WHERE unit_id = $1`,
+        [unitId]
+      );
+      const resIds = reservationIds.map((r) => r.id);
+      if (resIds.length) {
+        await query(
+          `UPDATE petty_cash SET linked_reservation_id = NULL
+           WHERE linked_reservation_id = ANY($1::int[])`,
+          [resIds]
+        );
+        await query(`DELETE FROM commissions WHERE reservation_id = ANY($1::int[])`, [resIds]);
+        await query(`DELETE FROM payments WHERE reservation_id = ANY($1::int[])`, [resIds]);
+        await query(`DELETE FROM reservations WHERE unit_id = $1`, [unitId]);
+      }
+
+      await query(`UPDATE bookings SET unit_id = NULL WHERE unit_id = $1`, [unitId]);
+      await query(`DELETE FROM expenses WHERE unit_id = $1`, [unitId]);
+      await query(`DELETE FROM owner_units WHERE unit_id = $1`, [unitId]);
+      await query(`DELETE FROM reviews WHERE unit_id = $1`, [unitId]);
+
+      const wp = existing[0].wp_post_id;
+      if (wp != null) {
+        await query(`DELETE FROM unit_daily_prices WHERE wp_post_id = $1`, [wp]);
+        await query(`DELETE FROM unit_blocked_dates WHERE wp_post_id = $1`, [wp]);
+        await query(`DELETE FROM unit_ical_blocks WHERE wp_post_id = $1`, [wp]);
+        await query(`DELETE FROM listing_ical WHERE wordpress_post_id = $1`, [wp]);
+      }
+
+      const { rows } = await query(`DELETE FROM units WHERE id = $1 RETURNING id`, [unitId]);
+      await query('COMMIT');
+      res.json({ id: rows[0].id, deleted: true });
+    } catch (inner) {
+      await query('ROLLBACK');
+      throw inner;
+    }
   } catch (e) {
     next(e);
   }

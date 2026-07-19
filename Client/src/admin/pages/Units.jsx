@@ -560,7 +560,7 @@ export default function Units() {
 
   const deleteMutation = useMutation({
     mutationFn: (id) => api.delete(`/units/${id}`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['units'] }); toast.success('Unit archived'); setDeleteId(null); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['units'] }); toast.success('Unit deleted'); setDeleteId(null); },
     onError: (e) => toast.error(e.response?.data?.error || 'Error deleting unit'),
   });
 
@@ -831,8 +831,8 @@ export default function Units() {
       </Modal>
 
       <ConfirmDialog open={!!deleteId} onClose={() => setDeleteId(null)} onConfirm={() => deleteMutation.mutate(deleteId)}
-        loading={deleteMutation.isPending} title="Archive Unit"
-        message="Archive this unit? It will be removed from the guest site." confirmText="Archive" danger />
+        loading={deleteMutation.isPending} title="Delete Unit"
+        message="Permanently delete this unit? Related reservations and unit data will be removed. This cannot be undone." confirmText="Delete" danger />
     </div>
   );
 }
