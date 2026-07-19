@@ -115,7 +115,7 @@ export default function HomePage() {
               <em className="italic font-normal">luxury.</em>
             </h1>
             <p className="mt-5 max-w-xl text-base leading-relaxed text-white/85 md:text-lg">
-              Hand-picked homes along Egypt&apos;s most beautiful coastlines — Fouka Bay, Gaia,
+              Hand-picked homes along Egypt&apos;s most beautiful coastlines — Fouka Bay, GAIA,
               Hacienda West, Marassi and Ain Sokhna.
             </p>
 

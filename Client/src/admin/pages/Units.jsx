@@ -16,6 +16,7 @@ import { currency, UNIT_TYPES } from '../utils/formatters';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import { useProjectCatalog } from '../../hooks/useProjectCatalog';
 import { AREAS, COMPOUNDS } from '../../data/compounds';
+import { normalizeProjectName } from '../../utils/projectNames';
 
 const FALLBACK_PROJECTS_BY_DEST = COMPOUNDS.reduce((acc, c) => {
   if (!acc[c.area]) acc[c.area] = [];
@@ -609,9 +610,9 @@ export default function Units() {
       name: form.name,
       destination: form.destination,
       area: form.destination,
-      project: form.project,
-      compound: form.project,
-      projectName: form.project,
+      project: normalizeProjectName(form.project),
+      compound: normalizeProjectName(form.project),
+      projectName: normalizeProjectName(form.project),
       status: undefined,
       ops_status: form.ops_status,
       property_type: form.type,

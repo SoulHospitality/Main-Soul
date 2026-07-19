@@ -18,6 +18,7 @@ const {
 } = require('../../lib/unitListingStatus');
 const { FINANCIAL_EPOCH, clampFromDate } = require('../../lib/financialEpoch');
 const { getMinimumStayNights } = require('../../lib/minStay');
+const { normalizeProjectName } = require('../../lib/projectNames');
 
 const router = express.Router();
 router.use(authStaff);
@@ -446,7 +447,7 @@ router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) =>
   try {
     const b = req.body;
     const title = toText(b.title || b.name);
-    const compound = toText(b.compound || b.project || b.projectName);
+    const compound = normalizeProjectName(toText(b.compound || b.project || b.projectName));
     const area = toText(b.area || b.destination, 'North Coast');
     if (!title) return res.status(400).json({ error: 'Unit name is required' });
     if (!compound) return res.status(400).json({ error: 'Project is required' });
@@ -546,7 +547,7 @@ router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) =>
         title,
         status,
         compound,
-        toText(b.project || b.projectName || b.compound, compound),
+        normalizeProjectName(toText(b.project || b.projectName || b.compound, compound)),
         area,
         beds,
         baths,
@@ -631,14 +632,16 @@ async function updateUnitHandler(req, res, next) {
 
     const propertyType = toText(b.property_type || b.type) || existingRows[0].property_type;
     const cleaningFee = housekeepingFeeForType(propertyType);
-    const nextProject =
+    const nextProject = normalizeProjectName(
       toText(b.project || b.projectName || b.compound) ||
-      existingRows[0].project ||
-      existingRows[0].compound;
-    const nextCompound =
+        existingRows[0].project ||
+        existingRows[0].compound
+    );
+    const nextCompound = normalizeProjectName(
       toText(b.compound || b.project || b.projectName) ||
-      existingRows[0].compound ||
-      existingRows[0].project;
+        existingRows[0].compound ||
+        existingRows[0].project
+    );
     const nextArea = toText(b.area || b.destination) || existingRows[0].area;
     const minNights = getMinimumStayNights({
       project: nextProject,
@@ -711,8 +714,8 @@ async function updateUnitHandler(req, res, next) {
       [
         toText(b.title || b.name),
         listingStatus,
-        toText(b.compound || b.project || b.projectName),
-        toText(b.project || b.projectName || b.compound),
+        nextCompound,
+        nextProject,
         toText(b.area || b.destination),
         toNum(b.beds ?? b.bedrooms, { int: true }),
         toNum(b.baths ?? b.bathrooms, { int: true }),

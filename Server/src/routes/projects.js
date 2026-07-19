@@ -1,6 +1,7 @@
 const express = require('express');
 const { query } = require('../config/db');
 const { authStaff, requireRoles } = require('../middleware/auth');
+const { normalizeProjectName } = require('../lib/projectNames');
 
 const router = express.Router();
 
@@ -15,7 +16,7 @@ function buildCatalog(rows) {
 
   for (const row of rows) {
     const destination = row.destination;
-    const name = row.name;
+    const name = normalizeProjectName(row.name);
     if (!destination || !name) continue;
     if (!seenDest.has(destination)) {
       seenDest.add(destination);
@@ -77,7 +78,9 @@ router.get('/catalog', async (_req, res, next) => {
 router.post('/', authStaff, requireRoles('admin', 'resale'), async (req, res, next) => {
   try {
     const destination = normalizeText(req.body?.destination || req.body?.city);
-    const name = normalizeText(req.body?.name || req.body?.projectName || req.body?.project);
+    const name = normalizeProjectName(
+      normalizeText(req.body?.name || req.body?.projectName || req.body?.project)
+    );
     if (!destination || !name) {
       return res.status(400).json({ error: 'destination and name are required' });
     }

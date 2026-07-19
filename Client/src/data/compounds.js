@@ -8,7 +8,7 @@ export const COMPOUNDS = [
     match: /fouka/i,
   },
   {
-    name: 'Gaia',
+    name: 'GAIA',
     slug: 'gaia',
     area: 'North Coast',
     image: '/compounds/gaia.jpg',
