@@ -17,6 +17,7 @@ const {
   syncUnitListingStatus,
 } = require('../../lib/unitListingStatus');
 const { FINANCIAL_EPOCH, clampFromDate } = require('../../lib/financialEpoch');
+const { getMinimumStayNights } = require('../../lib/minStay');
 
 const router = express.Router();
 router.use(authStaff);
@@ -475,7 +476,12 @@ router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) =>
       coverUrl = photoUrls[0] || null;
     }
 
-    const minNights = toNum(b.min_nights, { int: true, fallback: 1 });
+    const minNights = getMinimumStayNights({
+      project: toText(b.project || b.projectName || b.compound, compound),
+      compound,
+      area,
+      destination: area,
+    });
     const utilitiesCost = toNum(b.utilities_cost);
     const unitNumber = toText(b.unit_number);
     const view = toText(b.view);
@@ -616,13 +622,30 @@ async function updateUnitHandler(req, res, next) {
       : null;
 
     const { rows: existingRows } = await query(
-      `SELECT other_details, price_fallback, wp_post_id, property_type, status FROM units WHERE id = $1`,
+      `SELECT other_details, price_fallback, wp_post_id, property_type, status,
+              project, compound, area
+       FROM units WHERE id = $1`,
       [req.params.id]
     );
     if (!existingRows[0]) return res.status(404).json({ error: 'Not found' });
 
     const propertyType = toText(b.property_type || b.type) || existingRows[0].property_type;
     const cleaningFee = housekeepingFeeForType(propertyType);
+    const nextProject =
+      toText(b.project || b.projectName || b.compound) ||
+      existingRows[0].project ||
+      existingRows[0].compound;
+    const nextCompound =
+      toText(b.compound || b.project || b.projectName) ||
+      existingRows[0].compound ||
+      existingRows[0].project;
+    const nextArea = toText(b.area || b.destination) || existingRows[0].area;
+    const minNights = getMinimumStayNights({
+      project: nextProject,
+      compound: nextCompound,
+      area: nextArea,
+      destination: nextArea,
+    });
 
     let photoUrls = b.photo_urls ?? null;
     let coverUrl = b.cover_url ?? null;
@@ -678,7 +701,7 @@ async function updateUnitHandler(req, res, next) {
          view = COALESCE($29, view),
          floor = COALESCE($30, floor),
          source_url = COALESCE($31, source_url),
-         min_nights = COALESCE($32, min_nights),
+         min_nights = $32,
          access_fee_per_adult_egp = COALESCE($33, access_fee_per_adult_egp),
          access_fee_per_teen_egp = COALESCE($34, access_fee_per_teen_egp),
          access_card_count_included = COALESCE($35, access_card_count_included),
@@ -723,7 +746,7 @@ async function updateUnitHandler(req, res, next) {
         b.location_link !== undefined || b.source_url !== undefined
           ? toText(b.location_link || b.source_url)
           : null,
-        toNum(b.min_nights, { int: true }),
+        minNights,
         beachPrice,
         beachExtra,
         beachDays,

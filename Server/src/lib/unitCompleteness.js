@@ -58,7 +58,6 @@ function assessUnitCompleteness(unit, { hasPrice = false } = {}) {
   if (unit.baths == null || unit.baths === '' || Number.isNaN(Number(unit.baths))) missing.push('bathrooms');
   if (unit.floor == null || unit.floor === '' || Number.isNaN(Number(unit.floor))) missing.push('floor');
   if (!(Number(unit.guests) >= 1)) missing.push('guests');
-  if (!(Number(unit.min_nights) >= 1)) missing.push('min nights');
   if (!hasPrice && !(Number(unit.price_fallback || unit.price_per_night) > 0)) {
     missing.push('price (fallback or daily rates)');
   }

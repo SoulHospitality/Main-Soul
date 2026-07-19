@@ -90,7 +90,6 @@ const EMPTY_FORM = {
   amenities: [],
   facilities: [],
   location_link: '',
-  min_nights: 1,
   beach_access_price: '',
   beach_access_days: 7,
   beach_access_extra_guest: '',
@@ -362,7 +361,6 @@ function UnitForm({ form, setForm }) {
           <label className="label">Utilities Cost Per Night (EGP)</label>
           <input type="number" min="0" step="0.01" className="input" value={form.utilities_cost} onChange={e => setForm(f => ({ ...f, utilities_cost: e.target.value }))} placeholder="0.00" />
         </div>
-        <div><label className="label">Min nights</label><input type="number" min="1" className="input" value={form.min_nights} onChange={e => setForm(f => ({ ...f, min_nights: e.target.value }))} /></div>
         <div>
           <label className="label">Beach access price (EGP)</label>
           <input type="number" min="0" step="0.01" className="input" value={form.beach_access_price} onChange={e => setForm(f => ({ ...f, beach_access_price: e.target.value }))} placeholder="Per person / period" />
@@ -586,7 +584,6 @@ export default function Units() {
       amenities: toTagList(u.amenities),
       facilities,
       location_link: u.location_link || u.source_url || '',
-      min_nights: u.min_nights || 1,
       beach_access_price: u.beach_access_price ?? u.access_fee_per_adult_egp ?? '',
       beach_access_days: u.beach_access_days ?? u.access_card_count_included ?? 7,
       beach_access_extra_guest: u.beach_access_extra_guest ?? u.access_fee_per_teen_egp ?? '',

@@ -19,7 +19,6 @@ function completeUnit(over = {}) {
     baths: 1,
     floor: 0,
     guests: 4,
-    min_nights: 1,
     price_fallback: 1000,
     utilities_cost: 0,
     access_fee_per_adult_egp: 100,

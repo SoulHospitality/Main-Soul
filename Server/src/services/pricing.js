@@ -1,5 +1,6 @@
 const { query } = require('../config/db');
 const { fetchUpstreamBusyDates } = require('./ical');
+const { getMinimumStayNights } = require('../lib/minStay');
 
 function nightsBetween(checkin, checkout) {
   const a = new Date(`${checkin}T00:00:00`);
@@ -25,25 +26,6 @@ function eachNight(checkin, checkout) {
   const out = [];
   for (let i = 0; i < nights; i++) out.push(addDaysIso(checkin, i));
   return out;
-}
-
-const MIN_STAY_NIGHTS = 4;
-const GAIA_MIN_STAY_NIGHTS = 3;
-
-function isGaiaUnit(unit) {
-  const fields = [
-    unit?.project,
-    unit?.projectName,
-    unit?.project_name,
-    unit?.compound,
-    unit?.destination,
-    unit?.location,
-  ];
-  return fields.some((v) => String(v || '').trim().toLowerCase() === 'gaia');
-}
-
-function getMinimumStayNights(unit) {
-  return isGaiaUnit(unit) ? GAIA_MIN_STAY_NIGHTS : MIN_STAY_NIGHTS;
 }
 
 async function priceForNight(wpPostId, dateStr) {

@@ -2,7 +2,7 @@ const MIN_STAY_NIGHTS = 4;
 const GAIA_MIN_STAY_NIGHTS = 3;
 
 /**
- * GAIA project → 3 nights; all other projects → 4 nights.
+ * Project names containing "GAIA" (case-insensitive) → 3 nights; all others → 4.
  */
 export function isGaiaUnit(unit) {
   const fields = [
@@ -11,9 +11,10 @@ export function isGaiaUnit(unit) {
     unit?.project_name,
     unit?.compound,
     unit?.destination,
+    unit?.area,
     unit?.location,
   ];
-  return fields.some((v) => String(v || '').trim().toLowerCase() === 'gaia');
+  return fields.some((v) => String(v || '').toLowerCase().includes('gaia'));
 }
 
 export function getMinimumStayNights(unit) {
