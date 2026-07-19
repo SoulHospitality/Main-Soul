@@ -87,15 +87,18 @@ function toText(value, fallback = null) {
 
 function mapUnitRow(u) {
   const details = parseOtherDetails(u.other_details);
+  const project = normalizeProjectName(u.project || u.compound);
+  const compound = normalizeProjectName(u.compound || u.project);
   return {
     ...u,
+    compound,
+    project,
     name: u.title,
     bedrooms: u.beds,
     bathrooms: u.baths,
     type: u.property_type,
     area_sqft: u.size_m2,
     price_per_night: u.price_fallback,
-    project: u.project || u.compound,
     photos_link: details.photos_folder_url || u.cover_url,
     photos_folder_url: details.photos_folder_url || '',
     destination: u.area,
