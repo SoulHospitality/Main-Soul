@@ -5,9 +5,7 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "nodemon src/server.js",
-    "db:reconstruct": "node scripts/reconstruct-db.js",
-    "db:inspect": "node scripts/inspect-db.js"
+    "dev": "nodemon src/server.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",

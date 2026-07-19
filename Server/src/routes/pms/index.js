@@ -542,7 +542,7 @@ router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) =>
          access_fee_per_adult_egp, access_fee_per_teen_egp, access_card_count_included
        ) VALUES (
          $1,$2,COALESCE($3,'draft'),'manual',$4,COALESCE($5,$4),COALESCE($6,'North Coast'),
-         $7,$8,$9,$10,$11,COALESCE($12,'{}'),COALESCE($13,'{}'),$14,$15,$16,
+         $7,$8,$9,$10,$11,COALESCE($12::text[], '{}'::text[]),COALESCE($13::text[], '{}'::text[]),$14,$15,$16,
          $17,$18,$19,$20,$21,$22,$23,$24,COALESCE($25,'available'),$26,$27,$28,$29,
          $30,$31,$32,$33,$34,$35,$36,$37,$38
        ) RETURNING *`,
