@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { DollarSign, Trash2 } from 'lucide-react';
@@ -240,6 +240,186 @@ export default function Pricing() {
           )}
         </div>
       )}
+
+      {unitId && (
+        <PricingRecommendationsPanel unitId={unitId} />
+      )}
+    </div>
+  );
+}
+
+function PricingRecommendationsPanel({ unitId }) {
+  const qc = useQueryClient();
+  const [base, setBase] = useState('');
+  const [floor, setFloor] = useState('');
+  const [ceiling, setCeiling] = useState('');
+  const [confidence, setConfidence] = useState('0.7');
+  const [reasoning, setReasoning] = useState('');
+  const [comparable, setComparable] = useState(false);
+
+  const { data: unitMeta } = useQuery({
+    queryKey: ['unit-meta', unitId],
+    queryFn: () => api.get(`/units`).then((r) => {
+      const list = Array.isArray(r.data) ? r.data : r.data?.items || [];
+      return list.find((u) => String(u.id) === String(unitId));
+    }),
+  });
+
+  useEffect(() => {
+    if (unitMeta) setComparable(Boolean(unitMeta.is_comparable));
+  }, [unitMeta]);
+
+  const { data: recs = [] } = useQuery({
+    queryKey: ['pricing-recommendations', unitId],
+    queryFn: () =>
+      api.get('/pricing-recommendations', { params: { unit_id: unitId } }).then((r) => r.data),
+  });
+
+  const create = useMutation({
+    mutationFn: () =>
+      api.post('/pricing-recommendations', {
+        unit_id: unitId,
+        base_price: Number(base) || null,
+        floor_price: floor === '' ? null : Number(floor),
+        ceiling_price: ceiling === '' ? null : Number(ceiling),
+        confidence: Number(confidence) || 0,
+        reasoning: { summary: reasoning || 'Manual recommendation' },
+        status: 'draft',
+      }),
+    onSuccess: () => {
+      toast.success('Recommendation saved');
+      setBase('');
+      qc.invalidateQueries({ queryKey: ['pricing-recommendations', unitId] });
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+  });
+
+  const generate = useMutation({
+    mutationFn: () => api.post('/pricing-recommendations/generate', { unit_id: unitId }),
+    onSuccess: (r) => {
+      toast.success(`Generated · confidence ${r.data.confidence}`);
+      qc.invalidateQueries({ queryKey: ['pricing-recommendations', unitId] });
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Generate failed'),
+  });
+
+  const patchRec = useMutation({
+    mutationFn: ({ id, status, body }) => api.patch(`/pricing-recommendations/${id}`, { status, ...body }),
+    onSuccess: (_, v) => {
+      toast.success(v.status === 'accepted' ? 'Accepted · daily prices seeded' : `Status → ${v.status}`);
+      qc.invalidateQueries({ queryKey: ['pricing-recommendations', unitId] });
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+  });
+
+  const toggleComp = useMutation({
+    mutationFn: (flag) => api.patch(`/units/${unitId}/comparable`, { is_comparable: flag }),
+    onSuccess: (r) => {
+      setComparable(Boolean(r.data.is_comparable));
+      toast.success(r.data.is_comparable ? 'Marked as comparable' : 'Unmarked comparable');
+      qc.invalidateQueries({ queryKey: ['unit-meta', unitId] });
+    },
+  });
+
+  const parseReason = (r) => {
+    if (!r?.reasoning) return {};
+    return typeof r.reasoning === 'string' ? JSON.parse(r.reasoning) : r.reasoning;
+  };
+
+  return (
+    <div className="card p-5 space-y-3">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h3 className="font-semibold text-gray-900">Pricing recommendations</h3>
+          <p className="text-xs text-gray-500">
+            Rules engine: curated/peer comps + weekday/weekend/peak · negotiate floor–ceiling
+          </p>
+        </div>
+        <div className="flex gap-2 items-center">
+          <label className="text-xs flex items-center gap-1.5 text-gray-600">
+            <input
+              type="checkbox"
+              checked={comparable}
+              onChange={(e) => toggleComp.mutate(e.target.checked)}
+            />
+            Use as comparable
+          </label>
+          <button
+            type="button"
+            className="btn-primary text-sm"
+            disabled={generate.isPending}
+            onClick={() => generate.mutate()}
+          >
+            Auto-generate
+          </button>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2 items-end">
+        <div>
+          <label className="text-xs text-gray-500">Base</label>
+          <input className="block border rounded-lg px-3 py-2 text-sm w-28" value={base} onChange={(e) => setBase(e.target.value)} />
+        </div>
+        <div>
+          <label className="text-xs text-gray-500">Floor</label>
+          <input className="block border rounded-lg px-3 py-2 text-sm w-28" value={floor} onChange={(e) => setFloor(e.target.value)} />
+        </div>
+        <div>
+          <label className="text-xs text-gray-500">Ceiling</label>
+          <input className="block border rounded-lg px-3 py-2 text-sm w-28" value={ceiling} onChange={(e) => setCeiling(e.target.value)} />
+        </div>
+        <div>
+          <label className="text-xs text-gray-500">Confidence</label>
+          <input className="block border rounded-lg px-3 py-2 text-sm w-20" value={confidence} onChange={(e) => setConfidence(e.target.value)} />
+        </div>
+        <div className="flex-1 min-w-[160px]">
+          <label className="text-xs text-gray-500">Reasoning</label>
+          <input className="block w-full border rounded-lg px-3 py-2 text-sm" value={reasoning} onChange={(e) => setReasoning(e.target.value)} />
+        </div>
+        <button type="button" className="btn-secondary text-sm" onClick={() => create.mutate()} disabled={!base}>
+          Save draft
+        </button>
+      </div>
+      <ul className="text-sm divide-y border rounded-lg">
+        {recs.map((r) => {
+          const reason = parseReason(r);
+          return (
+            <li key={r.id} className="px-3 py-3 space-y-1">
+              <div className="flex justify-between gap-3 flex-wrap">
+                <span className="font-medium">
+                  Base {r.base_price ?? '—'} · floor {r.floor_price ?? '—'} · ceil {r.ceiling_price ?? '—'} · wknd{' '}
+                  {r.weekend_price ?? '—'} · peak {r.peak_price ?? '—'}
+                </span>
+                <span className="text-xs text-gray-400">
+                  conf {Math.round(Number(r.confidence || 0) * 100)}% · {r.status}
+                </span>
+              </div>
+              {reason.summary && <p className="text-xs text-gray-500">{reason.summary}</p>}
+              {(reason.comparable_titles || []).length > 0 && (
+                <p className="text-xs text-gray-400">Comps: {reason.comparable_titles.slice(0, 6).join(', ')}</p>
+              )}
+              {r.status !== 'accepted' && r.status !== 'rejected' && r.status !== 'superseded' && (
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    className="text-xs text-emerald-700 font-medium"
+                    onClick={() => patchRec.mutate({ id: r.id, status: 'accepted' })}
+                  >
+                    Accept & seed 60d
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs text-red-600 font-medium"
+                    onClick={() => patchRec.mutate({ id: r.id, status: 'rejected' })}
+                  >
+                    Reject
+                  </button>
+                </div>
+              )}
+            </li>
+          );
+        })}
+        {!recs.length && <li className="px-3 py-4 text-gray-400 text-center text-xs">No recommendations yet</li>}
+      </ul>
     </div>
   );
 }

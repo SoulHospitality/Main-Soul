@@ -3,6 +3,7 @@ export const ROLES = {
   RESERVATIONS: 'reservations',
   RESALE: 'resale',
   HR: 'hr',
+  OWNER: 'owner',
 };
 
 const PERMISSIONS = {
@@ -15,6 +16,8 @@ const PERMISSIONS = {
     'reservations:confirm',
     'reservations:delete',
     'schedule:read',
+    'housekeeping:read',
+    'housekeeping:write',
     'notifications:read',
     'documents:read',
     'documents:write',
@@ -25,6 +28,8 @@ const PERMISSIONS = {
     'units:delete',
     'projects:read',
     'projects:write',
+    'acquisition:read',
+    'acquisition:write',
     'notifications:read',
     'documents:read',
     'documents:write',
@@ -40,14 +45,21 @@ const PERMISSIONS = {
     'documents:read',
     'documents:write',
   ],
+  owner: [
+    'owner:dashboard',
+    'owner:reservations',
+    'owner:statement',
+    'owner:payouts',
+  ],
 };
 
-/** Three separate PMS surfaces + full admin */
+/** Three separate PMS surfaces + full admin + owner portal */
 const PAGE_ACCESS = {
   admin: true,
-  reservations: new Set(['dashboard', 'reservations', 'schedule', 'profile']),
-  resale: new Set(['units', 'projects', 'profile']),
+  reservations: new Set(['dashboard', 'reservations', 'schedule', 'housekeeping', 'maintenance', 'profile']),
+  resale: new Set(['units', 'projects', 'acquisition', 'pricing', 'schedule', 'profile']),
   hr: new Set(['users', 'hr', 'recruitment', 'profile']),
+  owner: new Set(['owner', 'owner_reservations', 'owner_statement', 'owner_payouts', 'owner_blocks', 'profile']),
 };
 
 export function hasPermission(user, permission) {
@@ -90,8 +102,12 @@ export function canManageUsers(user) {
   return !!user && (user.role === 'admin' || user.role === 'hr');
 }
 
+export function isOwnerRole(user) {
+  return !!user && user.role === 'owner';
+}
+
 export function creatableRoles(actorRole) {
-  if (actorRole === 'admin') return ['admin', 'reservations', 'resale', 'hr'];
+  if (actorRole === 'admin') return ['admin', 'reservations', 'resale', 'hr', 'owner'];
   if (actorRole === 'hr') return ['reservations', 'resale', 'hr'];
   return [];
 }
@@ -101,6 +117,7 @@ export const ROLE_LABELS = {
   reservations: 'Reservations',
   resale: 'Resale',
   hr: 'HR',
+  owner: 'Owner',
 };
 
 export const ROLE_COLORS = {
@@ -108,6 +125,7 @@ export const ROLE_COLORS = {
   reservations: 'badge-soul-orange',
   resale: 'badge-soul-teal',
   hr: 'badge-soul-slate',
+  owner: 'badge-soul-teal',
 };
 
 export const PMS_LABELS = {
@@ -115,4 +133,5 @@ export const PMS_LABELS = {
   reservations: 'Reservations PMS',
   resale: 'Resale PMS',
   hr: 'HR PMS',
+  owner: 'Owner Portal',
 };

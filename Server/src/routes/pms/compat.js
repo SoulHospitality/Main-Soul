@@ -757,7 +757,6 @@ router.get('/reports/revenue', async (_req, res) => res.json([]));
 router.get('/reports/by-employee', async (_req, res) => res.json([]));
 router.get('/reports/by-unit', async (_req, res) => res.json([]));
 router.get('/reports/daily-reservations', async (_req, res) => res.json([]));
-router.get('/reports/owner-statement', async (_req, res) => res.json({ lines: [], totals: {} }));
 router.get('/reservations/blocked-dates', async (req, res, next) => {
   try {
     const unitId = req.query.unit_id;

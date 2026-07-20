@@ -142,6 +142,27 @@ export default function Dashboard() {
         />
         <StatCard
           icon={CalendarDays} iconBg="bg-orange-50" iconColor="text-orange-600"
+          title="Occupancy (MTD)"
+          value={`${data?.kpis?.occupancy_rate_pct ?? 0}%`}
+          sub={`${data?.kpis?.booked_nights ?? 0} / ${data?.kpis?.available_nights ?? 0} nights`}
+        />
+        <StatCard
+          icon={TrendingUp} iconBg="bg-violet-50" iconColor="text-violet-700"
+          title="ADR"
+          value={currency(data?.kpis?.adr)}
+          sub={`RevPAR ${currency(data?.kpis?.revpar)}`}
+        />
+        <StatCard
+          icon={AlertCircle} iconBg="bg-red-50" iconColor="text-red-600"
+          title="Units Not Ready"
+          value={data?.kpis?.units_not_ready_today ?? 0}
+          sub="Check-ins at risk today"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <StatCard
+          icon={CalendarDays} iconBg="bg-soul-blue-50" iconColor="text-soul-blue"
           title="Total Reservations"
           value={data?.reservations?.total ?? '—'}
           sub="Across all projects"
@@ -158,6 +179,21 @@ export default function Dashboard() {
           value={data?.calendar?.checkoutsCount ?? 0}
           sub={data?.calendar?.checkoutsCount ? 'Guests departing' : 'No departures today'}
         />
+        {canSeeFinance ? (
+          <StatCard
+            icon={DollarSign} iconBg="bg-emerald-50" iconColor="text-emerald-700"
+            title="Payouts Due"
+            value={currency(data?.kpis?.payouts_due ?? data?.finance?.payoutsDue)}
+            sub="Owner net outstanding"
+          />
+        ) : (
+          <StatCard
+            icon={Clock} iconBg="bg-amber-50" iconColor="text-amber-600"
+            title="Upcoming Check-ins"
+            value={data?.calendar?.upcomingCheckins ?? 0}
+            sub="Next 7 days"
+          />
+        )}
       </div>
 
       {/* ── Finance cards (non op-manager) ── */}
@@ -273,8 +309,8 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── Today: check-ins + check-outs ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {/* ── Today: check-ins + check-outs + at risk ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <TodayCard
           icon={LogIn}   iconBg="bg-teal-100"   iconColor="text-teal-600"
           title="Check-ins Today"
@@ -290,6 +326,19 @@ export default function Dashboard() {
           rows={checkoutsToday}
           emptyText="No check-outs today"
           rowColor="bg-orange-50"
+        />
+        <TodayCard
+          icon={AlertCircle} iconBg="bg-red-100" iconColor="text-red-600"
+          title="Units at Risk"
+          count={(data?.unitsAtRisk || []).length}
+          rows={(data?.unitsAtRisk || []).map((r) => ({
+            ...r,
+            guest_name: r.unit_name,
+            project: r.risk_reason || r.ops_status || 'not ready',
+            unit_name: r.guest_name || '',
+          }))}
+          emptyText="All check-ins look ready"
+          rowColor="bg-red-50"
         />
       </div>
 

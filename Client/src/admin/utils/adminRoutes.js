@@ -8,6 +8,8 @@ export function defaultAdminPage(role) {
       return `${A}/units`;
     case 'hr':
       return `${A}/users`;
+    case 'owner':
+      return `${A}/owner`;
     default:
       return `${A}/dashboard`;
   }

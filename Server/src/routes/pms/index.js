@@ -4,6 +4,9 @@ const { query } = require('../../config/db');
 const { authStaff, requireRoles, requirePasswordChanged } = require('../../middleware/auth');
 const { upload, attachCloudinaryUrls } = require('../../config/cloudinary');
 const compat = require('./compat');
+const housekeepingOps = require('./housekeepingOps');
+const ownerPortal = require('./ownerPortal');
+const roadmapScaffold = require('./roadmapScaffold');
 const {
   TEMP_PASSWORD,
   generateUniqueStaffCode,
@@ -20,11 +23,16 @@ const { FINANCIAL_EPOCH, clampFromDate } = require('../../lib/financialEpoch');
 const { getMinimumStayNights } = require('../../lib/minStay');
 const { normalizeProjectName } = require('../../lib/projectNames');
 const { guestsFromBedrooms } = require('../../lib/guestCapacity');
+const { logAudit } = require('../../lib/audit');
+const { calcReservationFinancials } = require('../../lib/commission');
 
 const router = express.Router();
 router.use(authStaff);
 router.use(requirePasswordChanged);
 router.use(compat);
+router.use(housekeepingOps);
+router.use(ownerPortal);
+router.use(roadmapScaffold);
 
 function sendList(res, rows) {
   res.json(rows);
@@ -593,6 +601,13 @@ router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) =>
       missing: completeness.missing,
       status,
     };
+    await logAudit({
+      userId: req.user.id,
+      action: 'CREATE_UNIT',
+      entityType: 'unit',
+      entityId: rows[0].id,
+      details: { title, status },
+    });
     res.status(201).json(payload);
   } catch (e) {
     next(e);
@@ -829,6 +844,12 @@ router.delete('/units/:id', requireRoles('admin', 'resale'), async (req, res, ne
 
       const { rows } = await query(`DELETE FROM units WHERE id = $1 RETURNING id`, [unitId]);
       await query('COMMIT');
+      await logAudit({
+        userId: req.user.id,
+        action: 'DELETE_UNIT',
+        entityType: 'unit',
+        entityId: unitId,
+      });
       res.json({ id: rows[0].id, deleted: true });
     } catch (inner) {
       await query('ROLLBACK');
@@ -879,15 +900,41 @@ router.get('/daily-prices/:unitId', async (req, res, next) => {
 
 router.put('/daily-prices/:unitId', requireRoles('admin'), async (req, res, next) => {
   try {
-    const { rows: u } = await query(`SELECT wp_post_id FROM units WHERE id = $1`, [req.params.unitId]);
+    const { rows: u } = await query(
+      `SELECT id, wp_post_id FROM units WHERE id = $1`,
+      [req.params.unitId]
+    );
     if (!u[0]?.wp_post_id) return res.status(404).json({ error: 'Unit not found' });
     const items = Array.isArray(req.body) ? req.body : req.body.items || [];
     for (const item of items) {
+      const { rows: prev } = await query(
+        `SELECT price, currency, source FROM unit_daily_prices WHERE wp_post_id = $1 AND date = $2`,
+        [u[0].wp_post_id, item.date]
+      );
+      const oldPrice = prev[0] ? Number(prev[0].price) : null;
+
       if (item.clear || item.price == null || Number(item.price) <= 0) {
         await query(`DELETE FROM unit_daily_prices WHERE wp_post_id = $1 AND date = $2`, [
           u[0].wp_post_id,
           item.date,
         ]);
+        try {
+          await query(
+            `INSERT INTO price_change_log (unit_id, price_date, old_price, new_price, currency, source, reason, actor_id)
+             VALUES ($1,$2,$3,NULL,COALESCE($4,'EGP'),$5,$6,$7)`,
+            [
+              u[0].id,
+              item.date,
+              oldPrice,
+              prev[0]?.currency || 'EGP',
+              item.source || 'manual-admin',
+              item.reason || 'cleared',
+              req.user.id,
+            ]
+          );
+        } catch (_) {
+          /* table may not exist until migration */
+        }
         continue;
       }
       await query(
@@ -897,8 +944,33 @@ router.put('/daily-prices/:unitId', requireRoles('admin'), async (req, res, next
            price = EXCLUDED.price, currency = EXCLUDED.currency, source = EXCLUDED.source, updated_at = now()`,
         [u[0].wp_post_id, item.date, item.price, item.currency, item.source || 'manual-admin']
       );
+      try {
+        await query(
+          `INSERT INTO price_change_log (unit_id, price_date, old_price, new_price, currency, source, reason, actor_id)
+           VALUES ($1,$2,$3,$4,COALESCE($5,'EGP'),$6,$7,$8)`,
+          [
+            u[0].id,
+            item.date,
+            oldPrice,
+            Number(item.price),
+            item.currency || 'EGP',
+            item.source || 'manual-admin',
+            item.reason || 'manual update',
+            req.user.id,
+          ]
+        );
+      } catch (_) {
+        /* ignore if migration not applied */
+      }
     }
     await syncUnitListingStatus(req.params.unitId);
+    await logAudit({
+      userId: req.user.id,
+      action: 'UPDATE_DAILY_PRICES',
+      entityType: 'unit',
+      entityId: req.params.unitId,
+      details: { count: items.length },
+    });
     res.json({ ok: true, count: items.length });
   } catch (e) {
     next(e);
@@ -1006,6 +1078,13 @@ router.post('/reservations', requireRoles('admin', 'reservations'), async (req, 
         utilitiesOverride,
       ]
     );
+    await logAudit({
+      userId: req.user.id,
+      action: 'CREATE_RESERVATION',
+      entityType: 'reservation',
+      entityId: rows[0].id,
+      details: { unit_id: b.unit_id, check_in: b.check_in, check_out: b.check_out },
+    });
     res.status(201).json(rows[0]);
   } catch (e) {
     next(e);
@@ -1292,6 +1371,12 @@ router.post('/payments/:id/approve', requireRoles('admin'), async (req, res, nex
        WHERE id = $2 RETURNING *`,
       [req.user.id, req.params.id]
     );
+    await logAudit({
+      userId: req.user.id,
+      action: 'APPROVE_PAYMENT',
+      entityType: 'payment',
+      entityId: req.params.id,
+    });
     res.json(rows[0]);
   } catch (e) {
     next(e);
@@ -1451,6 +1536,111 @@ router.get('/dashboard/stats', async (req, res, next) => {
 
     const totalReservations = projectStats.reduce((s, p) => s + p.total_reservations, 0);
 
+    // KPI window: MTD clamped to financial epoch
+    const kpiFrom = monthStart;
+    const kpiTo = today;
+    const totalUnitsCount = Number(totalUnitsRes.rows[0].cnt) || 0;
+    const daySpan = Math.max(
+      1,
+      Math.round((new Date(`${kpiTo}T00:00:00Z`) - new Date(`${kpiFrom}T00:00:00Z`)) / 86400000) + 1
+    );
+
+    const [{ rows: nightRows }, { rows: notReadyRows }, { rows: ownerFinRows }] =
+      await Promise.all([
+        query(
+          `SELECT
+             COALESCE(SUM(GREATEST(
+               LEAST(r.check_out::date, $2::date) - GREATEST(r.check_in::date, $1::date),
+               0
+             )), 0)::float AS booked_nights,
+             COALESCE(SUM(
+               CASE WHEN r.nights > 0 AND r.total_amount > 0
+                 THEN r.total_amount * (
+                   GREATEST(
+                     LEAST(r.check_out::date, $2::date) - GREATEST(r.check_in::date, $1::date),
+                     0
+                   )::float / NULLIF(r.nights, 0)
+                 )
+                 ELSE 0
+               END
+             ), 0)::float AS gross
+           FROM reservations r
+           WHERE r.status IN ('confirmed', 'checked_in', 'checked_out', 'pending')
+             AND r.check_in < ($2::date + INTERVAL '1 day')
+             AND r.check_out > $1::date`,
+          [kpiFrom, kpiTo]
+        ),
+        query(
+          `SELECT r.id, r.guest_name,
+                  COALESCE(u.title, u.unit_number, 'Unit') AS unit_name,
+                  u.unit_number,
+                  COALESCE(u.project, u.compound, 'Unassigned') AS project,
+                  u.ops_status,
+                  CASE
+                    WHEN u.ops_status = 'maintenance' THEN 'maintenance'
+                    WHEN NOT EXISTS (
+                      SELECT 1 FROM housekeeping_tasks t
+                      WHERE t.unit_id = u.id
+                        AND t.reservation_id = r.id
+                        AND t.status = 'ready'
+                    ) THEN 'not_ready'
+                    ELSE 'ok'
+                  END AS risk_reason
+           FROM reservations r
+           JOIN units u ON u.id = r.unit_id
+           WHERE r.check_in = $1::date
+             AND r.status IN ('confirmed', 'pending', 'checked_in')
+             AND (
+               u.ops_status = 'maintenance'
+               OR NOT EXISTS (
+                 SELECT 1 FROM housekeeping_tasks t
+                 WHERE t.unit_id = u.id
+                   AND (t.reservation_id = r.id OR t.due_at::date = r.check_in)
+                   AND t.status = 'ready'
+               )
+             )
+           ORDER BY COALESCE(u.project, u.compound), u.title`,
+          [today]
+        ).catch(() => ({ rows: [] })),
+        query(
+          `SELECT r.*, u.company_commission_pct, u.company_commission_owner_pct,
+                  u.commission_mode, u.commission_tenant_pct, u.utilities_cost
+           FROM reservations r
+           JOIN units u ON u.id = r.unit_id
+           WHERE r.status <> 'cancelled' AND r.check_in >= $1::date`,
+          [FINANCIAL_EPOCH]
+        ).catch(() => ({ rows: [] })),
+      ]);
+
+    const bookedNights = Number(nightRows[0]?.booked_nights) || 0;
+    const gross = Number(nightRows[0]?.gross) || 0;
+    const availableNights = Math.max(1, totalUnitsCount * daySpan);
+    const occupancyRate = availableNights > 0 ? bookedNights / availableNights : 0;
+    const adr = bookedNights > 0 ? gross / bookedNights : 0;
+    const revpar = adr * occupancyRate;
+
+    let payoutsDue = 0;
+    for (const r of ownerFinRows) {
+      const utilitiesAmount =
+        parseFloat(r.utilities_amount) ||
+        (Number(r.nights) || 0) * (parseFloat(r.utilities_cost) || 0);
+      const fin = calcReservationFinancials(r, { ...r, utilities_amount: utilitiesAmount });
+      payoutsDue += fin.ownerNet;
+    }
+
+    const kpis = {
+      from: kpiFrom,
+      to: kpiTo,
+      booked_nights: Math.round(bookedNights * 10) / 10,
+      available_nights: availableNights,
+      occupancy_rate_pct: Math.round(occupancyRate * 1000) / 10,
+      adr: Math.round(adr * 100) / 100,
+      revpar: Math.round(revpar * 100) / 100,
+      payouts_due: Math.round(payoutsDue * 100) / 100,
+      units_not_ready_today: notReadyRows.length,
+    };
+    const unitsAtRisk = notReadyRows;
+
     let finance = null;
     let monthlyRevenue = [];
     if (role === 'admin') {
@@ -1487,6 +1677,7 @@ router.get('/dashboard/stats', async (req, res, next) => {
         monthRevenue: Number(monthRevenue.rows[0].total) || 0,
         monthPaid: Number(monthPaid.rows[0].total) || 0,
         pendingPayments: Number(pendingPayments.rows[0].total) || 0,
+        payoutsDue: kpis.payouts_due,
       };
 
       for (let i = 5; i >= 0; i--) {
@@ -1511,9 +1702,11 @@ router.get('/dashboard/stats', async (req, res, next) => {
     }
 
     res.json({
-      units: { total: Number(totalUnitsRes.rows[0].cnt) || 0 },
+      units: { total: totalUnitsCount },
       reservations: { total: totalReservations },
       finance,
+      kpis,
+      unitsAtRisk,
       calendar: {
         upcomingCheckins: Number(upcomingRes.rows[0].cnt) || 0,
         checkinsToday: checkinsRes.rows,
@@ -1647,16 +1840,54 @@ router.post('/treasury', requireRoles('admin'), async (req, res, next) => {
   }
 });
 
-router.get('/audit', requireRoles('admin'), async (_req, res, next) => {
+router.get('/audit', requireRoles('admin'), async (req, res, next) => {
   try {
-    const { rows } = await query(`SELECT * FROM audit_log ORDER BY created_at DESC LIMIT 200`);
-    sendList(res, rows);
+    const params = [];
+    const where = ['1=1'];
+    if (req.query.action) {
+      params.push(req.query.action);
+      where.push(`a.action = $${params.length}`);
+    }
+    if (req.query.user_id) {
+      params.push(Number(req.query.user_id));
+      where.push(`a.user_id = $${params.length}`);
+    }
+    if (req.query.from_date) {
+      params.push(req.query.from_date);
+      where.push(`a.created_at::date >= $${params.length}::date`);
+    }
+    if (req.query.to_date) {
+      params.push(req.query.to_date);
+      where.push(`a.created_at::date <= $${params.length}::date`);
+    }
+    if (req.query.search) {
+      params.push(`%${String(req.query.search).toLowerCase()}%`);
+      where.push(
+        `(lower(a.action) LIKE $${params.length} OR lower(COALESCE(a.entity_type,'')) LIKE $${params.length} OR lower(COALESCE(a.entity_id,'')) LIKE $${params.length} OR lower(COALESCE(u.full_name,'')) LIKE $${params.length} OR lower(COALESCE(u.username,'')) LIKE $${params.length})`
+      );
+    }
+    const { rows } = await query(
+      `SELECT a.*, u.full_name AS user_name, u.username
+       FROM audit_log a
+       LEFT JOIN staff_users u ON u.id = a.user_id
+       WHERE ${where.join(' AND ')}
+       ORDER BY a.created_at DESC
+       LIMIT 500`,
+      params
+    );
+    const { rows: actionRows } = await query(
+      `SELECT DISTINCT action FROM audit_log WHERE action IS NOT NULL ORDER BY action`
+    );
+    res.json({
+      logs: rows,
+      actions: actionRows.map((r) => r.action),
+    });
   } catch (e) {
     next(e);
   }
 });
 
-router.get('/owner-units/mine', requireRoles('admin'), async (req, res, next) => {
+router.get('/owner-units/mine', requireRoles('admin', 'owner'), async (req, res, next) => {
   try {
     const ownerId = req.user.role === 'owner' ? req.user.id : req.query.owner_id || req.user.id;
     const { rows } = await query(

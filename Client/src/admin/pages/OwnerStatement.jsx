@@ -8,6 +8,7 @@ import EmptyState from '../components/ui/EmptyState';
 import { currency, formatDate } from '../utils/formatters';
 import { useAuth } from '../context/AuthContext';
 import SearchableSelect from '../components/ui/SearchableSelect';
+import { isOwnerRole as checkOwner } from '../utils/permissions';
 
 // ─── Internal-only commission mode badge ─────────────────────────────────────
 function ModeBadge({ mode }) {
@@ -53,7 +54,7 @@ function PaidByBadge({ paidBy }) {
 
 export default function OwnerStatement() {
   const { user } = useAuth();
-  const isOwnerRole  = false;
+  const isOwnerRole  = checkOwner(user);
   const isStaffRole  = !isOwnerRole;
 
   const [unitId,    setUnitId]    = useState('');
@@ -65,7 +66,7 @@ export default function OwnerStatement() {
   const { data: units = [], isLoading: unitsLoading } = useQuery({
     queryKey: ['owner-statement-units', isOwnerRole],
     queryFn: () => isOwnerRole
-      ? api.get('/owner-units/my-units').then(r => r.data)
+      ? api.get('/owner/units').then(r => r.data)
       : api.get('/units').then(r => r.data),
   });
 

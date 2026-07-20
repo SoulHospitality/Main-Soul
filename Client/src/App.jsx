@@ -24,7 +24,6 @@ import {
   OwnersPage,
 } from './pages/StaticPages';
 import ContactPage from './pages/ContactPage';
-import ComingSoonPage from './pages/ComingSoonPage';
 import WhatsAppFAB from './components/layout/WhatsAppFAB';
 
 export default function App() {
@@ -33,8 +32,8 @@ export default function App() {
       <CurrencyProvider>
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={<ComingSoonPage />} />
-            <Route path="/home" element={<HomePage />} />
+            <Route path="/" element={<HomePage />} />
+            <Route path="/home" element={<Navigate to="/" replace />} />
             <Route path="/search" element={<SearchPage />} />
             <Route path="/listings/:slug" element={<ListingDetailPage />} />
             <Route path="/checkout" element={<CheckoutPage />} />

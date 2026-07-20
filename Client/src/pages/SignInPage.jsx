@@ -152,7 +152,7 @@ export default function SignInPage() {
       {staffOnly && (
         <p className="mt-6 text-center text-sm text-soul-muted">
           <Link to="/" className="font-medium text-soul-muted hover:text-soul-blue">
-            ← Back to coming soon
+            ← Back to home
           </Link>
         </p>
       )}

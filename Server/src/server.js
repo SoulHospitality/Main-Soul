@@ -8,6 +8,7 @@ const { runMigrations, query } = require('./config/db');
 const { initSocket } = require('./config/socket');
 const { startBookingHoldExpiryJob } = require('./jobs/bookingHoldExpiry');
 const { startPmsReminderJobs } = require('./jobs/pmsReminders');
+const { startHousekeepingTaskJob } = require('./jobs/housekeepingTasks');
 const { syncAllUnitListingStatusesOnBoot } = require('./lib/bootUnitStatusSync');
 
 async function seedAdmin() {
@@ -54,6 +55,7 @@ async function main() {
   initSocket(server);
   startBookingHoldExpiryJob();
   startPmsReminderJobs();
+  startHousekeepingTaskJob();
 
   const port = Number(process.env.PORT || 5000);
   server.listen(port, () => {
