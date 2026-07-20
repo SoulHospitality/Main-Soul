@@ -154,6 +154,8 @@ export default function CompoundGrid({ counts = {} }) {
               <img
                 src={c.image}
                 alt={c.name}
+                loading="lazy"
+                decoding="async"
                 className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-soul-ink/75 via-soul-ink/15 to-transparent" />

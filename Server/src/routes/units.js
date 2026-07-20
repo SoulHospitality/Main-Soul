@@ -108,11 +108,15 @@ router.get('/', async (req, res, next) => {
     }
 
     params.push(Number(limit), Number(offset));
+    // Card/list projection: skip heavy detail fields and cap gallery to 5 photos.
     const sql = `
-      SELECT u.id, u.slug, u.title, u.status, u.compound, u.area, u.city, u.beds, u.baths, u.guests, u.size_m2,
-             u.cover_url, u.photo_urls, u.short_description, u.amenities, u.wp_post_id, u.featured,
-             u.price_currency, u.min_nights, u.cleaning_fee_egp, u.service_fee_percent,
-             u.security_deposit_egp, u.lat, u.lng, u.property_type, u.view, u.floor, u.price_fallback,
+      SELECT u.id, u.slug, u.title, u.status, u.compound, u.area, u.city, u.beds, u.baths, u.guests,
+             u.cover_url,
+             CASE
+               WHEN u.photo_urls IS NULL THEN NULL
+               ELSE u.photo_urls[1:5]
+             END AS photo_urls,
+             u.wp_post_id, u.featured, u.price_currency, u.property_type, u.price_fallback,
              u.created_at,
              COALESCE(u.average_rating, 0) AS average_rating,
              COALESCE(u.review_count, 0) AS review_count

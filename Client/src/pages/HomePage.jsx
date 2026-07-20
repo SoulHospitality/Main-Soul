@@ -41,28 +41,25 @@ export default function HomePage() {
 
     Promise.all([
       api.get('/units', { params: { featured: 'true', status: 'published', limit: 8 } }),
-      api.get('/units', { params: { status: 'published', limit: 100 } }),
+      api.get('/units', { params: { status: 'published', limit: 1 } }),
       api.get('/units/compounds').catch(() => ({ data: { items: [] } })),
     ])
-      .then(([featRes, allRes, compoundsRes]) => {
+      .then(async ([featRes, countRes, compoundsRes]) => {
         if (cancelled) return;
         let items = featRes.data.items || [];
         if (!items.length) {
-          items = (allRes.data.items || []).slice(0, 8);
+          const fallback = await api.get('/units', {
+            params: { status: 'published', limit: 8 },
+          });
+          if (cancelled) return;
+          items = fallback.data.items || [];
         }
         setFeatured(items);
-        setTotal(allRes.data.total ?? items.length);
+        setTotal(countRes.data.total ?? items.length);
 
         const counts = {};
         for (const row of compoundsRes.data.items || []) {
-          counts[row.name] = row.listings;
-        }
-        // Fallback: count from listings payload
-        if (!Object.keys(counts).length) {
-          for (const u of allRes.data.items || []) {
-            if (!u.compound) continue;
-            counts[u.compound] = (counts[u.compound] || 0) + 1;
-          }
+          if (row.name) counts[row.name] = row.listings;
         }
         setCompoundCounts(counts);
       })
@@ -90,6 +87,9 @@ export default function HomePage() {
               key={src}
               src={src}
               alt=""
+              fetchPriority={i === 0 ? 'high' : 'low'}
+              loading={i === 0 ? 'eager' : 'lazy'}
+              decoding="async"
               className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-[1600ms] ${
                 i === heroIndex ? 'opacity-100' : 'opacity-0'
               }`}
@@ -158,7 +158,9 @@ export default function HomePage() {
           {loading &&
             Array.from({ length: 4 }).map((_, i) => <ListingCardSkeleton key={i} />)}
           {!loading &&
-            featured.map((u) => <ListingCard key={u.id} listing={u} />)}
+            featured.map((u, i) => (
+              <ListingCard key={u.id} listing={u} priority={i < 4} />
+            ))}
           {!loading && !featured.length && (
             <p className="text-soul-muted col-span-full">
               Featured homes will appear here once published units are available.

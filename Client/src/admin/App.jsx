@@ -1,41 +1,56 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Layout from './components/layout/Layout';
 import OwnerLayout from './components/layout/OwnerLayout';
-import Dashboard from './pages/Dashboard';
-import Units from './pages/Units';
-import Reservations from './pages/Reservations';
-import Payments from './pages/Payments';
-import Finance from './pages/Finance';
-import Profit from './pages/Profit';
-import Expenses from './pages/Expenses';
-import OwnerStatement from './pages/OwnerStatement';
-import Reports from './pages/Reports';
-import Users from './pages/Users';
-import Profile from './pages/Profile';
-import Schedule from './pages/Schedule';
-import Pricing from './pages/Pricing';
-import Utilities from './pages/Utilities';
-import HR from './pages/HR';
-import Recruitment from './pages/Recruitment';
-import Tasks from './pages/Tasks';
-import PettyCash from './pages/PettyCash';
-import CashFlow from './pages/CashFlow';
-import Treasury from './pages/Treasury';
-import Housekeeping from './pages/Housekeeping';
-import AuditLog from './pages/AuditLog';
-import Projects from './pages/Projects';
-import ChangePassword from './pages/ChangePassword';
-import OwnerDashboard from './pages/OwnerDashboard';
-import OwnerReservations from './pages/OwnerReservations';
-import OwnerStatementPage, { OwnerPayoutsPage } from './pages/OwnerPortalPages';
-import AcquisitionPipeline from './pages/AcquisitionPipeline';
-import MaintenanceTickets from './pages/MaintenanceTickets';
-import OwnerDateBlocks from './pages/OwnerDateBlocks';
-import OwnerSettlementsAdmin from './pages/OwnerSettlementsAdmin';
 import LoadingSpinner from './components/ui/LoadingSpinner';
 import { canAccess, isOwnerRole } from './utils/permissions';
 import { defaultAdminPage, ADMIN_LOGIN, ADMIN_CHANGE_PASSWORD } from './utils/adminRoutes';
+
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Units = lazy(() => import('./pages/Units'));
+const Reservations = lazy(() => import('./pages/Reservations'));
+const Payments = lazy(() => import('./pages/Payments'));
+const Finance = lazy(() => import('./pages/Finance'));
+const Profit = lazy(() => import('./pages/Profit'));
+const Expenses = lazy(() => import('./pages/Expenses'));
+const OwnerStatement = lazy(() => import('./pages/OwnerStatement'));
+const Reports = lazy(() => import('./pages/Reports'));
+const Users = lazy(() => import('./pages/Users'));
+const Profile = lazy(() => import('./pages/Profile'));
+const Schedule = lazy(() => import('./pages/Schedule'));
+const Pricing = lazy(() => import('./pages/Pricing'));
+const Utilities = lazy(() => import('./pages/Utilities'));
+const HR = lazy(() => import('./pages/HR'));
+const Recruitment = lazy(() => import('./pages/Recruitment'));
+const Tasks = lazy(() => import('./pages/Tasks'));
+const PettyCash = lazy(() => import('./pages/PettyCash'));
+const CashFlow = lazy(() => import('./pages/CashFlow'));
+const Treasury = lazy(() => import('./pages/Treasury'));
+const Housekeeping = lazy(() => import('./pages/Housekeeping'));
+const AuditLog = lazy(() => import('./pages/AuditLog'));
+const Projects = lazy(() => import('./pages/Projects'));
+const ChangePassword = lazy(() => import('./pages/ChangePassword'));
+const OwnerDashboard = lazy(() => import('./pages/OwnerDashboard'));
+const OwnerReservations = lazy(() => import('./pages/OwnerReservations'));
+const OwnerStatementPage = lazy(() =>
+  import('./pages/OwnerPortalPages').then((m) => ({ default: m.default }))
+);
+const OwnerPayoutsPage = lazy(() =>
+  import('./pages/OwnerPortalPages').then((m) => ({ default: m.OwnerPayoutsPage }))
+);
+const AcquisitionPipeline = lazy(() => import('./pages/AcquisitionPipeline'));
+const MaintenanceTickets = lazy(() => import('./pages/MaintenanceTickets'));
+const OwnerDateBlocks = lazy(() => import('./pages/OwnerDateBlocks'));
+const OwnerSettlementsAdmin = lazy(() => import('./pages/OwnerSettlementsAdmin'));
+
+function PageFallback() {
+  return (
+    <div className="min-h-[40vh] flex items-center justify-center">
+      <LoadingSpinner />
+    </div>
+  );
+}
 
 function ProtectedRoute({ children, page, allowFirstLogin }) {
   const { user, loading } = useAuth();
@@ -48,9 +63,10 @@ function ProtectedRoute({ children, page, allowFirstLogin }) {
 
   if (page && !canAccess(user, page)) return <Navigate to={defaultAdminPage(user.role)} replace />;
 
-  if (allowFirstLogin) return children;
-  if (isOwnerRole(user)) return <OwnerLayout>{children}</OwnerLayout>;
-  return <Layout>{children}</Layout>;
+  const body = <Suspense fallback={<PageFallback />}>{children}</Suspense>;
+  if (allowFirstLogin) return body;
+  if (isOwnerRole(user)) return <OwnerLayout>{body}</OwnerLayout>;
+  return <Layout>{body}</Layout>;
 }
 
 function RoleRedirect() {

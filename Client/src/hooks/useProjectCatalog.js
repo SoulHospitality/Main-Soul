@@ -43,7 +43,7 @@ export function useProjectCatalog() {
   const { data, isLoading, error, refetch, isError, isSuccess } = useQuery({
     queryKey: PROJECT_CATALOG_KEY,
     queryFn: fetchProjectCatalog,
-    staleTime: 30_000,
+    staleTime: 10 * 60_000,
   });
 
   const resolved =

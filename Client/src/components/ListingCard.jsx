@@ -3,8 +3,9 @@ import { Link } from 'react-router-dom';
 import { Bath, BedDouble, ChevronLeft, ChevronRight, Heart, Users } from 'lucide-react';
 import { useCurrency } from '../context/CurrencyContext';
 import { getListingWpId, useWishlist } from '../hooks/useWishlist';
+import { optimizeImageUrl } from '../utils/imageUrl';
 
-export default function ListingCard({ listing, carryDates, wishlistMode = false, onRemove }) {
+export default function ListingCard({ listing, carryDates, wishlistMode = false, onRemove, priority = false }) {
   const { formatPrice } = useCurrency();
   const { has, toggle, remove } = useWishlist();
   const removeFromWishlist = onRemove || remove;
@@ -13,7 +14,10 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
     : listing.cover_url
       ? [listing.cover_url]
       : [])
-    .filter(Boolean);
+    .filter(Boolean)
+    .slice(0, 6)
+    .map((url) => optimizeImageUrl(url, { width: 720 }));
+
   const [index, setIndex] = useState(0);
   const wpId = getListingWpId(listing);
   const wished = has(wpId);
@@ -52,6 +56,12 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
           <img
             src={photos[index]}
             alt={listing.title}
+            width={720}
+            height={540}
+            loading={priority ? 'eager' : 'lazy'}
+            decoding="async"
+            fetchPriority={priority ? 'high' : 'auto'}
+            sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 25vw"
             className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
             draggable={false}
           />

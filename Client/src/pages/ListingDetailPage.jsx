@@ -8,6 +8,7 @@ import AddReviewForm from '../components/reviews/AddReviewForm';
 import UnitReviewsDisplay from '../components/reviews/UnitReviewsDisplay';
 import { useAuth } from '../context/AuthContext';
 import api, { createUnitReview, fetchUnitReviews } from '../api/http';
+import { optimizeImageUrl } from '../utils/imageUrl';
 
 const localISO = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -212,7 +213,7 @@ export default function ListingDetailPage() {
     for (const url of unit.photo_urls || []) {
       if (url && !list.includes(url)) list.push(url);
     }
-    return list;
+    return list.map((url, i) => optimizeImageUrl(url, { width: i === 0 ? 1400 : 800 }));
   }, [unit]);
 
   const facilities = useMemo(() => (unit ? parseFacilities(unit) : []), [unit]);
@@ -312,13 +313,21 @@ export default function ListingDetailPage() {
             <div className="relative mb-8">
               <div className="hidden md:grid grid-cols-[2fr_1fr_1fr] grid-rows-[240px_240px] gap-2 rounded-[22px] overflow-hidden">
                 <div className="md:row-span-2 relative bg-soul-ivory/40 overflow-hidden">
-                  <img src={photos[0]} alt={unit.title} className="absolute inset-0 w-full h-full object-cover" />
+                  <img
+                    src={photos[0]}
+                    alt={unit.title}
+                    fetchPriority="high"
+                    decoding="async"
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
                 </div>
                 {photos.slice(1, 5).map((p, i) => (
                   <div key={p} className="relative bg-soul-ivory/40 overflow-hidden">
                     <img
                       src={p}
                       alt={`${unit.title}, photo ${i + 2}`}
+                      loading="lazy"
+                      decoding="async"
                       className="absolute inset-0 w-full h-full object-cover"
                     />
                   </div>
@@ -334,6 +343,8 @@ export default function ListingDetailPage() {
                     <img
                       src={p}
                       alt={i === 0 ? unit.title : `${unit.title}, photo ${i + 1}`}
+                      loading={i === 0 ? 'eager' : 'lazy'}
+                      decoding="async"
                       className="absolute inset-0 w-full h-full object-cover"
                     />
                   </div>
