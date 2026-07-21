@@ -318,3 +318,20 @@ input[type="number"]::-webkit-inner-spin-button {
   margin: 0;
 }
 input[type="number"] { -moz-appearance: textfield; }
+
+/* Coming soon landing */
+@keyframes coming-soon-zoom {
+  from { transform: scale(1.05); }
+  to { transform: scale(1.14); }
+}
+
+.coming-soon-hero {
+  animation: coming-soon-zoom 28s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coming-soon-hero {
+    animation: none;
+  }
+}

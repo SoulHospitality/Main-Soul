@@ -31,6 +31,7 @@ const Faq = lazy(() => import('./pages/StaticPages').then((m) => ({ default: m.F
 const Legal = lazy(() => import('./pages/StaticPages').then((m) => ({ default: m.LegalPage })));
 const Owners = lazy(() => import('./pages/StaticPages').then((m) => ({ default: m.OwnersPage })));
 const ContactPage = lazy(() => import('./pages/ContactPage'));
+const ComingSoonPage = lazy(() => import('./pages/ComingSoonPage'));
 
 export default function App() {
   return (
@@ -39,8 +40,8 @@ export default function App() {
         <BrowserRouter>
           <Suspense fallback={<RouteFallback />}>
             <Routes>
-              <Route path="/" element={<HomePage />} />
-              <Route path="/home" element={<Navigate to="/" replace />} />
+              <Route path="/" element={<ComingSoonPage />} />
+              <Route path="/home" element={<HomePage />} />
               <Route path="/search" element={<SearchPage listingType="rent" />} />
               <Route path="/for-sale" element={<SearchPage listingType="sale" />} />
               <Route path="/listings/:slug" element={<ListingDetailPage />} />
