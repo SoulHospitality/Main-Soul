@@ -1,13 +1,14 @@
 import { useCurrency } from '../../context/CurrencyContext';
 import { whatsappHref } from '../../theme/brand';
+import { getDisplayPriceEgp } from '../../utils/displayPrice';
 
 /**
  * Sticky inquire card for for-sale listings (no nightly booking).
  */
 export default function ListingSaleCard({ unit }) {
   const { formatPrice } = useCurrency();
-  const amount = Number(unit?.price_fallback || unit?.from_price || 0);
-  const price = amount > 0 ? formatPrice(amount, { perNight: false }) : null;
+  const amount = getDisplayPriceEgp(unit);
+  const price = amount != null ? formatPrice(amount, { perNight: false }) : null;
   const sizeM2 = Number(unit?.size_m2 || unit?.unit_area || 0);
   const message = `Hi Soul — I'm interested in ${unit?.title || 'this property'} for sale${unit?.slug ? ` (${unit.slug})` : ''}.`;
 

@@ -9,6 +9,7 @@ import PropertyFiltersSidebar, {
 } from '../components/search/PropertyFiltersSidebar';
 import { resolveLocationFilter, useProjectCatalog } from '../hooks/useProjectCatalog';
 import api from '../api/http';
+import { getDisplayPriceEgp } from '../utils/displayPrice';
 
 const PAGE_SIZE = 18;
 
@@ -133,7 +134,7 @@ export default function SearchPage({ listingType = 'rent' }) {
     const maxPrice = Number(params.get('priceMax') || 0);
     if (minPrice > 0 || maxPrice > 0) {
       list = list.filter((u) => {
-        const price = Number(u.price_fallback || u.from_price || 0);
+        const price = getDisplayPriceEgp(u) || 0;
         if (minPrice > 0 && price < minPrice) return false;
         if (maxPrice > 0 && price > maxPrice) return false;
         return true;
@@ -142,14 +143,11 @@ export default function SearchPage({ listingType = 'rent' }) {
     if (sort === 'price-asc') {
       list.sort(
         (a, b) =>
-          Number(a.price_fallback || a.from_price || Infinity) -
-          Number(b.price_fallback || b.from_price || Infinity)
+          (getDisplayPriceEgp(a) ?? Infinity) - (getDisplayPriceEgp(b) ?? Infinity)
       );
     } else if (sort === 'price-desc') {
       list.sort(
-        (a, b) =>
-          Number(b.price_fallback || b.from_price || 0) -
-          Number(a.price_fallback || a.from_price || 0)
+        (a, b) => (getDisplayPriceEgp(b) || 0) - (getDisplayPriceEgp(a) || 0)
       );
     } else if (sort === 'newest') {
       list.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));

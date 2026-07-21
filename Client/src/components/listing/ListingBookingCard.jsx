@@ -4,24 +4,19 @@ import { useCurrency } from '../../context/CurrencyContext';
 import { housekeepingFeeForUnit } from '../../utils/housekeeping';
 import { isFreeBeachProject, resolveBeachAccessRates } from '../../utils/beachAccess';
 import { brand, whatsappHref } from '../../theme/brand';
+import { getDisplayPriceEgp } from '../../utils/displayPrice';
 
 /**
  * SoulHospitality-style sticky reservation card.
- * Reserve CTA is temporarily disabled (coming soon); inquiry goes to WhatsApp.
+ * Shows the unit display price (same as listing cards); schedule rates belong in BookingDrawer.
  */
 export default function ListingBookingCard({
   unit,
-  dailyPrices = {},
 }) {
   const { formatPrice } = useCurrency();
   const money = (n) => formatPrice(n, { perNight: false }) || '—';
 
-  const pricePerNight = useMemo(() => {
-    const vals = Object.values(dailyPrices || {}).filter((n) => typeof n === 'number' && n > 0);
-    if (vals.length) return Math.min(...vals);
-    const fb = Number(unit?.price_fallback || unit?.from_price || 0);
-    return fb > 0 ? fb : null;
-  }, [dailyPrices, unit]);
+  const pricePerNight = getDisplayPriceEgp(unit);
 
   const cleaning = housekeepingFeeForUnit(unit);
   const minNights = getMinimumStayNights(unit);

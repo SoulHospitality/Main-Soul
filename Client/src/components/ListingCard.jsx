@@ -4,6 +4,7 @@ import { Bath, BedDouble, ChevronLeft, ChevronRight, Heart, Maximize2, Users } f
 import { useCurrency } from '../context/CurrencyContext';
 import { getListingWpId, useWishlist } from '../hooks/useWishlist';
 import { optimizeImageUrl } from '../utils/imageUrl';
+import { getDisplayPriceEgp } from '../utils/displayPrice';
 
 export default function ListingCard({ listing, carryDates, wishlistMode = false, onRemove, priority = false }) {
   const { formatPrice } = useCurrency();
@@ -22,8 +23,8 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
   const [index, setIndex] = useState(0);
   const wpId = getListingWpId(listing);
   const wished = has(wpId);
-  const amount = Number(listing.price_fallback || listing.from_price || 0);
-  const priceCore = formatPrice(amount, { perNight: false });
+  const amount = getDisplayPriceEgp(listing);
+  const priceCore = amount != null ? formatPrice(amount, { perNight: false }) : null;
   const sizeM2 = Number(listing.size_m2 || listing.unit_area || 0);
 
   const location = [...new Set([listing.compound, listing.area, listing.city].filter(Boolean))].join(' · ')
