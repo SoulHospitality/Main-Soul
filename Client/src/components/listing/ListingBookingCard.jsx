@@ -1,27 +1,19 @@
-import { useMemo, useState } from 'react';
-import BookingDrawer from '../booking/BookingDrawer';
-import { BOOKING_POLICIES } from '../../constants/bookingPolicies';
+import { useMemo } from 'react';
 import { getMinimumStayNights, isGaiaUnit } from '../../utils/bookingRules';
-import { localDateToIso } from './ListingDatePicker';
 import { useCurrency } from '../../context/CurrencyContext';
 import { housekeepingFeeForUnit } from '../../utils/housekeeping';
 import { isFreeBeachProject, resolveBeachAccessRates } from '../../utils/beachAccess';
 
 /**
  * SoulHospitality-style sticky reservation card.
- * Opens BookingDrawer on "Reserve this unit".
+ * Reserve CTA is temporarily disabled (coming soon).
  */
 export default function ListingBookingCard({
   unit,
-  blockedDates = [],
   dailyPrices = {},
-  initialCheckin,
-  initialCheckout,
-  initialGuests,
 }) {
   const { formatPrice } = useCurrency();
   const money = (n) => formatPrice(n, { perNight: false }) || '—';
-  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const pricePerNight = useMemo(() => {
     const vals = Object.values(dailyPrices || {}).filter((n) => typeof n === 'number' && n > 0);
@@ -48,31 +40,6 @@ export default function ListingBookingCard({
     return `${money(beach.adult)} per guest / ${beach.days} ${beach.days === 1 ? 'day' : 'days'}`;
   })();
 
-  const guests = useMemo(() => {
-    const cap = Number(unit?.guests) || 8;
-    const adults = Math.max(1, Math.min(Number(initialGuests) || 1, cap));
-    return { adults, children: 0, infants: 0 };
-  }, [initialGuests, unit?.guests]);
-
-  const drawerCheckin =
-    initialCheckin ||
-    localDateToIso(
-      (() => {
-        const d = new Date();
-        d.setDate(d.getDate() + 1);
-        return d;
-      })()
-    );
-  const drawerCheckout =
-    initialCheckout ||
-    localDateToIso(
-      (() => {
-        const d = new Date();
-        d.setDate(d.getDate() + 1 + minNights);
-        return d;
-      })()
-    );
-
   return (
     <>
       <div className="md:sticky md:top-[116px] flex flex-col gap-4 rounded-3xl border border-soul-line bg-white p-6 shadow-[0_30px_70px_-35px_rgba(40,63,94,0.4)]">
@@ -86,10 +53,11 @@ export default function ListingBookingCard({
         </div>
         <button
           type="button"
-          onClick={() => setDrawerOpen(true)}
-          className="inline-flex w-full items-center justify-center rounded-full bg-soul-blue px-6 py-3.5 text-sm font-semibold uppercase tracking-[0.16em] text-white transition-colors hover:bg-soul-blue-dark"
+          disabled
+          aria-disabled="true"
+          className="inline-flex w-full cursor-not-allowed items-center justify-center rounded-full bg-soul-blue/40 px-6 py-3.5 text-sm font-semibold uppercase tracking-[0.16em] text-white/80"
         >
-          Reserve this unit
+          Coming soon
         </button>
       </div>
 
@@ -105,23 +73,13 @@ export default function ListingBookingCard({
         </div>
         <button
           type="button"
-          onClick={() => setDrawerOpen(true)}
-          className="bg-soul-blue text-white font-semibold px-5 py-3 rounded-[12px] text-sm whitespace-nowrap uppercase tracking-wide"
+          disabled
+          aria-disabled="true"
+          className="cursor-not-allowed rounded-[12px] bg-soul-blue/40 px-5 py-3 text-sm font-semibold uppercase tracking-wide text-white/80 whitespace-nowrap"
         >
-          Reserve
+          Coming soon
         </button>
       </div>
-
-      <BookingDrawer
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        unit={unit}
-        blockedDates={blockedDates}
-        dailyPrices={dailyPrices}
-        initialCheckin={drawerCheckin}
-        initialCheckout={drawerCheckout}
-        initialGuests={guests}
-      />
     </>
   );
 }
