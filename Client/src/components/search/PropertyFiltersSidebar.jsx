@@ -30,7 +30,9 @@ export default function PropertyFiltersSidebar({
   onClear,
   variant = 'sidebar',
   onClose,
+  mode = 'rent',
 }) {
+  const isSale = mode === 'sale';
   const { destinations, projectsByDestination } = useProjectCatalog();
   const [destination, setDestination] = useState('');
   const [checkin, setCheckin] = useState('');
@@ -90,17 +92,21 @@ export default function PropertyFiltersSidebar({
     const max = next.priceMax !== undefined ? next.priceMax : priceMax;
     const where = p || d;
     const resolved = resolveLocationFilter(where, { destinations, projectsByDestination });
-    return {
+    const base = {
       where,
       destination: d || resolved.destination,
       compound: d ? p : '',
-      checkin: cin || undefined,
-      checkout: cout || undefined,
-      guests: g,
       beds: b || undefined,
       types: types.length ? types : [],
       priceMin: min || undefined,
       priceMax: max || undefined,
+    };
+    if (isSale) return base;
+    return {
+      ...base,
+      checkin: cin || undefined,
+      checkout: cout || undefined,
+      guests: g,
     };
   }
 
@@ -177,36 +183,40 @@ export default function PropertyFiltersSidebar({
         </select>
       </Field>
 
-      <div>
-        <DateRangeFieldLabel />
-        <DateRangePicker
-          checkin={checkin}
-          checkout={checkout}
-          onChange={setDatesLive}
-        />
-      </div>
+      {!isSale && (
+        <>
+          <div>
+            <DateRangeFieldLabel />
+            <DateRangePicker
+              checkin={checkin}
+              checkout={checkout}
+              onChange={setDatesLive}
+            />
+          </div>
 
-      <Field label="Guests" icon={Users}>
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-soul-line bg-white px-3 py-2.5">
-          <button
-            type="button"
-            className="grid h-8 w-8 place-items-center rounded-full border border-soul-line text-soul-blue disabled:opacity-40"
-            disabled={guests <= 1}
-            onClick={() => setGuestsLive(Math.max(1, guests - 1))}
-          >
-            −
-          </button>
-          <span className="text-sm font-semibold text-soul-blue">{guests}</span>
-          <button
-            type="button"
-            className="grid h-8 w-8 place-items-center rounded-full border border-soul-line text-soul-blue disabled:opacity-40"
-            disabled={guests >= 16}
-            onClick={() => setGuestsLive(Math.min(16, guests + 1))}
-          >
-            +
-          </button>
-        </div>
-      </Field>
+          <Field label="Guests" icon={Users}>
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-soul-line bg-white px-3 py-2.5">
+              <button
+                type="button"
+                className="grid h-8 w-8 place-items-center rounded-full border border-soul-line text-soul-blue disabled:opacity-40"
+                disabled={guests <= 1}
+                onClick={() => setGuestsLive(Math.max(1, guests - 1))}
+              >
+                −
+              </button>
+              <span className="text-sm font-semibold text-soul-blue">{guests}</span>
+              <button
+                type="button"
+                className="grid h-8 w-8 place-items-center rounded-full border border-soul-line text-soul-blue disabled:opacity-40"
+                disabled={guests >= 16}
+                onClick={() => setGuestsLive(Math.min(16, guests + 1))}
+              >
+                +
+              </button>
+            </div>
+          </Field>
+        </>
+      )}
 
       <Field label="Bedrooms" icon={BedDouble}>
         <div className="flex flex-wrap gap-1.5">
@@ -227,7 +237,7 @@ export default function PropertyFiltersSidebar({
         </div>
       </Field>
 
-      <Field label="Rental type" icon={Building2}>
+      <Field label={isSale ? 'Property type' : 'Rental type'} icon={Building2}>
         <div className="space-y-2 rounded-xl border border-soul-line bg-white px-3.5 py-3">
           {RENTAL_TYPES.map((type) => {
             const checked = rentalTypes.includes(type);
@@ -249,12 +259,12 @@ export default function PropertyFiltersSidebar({
         </div>
       </Field>
 
-      <Field label="Price range (EGP / night)" icon={Wallet}>
+      <Field label={isSale ? 'Price range (EGP)' : 'Price range (EGP / night)'} icon={Wallet}>
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
           <input
             type="number"
             min={0}
-            step={500}
+            step={isSale ? 100000 : 500}
             className={inputCls}
             value={priceMin || ''}
             placeholder="Min"
@@ -265,7 +275,7 @@ export default function PropertyFiltersSidebar({
           <input
             type="number"
             min={0}
-            step={500}
+            step={isSale ? 100000 : 500}
             className={inputCls}
             value={priceMax || ''}
             placeholder="Max"
@@ -359,10 +369,12 @@ function Field({ label, icon: Icon, children }) {
   );
 }
 
-export function MobileSearchPill({ values, onOpen, filterCount = 0 }) {
+export function MobileSearchPill({ values, onOpen, filterCount = 0, mode = 'rent' }) {
+  const isSale = mode === 'sale';
   const place = values.where || 'Anywhere';
   const guests = Number(values.guests) || 1;
   const dateStr = useMemo(() => {
+    if (isSale) return 'For sale';
     if (!values.checkin || !values.checkout) return 'Any dates';
     try {
       const da = new Date(`${values.checkin}T00:00:00`);
@@ -373,7 +385,7 @@ export function MobileSearchPill({ values, onOpen, filterCount = 0 }) {
     } catch {
       return 'Any dates';
     }
-  }, [values.checkin, values.checkout]);
+  }, [values.checkin, values.checkout, isSale]);
 
   return (
     <button
@@ -386,7 +398,7 @@ export function MobileSearchPill({ values, onOpen, filterCount = 0 }) {
       </span>
       <div className="min-w-0 flex-1">
         <div className="truncate text-[14px] font-bold text-soul-blue">
-          {place} · {guests} guest{guests === 1 ? '' : 's'}
+          {isSale ? place : `${place} · ${guests} guest${guests === 1 ? '' : 's'}`}
         </div>
         <div className="truncate text-[12px] text-soul-muted">{dateStr}</div>
       </div>

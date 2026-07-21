@@ -9,6 +9,7 @@ import { defaultAdminPage, ADMIN_LOGIN, ADMIN_CHANGE_PASSWORD } from './utils/ad
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Units = lazy(() => import('./pages/Units'));
+const UnitsForSale = lazy(() => import('./pages/UnitsForSale'));
 const Reservations = lazy(() => import('./pages/Reservations'));
 const Payments = lazy(() => import('./pages/Payments'));
 const Finance = lazy(() => import('./pages/Finance'));
@@ -21,8 +22,6 @@ const Profile = lazy(() => import('./pages/Profile'));
 const Schedule = lazy(() => import('./pages/Schedule'));
 const Pricing = lazy(() => import('./pages/Pricing'));
 const Utilities = lazy(() => import('./pages/Utilities'));
-const HR = lazy(() => import('./pages/HR'));
-const Recruitment = lazy(() => import('./pages/Recruitment'));
 const Tasks = lazy(() => import('./pages/Tasks'));
 const PettyCash = lazy(() => import('./pages/PettyCash'));
 const CashFlow = lazy(() => import('./pages/CashFlow'));
@@ -91,6 +90,7 @@ function AppRoutes() {
       />
       <Route path="dashboard" element={<ProtectedRoute page="dashboard"><Dashboard /></ProtectedRoute>} />
       <Route path="units" element={<ProtectedRoute page="units"><Units /></ProtectedRoute>} />
+      <Route path="units-for-sale" element={<ProtectedRoute page="units_sale"><UnitsForSale /></ProtectedRoute>} />
       <Route path="projects" element={<ProtectedRoute page="projects"><Projects /></ProtectedRoute>} />
       <Route path="reservations" element={<ProtectedRoute page="reservations"><Reservations /></ProtectedRoute>} />
       <Route path="schedule" element={<ProtectedRoute page="schedule"><Schedule /></ProtectedRoute>} />
@@ -104,8 +104,6 @@ function AppRoutes() {
       <Route path="owner-statement" element={<ProtectedRoute page="owner_statement"><OwnerStatement /></ProtectedRoute>} />
       <Route path="owner-settlements" element={<ProtectedRoute page="owner_settlements"><OwnerSettlementsAdmin /></ProtectedRoute>} />
       <Route path="reports" element={<ProtectedRoute page="reports"><Reports /></ProtectedRoute>} />
-      <Route path="hr" element={<ProtectedRoute page="hr"><HR /></ProtectedRoute>} />
-      <Route path="recruitment" element={<ProtectedRoute page="recruitment"><Recruitment /></ProtectedRoute>} />
       <Route path="tasks" element={<ProtectedRoute page="tasks"><Tasks /></ProtectedRoute>} />
       <Route path="petty-cash" element={<ProtectedRoute page="petty_cash"><PettyCash /></ProtectedRoute>} />
       <Route path="cashflow" element={<ProtectedRoute page="cashflow"><CashFlow /></ProtectedRoute>} />

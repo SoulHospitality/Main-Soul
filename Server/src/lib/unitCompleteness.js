@@ -1,8 +1,11 @@
 /**
  * Guest-listing completeness: incomplete units stay draft and never appear to guests.
- * Every guest-facing attribute on the unit form must be filled before publish.
- * Status is automatic: complete → published, incomplete → draft.
+ * Sale units skip rental-only fields (beach, nightly price, utilities) and require area (size_m2).
+ * GAIA / free-beach projects skip manual beach fields.
  */
+
+const { isGaiaUnit } = require('./minStay');
+const { isFreeBeachProject, beachAccessRequiresManualEntry } = require('./beachAccess');
 
 function hasText(v) {
   return String(v || '').trim().length > 0;
@@ -41,6 +44,10 @@ function beachDays(unit) {
   return unit.access_card_count_included ?? unit.beach_access_days;
 }
 
+function isSaleUnit(unit) {
+  return String(unit?.listing_type || 'rent').toLowerCase() === 'sale';
+}
+
 /**
  * @param {object} unit - unit row or merged create/update fields
  * @param {{ hasPrice?: boolean }} opts
@@ -48,6 +55,8 @@ function beachDays(unit) {
  */
 function assessUnitCompleteness(unit, { hasPrice = false } = {}) {
   const missing = [];
+  const sale = isSaleUnit(unit);
+
   if (!hasText(unit.title || unit.name)) missing.push('title');
   if (!hasText(unit.compound || unit.project)) missing.push('project');
   if (!hasText(unit.area || unit.destination)) missing.push('destination');
@@ -58,13 +67,23 @@ function assessUnitCompleteness(unit, { hasPrice = false } = {}) {
   if (unit.baths == null || unit.baths === '' || Number.isNaN(Number(unit.baths))) missing.push('bathrooms');
   if (unit.floor == null || unit.floor === '' || Number.isNaN(Number(unit.floor))) missing.push('floor');
   if (!(Number(unit.guests) >= 1)) missing.push('guests');
-  if (!hasPrice && !(Number(unit.price_fallback || unit.price_per_night) > 0)) {
-    missing.push('price (fallback or daily rates)');
+
+  if (sale) {
+    if (!(Number(unit.size_m2 || unit.area_sqft || unit.unit_area) > 0)) {
+      missing.push('area (m²)');
+    }
+  } else {
+    if (!hasPrice && !(Number(unit.price_fallback || unit.price_per_night) > 0)) {
+      missing.push('price (fallback or daily rates)');
+    }
+    if (!hasNumberSet(unit.utilities_cost)) missing.push('utilities cost');
+    if (beachAccessRequiresManualEntry(unit)) {
+      if (!hasNumberSet(beachAdult(unit))) missing.push('beach access price');
+      if (!hasNumberSet(beachExtra(unit))) missing.push('beach access extra guest');
+      if (!(Number(beachDays(unit)) >= 1)) missing.push('beach access period');
+    }
   }
-  if (!hasNumberSet(unit.utilities_cost)) missing.push('utilities cost');
-  if (!hasNumberSet(beachAdult(unit))) missing.push('beach access price');
-  if (!hasNumberSet(beachExtra(unit))) missing.push('beach access extra guest');
-  if (!(Number(beachDays(unit)) >= 1)) missing.push('beach access period');
+
   if (!hasText(descriptionText(unit))) missing.push('description');
   if (!hasAmenities(unit)) missing.push('amenities');
   if (!hasText(unit.source_url || unit.location_link)) missing.push('location link');
@@ -104,4 +123,8 @@ module.exports = {
   assessUnitCompleteness,
   resolveListingStatus,
   hasPhotos,
+  isSaleUnit,
+  isGaiaUnit,
+  isFreeBeachProject,
+  beachAccessRequiresManualEntry,
 };

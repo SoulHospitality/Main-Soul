@@ -34,10 +34,13 @@ async function syncUnitListingStatus(unitId, { requestedStatus = null } = {}) {
     return unit;
   }
 
-  const hasPrice = await unitHasPrice(unitId, {
-    priceFallback: unit.price_fallback,
-    wpPostId: unit.wp_post_id,
-  });
+  const hasPrice =
+    String(unit.listing_type || 'rent').toLowerCase() === 'sale'
+      ? true
+      : await unitHasPrice(unitId, {
+          priceFallback: unit.price_fallback,
+          wpPostId: unit.wp_post_id,
+        });
   const resolved = resolveListingStatus({
     unit,
     hasPrice,

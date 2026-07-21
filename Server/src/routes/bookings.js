@@ -139,7 +139,6 @@ router.post('/checkout', optionalGuest, upload.array('id_photos', 4), attachClou
     } catch (_) {
       /* optional */
     }
-    await notifySales(booking);
 
     res.status(201).json({ mode: 'hold', booking, message: 'Request received — awaiting confirmation' });
   } catch (err) {

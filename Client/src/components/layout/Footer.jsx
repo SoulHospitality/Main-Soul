@@ -58,7 +58,8 @@ export default function Footer() {
               Soul Hospitality
             </p>
             <div className="flex flex-col gap-3">
-              <FooterLink label="Properties" href="/search" />
+              <FooterLink label="Properties For Rent" href="/search" />
+              <FooterLink label="Properties For Sale" href="/for-sale" />
               <FooterLink label="About Soul" href="/about" />
               <FooterLink label="FAQ" href="/faq" />
               <FooterLink label="Become a Host" href="/owners" />

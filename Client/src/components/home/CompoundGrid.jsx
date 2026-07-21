@@ -32,13 +32,17 @@ export default function CompoundGrid({ counts = {} }) {
   const touchStartX = useRef(null);
 
   const cards = useMemo(() => {
-    return projectCards.map((p) => ({
+    const mapped = projectCards.map((p) => ({
       id: p.id,
       name: p.name,
       destination: p.destination,
       image: p.image || '/soul-brand/coast-2.jpg',
       propertyCount: counts[p.name] || 0,
     }));
+    const foukaIdx = mapped.findIndex((c) => /fouka/i.test(c.name));
+    if (foukaIdx <= 0) return mapped;
+    const [fouka] = mapped.splice(foukaIdx, 1);
+    return [fouka, ...mapped];
   }, [projectCards, counts]);
 
   const count = cards.length;

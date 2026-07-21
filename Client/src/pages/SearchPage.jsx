@@ -19,7 +19,7 @@ const SORT_LABELS = {
   newest: 'Newest',
 };
 
-function buildApiParams(sp, { limit, offset }) {
+function buildApiParams(sp, { limit, offset, listingType }) {
   const destination = sp.get('destination') || sp.get('area') || '';
   const compound = sp.get('compound') || sp.get('project') || '';
   const types = sp.get('types') || '';
@@ -29,14 +29,17 @@ function buildApiParams(sp, { limit, offset }) {
     destination: destination || undefined,
     compound: compound || undefined,
     beds: sp.get('beds') || undefined,
-    guests: sp.get('guests') || undefined,
+    guests: listingType === 'sale' ? undefined : sp.get('guests') || undefined,
     types: types || undefined,
+    listing_type: listingType,
     limit,
     offset,
   };
 }
 
-export default function SearchPage() {
+export default function SearchPage({ listingType = 'rent' }) {
+  const isSale = listingType === 'sale';
+  const basePath = isSale ? '/for-sale' : '/search';
   const [params, setParams] = useSearchParams();
   const { destinations, projectsByDestination } = useProjectCatalog();
   const [items, setItems] = useState([]);
@@ -47,6 +50,8 @@ export default function SearchPage() {
   const [sortOpen, setSortOpen] = useState(false);
 
   const sort = SORT_LABELS[params.get('sort')] ? params.get('sort') : 'recommended';
+  const nounPlural = isSale ? 'properties' : 'homes';
+  const nounSingular = isSale ? 'property' : 'home';
 
   const filterValues = useMemo(
     () => ({
@@ -100,7 +105,9 @@ export default function SearchPage() {
     let cancelled = false;
     setLoading(true);
     api
-      .get('/units', { params: buildApiParams(params, { limit: PAGE_SIZE, offset: 0 }) })
+      .get('/units', {
+        params: buildApiParams(params, { limit: PAGE_SIZE, offset: 0, listingType }),
+      })
       .then((r) => {
         if (cancelled) return;
         setItems(r.data.items || []);
@@ -118,7 +125,7 @@ export default function SearchPage() {
     return () => {
       cancelled = true;
     };
-  }, [params]);
+  }, [params, listingType]);
 
   const displayed = useMemo(() => {
     let list = [...items];
@@ -161,8 +168,8 @@ export default function SearchPage() {
 
   const filterCount = [
     params.get('compound') || params.get('destination') || params.get('area') || params.get('where'),
-    params.get('checkin'),
-    params.get('guests') && Number(params.get('guests')) > 1 ? params.get('guests') : null,
+    !isSale && params.get('checkin'),
+    !isSale && params.get('guests') && Number(params.get('guests')) > 1 ? params.get('guests') : null,
     params.get('beds'),
     params.get('types'),
     params.get('priceMin') || params.get('priceMax'),
@@ -235,7 +242,11 @@ export default function SearchPage() {
     setLoadingMore(true);
     try {
       const r = await api.get('/units', {
-        params: buildApiParams(params, { limit: PAGE_SIZE, offset: items.length }),
+        params: buildApiParams(params, {
+          limit: PAGE_SIZE,
+          offset: items.length,
+          listingType,
+        }),
       });
       setItems((prev) => [...prev, ...(r.data.items || [])]);
       setTotal(r.data.total ?? total);
@@ -256,6 +267,7 @@ export default function SearchPage() {
         <MobileSearchPill
           values={filterValues}
           filterCount={filterCount}
+          mode={listingType}
           onOpen={() => setSheetOpen(true)}
         />
       </div>
@@ -265,16 +277,25 @@ export default function SearchPage() {
           values={filterValues}
           onApply={applyFilters}
           onClear={clearFilters}
+          mode={listingType}
         />
 
         <main className="min-w-0 pb-24 lg:pb-8">
           <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h1 className="font-display text-2xl font-semibold text-soul-blue sm:text-3xl">
-                {filterValues.where ? `Stays in ${filterValues.where}` : 'All stays'}
+                {filterValues.where
+                  ? isSale
+                    ? `For sale in ${filterValues.where}`
+                    : `Stays in ${filterValues.where}`
+                  : isSale
+                    ? 'Properties for sale'
+                    : 'All stays'}
               </h1>
               <p className="mt-1 text-sm text-soul-muted">
-                {loading ? 'Loading…' : `${total} home${total === 1 ? '' : 's'} available`}
+                {loading
+                  ? 'Loading…'
+                  : `${total} ${total === 1 ? nounSingular : nounPlural} available`}
               </p>
             </div>
 
@@ -335,13 +356,17 @@ export default function SearchPage() {
             </div>
           ) : displayed.length === 0 ? (
             <div className="mx-auto max-w-md py-16 text-center">
-              <h3 className="font-display text-2xl font-semibold text-soul-blue">No homes match</h3>
+              <h3 className="font-display text-2xl font-semibold text-soul-blue">
+                {isSale ? 'No properties match' : 'No homes match'}
+              </h3>
               <p className="mb-5 mt-2 leading-relaxed text-soul-muted">
-                Try clearing filters or widening your dates.
-                {total > 0 ? ` ${total} homes are live overall.` : ''}
+                {isSale
+                  ? 'Try clearing filters or choosing another destination.'
+                  : 'Try clearing filters or widening your dates.'}
+                {total > 0 ? ` ${total} ${nounPlural} are live overall.` : ''}
               </p>
               <Link
-                to="/search"
+                to={basePath}
                 className="inline-block rounded-full bg-soul-blue px-5 py-2.5 font-semibold text-white"
               >
                 Reset filters
@@ -368,8 +393,8 @@ export default function SearchPage() {
                 )}
                 <span className="text-sm text-soul-muted">
                   {hasMore
-                    ? `Showing ${displayed.length} of ${total} homes`
-                    : `Showing all ${displayed.length} homes`}
+                    ? `Showing ${displayed.length} of ${total} ${nounPlural}`
+                    : `Showing all ${displayed.length} ${nounPlural}`}
                 </span>
               </div>
             </>
@@ -392,6 +417,7 @@ export default function SearchPage() {
           onApply={applyFilters}
           onClear={clearFilters}
           onClose={() => setSheetOpen(false)}
+          mode={listingType}
         />
       )}
 

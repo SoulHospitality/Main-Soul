@@ -5,7 +5,7 @@ export function defaultAdminPage(role) {
     case 'reservations':
       return `${A}/reservations`;
     case 'resale':
-      return `${A}/units`;
+      return `${A}/units-for-sale`;
     case 'hr':
       return `${A}/users`;
     case 'owner':

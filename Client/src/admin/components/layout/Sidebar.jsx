@@ -6,13 +6,14 @@ import { getRoleTheme } from '../../utils/roleTheme';
 import {
   LayoutDashboard, Building2, CalendarDays, CreditCard,
   BadgeDollarSign, Receipt, FileBarChart2, Users, UserCircle,
-  LogOut, Building, FileText, CalendarRange, Zap, CheckSquare, Users2, Wallet,
+  LogOut, Building, FileText, CalendarRange, Zap, CheckSquare, Wallet,
   TrendingUp, Landmark, Sparkles, Shield, DollarSign, Briefcase,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
   { path: '/admin/dashboard',        label: 'Dashboard',          icon: LayoutDashboard,   page: 'dashboard' },
-  { path: '/admin/units',            label: 'Units',              icon: Building2,          page: 'units' },
+  { path: '/admin/units',            label: 'Units (Rent)',       icon: Building2,          page: 'units' },
+  { path: '/admin/units-for-sale',   label: 'Units for Sale',     icon: Building2,          page: 'units_sale' },
   { path: '/admin/projects',         label: 'Destinations',       icon: Building,           page: 'projects' },
   { path: '/admin/reservations',     label: 'Reservations',       icon: CalendarDays,       page: 'reservations' },
   { path: '/admin/schedule',         label: 'Schedule',           icon: CalendarRange,      page: 'schedule' },
@@ -31,8 +32,6 @@ const NAV_ITEMS = [
   { path: '/admin/owner-settlements', label: 'Owner Settlements', icon: FileBarChart2, page: 'owner_settlements' },
   { path: '/admin/owner-statement',  label: 'Owner Statement',    icon: FileBarChart2,      page: 'owner_statement' },
   { path: '/admin/reports',          label: 'Reports',            icon: FileText,           page: 'reports' },
-  { path: '/admin/hr',               label: 'HR & Payroll',       icon: Users2,             page: 'hr' },
-  { path: '/admin/recruitment',      label: 'Recruitment',        icon: Briefcase,          page: 'recruitment' },
   { path: '/admin/users',            label: 'User Management',    icon: Users,              page: 'users' },
   { path: '/admin/tasks',            label: 'Tasks',              icon: CheckSquare,        page: 'tasks' },
   { path: '/admin/audit',            label: 'Audit Log',          icon: Shield,             page: 'audit' },

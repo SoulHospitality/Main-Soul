@@ -40,7 +40,7 @@ function calcNights(checkIn, checkOut) {
   return d > 0 ? d : 0;
 }
 
-function ReservationForm({ form, setForm, units, users, isNew, transferProof, onTransferProofChange, editId, allowPastDates }) {
+function ReservationForm({ form, setForm, units, users, isNew, transferProof, onTransferProofChange, editId, allowPastDates, lockSalesPerson = false, currentUserName = '' }) {
   // Auto-fill price_per_night from selected unit
   const selectedUnit = units.find(u => String(u.id) === String(form.unit_id));
 
@@ -362,11 +362,15 @@ function ReservationForm({ form, setForm, units, users, isNew, transferProof, on
         </div>
         <div>
           <label className="label">Sales Person {!form.is_owner_reservation && <span className="text-red-500">*</span>}</label>
-          <SearchableSelect
-            value={form.sales_person_id} onChange={v => setForm(f => ({ ...f, sales_person_id: v }))}
-            placeholder="Select sales person…"
-            options={[{ value: '', label: 'None' }, ...users.map(u => ({ value: String(u.id), label: u.full_name }))]}
-          />
+          {lockSalesPerson ? (
+            <div className="input bg-gray-50 text-gray-700">{currentUserName || 'Assigned to you'}</div>
+          ) : (
+            <SearchableSelect
+              value={form.sales_person_id} onChange={v => setForm(f => ({ ...f, sales_person_id: v }))}
+              placeholder="Select sales person…"
+              options={[{ value: '', label: 'None' }, ...users.map(u => ({ value: String(u.id), label: u.full_name }))]}
+            />
+          )}
         </div>
       </div>
 
@@ -618,212 +622,6 @@ function calcNetPricePerNight(r) {
   return nights > 0 ? Math.round((subtotal / nights) * 100) / 100 : 0;
 }
 
-function PermitsTab() {
-  const qc = useQueryClient();
-  const [search,           setSearch]           = useState('');
-  const [filterProject,    setFilterProject]    = useState('');
-  const [filterUnit,       setFilterUnit]       = useState('');
-  const [filterCheckInFrom,setFilterCheckInFrom]= useState('');
-  const [filterCheckInTo,  setFilterCheckInTo]  = useState('');
-  const [sortKey,          setSortKey]          = useState('created_at');
-  const [sortDir,          setSortDir]          = useState('desc');
-  const [editingNote,      setEditingNote]      = useState({});
-
-  const { data: allReservations = [], isLoading } = useQuery({
-    queryKey: ['reservations-permits'],
-    queryFn: () => api.get('/reservations').then(r => r.data.filter(x => x.status !== 'cancelled')),
-    refetchInterval: 30000,
-  });
-
-  const { data: units = [] } = useQuery({
-    queryKey: ['units'],
-    queryFn: () => api.get('/units').then(r => r.data),
-  });
-
-  const projects = [...new Set(units.map(u => u.project).filter(Boolean))].sort();
-
-  const filtered = allReservations.filter(r => {
-    if (search && !r.guest_name?.toLowerCase().includes(search.toLowerCase()) &&
-        !r.guest_phone?.includes(search)) return false;
-    if (filterProject && r.project !== filterProject) return false;
-    if (filterUnit && String(r.unit_id) !== filterUnit) return false;
-    if (filterCheckInFrom && r.check_in < filterCheckInFrom) return false;
-    if (filterCheckInTo   && r.check_in > filterCheckInTo)   return false;
-    return true;
-  });
-
-  const sorted = [...filtered].sort((a, b) => {
-    let va = a[sortKey] ?? '', vb = b[sortKey] ?? '';
-    if (sortKey === 'nights') { va = parseInt(va) || 0; vb = parseInt(vb) || 0; }
-    if (va < vb) return sortDir === 'asc' ? -1 : 1;
-    if (va > vb) return sortDir === 'asc' ? 1 : -1;
-    return 0;
-  });
-
-  const handleSort = (key) => {
-    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    else { setSortKey(key); setSortDir('asc'); }
-  };
-
-  const SortArrow = ({ col }) => {
-    if (sortKey !== col) return <span style={{ color: '#d1d5db', marginLeft: 3, fontSize: 10 }}>⇅</span>;
-    return <span style={{ color: '#6366f1', marginLeft: 3, fontSize: 10 }}>{sortDir === 'asc' ? '↑' : '↓'}</span>;
-  };
-
-  const toggleMutation = useMutation({
-    mutationFn: ({ id, field, value }) => api.patch(`/reservations/${id}/permit`, { [field]: value }),
-    onSuccess: () => qc.invalidateQueries(['reservations-permits']),
-  });
-
-  const noteMutation = useMutation({
-    mutationFn: ({ id, note }) => api.patch(`/reservations/${id}/permit`, { permit_feedback_note: note }),
-    onSuccess: () => qc.invalidateQueries(['reservations-permits']),
-  });
-
-  const toggle = (id, field, current) => toggleMutation.mutate({ id, field, value: !current });
-
-  const CHECKS = [
-    { field: 'permit_owner_notified', label: 'تم ابلاغ الاونر بالحجز',  color: '#b45309' },
-    { field: 'permit_contacted',     label: 'كلمناه وخدنا البطايق',     color: '#2563eb' },
-    { field: 'permit_sent',          label: 'عملنا التصريح واتبعت',      color: '#7c3aed' },
-    { field: 'permit_feedback',      label: 'خدنا الـ Feedback',         color: '#059669' },
-  ];
-
-  if (isLoading) return <LoadingSpinner />;
-
-  return (
-    <div className="space-y-4">
-      {/* ── Filters ── */}
-      <SearchFilter value={search} onChange={setSearch} placeholder="Search name, phone...">
-        <SearchableSelect value={filterProject}
-          onChange={v => { setFilterProject(v); setFilterUnit(''); }}
-          placeholder="All Projects"
-          options={[{ value: '', label: 'All Projects' }, ...projects.map(p => ({ value: p, label: p }))]}
-        />
-        <SearchableSelect value={filterUnit} onChange={setFilterUnit}
-          placeholder="All Units"
-          options={[{ value: '', label: 'All Units' }, ...units.filter(u => !filterProject || u.project === filterProject).map(u => ({ value: String(u.id), label: `${u.unit_number} — ${u.project}` }))]}
-        />
-        <DateRangeFilter
-          label="Check-in"
-          from={filterCheckInFrom} to={filterCheckInTo}
-          onFromChange={setFilterCheckInFrom} onToChange={setFilterCheckInTo}
-          onClear={() => { setFilterCheckInFrom(''); setFilterCheckInTo(''); }}
-        />
-      </SearchFilter>
-
-      {/* ── Table ── */}
-      {sorted.length === 0 ? (
-        <EmptyState icon={CalendarDays} title="No reservations" subtitle="Confirmed reservations will appear here" />
-      ) : (
-        <div className="card p-0">
-          <div className="table-wrapper">
-            <table className="table text-xs">
-              <thead>
-                <tr>
-                  {[
-                    { key: 'check_in',    label: 'Check-in'   },
-                    { key: 'check_out',   label: 'Check-out'  },
-                    { key: 'guest_name',  label: 'Guest Name' },
-                    { key: 'guest_phone', label: 'Phone'      },
-                    { key: 'unit_number', label: 'Unit No.'   },
-                    { key: 'nights',      label: 'Nights'     },
-                    { key: 'net_ppn',     label: 'سعر الليلة Net' },
-                  ].map(col => (
-                    <th key={col.key}
-                      className="whitespace-nowrap cursor-pointer select-none hover:bg-gray-100"
-                      onClick={() => handleSort(col.key)}>
-                      {col.label}<SortArrow col={col.key} />
-                    </th>
-                  ))}
-                  {CHECKS.map(c => (
-                    <th key={c.field} className="text-center whitespace-nowrap" style={{ minWidth: 140 }}>
-                      {c.label}
-                    </th>
-                  ))}
-                  <th className="whitespace-nowrap" style={{ minWidth: 200 }}>Feedback Note</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sorted.map(r => {
-                  const allDone = CHECKS.every(c => r[c.field]);
-                  const noteVal = editingNote[r.id] !== undefined
-                    ? editingNote[r.id]
-                    : (r.permit_feedback_note || '');
-                  return (
-                    <tr key={r.id} style={allDone ? { background: '#f0fdf4' } : {}}>
-                      <td className="whitespace-nowrap font-medium">{formatDate(r.check_in)}</td>
-                      <td className="whitespace-nowrap">{formatDate(r.check_out)}</td>
-                      <td className="whitespace-nowrap">{r.guest_name}</td>
-                      <td className="whitespace-nowrap text-gray-500">{r.guest_phone}</td>
-                      <td className="whitespace-nowrap">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-100 text-gray-700 font-mono text-xs">
-                          {r.unit_number}
-                        </span>
-                      </td>
-                      <td className="text-center">{r.nights}</td>
-                      <td className="text-center whitespace-nowrap font-medium text-indigo-700">
-                        {calcNetPricePerNight(r).toLocaleString('en-EG', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                      </td>
-                      {CHECKS.map(c => (
-                        <td key={c.field} className="text-center">
-                          <button
-                            onClick={() => toggle(r.id, c.field, r[c.field])}
-                            disabled={toggleMutation.isPending}
-                            style={{
-                              width: 24, height: 24, borderRadius: 6, border: '2px solid',
-                              borderColor: r[c.field] ? c.color : '#d1d5db',
-                              background:  r[c.field] ? c.color : '#fff',
-                              cursor: 'pointer', display: 'inline-flex',
-                              alignItems: 'center', justifyContent: 'center',
-                              transition: 'all 0.15s',
-                            }}
-                          >
-                            {r[c.field] && (
-                              <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-                                <path d="M2 7L5 10L11 3" stroke="white" strokeWidth="2"
-                                  strokeLinecap="round" strokeLinejoin="round"/>
-                              </svg>
-                            )}
-                          </button>
-                        </td>
-                      ))}
-                      <td>
-                        <input
-                          type="text"
-                          className="input text-xs py-1"
-                          placeholder="Add note…"
-                          value={noteVal}
-                          onChange={e => setEditingNote(n => ({ ...n, [r.id]: e.target.value }))}
-                          onBlur={() => {
-                            if (noteVal !== (r.permit_feedback_note || ''))
-                              noteMutation.mutate({ id: r.id, note: noteVal });
-                            setEditingNote(n => { const c = { ...n }; delete c[r.id]; return c; });
-                          }}
-                          onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
-                          style={{ minWidth: 160 }}
-                        />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div className="px-4 py-2 border-t border-gray-100 flex items-center gap-4 text-xs text-gray-400">
-            <span>{sorted.length} reservation{sorted.length !== 1 ? 's' : ''}</span>
-            <span>·</span>
-            <span className="text-green-600 font-medium">
-              {sorted.filter(r => CHECKS.every(c => r[c.field])).length} completed
-            </span>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Compact date-range filter pill ─────────────────────────────────────────
 function DateRangeFilter({ label, from, to, onFromChange, onToChange, onClear }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -908,8 +706,8 @@ function DateRangeFilter({ label, from, to, onFromChange, onToChange, onClear })
 
 export default function Reservations() {
   const qc = useQueryClient();
-  const { isAdmin, canManageReservations, canAccessFinance } = usePermissions();
-  const allowPastDates = isAdmin;
+  const { isAdmin, isReservations, canManageReservations, canAccessFinance, user } = usePermissions();
+  const allowPastDates = isReservations;
   const [searchParams] = useSearchParams();
   const [search, setSearch] = useState(searchParams.get('search') || '');
   const [filterStatus,      setFilterStatus]      = useState('');
@@ -923,7 +721,6 @@ export default function Reservations() {
   const [filterCheckInTo,    setFilterCheckInTo]    = useState('');
   const [filterCheckOutFrom, setFilterCheckOutFrom] = useState('');
   const [filterCheckOutTo,   setFilterCheckOutTo]   = useState('');
-  const [activeTab, setActiveTab] = useState('reservations'); // 'reservations' | 'permits'
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [editId, setEditId] = useState(null);
@@ -1084,7 +881,15 @@ export default function Reservations() {
     });
   };
 
-  const openAdd = () => { setForm(EMPTY_FORM); setEditId(null); setTransferProof(null); setModal('form'); };
+  const openAdd = () => {
+    setForm({
+      ...EMPTY_FORM,
+      sales_person_id: isReservations && user?.id ? String(user.id) : '',
+    });
+    setEditId(null);
+    setTransferProof(null);
+    setModal('form');
+  };
   const openEdit = (r) => {
     setForm({
       unit_id: r.unit_id, guest_name: r.guest_name, guest_email: r.guest_email || '',
@@ -1191,26 +996,25 @@ export default function Reservations() {
 
   return (
     <div className="space-y-6">
-      <WebsiteBookingRequests />
+      {isReservations && <WebsiteBookingRequests />}
       <div className="flex items-center justify-between">
         <div className="page-header mb-0">
           <h1 className="page-title">Reservations</h1>
           <p className="page-subtitle">{filteredByUnit.length} reservation{filteredByUnit.length !== 1 ? 's' : ''}{ownerStays.length > 0 && canSeeOwnerStays ? ` · ${ownerStays.length} owner stay${ownerStays.length !== 1 ? 's' : ''}` : ''}</p>
         </div>
         <div className="flex gap-2">
-          {(isAdmin) && activeTab === 'reservations' && <button onClick={exportExcel} className="btn-secondary"><Download className="w-4 h-4" />Export Excel</button>}
-          {canWrite && activeTab === 'reservations' && (
+          {(isAdmin) && <button onClick={exportExcel} className="btn-secondary"><Download className="w-4 h-4" />Export Excel</button>}
+          {canWrite && (
             <button onClick={() => setBlockModal(true)}
               className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border-2 border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100 text-sm font-medium transition-colors">
               <Lock className="w-4 h-4" />Block Nights
             </button>
           )}
-          {canWrite && activeTab === 'reservations' && <button onClick={openAdd} className="btn-primary"><Plus className="w-4 h-4" />New Reservation</button>}
+          {canWrite && <button onClick={openAdd} className="btn-primary"><Plus className="w-4 h-4" />New Reservation</button>}
         </div>
       </div>
 
-      {activeTab === 'reservations' && (
-        <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-3">
           <button
             type="button"
             onClick={() => { setFilterStatus(''); setFilterPayment(''); }}
@@ -1240,34 +1044,6 @@ export default function Reservations() {
             </p>
           </button>
         </div>
-      )}
-
-      {/* ── Tab switcher ── */}
-      <div className="flex gap-1 border-b border-gray-200">
-        {[
-          { key: 'reservations', label: 'Reservations', always: true },
-          { key: 'permits',      label: 'التصاريح',    always: false },
-        ].filter(t => t.always || isAdmin).map(t => (
-          <button
-            key={t.key}
-            onClick={() => setActiveTab(t.key)}
-            className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
-              activeTab === t.key
-                ? 'border-primary-600 text-primary-700'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* ── Permits tab ── */}
-      {activeTab === 'permits' && isAdmin && <PermitsTab />}
-
-      {/* ── Reservations tab ── */}
-      {activeTab === 'reservations' && (
-      <>
 
       <SearchFilter value={search} onChange={setSearch} placeholder="Search tenant, email, phone...">
         <SearchableSelect className="w-40" value={filterStatus} onChange={setFilterStatus}
@@ -1454,10 +1230,10 @@ export default function Reservations() {
                         <td>
                           <div className="flex gap-1 flex-wrap">
                             <button onClick={() => setViewRes(r.id)} className="p-1.5 rounded text-gray-400 hover:text-primary-600 hover:bg-primary-50" title="View"><Eye className="w-3.5 h-3.5" /></button>
-                            {(isAdmin) && r.status !== 'cancelled' && (
+                            {canWrite && r.status !== 'cancelled' && (
                               <button onClick={() => openEdit(r)} className="p-1.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50" title="Edit"><Edit2 className="w-3.5 h-3.5" /></button>
                             )}
-                            {(isAdmin) && r.status !== 'cancelled' && (
+                            {canWrite && r.status !== 'cancelled' && (
                               <button onClick={() => openCancelReq(r.id)} className="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50" title="Cancel"><Ban className="w-3.5 h-3.5" /></button>
                             )}
                           </div>
@@ -1533,7 +1309,9 @@ export default function Reservations() {
       >
         <ReservationForm form={form} setForm={setForm} units={units} users={users}
           isNew={!editId} editId={editId} transferProof={transferProof} onTransferProofChange={setTransferProof}
-          allowPastDates={allowPastDates} />
+          allowPastDates={allowPastDates}
+          lockSalesPerson={isReservations}
+          currentUserName={user?.full_name || user?.username || ''} />
       </Modal>
 
       {/* View Modal */}
@@ -1754,8 +1532,6 @@ export default function Reservations() {
           </label>
         </div>
       </Modal>
-      </>
-      )}
     </div>
   );
 }

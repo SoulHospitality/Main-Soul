@@ -4,6 +4,8 @@ import toast from 'react-hot-toast';
 import { MapPin, Plus, Trash2 } from 'lucide-react';
 
 import { PROJECT_CATALOG_KEY } from '../../hooks/useProjectCatalog';
+import TagSelect from '../components/ui/TagSelect';
+import { FACILITY_SUGGESTIONS } from '../utils/facilitySuggestions';
 
 async function catalogFetch(path, options = {}) {
   const token = localStorage.getItem('pms_token');
@@ -34,6 +36,9 @@ export default function Projects() {
   const [selectedDestination, setSelectedDestination] = useState('');
   const [destinationInput, setDestinationInput] = useState('');
   const [projectNameInput, setProjectNameInput] = useState('');
+  const [createFacilities, setCreateFacilities] = useState([]);
+  const [editingId, setEditingId] = useState(null);
+  const [editFacilities, setEditFacilities] = useState([]);
 
   useEffect(() => {
     if (!selectedDestination && destinations[0]) {
@@ -51,15 +56,32 @@ export default function Projects() {
   }, [projectsByDestination, selectedDestination]);
 
   const createMutation = useMutation({
-    mutationFn: ({ destination, name }) =>
+    mutationFn: ({ destination, name, facilities }) =>
       catalogFetch('/projects', {
         method: 'POST',
-        body: JSON.stringify({ destination, name }),
+        body: JSON.stringify({ destination, name, facilities }),
       }),
     onSuccess: () => {
       toast.success('Project mapping added');
       setProjectNameInput('');
       setDestinationInput('');
+      setCreateFacilities([]);
+      refetch();
+      qc.invalidateQueries({ queryKey: PROJECT_CATALOG_KEY });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, facilities }) =>
+      catalogFetch(`/projects/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ facilities }),
+      }),
+    onSuccess: () => {
+      toast.success('Project facilities saved');
+      setEditingId(null);
+      setEditFacilities([]);
       refetch();
       qc.invalidateQueries({ queryKey: PROJECT_CATALOG_KEY });
     },
@@ -103,7 +125,7 @@ export default function Projects() {
       toast.error('Both destination and project name are required');
       return;
     }
-    createMutation.mutate({ destination, name });
+    createMutation.mutate({ destination, name, facilities: createFacilities });
     setSelectedDestination(destination);
   }
 
@@ -116,6 +138,11 @@ export default function Projects() {
     deleteDestinationMutation.mutate(destination);
   }
 
+  function startEditFacilities(row) {
+    setEditingId(row.id);
+    setEditFacilities(Array.isArray(row.facilities) ? row.facilities : []);
+  }
+
   const selectedItems = items.filter((i) => i.destination === selectedDestination);
 
   return (
@@ -123,7 +150,7 @@ export default function Projects() {
       <div className="page-header">
         <h1 className="page-title">Destinations & Projects</h1>
         <p className="page-subtitle">
-          Manage destination → project mappings. Deleting a destination removes it from guest search, homepage, and unit forms.
+          Manage destination → project mappings and shared compound facilities. Facilities apply to all units in that project.
         </p>
       </div>
 
@@ -164,6 +191,13 @@ export default function Projects() {
               required
             />
           </div>
+          <TagSelect
+            label="Facilities (shared by all units in this project)"
+            placeholder="Select or type facilities…"
+            suggestions={FACILITY_SUGGESTIONS}
+            selectedTags={createFacilities}
+            onTagsChange={setCreateFacilities}
+          />
         </div>
         <button type="submit" className="btn-primary" disabled={createMutation.isPending}>
           {createMutation.isPending ? 'Saving…' : 'Add project'}
@@ -241,21 +275,50 @@ export default function Projects() {
               <p>No projects yet for this destination.</p>
             </div>
           ) : (
-            <div className="table-wrapper">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Project</th>
-                    <th>Destination</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {selectedItems.map((row) => (
-                    <tr key={row.id}>
-                      <td className="font-medium">{row.name}</td>
-                      <td>{row.destination}</td>
-                      <td className="text-right">
+            <div className="space-y-4 p-4">
+              {selectedItems.map((row) => {
+                const facilities = Array.isArray(row.facilities) ? row.facilities : [];
+                const isEditing = editingId === row.id;
+                return (
+                  <div key={row.id} className="rounded-xl border border-gray-100 p-4 space-y-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-gray-900">{row.name}</p>
+                        <p className="text-xs text-gray-400">{row.destination}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        {!isEditing ? (
+                          <button
+                            type="button"
+                            className="btn-secondary btn-sm"
+                            onClick={() => startEditFacilities(row)}
+                          >
+                            Edit facilities
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              className="btn-primary btn-sm"
+                              disabled={updateMutation.isPending}
+                              onClick={() =>
+                                updateMutation.mutate({ id: row.id, facilities: editFacilities })
+                              }
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-secondary btn-sm"
+                              onClick={() => {
+                                setEditingId(null);
+                                setEditFacilities([]);
+                              }}
+                            >
+                              Cancel
+                            </button>
+                          </>
+                        )}
                         <button
                           type="button"
                           className="btn-sm btn-danger"
@@ -267,11 +330,34 @@ export default function Projects() {
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </div>
+                    </div>
+
+                    {isEditing ? (
+                      <TagSelect
+                        label="Facilities"
+                        placeholder="Select or type facilities…"
+                        suggestions={FACILITY_SUGGESTIONS}
+                        selectedTags={editFacilities}
+                        onTagsChange={setEditFacilities}
+                      />
+                    ) : facilities.length ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {facilities.map((f) => (
+                          <span
+                            key={f}
+                            className="rounded-md border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs text-gray-700"
+                          >
+                            {f}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-400">No facilities set yet.</p>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

@@ -9,6 +9,11 @@ function normalizeText(value) {
   return String(value || '').trim();
 }
 
+function normalizeFacilities(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((v) => String(v || '').trim()).filter(Boolean))];
+}
+
 function buildCatalog(rows) {
   const destinations = [];
   const projectsByDestination = {};
@@ -36,6 +41,25 @@ function buildCatalog(rows) {
   return { destinations, projectsByDestination };
 }
 
+async function loadCatalogRows() {
+  const { rows } = await query(
+    `SELECT id, destination, name, image_url, sort_order, COALESCE(facilities, '{}'::text[]) AS facilities
+     FROM location_projects
+     ORDER BY sort_order ASC, destination ASC, name ASC`
+  );
+  return rows;
+}
+
+function catalogResponse(rows) {
+  return {
+    success: true,
+    data: {
+      ...buildCatalog(rows),
+      items: rows,
+    },
+  };
+}
+
 /** GET /api/projects — distinct destination names (SoulHospitality-compatible) */
 router.get('/', async (_req, res, next) => {
   try {
@@ -56,19 +80,8 @@ router.get('/', async (_req, res, next) => {
 /** GET /api/projects/catalog — destinations + projectsByDestination */
 router.get('/catalog', async (_req, res, next) => {
   try {
-    const { rows } = await query(
-      `SELECT id, destination, name, image_url, sort_order
-       FROM location_projects
-       ORDER BY sort_order ASC, destination ASC, name ASC`
-    );
-    const catalog = buildCatalog(rows);
-    res.json({
-      success: true,
-      data: {
-        ...catalog,
-        items: rows,
-      },
-    });
+    const rows = await loadCatalogRows();
+    res.json(catalogResponse(rows));
   } catch (err) {
     next(err);
   }
@@ -87,6 +100,7 @@ router.post('/', authStaff, requireRoles('admin', 'resale'), async (req, res, ne
 
     const normalizedDestination = destination.toLowerCase();
     const normalizedName = name.toLowerCase();
+    const facilities = normalizeFacilities(req.body?.facilities);
 
     const existing = await query(
       `SELECT id FROM location_projects
@@ -99,8 +113,8 @@ router.post('/', authStaff, requireRoles('admin', 'resale'), async (req, res, ne
 
     await query(
       `INSERT INTO location_projects
-         (destination, name, normalized_destination, normalized_name, image_url, sort_order)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
+         (destination, name, normalized_destination, normalized_name, image_url, sort_order, facilities)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [
         destination,
         name,
@@ -108,21 +122,48 @@ router.post('/', authStaff, requireRoles('admin', 'resale'), async (req, res, ne
         normalizedName,
         req.body?.image_url || null,
         Number(req.body?.sort_order) || 0,
+        facilities,
       ]
     );
 
-    const { rows } = await query(
-      `SELECT id, destination, name, image_url, sort_order
-       FROM location_projects
-       ORDER BY sort_order ASC, destination ASC, name ASC`
+    res.status(201).json(catalogResponse(await loadCatalogRows()));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** PUT /api/projects/:id — update project (facilities, image, name) */
+router.put('/:id', authStaff, requireRoles('admin', 'resale'), async (req, res, next) => {
+  try {
+    const id = req.params.id;
+    const facilities =
+      req.body?.facilities !== undefined ? normalizeFacilities(req.body.facilities) : null;
+    const imageUrl = req.body?.image_url !== undefined ? req.body.image_url || null : undefined;
+    const name = req.body?.name
+      ? normalizeProjectName(normalizeText(req.body.name))
+      : null;
+
+    const { rows: existing } = await query(`SELECT id FROM location_projects WHERE id = $1`, [id]);
+    if (!existing[0]) return res.status(404).json({ error: 'Project not found' });
+
+    await query(
+      `UPDATE location_projects SET
+         name = COALESCE($2, name),
+         normalized_name = COALESCE(lower($2), normalized_name),
+         image_url = CASE WHEN $3::boolean THEN $4 ELSE image_url END,
+         facilities = COALESCE($5, facilities),
+         updated_at = now()
+       WHERE id = $1`,
+      [
+        id,
+        name,
+        imageUrl !== undefined,
+        imageUrl ?? null,
+        facilities,
+      ]
     );
-    res.status(201).json({
-      success: true,
-      data: {
-        ...buildCatalog(rows),
-        items: rows,
-      },
-    });
+
+    res.json(catalogResponse(await loadCatalogRows()));
   } catch (err) {
     next(err);
   }
@@ -151,17 +192,12 @@ router.delete(
         return res.status(404).json({ error: 'Destination not found' });
       }
 
-      // Count units still labeled with this area (catalog gone; units may remain until reassigned)
       const unitsRes = await query(
         `SELECT count(*)::int AS c FROM units WHERE lower(trim(area)) = lower($1)`,
         [destination]
       );
 
-      const { rows } = await query(
-        `SELECT id, destination, name, image_url, sort_order
-         FROM location_projects
-         ORDER BY sort_order ASC, destination ASC, name ASC`
-      );
+      const rows = await loadCatalogRows();
       res.json({
         success: true,
         data: {
@@ -181,12 +217,7 @@ router.delete(
 router.delete('/:id', authStaff, requireRoles('admin', 'resale'), async (req, res, next) => {
   try {
     await query(`DELETE FROM location_projects WHERE id = $1`, [req.params.id]);
-    const { rows } = await query(
-      `SELECT id, destination, name, image_url, sort_order
-       FROM location_projects
-       ORDER BY sort_order ASC, destination ASC, name ASC`
-    );
-    res.json({ success: true, data: { ...buildCatalog(rows), items: rows } });
+    res.json(catalogResponse(await loadCatalogRows()));
   } catch (err) {
     next(err);
   }

@@ -156,7 +156,6 @@ export default function Finance() {
             icon={Users2}
             label="Salaries"
             value={data?.salaries}
-            href="/admin/hr"
             tone="rose"
             sub="Expense — active payroll total"
           />

@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import BookingDrawer from '../booking/BookingDrawer';
 import { BOOKING_POLICIES } from '../../constants/bookingPolicies';
-import { getMinimumStayNights } from '../../utils/bookingRules';
+import { getMinimumStayNights, isGaiaUnit } from '../../utils/bookingRules';
 import { localDateToIso } from './ListingDatePicker';
 import { useCurrency } from '../../context/CurrencyContext';
 import { housekeepingFeeForUnit } from '../../utils/housekeeping';
+import { isFreeBeachProject, resolveBeachAccessRates } from '../../utils/beachAccess';
 
 /**
  * SoulHospitality-style sticky reservation card.
@@ -30,16 +31,21 @@ export default function ListingBookingCard({
   }, [dailyPrices, unit]);
 
   const cleaning = housekeepingFeeForUnit(unit);
-  const beachBase = Number(unit?.access_fee_per_adult_egp || unit?.beach_access_price || 0);
-  const beachExtra = Number(unit?.access_fee_per_teen_egp || unit?.beach_access_extra_guest || beachBase || 0);
-  const beachDays = Number(unit?.access_card_count_included || unit?.beach_access_days || 7) || 7;
+  const minNights = getMinimumStayNights(unit);
+  const beach = resolveBeachAccessRates(unit, minNights);
 
   const beachSummary = (() => {
-    if (!(beachBase > 0)) return null;
-    if (beachExtra > 0 && beachExtra !== beachBase) {
-      return `${money(beachBase)} base, ${money(beachExtra)} extra guest / ${beachDays} ${beachDays === 1 ? 'day' : 'days'}`;
+    if (isFreeBeachProject(unit) || beach.mode === 'free') {
+      return 'Free';
     }
-    return `${money(beachBase)} per guest / ${beachDays} ${beachDays === 1 ? 'day' : 'days'}`;
+    if (isGaiaUnit(unit) || beach.mode === 'gaia') {
+      return 'By stay length — 3 nights: 1,900 (extra 2,500) · 4 nights: 2,500 (extra 3,100) · 5+: 3,500 / 7 nights (extra 4,100)';
+    }
+    if (!(beach.adult > 0)) return null;
+    if (beach.extra > 0 && beach.extra !== beach.adult) {
+      return `${money(beach.adult)} base, ${money(beach.extra)} extra guest / ${beach.days} ${beach.days === 1 ? 'day' : 'days'}`;
+    }
+    return `${money(beach.adult)} per guest / ${beach.days} ${beach.days === 1 ? 'day' : 'days'}`;
   })();
 
   const guests = useMemo(() => {
@@ -62,7 +68,7 @@ export default function ListingBookingCard({
     localDateToIso(
       (() => {
         const d = new Date();
-        d.setDate(d.getDate() + 1 + getMinimumStayNights(unit));
+        d.setDate(d.getDate() + 1 + minNights);
         return d;
       })()
     );

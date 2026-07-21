@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Bath, BedDouble, ChevronLeft, ChevronRight, Heart, Users } from 'lucide-react';
+import { Bath, BedDouble, ChevronLeft, ChevronRight, Heart, Maximize2, Users } from 'lucide-react';
 import { useCurrency } from '../context/CurrencyContext';
 import { getListingWpId, useWishlist } from '../hooks/useWishlist';
 import { optimizeImageUrl } from '../utils/imageUrl';
@@ -9,6 +9,7 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
   const { formatPrice } = useCurrency();
   const { has, toggle, remove } = useWishlist();
   const removeFromWishlist = onRemove || remove;
+  const isSale = String(listing.listing_type || 'rent').toLowerCase() === 'sale';
   const photos = (listing.photo_urls?.length
     ? listing.photo_urls
     : listing.cover_url
@@ -23,14 +24,17 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
   const wished = has(wpId);
   const amount = Number(listing.price_fallback || listing.from_price || 0);
   const priceCore = formatPrice(amount, { perNight: false });
+  const sizeM2 = Number(listing.size_m2 || listing.unit_area || 0);
 
   const location = [...new Set([listing.compound, listing.area, listing.city].filter(Boolean))].join(' · ')
     || 'North Coast, Egypt';
 
   const params = new URLSearchParams();
-  if (carryDates?.checkin) params.set('checkin', carryDates.checkin);
-  if (carryDates?.checkout) params.set('checkout', carryDates.checkout);
-  if (carryDates?.guests) params.set('guests', carryDates.guests);
+  if (!isSale) {
+    if (carryDates?.checkin) params.set('checkin', carryDates.checkin);
+    if (carryDates?.checkout) params.set('checkout', carryDates.checkout);
+    if (carryDates?.guests) params.set('guests', carryDates.guests);
+  }
   const qs = params.toString();
   const href = `/listings/${listing.slug}${qs ? `?${qs}` : ''}`;
 
@@ -67,6 +71,12 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
           />
         ) : (
           <div className="grid h-full w-full place-items-center text-sm text-soul-muted">No photo</div>
+        )}
+
+        {isSale && (
+          <span className="absolute left-3 top-3 rounded-full bg-soul-blue px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-white">
+            For sale
+          </span>
         )}
 
         {photos.length > 1 && (
@@ -122,25 +132,27 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
         </h3>
         <div className="truncate text-[13px] text-soul-muted">{location}</div>
 
-        <div className="mt-1.5 flex flex-wrap items-center gap-2">
-          {Number(listing.review_count || listing.reviewCount || 0) > 0 ? (
-            <>
-              <span className="rounded-md border border-amber-100 bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-700">
-                ★ {Number(listing.average_rating || listing.averageRating || listing.rating || 0).toFixed(1)}
-              </span>
-              <span className="text-[11px] font-medium text-soul-muted">
-                ({listing.review_count || listing.reviewCount} reviews)
-              </span>
-            </>
-          ) : (
-            <>
-              <span className="rounded-md border border-soul-line bg-soul-ivory/60 px-2 py-0.5 text-[11px] font-bold text-soul-muted">
-                ★ —
-              </span>
-              <span className="text-[11px] italic text-soul-muted">No reviews yet</span>
-            </>
-          )}
-        </div>
+        {!isSale && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            {Number(listing.review_count || listing.reviewCount || 0) > 0 ? (
+              <>
+                <span className="rounded-md border border-amber-100 bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-700">
+                  ★ {Number(listing.average_rating || listing.averageRating || listing.rating || 0).toFixed(1)}
+                </span>
+                <span className="text-[11px] font-medium text-soul-muted">
+                  ({listing.review_count || listing.reviewCount} reviews)
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="rounded-md border border-soul-line bg-soul-ivory/60 px-2 py-0.5 text-[11px] font-bold text-soul-muted">
+                  ★ —
+                </span>
+                <span className="text-[11px] italic text-soul-muted">No reviews yet</span>
+              </>
+            )}
+          </div>
+        )}
 
         <div className="mt-1.5 flex flex-wrap items-baseline gap-1.5">
           {priceCore ? (
@@ -148,10 +160,10 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
               <span className="font-num text-[19px] font-semibold leading-tight text-soul-blue">
                 {priceCore}
               </span>
-              <span className="text-[12.5px] text-soul-muted">/ night</span>
+              {!isSale && <span className="text-[12.5px] text-soul-muted">/ night</span>}
             </>
           ) : (
-            <span className="text-[13px] text-soul-muted">View pricing</span>
+            <span className="text-[13px] text-soul-muted">{isSale ? 'Inquire for price' : 'View pricing'}</span>
           )}
         </div>
 
@@ -162,9 +174,9 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
           {(listing.baths ?? 0) > 0 && (
             <Spec icon={Bath} value={listing.baths} />
           )}
-          {(listing.guests ?? 0) > 0 && (
-            <Spec icon={Users} value={listing.guests} />
-          )}
+          {isSale
+            ? sizeM2 > 0 && <Spec icon={Maximize2} value={`${sizeM2} m²`} />
+            : (listing.guests ?? 0) > 0 && <Spec icon={Users} value={listing.guests} />}
         </div>
       </div>
     </Link>

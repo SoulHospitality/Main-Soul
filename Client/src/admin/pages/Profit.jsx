@@ -188,7 +188,7 @@ export default function Profit() {
           <p className="text-xs text-slate-400 mb-2">These reduce profit</p>
           <Row label="Housekeeping" value={breakdown.housekeeping} href="/admin/housekeeping" negative />
           <Row label="Utilities" value={breakdown.utilities} href="/admin/utilities" negative />
-          <Row label="Salaries" value={breakdown.salaries} href="/admin/hr" negative />
+          <Row label="Salaries" value={breakdown.salaries} negative />
           <Row label="Petty Cash" value={breakdown.pettyCash} href="/admin/petty-cash" negative />
           <Row label="Expenses" value={breakdown.expenses} href="/admin/expenses" negative />
           <div className="flex items-center justify-between pt-3 mt-1">

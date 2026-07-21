@@ -51,9 +51,11 @@ async function getDailyPriceMap(wpPostId, from, to) {
 
 function computeFees(unit, { nights, subtotal, adults = 1, teens = 0 }) {
   const { housekeepingFeeForUnit } = require('../lib/housekeeping');
+  const { resolveBeachAccessRates } = require('../lib/beachAccess');
   const cleaning = housekeepingFeeForUnit(unit);
-  const accessAdult = Number(unit?.access_fee_per_adult_egp || 0) * Math.max(0, Number(adults) || 0);
-  const accessTeen = Number(unit?.access_fee_per_teen_egp || 0) * Math.max(0, Number(teens) || 0);
+  const beach = resolveBeachAccessRates(unit, nights);
+  const accessAdult = Number(beach.adult || 0) * Math.max(0, Number(adults) || 0);
+  const accessTeen = Number(beach.extra || 0) * Math.max(0, Number(teens) || 0);
   const access = accessAdult + accessTeen;
   const servicePct = Number(unit?.service_fee_percent || 0);
   const service = Math.round(subtotal * (servicePct / 100));
@@ -69,6 +71,7 @@ function computeFees(unit, { nights, subtotal, adults = 1, teens = 0 }) {
     service_fee_egp: service,
     security_deposit_egp: deposit,
     fees_total: cleaning + access + service,
+    beach_access: beach,
   };
 }
 

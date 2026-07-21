@@ -20,7 +20,9 @@ const {
   syncUnitListingStatus,
 } = require('../../lib/unitListingStatus');
 const { FINANCIAL_EPOCH, clampFromDate } = require('../../lib/financialEpoch');
+const { reservationScopeClause, bookingAssigneeClause, loadReservationAccess, assertReservationOwned, isReservationsAgent } = require('../../lib/reservationScope');
 const { getMinimumStayNights } = require('../../lib/minStay');
+const { beachAccessPersistValues } = require('../../lib/beachAccess');
 const { normalizeProjectName } = require('../../lib/projectNames');
 const { guestsFromBedrooms } = require('../../lib/guestCapacity');
 const { logAudit } = require('../../lib/audit');
@@ -116,6 +118,8 @@ function mapUnitRow(u) {
     beach_access_price: u.access_fee_per_adult_egp,
     beach_access_extra_guest: u.access_fee_per_teen_egp,
     beach_access_days: u.access_card_count_included || 7,
+    listing_type: u.listing_type || 'rent',
+    unit_area: u.size_m2,
   };
 }
 
@@ -395,7 +399,7 @@ router.delete('/users/:id', requireRoles('admin', 'hr'), async (req, res, next) 
 // ── Units (shared public.units) ─────────────────────────────
 router.get('/units', async (req, res, next) => {
   try {
-    const { search, status, project, bedrooms } = req.query;
+    const { search, status, project, bedrooms, listing_type } = req.query;
     const where = ['TRUE'];
     const params = [];
     let i = 1;
@@ -423,6 +427,10 @@ router.get('/units', async (req, res, next) => {
       where.push(`beds = $${i++}`);
       params.push(Number(bedrooms));
     }
+    const listingType = String(listing_type || 'rent').toLowerCase() === 'sale' ? 'sale' : 'rent';
+    where.push(`COALESCE(listing_type, 'rent') = $${i++}`);
+    params.push(listingType);
+
     const { rows } = await query(
       `SELECT id, slug, title, status, ops_status, compound, project, area, beds, baths, guests,
               size_m2, floor, view, property_type, wp_post_id, cover_url, photo_urls, amenities,
@@ -431,11 +439,10 @@ router.get('/units', async (req, res, next) => {
               commission_tenant_pct, utilities_cost, internal_code, unit_number, price_fallback,
               cleaning_fee_egp, service_fee_percent, security_deposit_egp,
               access_fee_per_adult_egp, access_fee_per_teen_egp, access_card_count_included,
-              min_nights, ical_url, notes, created_at
+              min_nights, ical_url, notes, listing_type, created_at
        FROM units
        WHERE ${where.join(' AND ')}
-       ORDER BY created_at DESC`
-      ,
+       ORDER BY created_at DESC`,
       params
     );
     sendList(res, rows.map(mapUnitRow));
@@ -467,18 +474,40 @@ router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) =>
     const { housekeepingFeeForType } = require('../../lib/housekeeping');
     const propertyType = toText(b.property_type || b.type);
     const cleaningFee = housekeepingFeeForType(propertyType);
-    const priceFallback = toNum(b.price_per_night || b.price_fallback, { int: true });
+    const listingType = String(b.listing_type || 'rent').toLowerCase() === 'sale' ? 'sale' : 'rent';
+    const sizeM2 = toNum(b.size_m2 || b.area_sqft || b.unit_area, { int: true });
+    const priceFallback =
+      listingType === 'sale' ? null : toNum(b.price_per_night || b.price_fallback, { int: true });
     const beds = toNum(b.beds ?? b.bedrooms, { int: true, fallback: 1 });
     const baths = toNum(b.baths ?? b.bathrooms, { int: true, fallback: 1 });
     const guests = guestsFromBedrooms(beds);
 
     const slug = toText(b.slug) || slugify(title || `unit-${Date.now()}`);
     const amenities = normalizeTagList(b.amenities);
-    const facilities = normalizeTagList(b.facilities);
-    const beachPrice = toNum(b.beach_access_price ?? b.access_fee_per_adult_egp, { int: true });
-    const beachExtra = toNum(b.beach_access_extra_guest ?? b.access_fee_per_teen_egp, { int: true });
-    const beachDays = toNum(b.beach_access_days ?? b.access_card_count_included, { int: true, fallback: 7 });
+    // Facilities live on the project (Destinations page), not on units.
+    const facilities = undefined;
+    let beachPrice =
+      listingType === 'sale'
+        ? null
+        : toNum(b.beach_access_price ?? b.access_fee_per_adult_egp, { int: true });
+    let beachExtra =
+      listingType === 'sale'
+        ? null
+        : toNum(b.beach_access_extra_guest ?? b.access_fee_per_teen_egp, { int: true });
+    let beachDays =
+      listingType === 'sale'
+        ? null
+        : toNum(b.beach_access_days ?? b.access_card_count_included, { int: true, fallback: 7 });
 
+    const beachOverride = beachAccessPersistValues(
+      { listing_type: listingType },
+      { project: toText(b.project || b.projectName || b.compound, compound), compound, area }
+    );
+    if (beachOverride) {
+      beachPrice = beachOverride.adult;
+      beachExtra = beachOverride.extra;
+      beachDays = beachOverride.days;
+    }
     let photoUrls = Array.isArray(b.photo_urls) ? b.photo_urls : [];
     let coverUrl = b.cover_url || photoUrls[0] || null;
     let folderUrl = b.photos_folder_url || b.drive_folder_url || b.photos_link || null;
@@ -495,7 +524,7 @@ router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) =>
       area,
       destination: area,
     });
-    const utilitiesCost = toNum(b.utilities_cost);
+    const utilitiesCost = listingType === 'sale' ? null : toNum(b.utilities_cost);
     const unitNumber = toText(b.unit_number);
     const view = toText(b.view);
     const floorRaw = b.floor != null && b.floor !== '' ? b.floor : null;
@@ -516,6 +545,8 @@ router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) =>
         baths,
         floor: floorRaw,
         guests,
+        listing_type: listingType,
+        size_m2: sizeM2,
         min_nights: minNights,
         price_fallback: priceFallback,
         utilities_cost: utilitiesCost,
@@ -533,7 +564,7 @@ router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) =>
         cover_url: coverUrl,
         photo_urls: photoUrls,
       },
-      hasPrice: Number(priceFallback) > 0,
+      hasPrice: listingType === 'sale' ? true : Number(priceFallback) > 0,
       requestedStatus: null,
       isCreate: true,
     });
@@ -547,12 +578,13 @@ router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) =>
          company_commission_pct, company_commission_owner_pct, commission_mode, commission_tenant_pct,
          utilities_cost, ops_status, unit_number, internal_code, created_by_staff, price_fallback,
          property_type, view, floor, source_url, min_nights, cleaning_fee_egp,
-         access_fee_per_adult_egp, access_fee_per_teen_egp, access_card_count_included
+         access_fee_per_adult_egp, access_fee_per_teen_egp, access_card_count_included,
+         listing_type
        ) VALUES (
          $1,$2,COALESCE($3,'draft'),'manual',$4,COALESCE($5,$4),COALESCE($6,'North Coast'),
          $7,$8,$9,$10,$11,COALESCE($12::text[], '{}'::text[]),COALESCE($13::text[], '{}'::text[]),$14,$15,$16,
          $17,$18,$19,$20,$21,$22,$23,$24,COALESCE($25,'available'),$26,$27,$28,$29,
-         $30,$31,$32,$33,$34,$35,$36,$37,$38
+         $30,$31,$32,$33,$34,$35,$36,$37,$38,$39
        ) RETURNING *`,
       [
         slug,
@@ -564,7 +596,7 @@ router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) =>
         beds,
         baths,
         guests,
-        toNum(b.size_m2 || b.area_sqft, { int: true }),
+        sizeM2,
         coverUrl,
         photoUrls,
         amenities,
@@ -578,7 +610,7 @@ router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) =>
         toNum(b.company_commission_owner_pct, { fallback: 10 }),
         b.commission_mode || 'A',
         toNum(b.commission_tenant_pct, { fallback: 0 }),
-        toNum(b.utilities_cost),
+        utilitiesCost,
         b.ops_status || (['available', 'occupied', 'maintenance'].includes(b.status) ? b.status : 'available'),
         unitNumber,
         toText(b.internal_code || b.uniqueId),
@@ -588,11 +620,12 @@ router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) =>
         view,
         floorRaw != null ? String(floorRaw) : null,
         locationLink,
-        minNights,
-        cleaningFee,
+        listingType === 'sale' ? 1 : minNights,
+        listingType === 'sale' ? 0 : cleaningFee,
         beachPrice,
         beachExtra,
         beachDays,
+        listingType,
       ]
     );
     const payload = mapUnitRow(rows[0]);
@@ -618,7 +651,8 @@ async function updateUnitHandler(req, res, next) {
   try {
     const b = req.body;
     const amenities = b.amenities == null ? null : normalizeTagList(b.amenities);
-    const facilities = b.facilities == null ? null : normalizeTagList(b.facilities);
+    // Do not overwrite legacy unit facilities from the unit form; manage on Destinations.
+    const facilities = undefined;
     const { housekeepingFeeForType } = require('../../lib/housekeeping');
 
     let listingStatus = ['draft', 'published', 'cancelled', 'archived', 'delisted'].includes(b.status)
@@ -631,23 +665,30 @@ async function updateUnitHandler(req, res, next) {
     const opsStatus = b.ops_status
       || (['available', 'occupied', 'maintenance'].includes(b.status) ? b.status : null);
 
-    const beachPrice = b.beach_access_price !== undefined || b.access_fee_per_adult_egp !== undefined
+    let beachPrice = b.beach_access_price !== undefined || b.access_fee_per_adult_egp !== undefined
       ? toNum(b.beach_access_price ?? b.access_fee_per_adult_egp, { int: true })
       : null;
-    const beachExtra = b.beach_access_extra_guest !== undefined || b.access_fee_per_teen_egp !== undefined
+    let beachExtra = b.beach_access_extra_guest !== undefined || b.access_fee_per_teen_egp !== undefined
       ? toNum(b.beach_access_extra_guest ?? b.access_fee_per_teen_egp, { int: true })
       : null;
-    const beachDays = b.beach_access_days !== undefined || b.access_card_count_included !== undefined
+    let beachDays = b.beach_access_days !== undefined || b.access_card_count_included !== undefined
       ? toNum(b.beach_access_days ?? b.access_card_count_included, { int: true })
       : null;
 
     const { rows: existingRows } = await query(
       `SELECT other_details, price_fallback, wp_post_id, property_type, status,
-              project, compound, area, beds
+              project, compound, area, beds, listing_type, size_m2,
+              utilities_cost, access_fee_per_adult_egp, access_fee_per_teen_egp,
+              access_card_count_included
        FROM units WHERE id = $1`,
       [req.params.id]
     );
     if (!existingRows[0]) return res.status(404).json({ error: 'Not found' });
+
+    const listingType =
+      String(b.listing_type || existingRows[0].listing_type || 'rent').toLowerCase() === 'sale'
+        ? 'sale'
+        : 'rent';
 
     const propertyType = toText(b.property_type || b.type) || existingRows[0].property_type;
     const cleaningFee = housekeepingFeeForType(propertyType);
@@ -669,6 +710,15 @@ async function updateUnitHandler(req, res, next) {
       destination: nextArea,
     });
 
+    const beachOverride = beachAccessPersistValues(
+      { listing_type: listingType },
+      { project: nextProject, compound: nextCompound, area: nextArea }
+    );
+    if (beachOverride) {
+      beachPrice = beachOverride.adult;
+      beachExtra = beachOverride.extra;
+      beachDays = beachOverride.days;
+    }
     let photoUrls = b.photo_urls ?? null;
     let coverUrl = b.cover_url ?? null;
     let folderUrl;
@@ -746,7 +796,7 @@ async function updateUnitHandler(req, res, next) {
             Number.isFinite(nextBeds) ? nextBeds : existingRows[0]?.beds
           );
         })(),
-        toNum(b.size_m2 || b.area_sqft, { int: true }),
+        toNum(b.size_m2 || b.area_sqft || b.unit_area, { int: true }),
         coverUrl,
         photoUrls,
         amenities,
@@ -980,6 +1030,7 @@ router.put('/daily-prices/:unitId', requireRoles('admin'), async (req, res, next
 // ── Reservations ────────────────────────────────────────────
 router.get('/reservations', async (req, res, next) => {
   try {
+    const scope = reservationScopeClause(req.user, 'r', 1);
     const { rows } = await query(
       `SELECT r.*,
               u.title AS unit_title,
@@ -1003,9 +1054,10 @@ router.get('/reservations', async (req, res, next) => {
        FROM reservations r
        JOIN units u ON u.id = r.unit_id
        LEFT JOIN bookings b ON b.id = r.booking_id
-       WHERE r.status <> 'cancelled'
+       WHERE r.status <> 'cancelled'${scope.clause}
        ORDER BY r.created_at DESC
-       LIMIT 200`
+       LIMIT 200`,
+      scope.params
     );
     sendList(res, rows);
   } catch (e) {
@@ -1013,9 +1065,11 @@ router.get('/reservations', async (req, res, next) => {
   }
 });
 
-router.post('/reservations', requireRoles('admin', 'reservations'), async (req, res, next) => {
+router.post('/reservations', requireRoles('reservations'), async (req, res, next) => {
   try {
     const b = req.body;
+    const salesPersonId =
+      req.user.role === 'reservations' ? req.user.id : (b.sales_person_id || req.user.id);
     const checkIn = new Date(b.check_in);
     const checkOut = new Date(b.check_out);
     const nights = Math.max(1, Math.round((checkOut - checkIn) / 86400000));
@@ -1064,7 +1118,7 @@ router.post('/reservations', requireRoles('admin', 'reservations'), async (req, 
         b.amount_paid || 0,
         b.payment_status,
         b.booking_source,
-        b.sales_person_id || req.user.id,
+        salesPersonId,
         b.is_owner_reservation ? 1 : 0,
         b.status,
         b.notes,
@@ -1091,8 +1145,12 @@ router.post('/reservations', requireRoles('admin', 'reservations'), async (req, 
   }
 });
 
-router.patch('/reservations/:id', requireRoles('admin', 'reservations'), async (req, res, next) => {
+router.patch('/reservations/:id', requireRoles('reservations'), async (req, res, next) => {
   try {
+    const existing = await loadReservationAccess(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    assertReservationOwned(req.user, existing);
+
     const b = req.body;
     const { rows } = await query(
       `UPDATE reservations SET
@@ -1110,14 +1168,15 @@ router.patch('/reservations/:id', requireRoles('admin', 'reservations'), async (
   }
 });
 
-router.delete('/reservations/:id', requireRoles('admin', 'reservations'), async (req, res, next) => {
+router.delete('/reservations/:id', requireRoles('reservations'), async (req, res, next) => {
   try {
     const id = req.params.id;
     const { rows: existing } = await query(
-      `SELECT id, booking_id FROM reservations WHERE id = $1`,
+      `SELECT id, booking_id, sales_person_id FROM reservations WHERE id = $1`,
       [id]
     );
     if (!existing[0]) return res.status(404).json({ error: 'Not found' });
+    assertReservationOwned(req.user, existing[0]);
 
     const bookingId = existing[0].booking_id;
 
@@ -1143,8 +1202,12 @@ router.delete('/reservations/:id', requireRoles('admin', 'reservations'), async 
   }
 });
 
-router.post('/reservations/:id/cancel-request', requireRoles('admin', 'reservations'), async (req, res, next) => {
+router.post('/reservations/:id/cancel-request', requireRoles('reservations'), async (req, res, next) => {
   try {
+    const existing = await loadReservationAccess(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    assertReservationOwned(req.user, existing);
+
     const { reason } = req.body || {};
     const { rows } = await query(
       `UPDATE reservations SET
@@ -1213,7 +1276,10 @@ router.get('/reservations/schedule', async (req, res, next) => {
       new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
     const { bedrooms, project } = req.query;
 
-    const unitWhere = [`COALESCE(status, 'draft') NOT IN ('archived', 'cancelled', 'delisted')`];
+    const unitWhere = [
+      `COALESCE(status, 'draft') NOT IN ('archived', 'cancelled', 'delisted')`,
+      `COALESCE(listing_type, 'rent') = 'rent'`,
+    ];
     const unitParams = [];
     let i = 1;
     if (bedrooms !== undefined && bedrooms !== '') {
@@ -1239,6 +1305,7 @@ router.get('/reservations/schedule', async (req, res, next) => {
     const unitIds = units.map((u) => u.id);
     if (unitIds.length === 0) return res.json({ units: [], reservations: [] });
 
+    const scope = reservationScopeClause(req.user, 'r', 4);
     const { rows: reservations } = await query(
       `SELECT r.id, r.unit_id, r.guest_name, r.guest_email, r.guest_phone, r.guest_nationality,
               r.check_in::text AS check_in, r.check_out::text AS check_out, r.nights,
@@ -1260,12 +1327,13 @@ router.get('/reservations/schedule', async (req, res, next) => {
        WHERE r.status NOT IN ('cancelled')
          AND r.check_in < $1::date
          AND r.check_out > $2::date
-         AND r.unit_id = ANY($3::uuid[])
+         AND r.unit_id = ANY($3::uuid[])${scope.clause}
        ORDER BY r.check_in`,
-      [to, from, unitIds]
+      [to, from, unitIds, ...scope.params]
     );
 
     // Overlay website bookings so reserved nights from the guest site appear too
+    const bookingScope = bookingAssigneeClause(req.user, 'b', 4);
     const { rows: webBookings } = await query(
       `SELECT b.id, COALESCE(b.unit_id, u.id) AS unit_id,
               COALESCE(NULLIF(b.guest_name, ''), 'Website guest') AS guest_name,
@@ -1289,9 +1357,9 @@ router.get('/reservations/schedule', async (req, res, next) => {
          AND NOT EXISTS (
            SELECT 1 FROM reservations r
            WHERE r.booking_id = b.id AND r.status <> 'cancelled'
-         )
+         )${bookingScope.clause}
        ORDER BY b.checkin`,
-      [to, from, unitIds]
+      [to, from, unitIds, ...bookingScope.params]
     ).catch(() => ({ rows: [] }));
 
     const seen = new Set(reservations.map((r) => `${r.unit_id}:${r.check_in}:${r.check_out}:${r.guest_name}`));
@@ -1442,6 +1510,7 @@ router.get('/commissions', requireRoles('admin'), async (_req, res, next) => {
 router.get('/dashboard/stats', async (req, res, next) => {
   try {
     const role = req.user?.role;
+    const agentId = isReservationsAgent(req.user) ? req.user.id : null;
     const now = new Date();
     const today = now.toISOString().slice(0, 10);
     const calendarMonthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
@@ -1471,8 +1540,9 @@ router.get('/dashboard/stats', async (req, res, next) => {
          JOIN units u ON u.id = r.unit_id
          WHERE r.check_in = $1::date
            AND r.status IN ('confirmed', 'pending', 'checked_in')
+           AND ($2::int IS NULL OR r.sales_person_id = $2)
          ORDER BY COALESCE(u.project, u.compound), u.title`,
-        [today]
+        [today, agentId]
       ),
       query(
         `SELECT r.id, r.guest_name,
@@ -1483,15 +1553,17 @@ router.get('/dashboard/stats', async (req, res, next) => {
          JOIN units u ON u.id = r.unit_id
          WHERE r.check_out = $1::date
            AND r.status IN ('confirmed', 'checked_in')
+           AND ($2::int IS NULL OR r.sales_person_id = $2)
          ORDER BY COALESCE(u.project, u.compound), u.title`,
-        [today]
+        [today, agentId]
       ),
       query(
         `SELECT COUNT(*)::int AS cnt
          FROM reservations
          WHERE check_in BETWEEN $1::date AND $2::date
-           AND status IN ('confirmed', 'pending')`,
-        [today, nextWeekStr]
+           AND status IN ('confirmed', 'pending')
+           AND ($3::int IS NULL OR sales_person_id = $3)`,
+        [today, nextWeekStr, agentId]
       ),
       query(
         `SELECT
@@ -1506,9 +1578,11 @@ router.get('/dashboard/stats', async (req, res, next) => {
            END)::int AS occupied_units
          FROM units u
          LEFT JOIN reservations r ON r.unit_id = u.id
+           AND ($1::int IS NULL OR r.sales_person_id = $1)
          WHERE COALESCE(u.status, 'draft') NOT IN ('archived', 'cancelled', 'delisted')
          GROUP BY COALESCE(u.project, u.compound, 'Unassigned')
-         ORDER BY COALESCE(u.project, u.compound, 'Unassigned')`
+         ORDER BY COALESCE(u.project, u.compound, 'Unassigned')`,
+        [agentId]
       ),
       query(
         `SELECT r.id, r.guest_name, r.check_in, r.check_out,
@@ -1517,8 +1591,10 @@ router.get('/dashboard/stats', async (req, res, next) => {
          FROM reservations r
          LEFT JOIN units u ON u.id = r.unit_id
          WHERE r.status <> 'cancelled'
+           AND ($1::int IS NULL OR r.sales_person_id = $1)
          ORDER BY r.created_at DESC
-         LIMIT 6`
+         LIMIT 6`,
+        [agentId]
       ),
     ]);
 
@@ -1567,8 +1643,9 @@ router.get('/dashboard/stats', async (req, res, next) => {
            FROM reservations r
            WHERE r.status IN ('confirmed', 'checked_in', 'checked_out', 'pending')
              AND r.check_in < ($2::date + INTERVAL '1 day')
-             AND r.check_out > $1::date`,
-          [kpiFrom, kpiTo]
+             AND r.check_out > $1::date
+             AND ($3::int IS NULL OR r.sales_person_id = $3)`,
+          [kpiFrom, kpiTo, agentId]
         ),
         query(
           `SELECT r.id, r.guest_name,
@@ -1590,6 +1667,7 @@ router.get('/dashboard/stats', async (req, res, next) => {
            JOIN units u ON u.id = r.unit_id
            WHERE r.check_in = $1::date
              AND r.status IN ('confirmed', 'pending', 'checked_in')
+             AND ($2::int IS NULL OR r.sales_person_id = $2)
              AND (
                u.ops_status = 'maintenance'
                OR NOT EXISTS (
@@ -1600,15 +1678,16 @@ router.get('/dashboard/stats', async (req, res, next) => {
                )
              )
            ORDER BY COALESCE(u.project, u.compound), u.title`,
-          [today]
+          [today, agentId]
         ).catch(() => ({ rows: [] })),
         query(
           `SELECT r.*, u.company_commission_pct, u.company_commission_owner_pct,
                   u.commission_mode, u.commission_tenant_pct, u.utilities_cost
            FROM reservations r
            JOIN units u ON u.id = r.unit_id
-           WHERE r.status <> 'cancelled' AND r.check_in >= $1::date`,
-          [FINANCIAL_EPOCH]
+           WHERE r.status <> 'cancelled' AND r.check_in >= $1::date
+             AND ($2::int IS NULL OR r.sales_person_id = $2)`,
+          [FINANCIAL_EPOCH, agentId]
         ).catch(() => ({ rows: [] })),
       ]);
 
@@ -1936,9 +2015,13 @@ router.get('/inquiries', requireRoles('admin', 'reservations'), async (_req, res
   }
 });
 
-router.get('/guest-bookings', requireRoles('admin', 'reservations'), async (_req, res, next) => {
+router.get('/guest-bookings', requireRoles('admin', 'reservations'), async (req, res, next) => {
   try {
-    const { rows } = await query(`SELECT * FROM bookings ORDER BY created_at DESC LIMIT 200`);
+    const scope = bookingAssigneeClause(req.user, 'b', 1);
+    const { rows } = await query(
+      `SELECT * FROM bookings b WHERE TRUE${scope.clause} ORDER BY created_at DESC LIMIT 200`,
+      scope.params
+    );
     sendList(res, rows);
   } catch (e) {
     next(e);

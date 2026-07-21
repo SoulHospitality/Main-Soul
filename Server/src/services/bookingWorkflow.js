@@ -1,26 +1,24 @@
 const { query } = require('../config/db');
 const { emitSalesNotification } = require('../config/socket');
 const { sendBookingAcceptedEmail } = require('./guestEmails');
+const {
+  pickLeastLoadedReservationsAgent,
+  assertBookingAssigned,
+  isReservationsAgent,
+  isAdmin,
+} = require('../lib/reservationScope');
 
 async function pickSalesAssignee() {
-  const { rows } = await query(
-    `SELECT id, sales_commission_pct FROM staff_users
-     WHERE is_active = 1 AND role IN ('reservations','admin')
-     ORDER BY sales_commission_pct DESC NULLS LAST, id ASC`
-  );
-  if (!rows.length) return null;
-  // Lightweight weighted pick by commission % (fallback equal weight)
-  const weights = rows.map((r) => Math.max(1, Number(r.sales_commission_pct) || 1));
-  const total = weights.reduce((a, b) => a + b, 0);
-  let r = Math.random() * total;
-  for (let i = 0; i < rows.length; i++) {
-    r -= weights[i];
-    if (r <= 0) return rows[i].id;
-  }
-  return rows[0].id;
+  return pickLeastLoadedReservationsAgent();
 }
 
 async function acceptWebsiteBooking(bookingId, staffUser) {
+  if (isAdmin(staffUser)) {
+    const err = new Error('Admins cannot accept website bookings');
+    err.status = 403;
+    throw err;
+  }
+
   const { rows } = await query(`SELECT * FROM bookings WHERE id = $1`, [bookingId]);
   const booking = rows[0];
   if (!booking) {
@@ -33,6 +31,8 @@ async function acceptWebsiteBooking(bookingId, staffUser) {
     err.status = 409;
     throw err;
   }
+
+  assertBookingAssigned(staffUser, booking);
 
   let commissionNote = null;
   if (booking.unit_id) {
@@ -50,19 +50,23 @@ async function acceptWebsiteBooking(bookingId, staffUser) {
     }
   }
 
-  const assignee = staffUser?.id || (await pickSalesAssignee());
+  const assignee =
+    booking.assigned_sales_id ||
+    (isReservationsAgent(staffUser) ? staffUser.id : null) ||
+    (await pickLeastLoadedReservationsAgent());
 
   const { rows: updated } = await query(
     `UPDATE bookings SET
        status = 'confirmed',
        hold_expires_at = NULL,
+       assigned_sales_id = COALESCE(assigned_sales_id, $3),
        notes = CASE
          WHEN $2::text IS NULL THEN notes
          ELSE COALESCE(notes || E'\n', '') || ('[commission] ' || $2::text)
        END
      WHERE id = $1
      RETURNING *`,
-    [bookingId, commissionNote]
+    [bookingId, commissionNote, assignee]
   );
 
   // Mirror into PMS reservations when linked to a unit
@@ -122,8 +126,12 @@ async function acceptWebsiteBooking(bookingId, staffUser) {
       );
     } else {
       await query(
-        `UPDATE reservations SET status = 'confirmed', updated_at = now() WHERE booking_id = $1`,
-        [bookingId]
+        `UPDATE reservations
+         SET status = 'confirmed',
+             sales_person_id = COALESCE(sales_person_id, $2),
+             updated_at = now()
+         WHERE booking_id = $1`,
+        [bookingId, assignee]
       );
     }
   }
@@ -162,7 +170,13 @@ async function cancelWebsiteBooking(bookingId, reason = 'cancelled_by_staff') {
   return updated[0] || null;
 }
 
-async function rejectWebsiteBooking(bookingId, reason = 'rejected_by_staff') {
+async function rejectWebsiteBooking(bookingId, staffUser, reason = 'rejected_by_staff') {
+  if (isAdmin(staffUser)) {
+    const err = new Error('Admins cannot reject website bookings');
+    err.status = 403;
+    throw err;
+  }
+
   const { rows } = await query(`SELECT * FROM bookings WHERE id = $1`, [bookingId]);
   const booking = rows[0];
   if (!booking) {
@@ -176,6 +190,8 @@ async function rejectWebsiteBooking(bookingId, reason = 'rejected_by_staff') {
     throw err;
   }
 
+  assertBookingAssigned(staffUser, booking);
+
   const updated = await cancelWebsiteBooking(bookingId, reason);
 
   await query(
@@ -187,8 +203,11 @@ async function rejectWebsiteBooking(bookingId, reason = 'rejected_by_staff') {
 }
 
 async function assignSalesOnCreate(bookingId) {
-  const assignee = await pickSalesAssignee();
+  const assignee = await pickLeastLoadedReservationsAgent();
   if (!assignee) return null;
+
+  await query(`UPDATE bookings SET assigned_sales_id = $1 WHERE id = $2`, [assignee, bookingId]);
+
   await query(
     `INSERT INTO sales_notifications (user_id, title, message, meta)
      VALUES ($1,$2,$3,$4)`,

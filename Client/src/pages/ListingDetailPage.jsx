@@ -4,6 +4,7 @@ import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
 import ListingCard from '../components/ListingCard';
 import ListingBookingCard from '../components/listing/ListingBookingCard';
+import ListingSaleCard from '../components/listing/ListingSaleCard';
 import AddReviewForm from '../components/reviews/AddReviewForm';
 import UnitReviewsDisplay from '../components/reviews/UnitReviewsDisplay';
 import { useAuth } from '../context/AuthContext';
@@ -100,6 +101,14 @@ export default function ListingDetailPage() {
         if (!cancelled) setNotFound(true);
       });
 
+    return () => {
+      cancelled = true;
+    };
+  }, [slug]);
+
+  useEffect(() => {
+    if (!unit || String(unit.listing_type || 'rent').toLowerCase() === 'sale') return undefined;
+    let cancelled = false;
     const from = localISO(new Date());
     const toDate = new Date();
     toDate.setMonth(toDate.getMonth() + 6);
@@ -122,16 +131,18 @@ export default function ListingDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [slug]);
+  }, [slug, unit]);
 
   useEffect(() => {
     if (!unit) return undefined;
     let cancelled = false;
+    const listingType = String(unit.listing_type || 'rent').toLowerCase() === 'sale' ? 'sale' : 'rent';
     api
       .get('/units', {
         params: {
           status: 'published',
           compound: unit.compound || undefined,
+          listing_type: listingType,
           limit: 6,
         },
       })
@@ -148,6 +159,7 @@ export default function ListingDetailPage() {
 
   useEffect(() => {
     if (!unit?.id && !unit?.slug) return undefined;
+    if (String(unit.listing_type || 'rent').toLowerCase() === 'sale') return undefined;
     let cancelled = false;
     setReviewsLoading(true);
     setReviewsError('');
@@ -239,6 +251,10 @@ export default function ListingDetailPage() {
           <Link to="/search" className="text-soul-blue font-semibold underline">
             Browse all stays
           </Link>
+          <span className="mx-2 text-soul-muted">·</span>
+          <Link to="/for-sale" className="text-soul-blue font-semibold underline">
+            Browse properties for sale
+          </Link>
         </main>
         <Footer />
       </div>
@@ -255,14 +271,25 @@ export default function ListingDetailPage() {
     );
   }
 
-  const detailRows = [
-    { label: 'Guests', value: String(unit.guests || '—') },
-    { label: 'Bedrooms', value: String(unit.beds ?? '—') },
-    { label: 'Baths', value: String(unit.baths ?? '—') },
-    { label: 'Check-in', value: 'After 3:00 PM' },
-    { label: 'Check-out', value: 'Before 11:00 AM' },
-    ...(unit.property_type ? [{ label: 'Property type', value: unit.property_type }] : []),
-  ];
+  const isSale = String(unit.listing_type || 'rent').toLowerCase() === 'sale';
+  const browsePath = isSale ? '/for-sale' : '/search';
+  const sizeM2 = Number(unit.size_m2 || unit.unit_area || 0);
+
+  const detailRows = isSale
+    ? [
+        { label: 'Bedrooms', value: String(unit.beds ?? '—') },
+        { label: 'Baths', value: String(unit.baths ?? '—') },
+        ...(sizeM2 > 0 ? [{ label: 'Area', value: `${sizeM2} m²` }] : []),
+        ...(unit.property_type ? [{ label: 'Property type', value: unit.property_type }] : []),
+      ]
+    : [
+        { label: 'Guests', value: String(unit.guests || '—') },
+        { label: 'Bedrooms', value: String(unit.beds ?? '—') },
+        { label: 'Baths', value: String(unit.baths ?? '—') },
+        { label: 'Check-in', value: 'After 3:00 PM' },
+        { label: 'Check-out', value: 'Before 11:00 AM' },
+        ...(unit.property_type ? [{ label: 'Property type', value: unit.property_type }] : []),
+      ];
 
   return (
     <div>
@@ -277,7 +304,7 @@ export default function ListingDetailPage() {
             {locationParts.map((part) => (
               <span key={part}>
                 {' · '}
-                <Link to={`/search?area=${encodeURIComponent(part)}`} className="hover:text-soul-blue">
+                <Link to={`${browsePath}?area=${encodeURIComponent(part)}`} className="hover:text-soul-blue">
                   {part}
                 </Link>
               </span>
@@ -290,7 +317,9 @@ export default function ListingDetailPage() {
           <div className="flex justify-between items-end flex-wrap gap-4 mb-5">
             <div>
               {locationParts[0] && (
-                <p className="soul-eyebrow text-soul-teal mb-2.5">{locationParts[0]}</p>
+                <p className="soul-eyebrow text-soul-teal mb-2.5">
+                  {isSale ? `For sale · ${locationParts[0]}` : locationParts[0]}
+                </p>
               )}
               <h1 className="font-display text-[clamp(28px,3.5vw,40px)] font-semibold mb-2.5 text-soul-blue">
                 {unit.title}
@@ -299,7 +328,7 @@ export default function ListingDetailPage() {
                 <strong className="text-soul-blue">{locationParts[0] || 'Egypt'}</strong>
                 {locationParts.length > 1 ? `, ${locationParts.slice(1).join(', ')}` : ''}
               </div>
-              {Number(unit.review_count || 0) > 0 ? (
+              {!isSale && Number(unit.review_count || 0) > 0 ? (
                 <p className="mt-2 text-sm text-soul-blue">
                   <span className="font-semibold text-amber-600">★ {Number(unit.average_rating || 0).toFixed(1)}</span>
                   <span className="text-soul-muted"> · {unit.review_count} review{Number(unit.review_count) === 1 ? '' : 's'}</span>
@@ -377,12 +406,16 @@ export default function ListingDetailPage() {
               <a href="#features" className="py-3 hover:text-soul-blue transition-colors">
                 Amenities
               </a>
-              <a href="#reviews" className="py-3 hover:text-soul-blue transition-colors">
-                Reviews
-              </a>
-              <a href="#rules" className="py-3 hover:text-soul-blue transition-colors">
-                House rules
-              </a>
+              {!isSale && (
+                <>
+                  <a href="#reviews" className="py-3 hover:text-soul-blue transition-colors">
+                    Reviews
+                  </a>
+                  <a href="#rules" className="py-3 hover:text-soul-blue transition-colors">
+                    House rules
+                  </a>
+                </>
+              )}
             </div>
           </nav>
 
@@ -390,9 +423,19 @@ export default function ListingDetailPage() {
             <div>
               <section className="pb-8 border-b border-soul-line mb-8">
                 <div className="grid grid-cols-3 gap-3.5">
-                  <Spec num={String(unit.guests || '—')} label="Guests" />
-                  <Spec num={String(unit.beds ?? '—')} label="Bedrooms" />
-                  <Spec num={String(unit.baths ?? '—')} label="Baths" />
+                  {isSale ? (
+                    <>
+                      <Spec num={String(unit.beds ?? '—')} label="Bedrooms" />
+                      <Spec num={String(unit.baths ?? '—')} label="Baths" />
+                      <Spec num={sizeM2 > 0 ? `${sizeM2}` : '—'} label={sizeM2 > 0 ? 'm²' : 'Area'} />
+                    </>
+                  ) : (
+                    <>
+                      <Spec num={String(unit.guests || '—')} label="Guests" />
+                      <Spec num={String(unit.beds ?? '—')} label="Bedrooms" />
+                      <Spec num={String(unit.baths ?? '—')} label="Baths" />
+                    </>
+                  )}
                 </div>
               </section>
 
@@ -456,6 +499,7 @@ export default function ListingDetailPage() {
                 )}
               </section>
 
+              {!isSale && (
               <section id="reviews" className="scroll-mt-[130px] pb-8 border-b border-soul-line mb-8">
                 <h2 className="font-display text-2xl font-semibold mb-5 text-soul-blue">Reviews</h2>
                 <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
@@ -488,14 +532,15 @@ export default function ListingDetailPage() {
                   />
                 </div>
               </section>
+              )}
 
               {similar.length > 0 && (
                 <section className="pb-8 border-b border-soul-line mb-8">
                   <div className="flex justify-between items-center mb-3.5 flex-wrap gap-3.5">
                     <h2 className="font-display text-2xl font-semibold m-0 text-soul-blue">
-                      Similar homes you might like
+                      {isSale ? 'Similar properties for sale' : 'Similar homes you might like'}
                     </h2>
-                    <Link to="/search" className="text-soul-blue font-semibold text-sm hover:underline">
+                    <Link to={browsePath} className="text-soul-blue font-semibold text-sm hover:underline">
                       View all →
                     </Link>
                   </div>
@@ -504,62 +549,74 @@ export default function ListingDetailPage() {
                       <ListingCard
                         key={l.id}
                         listing={l}
-                        carryDates={{
-                          checkin: params.get('checkin') || undefined,
-                          checkout: params.get('checkout') || undefined,
-                          guests: params.get('guests') || undefined,
-                        }}
+                        carryDates={
+                          isSale
+                            ? undefined
+                            : {
+                                checkin: params.get('checkin') || undefined,
+                                checkout: params.get('checkout') || undefined,
+                                guests: params.get('guests') || undefined,
+                              }
+                        }
                       />
                     ))}
                   </div>
                 </section>
               )}
 
-              <section id="rules" className="scroll-mt-[130px] pb-8 border-b border-soul-line mb-8">
-                <h2 className="font-display text-2xl font-semibold mb-3.5 text-soul-blue">House rules</h2>
-                <ul className="space-y-1.5 text-sm text-soul-blue m-0 list-none p-0">
-                  <li className="flex items-center gap-2">
-                    <CheckIcon /> Check-in after 3:00 PM
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <CheckIcon /> Checkout before 11:00 AM
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <CheckIcon /> No smoking indoors
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <CheckIcon /> No parties or events
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <CheckIcon /> {unit.guests || 8} guests max
-                  </li>
-                </ul>
-              </section>
+              {!isSale && (
+                <>
+                  <section id="rules" className="scroll-mt-[130px] pb-8 border-b border-soul-line mb-8">
+                    <h2 className="font-display text-2xl font-semibold mb-3.5 text-soul-blue">House rules</h2>
+                    <ul className="space-y-1.5 text-sm text-soul-blue m-0 list-none p-0">
+                      <li className="flex items-center gap-2">
+                        <CheckIcon /> Check-in after 3:00 PM
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <CheckIcon /> Checkout before 11:00 AM
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <CheckIcon /> No smoking indoors
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <CheckIcon /> No parties or events
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <CheckIcon /> {unit.guests || 8} guests max
+                      </li>
+                    </ul>
+                  </section>
 
-              <section className="pb-8 border-b border-soul-line mb-8">
-                <h2 className="font-display text-2xl font-semibold mb-3.5 text-soul-blue">Guest Regulations</h2>
-                <ul className="space-y-2 text-sm text-soul-blue m-0 list-none p-0">
-                  {GUEST_REGULATIONS.map((rule) => (
-                    <li key={rule} className="flex items-start gap-2.5">
-                      <span className="mt-0.5">
-                        <CheckIcon />
-                      </span>
-                      <span>{rule}</span>
-                    </li>
-                  ))}
-                </ul>
-              </section>
+                  <section className="pb-8 border-b border-soul-line mb-8">
+                    <h2 className="font-display text-2xl font-semibold mb-3.5 text-soul-blue">Guest Regulations</h2>
+                    <ul className="space-y-2 text-sm text-soul-blue m-0 list-none p-0">
+                      {GUEST_REGULATIONS.map((rule) => (
+                        <li key={rule} className="flex items-start gap-2.5">
+                          <span className="mt-0.5">
+                            <CheckIcon />
+                          </span>
+                          <span>{rule}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                </>
+              )}
             </div>
 
             <aside>
-              <ListingBookingCard
-                unit={unit}
-                blockedDates={blocked}
-                dailyPrices={prices}
-                initialCheckin={params.get('checkin') || undefined}
-                initialCheckout={params.get('checkout') || undefined}
-                initialGuests={params.get('guests') ? parseInt(params.get('guests'), 10) : undefined}
-              />
+              {isSale ? (
+                <ListingSaleCard unit={unit} />
+              ) : (
+                <ListingBookingCard
+                  unit={unit}
+                  blockedDates={blocked}
+                  dailyPrices={prices}
+                  initialCheckin={params.get('checkin') || undefined}
+                  initialCheckout={params.get('checkout') || undefined}
+                  initialGuests={params.get('guests') ? parseInt(params.get('guests'), 10) : undefined}
+                />
+              )}
             </aside>
           </div>
         </div>

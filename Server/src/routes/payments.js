@@ -1,7 +1,6 @@
 const express = require('express');
 const { query } = require('../config/db');
 const { verifyPaymobHmac } = require('../config/paymob');
-const { notifySales } = require('./bookings');
 
 const router = express.Router();
 
@@ -87,8 +86,6 @@ router.post('/paymob-webhook', async (req, res, next) => {
     } catch (_) {
       /* optional */
     }
-
-    await notifySales({ ...booking, status: 'pending' });
 
     res.json({ ok: true, booking_id: booking.id });
   } catch (err) {

@@ -1,23 +1,34 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, NavLink, useNavigate } from 'react-router-dom';
-import { Menu, User, X, Heart } from 'lucide-react';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { ChevronDown, Menu, User, X, Heart } from 'lucide-react';
 import { brand, whatsappHref } from '../../theme/brand';
 import { useCurrency } from '../../context/CurrencyContext';
 import { useAuth } from '../../context/AuthContext';
 
 const NAV = [
-  { label: 'Properties', to: '/search' },
   { label: 'About Soul', to: '/about' },
   { label: 'FAQ', to: '/faq' },
   { label: 'Become a Host', to: '/owners' },
 ];
 
+const PROPERTY_LINKS = [
+  { label: 'Properties For Rent', to: '/search' },
+  { label: 'Properties For Sale', to: '/for-sale' },
+];
+
+function isPropertiesPath(pathname) {
+  return pathname.startsWith('/search') || pathname.startsWith('/for-sale') || pathname.startsWith('/listings');
+}
+
 export default function Header({ overHero = false }) {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [propsOpen, setPropsOpen] = useState(false);
+  const propsRef = useRef(null);
   const { currency, setCurrency } = useCurrency();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
 
   useEffect(() => {
     if (!overHero) return undefined;
@@ -34,10 +45,31 @@ export default function Header({ overHero = false }) {
     };
   }, [mobileOpen]);
 
+  useEffect(() => {
+    setPropsOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!propsOpen) return undefined;
+    const onPointer = (e) => {
+      if (propsRef.current && !propsRef.current.contains(e.target)) setPropsOpen(false);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') setPropsOpen(false);
+    };
+    document.addEventListener('mousedown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [propsOpen]);
+
   const solid = !overHero || scrolled;
   const linkCls = solid
     ? 'text-soul-blue/80 hover:text-soul-blue'
     : 'text-white/90 hover:text-white';
+  const propsActive = isPropertiesPath(pathname);
 
   return (
     <>
@@ -58,7 +90,59 @@ export default function Header({ overHero = false }) {
             />
           </Link>
 
-          <nav className="pointer-events-none absolute inset-x-0 hidden items-center justify-center gap-7 lg:flex xl:gap-9">
+          <nav className="pointer-events-none absolute inset-x-0 hidden items-center justify-center gap-5 lg:flex xl:gap-6">
+            <div className="pointer-events-auto relative" ref={propsRef}>
+              <button
+                type="button"
+                aria-expanded={propsOpen}
+                aria-haspopup="menu"
+                onClick={() => setPropsOpen((o) => !o)}
+                className={`inline-flex items-center gap-1.5 text-[13px] font-bold uppercase tracking-[0.16em] ${
+                  propsActive || propsOpen
+                    ? solid
+                      ? 'text-soul-blue'
+                      : 'text-white'
+                    : linkCls
+                }`}
+              >
+                Properties
+                <ChevronDown
+                  size={14}
+                  strokeWidth={2.5}
+                  className={`transition-transform ${propsOpen ? 'rotate-180' : ''}`}
+                />
+              </button>
+
+              {propsOpen && (
+                <div
+                  role="menu"
+                  className="absolute left-1/2 top-full z-50 mt-3 min-w-[240px] -translate-x-1/2 overflow-hidden rounded-[14px] border border-soul-line bg-white p-1.5 shadow-[0_18px_50px_rgba(40,63,94,0.18)]"
+                >
+                  {PROPERTY_LINKS.map((item) => {
+                    const active =
+                      pathname === item.to ||
+                      (item.to === '/search' && pathname.startsWith('/search')) ||
+                      (item.to === '/for-sale' && pathname.startsWith('/for-sale'));
+                    return (
+                      <Link
+                        key={item.to}
+                        to={item.to}
+                        role="menuitem"
+                        onClick={() => setPropsOpen(false)}
+                        className={`block rounded-[10px] px-3.5 py-2.5 text-[13px] font-semibold transition ${
+                          active
+                            ? 'bg-soul-blue-50 text-soul-blue'
+                            : 'text-soul-blue hover:bg-soul-blue-50/70'
+                        }`}
+                      >
+                        {item.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
             {NAV.map((item) => (
               <NavLink
                 key={item.to}
@@ -128,13 +212,15 @@ export default function Header({ overHero = false }) {
           currency={currency}
           setCurrency={setCurrency}
           user={user}
+          pathname={pathname}
         />
       )}
     </>
   );
 }
 
-function MobileDrawer({ onClose, currency, setCurrency, user }) {
+function MobileDrawer({ onClose, currency, setCurrency, user, pathname }) {
+  const [propsOpen, setPropsOpen] = useState(isPropertiesPath(pathname));
   const panelRef = useRef(null);
 
   return (
@@ -151,6 +237,41 @@ function MobileDrawer({ onClose, currency, setCurrency, user }) {
           </button>
         </div>
         <nav className="flex-1 px-5 py-6 space-y-1 overflow-y-auto">
+          <div className="border-b border-soul-line/60 pb-3 mb-1">
+            <button
+              type="button"
+              onClick={() => setPropsOpen((o) => !o)}
+              className="flex w-full items-center justify-between py-3 text-[13px] font-bold uppercase tracking-[0.16em] text-soul-blue"
+              aria-expanded={propsOpen}
+            >
+              Properties
+              <ChevronDown
+                size={16}
+                className={`transition-transform ${propsOpen ? 'rotate-180' : ''}`}
+              />
+            </button>
+            {propsOpen && (
+              <div className="mt-1 space-y-1 pb-1">
+                {PROPERTY_LINKS.map((item) => {
+                  const active = pathname === item.to || pathname.startsWith(`${item.to}?`);
+                  return (
+                    <Link
+                      key={item.to}
+                      to={item.to}
+                      onClick={onClose}
+                      className={`block rounded-xl px-3 py-2.5 text-[13px] font-semibold ${
+                        active
+                          ? 'bg-soul-blue-50 text-soul-blue'
+                          : 'text-soul-blue/80 hover:bg-soul-blue-50/60'
+                      }`}
+                    >
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
           {NAV.map((item) => (
             <Link
               key={item.to}

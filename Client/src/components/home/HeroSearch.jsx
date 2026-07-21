@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProjectCatalog } from '../../hooks/useProjectCatalog';
 import DateRangePicker from '../ui/DateRangePicker';
@@ -11,26 +11,39 @@ const isAfterDay = (a, b) => {
 
 /**
  * SoulHospitality-style vertical search capsule for the homepage hero.
- * Wired to Main Soul destinations catalog + /search.
+ * Project + dates + guests → /search.
  */
 export default function HeroSearch() {
   const navigate = useNavigate();
-  const { destinations } = useProjectCatalog();
+  const { projectCards } = useProjectCatalog();
   const capsuleRef = useRef(null);
 
+  const projects = useMemo(() => {
+    const seen = new Set();
+    const list = [];
+    for (const p of projectCards) {
+      const key = String(p.name || '').toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      list.push(p);
+    }
+    return list;
+  }, [projectCards]);
+
   const [criteria, setCriteria] = useState({
+    project: '',
     destination: '',
     checkin: '',
     checkout: '',
     guests: 1,
   });
-  const [destinationOpen, setDestinationOpen] = useState(false);
+  const [projectOpen, setProjectOpen] = useState(false);
   const [guestOpen, setGuestOpen] = useState(false);
 
   useEffect(() => {
     const onOutside = (event) => {
       if (capsuleRef.current && !capsuleRef.current.contains(event.target)) {
-        setDestinationOpen(false);
+        setProjectOpen(false);
         setGuestOpen(false);
       }
     };
@@ -38,7 +51,7 @@ export default function HeroSearch() {
     return () => document.removeEventListener('mousedown', onOutside);
   }, []);
 
-  const destinationLabel = criteria.destination || 'Where to go?';
+  const projectLabel = criteria.project || 'Which project?';
 
   const hasValidRange =
     criteria.checkin &&
@@ -49,6 +62,7 @@ export default function HeroSearch() {
     event.preventDefault();
     const params = new URLSearchParams();
     if (criteria.destination) params.set('destination', criteria.destination);
+    if (criteria.project) params.set('compound', criteria.project);
     if (criteria.checkin) params.set('checkin', criteria.checkin);
     if (criteria.checkout) params.set('checkout', criteria.checkout);
     if (criteria.guests > 0) params.set('guests', String(criteria.guests));
@@ -61,57 +75,66 @@ export default function HeroSearch() {
       onSubmit={handleSubmit}
       className="relative z-[60] flex w-full flex-col gap-4 overflow-visible rounded-[1.6rem] border border-white/25 bg-white/10 p-4 shadow-[0_24px_70px_rgba(0,0,0,0.18)] backdrop-blur-xl sm:gap-5 sm:rounded-[2rem] sm:p-6 lg:p-8"
     >
-      {/* Destination */}
+      {/* Project */}
       <div className="relative">
         <button
           type="button"
           onClick={() => {
-            setDestinationOpen((o) => !o);
+            setProjectOpen((o) => !o);
             setGuestOpen(false);
           }}
           className="flex w-full cursor-pointer flex-col gap-2 rounded-2xl border border-white/25 bg-white/10 px-5 py-4 text-left transition-colors hover:bg-white/20"
         >
           <span className="text-[11px] font-bold uppercase tracking-wider text-white/70">
-            Destination
+            Project
           </span>
           <span
             className={`truncate text-sm font-medium ${
-              criteria.destination ? 'text-white' : 'text-white/55'
+              criteria.project ? 'text-white' : 'text-white/55'
             }`}
           >
-            {destinationLabel}
+            {projectLabel}
           </span>
         </button>
 
-        {destinationOpen ? (
+        {projectOpen ? (
           <div className="absolute left-0 right-0 top-full z-[130] mt-3 max-h-64 overflow-y-auto rounded-2xl border border-white/25 bg-white/95 p-2 shadow-2xl backdrop-blur-xl sm:left-0 sm:right-auto sm:w-80">
             <button
               type="button"
               onClick={() => {
-                setCriteria((c) => ({ ...c, destination: '' }));
-                setDestinationOpen(false);
+                setCriteria((c) => ({ ...c, project: '', destination: '' }));
+                setProjectOpen(false);
               }}
               className="flex w-full items-center justify-between border-b border-soul-line px-4 py-3 text-left text-sm text-soul-blue last:border-b-0 hover:bg-soul-blue-50/70"
             >
-              <span>Anywhere</span>
+              <span>Any project</span>
               <span className="text-soul-muted/50">→</span>
             </button>
-            {destinations.map((option) => (
+            {projects.map((option) => (
               <button
-                key={option}
+                key={option.id || option.name}
                 type="button"
                 onClick={() => {
-                  setCriteria((c) => ({ ...c, destination: option }));
-                  setDestinationOpen(false);
+                  setCriteria((c) => ({
+                    ...c,
+                    project: option.name,
+                    destination: option.destination || option.area || '',
+                  }));
+                  setProjectOpen(false);
                 }}
                 className="flex w-full items-center justify-between border-b border-soul-line px-4 py-3 text-left text-sm text-soul-blue last:border-b-0 hover:bg-soul-blue-50/70"
               >
-                <span>{option}</span>
-                <span className="text-soul-muted/50">→</span>
+                <span className="min-w-0">
+                  <span className="block truncate font-medium">{option.name}</span>
+                  {option.destination ? (
+                    <span className="block truncate text-[11px] text-soul-muted">{option.destination}</span>
+                  ) : null}
+                </span>
+                <span className="shrink-0 text-soul-muted/50">→</span>
               </button>
             ))}
-            {destinations.length === 0 ? (
-              <p className="px-4 py-3 text-sm text-soul-muted">No destinations available yet.</p>
+            {projects.length === 0 ? (
+              <p className="px-4 py-3 text-sm text-soul-muted">No projects available yet.</p>
             ) : null}
           </div>
         ) : null}
@@ -127,7 +150,7 @@ export default function HeroSearch() {
         }
         onOpenChange={(open) => {
           if (open) {
-            setDestinationOpen(false);
+            setProjectOpen(false);
             setGuestOpen(false);
           }
         }}
@@ -139,7 +162,7 @@ export default function HeroSearch() {
           type="button"
           onClick={() => {
             setGuestOpen((o) => !o);
-            setDestinationOpen(false);
+            setProjectOpen(false);
           }}
           className="flex w-full cursor-pointer flex-col gap-2 rounded-2xl border border-white/25 bg-white/10 px-5 py-4 text-left transition-colors hover:bg-white/20"
         >

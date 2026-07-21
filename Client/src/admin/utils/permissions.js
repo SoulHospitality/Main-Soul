@@ -37,10 +37,6 @@ const PERMISSIONS = {
   hr: [
     'users:read',
     'users:write',
-    'hr:read',
-    'hr:write',
-    'recruitment:read',
-    'recruitment:write',
     'notifications:read',
     'documents:read',
     'documents:write',
@@ -57,8 +53,8 @@ const PERMISSIONS = {
 const PAGE_ACCESS = {
   admin: true,
   reservations: new Set(['dashboard', 'reservations', 'schedule', 'housekeeping', 'maintenance', 'profile']),
-  resale: new Set(['units', 'projects', 'acquisition', 'pricing', 'schedule', 'profile']),
-  hr: new Set(['users', 'hr', 'recruitment', 'profile']),
+  resale: new Set(['units_sale', 'projects', 'acquisition', 'pricing', 'schedule', 'profile']),
+  hr: new Set(['users', 'profile']),
   owner: new Set(['owner', 'owner_reservations', 'owner_statement', 'owner_payouts', 'owner_blocks', 'profile']),
 };
 
@@ -87,6 +83,10 @@ export function canDeleteUnits(user) {
 }
 
 export function canManageReservations(user) {
+  return !!user && user.role === 'reservations';
+}
+
+export function canViewAllReservations(user) {
   return !!user && (user.role === 'admin' || user.role === 'reservations');
 }
 

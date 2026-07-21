@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Edit2, Trash2, Building2, BedDouble, Bath, Layers, Eye, ExternalLink, DollarSign, X, ChevronDown, Search } from 'lucide-react';
+import { Plus, Edit2, Trash2, Building2, BedDouble, Bath, Layers, Eye, ExternalLink, DollarSign } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import { usePermissions } from '../hooks/usePermissions';
@@ -17,6 +17,13 @@ import SearchableSelect from '../components/ui/SearchableSelect';
 import { useProjectCatalog } from '../../hooks/useProjectCatalog';
 import { AREAS, COMPOUNDS } from '../../data/compounds';
 import { normalizeProjectName } from '../../utils/projectNames';
+import {
+  beachAccessFormDefaults,
+  beachAccessRequiresManualEntry,
+  isFreeBeachProject,
+} from '../../utils/beachAccess';
+import { isGaiaUnit } from '../../utils/bookingRules';
+import TagSelect from '../components/ui/TagSelect';
 
 const FALLBACK_PROJECTS_BY_DEST = COMPOUNDS.reduce((acc, c) => {
   if (!acc[c.area]) acc[c.area] = [];
@@ -48,28 +55,66 @@ const BEACH_ACCESS_PERIODS = [
   { value: 14, label: 'Every 14 days' },
 ];
 
+/** In-unit amenity suggestions for new units (existing published amenities are unchanged). */
 const AMENITY_SUGGESTIONS = [
-  'In-unit washer and dryer', 'Smart thermostat (e.g., Nest)', 'Private balcony or patio', 'Walk-in closets',
-  'Stainless steel appliances', 'Dishwasher', 'Hardwood or LVP flooring', 'Keyless smart lock entry',
-  'Granite or quartz countertops', 'Central air conditioning', 'Floor-to-ceiling windows', 'Built-in wine cooler',
-  'USB wall outlets', 'Kitchen island', 'Deep soaking tub', 'Fully equipped fitness center', 'Rooftop swimming pool',
-  'Hot tub / Jacuzzi', 'Yoga or Pilates studio', 'Sauna or steam room', 'Tennis or pickleball courts',
-  'Indoor basketball court', 'Community clubhouse or lounge', 'Private movie theater/media room',
-  'Game room (billiards, arcade, ping pong)', 'Outdoor BBQ grilling stations', 'Fire pit lounge area',
-  'Community kitchen for hosting events', 'Electric Vehicle (EV) charging stations', 'Secure underground parking garage',
-  'Reserved covered parking spaces', 'High-speed fiber-optic internet connection', 'Storage units/lockers for rent',
-  'Secure bicycle storage room', 'Bike repair station', 'Passenger and freight elevators', 'Trash valet service (doorstep pickup)',
-  'On-site recycling center', '24/7 concierge or doorman', 'Gated community entrance', 'On-site 24/7 maintenance team',
-  'Co-working spaces / business center', 'Private conference rooms', 'Fenced-in dog park', 'Pet washing station',
-  'Landscaped community gardens', 'Children’s playground', 'Walking or jogging trails', 'Air Conditioning',
-  'Laundry', 'Microwave', 'Swimming Pool', 'TV Cable', 'Wi-Fi',
+  'Wi-Fi',
+  'Bed Lines',
+  'Beach Access',
+  'Cooking Basics',
+  'Free Parking',
+  'Heating',
+  'Stove',
+  'Microwave',
+  'Hot Watter Kettls',
+  'Refrigerator',
+  'Air conditioning',
+  'Smart TV',
+  'Washer',
+  'Dryer',
+  'Dishwasher',
+  'Oven',
+  'Coffee maker',
+  'Toaster',
+  'Blender',
+  'Dining table',
+  'Private balcony',
+  'Private terrace',
+  'Sea view from unit',
+  'Lagoon view from unit',
+  'Pool view from unit',
+  'Garden view from unit',
+  'Blackout curtains',
+  'Extra pillows and blankets',
+  'Hangers',
+  'Iron',
+  'Hair dryer',
+  'Shampoo',
+  'Body soap',
+  'Hot water',
+  'Bathtub',
+  'Shower',
+  'Bidet',
+  'Dedicated workspace',
+  'Safe',
+  'Elevator access',
+  'Ground-floor access',
+  'Keyless smart lock',
+  'Self check-in',
+  'Kitchenette',
+  'Full kitchen',
+  'Outdoor dining area',
+  'BBQ grill',
+  'Private pool access',
+  'Housekeeping available',
 ];
 
-const FACILITY_SUGGESTIONS = [
-  'On-site ATM / Bank branch', 'Dry cleaning service', 'Hair salon and spa', 'Bakery / Coffee shop',
-  'Restaurants and food court', 'Medical clinic / First-aid station', 'Gated guardhouse entry',
-  'CCTV surveillance control room', 'Emergency fire response station', 'Full-size soccer/football pitch', 'Skatepark',
-  'Outdoor fitness equipment gym', 'Pet agility park', 'Shuttle bus stop', 'Guest parking lot',
+const FLOOR_OPTIONS = [
+  { value: 0, label: 'Ground' },
+  { value: 1, label: '1st' },
+  { value: 2, label: '2nd' },
+  { value: 3, label: '3rd' },
+  { value: 4, label: '4th' },
+  { value: 5, label: '5th' },
 ];
 
 const EMPTY_FORM = {
@@ -89,11 +134,11 @@ const EMPTY_FORM = {
   view: '',
   description: '',
   amenities: [],
-  facilities: [],
   location_link: '',
   beach_access_price: '',
   beach_access_days: 7,
   beach_access_extra_guest: '',
+  unit_area: '',
 };
 
 /** Capacity rule: studio (0 BR) → 2 guests; otherwise 2 × bedrooms. */
@@ -109,99 +154,6 @@ function toTagList(value) {
     return value.split(',').map((s) => s.trim()).filter(Boolean);
   }
   return [];
-}
-
-function TagSelect({ label, placeholder, suggestions, selectedTags, onTagsChange }) {
-  const [input, setInput] = useState('');
-  const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (containerRef.current && !containerRef.current.contains(event.target)) setIsOpen(false);
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const addTag = (tag) => {
-    const cleaned = String(tag || '').trim();
-    if (cleaned && !selectedTags.includes(cleaned)) onTagsChange([...selectedTags, cleaned]);
-    setInput('');
-    setIsOpen(false);
-  };
-
-  const filtered = suggestions.filter(
-    (item) => item.toLowerCase().includes(input.toLowerCase()) && !selectedTags.includes(item)
-  );
-
-  return (
-    <div ref={containerRef} className="relative sm:col-span-2">
-      <label className="label">{label}</label>
-      <div
-        onClick={() => setIsOpen(true)}
-        className="input min-h-[46px] h-auto flex flex-wrap items-center gap-1.5 cursor-text py-2 pr-9"
-      >
-        {selectedTags.map((tag) => (
-          <span key={tag} className="inline-flex items-center gap-1 rounded-md bg-primary-50 text-primary-800 border border-primary-100 px-2 py-0.5 text-xs font-medium">
-            {tag}
-            <button
-              type="button"
-              className="text-primary-400 hover:text-red-500"
-              onClick={(e) => {
-                e.stopPropagation();
-                onTagsChange(selectedTags.filter((t) => t !== tag));
-              }}
-            >
-              <X className="w-3 h-3" />
-            </button>
-          </span>
-        ))}
-        <input
-          type="text"
-          className="flex-1 min-w-[120px] bg-transparent outline-none text-sm"
-          value={input}
-          placeholder={selectedTags.length ? '' : placeholder}
-          onFocus={() => setIsOpen(true)}
-          onChange={(e) => { setInput(e.target.value); setIsOpen(true); }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ',') {
-              e.preventDefault();
-              if (input.trim()) addTag(filtered[0] || input);
-            }
-          }}
-        />
-        <ChevronDown className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-      </div>
-      {isOpen && (
-        <div className="absolute z-50 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg py-1">
-          {filtered.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-gray-400 flex items-center gap-2">
-              <Search className="w-3.5 h-3.5" />
-              {input.trim() ? (
-                <button type="button" className="text-primary-600 hover:underline" onClick={() => addTag(input)}>
-                  Add “{input.trim()}”
-                </button>
-              ) : (
-                'No matches'
-              )}
-            </div>
-          ) : (
-            filtered.map((item) => (
-              <button
-                key={item}
-                type="button"
-                className="w-full text-left px-3 py-2 text-sm hover:bg-primary-50"
-                onClick={() => addTag(item)}
-              >
-                {item}
-              </button>
-            ))
-          )}
-        </div>
-      )}
-    </div>
-  );
 }
 
 function CommissionSection({ form, setForm }) {
@@ -285,14 +237,29 @@ function CommissionSection({ form, setForm }) {
   );
 }
 
-function UnitForm({ form, setForm }) {
+function UnitForm({ form, setForm, listingType = 'rent' }) {
   const { isAdmin, canManageUnits } = usePermissions();
   const canSeeOwner = isAdmin || canManageUnits;
+  const isSale = listingType === 'sale';
   const { destinations, projectsByDestination } = useProjectCatalog();
   const effectiveDestinations = destinations.length ? destinations : AREAS;
   const catalogProjects = projectsByDestination[form.destination] || [];
   const fallbackProjects = FALLBACK_PROJECTS_BY_DEST[form.destination] || [];
   const projectOptions = catalogProjects.length ? catalogProjects : fallbackProjects;
+  const projectCtx = { project: form.project, compound: form.project, listing_type: listingType };
+  const showBeachFields = !isSale && beachAccessRequiresManualEntry(projectCtx);
+  const gaiaProject = !isSale && isGaiaUnit(projectCtx);
+  const freeBeach = !isSale && isFreeBeachProject(projectCtx);
+
+  function applyProjectChange(project) {
+    const beachDefaults = beachAccessFormDefaults(project);
+    setForm((f) => ({
+      ...f,
+      project,
+      compound: project,
+      ...(beachDefaults || {}),
+    }));
+  }
 
   return (
     <div className="space-y-4">
@@ -324,11 +291,7 @@ function UnitForm({ form, setForm }) {
           <select
             className="input"
             value={form.project || ''}
-            onChange={(e) => setForm((f) => ({
-              ...f,
-              project: e.target.value,
-              compound: e.target.value,
-            }))}
+            onChange={(e) => applyProjectChange(e.target.value)}
             disabled={!form.destination}
           >
             <option value="">{form.destination ? 'Select project…' : 'Pick destination first'}</option>
@@ -371,44 +334,85 @@ function UnitForm({ form, setForm }) {
           />
         </div>
         <div><label className="label">Bathrooms</label><input type="number" min="0" className="input" value={form.bathrooms} onChange={e => setForm(f => ({ ...f, bathrooms: e.target.value }))} /></div>
-        <div><label className="label">Floor</label><input type="number" className="input" value={form.floor} onChange={e => setForm(f => ({ ...f, floor: e.target.value }))} /></div>
+        <div>
+          <label className="label">Floor</label>
+          <select
+            className="input"
+            value={FLOOR_OPTIONS.some((o) => String(o.value) === String(form.floor)) ? form.floor : 0}
+            onChange={(e) => setForm((f) => ({ ...f, floor: Number(e.target.value) }))}
+          >
+            {FLOOR_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </div>
         <div>
           <label className="label">Guests / capacity</label>
           <input type="number" className="input bg-gray-50" value={guestsFromBedrooms(form.bedrooms)} readOnly />
           <p className="text-xs text-gray-400 mt-1">Auto: 2 × bedrooms (studio = 2)</p>
         </div>
-        <div>
-          <label className="label">Fallback nightly (EGP)</label>
-          <input type="number" min="0" step="0.01" className="input" value={form.price_per_night} onChange={e => setForm(f => ({ ...f, price_per_night: e.target.value }))} placeholder="Display only — bookable prices on Pricing" />
-        </div>
-        <div>
-          <label className="label">Utilities Cost Per Night (EGP)</label>
-          <input type="number" min="0" step="0.01" className="input" value={form.utilities_cost} onChange={e => setForm(f => ({ ...f, utilities_cost: e.target.value }))} placeholder="0.00" />
-        </div>
-        <div>
-          <label className="label">Beach access price (EGP)</label>
-          <input type="number" min="0" step="0.01" className="input" value={form.beach_access_price} onChange={e => setForm(f => ({ ...f, beach_access_price: e.target.value }))} placeholder="Per person / period" />
-        </div>
-        <div>
-          <label className="label">Beach access period</label>
-          <select
-            className="input"
-            value={form.beach_access_days || 7}
-            onChange={e => setForm(f => ({ ...f, beach_access_days: Number(e.target.value) }))}
-          >
-            {BEACH_ACCESS_PERIODS.map((p) => (
-              <option key={p.value} value={p.value}>{p.label}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="label">Beach access — extra guest (EGP)</label>
-          <input type="number" min="0" step="0.01" className="input" value={form.beach_access_extra_guest} onChange={e => setForm(f => ({ ...f, beach_access_extra_guest: e.target.value }))} placeholder="Per extra guest / period" />
-        </div>
+        {isSale ? (
+          <div>
+            <label className="label">Area (m²) *</label>
+            <input
+              type="number"
+              min="1"
+              step="1"
+              className="input"
+              value={form.unit_area}
+              onChange={(e) => setForm((f) => ({ ...f, unit_area: e.target.value }))}
+              placeholder="e.g. 145"
+            />
+          </div>
+        ) : (
+          <>
+            <div>
+              <label className="label">Fallback nightly (EGP)</label>
+              <input type="number" min="0" step="0.01" className="input" value={form.price_per_night} onChange={e => setForm(f => ({ ...f, price_per_night: e.target.value }))} placeholder="Display only — bookable prices on Pricing" />
+            </div>
+            <div>
+              <label className="label">Utilities Cost Per Night (EGP)</label>
+              <input type="number" min="0" step="0.01" className="input" value={form.utilities_cost} onChange={e => setForm(f => ({ ...f, utilities_cost: e.target.value }))} placeholder="0.00" />
+            </div>
+            {showBeachFields ? (
+              <>
+                <div>
+                  <label className="label">Beach access price (EGP)</label>
+                  <input type="number" min="0" step="0.01" className="input" value={form.beach_access_price} onChange={e => setForm(f => ({ ...f, beach_access_price: e.target.value }))} placeholder="Per person / period" />
+                </div>
+                <div>
+                  <label className="label">Beach access period</label>
+                  <select
+                    className="input"
+                    value={form.beach_access_days || 7}
+                    onChange={e => setForm(f => ({ ...f, beach_access_days: Number(e.target.value) }))}
+                  >
+                    {BEACH_ACCESS_PERIODS.map((p) => (
+                      <option key={p.value} value={p.value}>{p.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Beach access — extra guest (EGP)</label>
+                  <input type="number" min="0" step="0.01" className="input" value={form.beach_access_extra_guest} onChange={e => setForm(f => ({ ...f, beach_access_extra_guest: e.target.value }))} placeholder="Per extra guest / period" />
+                </div>
+              </>
+            ) : gaiaProject ? (
+              <div className="sm:col-span-2 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2.5 text-sm text-sky-900">
+                <strong>GAIA beach access</strong> is automatic by stay length (no fields needed):
+                3 nights → 1,900 / extra 2,500 · 4 nights → 2,500 / extra 3,100 · 5+ nights → 3,500 / extra 4,100 (per 7 nights).
+              </div>
+            ) : freeBeach ? (
+              <div className="sm:col-span-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-900">
+                <strong>Free beach access</strong> for this project (Hacienda West / D-Bay). No beach fees are charged.
+              </div>
+            ) : null}
+          </>
+        )}
       </div>
 
       <div className="border-t border-gray-100 pt-4 space-y-3">
-        <h4 className="text-sm font-semibold text-gray-700">Guest listing</h4>
+        <h4 className="text-sm font-semibold text-gray-700">{isSale ? 'Listing details' : 'Guest listing'}</h4>
         <div>
           <label className="label">Description</label>
           <textarea className="input resize-none" rows={3} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="The property…" />
@@ -421,13 +425,9 @@ function UnitForm({ form, setForm }) {
             selectedTags={form.amenities || []}
             onTagsChange={(tags) => setForm((f) => ({ ...f, amenities: tags }))}
           />
-          <TagSelect
-            label="Facilities"
-            placeholder="Select or type facilities…"
-            suggestions={FACILITY_SUGGESTIONS}
-            selectedTags={form.facilities || []}
-            onTagsChange={(tags) => setForm((f) => ({ ...f, facilities: tags }))}
-          />
+          <p className="sm:col-span-2 text-xs text-gray-400 -mt-2">
+            Compound facilities are managed on Destinations → project (shared by all units in that project).
+          </p>
           <div className="sm:col-span-2">
             <label className="label">Location / maps link</label>
             <input type="url" className="input" value={form.location_link} onChange={e => setForm(f => ({ ...f, location_link: e.target.value }))} placeholder="https://maps.google.com/…" />
@@ -481,7 +481,7 @@ function UnitForm({ form, setForm }) {
               Auto — published when every field is filled, otherwise draft
             </div>
             <p className="text-xs text-gray-400 mt-1">
-              Status is set automatically. Missing any field (price, description, beach access, photos, amenities, location, view, utilities, etc.) keeps the unit as draft and hidden from guests.
+              Status is set automatically. Missing required fields keeps the unit as draft and hidden from guests. GAIA and free-beach projects do not need beach access fields.
             </p>
           </div>
         </div>
@@ -497,9 +497,10 @@ function CommissionBadge({ unit }) {
   return <span className="text-xs text-gray-500">Via Us: <strong className="text-gray-700">{unit.company_commission_pct}%</strong> · Via Owner: <strong className="text-gray-700">{unit.company_commission_owner_pct || 10}%</strong> · Tenant: <strong className="text-gray-700">{unit.commission_tenant_pct || 0}%</strong></span>;
 }
 
-export default function Units() {
+export default function Units({ listingType = 'rent' }) {
   const qc = useQueryClient();
   const { canDeleteUnits, canManageUnits } = usePermissions();
+  const isSale = listingType === 'sale';
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterProject, setFilterProject] = useState('');
@@ -512,8 +513,16 @@ export default function Units() {
   const [handoffUnit, setHandoffUnit] = useState(null);
 
   const { data: units = [], isLoading } = useQuery({
-    queryKey: ['units', search, filterStatus, filterProject, filterBedrooms],
-    queryFn: () => api.get('/units', { params: { search: search || undefined, status: filterStatus || undefined, project: filterProject || undefined, bedrooms: filterBedrooms || undefined } }).then(r => r.data),
+    queryKey: ['units', listingType, search, filterStatus, filterProject, filterBedrooms],
+    queryFn: () => api.get('/units', {
+      params: {
+        listing_type: listingType,
+        search: search || undefined,
+        status: filterStatus || undefined,
+        project: filterProject || undefined,
+        bedrooms: filterBedrooms || undefined,
+      },
+    }).then(r => r.data),
   });
 
   const { data: projects = [] } = useQuery({
@@ -568,51 +577,37 @@ export default function Units() {
     setForm({
       ...EMPTY_FORM,
       amenities: [],
-      facilities: [],
       photo_urls: [],
     });
     setEditId(null);
     setModal('add');
   };
   const openEdit = (u) => {
-    let facilities = toTagList(u.facilities);
-    if (!facilities.length && u.other_details) {
-      try {
-        const parsed = typeof u.other_details === 'string' ? JSON.parse(u.other_details) : u.other_details;
-        facilities = toTagList(parsed?.facilities);
-      } catch (_) { /* ignore */ }
-    }
+    setEditId(u.id);
     setForm({
+      ...EMPTY_FORM,
+      ...u,
       name: u.name || u.title || '',
-      destination: u.area || u.destination || '',
+      destination: u.destination || u.area || '',
       project: u.project || u.compound || '',
-      unit_number: u.unit_number || '',
       type: u.type || u.property_type || 'Apartment',
       bedrooms: u.bedrooms ?? u.beds ?? 1,
       bathrooms: u.bathrooms ?? u.baths ?? 1,
-      floor: u.floor || 0,
-      guests: guestsFromBedrooms(u.bedrooms ?? u.beds ?? 1),
-      owner_name: u.owner_name || '', owner_email: u.owner_email || '', owner_phone: u.owner_phone || '',
-      commission_mode: u.commission_mode || 'A',
-      company_commission_pct: u.company_commission_pct,
-      company_commission_owner_pct: u.company_commission_owner_pct || 10,
-      commission_tenant_pct: u.commission_tenant_pct || 0,
-      photo_urls: u.photo_urls || [],
-      photos_folder_url: u.photos_folder_url || '',
-      price_per_night: u.price_per_night || u.price_fallback || '',
-      utilities_cost: u.utilities_cost || '',
-      ops_status: u.ops_status || 'available',
-      listing_status: u.status || 'draft',
-      view: u.view || '',
-      description: u.the_property || u.short_description || '',
+      floor: u.floor ?? 0,
+      description: u.description || u.the_property || '',
       amenities: toTagList(u.amenities),
-      facilities,
       location_link: u.location_link || u.source_url || '',
+      photos_folder_url: u.photos_folder_url || '',
+      photo_urls: Array.isArray(u.photo_urls) ? u.photo_urls : [],
+      price_per_night: u.price_per_night ?? u.price_fallback ?? '',
+      utilities_cost: u.utilities_cost ?? '',
       beach_access_price: u.beach_access_price ?? u.access_fee_per_adult_egp ?? '',
       beach_access_days: u.beach_access_days ?? u.access_card_count_included ?? 7,
       beach_access_extra_guest: u.beach_access_extra_guest ?? u.access_fee_per_teen_egp ?? '',
+      unit_area: u.unit_area ?? u.size_m2 ?? '',
+      ops_status: u.ops_status || 'available',
     });
-    setEditId(u.id); setModal('edit');
+    setModal('edit');
   };
   const handleSave = () => {
     if (!String(form.name || '').trim()) {
@@ -627,15 +622,39 @@ export default function Units() {
       toast.error('Project is required');
       return;
     }
+    if (isSale && !(Number(form.unit_area) > 0)) {
+      toast.error('Area (m²) is required for sale units');
+      return;
+    }
+    const projectName = normalizeProjectName(form.project);
+    const beachDefaults = !isSale ? beachAccessFormDefaults(projectName) : null;
+    const beachPrice = isSale
+      ? null
+      : beachDefaults
+        ? (beachDefaults.beach_access_price === '' ? null : beachDefaults.beach_access_price)
+        : (form.beach_access_price === '' ? null : form.beach_access_price);
+    const beachExtra = isSale
+      ? null
+      : beachDefaults
+        ? (beachDefaults.beach_access_extra_guest === '' ? null : beachDefaults.beach_access_extra_guest)
+        : (form.beach_access_extra_guest === '' ? null : form.beach_access_extra_guest);
+    const beachDays = isSale
+      ? null
+      : beachDefaults
+        ? beachDefaults.beach_access_days
+        : (form.beach_access_days === '' ? null : form.beach_access_days);
+
+    const { facilities: _omitFacilities, ...formRest } = form;
     saveMutation.mutate({
-      ...form,
+      ...formRest,
+      listing_type: listingType,
       title: form.name,
       name: form.name,
       destination: form.destination,
       area: form.destination,
-      project: normalizeProjectName(form.project),
-      compound: normalizeProjectName(form.project),
-      projectName: normalizeProjectName(form.project),
+      project: projectName,
+      compound: projectName,
+      projectName,
       status: undefined,
       ops_status: form.ops_status,
       property_type: form.type,
@@ -647,16 +666,17 @@ export default function Units() {
       the_property: form.description,
       description: form.description,
       amenities: form.amenities,
-      facilities: form.facilities,
       photos_folder_url: form.photos_folder_url || '',
-      access_fee_per_adult_egp: form.beach_access_price || null,
-      access_fee_per_teen_egp: form.beach_access_extra_guest || null,
-      access_card_count_included: form.beach_access_days || 7,
-      beach_access_price: form.beach_access_price === '' ? null : form.beach_access_price,
-      beach_access_days: form.beach_access_days === '' ? null : form.beach_access_days,
-      beach_access_extra_guest: form.beach_access_extra_guest === '' ? null : form.beach_access_extra_guest,
-      price_per_night: form.price_per_night === '' ? null : form.price_per_night,
-      utilities_cost: form.utilities_cost === '' ? null : form.utilities_cost,
+      unit_area: isSale ? form.unit_area : null,
+      size_m2: isSale ? form.unit_area : form.unit_area || null,
+      access_fee_per_adult_egp: isSale ? null : beachPrice,
+      access_fee_per_teen_egp: isSale ? null : beachExtra,
+      access_card_count_included: isSale ? null : beachDays,
+      beach_access_price: isSale ? null : beachPrice,
+      beach_access_days: isSale ? null : beachDays,
+      beach_access_extra_guest: isSale ? null : beachExtra,
+      price_per_night: isSale ? null : (form.price_per_night === '' ? null : form.price_per_night),
+      utilities_cost: isSale ? null : (form.utilities_cost === '' ? null : form.utilities_cost),
     });
   };
   const canWrite = canManageUnits;
@@ -670,18 +690,21 @@ export default function Units() {
             <strong>{handoffUnit.name || handoffUnit.title}</strong> saved as draft
             {handoffUnit.listing_completeness?.missing?.length
               ? ` (missing: ${handoffUnit.listing_completeness.missing.join(', ')})`
-              : ''}. Complete the listing, then it can appear to guests.
+              : ''}. Complete the listing{isSale ? '' : ', then it can appear to guests'}.
           </span>
           <div className="flex gap-2">
-            <a href="/admin/pricing" className="btn-secondary text-xs">Pricing</a>
+            {!isSale && <a href="/admin/pricing" className="btn-secondary text-xs">Pricing</a>}
             <button type="button" className="text-xs underline" onClick={() => setHandoffUnit(null)}>Dismiss</button>
           </div>
         </div>
       )}
       <div className="flex items-center justify-between">
         <div className="page-header mb-0">
-          <h1 className="page-title">Units</h1>
-          <p className="page-subtitle">{units.length} unit{units.length !== 1 ? 's' : ''} total</p>
+          <h1 className="page-title">{isSale ? 'Units for Sale' : 'Units'}</h1>
+          <p className="page-subtitle">
+            {units.length} {isSale ? 'for-sale' : ''} unit{units.length !== 1 ? 's' : ''}
+            {isSale ? ' · managed by resale' : ' for rent'}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex bg-gray-100 rounded-lg p-1">
@@ -741,9 +764,15 @@ export default function Units() {
                   <Eye className="w-3.5 h-3.5" />{u.view}
                 </div>
               )}
-              {(u.price_per_night > 0 || u.price_fallback > 0) && (
+              {(isSale
+                ? (u.unit_area || u.size_m2 || u.area_sqft)
+                : (u.price_per_night > 0 || u.price_fallback > 0)) && (
                 <div className="flex items-center gap-1.5 text-sm text-emerald-700 font-medium mb-2">
-                  <DollarSign className="w-4 h-4" />{currency(u.price_per_night || u.price_fallback)} / night
+                  {isSale ? (
+                    <>{u.unit_area || u.size_m2 || u.area_sqft} m²</>
+                  ) : (
+                    <><DollarSign className="w-4 h-4" />{currency(u.price_per_night || u.price_fallback)} / night</>
+                  )}
                 </div>
               )}
               <div className="flex items-center justify-between pt-3 border-t border-gray-100">
@@ -772,7 +801,9 @@ export default function Units() {
                   <SortTh col="project" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>Project</SortTh>
                   <SortTh col="type" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>Type</SortTh>
                   <th>Beds/Bath</th>
-                  <SortTh col="price_per_night" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>Price/Night</SortTh>
+                  <SortTh col={isSale ? 'size_m2' : 'price_per_night'} sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>
+                    {isSale ? 'Area (m²)' : 'Price/Night'}
+                  </SortTh>
                   <SortTh col="owner_name" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>Owner</SortTh>
                   <th>Commission</th><th>Photos</th>
                   <SortTh col="status" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>Status</SortTh>
@@ -786,7 +817,11 @@ export default function Units() {
                     <td>{u.project}</td>
                     <td>{u.type || u.property_type}</td>
                     <td>{u.bedrooms ?? u.beds}B/{u.bathrooms ?? u.baths}Ba</td>
-                    <td>{(u.price_per_night || u.price_fallback) > 0 ? currency(u.price_per_night || u.price_fallback) : '—'}</td>
+                    <td>
+                      {isSale
+                        ? ((u.unit_area || u.size_m2 || u.area_sqft) ? `${u.unit_area || u.size_m2 || u.area_sqft} m²` : '—')
+                        : ((u.price_per_night || u.price_fallback) > 0 ? currency(u.price_per_night || u.price_fallback) : '—')}
+                    </td>
                     <td>{u.owner_name || '—'}</td>
                     <td><CommissionBadge unit={u} /></td>
                     <td>
@@ -814,20 +849,22 @@ export default function Units() {
       <Modal
         open={modal === 'add' || modal === 'edit'}
         onClose={() => setModal(null)}
-        title={modal === 'edit' ? 'Edit Unit' : 'Add New Unit'}
+        title={modal === 'edit'
+          ? (isSale ? 'Edit Sale Unit' : 'Edit Unit')
+          : (isSale ? 'Add Unit for Sale' : 'Add New Unit')}
         size="lg"
         footer={<>
           <button onClick={() => setModal(null)} className="btn-secondary">Cancel</button>
           <button
             onClick={handleSave}
-            disabled={saveMutation.isPending || !form.name || !form.destination || !form.project}
+            disabled={saveMutation.isPending || !form.name || !form.destination || !form.project || (isSale && !form.unit_area)}
             className="btn-primary"
           >
-            {saveMutation.isPending ? 'Saving...' : modal === 'edit' ? 'Save Changes' : 'Create draft'}
+            {saveMutation.isPending ? 'Saving...' : modal === 'edit' ? 'Save Changes' : (isSale ? 'Create sale unit' : 'Create draft')}
           </button>
         </>}
       >
-        <UnitForm form={form} setForm={setForm} />
+        <UnitForm form={form} setForm={setForm} listingType={listingType} />
       </Modal>
 
       <ConfirmDialog open={!!deleteId} onClose={() => setDeleteId(null)} onConfirm={() => deleteMutation.mutate(deleteId)}

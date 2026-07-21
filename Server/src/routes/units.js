@@ -42,6 +42,45 @@ function toPublicUnit(row) {
   return out;
 }
 
+function facilitiesFromOtherDetails(row) {
+  try {
+    const details =
+      typeof row?.other_details === 'string' ? JSON.parse(row.other_details) : row?.other_details;
+    if (Array.isArray(details?.facilities)) {
+      return details.facilities.map((f) => String(f || '').trim()).filter(Boolean);
+    }
+  } catch {
+    /* ignore */
+  }
+  return [];
+}
+
+async function projectFacilitiesMap(projectNames) {
+  const names = [...new Set(projectNames.map((n) => String(n || '').trim()).filter(Boolean))];
+  if (!names.length) return new Map();
+  const { rows } = await query(
+    `SELECT name, COALESCE(facilities, '{}'::text[]) AS facilities
+     FROM location_projects
+     WHERE lower(trim(name)) = ANY($1::text[])`,
+    [names.map((n) => n.toLowerCase())]
+  );
+  const map = new Map();
+  for (const r of rows) {
+    map.set(String(r.name).toLowerCase(), Array.isArray(r.facilities) ? r.facilities : []);
+  }
+  return map;
+}
+
+function attachFacilities(row, facilitiesByProject) {
+  const out = toPublicUnit(row);
+  const key = String(row.compound || row.project || '').trim().toLowerCase();
+  const fromProject = key ? facilitiesByProject.get(key) || [] : [];
+  const fromUnit = facilitiesFromOtherDetails(row);
+  // Prefer project-level facilities; fall back to legacy unit facilities (published units).
+  out.facilities = fromProject.length ? fromProject : fromUnit;
+  return out;
+}
+
 router.get('/', async (req, res, next) => {
   try {
     const {
@@ -58,13 +97,15 @@ router.get('/', async (req, res, next) => {
       types,
       property_type,
       status = 'published',
+      listing_type: listingTypeParam,
       limit = 24,
       offset = 0,
     } = req.query;
 
-    const where = ['u.status = $1'];
-    const params = [status];
-    let i = 2;
+    const listingType = String(listingTypeParam || 'rent').toLowerCase() === 'sale' ? 'sale' : 'rent';
+    const where = ["u.status = $1", `COALESCE(u.listing_type, 'rent') = $2`];
+    const params = [status, listingType];
+    let i = 3;
 
     // SoulHospitality aliases: destination → area, project/projectName → compound
     const compoundFilter = compound || projectName || project;
@@ -117,7 +158,7 @@ router.get('/', async (req, res, next) => {
                ELSE u.photo_urls[1:5]
              END AS photo_urls,
              u.wp_post_id, u.featured, u.price_currency, u.property_type, u.price_fallback,
-             u.created_at,
+             u.size_m2, u.listing_type, u.created_at,
              COALESCE(u.average_rating, 0) AS average_rating,
              COALESCE(u.review_count, 0) AS review_count
       FROM units u
@@ -130,7 +171,11 @@ router.get('/', async (req, res, next) => {
       `SELECT count(*)::int AS c FROM units u WHERE ${where.join(' AND ')}`,
       params.slice(0, -2)
     );
-    res.json({ items: rows.map(toPublicUnit), total: countRes.rows[0].c });
+    const facilitiesByProject = await projectFacilitiesMap(rows.map((r) => r.compound || r.project));
+    res.json({
+      items: rows.map((r) => attachFacilities(r, facilitiesByProject)),
+      total: countRes.rows[0].c,
+    });
   } catch (err) {
     next(err);
   }
@@ -140,7 +185,7 @@ router.get('/compounds', async (_req, res, next) => {
   try {
     const { rows } = await query(
       `SELECT compound AS name, count(*)::int AS listings
-       FROM units WHERE status = 'published'
+       FROM units WHERE status = 'published' AND COALESCE(listing_type, 'rent') = 'rent'
        GROUP BY compound ORDER BY compound`
     );
     res.json({ items: rows });
@@ -158,7 +203,10 @@ router.get('/:idOrSlug', async (req, res, next) => {
       [key]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Unit not found' });
-    res.json(toPublicUnit(rows[0]));
+    const facilitiesByProject = await projectFacilitiesMap([
+      rows[0].compound || rows[0].project,
+    ]);
+    res.json(attachFacilities(rows[0], facilitiesByProject));
   } catch (err) {
     next(err);
   }

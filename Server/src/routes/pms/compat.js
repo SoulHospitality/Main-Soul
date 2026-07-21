@@ -3,6 +3,7 @@ const { query } = require('../../config/db');
 const { authStaff, requireRoles } = require('../../middleware/auth');
 const { syncUnitListingStatus } = require('../../lib/unitListingStatus');
 const { FINANCIAL_EPOCH, clampFromDate } = require('../../lib/financialEpoch');
+const { bookingAssigneeClause, loadReservationAccess, assertReservationOwned, assertBookingAssigned, isAdmin } = require('../../lib/reservationScope');
 
 /** Extra PMS endpoints expected by the legacy admin SPA (stubs + thin adapters). */
 const router = express.Router();
@@ -478,6 +479,10 @@ router.put('/blocked-dates/:unitId', requireRoles('admin'), async (req, res, nex
 
 router.get('/website-bookings', async (req, res, next) => {
   try {
+    if (isAdmin(req.user)) {
+      return res.json([]);
+    }
+
     const status = req.query.status;
     const params = [];
     let where = 'TRUE';
@@ -485,11 +490,14 @@ router.get('/website-bookings', async (req, res, next) => {
       params.push(status);
       where = `b.status = $${params.length}`;
     }
+    const scope = bookingAssigneeClause(req.user, 'b', params.length + 1);
+    params.push(...scope.params);
     const { rows } = await query(
       `SELECT b.*,
               u.title AS unit_title,
               u.unit_number,
               u.slug AS unit_slug,
+              su.full_name AS assigned_agent_name,
               COALESCE(
                 NULLIF(b.id_photo_urls, '{}'),
                 (
@@ -518,7 +526,8 @@ router.get('/website-bookings', async (req, res, next) => {
               ) AS id_photo_urls
        FROM bookings b
        LEFT JOIN units u ON u.id = b.unit_id
-       WHERE ${where}
+       LEFT JOIN staff_users su ON su.id = b.assigned_sales_id
+       WHERE ${where}${scope.clause}
        ORDER BY b.created_at DESC
        LIMIT 200`,
       params
@@ -529,7 +538,7 @@ router.get('/website-bookings', async (req, res, next) => {
   }
 });
 
-router.post('/website-bookings/:id/accept', requireRoles('admin', 'reservations'), async (req, res, next) => {
+router.post('/website-bookings/:id/accept', requireRoles('reservations'), async (req, res, next) => {
   try {
     const { acceptWebsiteBooking } = require('../../services/bookingWorkflow');
     const booking = await acceptWebsiteBooking(req.params.id, req.user);
@@ -539,10 +548,14 @@ router.post('/website-bookings/:id/accept', requireRoles('admin', 'reservations'
   }
 });
 
-router.post('/website-bookings/:id/reject', requireRoles('admin', 'reservations'), async (req, res, next) => {
+router.post('/website-bookings/:id/reject', requireRoles('reservations'), async (req, res, next) => {
   try {
     const { rejectWebsiteBooking } = require('../../services/bookingWorkflow');
-    const booking = await rejectWebsiteBooking(req.params.id, req.body?.reason || 'rejected_by_staff');
+    const booking = await rejectWebsiteBooking(
+      req.params.id,
+      req.user,
+      req.body?.reason || 'rejected_by_staff'
+    );
     res.json(booking);
   } catch (e) {
     next(e);
@@ -825,8 +838,12 @@ router.put('/tasks/:id', async (req, res, next) => {
   }
 });
 
-router.put('/reservations/:id', requireRoles('admin', 'reservations'), async (req, res, next) => {
+router.put('/reservations/:id', requireRoles('reservations'), async (req, res, next) => {
   try {
+    const existing = await loadReservationAccess(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    assertReservationOwned(req.user, existing);
+
     const b = req.body;
     const { rows } = await query(
       `UPDATE reservations SET
