@@ -237,6 +237,9 @@ export default function BecomeAHostPage() {
                         {d}
                       </option>
                     ))}
+                    {!destinationOptions.includes('Other') && (
+                      <option value="Other">Other</option>
+                    )}
                   </select>
                 </label>
 
