@@ -57,18 +57,26 @@ function computeFees(unit, { nights, subtotal, adults = 1, teens = 0 }) {
   const accessAdult = Number(beach.adult || 0) * Math.max(0, Number(adults) || 0);
   const accessTeen = Number(beach.extra || 0) * Math.max(0, Number(teens) || 0);
   const access = accessAdult + accessTeen;
-  const servicePct = Number(unit?.service_fee_percent || 0);
-  const service = Math.round(subtotal * (servicePct / 100));
+  // Guest checkout: flat 15% service fees + taxes on accommodation subtotal.
+  const servicePct = 15;
+  const service = Math.round(Number(subtotal || 0) * (servicePct / 100));
   const deposit = Number(unit?.security_deposit_egp || 0);
   const lines = [];
   if (cleaning > 0) lines.push({ key: 'cleaning', label: 'Housekeeping fee', amount: cleaning });
   if (access > 0) lines.push({ key: 'access', label: 'Access cards', amount: access });
-  if (service > 0) lines.push({ key: 'service', label: `Service (${servicePct}%)`, amount: service });
+  if (service > 0) {
+    lines.push({
+      key: 'service',
+      label: `Service fees + Taxes (${servicePct}%)`,
+      amount: service,
+    });
+  }
   return {
     lines,
     cleaning_fee_egp: cleaning,
     access_fee_egp: access,
     service_fee_egp: service,
+    service_fee_percent: servicePct,
     security_deposit_egp: deposit,
     fees_total: cleaning + access + service,
     beach_access: beach,

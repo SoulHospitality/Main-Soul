@@ -226,7 +226,11 @@ export default function PaymentPage() {
                   {(feeLines.length ? feeLines : [
                     cleaningFee > 0 && { key: 'cleaning', label: 'Cleaning', amount: cleaningFee },
                     accessFee > 0 && { key: 'access', label: 'Access / beach', amount: accessFee },
-                    serviceFee > 0 && { key: 'service', label: 'Service fee', amount: serviceFee },
+                    serviceFee > 0 && {
+                      key: 'service',
+                      label: 'Service fees + Taxes (15%)',
+                      amount: serviceFee,
+                    },
                   ].filter(Boolean)
                   ).map((line) => (
                     <div key={line.key || line.label} className="flex justify-between">

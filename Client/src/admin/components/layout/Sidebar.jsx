@@ -13,7 +13,7 @@ import {
 const NAV_ITEMS = [
   { path: '/admin/dashboard',        label: 'Dashboard',          icon: LayoutDashboard,   page: 'dashboard' },
   { path: '/admin/units',            label: 'Units (Rent)',       icon: Building2,          page: 'units' },
-  { path: '/admin/units-for-sale',   label: 'Units for Sale',     icon: Building2,          page: 'units_sale' },
+  { path: '/admin/units-for-sale',   label: 'Units for Sale',     icon: Building2,          page: 'units_sale', resaleLabel: 'Units' },
   { path: '/admin/projects',         label: 'Destinations',       icon: Building,           page: 'projects' },
   { path: '/admin/reservations',     label: 'Reservations',       icon: CalendarDays,       page: 'reservations' },
   { path: '/admin/schedule',         label: 'Schedule',           icon: CalendarRange,      page: 'schedule' },
@@ -26,7 +26,8 @@ const NAV_ITEMS = [
   { path: '/admin/petty-cash',       label: 'Petty Cash',         icon: Wallet,             page: 'petty_cash' },
   { path: '/admin/housekeeping',     label: 'Housekeeping',       icon: Sparkles,           page: 'housekeeping' },
   { path: '/admin/maintenance',      label: 'Maintenance',        icon: CheckSquare,        page: 'maintenance' },
-  { path: '/admin/acquisition',      label: 'Acquisition',        icon: Briefcase,          page: 'acquisition' },
+  { path: '/admin/acquisition',      label: 'Acquisition',        icon: Briefcase,          page: 'acquisition', resaleLabel: 'Owners requests' },
+  { path: '/admin/sales',            label: 'Sales',              icon: TrendingUp,         page: 'sales' },
   { path: '/admin/treasury',         label: 'Treasury',            icon: Landmark,           page: 'cashflow' },
   { path: '/admin/cashflow',         label: 'Cash Flow',          icon: DollarSign,         page: 'cashflow' },
   { path: '/admin/owner-settlements', label: 'Owner Settlements', icon: FileBarChart2, page: 'owner_settlements' },
@@ -87,7 +88,10 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
       )}
 
       <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
-        {NAV_ITEMS.filter((item) => canAccess(item.page)).map((item) => (
+        {NAV_ITEMS.filter((item) => canAccess(item.page)).map((item) => {
+          const label =
+            user?.role === 'resale' && item.resaleLabel ? item.resaleLabel : item.label;
+          return (
           <NavLink
             key={item.path}
             to={item.path}
@@ -95,12 +99,13 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
             className={({ isActive }) =>
               `sidebar-link ${isActive ? 'sidebar-link-active' : 'sidebar-link-inactive'} ${!showLabels ? 'justify-center px-2' : ''}`
             }
-            title={!showLabels ? item.label : undefined}
+            title={!showLabels ? label : undefined}
           >
             <item.icon className="w-5 h-5 flex-shrink-0" strokeWidth={1.75} />
-            {showLabels && <span>{item.label}</span>}
+            {showLabels && <span>{label}</span>}
           </NavLink>
-        ))}
+          );
+        })}
       </nav>
 
       <div className="border-t border-white/10 p-3">

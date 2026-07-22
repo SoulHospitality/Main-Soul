@@ -544,7 +544,7 @@ export default function BookingDrawer({
               )}
               {service > 0 && (
                 <div className="flex items-center justify-between text-sm text-soul-muted">
-                  <span>Service fee</span>
+                  <span>Service fees + Taxes (15%)</span>
                   <span className="font-semibold text-soul-blue">{money(service)}</span>
                 </div>
               )}

@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import { currency } from '../utils/formatters';
+import { usePermissions } from '../hooks/usePermissions';
 
 const STAGES = [
   'lead',
@@ -303,6 +304,7 @@ function LeadDetail({ lead, onClose }) {
 
 export default function AcquisitionPipeline() {
   const qc = useQueryClient();
+  const { isResale } = usePermissions();
   const [form, setForm] = useState(EMPTY);
   const [showIntake, setShowIntake] = useState(false);
   const [selected, setSelected] = useState(null);
@@ -349,7 +351,9 @@ export default function AcquisitionPipeline() {
     <div className="space-y-6 p-1">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Acquisition Pipeline</h1>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {isResale ? 'Owners requests' : 'Acquisition Pipeline'}
+          </h1>
           <p className="text-sm text-gray-500">
             Intake → draft unit → pricing recommendation → negotiation → contract → live
           </p>

@@ -495,7 +495,7 @@ function CommissionBadge({ unit }) {
 
 export default function Units({ listingType = 'rent' }) {
   const qc = useQueryClient();
-  const { canDeleteUnits, canManageUnits } = usePermissions();
+  const { canDeleteUnits, canManageUnits, isResale } = usePermissions();
   const isSale = listingType === 'sale';
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
@@ -696,7 +696,7 @@ export default function Units({ listingType = 'rent' }) {
       )}
       <div className="flex items-center justify-between">
         <div className="page-header mb-0">
-          <h1 className="page-title">{isSale ? 'Units for Sale' : 'Units'}</h1>
+          <h1 className="page-title">{isSale ? (isResale ? 'Units' : 'Units for Sale') : 'Units'}</h1>
           <p className="page-subtitle">
             {units.length} {isSale ? 'for-sale' : ''} unit{units.length !== 1 ? 's' : ''}
             {isSale ? ' · managed by resale' : ' for rent'}

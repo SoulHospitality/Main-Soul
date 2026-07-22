@@ -427,7 +427,13 @@ router.get('/units', async (req, res, next) => {
       where.push(`beds = $${i++}`);
       params.push(Number(bedrooms));
     }
-    const listingType = String(listing_type || 'rent').toLowerCase() === 'sale' ? 'sale' : 'rent';
+    // Resale PMS only manages for-sale inventory.
+    const listingType =
+      req.user?.role === 'resale'
+        ? 'sale'
+        : String(listing_type || 'rent').toLowerCase() === 'sale'
+          ? 'sale'
+          : 'rent';
     where.push(`COALESCE(listing_type, 'rent') = $${i++}`);
     params.push(listingType);
 
@@ -474,7 +480,10 @@ router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) =>
     const { housekeepingFeeForType } = require('../../lib/housekeeping');
     const propertyType = toText(b.property_type || b.type);
     const cleaningFee = housekeepingFeeForType(propertyType);
-    const listingType = String(b.listing_type || 'rent').toLowerCase() === 'sale' ? 'sale' : 'rent';
+    let listingType = String(b.listing_type || 'rent').toLowerCase() === 'sale' ? 'sale' : 'rent';
+    if (req.user?.role === 'resale') {
+      listingType = 'sale';
+    }
     const sizeM2 = toNum(b.size_m2 || b.area_sqft || b.unit_area, { int: true });
     const priceFallback =
       listingType === 'sale' ? null : toNum(b.price_per_night || b.price_fallback, { int: true });
@@ -685,10 +694,19 @@ async function updateUnitHandler(req, res, next) {
     );
     if (!existingRows[0]) return res.status(404).json({ error: 'Not found' });
 
-    const listingType =
+    const existingListingType =
+      String(existingRows[0].listing_type || 'rent').toLowerCase() === 'sale' ? 'sale' : 'rent';
+    if (req.user?.role === 'resale' && existingListingType !== 'sale') {
+      return res.status(403).json({ error: 'Resale can only manage for-sale units' });
+    }
+
+    let listingType =
       String(b.listing_type || existingRows[0].listing_type || 'rent').toLowerCase() === 'sale'
         ? 'sale'
         : 'rent';
+    if (req.user?.role === 'resale') {
+      listingType = 'sale';
+    }
 
     const propertyType = toText(b.property_type || b.type) || existingRows[0].property_type;
     const cleaningFee = housekeepingFeeForType(propertyType);
@@ -857,8 +875,14 @@ router.put('/units/:id', requireRoles('admin', 'resale'), updateUnitHandler);
 router.delete('/units/:id', requireRoles('admin', 'resale'), async (req, res, next) => {
   try {
     const unitId = req.params.id;
-    const { rows: existing } = await query(`SELECT id, wp_post_id FROM units WHERE id = $1`, [unitId]);
+    const { rows: existing } = await query(
+      `SELECT id, wp_post_id, COALESCE(listing_type, 'rent') AS listing_type FROM units WHERE id = $1`,
+      [unitId]
+    );
     if (!existing[0]) return res.status(404).json({ error: 'Not found' });
+    if (req.user?.role === 'resale' && existing[0].listing_type !== 'sale') {
+      return res.status(403).json({ error: 'Resale can only delete for-sale units' });
+    }
 
     await query('BEGIN');
     try {

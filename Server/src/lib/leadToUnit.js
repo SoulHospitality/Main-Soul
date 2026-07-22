@@ -41,12 +41,12 @@ async function createDraftUnitFromLead(lead, { actorId } = {}) {
        slug, title, status, source, compound, project, area,
        beds, baths, guests, property_type, price_fallback,
        owner_name, owner_phone, owner_email, short_description, the_property,
-       min_nights, ops_status, created_by_staff, photo_urls, amenities
+       min_nights, ops_status, created_by_staff, photo_urls, amenities, listing_type
      ) VALUES (
        $1,$2,'draft','manual',$3,$3,COALESCE($4,'North Coast'),
        $5,$6,$7,$8,$9,
        $10,$11,$12,$13,$13,
-       $14,'available',$15,'{}'::text[],'{}'::text[]
+       $14,'available',$15,'{}'::text[],'{}'::text[],'sale'
      ) RETURNING *`,
     [
       slug,

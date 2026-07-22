@@ -26,10 +26,9 @@ const PERMISSIONS = {
     'units:read',
     'units:write',
     'units:delete',
-    'projects:read',
-    'projects:write',
     'acquisition:read',
     'acquisition:write',
+    'sales:read',
     'notifications:read',
     'documents:read',
     'documents:write',
@@ -53,7 +52,7 @@ const PERMISSIONS = {
 const PAGE_ACCESS = {
   admin: true,
   reservations: new Set(['dashboard', 'reservations', 'schedule', 'housekeeping', 'maintenance', 'profile']),
-  resale: new Set(['units_sale', 'projects', 'acquisition', 'pricing', 'schedule', 'profile']),
+  resale: new Set(['units_sale', 'acquisition', 'sales', 'profile']),
   hr: new Set(['users', 'profile']),
   owner: new Set(['owner', 'owner_reservations', 'owner_statement', 'owner_payouts', 'owner_blocks', 'profile']),
 };
