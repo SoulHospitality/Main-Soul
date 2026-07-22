@@ -61,8 +61,9 @@ router.post('/acquisition-leads', requireRoles('admin', 'resale'), async (req, r
     const { rows } = await query(
       `INSERT INTO acquisition_leads (
          title, owner_name, owner_phone, owner_email, destination, project,
-         property_type, beds, baths, expected_price, stage, unit_id, notes, sla_due_at, created_by
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+         property_type, beds, baths, expected_price, stage, unit_id, notes, sla_due_at, created_by,
+         furnishing_status, preferred_contact_time, source
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
        RETURNING *`,
       [
         b.title,
@@ -80,6 +81,9 @@ router.post('/acquisition-leads', requireRoles('admin', 'resale'), async (req, r
         b.notes || null,
         b.sla_due_at || slaDueForStage(stage),
         req.user.id,
+        b.furnishing_status || null,
+        b.preferred_contact_time || null,
+        b.source || 'manual',
       ]
     );
     await logAudit({

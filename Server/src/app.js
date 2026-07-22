@@ -98,6 +98,7 @@ function createApp() {
   app.use('/api/bookings', bookingsRoutes);
   app.use('/api/payments', paymentsRoutes);
   app.use('/api/inquiries', inquiriesRoutes);
+  app.use('/api/host-requests', require('./routes/hostRequests'));
   app.use('/api/wishlist', wishlistRoutes);
   app.use('/api/promo-codes', promoRoutes);
   app.use('/api/recruitment', recruitmentRoutes);

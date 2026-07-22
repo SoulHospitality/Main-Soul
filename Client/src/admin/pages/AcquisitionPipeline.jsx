@@ -146,8 +146,17 @@ function LeadDetail({ lead, onClose }) {
           <div>
             <h2 className="text-xl font-bold text-gray-900">{lead.title}</h2>
             <p className="text-sm text-gray-500">
-              {lead.stage} · {lead.project || '—'} · owner {lead.owner_name || '—'}
+              {lead.stage} · {lead.project || lead.destination || '—'} · owner {lead.owner_name || '—'}
+              {lead.source === 'website_host' ? ' · website form' : ''}
             </p>
+            {(lead.furnishing_status || lead.preferred_contact_time || lead.owner_phone || lead.owner_email) && (
+              <p className="mt-2 text-xs text-gray-500 space-x-2">
+                {lead.owner_phone && <span>{lead.owner_phone}</span>}
+                {lead.owner_email && <span>· {lead.owner_email}</span>}
+                {lead.furnishing_status && <span>· {lead.furnishing_status}</span>}
+                {lead.preferred_contact_time && <span>· {lead.preferred_contact_time}</span>}
+              </p>
+            )}
           </div>
           <button type="button" className="text-gray-400 hover:text-gray-700" onClick={onClose}>
             ✕
@@ -437,11 +446,19 @@ export default function AcquisitionPipeline() {
                     <button type="button" className="text-left hover:text-primary-700" onClick={() => setSelected(lead)}>
                       {lead.title}
                     </button>
+                    {lead.source === 'website_host' && (
+                      <span className="ml-2 text-[10px] uppercase tracking-wide text-violet-700">website</span>
+                    )}
                     {lead.unit_id && (
                       <span className="ml-2 text-[10px] uppercase tracking-wide text-emerald-700">unit</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-gray-600">{lead.owner_name || '—'}</td>
+                  <td className="px-4 py-3 text-gray-600">
+                    <div>{lead.owner_name || '—'}</div>
+                    {lead.preferred_contact_time && (
+                      <div className="text-[11px] text-gray-400">{lead.preferred_contact_time}</div>
+                    )}
+                  </td>
                   <td className="px-4 py-3">{lead.project || '—'}</td>
                   <td className="px-4 py-3">
                     <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-800">

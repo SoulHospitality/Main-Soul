@@ -41,14 +41,6 @@ export function FaqPage() {
   );
 }
 
-export function OwnersPage() {
-  return (
-    <StaticPage title="List your home">
-      <p>Partner with Soul to host your unit. Our ops team handles guest communication, pricing, and stays.</p>
-    </StaticPage>
-  );
-}
-
 export function LegalPage({ kind }) {
   const titles = {
     terms: 'Terms',

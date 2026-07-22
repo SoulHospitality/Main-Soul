@@ -29,7 +29,7 @@ const Compounds = lazy(() =>
 );
 const Faq = lazy(() => import('./pages/StaticPages').then((m) => ({ default: m.FaqPage })));
 const Legal = lazy(() => import('./pages/StaticPages').then((m) => ({ default: m.LegalPage })));
-const Owners = lazy(() => import('./pages/StaticPages').then((m) => ({ default: m.OwnersPage })));
+const Owners = lazy(() => import('./pages/BecomeAHostPage'));
 const ContactPage = lazy(() => import('./pages/ContactPage'));
 
 export default function App() {
