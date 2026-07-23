@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, ChevronLeft, ChevronRight, Maximize2, Upload, X } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, FileText, Maximize2, Upload, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import Badge from './ui/Badge';
 import LoadingSpinner from './ui/LoadingSpinner';
 import Modal from './ui/Modal';
+import { isPdfUrl } from '../utils/idDocuments';
 import { currency, formatDate } from '../utils/formatters';
 
 function toIdPhotos(booking) {
@@ -166,7 +167,7 @@ export default function WebsiteBookingRequests() {
                 <th className="py-2 pr-3">Unit</th>
                 <th className="py-2 pr-3">Total</th>
                 <th className="py-2 pr-3">Payment</th>
-                <th className="py-2 pr-3">Guest photos</th>
+                <th className="py-2 pr-3">Guest documents</th>
                 <th className="py-2">Actions</th>
               </tr>
             </thead>
@@ -212,20 +213,26 @@ export default function WebsiteBookingRequests() {
                               type="button"
                               onClick={() => openPreview(idPhotos, photo)}
                               className="relative"
-                              title="Review guest photo"
+                              title={isPdfUrl(photo) ? 'Review ID PDF' : 'Review guest photo'}
                             >
-                              <img
-                                src={photo}
-                                alt="Guest ID"
-                                className="h-12 w-12 rounded-md border border-amber-200 object-cover bg-white"
-                              />
+                              {isPdfUrl(photo) ? (
+                                <span className="flex h-12 w-12 items-center justify-center rounded-md border border-amber-200 bg-white text-rose-700">
+                                  <FileText className="h-5 w-5" />
+                                </span>
+                              ) : (
+                                <img
+                                  src={photo}
+                                  alt="Guest ID"
+                                  className="h-12 w-12 rounded-md border border-amber-200 object-cover bg-white"
+                                />
+                              )}
                               <span className="absolute -right-1 -top-1 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-slate-700 text-white">
                                 <Maximize2 className="h-2 w-2" strokeWidth={2} aria-hidden="true" />
                               </span>
                             </button>
                           ))
                         ) : (
-                          <span className="text-xs italic text-gray-400">No photos</span>
+                          <span className="text-xs italic text-gray-400">No documents</span>
                         )}
                       </div>
                     </td>
@@ -308,7 +315,7 @@ export default function WebsiteBookingRequests() {
             </div>
 
             <div>
-              <div className="text-xs uppercase text-gray-500 mb-2">Guest photos</div>
+              <div className="text-xs uppercase text-gray-500 mb-2">Guest ID documents</div>
               <div className="flex flex-wrap gap-2">
                 {toIdPhotos(acceptBooking).length ? (
                   toIdPhotos(acceptBooking).map((photo) => (
@@ -317,15 +324,21 @@ export default function WebsiteBookingRequests() {
                       type="button"
                       onClick={() => openPreview(toIdPhotos(acceptBooking), photo)}
                     >
-                      <img
-                        src={photo}
-                        alt="Guest"
-                        className="h-16 w-16 rounded-md border object-cover"
-                      />
+                      {isPdfUrl(photo) ? (
+                        <span className="flex h-16 w-16 items-center justify-center rounded-md border bg-slate-50 text-rose-700">
+                          <FileText className="h-6 w-6" />
+                        </span>
+                      ) : (
+                        <img
+                          src={photo}
+                          alt="Guest"
+                          className="h-16 w-16 rounded-md border object-cover"
+                        />
+                      )}
                     </button>
                   ))
                 ) : (
-                  <span className="text-sm text-gray-400 italic">No photos uploaded</span>
+                  <span className="text-sm text-gray-400 italic">No documents uploaded</span>
                 )}
               </div>
             </div>
@@ -416,7 +429,10 @@ export default function WebsiteBookingRequests() {
           className="fixed inset-0 z-[210] flex items-center justify-center bg-black/70 p-4"
           onClick={() => setPreviewPhotos([])}
         >
-          <div className="relative max-h-[90vh] max-w-3xl" onClick={(e) => e.stopPropagation()}>
+          <div
+            className={`relative max-h-[90vh] ${isPdfUrl(previewPhotos[previewPhotoIndex]) ? 'w-full max-w-5xl' : 'max-w-3xl'}`}
+            onClick={(e) => e.stopPropagation()}
+          >
             <button
               type="button"
               className="absolute -right-2 -top-2 z-10 rounded-full bg-white p-1.5 text-gray-700 shadow"
@@ -425,11 +441,31 @@ export default function WebsiteBookingRequests() {
             >
               <X className="h-4 w-4" />
             </button>
-            <img
-              src={previewPhotos[previewPhotoIndex]}
-              alt="ID preview"
-              className="max-h-[85vh] max-w-full rounded-lg object-contain"
-            />
+            {isPdfUrl(previewPhotos[previewPhotoIndex]) ? (
+              <div className="overflow-hidden rounded-lg bg-white shadow-lg">
+                <iframe
+                  title="ID PDF preview"
+                  src={previewPhotos[previewPhotoIndex]}
+                  className="h-[75vh] w-full border-0"
+                />
+                <div className="border-t px-4 py-2 text-center">
+                  <a
+                    href={previewPhotos[previewPhotoIndex]}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm font-medium text-soul-blue underline"
+                  >
+                    Open PDF in new tab
+                  </a>
+                </div>
+              </div>
+            ) : (
+              <img
+                src={previewPhotos[previewPhotoIndex]}
+                alt="ID preview"
+                className="max-h-[85vh] max-w-full rounded-lg object-contain"
+              />
+            )}
             {previewPhotos.length > 1 && (
               <div className="mt-3 flex items-center justify-center gap-3">
                 <button

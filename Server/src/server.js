@@ -10,7 +10,6 @@ const { startBookingHoldExpiryJob } = require('./jobs/bookingHoldExpiry');
 const { startPmsReminderJobs } = require('./jobs/pmsReminders');
 const { startHousekeepingTaskJob } = require('./jobs/housekeepingTasks');
 const { syncAllUnitListingStatusesOnBoot } = require('./lib/bootUnitStatusSync');
-const { seedOwnersFromUnits } = require('./lib/seedOwnersFromUnits');
 
 async function seedAdmin() {
   const username = process.env.ADMIN_USERNAME || 'admin';
@@ -44,11 +43,6 @@ async function main() {
   } else {
     await runMigrations();
     await seedAdmin();
-    try {
-      await seedOwnersFromUnits();
-    } catch (err) {
-      console.error('[boot] Owner accounts seed failed:', err.message);
-    }
     try {
       await syncAllUnitListingStatusesOnBoot();
     } catch (err) {

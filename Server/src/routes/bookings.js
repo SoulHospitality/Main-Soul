@@ -12,7 +12,7 @@ function merchantOrderId() {
   return `TEMP_SOUL_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-router.post('/checkout', authGuest, upload.array('id_photos', 4), attachCloudinaryUrls, async (req, res, next) => {
+router.post('/checkout', authGuest, upload.array('id_photos', 10), attachCloudinaryUrls, async (req, res, next) => {
   try {
     const {
       slug,

@@ -1,9 +1,9 @@
 import { useRef, useState } from 'react';
-import { CloudUpload, FileImage, X } from 'lucide-react';
+import { CloudUpload, FileImage, FileText, X } from 'lucide-react';
 import { useLocale } from '../../context/LocaleContext';
 
-const ACCEPT = 'image/png,image/jpeg,image/jpg,image/webp';
-const MAX_FILES = 2;
+const ACCEPT = 'image/png,image/jpeg,image/jpg,image/webp,application/pdf,.pdf';
+const MAX_FILES = 10;
 const MAX_MB = 10;
 
 function formatBytes(n) {
@@ -13,8 +13,22 @@ function formatBytes(n) {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function isAllowedFile(file) {
+  const type = String(file?.type || '').toLowerCase();
+  const name = String(file?.name || '').toLowerCase();
+  if (/^image\/(png|jpe?g|webp)$/i.test(type)) return true;
+  if (type === 'application/pdf' || name.endsWith('.pdf')) return true;
+  return false;
+}
+
+function isPdfFile(file) {
+  const type = String(file?.type || '').toLowerCase();
+  const name = String(file?.name || '').toLowerCase();
+  return type === 'application/pdf' || name.endsWith('.pdf');
+}
+
 /**
- * Drag-and-drop style upload for National ID / Passport photos.
+ * Drag-and-drop upload for National ID / Passport photos or PDFs.
  */
 export default function IdentityPhotoUpload({
   files = [],
@@ -29,9 +43,7 @@ export default function IdentityPhotoUpload({
 
   function takeFiles(fileList) {
     setError('');
-    const incoming = Array.from(fileList || []).filter((f) =>
-      /^image\/(png|jpe?g|webp)$/i.test(f.type)
-    );
+    const incoming = Array.from(fileList || []).filter(isAllowedFile);
     if (!incoming.length) {
       setError(t('booking.badType'));
       return;
@@ -125,7 +137,7 @@ export default function IdentityPhotoUpload({
                 className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5"
               >
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white text-slate-500 shadow-sm">
-                  <FileImage className="h-5 w-5" />
+                  {isPdfFile(file) ? <FileText className="h-5 w-5" /> : <FileImage className="h-5 w-5" />}
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-slate-800">{file.name}</p>

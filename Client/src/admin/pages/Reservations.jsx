@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { Plus, Edit2, Eye, Ban, CreditCard, CalendarDays, Upload, Download, CheckCircle, AlertCircle, Lock, Trash2, Maximize2, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { Plus, Edit2, Eye, Ban, CreditCard, CalendarDays, Upload, Download, CheckCircle, AlertCircle, Lock, Trash2, Maximize2, ChevronLeft, ChevronRight, X, FileText } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
@@ -13,6 +13,7 @@ import ConfirmDialog from '../components/ui/ConfirmDialog';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
 import SearchFilter from '../components/ui/SearchFilter';
+import { isPdfUrl } from '../utils/idDocuments';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import SortTh from '../components/ui/SortTh';
 import BookingCalendar from '../components/ui/BookingCalendar';
@@ -1111,7 +1112,7 @@ export default function Reservations() {
                   <SortTh col="check_out" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Check-out</SortTh>
                   <SortTh col="guest_email" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Email</SortTh>
                   <th className="whitespace-nowrap text-right">Total to be paid</th>
-                  <th className="whitespace-nowrap">ID Photos</th>
+                  <th className="whitespace-nowrap">ID Documents</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -1141,15 +1142,21 @@ export default function Reservations() {
                               type="button"
                               onClick={() => { setPreviewPhotos(idPhotos); setPreviewPhotoIndex(idPhotos.indexOf(photo)); }}
                               className="relative"
-                              title="View ID photo"
+                              title={isPdfUrl(photo) ? 'View ID PDF' : 'View ID photo'}
                             >
-                              <img src={photo} alt="ID" className="h-10 w-10 rounded-md border border-gray-200 object-cover" />
+                              {isPdfUrl(photo) ? (
+                                <span className="flex h-10 w-10 items-center justify-center rounded-md border border-gray-200 bg-white text-rose-700">
+                                  <FileText className="h-4 w-4" />
+                                </span>
+                              ) : (
+                                <img src={photo} alt="ID" className="h-10 w-10 rounded-md border border-gray-200 object-cover" />
+                              )}
                               <span className="absolute -right-1 -top-1 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-slate-700 text-white">
                                 <Maximize2 className="h-2 w-2" strokeWidth={2} aria-hidden="true" />
                               </span>
                             </button>
                           )) : (
-                            <span className="text-gray-400 italic">No photos</span>
+                            <span className="text-gray-400 italic">No documents</span>
                           )}
                         </div>
                       </td>
@@ -1340,7 +1347,10 @@ export default function Reservations() {
 
       {previewPhotos.length > 0 && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setPreviewPhotos([])}>
-          <div className="relative max-h-[90vh] max-w-3xl" onClick={(e) => e.stopPropagation()}>
+          <div
+            className={`relative max-h-[90vh] ${isPdfUrl(previewPhotos[previewPhotoIndex]) ? 'w-full max-w-5xl' : 'max-w-3xl'}`}
+            onClick={(e) => e.stopPropagation()}
+          >
             <button
               type="button"
               className="absolute -right-2 -top-2 z-10 rounded-full bg-white p-1.5 text-gray-700 shadow"
@@ -1349,11 +1359,31 @@ export default function Reservations() {
             >
               <X className="h-4 w-4" />
             </button>
-            <img
-              src={previewPhotos[previewPhotoIndex]}
-              alt="ID preview"
-              className="max-h-[85vh] max-w-full rounded-lg object-contain"
-            />
+            {isPdfUrl(previewPhotos[previewPhotoIndex]) ? (
+              <div className="overflow-hidden rounded-lg bg-white shadow-lg">
+                <iframe
+                  title="ID PDF preview"
+                  src={previewPhotos[previewPhotoIndex]}
+                  className="h-[75vh] w-full border-0"
+                />
+                <div className="border-t px-4 py-2 text-center">
+                  <a
+                    href={previewPhotos[previewPhotoIndex]}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm font-medium text-soul-blue underline"
+                  >
+                    Open PDF in new tab
+                  </a>
+                </div>
+              </div>
+            ) : (
+              <img
+                src={previewPhotos[previewPhotoIndex]}
+                alt="ID preview"
+                className="max-h-[85vh] max-w-full rounded-lg object-contain"
+              />
+            )}
             {previewPhotos.length > 1 && (
               <div className="mt-3 flex items-center justify-center gap-3">
                 <button
