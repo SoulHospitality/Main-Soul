@@ -23,8 +23,6 @@ export default function HomePage() {
   const [heroIndex, setHeroIndex] = useState(0);
   const [featured, setFeatured] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [total, setTotal] = useState(0);
-  const [compoundCounts, setCompoundCounts] = useState({});
   const [entered, setEntered] = useState(false);
 
   useEffect(() => {
@@ -43,10 +41,8 @@ export default function HomePage() {
 
     Promise.all([
       api.get('/units', { params: { featured: 'true', status: 'published', limit: 8 } }),
-      api.get('/units', { params: { status: 'published', limit: 1 } }),
-      api.get('/units/compounds').catch(() => ({ data: { items: [] } })),
     ])
-      .then(async ([featRes, countRes, compoundsRes]) => {
+      .then(async ([featRes]) => {
         if (cancelled) return;
         let items = featRes.data.items || [];
         if (!items.length) {
@@ -57,13 +53,6 @@ export default function HomePage() {
           items = fallback.data.items || [];
         }
         setFeatured(items);
-        setTotal(countRes.data.total ?? items.length);
-
-        const counts = {};
-        for (const row of compoundsRes.data.items || []) {
-          if (row.name) counts[row.name] = row.listings;
-        }
-        setCompoundCounts(counts);
       })
       .catch(() => {
         if (!cancelled) setFeatured([]);
@@ -121,10 +110,8 @@ export default function HomePage() {
             </p>
 
             <div className="mt-8 flex flex-wrap gap-6 border-t border-white/15 pt-6 text-sm text-white/75">
-              <span>
-                {t('home.homesCount', { count: total || '—' })}
-              </span>
-              <span>{t('home.destinations')}</span>
+              <span>{t('home.heroPhrase1')}</span>
+              <span>{t('home.heroPhrase2')}</span>
               <span>{t('home.regions')}</span>
             </div>
           </div>
@@ -139,7 +126,7 @@ export default function HomePage() {
       </section>
 
       <div className={entered ? 'soul-fade-up' : 'opacity-0'} style={{ animationDelay: '0.55s' }}>
-        <CompoundGrid counts={compoundCounts} />
+        <CompoundGrid />
       </div>
 
       {/* Featured listings */}

@@ -148,7 +148,6 @@ export default function Finance() {
             icon={TrendingUp}
             label="Cashflow"
             value={cash.net}
-            href="/admin/cashflow"
             tone="blue"
             sub={`In ${currency(cash.inflow)} · Out ${currency(cash.outflow)}`}
           />
@@ -177,7 +176,6 @@ export default function Finance() {
             icon={Home}
             label="Owed to Unit Owners"
             value={data?.ownerOwed}
-            href="/admin/owner-statement"
             tone="slate"
             sub="Net amount due to owners"
           />
@@ -199,9 +197,8 @@ export default function Finance() {
           />
           <MetricCard
             icon={Landmark}
-            label="Treasury"
+            label="Treasury outflow"
             value={cash.outflow}
-            href="/admin/treasury"
             tone="blue"
             sub="Ledger outflows (reference)"
           />

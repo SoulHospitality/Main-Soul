@@ -4,10 +4,10 @@ import { usePermissions } from '../../hooks/usePermissions';
 import { ROLE_LABELS, PMS_LABELS } from '../../utils/permissions';
 import { getRoleTheme } from '../../utils/roleTheme';
 import {
-  LayoutDashboard, Building2, CalendarDays, CreditCard,
+  LayoutDashboard, Building2, CalendarDays,
   BadgeDollarSign, Receipt, FileBarChart2, Users, UserCircle,
-  LogOut, Building, FileText, CalendarRange, Zap, Wallet, CheckSquare,
-  TrendingUp, Landmark, Sparkles, Shield, DollarSign, Briefcase,
+  LogOut, Building, CalendarRange, Zap, Wallet,
+  TrendingUp, Sparkles, Briefcase,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -17,9 +17,7 @@ const NAV_ITEMS = [
   { path: '/admin/projects',         label: 'Destinations',       icon: Building,           page: 'projects' },
   { path: '/admin/reservations',     label: 'Reservations',       icon: CalendarDays,       page: 'reservations' },
   { path: '/admin/schedule',         label: 'Schedule',           icon: CalendarRange,      page: 'schedule' },
-  { path: '/admin/pricing',          label: 'Pricing',            icon: DollarSign,         page: 'pricing' },
   { path: '/admin/utilities',        label: 'Utilities',          icon: Zap,                page: 'utilities' },
-  { path: '/admin/payments',         label: 'Payments',           icon: CreditCard,         page: 'payments' },
   { path: '/admin/finance',          label: 'Finance',            icon: BadgeDollarSign,    page: 'finance' },
   { path: '/admin/profit',           label: 'Profit',             icon: TrendingUp,         page: 'profit' },
   { path: '/admin/expenses',         label: 'Expenses',           icon: Receipt,            page: 'expenses' },
@@ -27,14 +25,8 @@ const NAV_ITEMS = [
   { path: '/admin/housekeeping',     label: 'Housekeeping',       icon: Sparkles,           page: 'housekeeping' },
   { path: '/admin/acquisition',      label: 'Owner leads',        icon: Briefcase,          page: 'acquisition', resaleLabel: 'Owners requests' },
   { path: '/admin/sales',            label: 'Sales',              icon: TrendingUp,         page: 'sales' },
-  { path: '/admin/treasury',         label: 'Treasury',            icon: Landmark,           page: 'cashflow' },
-  { path: '/admin/cashflow',         label: 'Cash Flow',          icon: DollarSign,         page: 'cashflow' },
   { path: '/admin/owner-settlements', label: 'Owner Settlements', icon: FileBarChart2, page: 'owner_settlements' },
-  { path: '/admin/owner-statement',  label: 'Owner Statement',    icon: FileBarChart2,      page: 'owner_statement' },
-  { path: '/admin/reports',          label: 'Reports',            icon: FileText,           page: 'reports' },
   { path: '/admin/users',            label: 'User Management',    icon: Users,              page: 'users' },
-  { path: '/admin/tasks',            label: 'Tasks',              icon: CheckSquare,        page: 'tasks' },
-  { path: '/admin/audit',            label: 'Audit Log',          icon: Shield,             page: 'audit' },
 ];
 
 export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile }) {

@@ -6,6 +6,22 @@ import { useLocale } from '../../context/LocaleContext';
 
 const AUTO_MS = 5500;
 const GAP_PX = 20;
+const PROJECT_PHRASE_KEYS = [
+  'home.projectPhrase0',
+  'home.projectPhrase1',
+  'home.projectPhrase2',
+  'home.projectPhrase3',
+  'home.projectPhrase4',
+  'home.projectPhrase5',
+];
+
+function phraseKeyForName(name = '') {
+  let hash = 0;
+  for (let i = 0; i < name.length; i += 1) {
+    hash = (hash + name.charCodeAt(i) * (i + 1)) % PROJECT_PHRASE_KEYS.length;
+  }
+  return PROJECT_PHRASE_KEYS[hash];
+}
 
 function useVisibleCount() {
   const [visible, setVisible] = useState(3);
@@ -25,7 +41,7 @@ function useVisibleCount() {
   return visible;
 }
 
-export default function CompoundGrid({ counts = {} }) {
+export default function CompoundGrid() {
   const { t, isRtl } = useLocale();
   const { projectCards } = useProjectCatalog();
   const visible = useVisibleCount();
@@ -39,13 +55,13 @@ export default function CompoundGrid({ counts = {} }) {
       name: p.name,
       destination: p.destination,
       image: p.image || '/soul-brand/coast-2.jpg',
-      propertyCount: counts[p.name] || 0,
+      phraseKey: phraseKeyForName(p.name),
     }));
     const foukaIdx = mapped.findIndex((c) => /fouka/i.test(c.name));
     if (foukaIdx <= 0) return mapped;
     const [fouka] = mapped.splice(foukaIdx, 1);
     return [fouka, ...mapped];
-  }, [projectCards, counts]);
+  }, [projectCards]);
 
   const count = cards.length;
   const maxIndex = Math.max(0, count - visible);
@@ -172,11 +188,7 @@ export default function CompoundGrid({ counts = {} }) {
                   {c.destination}
                 </div>
                 <div className="mt-0.5 font-display text-xl sm:text-2xl">{c.name}</div>
-                <div className="mt-1 text-sm text-white/80">
-                  {c.propertyCount > 0
-                    ? `${c.propertyCount} ${c.propertyCount === 1 ? t('home.property') : t('home.properties')}`
-                    : t('home.exploreStays')}
-                </div>
+                <div className="mt-1 text-sm text-white/80">{t(c.phraseKey)}</div>
               </div>
             </Link>
           ))}

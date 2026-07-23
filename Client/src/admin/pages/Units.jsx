@@ -364,7 +364,7 @@ function UnitForm({ form, setForm, listingType = 'rent' }) {
           <>
             <div>
               <label className="label">Fallback nightly (EGP)</label>
-              <input type="number" min="0" step="0.01" className="input" value={form.price_per_night} onChange={e => setForm(f => ({ ...f, price_per_night: e.target.value }))} placeholder="Display only — bookable prices on Pricing" />
+              <input type="number" min="0" step="0.01" className="input" value={form.price_per_night} onChange={e => setForm(f => ({ ...f, price_per_night: e.target.value }))} placeholder="Display price per night" />
             </div>
             <div>
               <label className="label">Utilities Cost Per Night (EGP)</label>
@@ -689,7 +689,6 @@ export default function Units({ listingType = 'rent' }) {
               : ''}. Complete the listing{isSale ? '' : ', then it can appear to guests'}.
           </span>
           <div className="flex gap-2">
-            {!isSale && <a href="/admin/pricing" className="btn-secondary text-xs">Pricing</a>}
             <button type="button" className="text-xs underline" onClick={() => setHandoffUnit(null)}>Dismiss</button>
           </div>
         </div>
