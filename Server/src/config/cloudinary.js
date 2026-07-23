@@ -13,15 +13,36 @@ const upload = multer({
   limits: { fileSize: 15 * 1024 * 1024 },
 });
 
-function uploadBufferToCloudinary(buffer, filename = 'upload') {
+function isPdfUpload(filename = '', mimetype = '') {
+  return /pdf/i.test(String(mimetype)) || /\.pdf$/i.test(String(filename));
+}
+
+function safeBaseName(filename = 'upload') {
+  return String(filename)
+    .replace(/\.[^.]+$/, '')
+    .replace(/[^\w.-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 80) || 'upload';
+}
+
+/**
+ * Images use auto; PDFs are uploaded as image assets so Cloudinary can deliver
+ * page previews (JPG) and inline PDF URLs under /image/upload/.
+ */
+function uploadBufferToCloudinary(buffer, filename = 'upload', mimetype = '') {
+  const pdf = isPdfUpload(filename, mimetype);
   return new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      {
-        folder: 'soul-hospitality',
-        public_id: `${Date.now()}-${String(filename).replace(/\.[^.]+$/, '')}`,
-        resource_type: 'auto',
-      },
-      (err, result) => (err ? reject(err) : resolve(result))
+    const options = {
+      folder: 'soul-hospitality/id-docs',
+      public_id: `${Date.now()}-${safeBaseName(filename)}`,
+      resource_type: pdf ? 'image' : 'auto',
+      type: 'upload',
+    };
+    if (pdf) {
+      options.format = 'pdf';
+    }
+    const stream = cloudinary.uploader.upload_stream(options, (err, result) =>
+      err ? reject(err) : resolve(result)
     );
     streamifier.createReadStream(buffer).pipe(stream);
   });
@@ -41,9 +62,15 @@ async function attachCloudinaryUrls(req, _res, next) {
     }
     for (const file of files) {
       if (!file.buffer) continue;
-      const result = await uploadBufferToCloudinary(file.buffer, file.originalname);
+      const result = await uploadBufferToCloudinary(
+        file.buffer,
+        file.originalname,
+        file.mimetype
+      );
       file.path = result.secure_url;
       file.secure_url = result.secure_url;
+      file.cloudinary_resource_type = result.resource_type;
+      file.cloudinary_pages = result.pages;
     }
     next();
   } catch (err) {

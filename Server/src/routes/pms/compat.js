@@ -10,6 +10,51 @@ const { upload, attachCloudinaryUrls } = require('../../config/cloudinary');
 const router = express.Router();
 router.use(authStaff);
 
+/** Stream an ID document from Cloudinary so staff can preview PDFs inline. */
+router.get('/id-documents/view', async (req, res, next) => {
+  try {
+    const raw = String(req.query.url || '').trim();
+    const cloud = process.env.CLOUDINARY_CLOUD_NAME;
+    if (!raw || !cloud) {
+      return res.status(400).json({ error: 'Missing document URL' });
+    }
+
+    let parsed;
+    try {
+      parsed = new URL(raw);
+    } catch {
+      return res.status(400).json({ error: 'Invalid document URL' });
+    }
+
+    if (parsed.protocol !== 'https:') {
+      return res.status(400).json({ error: 'Invalid document URL' });
+    }
+    if (!parsed.hostname.endsWith('cloudinary.com')) {
+      return res.status(400).json({ error: 'Document must be stored on Cloudinary' });
+    }
+    if (!raw.includes(`/${cloud}/`)) {
+      return res.status(400).json({ error: 'Document is not from this Cloudinary account' });
+    }
+
+    const upstream = await fetch(raw);
+    if (!upstream.ok) {
+      return res.status(502).json({
+        error:
+          'Could not load this document from Cloudinary. If it is a PDF, enable “Allow delivery of PDF and ZIP files” in Cloudinary Security settings, or re-upload the ID.',
+      });
+    }
+
+    const contentType = upstream.headers.get('content-type') || 'application/pdf';
+    const buf = Buffer.from(await upstream.arrayBuffer());
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', 'inline; filename="id-document.pdf"');
+    res.setHeader('Cache-Control', 'private, max-age=120');
+    res.send(buf);
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.get('/users/sales', async (_req, res, next) => {
   try {
     const { rows } = await query(

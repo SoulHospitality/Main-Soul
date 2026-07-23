@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, ChevronLeft, ChevronRight, FileText, Maximize2, Upload, X } from 'lucide-react';
+import { Check, FileText, Maximize2, Upload, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
+import IdDocumentPreviewModal from './IdDocumentPreviewModal';
 import Badge from './ui/Badge';
 import LoadingSpinner from './ui/LoadingSpinner';
 import Modal from './ui/Modal';
-import { isPdfUrl } from '../utils/idDocuments';
+import { idDocumentThumbUrl, isPdfUrl } from '../utils/idDocuments';
 import { currency, formatDate } from '../utils/formatters';
 
 function toIdPhotos(booking) {
@@ -216,9 +217,17 @@ export default function WebsiteBookingRequests() {
                               title={isPdfUrl(photo) ? 'Review ID PDF' : 'Review guest photo'}
                             >
                               {isPdfUrl(photo) ? (
-                                <span className="flex h-12 w-12 items-center justify-center rounded-md border border-amber-200 bg-white text-rose-700">
-                                  <FileText className="h-5 w-5" />
-                                </span>
+                                idDocumentThumbUrl(photo) !== photo ? (
+                                  <img
+                                    src={idDocumentThumbUrl(photo)}
+                                    alt="Guest ID PDF"
+                                    className="h-12 w-12 rounded-md border border-amber-200 object-cover bg-white"
+                                  />
+                                ) : (
+                                  <span className="flex h-12 w-12 items-center justify-center rounded-md border border-amber-200 bg-white text-rose-700">
+                                    <FileText className="h-5 w-5" />
+                                  </span>
+                                )
                               ) : (
                                 <img
                                   src={photo}
@@ -325,9 +334,17 @@ export default function WebsiteBookingRequests() {
                       onClick={() => openPreview(toIdPhotos(acceptBooking), photo)}
                     >
                       {isPdfUrl(photo) ? (
-                        <span className="flex h-16 w-16 items-center justify-center rounded-md border bg-slate-50 text-rose-700">
-                          <FileText className="h-6 w-6" />
-                        </span>
+                        idDocumentThumbUrl(photo) !== photo ? (
+                          <img
+                            src={idDocumentThumbUrl(photo)}
+                            alt="Guest"
+                            className="h-16 w-16 rounded-md border object-cover"
+                          />
+                        ) : (
+                          <span className="flex h-16 w-16 items-center justify-center rounded-md border bg-slate-50 text-rose-700">
+                            <FileText className="h-6 w-6" />
+                          </span>
+                        )
                       ) : (
                         <img
                           src={photo}
@@ -425,72 +442,13 @@ export default function WebsiteBookingRequests() {
       </Modal>
 
       {previewPhotos.length > 0 && (
-        <div
-          className="fixed inset-0 z-[210] flex items-center justify-center bg-black/70 p-4"
-          onClick={() => setPreviewPhotos([])}
-        >
-          <div
-            className={`relative max-h-[90vh] ${isPdfUrl(previewPhotos[previewPhotoIndex]) ? 'w-full max-w-5xl' : 'max-w-3xl'}`}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              type="button"
-              className="absolute -right-2 -top-2 z-10 rounded-full bg-white p-1.5 text-gray-700 shadow"
-              onClick={() => setPreviewPhotos([])}
-              aria-label="Close"
-            >
-              <X className="h-4 w-4" />
-            </button>
-            {isPdfUrl(previewPhotos[previewPhotoIndex]) ? (
-              <div className="overflow-hidden rounded-lg bg-white shadow-lg">
-                <iframe
-                  title="ID PDF preview"
-                  src={previewPhotos[previewPhotoIndex]}
-                  className="h-[75vh] w-full border-0"
-                />
-                <div className="border-t px-4 py-2 text-center">
-                  <a
-                    href={previewPhotos[previewPhotoIndex]}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm font-medium text-soul-blue underline"
-                  >
-                    Open PDF in new tab
-                  </a>
-                </div>
-              </div>
-            ) : (
-              <img
-                src={previewPhotos[previewPhotoIndex]}
-                alt="ID preview"
-                className="max-h-[85vh] max-w-full rounded-lg object-contain"
-              />
-            )}
-            {previewPhotos.length > 1 && (
-              <div className="mt-3 flex items-center justify-center gap-3">
-                <button
-                  type="button"
-                  className="rounded-full bg-white/90 p-2 text-gray-700 shadow"
-                  onClick={() =>
-                    setPreviewPhotoIndex((i) => (i - 1 + previewPhotos.length) % previewPhotos.length)
-                  }
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <span className="text-sm text-white">
-                  {previewPhotoIndex + 1} / {previewPhotos.length}
-                </span>
-                <button
-                  type="button"
-                  className="rounded-full bg-white/90 p-2 text-gray-700 shadow"
-                  onClick={() => setPreviewPhotoIndex((i) => (i + 1) % previewPhotos.length)}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
+        <IdDocumentPreviewModal
+          urls={previewPhotos}
+          index={previewPhotoIndex}
+          zClass="z-[210]"
+          onClose={() => setPreviewPhotos([])}
+          onIndexChange={setPreviewPhotoIndex}
+        />
       )}
     </>
   );
