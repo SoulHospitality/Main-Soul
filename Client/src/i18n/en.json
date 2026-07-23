@@ -321,6 +321,7 @@
     "browse": "Browse File",
     "ready": "Ready",
     "idMandatory": "It's mandatory for Egyptians to add the National photo ID for any one above 15 years old.",
+    "idMandatoryAr": "إلزامي للمصريين إضافة صورة البطاقة الشخصية لأي شخص فوق ١٥ سنة.",
     "badType": "Please choose JPEG, PNG, or WEBP images.",
     "tooBig": "Each file must be under {{mb}}MB.",
     "authTitle": "Sign in to continue",
