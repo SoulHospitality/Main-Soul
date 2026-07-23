@@ -35,15 +35,6 @@ const EMPTY = {
   create_draft_unit: true,
 };
 
-function slaLabel(iso) {
-  if (!iso) return null;
-  const due = new Date(iso);
-  const days = Math.ceil((due - Date.now()) / 86400000);
-  if (Number.isNaN(days)) return null;
-  if (days < 0) return `SLA overdue ${Math.abs(days)}d`;
-  return `SLA ${days}d left`;
-}
-
 function reasoningOf(rec) {
   if (!rec?.reasoning) return {};
   return typeof rec.reasoning === 'string' ? JSON.parse(rec.reasoning) : rec.reasoning;
@@ -147,21 +138,54 @@ function LeadDetail({ lead, onClose }) {
           <div>
             <h2 className="text-xl font-bold text-gray-900">{lead.title}</h2>
             <p className="text-sm text-gray-500">
-              {lead.stage} · {lead.project || lead.destination || '—'} · owner {lead.owner_name || '—'}
+              {lead.stage}
               {lead.source === 'website_host' ? ' · website form' : ''}
+              {lead.property_type ? ` · ${lead.property_type}` : ''}
             </p>
-            {(lead.furnishing_status || lead.preferred_contact_time || lead.owner_phone || lead.owner_email) && (
-              <p className="mt-2 text-xs text-gray-500 space-x-2">
-                {lead.owner_phone && <span>{lead.owner_phone}</span>}
-                {lead.owner_email && <span>· {lead.owner_email}</span>}
-                {lead.furnishing_status && <span>· {lead.furnishing_status}</span>}
-                {lead.preferred_contact_time && <span>· {lead.preferred_contact_time}</span>}
-              </p>
-            )}
           </div>
           <button type="button" className="text-gray-400 hover:text-gray-700" onClick={onClose}>
             ✕
           </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-xl border bg-slate-50 p-4 text-sm">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-gray-400">Name</p>
+            <p className="font-medium text-gray-900">{lead.owner_name || '—'}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-gray-400">Destination</p>
+            <p className="font-medium text-gray-900">{lead.destination || lead.project || '—'}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-gray-400">Phone</p>
+            <p className="font-medium text-gray-900">
+              {lead.owner_phone ? (
+                <a href={`tel:${lead.owner_phone}`} className="hover:text-primary-700">
+                  {lead.owner_phone}
+                </a>
+              ) : (
+                '—'
+              )}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-gray-400">Email</p>
+            <p className="font-medium text-gray-900 break-all">
+              {lead.owner_email ? (
+                <a href={`mailto:${lead.owner_email}`} className="hover:text-primary-700">
+                  {lead.owner_email}
+                </a>
+              ) : (
+                '—'
+              )}
+            </p>
+          </div>
+          {(lead.furnishing_status || lead.preferred_contact_time) && (
+            <div className="sm:col-span-2 text-xs text-gray-500">
+              {[lead.furnishing_status, lead.preferred_contact_time].filter(Boolean).join(' · ')}
+            </div>
+          )}
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -430,11 +454,12 @@ export default function AcquisitionPipeline() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-xs uppercase text-gray-500">
             <tr>
-              <th className="px-4 py-3 text-left">Title</th>
-              <th className="px-4 py-3 text-left">Owner</th>
-              <th className="px-4 py-3 text-left">Project</th>
+              <th className="px-4 py-3 text-left">Request</th>
+              <th className="px-4 py-3 text-left">Name</th>
+              <th className="px-4 py-3 text-left">Phone</th>
+              <th className="px-4 py-3 text-left">Email</th>
+              <th className="px-4 py-3 text-left">Destination</th>
               <th className="px-4 py-3 text-left">Stage</th>
-              <th className="px-4 py-3 text-left">SLA</th>
               <th className="px-4 py-3 text-left">Actions</th>
             </tr>
           </thead>
@@ -442,8 +467,6 @@ export default function AcquisitionPipeline() {
             {data.map((lead) => {
               const idx = STAGES.indexOf(lead.stage);
               const next = STAGES[Math.min(idx + 1, STAGES.length - 1)];
-              const sla = slaLabel(lead.sla_due_at);
-              const overdue = lead.sla_due_at && new Date(lead.sla_due_at) < new Date();
               return (
                 <tr key={lead.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium">
@@ -457,20 +480,36 @@ export default function AcquisitionPipeline() {
                       <span className="ml-2 text-[10px] uppercase tracking-wide text-emerald-700">unit</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-gray-600">
-                    <div>{lead.owner_name || '—'}</div>
-                    {lead.preferred_contact_time && (
-                      <div className="text-[11px] text-gray-400">{lead.preferred_contact_time}</div>
+                  <td className="px-4 py-3 text-gray-800">{lead.owner_name || '—'}</td>
+                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
+                    {lead.owner_phone ? (
+                      <a href={`tel:${lead.owner_phone}`} className="hover:text-primary-700">
+                        {lead.owner_phone}
+                      </a>
+                    ) : (
+                      '—'
                     )}
                   </td>
-                  <td className="px-4 py-3">{lead.project || '—'}</td>
+                  <td className="px-4 py-3 text-gray-600">
+                    {lead.owner_email ? (
+                      <a href={`mailto:${lead.owner_email}`} className="hover:text-primary-700 break-all">
+                        {lead.owner_email}
+                      </a>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-gray-600">
+                    <div>{lead.destination || '—'}</div>
+                    {lead.project && <div className="text-[11px] text-gray-400">{lead.project}</div>}
+                  </td>
                   <td className="px-4 py-3">
                     <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-800">
                       {lead.stage}
                     </span>
-                  </td>
-                  <td className={`px-4 py-3 text-xs ${overdue ? 'text-red-600 font-semibold' : 'text-gray-500'}`}>
-                    {sla || '—'}
+                    {lead.preferred_contact_time && (
+                      <div className="mt-1 text-[11px] text-gray-400">{lead.preferred_contact_time}</div>
+                    )}
                   </td>
                   <td className="px-4 py-3 space-x-2 whitespace-nowrap">
                     <button type="button" className="text-xs text-gray-600 font-medium" onClick={() => setSelected(lead)}>

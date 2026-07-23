@@ -119,8 +119,12 @@ export default function ResaleSales() {
               <div key={l.id} className="px-4 py-3">
                 <p className="font-medium text-gray-900">{l.owner_name || l.title}</p>
                 <p className="text-xs text-gray-500">
-                  {[l.destination, l.property_type, l.furnishing_status].filter(Boolean).join(' · ') ||
-                    '—'}
+                  Destination: {l.destination || '—'}
+                  {l.property_type ? ` · ${l.property_type}` : ''}
+                </p>
+                <p className="mt-1 text-xs text-gray-600">
+                  {l.owner_phone || '—'}
+                  {l.owner_email ? ` · ${l.owner_email}` : ''}
                 </p>
                 <p className="mt-1 text-xs text-gray-400">
                   {l.stage}
