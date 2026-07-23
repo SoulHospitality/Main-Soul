@@ -43,7 +43,8 @@ function Spec({ num, label }) {
   );
 }
 
-function ExpandableText({ text, limit = 320, t }) {
+function ExpandableText({ text, limit = 320 }) {
+  const { t } = useLocale();
   const [open, setOpen] = useState(false);
   if (!text) return null;
   const needs = text.length > limit;
