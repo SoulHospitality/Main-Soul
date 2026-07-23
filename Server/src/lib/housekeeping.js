@@ -7,7 +7,11 @@ const HOUSEKEEPING_DEFAULT = 1500;
 const HOUSEKEEPING_VILLA = 2500;
 
 function isVilla(propertyType) {
-  return String(propertyType || '').trim().toLowerCase() === 'villa';
+  const key = String(propertyType || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, '');
+  return key === 'villa' || key === 'townhouse' || key === 'townhome';
 }
 
 function housekeepingFeeForType(propertyType) {

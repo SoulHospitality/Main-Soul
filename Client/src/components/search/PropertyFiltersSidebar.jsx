@@ -13,7 +13,6 @@ export const RENTAL_TYPES = [
   'Studio',
   'Chalet',
   'Villa',
-  'Townhouse',
   'Penthouse',
 ];
 
@@ -22,7 +21,6 @@ const RENTAL_TYPE_KEYS = {
   Studio: 'search.typeStudio',
   Chalet: 'search.typeChalet',
   Villa: 'search.typeVilla',
-  Townhouse: 'search.typeTownhouse',
   Penthouse: 'search.typePenthouse',
 };
 

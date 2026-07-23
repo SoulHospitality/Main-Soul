@@ -163,7 +163,6 @@
     "typeStudio": "Studio",
     "typeChalet": "Chalet",
     "typeVilla": "Villa",
-    "typeTownhouse": "Townhouse",
     "typePenthouse": "Penthouse",
     "priceRangeBoth": "EGP {{min}} – {{max}}",
     "closeFilters": "Close filters"

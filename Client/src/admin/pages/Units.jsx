@@ -12,7 +12,7 @@ import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
 import SearchFilter from '../components/ui/SearchFilter';
 import SortTh from '../components/ui/SortTh';
-import { currency, UNIT_TYPES } from '../utils/formatters';
+import { currency, UNIT_TYPES, normalizePropertyType } from '../utils/formatters';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import { useProjectCatalog } from '../../hooks/useProjectCatalog';
 import { AREAS, COMPOUNDS } from '../../data/compounds';
@@ -586,7 +586,7 @@ export default function Units({ listingType = 'rent' }) {
       name: u.name || u.title || '',
       destination: u.destination || u.area || '',
       project: u.project || u.compound || '',
-      type: u.type || u.property_type || 'Apartment',
+      type: normalizePropertyType(u.type || u.property_type || 'Apartment'),
       bedrooms: u.bedrooms ?? u.beds ?? 1,
       bathrooms: u.bathrooms ?? u.baths ?? 1,
       floor: u.floor ?? 0,
@@ -653,8 +653,8 @@ export default function Units({ listingType = 'rent' }) {
       projectName,
       status: undefined,
       ops_status: form.ops_status,
-      property_type: form.type,
-      type: form.type,
+      property_type: normalizePropertyType(form.type),
+      type: normalizePropertyType(form.type),
       bedrooms: form.bedrooms,
       beds: form.bedrooms,
       guests: guestsFromBedrooms(form.bedrooms),

@@ -19,11 +19,12 @@ const CONTACT_TIMES = new Set([
   'Anytime',
 ]);
 
+const { normalizePropertyType } = require('../lib/propertyType');
+
 const PROPERTY_TYPES = new Set([
   'Apartment',
   'Studio',
   'Villa',
-  'Townhouse',
   'Penthouse',
   'Chalet',
   'Hotel Room',
@@ -53,7 +54,9 @@ router.post('/', submitLimiter, async (req, res, next) => {
     const destination = clean(req.body?.destination, 80);
     const project = clean(req.body?.project, 120) || 'Other';
     const furnishing = clean(req.body?.furnishing_status || req.body?.furnishingStatus, 60);
-    const propertyType = clean(req.body?.property_type || req.body?.propertyType, 60);
+    const propertyType = normalizePropertyType(
+      clean(req.body?.property_type || req.body?.propertyType, 60)
+    );
     const preferredContact = clean(
       req.body?.preferred_contact_time || req.body?.preferredContactTime,
       80

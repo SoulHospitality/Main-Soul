@@ -27,6 +27,7 @@ const { normalizeProjectName } = require('../../lib/projectNames');
 const { guestsFromBedrooms } = require('../../lib/guestCapacity');
 const { logAudit } = require('../../lib/audit');
 const { calcReservationFinancials } = require('../../lib/commission');
+const { normalizePropertyType } = require('../../lib/propertyType');
 
 const router = express.Router();
 router.use(authStaff);
@@ -588,7 +589,7 @@ router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) =>
     if (!compound) return res.status(400).json({ error: 'Project is required' });
 
     const { housekeepingFeeForType } = require('../../lib/housekeeping');
-    const propertyType = toText(b.property_type || b.type);
+    const propertyType = normalizePropertyType(toText(b.property_type || b.type));
     const cleaningFee = housekeepingFeeForType(propertyType);
     let listingType = String(b.listing_type || 'rent').toLowerCase() === 'sale' ? 'sale' : 'rent';
     if (req.user?.role === 'resale') {
@@ -818,7 +819,9 @@ async function updateUnitHandler(req, res, next) {
       listingType = 'sale';
     }
 
-    const propertyType = toText(b.property_type || b.type) || existingRows[0].property_type;
+    const propertyType = normalizePropertyType(
+      toText(b.property_type || b.type) || existingRows[0].property_type
+    );
     const cleaningFee = housekeepingFeeForType(propertyType);
     const nextProject = normalizeProjectName(
       toText(b.project || b.projectName || b.compound) ||
@@ -947,7 +950,7 @@ async function updateUnitHandler(req, res, next) {
         b.price_per_night !== undefined || b.price_fallback !== undefined
           ? toNum(b.price_per_night ?? b.price_fallback, { int: true })
           : null,
-        toText(b.property_type || b.type),
+        normalizePropertyType(toText(b.property_type || b.type)),
         b.view !== undefined ? toText(b.view) : null,
         b.floor != null && b.floor !== '' ? String(b.floor) : null,
         b.location_link !== undefined || b.source_url !== undefined

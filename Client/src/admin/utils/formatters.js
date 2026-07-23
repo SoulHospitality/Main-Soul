@@ -36,4 +36,14 @@ export const getStatusConfig = (status) =>
 export const BOOKING_SOURCES = ['Private', 'Broker', 'Campaign', 'Facebook Post'];
 export const PAYMENT_METHODS = ['cash', 'bank_transfer', 'credit_card', 'online'];
 export const PAYMENT_METHOD_LABELS = { cash: 'Cash', bank_transfer: 'Bank Transfer', credit_card: 'Credit Card', online: 'Online' };
-export const UNIT_TYPES = ['Apartment', 'Studio', 'Villa', 'Townhouse', 'Penthouse', 'Chalet', 'Hotel Room'];
+export const UNIT_TYPES = ['Apartment', 'Studio', 'Villa', 'Penthouse', 'Chalet', 'Hotel Room'];
+
+/** Townhouse / town home → Villa; otherwise keep known casing. */
+export function normalizePropertyType(type) {
+  const raw = String(type || '').trim();
+  if (!raw) return raw;
+  const key = raw.toLowerCase().replace(/[\s_-]+/g, '');
+  if (key === 'townhouse' || key === 'townhome') return 'Villa';
+  const known = UNIT_TYPES.find((t) => t.toLowerCase() === raw.toLowerCase());
+  return known || raw;
+}

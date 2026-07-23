@@ -163,7 +163,6 @@
     "typeStudio": "ستوديو",
     "typeChalet": "شاليه",
     "typeVilla": "فيلا",
-    "typeTownhouse": "تاون هاوس",
     "typePenthouse": "بنتهاوس",
     "priceRangeBoth": "{{min}} – {{max}} ج.م",
     "closeFilters": "إغلاق الفلاتر"

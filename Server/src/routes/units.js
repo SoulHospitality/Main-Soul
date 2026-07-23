@@ -135,10 +135,14 @@ router.get('/', async (req, res, next) => {
     }
 
     const typeRaw = types || type || property_type || '';
-    const typeList = String(typeRaw)
+    let typeList = String(typeRaw)
       .split(',')
       .map((t) => t.trim())
       .filter(Boolean);
+    // Villa filter also matches legacy Townhouse labels until fully migrated.
+    if (typeList.some((t) => t.toLowerCase() === 'villa')) {
+      typeList = [...new Set([...typeList, 'Townhouse', 'Town House', 'Townhome'])];
+    }
     if (typeList.length === 1) {
       where.push(`u.property_type ILIKE $${i++}`);
       params.push(typeList[0]);
