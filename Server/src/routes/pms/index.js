@@ -1,6 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const { query } = require('../../config/db');
+const { query, pool } = require('../../config/db');
 const { authStaff, requireRoles, requirePasswordChanged } = require('../../middleware/auth');
 const { upload, attachCloudinaryUrls } = require('../../config/cloudinary');
 const compat = require('./compat');
@@ -374,23 +374,133 @@ router.put('/users/:id/reset-password', requireRoles('admin', 'hr'), async (req,
 });
 
 router.delete('/users/:id', requireRoles('admin', 'hr'), async (req, res, next) => {
+  const targetId = Number(req.params.id);
+  const actorId = Number(req.user.id);
   try {
-    if (Number(req.params.id) === Number(req.user.id)) {
-      return res.status(400).json({ error: 'Cannot deactivate your own account' });
+    if (targetId === actorId) {
+      return res.status(400).json({ error: 'Cannot delete your own account' });
     }
-    const { rows: existingRows } = await query(`SELECT role FROM staff_users WHERE id = $1`, [
-      req.params.id,
-    ]);
+    const { rows: existingRows } = await query(
+      `SELECT id, username, role FROM staff_users WHERE id = $1`,
+      [targetId]
+    );
     if (!existingRows[0]) return res.status(404).json({ error: 'Not found' });
     if (req.user.role === 'hr' && existingRows[0].role === 'admin') {
-      return res.status(403).json({ error: 'HR cannot deactivate admin accounts' });
+      return res.status(403).json({ error: 'HR cannot delete admin accounts' });
     }
-    const { rows } = await query(
-      `UPDATE staff_users SET is_active = 0, updated_at = now()
-       WHERE id = $1 RETURNING id, username, is_active`,
-      [req.params.id]
-    );
-    res.json(rows[0]);
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Drop user-owned rows that should not survive account removal.
+      await client.query(`DELETE FROM sales_notifications WHERE user_id = $1`, [targetId]);
+      await client.query(`DELETE FROM commissions WHERE user_id = $1`, [targetId]);
+      await client.query(`DELETE FROM notifications WHERE user_id = $1`, [targetId]);
+      await client.query(`DELETE FROM owner_units WHERE owner_id = $1`, [targetId]);
+      await client.query(`DELETE FROM owner_payout_requests WHERE owner_id = $1`, [targetId]);
+      await client.query(`DELETE FROM owner_settlements WHERE owner_id = $1`, [targetId]);
+
+      // Preserve history by reassigning required FKs to the acting admin/HR.
+      await client.query(`UPDATE documents SET created_by = $2 WHERE created_by = $1`, [
+        targetId,
+        actorId,
+      ]);
+      await client.query(`UPDATE expenses SET created_by = $2 WHERE created_by = $1`, [
+        targetId,
+        actorId,
+      ]);
+      await client.query(`UPDATE petty_cash SET created_by = $2 WHERE created_by = $1`, [
+        targetId,
+        actorId,
+      ]);
+      await client.query(`UPDATE reservations SET created_by = $2 WHERE created_by = $1`, [
+        targetId,
+        actorId,
+      ]);
+      await client.query(`UPDATE tasks SET created_by = $2 WHERE created_by = $1`, [
+        targetId,
+        actorId,
+      ]);
+
+      // Clear optional references.
+      await client.query(
+        `UPDATE acquisition_contracts SET created_by = NULL WHERE created_by = $1`,
+        [targetId]
+      );
+      await client.query(
+        `UPDATE acquisition_leads SET created_by = NULL WHERE created_by = $1`,
+        [targetId]
+      );
+      await client.query(
+        `UPDATE acquisition_negotiation_events SET created_by = NULL WHERE created_by = $1`,
+        [targetId]
+      );
+      await client.query(`UPDATE audit_log SET user_id = NULL WHERE user_id = $1`, [targetId]);
+      await client.query(
+        `UPDATE bookings SET assigned_sales_id = NULL WHERE assigned_sales_id = $1`,
+        [targetId]
+      );
+      await client.query(`UPDATE cash_ledger SET created_by = NULL WHERE created_by = $1`, [
+        targetId,
+      ]);
+      await client.query(
+        `UPDATE housekeeping_inspections SET inspector_id = NULL WHERE inspector_id = $1`,
+        [targetId]
+      );
+      await client.query(
+        `UPDATE housekeeping_tasks SET assigned_to = NULL WHERE assigned_to = $1`,
+        [targetId]
+      );
+      await client.query(
+        `UPDATE maintenance_tickets SET created_by = NULL WHERE created_by = $1`,
+        [targetId]
+      );
+      await client.query(
+        `UPDATE owner_payout_requests SET reviewed_by = NULL WHERE reviewed_by = $1`,
+        [targetId]
+      );
+      await client.query(`UPDATE payments SET approved_by = NULL WHERE approved_by = $1`, [
+        targetId,
+      ]);
+      await client.query(`UPDATE payments SET created_by = NULL WHERE created_by = $1`, [
+        targetId,
+      ]);
+      await client.query(`UPDATE price_change_log SET actor_id = NULL WHERE actor_id = $1`, [
+        targetId,
+      ]);
+      await client.query(
+        `UPDATE pricing_recommendations SET created_by = NULL WHERE created_by = $1`,
+        [targetId]
+      );
+      await client.query(
+        `UPDATE reservations SET sales_person_id = NULL WHERE sales_person_id = $1`,
+        [targetId]
+      );
+      await client.query(
+        `UPDATE salary_deductions SET created_by = NULL WHERE created_by = $1`,
+        [targetId]
+      );
+      await client.query(`UPDATE tasks SET assigned_to = NULL WHERE assigned_to = $1`, [
+        targetId,
+      ]);
+      await client.query(
+        `UPDATE units SET created_by_staff = NULL WHERE created_by_staff = $1`,
+        [targetId]
+      );
+
+      const { rows } = await client.query(
+        `DELETE FROM staff_users WHERE id = $1 RETURNING id, username`,
+        [targetId]
+      );
+      await client.query('COMMIT');
+      res.json({ ok: true, deleted: rows[0] });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   } catch (e) {
     next(e);
   }

@@ -149,7 +149,7 @@ export default function Users() {
     mutationFn: (id) => api.delete(`/users/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['users'] });
-      toast.success('User deactivated');
+      toast.success('User deleted');
       setDeleteId(null);
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Error'),
@@ -366,7 +366,7 @@ export default function Users() {
                         <button
                           onClick={() => setDeleteId(u.id)}
                           className="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50"
-                          title="Deactivate"
+                          title="Delete"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -457,9 +457,9 @@ export default function Users() {
         onClose={() => setDeleteId(null)}
         onConfirm={() => deleteMutation.mutate(deleteId)}
         loading={deleteMutation.isPending}
-        title="Deactivate User"
-        message="This will deactivate the account. They will no longer be able to log in."
-        confirmText="Deactivate"
+        title="Delete User"
+        message="This permanently deletes the account from the system. This cannot be undone."
+        confirmText="Delete"
         danger
       />
     </div>
