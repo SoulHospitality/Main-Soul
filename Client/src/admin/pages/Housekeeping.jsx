@@ -136,13 +136,33 @@ function TasksTab() {
                 <div>
                   <p className="font-semibold text-gray-900">{t.unit_name}</p>
                   <p className="text-xs text-gray-500">
-                    {t.project || '—'} · Check-in {normDate(t.check_in) || '—'}
+                    Unit ID: {t.unit_number || t.unit_uuid || '—'}
+                    {t.project ? ` · ${t.project}` : ''}
                   </p>
+                  {t.source === 'guest_request' ? (
+                    <p className="mt-1 text-xs font-medium text-violet-700">Guest request</p>
+                  ) : (
+                    <p className="text-xs text-gray-500">Check-in {normDate(t.check_in) || '—'}</p>
+                  )}
                 </div>
                 <StatusBadge status={t.status} />
               </div>
+              {t.source === 'guest_request' && (
+                <div className="rounded-lg bg-violet-50 px-3 py-2 text-xs text-violet-900 space-y-1">
+                  <p>
+                    <span className="font-semibold">Requested time:</span>{' '}
+                    {t.requested_time || (t.due_at ? String(t.due_at) : '—')}
+                  </p>
+                  <p>
+                    <span className="font-semibold">Phone:</span> {t.guest_phone || '—'}
+                  </p>
+                </div>
+              )}
               {t.guest_name_internal && (
                 <p className="text-sm text-gray-600">Guest: {t.guest_name_internal}</p>
+              )}
+              {t.source !== 'guest_request' && t.guest_phone && (
+                <p className="text-xs text-gray-500">Phone: {t.guest_phone}</p>
               )}
               <ul className="text-xs text-gray-600 space-y-1">
                 {(Array.isArray(t.checklist) ? t.checklist : []).slice(0, 6).map((c) => (

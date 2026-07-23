@@ -23,12 +23,18 @@ router.get('/housekeeping-tasks', async (req, res, next) => {
       `SELECT t.*,
               COALESCE(u.title, u.unit_number, 'Unit') AS unit_name,
               u.unit_number,
+              u.id AS unit_uuid,
               COALESCE(u.project, u.compound) AS project,
               u.ops_status,
-              r.check_in, r.check_out, r.guest_name AS guest_name_internal
+              r.check_in, r.check_out,
+              r.guest_name AS guest_name_internal,
+              COALESCE(r.guest_phone, b.guest_phone) AS guest_phone,
+              COALESCE(t.source, 'pre_arrival') AS source,
+              t.requested_time
        FROM housekeeping_tasks t
        JOIN units u ON u.id = t.unit_id
        LEFT JOIN reservations r ON r.id = t.reservation_id
+       LEFT JOIN bookings b ON b.id = t.booking_id
        WHERE ${where}
        ORDER BY COALESCE(t.due_at, t.created_at) ASC
        LIMIT 200`,

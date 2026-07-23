@@ -23,7 +23,10 @@ export default function ResaleSales() {
   const published = units.filter((u) => u.status === 'published').length;
   const drafts = units.filter((u) => u.status === 'draft').length;
   const websiteLeads = leads.filter((l) => l.source === 'website_host');
-  const openLeads = leads.filter((l) => l.stage !== 'live').length;
+  const openLeads = leads.filter((l) => {
+    const s = String(l.stage || '').toLowerCase();
+    return s !== 'signed' && s !== 'rejected' && s !== 'contract_signed' && s !== 'live';
+  }).length;
 
   if (loadingUnits || loadingLeads) {
     return (
@@ -127,9 +130,9 @@ export default function ResaleSales() {
                   {l.owner_email ? ` · ${l.owner_email}` : ''}
                 </p>
                 <p className="mt-1 text-xs text-gray-400">
-                  {l.stage}
+                  {String(l.stage || 'pending').replace(/_/g, ' ')}
+                  {l.project ? ` · ${l.project}` : ''}
                   {l.source === 'website_host' ? ' · website' : ''}
-                  {l.preferred_contact_time ? ` · ${l.preferred_contact_time}` : ''}
                 </p>
               </div>
             ))}

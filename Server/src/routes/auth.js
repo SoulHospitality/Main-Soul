@@ -364,7 +364,7 @@ router.post('/reset-password', async (req, res, next) => {
 router.get('/me', authGuest, async (req, res, next) => {
   try {
     const { rows } = await query(
-      `SELECT id, email, full_name, phone, created_at FROM profiles WHERE id = $1`,
+      `SELECT id, email, full_name, phone, soul_points, created_at FROM profiles WHERE id = $1`,
       [req.guest.id]
     );
     res.json({ user: req.guest, profile: rows[0] || null });

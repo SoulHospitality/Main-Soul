@@ -142,6 +142,13 @@ async function acceptWebsiteBooking(bookingId, staffUser) {
     console.error('[email] Acceptance email failed:', emailErr.message);
   }
 
+  try {
+    const { awardPointsForBooking } = require('../lib/soulPoints');
+    await awardPointsForBooking(updated[0], { reason: 'reservation_accepted' });
+  } catch (pointsErr) {
+    console.error('[points] Award failed:', pointsErr.message);
+  }
+
   return updated[0];
 }
 

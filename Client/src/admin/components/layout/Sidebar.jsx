@@ -6,7 +6,7 @@ import { getRoleTheme } from '../../utils/roleTheme';
 import {
   LayoutDashboard, Building2, CalendarDays, CreditCard,
   BadgeDollarSign, Receipt, FileBarChart2, Users, UserCircle,
-  LogOut, Building, FileText, CalendarRange, Zap, CheckSquare, Wallet,
+  LogOut, Building, FileText, CalendarRange, Zap, Wallet, CheckSquare,
   TrendingUp, Landmark, Sparkles, Shield, DollarSign, Briefcase,
 } from 'lucide-react';
 
@@ -25,8 +25,7 @@ const NAV_ITEMS = [
   { path: '/admin/expenses',         label: 'Expenses',           icon: Receipt,            page: 'expenses' },
   { path: '/admin/petty-cash',       label: 'Petty Cash',         icon: Wallet,             page: 'petty_cash' },
   { path: '/admin/housekeeping',     label: 'Housekeeping',       icon: Sparkles,           page: 'housekeeping' },
-  { path: '/admin/maintenance',      label: 'Maintenance',        icon: CheckSquare,        page: 'maintenance' },
-  { path: '/admin/acquisition',      label: 'Acquisition',        icon: Briefcase,          page: 'acquisition', resaleLabel: 'Owners requests' },
+  { path: '/admin/acquisition',      label: 'Owner leads',        icon: Briefcase,          page: 'acquisition', resaleLabel: 'Owners requests' },
   { path: '/admin/sales',            label: 'Sales',              icon: TrendingUp,         page: 'sales' },
   { path: '/admin/treasury',         label: 'Treasury',            icon: Landmark,           page: 'cashflow' },
   { path: '/admin/cashflow',         label: 'Cash Flow',          icon: DollarSign,         page: 'cashflow' },

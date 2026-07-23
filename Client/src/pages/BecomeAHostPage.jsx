@@ -43,6 +43,7 @@ const EMPTY = {
   countryCode: '+20',
   phone: '',
   destination: '',
+  project: '',
   furnishingStatus: '',
   propertyType: '',
   preferredContactTime: '',
@@ -52,15 +53,26 @@ const fieldClass =
   'w-full rounded-xl border border-soul-line bg-white px-4 py-3 text-sm text-soul-blue outline-none transition focus:border-soul-blue';
 
 export default function BecomeAHostPage() {
-  const { destinations } = useProjectCatalog();
+  const { destinations, projectsByDestination } = useProjectCatalog();
   const destinationOptions = destinations?.length ? destinations : AREAS;
 
   const [form, setForm] = useState(EMPTY);
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState(null);
 
+  const projectOptions = useMemo(() => {
+    if (!form.destination || form.destination === 'Other') return [];
+    return projectsByDestination?.[form.destination] || [];
+  }, [form.destination, projectsByDestination]);
+
   const setField = (key) => (e) => {
-    setForm((f) => ({ ...f, [key]: e.target.value }));
+    const value = e.target.value;
+    setForm((f) => {
+      if (key === 'destination') {
+        return { ...f, destination: value, project: '' };
+      }
+      return { ...f, [key]: value };
+    });
     setStatus(null);
   };
 
@@ -71,6 +83,7 @@ export default function BecomeAHostPage() {
           form.email.trim() &&
           form.phone.trim() &&
           form.destination &&
+          form.project &&
           form.furnishingStatus &&
           form.propertyType &&
           form.preferredContactTime
@@ -90,6 +103,7 @@ export default function BecomeAHostPage() {
         country_code: form.countryCode,
         phone: form.phone.trim(),
         destination: form.destination,
+        project: form.project,
         furnishing_status: form.furnishingStatus,
         property_type: form.propertyType,
         preferred_contact_time: form.preferredContactTime,
@@ -244,6 +258,27 @@ export default function BecomeAHostPage() {
                 </label>
 
                 <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-soul-muted">
+                  Project
+                  <select
+                    value={form.project}
+                    onChange={setField('project')}
+                    className={fieldClass}
+                    required
+                    disabled={!form.destination}
+                  >
+                    <option value="">
+                      {form.destination ? 'Select project' : 'Pick destination first'}
+                    </option>
+                    {projectOptions.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                    <option value="Other">Other</option>
+                  </select>
+                </label>
+
+                <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-soul-muted">
                   Property type
                   <select
                     value={form.propertyType}
@@ -277,7 +312,7 @@ export default function BecomeAHostPage() {
                   </select>
                 </label>
 
-                <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-soul-muted">
+                <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-soul-muted sm:col-span-2">
                   Preferred contact time
                   <select
                     value={form.preferredContactTime}

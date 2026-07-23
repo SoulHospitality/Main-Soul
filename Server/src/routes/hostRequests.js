@@ -43,12 +43,6 @@ function clean(v, max = 200) {
   return s.slice(0, max);
 }
 
-function slaDueInDays(days) {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d.toISOString();
-}
-
 /** POST /api/host-requests — public Become a Host form */
 router.post('/', submitLimiter, async (req, res, next) => {
   try {
@@ -57,6 +51,7 @@ router.post('/', submitLimiter, async (req, res, next) => {
     const countryCode = clean(req.body?.country_code || req.body?.countryCode, 8);
     const phoneLocal = clean(req.body?.phone || req.body?.phone_number, 40);
     const destination = clean(req.body?.destination, 80);
+    const project = clean(req.body?.project, 120) || 'Other';
     const furnishing = clean(req.body?.furnishing_status || req.body?.furnishingStatus, 60);
     const propertyType = clean(req.body?.property_type || req.body?.propertyType, 60);
     const preferredContact = clean(
@@ -72,6 +67,7 @@ router.post('/', submitLimiter, async (req, res, next) => {
       return res.status(400).json({ error: 'Phone number with country code is required' });
     }
     if (!destination) return res.status(400).json({ error: 'Destination is required' });
+    if (!project) return res.status(400).json({ error: 'Project is required' });
     if (!FURNISHING.has(furnishing)) {
       return res.status(400).json({ error: 'Invalid furnishing status' });
     }
@@ -89,7 +85,7 @@ router.post('/', submitLimiter, async (req, res, next) => {
 
     const codeDigits = countryCode.replace(/[^\d+]/g, '');
     const phone = `${codeDigits.startsWith('+') ? codeDigits : `+${codeDigits}`}${digitsLocal}`;
-    const title = `${propertyType} · ${destination} — ${fullName}`;
+    const title = `${propertyType} · ${destination}${project ? ` / ${project}` : ''} — ${fullName}`;
 
     const { rows } = await query(
       `INSERT INTO acquisition_leads (
@@ -97,9 +93,9 @@ router.post('/', submitLimiter, async (req, res, next) => {
          property_type, stage, notes, sla_due_at, created_by,
          furnishing_status, preferred_contact_time, source
        ) VALUES (
-         $1,$2,$3,$4,$5,NULL,$6,'lead',$7,$8,NULL,$9,$10,'website_host'
+         $1,$2,$3,$4,$5,$6,$7,'pending',$8,NULL,NULL,$9,$10,'website_host'
        )
-       RETURNING id, title, owner_name, owner_email, destination, property_type,
+       RETURNING id, title, owner_name, owner_email, destination, project, property_type,
                  furnishing_status, preferred_contact_time, stage, created_at`,
       [
         title,
@@ -107,9 +103,9 @@ router.post('/', submitLimiter, async (req, res, next) => {
         phone,
         email,
         destination,
+        project,
         propertyType,
-        `Website Become a Host request.\nPhone: ${phone}\nFurnishing: ${furnishing}\nPreferred contact: ${preferredContact}`,
-        slaDueInDays(3),
+        `Website Become a Host request.\nPhone: ${phone}\nProject: ${project}\nFurnishing: ${furnishing}\nPreferred contact: ${preferredContact}`,
         furnishing,
         preferredContact,
       ]
@@ -126,6 +122,7 @@ router.post('/', submitLimiter, async (req, res, next) => {
           `Email: ${email}`,
           `Phone: ${phone}`,
           `Destination: ${destination}`,
+          `Project: ${project}`,
           `Property type: ${propertyType}`,
           `Furnishing: ${furnishing}`,
           `Preferred contact: ${preferredContact}`,
@@ -136,6 +133,7 @@ router.post('/', submitLimiter, async (req, res, next) => {
                  <li>Email: ${email}</li>
                  <li>Phone: ${phone}</li>
                  <li>Destination: ${destination}</li>
+                 <li>Project: ${project}</li>
                  <li>Property type: ${propertyType}</li>
                  <li>Furnishing: ${furnishing}</li>
                  <li>Preferred contact: ${preferredContact}</li>

@@ -40,7 +40,6 @@ const OwnerPayoutsPage = lazy(() =>
 );
 const AcquisitionPipeline = lazy(() => import('./pages/AcquisitionPipeline'));
 const ResaleSales = lazy(() => import('./pages/ResaleSales'));
-const MaintenanceTickets = lazy(() => import('./pages/MaintenanceTickets'));
 const OwnerDateBlocks = lazy(() => import('./pages/OwnerDateBlocks'));
 const OwnerSettlementsAdmin = lazy(() => import('./pages/OwnerSettlementsAdmin'));
 
@@ -114,7 +113,6 @@ function AppRoutes() {
       <Route path="users" element={<ProtectedRoute page="users"><Users /></ProtectedRoute>} />
       <Route path="acquisition" element={<ProtectedRoute page="acquisition"><AcquisitionPipeline /></ProtectedRoute>} />
       <Route path="sales" element={<ProtectedRoute page="sales"><ResaleSales /></ProtectedRoute>} />
-      <Route path="maintenance" element={<ProtectedRoute page="maintenance"><MaintenanceTickets /></ProtectedRoute>} />
       <Route path="owner" element={<ProtectedRoute page="owner"><OwnerDashboard /></ProtectedRoute>} />
       <Route path="owner/reservations" element={<ProtectedRoute page="owner_reservations"><OwnerReservations /></ProtectedRoute>} />
       <Route path="owner/statement" element={<ProtectedRoute page="owner_statement"><OwnerStatementPage /></ProtectedRoute>} />

@@ -6,36 +6,17 @@ const { buildPricingRecommendation } = require('../../lib/pricingRecommend');
 
 const router = express.Router();
 
-const ACQUISITION_STAGES = [
-  'lead',
-  'under_evaluation',
-  'pricing_recommended',
-  'proposal_sent',
-  'negotiation',
-  'contract_signed',
-  'content_pending',
-  'ready',
-  'live',
-];
+const ACQUISITION_STATUSES = ['pending', 'signed', 'rejected'];
 
-const STAGE_SLA_DAYS = {
-  lead: 3,
-  under_evaluation: 5,
-  pricing_recommended: 3,
-  proposal_sent: 7,
-  negotiation: 10,
-  contract_signed: 5,
-  content_pending: 7,
-  ready: 3,
-  live: null,
-};
-
-function slaDueForStage(stage) {
-  const days = STAGE_SLA_DAYS[stage];
-  if (days == null) return null;
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d.toISOString();
+function normalizeLeadStatus(value, fallback = 'pending') {
+  const raw = String(value || '').trim().toLowerCase();
+  if (ACQUISITION_STATUSES.includes(raw)) return raw;
+  if (raw === 'lead' || raw === 'under_evaluation' || raw === 'pricing_recommended') return 'pending';
+  if (raw === 'proposal_sent' || raw === 'negotiation' || raw === 'content_pending' || raw === 'ready') {
+    return 'pending';
+  }
+  if (raw === 'contract_signed' || raw === 'live') return 'signed';
+  return fallback;
 }
 
 // ── Acquisition pipeline ────────────────────────────────────
@@ -54,10 +35,7 @@ router.post('/acquisition-leads', requireRoles('admin', 'resale'), async (req, r
   try {
     const b = req.body;
     if (!b.title) return res.status(400).json({ error: 'title required' });
-    const stage = b.stage || 'lead';
-    if (!ACQUISITION_STAGES.includes(stage)) {
-      return res.status(400).json({ error: 'Invalid stage' });
-    }
+    const stage = normalizeLeadStatus(b.status || b.stage, 'pending');
     const { rows } = await query(
       `INSERT INTO acquisition_leads (
          title, owner_name, owner_phone, owner_email, destination, project,
@@ -79,7 +57,7 @@ router.post('/acquisition-leads', requireRoles('admin', 'resale'), async (req, r
         stage,
         b.unit_id || null,
         b.notes || null,
-        b.sla_due_at || slaDueForStage(stage),
+        b.sla_due_at || null,
         req.user.id,
         b.furnishing_status || null,
         b.preferred_contact_time || null,
@@ -101,22 +79,17 @@ router.post('/acquisition-leads', requireRoles('admin', 'resale'), async (req, r
 router.patch('/acquisition-leads/:id', requireRoles('admin', 'resale'), async (req, res, next) => {
   try {
     const b = req.body;
-    if (b.stage && !ACQUISITION_STAGES.includes(b.stage)) {
-      return res.status(400).json({ error: 'Invalid stage' });
+    const requestedStatus = b.status ?? b.stage;
+    if (requestedStatus != null && !ACQUISITION_STATUSES.includes(String(requestedStatus).toLowerCase())) {
+      return res.status(400).json({ error: 'Invalid status. Use pending, signed, or rejected.' });
     }
     const { rows: cur } = await query(`SELECT stage FROM acquisition_leads WHERE id = $1`, [
       req.params.id,
     ]);
     if (!cur[0]) return res.status(404).json({ error: 'Not found' });
 
-    const nextStage = b.stage || null;
-    const stageChanged = nextStage && nextStage !== cur[0].stage;
-    const sla =
-      b.sla_due_at !== undefined
-        ? b.sla_due_at
-        : stageChanged
-          ? slaDueForStage(nextStage)
-          : null;
+    const nextStage =
+      requestedStatus != null ? normalizeLeadStatus(requestedStatus, cur[0].stage) : null;
 
     const { rows } = await query(
       `UPDATE acquisition_leads SET
@@ -151,7 +124,7 @@ router.patch('/acquisition-leads/:id', requireRoles('admin', 'resale'), async (r
         b.property_type ?? null,
         b.beds ?? null,
         b.baths ?? null,
-        sla,
+        b.sla_due_at ?? null,
         req.params.id,
       ]
     );
@@ -160,9 +133,29 @@ router.patch('/acquisition-leads/:id', requireRoles('admin', 'resale'), async (r
       action: 'UPDATE_ACQUISITION_LEAD',
       entityType: 'acquisition_lead',
       entityId: rows[0].id,
-      details: { stage: rows[0].stage, sla_due_at: rows[0].sla_due_at },
+      details: { status: rows[0].stage },
     });
     res.json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.delete('/acquisition-leads/:id', requireRoles('admin', 'resale'), async (req, res, next) => {
+  try {
+    const { rows } = await query(
+      `DELETE FROM acquisition_leads WHERE id = $1 RETURNING id, owner_name, owner_email`,
+      [req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Not found' });
+    await logAudit({
+      userId: req.user.id,
+      action: 'DELETE_ACQUISITION_LEAD',
+      entityType: 'acquisition_lead',
+      entityId: rows[0].id,
+      details: { owner_name: rows[0].owner_name, owner_email: rows[0].owner_email },
+    });
+    res.json({ ok: true, deleted: rows[0] });
   } catch (e) {
     next(e);
   }
@@ -238,16 +231,10 @@ router.post(
           req.user.id,
         ]
       );
-      // Auto-move to negotiation if earlier
+      // Keep lead status as-is; negotiations no longer drive a pipeline.
       await query(
-        `UPDATE acquisition_leads SET
-           stage = CASE
-             WHEN stage IN ('lead','under_evaluation','pricing_recommended','proposal_sent')
-             THEN 'negotiation' ELSE stage END,
-           sla_due_at = COALESCE($2, sla_due_at),
-           updated_at = now()
-         WHERE id = $1`,
-        [req.params.id, slaDueForStage('negotiation')]
+        `UPDATE acquisition_leads SET updated_at = now() WHERE id = $1`,
+        [req.params.id]
       );
       await logAudit({
         userId: req.user.id,
@@ -311,11 +298,10 @@ router.post(
       if (status === 'signed') {
         await query(
           `UPDATE acquisition_leads SET
-             stage = 'contract_signed',
-             sla_due_at = $2,
+             stage = 'signed',
              updated_at = now()
            WHERE id = $1`,
-          [req.params.id, slaDueForStage('contract_signed')]
+          [req.params.id]
         );
       }
 
@@ -404,14 +390,8 @@ router.post(
           [req.body.lead_id, row.id]
         );
         await query(
-          `UPDATE acquisition_leads SET
-             stage = CASE
-               WHEN stage IN ('lead','under_evaluation') THEN 'pricing_recommended'
-               ELSE stage END,
-             sla_due_at = $2,
-             updated_at = now()
-           WHERE id = $1`,
-          [req.body.lead_id, slaDueForStage('pricing_recommended')]
+          `UPDATE acquisition_leads SET updated_at = now() WHERE id = $1`,
+          [req.body.lead_id]
         );
         row.lead_id = req.body.lead_id;
       }
@@ -494,18 +474,10 @@ router.patch(
         if (rows[0].lead_id) {
           await query(
             `UPDATE acquisition_leads SET
-               stage = CASE
-                 WHEN stage IN ('lead','under_evaluation','pricing_recommended')
-                 THEN 'proposal_sent' ELSE stage END,
                expected_price = COALESCE($2, expected_price),
-               sla_due_at = $3,
                updated_at = now()
              WHERE id = $1`,
-            [
-              rows[0].lead_id,
-              rows[0].base_price,
-              slaDueForStage('proposal_sent'),
-            ]
+            [rows[0].lead_id, rows[0].base_price]
           );
         }
       }

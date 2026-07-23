@@ -16,7 +16,9 @@ async function ensurePreArrivalTasks() {
      WHERE r.status IN ('confirmed', 'pending', 'checked_in')
        AND r.check_in::date BETWEEN CURRENT_DATE AND (CURRENT_DATE + INTERVAL '1 day')::date
        AND NOT EXISTS (
-         SELECT 1 FROM housekeeping_tasks t WHERE t.reservation_id = r.id
+         SELECT 1 FROM housekeeping_tasks t
+         WHERE t.reservation_id = r.id
+           AND COALESCE(t.source, 'pre_arrival') = 'pre_arrival'
        )`
   );
 
@@ -26,8 +28,8 @@ async function ensurePreArrivalTasks() {
     dueAt.setUTCHours(dueAt.getUTCHours() - 24);
     await query(
       `INSERT INTO housekeeping_tasks (
-         reservation_id, unit_id, status, checklist, due_at
-       ) VALUES ($1, $2, 'pending', $3::jsonb, $4)`,
+         reservation_id, unit_id, status, checklist, due_at, source
+       ) VALUES ($1, $2, 'pending', $3::jsonb, $4, 'pre_arrival')`,
       [row.reservation_id, row.unit_id, JSON.stringify(DEFAULT_CHECKLIST), dueAt.toISOString()]
     );
     created += 1;
