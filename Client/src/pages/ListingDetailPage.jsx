@@ -64,6 +64,14 @@ function ExpandableText({ text, limit = 320, t }) {
   );
 }
 
+const GUEST_REGULATION_KEYS = [
+  'listing.reg0',
+  'listing.reg1',
+  'listing.reg2',
+  'listing.reg3',
+  'listing.reg4',
+];
+
 export default function ListingDetailPage() {
   const { t } = useLocale();
   const { slug } = useParams();
@@ -80,14 +88,6 @@ export default function ListingDetailPage() {
   const [reviewsError, setReviewsError] = useState('');
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [reviewMessage, setReviewMessage] = useState('');
-
-  const GUEST_REGULATIONS = [
-    t('listing.reg0'),
-    t('listing.reg1'),
-    t('listing.reg2'),
-    t('listing.reg3'),
-    t('listing.reg4'),
-  ];
 
   useEffect(() => {
     let cancelled = false;
