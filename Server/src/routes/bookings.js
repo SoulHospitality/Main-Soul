@@ -2,7 +2,7 @@ const express = require('express');
 const { query } = require('../config/db');
 const { quoteStay } = require('../services/pricing');
 const { initializePaymobCheckout } = require('../config/paymob');
-const { authGuest, optionalGuest } = require('../middleware/auth');
+const { authGuest } = require('../middleware/auth');
 const { upload, attachCloudinaryUrls } = require('../config/cloudinary');
 const { emitSalesNotification } = require('../config/socket');
 
@@ -12,7 +12,7 @@ function merchantOrderId() {
   return `TEMP_SOUL_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-router.post('/checkout', optionalGuest, upload.array('id_photos', 4), attachCloudinaryUrls, async (req, res, next) => {
+router.post('/checkout', authGuest, upload.array('id_photos', 4), attachCloudinaryUrls, async (req, res, next) => {
   try {
     const {
       slug,

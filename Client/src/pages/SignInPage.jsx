@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Eye, EyeOff, Lock, User } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useLocale } from '../context/LocaleContext';
 import { defaultAdminPage, ADMIN_CHANGE_PASSWORD } from '../admin/utils/adminRoutes';
 import AuthShell, { AuthError, AuthField, AuthSubmit } from '../components/auth/AuthShell';
 
 export default function SignInPage() {
+  const { t } = useLocale();
   const { signIn, user } = useAuth();
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -39,8 +41,8 @@ export default function SignInPage() {
   return (
     <AuthShell
       imageSrc="/soul-brand/coast-hero-2.jpg"
-      eyebrow={staffOnly ? 'Staff access' : "Let's get started"}
-      title={staffOnly ? 'Soul Hospitality PMS' : 'Find your next coastal getaway'}
+      eyebrow={staffOnly ? t('auth.staffAccess') : t('auth.letsGetStarted')}
+      title={staffOnly ? t('auth.staffPmsTitle') : t('auth.panelTitle')}
       imageAlt="Soul Hospitality North Coast"
     >
       <div className="mb-8 text-center">
@@ -53,12 +55,12 @@ export default function SignInPage() {
           }}
         />
         <h1 className="font-display text-3xl font-semibold text-soul-blue sm:text-4xl">
-          {staffOnly ? 'Staff sign in' : 'Welcome back'}
+          {staffOnly ? t('auth.staffSignInTitle') : t('auth.welcomeBack')}
         </h1>
         <p className="mt-2 text-sm text-soul-muted">
           {staffOnly
-            ? 'Team members only — guest accounts cannot sign in here.'
-            : 'Sign in, Explore More.'}
+            ? t('auth.teamMembersOnly')
+            : t('auth.signInSubtitle')}
         </p>
       </div>
 
@@ -79,13 +81,13 @@ export default function SignInPage() {
             } else if (!staffOnly) {
               navigate(nextPath.startsWith('/') ? nextPath : '/account', { replace: true });
             } else {
-              setError('Staff credentials required.');
+              setError(t('auth.staffCredentialsRequired'));
             }
           } catch (err) {
             setError(
               staffOnly
-                ? err.response?.data?.error || err.message || 'Invalid staff username or password'
-                : err.response?.data?.error || err.message || 'Sign in failed'
+                ? err.response?.data?.error || err.message || t('auth.invalidStaffCreds')
+                : err.response?.data?.error || err.message || t('auth.signInFailed')
             );
           } finally {
             setLoading(false);
@@ -93,30 +95,30 @@ export default function SignInPage() {
         }}
       >
         <AuthField
-          label={staffOnly ? 'Username' : 'Email or Username'}
+          label={staffOnly ? t('auth.username') : t('auth.identity')}
           icon={User}
           name="identity"
           value={identity}
           onChange={(e) => setIdentity(e.target.value)}
-          placeholder={staffOnly ? 'Staff username' : 'Enter Email or Username'}
+          placeholder={staffOnly ? t('auth.staffUsernamePh') : t('auth.identityPh')}
           autoComplete="username"
         />
 
         <AuthField
-          label="Password"
+          label={t('auth.password')}
           icon={Lock}
           name="password"
           type={showPassword ? 'text' : 'password'}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="Enter your password"
+          placeholder={t('auth.passwordPh')}
           autoComplete="current-password"
           rightSlot={
             <button
               type="button"
               onClick={() => setShowPassword((v) => !v)}
               className="text-soul-muted transition-colors hover:text-soul-blue"
-              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              aria-label={showPassword ? t('common.hidePassword') : t('common.showPassword')}
             >
               {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </button>
@@ -124,8 +126,8 @@ export default function SignInPage() {
         />
 
         <AuthError message={error} />
-        <AuthSubmit loading={loading} loadingLabel="Signing in…">
-          {staffOnly ? 'Sign in to PMS' : 'Sign in'}
+        <AuthSubmit loading={loading} loadingLabel={t('auth.signingIn')}>
+          {staffOnly ? t('auth.signInToPms') : t('auth.signIn')}
         </AuthSubmit>
       </form>
 
@@ -133,17 +135,17 @@ export default function SignInPage() {
         <>
           <p className="mt-4 text-center text-sm">
             <Link to="/forgot-password" className="font-medium text-soul-muted hover:text-soul-blue">
-              Forgot password?
+              {t('auth.forgot')}
             </Link>
           </p>
 
           <p className="mt-6 text-center text-sm text-soul-muted">
-            Don&apos;t have an account?{' '}
+            {t('auth.noAccount')}{' '}
             <Link
               to="/sign-up"
               className="font-semibold text-soul-blue transition-colors hover:text-soul-blue-dark"
             >
-              Sign up now
+              {t('auth.signUpNow')}
             </Link>
           </p>
         </>
@@ -152,7 +154,7 @@ export default function SignInPage() {
       {staffOnly && (
         <p className="mt-6 text-center text-sm text-soul-muted">
           <Link to="/" className="font-medium text-soul-muted hover:text-soul-blue">
-            ← Back to home
+            ← {t('auth.backToHome')}
           </Link>
         </p>
       )}

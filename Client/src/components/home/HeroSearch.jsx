@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProjectCatalog } from '../../hooks/useProjectCatalog';
 import DateRangePicker from '../ui/DateRangePicker';
+import { useLocale } from '../../context/LocaleContext';
 
 const isAfterDay = (a, b) => {
   const sa = new Date(a.getFullYear(), a.getMonth(), a.getDate()).getTime();
@@ -15,6 +16,7 @@ const isAfterDay = (a, b) => {
  */
 export default function HeroSearch() {
   const navigate = useNavigate();
+  const { t } = useLocale();
   const { projectCards } = useProjectCatalog();
   const capsuleRef = useRef(null);
 
@@ -51,7 +53,7 @@ export default function HeroSearch() {
     return () => document.removeEventListener('mousedown', onOutside);
   }, []);
 
-  const projectLabel = criteria.project || 'Which project?';
+  const projectLabel = criteria.project || t('home.whichProject');
 
   const hasValidRange =
     criteria.checkin &&
@@ -83,10 +85,10 @@ export default function HeroSearch() {
             setProjectOpen((o) => !o);
             setGuestOpen(false);
           }}
-          className="flex w-full cursor-pointer flex-col gap-2 rounded-2xl border border-white/25 bg-white/10 px-5 py-4 text-left transition-colors hover:bg-white/20"
+          className="flex w-full cursor-pointer flex-col gap-2 rounded-2xl border border-white/25 bg-white/10 px-5 py-4 text-start transition-colors hover:bg-white/20"
         >
           <span className="text-[11px] font-bold uppercase tracking-wider text-white/70">
-            Project
+            {t('home.project')}
           </span>
           <span
             className={`truncate text-sm font-medium ${
@@ -98,16 +100,16 @@ export default function HeroSearch() {
         </button>
 
         {projectOpen ? (
-          <div className="absolute left-0 right-0 top-full z-[130] mt-3 max-h-64 overflow-y-auto rounded-2xl border border-white/25 bg-white/95 p-2 shadow-2xl backdrop-blur-xl sm:left-0 sm:right-auto sm:w-80">
+          <div className="absolute inset-x-0 top-full z-[130] mt-3 max-h-64 overflow-y-auto rounded-2xl border border-white/25 bg-white/95 p-2 shadow-2xl backdrop-blur-xl sm:inset-inline-start-0 sm:inset-inline-end-auto sm:w-80">
             <button
               type="button"
               onClick={() => {
                 setCriteria((c) => ({ ...c, project: '', destination: '' }));
                 setProjectOpen(false);
               }}
-              className="flex w-full items-center justify-between border-b border-soul-line px-4 py-3 text-left text-sm text-soul-blue last:border-b-0 hover:bg-soul-blue-50/70"
+              className="flex w-full items-center justify-between border-b border-soul-line px-4 py-3 text-start text-sm text-soul-blue last:border-b-0 hover:bg-soul-blue-50/70"
             >
-              <span>Any project</span>
+              <span>{t('home.anyProject')}</span>
               <span className="text-soul-muted/50">→</span>
             </button>
             {projects.map((option) => (
@@ -122,7 +124,7 @@ export default function HeroSearch() {
                   }));
                   setProjectOpen(false);
                 }}
-                className="flex w-full items-center justify-between border-b border-soul-line px-4 py-3 text-left text-sm text-soul-blue last:border-b-0 hover:bg-soul-blue-50/70"
+                className="flex w-full items-center justify-between border-b border-soul-line px-4 py-3 text-start text-sm text-soul-blue last:border-b-0 hover:bg-soul-blue-50/70"
               >
                 <span className="min-w-0">
                   <span className="block truncate font-medium">{option.name}</span>
@@ -134,7 +136,7 @@ export default function HeroSearch() {
               </button>
             ))}
             {projects.length === 0 ? (
-              <p className="px-4 py-3 text-sm text-soul-muted">No projects available yet.</p>
+              <p className="px-4 py-3 text-sm text-soul-muted">{t('home.noProjects')}</p>
             ) : null}
           </div>
         ) : null}
@@ -164,16 +166,16 @@ export default function HeroSearch() {
             setGuestOpen((o) => !o);
             setProjectOpen(false);
           }}
-          className="flex w-full cursor-pointer flex-col gap-2 rounded-2xl border border-white/25 bg-white/10 px-5 py-4 text-left transition-colors hover:bg-white/20"
+          className="flex w-full cursor-pointer flex-col gap-2 rounded-2xl border border-white/25 bg-white/10 px-5 py-4 text-start transition-colors hover:bg-white/20"
         >
-          <span className="text-[11px] font-bold uppercase tracking-wider text-white/70">Guests</span>
+          <span className="text-[11px] font-bold uppercase tracking-wider text-white/70">{t('home.searchGuests')}</span>
           <span className="truncate text-sm font-medium text-white">
-            {criteria.guests} Guest{criteria.guests === 1 ? '' : 's'}
+            {t('common.guestsCount', { count: criteria.guests })}
           </span>
         </button>
 
         {guestOpen ? (
-          <div className="absolute left-0 right-0 top-full z-[130] mt-3 rounded-2xl border border-white/25 bg-white/95 p-4 shadow-2xl backdrop-blur-xl sm:left-0 sm:right-auto sm:w-[340px]">
+          <div className="absolute inset-x-0 top-full z-[130] mt-3 rounded-2xl border border-white/25 bg-white/95 p-4 shadow-2xl backdrop-blur-xl sm:inset-inline-start-0 sm:inset-inline-end-auto sm:w-[340px]">
             <div className="flex items-center justify-between gap-3">
               <button
                 type="button"
@@ -185,7 +187,7 @@ export default function HeroSearch() {
                 −
               </button>
               <span className="text-sm font-semibold uppercase tracking-[0.18em] text-soul-blue">
-                {criteria.guests} guests
+                {t('home.guestsLower', { count: criteria.guests })}
               </span>
               <button
                 type="button"
@@ -204,7 +206,7 @@ export default function HeroSearch() {
         disabled={criteria.checkin && criteria.checkout ? !hasValidRange : false}
         className="w-full rounded-xl border border-white/30 bg-white/90 py-3.5 text-[11px] font-bold uppercase tracking-[0.2em] text-soul-blue transition-all duration-300 hover:-translate-y-0.5 hover:bg-white hover:shadow-lg hover:shadow-soul-ink/20 active:translate-y-0 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 sm:py-4 sm:text-xs"
       >
-        Search Stays
+        {t('home.searchStays')}
       </button>
     </form>
   );

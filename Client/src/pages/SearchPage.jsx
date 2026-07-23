@@ -10,14 +10,15 @@ import PropertyFiltersSidebar, {
 import { resolveLocationFilter, useProjectCatalog } from '../hooks/useProjectCatalog';
 import api from '../api/http';
 import { getDisplayPriceEgp } from '../utils/displayPrice';
+import { useLocale } from '../context/LocaleContext';
 
 const PAGE_SIZE = 18;
 
-const SORT_LABELS = {
-  recommended: 'Recommended',
-  'price-asc': 'Price: low to high',
-  'price-desc': 'Price: high to low',
-  newest: 'Newest',
+const SORT_KEYS = {
+  recommended: 'search.sortRecommended',
+  'price-asc': 'search.sortPriceAsc',
+  'price-desc': 'search.sortPriceDesc',
+  newest: 'search.sortNewest',
 };
 
 function buildApiParams(sp, { limit, offset, listingType }) {
@@ -39,6 +40,7 @@ function buildApiParams(sp, { limit, offset, listingType }) {
 }
 
 export default function SearchPage({ listingType = 'rent' }) {
+  const { t } = useLocale();
   const isSale = listingType === 'sale';
   const basePath = isSale ? '/for-sale' : '/search';
   const [params, setParams] = useSearchParams();
@@ -50,9 +52,14 @@ export default function SearchPage({ listingType = 'rent' }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
 
-  const sort = SORT_LABELS[params.get('sort')] ? params.get('sort') : 'recommended';
-  const nounPlural = isSale ? 'properties' : 'homes';
-  const nounSingular = isSale ? 'property' : 'home';
+  const sortLabels = useMemo(
+    () =>
+      Object.fromEntries(Object.entries(SORT_KEYS).map(([key, labelKey]) => [key, t(labelKey)])),
+    [t]
+  );
+  const sort = SORT_KEYS[params.get('sort')] ? params.get('sort') : 'recommended';
+  const nounPlural = isSale ? t('search.properties') : t('search.homes');
+  const nounSingular = isSale ? t('search.property') : t('search.home');
 
   const filterValues = useMemo(
     () => ({
@@ -72,7 +79,7 @@ export default function SearchPage({ listingType = 'rent' }) {
       beds: params.get('beds') || '',
       types: (params.get('types') || '')
         .split(',')
-        .map((t) => t.trim())
+        .map((t2) => t2.trim())
         .filter(Boolean),
       priceMin: params.get('priceMin') || '',
       priceMax: params.get('priceMax') || '',
@@ -284,16 +291,16 @@ export default function SearchPage({ listingType = 'rent' }) {
               <h1 className="font-display text-2xl font-semibold text-soul-blue sm:text-3xl">
                 {filterValues.where
                   ? isSale
-                    ? `For sale in ${filterValues.where}`
-                    : `Stays in ${filterValues.where}`
+                    ? t('search.forSaleIn', { where: filterValues.where })
+                    : t('search.staysIn', { where: filterValues.where })
                   : isSale
-                    ? 'Properties for sale'
-                    : 'All stays'}
+                    ? t('search.propertiesForSale')
+                    : t('search.allStays')}
               </h1>
               <p className="mt-1 text-sm text-soul-muted">
                 {loading
-                  ? 'Loading…'
-                  : `${total} ${total === 1 ? nounSingular : nounPlural} available`}
+                  ? t('common.loading')
+                  : t('search.available', { count: total, noun: total === 1 ? nounSingular : nounPlural })}
               </p>
             </div>
 
@@ -303,11 +310,11 @@ export default function SearchPage({ listingType = 'rent' }) {
                 onClick={() => setSortOpen((o) => !o)}
                 className="inline-flex items-center gap-2 rounded-full border border-soul-line bg-white px-3.5 py-2 text-[13.5px] font-semibold text-soul-blue hover:border-soul-blue"
               >
-                Sort: {SORT_LABELS[sort]} ▾
+                {t('search.sortPrefix', { label: t(SORT_KEYS[sort]) })} ▾
               </button>
               {sortOpen && (
                 <div className="absolute end-0 top-full z-40 mt-2 min-w-[220px] rounded-[14px] border border-soul-line bg-white p-1.5 shadow-[0_18px_50px_rgba(40,63,94,0.16)]">
-                  {Object.entries(SORT_LABELS).map(([key, label]) => (
+                  {Object.entries(SORT_KEYS).map(([key, labelKey]) => (
                     <button
                       key={key}
                       type="button"
@@ -321,7 +328,7 @@ export default function SearchPage({ listingType = 'rent' }) {
                           : 'hover:bg-soul-blue-50/60'
                       }`}
                     >
-                      {label}
+                      {t(labelKey)}
                     </button>
                   ))}
                 </div>
@@ -332,7 +339,7 @@ export default function SearchPage({ listingType = 'rent' }) {
           {projectChips.length > 0 && (
             <div className="mb-5 flex gap-1.5 overflow-x-auto whitespace-nowrap pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <Chip active={!activeCompound} onClick={() => setCompoundChip('')}>
-                All {chipDestination}
+                {t('search.allDestination', { destination: chipDestination })}
               </Chip>
               {projectChips.map((name) => (
                 <Chip
@@ -355,19 +362,19 @@ export default function SearchPage({ listingType = 'rent' }) {
           ) : displayed.length === 0 ? (
             <div className="mx-auto max-w-md py-16 text-center">
               <h3 className="font-display text-2xl font-semibold text-soul-blue">
-                {isSale ? 'No properties match' : 'No homes match'}
+                {isSale ? t('search.emptySale') : t('search.emptyHomes')}
               </h3>
               <p className="mb-5 mt-2 leading-relaxed text-soul-muted">
                 {isSale
-                  ? 'Try clearing filters or choosing another destination.'
-                  : 'Try clearing filters or widening your dates.'}
-                {total > 0 ? ` ${total} ${nounPlural} are live overall.` : ''}
+                  ? t('search.emptyHintSale')
+                  : t('search.emptyHintRent')}
+                {total > 0 ? ` ${t('search.liveOverall', { count: total, noun: nounPlural })}` : ''}
               </p>
               <Link
                 to={basePath}
                 className="inline-block rounded-full bg-soul-blue px-5 py-2.5 font-semibold text-white"
               >
-                Reset filters
+                {t('search.resetFilters')}
               </Link>
             </div>
           ) : (
@@ -386,13 +393,13 @@ export default function SearchPage({ listingType = 'rent' }) {
                     disabled={loadingMore}
                     className="rounded-full border border-soul-blue bg-white px-6 py-3 text-sm font-semibold text-soul-blue transition-colors hover:bg-soul-blue hover:text-white disabled:cursor-default disabled:opacity-60"
                   >
-                    {loadingMore ? 'Loading…' : 'Show more'}
+                    {loadingMore ? t('common.loading') : t('search.showMore')}
                   </button>
                 )}
                 <span className="text-sm text-soul-muted">
                   {hasMore
-                    ? `Showing ${displayed.length} of ${total} ${nounPlural}`
-                    : `Showing all ${displayed.length} ${nounPlural}`}
+                    ? t('search.showingOf', { shown: displayed.length, total, noun: nounPlural })
+                    : t('search.showingAll', { count: displayed.length, noun: nounPlural })}
                 </span>
               </div>
             </>
@@ -403,7 +410,7 @@ export default function SearchPage({ listingType = 'rent' }) {
       <FloatingFilterSort
         filterCount={filterCount}
         sort={sort}
-        sortLabels={SORT_LABELS}
+        sortLabels={sortLabels}
         onOpenFilters={() => setSheetOpen(true)}
         onSort={setSort}
       />

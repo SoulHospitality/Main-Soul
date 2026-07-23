@@ -1,3 +1,5 @@
+import { useLocale } from '../../context/LocaleContext';
+
 const PARTNERS = [
   {
     label: 'Tatweer Misr',
@@ -21,20 +23,16 @@ const PARTNERS = [
   },
 ];
 
-export default function PartnersSection({
-  eyebrow = 'Our partners',
-  title = (
-    <>
-      Trusted along the <em className="italic font-normal">coast.</em>
-    </>
-  ),
-  className = '',
-}) {
+export default function PartnersSection({ eyebrow, title, className = '' }) {
+  const { t } = useLocale();
+  const resolvedEyebrow = eyebrow ?? t('home.partnersEyebrow');
+  const resolvedTitle = title ?? t('home.partnersTitle');
+
   return (
     <section className={`py-16 md:py-20 ${className}`.trim()}>
       <div className="mx-auto max-w-soul px-5 sm:px-8">
-        <p className="soul-eyebrow mb-2 text-soul-muted">{eyebrow}</p>
-        <h2 className="font-display text-3xl text-soul-blue md:text-4xl">{title}</h2>
+        <p className="soul-eyebrow mb-2 text-soul-muted">{resolvedEyebrow}</p>
+        <h2 className="font-display text-3xl text-soul-blue md:text-4xl">{resolvedTitle}</h2>
 
         <div className="mt-10 grid grid-cols-2 items-center justify-items-center gap-8 border-t border-soul-line pt-10 sm:grid-cols-3 md:grid-cols-5 md:gap-10">
           {PARTNERS.map((partner) => (

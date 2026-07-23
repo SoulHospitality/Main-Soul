@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Mail, Minus, Plus, ShieldCheck, UserRound, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Mail, Minus, Plus, UserRound, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useCurrency } from '../../context/CurrencyContext';
+import { useLocale } from '../../context/LocaleContext';
 import api, { validatePromoCode } from '../../api/http';
 import ListingDatePicker, { isoToLocalDate, localDateToIso } from '../listing/ListingDatePicker';
 import { getMinimumStayNights } from '../../utils/bookingRules';
+import IdentityPhotoUpload from './IdentityPhotoUpload';
 
 /** Adults = 1, children = 0.5 — same load rules as SoulHospitality. */
 function getGuestLoad(adults, children) {
@@ -21,7 +23,7 @@ function rangeHitsBlocked(checkin, checkout, blockedDates = []) {
   return false;
 }
 
-function IncrementControl({ label, hint, value, onIncrement, onDecrement, min = 0 }) {
+function IncrementControl({ label, hint, value, onIncrement, onDecrement, min = 0, t }) {
   return (
     <div className="flex items-center justify-between rounded-2xl border border-soul-line bg-white px-4 py-3">
       <div>
@@ -34,7 +36,7 @@ function IncrementControl({ label, hint, value, onIncrement, onDecrement, min = 
           onClick={onDecrement}
           disabled={value <= min}
           className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-soul-line text-soul-muted hover:border-soul-blue hover:text-soul-blue disabled:opacity-40"
-          aria-label={`Decrease ${label}`}
+          aria-label={t('booking.decreaseAria', { label })}
         >
           <Minus className="h-3.5 w-3.5" strokeWidth={2.2} />
         </button>
@@ -43,7 +45,7 @@ function IncrementControl({ label, hint, value, onIncrement, onDecrement, min = 
           type="button"
           onClick={onIncrement}
           className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-soul-line text-soul-muted hover:border-soul-blue hover:text-soul-blue"
-          aria-label={`Increase ${label}`}
+          aria-label={t('booking.increaseAria', { label })}
         >
           <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
         </button>
@@ -68,6 +70,7 @@ export default function BookingDrawer({
 }) {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { t } = useLocale();
   const { formatPrice } = useCurrency();
   const money = (n) => formatPrice(n, { perNight: false }) || '—';
   const [message, setMessage] = useState('');
@@ -182,15 +185,8 @@ export default function BookingDrawer({
 
   if (!open) return null;
 
-  const isGuest = !user?.id;
-
   function handleChange(field, value) {
     setFormState((cur) => ({ ...cur, [field]: value }));
-  }
-
-  function handleIdentityDocumentsChange(event) {
-    const selectedFiles = Array.from(event.target.files || []).slice(0, 2);
-    setFormState((cur) => ({ ...cur, identityDocuments: selectedFiles }));
   }
 
   async function handlePromoValidation() {
@@ -210,10 +206,10 @@ export default function BookingDrawer({
         isValid: true,
         loading: false,
       });
-      setMessage(`Promo code applied: ${result.code}.`);
+      setMessage(t('booking.promoAppliedMsg', { code: result.code }));
     } catch (err) {
       setPromo({ code: '', percentage: 0, discountAmount: 0, isValid: false, loading: false });
-      setMessage(err.message || 'Invalid promo code');
+      setMessage(err.message || t('booking.invalidPromo'));
     }
   }
 
@@ -221,40 +217,36 @@ export default function BookingDrawer({
     event?.preventDefault?.();
     setMessage('');
 
-    if (!user?.id) {
-      setMessage('Please sign in or create an account to continue.');
-      return;
-    }
     if (!formState.checkInDate || !formState.checkOutDate) {
-      setMessage('Please choose both check-in and check-out dates.');
+      setMessage(t('booking.needDates'));
       return;
     }
     if (!String(formState.fullName || '').trim()) {
-      setMessage('Full legal name is required.');
+      setMessage(t('booking.needName'));
       return;
     }
     if (!String(formState.phone || '').trim()) {
-      setMessage('Phone number is required.');
+      setMessage(t('booking.needPhone'));
       return;
     }
     if (!String(formState.email || '').trim()) {
-      setMessage('Email address is required.');
+      setMessage(t('booking.needEmail'));
       return;
     }
     if (!quote?.available) {
-      setMessage(quote?.reason || 'These dates are not available.');
+      setMessage(quote?.reason || t('booking.notAvailable'));
       return;
     }
     if (belowMinimumStay) {
-      setMessage(`Minimum stay is ${minNights} nights for this unit.`);
+      setMessage(t('booking.minStay', { count: minNights }));
       return;
     }
     if (!formState.identityDocuments?.length) {
-      setMessage('Please upload at least one National ID or Passport photo.');
+      setMessage(t('booking.needId'));
       return;
     }
     if (isOverlapping) {
-      setMessage('The requested dates overlap with a blocked or reserved night.');
+      setMessage(t('booking.overlap'));
       return;
     }
 
@@ -281,63 +273,34 @@ export default function BookingDrawer({
     navigate('/checkout/payment', { state: checkoutState });
   }
 
-  const signInRedirect = `/sign-in?next=${encodeURIComponent(`/listings/${unit?.slug || ''}`)}`;
-
   return (
     <div className="fixed inset-0 z-[240] flex justify-end bg-slate-950/55 backdrop-blur-[2px]">
-      <button type="button" className="absolute inset-0 cursor-default" aria-label="Close booking drawer" onClick={onClose} />
+      <button type="button" className="absolute inset-0 cursor-default" aria-label={t('common.close')} onClick={onClose} />
 
       <aside className="relative flex h-full w-full max-w-none flex-col bg-white shadow-2xl lg:ml-auto lg:max-w-[50.4rem] lg:border-l lg:border-soul-line">
         <div className="flex items-center justify-between border-b border-soul-line px-6 py-5">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-soul-muted">Reservation Drawer</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-soul-muted">{t('booking.drawerEyebrow')}</p>
             <h2 className="mt-1 font-display text-2xl font-semibold text-soul-blue">
-              Book {unit?.title || 'this residence'}
+              {t('booking.bookTitle', { title: unit?.title || t('booking.thisResidence') })}
             </h2>
           </div>
           <button
             type="button"
             onClick={onClose}
             className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-soul-line text-soul-muted hover:border-soul-blue hover:text-soul-blue"
-            aria-label="Close drawer"
+            aria-label={t('common.close')}
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-5">
-          {isGuest ? (
-            <div className="flex min-h-[60vh] items-center justify-center">
-              <div className="w-full rounded-3xl border border-soul-line bg-soul-blue-50 p-6 text-center">
-                <div className="mx-auto mb-4 inline-flex h-14 w-14 items-center justify-center rounded-full bg-white text-soul-blue shadow-sm">
-                  <ShieldCheck className="h-6 w-6" />
-                </div>
-                <h3 className="font-display text-2xl font-semibold text-soul-blue">Sign in required</h3>
-                <p className="mt-2 text-sm leading-6 text-soul-muted">
-                  Create an account or sign in first so we can prefill your profile and secure this reservation.
-                </p>
-                <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
-                  <Link
-                    to={signInRedirect}
-                    className="rounded-full bg-soul-blue px-5 py-3 text-sm font-semibold text-white hover:bg-soul-blue-dark"
-                  >
-                    Sign in
-                  </Link>
-                  <Link
-                    to="/sign-up"
-                    className="rounded-full border border-soul-line bg-white px-5 py-3 text-sm font-semibold text-soul-blue hover:border-soul-blue"
-                  >
-                    Create account
-                  </Link>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-5">
+            <form id="booking-drawer-form" onSubmit={handleSubmit} className="space-y-5">
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="md:col-span-2 space-y-3">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted">
-                    Check-in / Check-out
+                    {t('booking.checkInOut')}
                   </p>
                   <ListingDatePicker
                     inline
@@ -359,27 +322,29 @@ export default function BookingDrawer({
                   />
                   {isOverlapping && (
                     <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
-                      Selected nights overlap a blocked or reserved date.
+                      {t('booking.overlapWarning')}
                     </p>
                   )}
                   {belowMinimumStay && (
                     <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
-                      Minimum stay is {minNights} nights for this unit.
+                      {t('booking.minStay', { count: minNights })}
                     </p>
                   )}
                 </div>
 
                 <IncrementControl
-                  label="Adults"
-                  hint="Ages 12+"
+                  t={t}
+                  label={t('booking.adults')}
+                  hint={t('booking.adultsHint')}
                   value={formState.adults}
                   min={1}
                   onDecrement={() => handleChange('adults', Math.max(1, Number(formState.adults || 1) - 1))}
                   onIncrement={() => handleChange('adults', Number(formState.adults || 1) + 1)}
                 />
                 <IncrementControl
-                  label="Children"
-                  hint="Ages 0-12"
+                  t={t}
+                  label={t('booking.children')}
+                  hint={t('booking.childrenHint')}
                   value={formState.children}
                   min={0}
                   onDecrement={() => handleChange('children', Math.max(0, Number(formState.children || 0) - 1))}
@@ -394,80 +359,67 @@ export default function BookingDrawer({
                   }`}
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <span className="font-medium text-soul-blue">Guest load</span>
+                    <span className="font-medium text-soul-blue">{t('booking.guestLoad')}</span>
                     <span className="font-semibold text-soul-blue">
                       {guestLoad} / {capacity}
                     </span>
                   </div>
                   <p className="mt-2 text-xs leading-5">
-                    Adults count as 1 guest and children count as 0.5 guest.
+                    {t('booking.guestLoadHint')}
                   </p>
                   {overCapacity && (
                     <p className="mt-2 text-xs font-semibold">
-                      You can still book above capacity, but you&apos;ll pay for each extra guest
-                      (higher beach-access / extra-guest rate).
+                      {t('booking.overCapacity')}
                     </p>
                   )}
                 </div>
 
                 <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted md:col-span-2">
-                  Full Legal Name
+                  {t('booking.fullLegalName')}
                   <div className="flex items-center gap-3 rounded-2xl border border-soul-line bg-white px-4 py-3 focus-within:border-soul-blue">
                     <UserRound className="h-4 w-4 text-soul-muted" />
                     <input
                       value={formState.fullName}
                       onChange={(e) => handleChange('fullName', e.target.value)}
                       className="w-full bg-transparent text-sm outline-none"
-                      placeholder="Enter full legal name"
+                      placeholder={t('booking.fullLegalNamePh')}
                       required
                     />
                   </div>
                 </label>
 
-                <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted md:col-span-2">
-                  National ID / Passport Photos
-                  <input
-                    type="file"
-                    accept="image/png,image/jpeg,image/jpg,image/webp"
-                    multiple
-                    onChange={handleIdentityDocumentsChange}
-                    className="rounded-2xl border border-soul-line bg-white px-4 py-3 text-sm outline-none focus:border-soul-blue"
-                    required
-                  />
-                  <p className="text-[11px] normal-case tracking-normal text-soul-muted">
-                    Upload clear photos of your National ID or Passport (up to 2 images).
+                <div className="md:col-span-2">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted">
+                    {t('booking.idPhotos')}
                   </p>
-                  {formState.identityDocuments.length > 0 && (
-                    <ul className="space-y-1 text-[11px] normal-case tracking-normal text-soul-muted">
-                      {formState.identityDocuments.map((file) => (
-                        <li key={`${file.name}-${file.lastModified}`}>{file.name}</li>
-                      ))}
-                    </ul>
-                  )}
-                </label>
+                  <IdentityPhotoUpload
+                    files={formState.identityDocuments}
+                    onChange={(next) => handleChange('identityDocuments', next)}
+                  />
+                </div>
 
                 <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted">
-                  Phone Number
+                  {t('booking.phone')}
                   <input
                     value={formState.phone}
                     onChange={(e) => handleChange('phone', e.target.value)}
                     className="rounded-2xl border border-soul-line bg-white px-4 py-3 text-sm outline-none focus:border-soul-blue"
-                    placeholder="Primary phone"
+                    placeholder={t('booking.phonePh')}
                     required
                   />
                 </label>
                 <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted">
-                  Secondary Phone
+                  {t('booking.secondaryPhone')}
                   <input
                     value={formState.secondaryPhone}
                     onChange={(e) => handleChange('secondaryPhone', e.target.value)}
                     className="rounded-2xl border border-soul-line bg-white px-4 py-3 text-sm outline-none focus:border-soul-blue"
-                    placeholder="Optional"
+                    placeholder={t('common.optional')}
                   />
                 </label>
 
                 <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted md:col-span-2">
-                  Email Address
+                  {t('booking.email')}
                   <div className="flex items-center gap-3 rounded-2xl border border-soul-line bg-white px-4 py-3 focus-within:border-soul-blue">
                     <Mail className="h-4 w-4 text-soul-muted" />
                     <input
@@ -475,31 +427,31 @@ export default function BookingDrawer({
                       value={formState.email}
                       onChange={(e) => handleChange('email', e.target.value)}
                       className="w-full bg-transparent text-sm outline-none"
-                      placeholder="Enter email address"
+                      placeholder={t('booking.emailPh')}
                       required
                     />
                   </div>
                 </label>
 
                 <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted md:col-span-2">
-                  Notes
+                  {t('booking.notes')}
                   <textarea
                     value={formState.notes}
                     onChange={(e) => handleChange('notes', e.target.value)}
                     rows={4}
                     className="rounded-2xl border border-soul-line bg-white px-4 py-3 text-sm outline-none focus:border-soul-blue"
-                    placeholder="Any special request or booking note"
+                    placeholder={t('booking.notesPh')}
                   />
                 </label>
 
                 <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted md:col-span-2">
-                  Promotional Code
+                  {t('booking.promo')}
                   <div className="flex gap-3">
                     <input
                       value={promoCodeInput}
                       onChange={(e) => setPromoCodeInput(e.target.value)}
                       className="w-full rounded-2xl border border-soul-line bg-white px-4 py-3 text-sm outline-none focus:border-soul-blue"
-                      placeholder="Enter promo code"
+                      placeholder={t('booking.promoPh')}
                     />
                     <button
                       type="button"
@@ -507,61 +459,59 @@ export default function BookingDrawer({
                       disabled={promo.loading || !gross}
                       className="inline-flex items-center justify-center rounded-2xl bg-soul-blue px-4 py-3 text-xs font-semibold uppercase tracking-widest text-white hover:bg-soul-blue-dark disabled:opacity-70"
                     >
-                      {promo.loading ? 'Checking' : 'Verify'}
+                      {promo.loading ? t('booking.checking') : t('booking.verify')}
                     </button>
                   </div>
                   {promo.isValid && (
-                    <p className="text-xs font-semibold text-emerald-600">{promo.code} applied successfully.</p>
+                    <p className="text-xs font-semibold text-emerald-600">{t('booking.promoApplied', { code: promo.code })}</p>
                   )}
                 </label>
               </div>
             </form>
-          )}
         </div>
 
-        {!isGuest && (
-          <div className="border-t border-soul-line bg-white px-6 py-5">
+        <div className="border-t border-soul-line bg-white px-6 py-5">
             <div className="grid gap-3 rounded-3xl border border-soul-line bg-soul-blue-50/40 p-4">
               <div className="flex items-center justify-between text-sm text-soul-muted">
-                <span>Nightly rate</span>
+                <span>{t('booking.nightlyRate')}</span>
                 <span className="font-semibold text-soul-blue">{money(nightlyRate)}</span>
               </div>
               <div className="flex items-center justify-between text-sm text-soul-muted">
-                <span>Subtotal ({nights || '—'} nights)</span>
+                <span>{t('booking.subtotalNights', { count: nights || '—' })}</span>
                 <span className="font-semibold text-soul-blue">{money(subtotal)}</span>
               </div>
               {cleaning > 0 && (
                 <div className="flex items-center justify-between text-sm text-soul-muted">
-                  <span>Cleaning</span>
+                  <span>{t('booking.cleaning')}</span>
                   <span className="font-semibold text-soul-blue">{money(cleaning)}</span>
                 </div>
               )}
               {access > 0 && (
                 <div className="flex items-center justify-between text-sm text-soul-muted">
-                  <span>Access / beach passes</span>
+                  <span>{t('booking.accessBeach')}</span>
                   <span className="font-semibold text-soul-blue">{money(access)}</span>
                 </div>
               )}
               {service > 0 && (
                 <div className="flex items-center justify-between text-sm text-soul-muted">
-                  <span>Service fees + Taxes (15%)</span>
+                  <span>{t('booking.serviceTax')}</span>
                   <span className="font-semibold text-soul-blue">{money(service)}</span>
                 </div>
               )}
               {promo.isValid && (
                 <div className="flex items-center justify-between text-sm text-emerald-700">
-                  <span>Promo discount</span>
+                  <span>{t('booking.promoDiscount')}</span>
                   <span className="font-semibold">− {money(promoDiscount)}</span>
                 </div>
               )}
               <div className="flex items-center justify-between text-sm text-soul-muted border-t border-soul-line pt-3">
-                <span>Estimated total</span>
+                <span>{t('booking.estimatedTotal')}</span>
                 <span className="font-num text-lg font-bold text-soul-blue">
                   {quoteLoading ? '…' : money(finalTotal)}
                 </span>
               </div>
               {!quote?.available && quote && (
-                <p className="text-xs text-rose-600">{quote.reason || 'Unavailable for these dates'}</p>
+                <p className="text-xs text-rose-600">{quote.reason || t('booking.unavailable')}</p>
               )}
             </div>
 
@@ -570,15 +520,14 @@ export default function BookingDrawer({
             )}
 
             <button
-              type="button"
-              onClick={handleSubmit}
+              type="submit"
+              form="booking-drawer-form"
               disabled={isOverlapping || belowMinimumStay || !quote?.available || quoteLoading}
               className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full bg-soul-blue px-5 py-4 text-xs font-semibold uppercase tracking-widest text-white hover:bg-soul-blue-dark disabled:opacity-70 disabled:cursor-not-allowed"
             >
-              Proceed to Payment
+              {t('booking.proceedPayment')}
             </button>
           </div>
-        )}
       </aside>
     </div>
   );

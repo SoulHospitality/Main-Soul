@@ -1,5 +1,6 @@
 import { createContext, useContext, useMemo, useState, useCallback, useEffect } from 'react';
 import api from '../api/http';
+import { useLocale } from './LocaleContext';
 
 const CurrencyContext = createContext(null);
 
@@ -8,12 +9,12 @@ const FALLBACK_EGP_PER_USD = Number(import.meta.env.VITE_EGP_USD_RATE || 50);
 function roundUsd(egpAmount, egpPerUsd) {
   const rate = egpPerUsd > 0 ? egpPerUsd : FALLBACK_EGP_PER_USD;
   const usd = Number(egpAmount) / rate;
-  // Approximate display: whole dollars under $100, one decimal otherwise
   if (usd >= 100) return Math.round(usd);
   return Math.round(usd * 10) / 10;
 }
 
 export function CurrencyProvider({ children }) {
+  const { t, localeTag } = useLocale();
   const [currency, setCurrency] = useState(() => localStorage.getItem('soul_currency') || 'EGP');
   const [egpUsdRate, setEgpUsdRate] = useState(FALLBACK_EGP_PER_USD);
   const [rateSource, setRateSource] = useState('fallback');
@@ -47,14 +48,15 @@ export function CurrencyProvider({ children }) {
       if (!Number.isFinite(n) || n <= 0) return null;
       if (currency === 'USD') {
         const usd = roundUsd(n, egpUsdRate);
-        const label = Number.isInteger(usd) ? usd.toLocaleString() : usd.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 1 });
-        return perNight ? `$${label} / night` : `$${label}`;
+        const label = Number.isInteger(usd)
+          ? usd.toLocaleString(localeTag)
+          : usd.toLocaleString(localeTag, { minimumFractionDigits: 0, maximumFractionDigits: 1 });
+        return perNight ? t('common.priceUsdNight', { amount: label }) : t('common.priceUsd', { amount: label });
       }
-      return perNight
-        ? `EGP ${n.toLocaleString()} / night`
-        : `EGP ${n.toLocaleString()}`;
+      const label = n.toLocaleString(localeTag);
+      return perNight ? t('common.priceEgpNight', { amount: label }) : t('common.priceEgp', { amount: label });
     },
-    [currency, egpUsdRate]
+    [currency, egpUsdRate, localeTag, t]
   );
 
   const convertFromEgp = useCallback(

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useProjectCatalog } from '../../hooks/useProjectCatalog';
+import { useLocale } from '../../context/LocaleContext';
 
 const AUTO_MS = 5500;
 const GAP_PX = 20;
@@ -25,6 +26,7 @@ function useVisibleCount() {
 }
 
 export default function CompoundGrid({ counts = {} }) {
+  const { t, isRtl } = useLocale();
   const { projectCards } = useProjectCatalog();
   const visible = useVisibleCount();
   const [index, setIndex] = useState(0);
@@ -96,42 +98,44 @@ export default function CompoundGrid({ counts = {} }) {
       <section className="mx-auto max-w-soul px-5 sm:px-8 py-16 md:py-20">
         <div className="text-center">
           <h2 className="font-display text-3xl md:text-4xl text-soul-blue">
-            Find your <em className="italic font-normal">Soul</em>
+            {t('home.findSoul')}
           </h2>
         </div>
-        <p className="mt-4 text-center text-soul-muted">Projects will appear here once they are added.</p>
+        <p className="mt-4 text-center text-soul-muted">{t('home.projectsEmpty')}</p>
       </section>
     );
   }
 
   const cardBasis = `calc((100% - ${(visible - 1) * GAP_PX}px) / ${visible})`;
-  const shift = `calc(-${index} * (${cardBasis} + ${GAP_PX}px))`;
+  const transform = isRtl
+    ? `translateX(calc(${index} * (${cardBasis} + ${GAP_PX}px)))`
+    : `translateX(calc(-${index} * (${cardBasis} + ${GAP_PX}px)))`;
 
   return (
     <section className="mx-auto max-w-soul px-5 sm:px-8 py-16 md:py-20">
       <div className="relative mb-6 md:mb-8">
         <div className="text-center">
           <h2 className="font-display text-3xl md:text-4xl text-soul-blue">
-            Find your <em className="italic font-normal">Soul</em>
+            {t('home.findSoul')}
           </h2>
         </div>
         {canSlide ? (
-          <div className="mt-4 flex items-center justify-center gap-2 sm:absolute sm:right-0 sm:top-1/2 sm:mt-0 sm:-translate-y-1/2">
+          <div className="mt-4 flex items-center justify-center gap-2 sm:absolute sm:end-0 sm:top-1/2 sm:mt-0 sm:-translate-y-1/2">
             <button
               type="button"
               onClick={goPrev}
-              aria-label="Previous projects"
+              aria-label={t('home.prevProjects')}
               className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-soul-line bg-white text-soul-blue transition hover:border-soul-blue/40 hover:bg-soul-sand/40"
             >
-              <ChevronLeft className="h-5 w-5" />
+              <ChevronLeft className="h-5 w-5 rtl:rotate-180" />
             </button>
             <button
               type="button"
               onClick={goNext}
-              aria-label="Next projects"
+              aria-label={t('home.nextProjects')}
               className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-soul-line bg-white text-soul-blue transition hover:border-soul-blue/40 hover:bg-soul-sand/40"
             >
-              <ChevronRight className="h-5 w-5" />
+              <ChevronRight className="h-5 w-5 rtl:rotate-180" />
             </button>
           </div>
         ) : null}
@@ -146,7 +150,7 @@ export default function CompoundGrid({ counts = {} }) {
       >
         <div
           className="flex transition-transform duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]"
-          style={{ gap: GAP_PX, transform: `translateX(${shift})` }}
+          style={{ gap: GAP_PX, transform }}
         >
           {cards.map((c) => (
             <Link
@@ -170,8 +174,8 @@ export default function CompoundGrid({ counts = {} }) {
                 <div className="mt-0.5 font-display text-xl sm:text-2xl">{c.name}</div>
                 <div className="mt-1 text-sm text-white/80">
                   {c.propertyCount > 0
-                    ? `${c.propertyCount} ${c.propertyCount === 1 ? 'Property' : 'Properties'}`
-                    : 'Explore stays'}
+                    ? `${c.propertyCount} ${c.propertyCount === 1 ? t('home.property') : t('home.properties')}`
+                    : t('home.exploreStays')}
                 </div>
               </div>
             </Link>
@@ -180,14 +184,14 @@ export default function CompoundGrid({ counts = {} }) {
       </div>
 
       {canSlide ? (
-        <div className="mt-5 flex items-center justify-center gap-2" role="tablist" aria-label="Project pages">
+        <div className="mt-5 flex items-center justify-center gap-2" role="tablist" aria-label={t('home.findSoul')}>
           {Array.from({ length: pageCount }).map((_, i) => (
             <button
               key={i}
               type="button"
               role="tab"
               aria-selected={i === index}
-              aria-label={`Show projects starting at ${i + 1}`}
+              aria-label={`${i + 1}`}
               onClick={() => goTo(i)}
               className={`h-1.5 rounded-full transition-all duration-300 ${
                 i === index ? 'w-8 bg-soul-blue' : 'w-1.5 bg-soul-line hover:bg-soul-muted'

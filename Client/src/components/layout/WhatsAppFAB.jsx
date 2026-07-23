@@ -1,5 +1,6 @@
 import { useLocation } from 'react-router-dom';
 import { whatsappHref } from '../../theme/brand';
+import { useLocale } from '../../context/LocaleContext';
 
 /**
  * Floating WhatsApp button (soul-website style): green circle, fixed end/bottom.
@@ -7,6 +8,7 @@ import { whatsappHref } from '../../theme/brand';
  */
 export default function WhatsAppFAB({ message = '' }) {
   const { pathname } = useLocation();
+  const { t } = useLocale();
 
   if (
     pathname.startsWith('/admin') ||
@@ -17,14 +19,15 @@ export default function WhatsAppFAB({ message = '' }) {
   }
 
   const href = whatsappHref(message);
+  const label = t('fab.whatsapp');
 
   return (
     <a
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      aria-label="Chat with us on WhatsApp"
-      title="Chat with us on WhatsApp"
+      aria-label={label}
+      title={label}
       className="group fixed end-5 bottom-5 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-[#25d366] shadow-[0_8px_24px_-6px_rgba(37,211,102,0.45)] transition-colors hover:bg-[#1ebe5a] md:end-6 md:bottom-6 md:h-[60px] md:w-[60px]"
     >
       <svg

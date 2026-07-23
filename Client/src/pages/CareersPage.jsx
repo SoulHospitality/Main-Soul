@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react';
 import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
 import api from '../api/http';
+import { useLocale } from '../context/LocaleContext';
 
 const emptyForm = { fullName: '', email: '', phone: '' };
 
 function ApplicationModal({ job, onClose }) {
+  const { t } = useLocale();
   const [form, setForm] = useState(emptyForm);
   const [cvFile, setCvFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -18,7 +20,7 @@ function ApplicationModal({ job, onClose }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!cvFile) {
-      setStatus({ type: 'error', message: 'Please attach your CV / resume.' });
+      setStatus({ type: 'error', message: t('careers.needCv') });
       return;
     }
     setSubmitting(true);
@@ -31,14 +33,14 @@ function ApplicationModal({ job, onClose }) {
       fd.append('phone', form.phone.trim());
       fd.append('cv', cvFile);
       await api.post('/recruitment/apply', fd);
-      setStatus({ type: 'success', message: 'Application submitted. Thank you — we will be in touch.' });
+      setStatus({ type: 'success', message: t('careers.success') });
       setForm(emptyForm);
       setCvFile(null);
       setTimeout(onClose, 1600);
     } catch (err) {
       setStatus({
         type: 'error',
-        message: err.response?.data?.error || err.message || 'Could not submit application.',
+        message: err.response?.data?.error || err.message || t('careers.submitFail'),
       });
     } finally {
       setSubmitting(false);
@@ -50,7 +52,7 @@ function ApplicationModal({ job, onClose }) {
       <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-soul-muted">Apply for</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-soul-muted">{t('careers.applyFor')}</p>
             <h2 className="mt-1 font-display text-xl text-soul-blue">{job.title}</h2>
           </div>
           <button
@@ -64,7 +66,7 @@ function ApplicationModal({ job, onClose }) {
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <label className="grid gap-2 text-xs uppercase tracking-[0.18em] text-soul-muted">
-            Full Name
+            {t('careers.fullName')}
             <input
               type="text"
               value={form.fullName}
@@ -74,7 +76,7 @@ function ApplicationModal({ job, onClose }) {
             />
           </label>
           <label className="grid gap-2 text-xs uppercase tracking-[0.18em] text-soul-muted">
-            Email
+            {t('careers.email')}
             <input
               type="email"
               value={form.email}
@@ -84,7 +86,7 @@ function ApplicationModal({ job, onClose }) {
             />
           </label>
           <label className="grid gap-2 text-xs uppercase tracking-[0.18em] text-soul-muted">
-            Phone
+            {t('careers.phone')}
             <input
               type="tel"
               value={form.phone}
@@ -94,7 +96,7 @@ function ApplicationModal({ job, onClose }) {
             />
           </label>
           <label className="grid gap-2 text-xs uppercase tracking-[0.18em] text-soul-muted">
-            CV / Resume
+            {t('careers.cv')}
             <input
               type="file"
               accept=".pdf,.doc,.docx"
@@ -122,14 +124,14 @@ function ApplicationModal({ job, onClose }) {
               onClick={onClose}
               className="rounded-xl border border-soul-line px-5 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-soul-blue"
             >
-              Cancel
+              {t('careers.cancel')}
             </button>
             <button
               type="submit"
               disabled={submitting}
               className="btn-pill bg-soul-blue px-6 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-white disabled:opacity-70"
             >
-              {submitting ? 'Submitting...' : 'Submit Application'}
+              {submitting ? t('careers.submitting') : t('careers.submit')}
             </button>
           </div>
         </form>
@@ -139,6 +141,7 @@ function ApplicationModal({ job, onClose }) {
 }
 
 export default function CareersPage() {
+  const { t } = useLocale();
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -152,7 +155,7 @@ export default function CareersPage() {
         if (mounted) setJobs(r.data.items || []);
       })
       .catch((err) => {
-        if (mounted) setError(err.response?.data?.error || err.message || 'Failed to load jobs');
+        if (mounted) setError(err.response?.data?.error || err.message || t('careers.failed'));
       })
       .finally(() => {
         if (mounted) setLoading(false);
@@ -167,16 +170,16 @@ export default function CareersPage() {
       <Header />
       <main className="mx-auto max-w-soul px-5 py-16">
         <section className="mx-auto max-w-4xl space-y-4 text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-soul-muted">Work With Us</p>
-          <h1 className="font-display text-4xl text-soul-blue">Current Openings</h1>
+          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-soul-muted">{t('careers.eyebrow')}</p>
+          <h1 className="font-display text-4xl text-soul-blue">{t('careers.title')}</h1>
           <p className="text-sm leading-7 text-soul-muted">
-            Join the Soul Hospitality team and help us deliver a calm, premium experience for every guest and owner.
+            {t('careers.subtitle')}
           </p>
         </section>
 
         {loading ? (
           <div className="mx-auto mt-10 max-w-2xl border border-soul-line bg-soul-blue-50/40 p-4 text-center text-sm uppercase tracking-[0.18em] text-soul-muted">
-            Loading open positions...
+            {t('careers.loading')}
           </div>
         ) : null}
 
@@ -188,7 +191,7 @@ export default function CareersPage() {
 
         {!loading && !error && !jobs.length ? (
           <div className="mx-auto mt-10 max-w-2xl border border-soul-line bg-soul-blue-50/40 p-4 text-center text-sm text-soul-muted">
-            There are no open positions at the moment. Please check back soon.
+            {t('careers.empty')}
           </div>
         ) : null}
 
@@ -207,7 +210,7 @@ export default function CareersPage() {
               <p className="mt-3 text-sm leading-7 text-soul-muted whitespace-pre-line">{job.description}</p>
               {job.requirements ? (
                 <p className="mt-3 text-sm leading-7 text-soul-muted/90 whitespace-pre-line">
-                  <span className="font-medium text-soul-blue">Requirements: </span>
+                  <span className="font-medium text-soul-blue">{t('careers.requirements')} </span>
                   {job.requirements}
                 </p>
               ) : null}
@@ -217,7 +220,7 @@ export default function CareersPage() {
                   onClick={() => setSelectedJob(job)}
                   className="btn-pill bg-soul-blue px-6 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-white"
                 >
-                  Apply Now
+                  {t('careers.applyNow')}
                 </button>
               </div>
             </article>

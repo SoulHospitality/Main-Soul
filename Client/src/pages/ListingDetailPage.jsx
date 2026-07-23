@@ -8,19 +8,12 @@ import ListingSaleCard from '../components/listing/ListingSaleCard';
 import AddReviewForm from '../components/reviews/AddReviewForm';
 import UnitReviewsDisplay from '../components/reviews/UnitReviewsDisplay';
 import { useAuth } from '../context/AuthContext';
+import { useLocale } from '../context/LocaleContext';
 import api, { createUnitReview, fetchUnitReviews } from '../api/http';
 import { optimizeImageUrl } from '../utils/imageUrl';
 
 const localISO = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-
-const GUEST_REGULATIONS = [
-  'Reservations are exclusively open to families. Single-gender groups are permitted for non-Arab guests only.',
-  'Arab couples must submit an official marriage certificate prior to booking. Visitors allowed are only of first-degree relatives.',
-  'Pets are prohibited (not even really cute ones).',
-  'Parties are prohibited.',
-  'Please be respectful of your neighbors and keep noise to a minimum from 10:00 PM – 8:00 AM.',
-];
 
 function parseFacilities(unit) {
   if (Array.isArray(unit?.facilities) && unit.facilities.length) return unit.facilities;
@@ -50,7 +43,7 @@ function Spec({ num, label }) {
   );
 }
 
-function ExpandableText({ text, limit = 320 }) {
+function ExpandableText({ text, limit = 320, t }) {
   const [open, setOpen] = useState(false);
   if (!text) return null;
   const needs = text.length > limit;
@@ -64,7 +57,7 @@ function ExpandableText({ text, limit = 320 }) {
           onClick={() => setOpen((v) => !v)}
           className="mt-2 text-sm font-semibold text-soul-blue underline"
         >
-          {open ? 'Show less' : 'Read more'}
+          {open ? t('listing.showLess') : t('listing.readMore')}
         </button>
       )}
     </div>
@@ -72,6 +65,7 @@ function ExpandableText({ text, limit = 320 }) {
 }
 
 export default function ListingDetailPage() {
+  const { t } = useLocale();
   const { slug } = useParams();
   const [params] = useSearchParams();
   const { user } = useAuth();
@@ -86,6 +80,14 @@ export default function ListingDetailPage() {
   const [reviewsError, setReviewsError] = useState('');
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [reviewMessage, setReviewMessage] = useState('');
+
+  const GUEST_REGULATIONS = [
+    t('listing.reg0'),
+    t('listing.reg1'),
+    t('listing.reg2'),
+    t('listing.reg3'),
+    t('listing.reg4'),
+  ];
 
   useEffect(() => {
     let cancelled = false;
@@ -178,7 +180,7 @@ export default function ListingDetailPage() {
         );
       })
       .catch(() => {
-        if (!cancelled) setReviewsError('Unable to load reviews right now.');
+        if (!cancelled) setReviewsError(t('listing.loadReviewsFailed'));
       })
       .finally(() => {
         if (!cancelled) setReviewsLoading(false);
@@ -194,7 +196,7 @@ export default function ListingDetailPage() {
     setReviewMessage('');
     try {
       const guestName =
-        user?.full_name || user?.fullName || user?.user_metadata?.full_name || user?.email || 'Guest';
+        user?.full_name || user?.fullName || user?.user_metadata?.full_name || user?.email || t('common.guest');
       const data = await createUnitReview(unit.id || unit.slug, { rating, comment, guestName });
       if (data.review) {
         setReviews((prev) => [data.review, ...prev]);
@@ -208,10 +210,10 @@ export default function ListingDetailPage() {
             }
           : current
       );
-      setReviewMessage('Thanks — your review was posted.');
+      setReviewMessage(t('listing.thanksReview'));
       return true;
     } catch (err) {
-      setReviewMessage(err.response?.data?.error || 'Could not post review. Please try again.');
+      setReviewMessage(err.response?.data?.error || t('listing.postFailed'));
       return false;
     } finally {
       setReviewSubmitting(false);
@@ -247,13 +249,13 @@ export default function ListingDetailPage() {
       <div>
         <Header />
         <main className="mx-auto max-w-[1280px] px-6 py-20 text-center">
-          <h1 className="font-display text-3xl text-soul-blue mb-3">Listing not found</h1>
+          <h1 className="font-display text-3xl text-soul-blue mb-3">{t('listing.notFound')}</h1>
           <Link to="/search" className="text-soul-blue font-semibold underline">
-            Browse all stays
+            {t('listing.browseStays')}
           </Link>
           <span className="mx-2 text-soul-muted">·</span>
           <Link to="/for-sale" className="text-soul-blue font-semibold underline">
-            Browse properties for sale
+            {t('listing.browseSale')}
           </Link>
         </main>
         <Footer />
@@ -265,7 +267,7 @@ export default function ListingDetailPage() {
     return (
       <div>
         <Header />
-        <main className="mx-auto max-w-[1280px] px-6 py-20 text-soul-muted">Loading listing…</main>
+        <main className="mx-auto max-w-[1280px] px-6 py-20 text-soul-muted">{t('listing.loading')}</main>
         <Footer />
       </div>
     );
@@ -277,18 +279,18 @@ export default function ListingDetailPage() {
 
   const detailRows = isSale
     ? [
-        { label: 'Bedrooms', value: String(unit.beds ?? '—') },
-        { label: 'Baths', value: String(unit.baths ?? '—') },
-        ...(sizeM2 > 0 ? [{ label: 'Area', value: `${sizeM2} m²` }] : []),
-        ...(unit.property_type ? [{ label: 'Property type', value: unit.property_type }] : []),
+        { label: t('listing.specBedrooms'), value: String(unit.beds ?? '—') },
+        { label: t('listing.specBaths'), value: String(unit.baths ?? '—') },
+        ...(sizeM2 > 0 ? [{ label: t('listing.specArea'), value: `${sizeM2} m²` }] : []),
+        ...(unit.property_type ? [{ label: t('listing.specPropertyType'), value: unit.property_type }] : []),
       ]
     : [
-        { label: 'Guests', value: String(unit.guests || '—') },
-        { label: 'Bedrooms', value: String(unit.beds ?? '—') },
-        { label: 'Baths', value: String(unit.baths ?? '—') },
-        { label: 'Check-in', value: 'After 3:00 PM' },
-        { label: 'Check-out', value: 'Before 11:00 AM' },
-        ...(unit.property_type ? [{ label: 'Property type', value: unit.property_type }] : []),
+        { label: t('listing.specGuests'), value: String(unit.guests || '—') },
+        { label: t('listing.specBedrooms'), value: String(unit.beds ?? '—') },
+        { label: t('listing.specBaths'), value: String(unit.baths ?? '—') },
+        { label: t('listing.specCheckIn'), value: t('listing.specCheckInValue') },
+        { label: t('listing.specCheckOut'), value: t('listing.specCheckOutValue') },
+        ...(unit.property_type ? [{ label: t('listing.specPropertyType'), value: unit.property_type }] : []),
       ];
 
   return (
@@ -299,7 +301,7 @@ export default function ListingDetailPage() {
           {/* Breadcrumb */}
           <div className="py-4 text-[13px] text-soul-muted">
             <Link to="/" className="hover:text-soul-blue">
-              Egypt
+              {t('listing.egypt')}
             </Link>
             {locationParts.map((part) => (
               <span key={part}>
@@ -318,20 +320,20 @@ export default function ListingDetailPage() {
             <div>
               {locationParts[0] && (
                 <p className="soul-eyebrow text-soul-teal mb-2.5">
-                  {isSale ? `For sale · ${locationParts[0]}` : locationParts[0]}
+                  {isSale ? t('listing.forSale', { place: locationParts[0] }) : locationParts[0]}
                 </p>
               )}
               <h1 className="font-display text-[clamp(28px,3.5vw,40px)] font-semibold mb-2.5 text-soul-blue">
                 {unit.title}
               </h1>
               <div className="text-soul-muted text-sm">
-                <strong className="text-soul-blue">{locationParts[0] || 'Egypt'}</strong>
+                <strong className="text-soul-blue">{locationParts[0] || t('listing.egypt')}</strong>
                 {locationParts.length > 1 ? `, ${locationParts.slice(1).join(', ')}` : ''}
               </div>
               {!isSale && Number(unit.review_count || 0) > 0 ? (
                 <p className="mt-2 text-sm text-soul-blue">
                   <span className="font-semibold text-amber-600">★ {Number(unit.average_rating || 0).toFixed(1)}</span>
-                  <span className="text-soul-muted"> · {unit.review_count} review{Number(unit.review_count) === 1 ? '' : 's'}</span>
+                  <span className="text-soul-muted"> · {t('listing.reviewCount', { count: unit.review_count })}</span>
                 </p>
               ) : null}
             </div>
@@ -354,7 +356,7 @@ export default function ListingDetailPage() {
                   <div key={p} className="relative bg-soul-ivory/40 overflow-hidden">
                     <img
                       src={p}
-                      alt={`${unit.title}, photo ${i + 2}`}
+                      alt={t('listing.photoAlt', { title: unit.title, n: i + 2 })}
                       loading="lazy"
                       decoding="async"
                       className="absolute inset-0 w-full h-full object-cover"
@@ -371,7 +373,7 @@ export default function ListingDetailPage() {
                   >
                     <img
                       src={p}
-                      alt={i === 0 ? unit.title : `${unit.title}, photo ${i + 1}`}
+                      alt={i === 0 ? unit.title : t('listing.photoAlt', { title: unit.title, n: i + 1 })}
                       loading={i === 0 ? 'eager' : 'lazy'}
                       decoding="async"
                       className="absolute inset-0 w-full h-full object-cover"
@@ -385,12 +387,12 @@ export default function ListingDetailPage() {
                 onClick={() => setLightbox(true)}
                 className="absolute bottom-4 end-4 bg-white/95 border border-soul-line rounded-full px-4 py-2 text-sm font-semibold text-soul-blue shadow-sm hover:bg-white"
               >
-                Show all {photos.length} photos
+                {t('listing.showAllPhotos', { count: photos.length })}
               </button>
             </div>
           ) : (
             <div className="bg-soul-ivory/50 rounded-[22px] aspect-[16/9] flex items-center justify-center text-soul-muted mb-8">
-              No photos yet
+              {t('listing.noPhotos')}
             </div>
           )}
 
@@ -398,21 +400,21 @@ export default function ListingDetailPage() {
           <nav className="hidden md:block sticky top-[69px] z-30 bg-white/95 backdrop-blur-md border-y border-soul-line mb-8">
             <div className="flex gap-7 text-[14px] font-semibold text-soul-muted">
               <a href="#about" className="py-3 hover:text-soul-blue transition-colors">
-                Description
+                {t('listing.description')}
               </a>
               <a href="#details" className="py-3 hover:text-soul-blue transition-colors">
-                Details
+                {t('listing.details')}
               </a>
               <a href="#features" className="py-3 hover:text-soul-blue transition-colors">
-                Amenities
+                {t('listing.amenitiesHeading')}
               </a>
               {!isSale && (
                 <>
                   <a href="#reviews" className="py-3 hover:text-soul-blue transition-colors">
-                    Reviews
+                    {t('listing.reviews')}
                   </a>
                   <a href="#rules" className="py-3 hover:text-soul-blue transition-colors">
-                    House rules
+                    {t('listing.houseRules')}
                   </a>
                 </>
               )}
@@ -425,27 +427,27 @@ export default function ListingDetailPage() {
                 <div className="grid grid-cols-3 gap-3.5">
                   {isSale ? (
                     <>
-                      <Spec num={String(unit.beds ?? '—')} label="Bedrooms" />
-                      <Spec num={String(unit.baths ?? '—')} label="Baths" />
-                      <Spec num={sizeM2 > 0 ? `${sizeM2}` : '—'} label={sizeM2 > 0 ? 'm²' : 'Area'} />
+                      <Spec num={String(unit.beds ?? '—')} label={t('listing.specBedrooms')} />
+                      <Spec num={String(unit.baths ?? '—')} label={t('listing.specBaths')} />
+                      <Spec num={sizeM2 > 0 ? `${sizeM2}` : '—'} label={sizeM2 > 0 ? 'm²' : t('listing.specArea')} />
                     </>
                   ) : (
                     <>
-                      <Spec num={String(unit.guests || '—')} label="Guests" />
-                      <Spec num={String(unit.beds ?? '—')} label="Bedrooms" />
-                      <Spec num={String(unit.baths ?? '—')} label="Baths" />
+                      <Spec num={String(unit.guests || '—')} label={t('listing.specGuests')} />
+                      <Spec num={String(unit.beds ?? '—')} label={t('listing.specBedrooms')} />
+                      <Spec num={String(unit.baths ?? '—')} label={t('listing.specBaths')} />
                     </>
                   )}
                 </div>
               </section>
 
               <section id="about" className="scroll-mt-[130px] pb-8 border-b border-soul-line mb-8">
-                <h2 className="font-display text-2xl font-semibold mb-3.5 text-soul-blue">Description</h2>
+                <h2 className="font-display text-2xl font-semibold mb-3.5 text-soul-blue">{t('listing.description')}</h2>
                 <ExpandableText text={description} />
               </section>
 
               <section id="details" className="scroll-mt-[130px] pb-8 border-b border-soul-line mb-8">
-                <h2 className="font-display text-2xl font-semibold mb-4 text-soul-blue">Details</h2>
+                <h2 className="font-display text-2xl font-semibold mb-4 text-soul-blue">{t('listing.details')}</h2>
                 <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-0">
                   {detailRows.map((r) => (
                     <div
@@ -460,12 +462,12 @@ export default function ListingDetailPage() {
               </section>
 
               <section id="features" className="scroll-mt-[130px] pb-8 border-b border-soul-line mb-8">
-                <h2 className="font-display text-2xl font-semibold mb-5 text-soul-blue">Features</h2>
+                <h2 className="font-display text-2xl font-semibold mb-5 text-soul-blue">{t('listing.features')}</h2>
 
                 {!!amenities.length && (
                   <>
                     <h3 className="text-[13px] font-bold uppercase tracking-wider text-soul-muted mb-3">
-                      Amenities
+                      {t('listing.amenitiesHeading')}
                     </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 mb-7">
                       {amenities.map((a) => (
@@ -481,7 +483,7 @@ export default function ListingDetailPage() {
                 {!!facilities.length && (
                   <>
                     <h3 className="text-[13px] font-bold uppercase tracking-wider text-soul-muted mb-3">
-                      Facilities
+                      {t('listing.facilities')}
                     </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                       {facilities.map((f) => (
@@ -495,13 +497,13 @@ export default function ListingDetailPage() {
                 )}
 
                 {!amenities.length && !facilities.length && (
-                  <p className="text-sm text-soul-muted m-0">Amenities will appear here once added in the PMS.</p>
+                  <p className="text-sm text-soul-muted m-0">{t('listing.amenitiesEmpty')}</p>
                 )}
               </section>
 
               {!isSale && (
               <section id="reviews" className="scroll-mt-[130px] pb-8 border-b border-soul-line mb-8">
-                <h2 className="font-display text-2xl font-semibold mb-5 text-soul-blue">Reviews</h2>
+                <h2 className="font-display text-2xl font-semibold mb-5 text-soul-blue">{t('listing.reviews')}</h2>
                 <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
                   <div className="space-y-3">
                     {user ? (
@@ -509,16 +511,16 @@ export default function ListingDetailPage() {
                     ) : (
                       <div className="rounded-3xl border border-soul-line bg-soul-ivory/40 p-5">
                         <p className="text-sm text-soul-blue">
-                          Please{' '}
+                          {t('listing.signInReviewPrefix')}{' '}
                           <Link to="/sign-in" className="font-semibold underline">
-                            sign in
+                            {t('listing.signIn')}
                           </Link>{' '}
-                          to submit a review for this unit.
+                          {t('listing.signInReviewSuffix')}
                         </p>
                       </div>
                     )}
                     {reviewMessage ? (
-                      <p className={`text-sm ${reviewMessage.startsWith('Thanks') ? 'text-emerald-700' : 'text-red-600'}`}>
+                      <p className={`text-sm ${reviewMessageOk ? 'text-emerald-700' : 'text-red-600'}`}>
                         {reviewMessage}
                       </p>
                     ) : null}
@@ -538,10 +540,10 @@ export default function ListingDetailPage() {
                 <section className="pb-8 border-b border-soul-line mb-8">
                   <div className="flex justify-between items-center mb-3.5 flex-wrap gap-3.5">
                     <h2 className="font-display text-2xl font-semibold m-0 text-soul-blue">
-                      {isSale ? 'Similar properties for sale' : 'Similar homes you might like'}
+                      {isSale ? t('listing.similarSale') : t('listing.similarRent')}
                     </h2>
                     <Link to={browsePath} className="text-soul-blue font-semibold text-sm hover:underline">
-                      View all →
+                      {t('listing.viewAll')}
                     </Link>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
@@ -567,35 +569,35 @@ export default function ListingDetailPage() {
               {!isSale && (
                 <>
                   <section id="rules" className="scroll-mt-[130px] pb-8 border-b border-soul-line mb-8">
-                    <h2 className="font-display text-2xl font-semibold mb-3.5 text-soul-blue">House rules</h2>
+                    <h2 className="font-display text-2xl font-semibold mb-3.5 text-soul-blue">{t('listing.houseRules')}</h2>
                     <ul className="space-y-1.5 text-sm text-soul-blue m-0 list-none p-0">
                       <li className="flex items-center gap-2">
-                        <CheckIcon /> Check-in after 3:00 PM
+                        <CheckIcon /> {t('listing.checkInAfter')}
                       </li>
                       <li className="flex items-center gap-2">
-                        <CheckIcon /> Checkout before 11:00 AM
+                        <CheckIcon /> {t('listing.checkOutBefore')}
                       </li>
                       <li className="flex items-center gap-2">
-                        <CheckIcon /> No smoking indoors
+                        <CheckIcon /> {t('listing.noSmoking')}
                       </li>
                       <li className="flex items-center gap-2">
-                        <CheckIcon /> No parties or events
+                        <CheckIcon /> {t('listing.noParties')}
                       </li>
                       <li className="flex items-center gap-2">
-                        <CheckIcon /> {unit.guests || 8} guests max
+                        <CheckIcon /> {t('listing.guestsMax', { count: unit.guests || 8 })}
                       </li>
                     </ul>
                   </section>
 
                   <section className="pb-8 border-b border-soul-line mb-8">
-                    <h2 className="font-display text-2xl font-semibold mb-3.5 text-soul-blue">Guest Regulations</h2>
+                    <h2 className="font-display text-2xl font-semibold mb-3.5 text-soul-blue">{t('listing.guestRegulations')}</h2>
                     <ul className="space-y-2 text-sm text-soul-blue m-0 list-none p-0">
-                      {GUEST_REGULATIONS.map((rule) => (
-                        <li key={rule} className="flex items-start gap-2.5">
+                      {GUEST_REGULATION_KEYS.map((key) => (
+                        <li key={key} className="flex items-start gap-2.5">
                           <span className="mt-0.5">
                             <CheckIcon />
                           </span>
-                          <span>{rule}</span>
+                          <span>{t(key)}</span>
                         </li>
                       ))}
                     </ul>
@@ -628,7 +630,7 @@ export default function ListingDetailPage() {
           className="fixed inset-0 z-[230] bg-black/85 flex flex-col"
           role="dialog"
           aria-modal="true"
-          aria-label="All photos"
+          aria-label={t('listing.allPhotos')}
         >
           <div className="flex items-center justify-between px-5 py-4 text-white">
             <strong className="font-display text-xl">{unit.title}</strong>
@@ -636,7 +638,7 @@ export default function ListingDetailPage() {
               type="button"
               onClick={() => setLightbox(false)}
               className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20"
-              aria-label="Close"
+              aria-label={t('common.close')}
             >
               ×
             </button>
@@ -644,7 +646,7 @@ export default function ListingDetailPage() {
           <div className="flex-1 overflow-y-auto px-5 pb-10">
             <div className="max-w-4xl mx-auto grid gap-3">
               {photos.map((p, i) => (
-                <img key={p} src={p} alt={`${unit.title} photo ${i + 1}`} className="w-full rounded-xl" />
+                <img key={p} src={p} alt={t('listing.photoAlt', { title: unit.title, n: i + 1 })} className="w-full rounded-xl" />
               ))}
             </div>
           </div>

@@ -4,6 +4,7 @@ const { authStaff, requireRoles } = require('../../middleware/auth');
 const { syncUnitListingStatus } = require('../../lib/unitListingStatus');
 const { FINANCIAL_EPOCH, clampFromDate } = require('../../lib/financialEpoch');
 const { bookingAssigneeClause, loadReservationAccess, assertReservationOwned, assertBookingAssigned, isAdmin } = require('../../lib/reservationScope');
+const { upload, attachCloudinaryUrls } = require('../../config/cloudinary');
 
 /** Extra PMS endpoints expected by the legacy admin SPA (stubs + thin adapters). */
 const router = express.Router();
@@ -538,15 +539,27 @@ router.get('/website-bookings', async (req, res, next) => {
   }
 });
 
-router.post('/website-bookings/:id/accept', requireRoles('reservations'), async (req, res, next) => {
-  try {
-    const { acceptWebsiteBooking } = require('../../services/bookingWorkflow');
-    const booking = await acceptWebsiteBooking(req.params.id, req.user);
-    res.json(booking);
-  } catch (e) {
-    next(e);
+router.post(
+  '/website-bookings/:id/accept',
+  requireRoles('reservations'),
+  upload.single('evidence'),
+  attachCloudinaryUrls,
+  async (req, res, next) => {
+    try {
+      const { acceptWebsiteBooking } = require('../../services/bookingWorkflow');
+      const body = req.body || {};
+      const booking = await acceptWebsiteBooking(req.params.id, req.user, {
+        paymentMode: body.payment_mode || body.paymentMode || null,
+        amountPaid: body.amount_paid ?? body.amountPaid,
+        evidenceUrl: req.file?.path || req.file?.secure_url || body.evidence_url || null,
+        evidenceName: req.file?.originalname || body.evidence_name || null,
+      });
+      res.json(booking);
+    } catch (e) {
+      next(e);
+    }
   }
-});
+);
 
 router.post('/website-bookings/:id/reject', requireRoles('reservations'), async (req, res, next) => {
   try {

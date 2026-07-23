@@ -2,15 +2,13 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Lock, Mail, Phone, User } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useLocale } from '../context/LocaleContext';
 import AuthShell, { AuthError, AuthField, AuthSubmit } from '../components/auth/AuthShell';
 import PasswordChecklist from '../components/auth/PasswordChecklist';
-import {
-  getPasswordRuleChecks,
-  passwordPolicyMessage,
-  passwordPolicyOk,
-} from '../utils/passwordRules';
+import { getPasswordRuleChecks, passwordPolicyOk } from '../utils/passwordRules';
 
 export default function SignUpPage() {
+  const { t } = useLocale();
   const { signUp } = useAuth();
   const navigate = useNavigate();
   const [form, setForm] = useState({
@@ -38,16 +36,16 @@ export default function SignUpPage() {
     <AuthShell
       variant="badge"
       imageSrc="/soul-brand/coast-hero-1.jpg"
-      title="Create your account"
+      title={t('auth.createTitle')}
       imageAlt="Soul Hospitality living space"
     >
       <div className="mb-8">
-        <p className="soul-eyebrow text-soul-muted">Join Soul</p>
+        <p className="soul-eyebrow text-soul-muted">{t('auth.joinSoul')}</p>
         <h1 className="mt-2 font-display text-3xl font-semibold text-soul-blue sm:text-4xl">
-          Create account
+          {t('auth.createTitle')}
         </h1>
         <p className="mt-2 text-sm text-soul-muted">
-          Book coastal stays and manage your trips in one place.
+          {t('auth.createSubtitle')}
         </p>
       </div>
 
@@ -57,11 +55,11 @@ export default function SignUpPage() {
           e.preventDefault();
           setError('');
           if (form.password !== form.confirmPassword) {
-            setError('Passwords do not match');
+            setError(t('common.passwordsDoNotMatch'));
             return;
           }
           if (!passwordPolicyOk(form.password)) {
-            setError(passwordPolicyMessage());
+            setError(t('common.passwordPolicy'));
             return;
           }
           setLoading(true);
@@ -74,70 +72,70 @@ export default function SignUpPage() {
             });
             navigate('/account', { replace: true });
           } catch (err) {
-            setError(err.response?.data?.error || err.message || 'Sign up failed');
+            setError(err.response?.data?.error || err.message || t('auth.signUpFailed'));
           } finally {
             setLoading(false);
           }
         }}
       >
         <AuthField
-          label="Full name"
+          label={t('auth.fullName')}
           icon={User}
           name="full_name"
           value={form.full_name}
           onChange={setField('full_name')}
-          placeholder="Your full name"
+          placeholder={t('auth.fullNamePh')}
           autoComplete="name"
         />
         <AuthField
-          label="Email"
+          label={t('auth.email')}
           icon={Mail}
           name="email"
           type="email"
           value={form.email}
           onChange={setField('email')}
-          placeholder="your@email.com"
+          placeholder={t('auth.emailPh')}
           autoComplete="email"
         />
         <AuthField
-          label="Phone"
+          label={t('auth.phone')}
           icon={Phone}
           name="phone"
           type="tel"
           value={form.phone}
           onChange={setField('phone')}
-          placeholder="01xxxxxxxxx"
+          placeholder={t('auth.phonePh')}
           autoComplete="tel"
           required={false}
         />
         <AuthField
-          label="Password"
+          label={t('auth.password')}
           icon={Lock}
           name="password"
           type={showPassword ? 'text' : 'password'}
           value={form.password}
           onChange={setField('password')}
-          placeholder="Create a password"
+          placeholder={t('auth.createPasswordPh')}
           autoComplete="new-password"
           rightSlot={
             <button
               type="button"
               onClick={() => setShowPassword((v) => !v)}
               className="text-soul-muted transition-colors hover:text-soul-blue"
-              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              aria-label={showPassword ? t('common.hidePassword') : t('common.showPassword')}
             >
               {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </button>
           }
         />
         <AuthField
-          label="Confirm password"
+          label={t('auth.confirmPassword')}
           icon={Lock}
           name="confirmPassword"
           type={showPassword ? 'text' : 'password'}
           value={form.confirmPassword}
           onChange={setField('confirmPassword')}
-          placeholder="Repeat your password"
+          placeholder={t('auth.confirmPasswordPh')}
           autoComplete="new-password"
         />
 
@@ -156,19 +154,19 @@ export default function SignUpPage() {
           >
             {match && form.confirmPassword ? '✓' : '×'}
           </span>
-          Passwords match
+          {t('common.passwordsMatch')}
         </div>
 
         <AuthError message={error} />
-        <AuthSubmit loading={loading} loadingLabel="Creating account…" disabled={!canSubmit}>
-          Sign up
+        <AuthSubmit loading={loading} loadingLabel={t('auth.creating')} disabled={!canSubmit}>
+          {t('auth.signUp')}
         </AuthSubmit>
       </form>
 
       <p className="mt-8 text-center text-sm text-soul-muted">
-        Already have an account?{' '}
+        {t('auth.haveAccount')}{' '}
         <Link to="/sign-in" className="font-semibold text-soul-blue transition-colors hover:text-soul-blue-dark">
-          Sign in
+          {t('auth.signIn')}
         </Link>
       </p>
     </AuthShell>

@@ -1,13 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useLocale } from '../../context/LocaleContext';
 
 const dateToIso = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-
-const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
 
 function rangeHasBlockedNight(start, end, blockedSet) {
   if (!blockedSet?.size) return false;
@@ -37,6 +33,7 @@ export default function ListingDatePicker({
   minNights = 1,
   inline = false,
 }) {
+  const { t, localeTag } = useLocale();
   const [view, setView] = useState(() => {
     const base = value?.start ?? new Date();
     return new Date(base.getFullYear(), base.getMonth(), 1);
@@ -128,15 +125,15 @@ export default function ListingDatePicker({
   }
 
   function summary() {
+    const fmt = (d) => d.toLocaleDateString(localeTag, { month: 'short', day: 'numeric' });
     if (value.start && value.end) {
       const nights = Math.round((+value.end - +value.start) / 86_400_000);
-      const fmt = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      return `${fmt(value.start)} – ${fmt(value.end)} · ${nights} night${nights > 1 ? 's' : ''}`;
+      return t('listing.rangeSummary', { start: fmt(value.start), end: fmt(value.end), nights });
     }
     if (value.start) {
-      return `Check-in ${value.start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · pick check-out`;
+      return t('listing.checkInPickOut', { date: fmt(value.start) });
     }
-    return 'Pick a check-in date';
+    return t('listing.pickCheckIn');
   }
 
   const panel = (
@@ -156,23 +153,23 @@ export default function ListingDatePicker({
           type="button"
           onClick={() => setView(new Date(view.getFullYear(), view.getMonth() - 1, 1))}
           className="w-8 h-8 rounded-full hover:bg-soul-blue-50 text-lg text-soul-blue"
-          aria-label="Previous month"
+          aria-label={t('common.previousMonth')}
         >
           ‹
         </button>
-        <strong className="text-sm text-soul-blue">Select dates</strong>
+        <strong className="text-sm text-soul-blue">{t('listing.selectDates')}</strong>
         <button
           type="button"
           onClick={() => setView(new Date(view.getFullYear(), view.getMonth() + 1, 1))}
           className="w-8 h-8 rounded-full hover:bg-soul-blue-50 text-lg text-soul-blue"
-          aria-label="Next month"
+          aria-label={t('common.nextMonth')}
         >
           ›
         </button>
       </div>
 
       <div className={`grid gap-6 ${inline ? 'grid-cols-1 sm:grid-cols-2 sm:gap-6' : 'grid-cols-1 md:grid-cols-2 gap-8'}`}>
-        <Month month={view} value={value} onPick={pick} blockedSet={blockedSet} dailyPrices={dailyPrices} minNights={minNights} />
+        <Month month={view} value={value} onPick={pick} blockedSet={blockedSet} dailyPrices={dailyPrices} minNights={minNights} localeTag={localeTag} />
         <Month
           month={new Date(view.getFullYear(), view.getMonth() + 1, 1)}
           value={value}
@@ -180,6 +177,7 @@ export default function ListingDatePicker({
           blockedSet={blockedSet}
           dailyPrices={dailyPrices}
           minNights={minNights}
+          localeTag={localeTag}
         />
       </div>
 
@@ -188,7 +186,7 @@ export default function ListingDatePicker({
           <span className="inline-grid place-items-center w-5 h-5 rounded-full bg-[#f4f5f7] border border-[#e3e8ef] text-soul-muted/50 text-[11px] line-through">
             14
           </span>
-          Crossed-out dates are already booked
+          {t('listing.blockedHint')}
         </div>
       )}
 
@@ -200,7 +198,7 @@ export default function ListingDatePicker({
             className="px-3.5 py-2 rounded-full border border-soul-line text-xs font-semibold text-soul-blue"
             onClick={() => onChange({ start: null, end: null })}
           >
-            Clear
+            {t('common.clear')}
           </button>
           {!inline && (
             <button
@@ -208,7 +206,7 @@ export default function ListingDatePicker({
               className="px-3.5 py-2 rounded-full bg-soul-blue text-white text-xs font-semibold hover:bg-soul-blue-dark"
               onClick={() => onClose?.()}
             >
-              Apply
+              {t('common.apply')}
             </button>
           )}
         </div>
@@ -232,7 +230,7 @@ export default function ListingDatePicker({
   );
 }
 
-function Month({ month, value, onPick, blockedSet, dailyPrices, minNights }) {
+function Month({ month, value, onPick, blockedSet, dailyPrices, minNights, localeTag }) {
   const y = month.getFullYear();
   const mo = month.getMonth();
   const first = new Date(y, mo, 1);
@@ -321,7 +319,7 @@ function Month({ month, value, onPick, blockedSet, dailyPrices, minNights }) {
   return (
     <div>
       <div className="text-center font-bold text-sm mb-2 text-soul-blue">
-        {MONTHS[mo]} {y}
+        {month.toLocaleDateString(localeTag || 'en-US', { month: 'long', year: 'numeric' })}
       </div>
       <div className="grid grid-cols-7 gap-0.5 text-[10.5px] font-bold text-soul-muted uppercase tracking-wider mb-1">
         {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, i) => (

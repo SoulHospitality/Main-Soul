@@ -8,9 +8,9 @@ export const getPasswordRuleChecks = (password) => {
 };
 
 export const passwordRuleItems = [
-  { key: 'minLength', label: '8 characters minimum' },
-  { key: 'uppercase', label: 'At least one uppercase letter' },
-  { key: 'lowercase', label: 'At least one lowercase letter' },
+  { key: 'minLength', label: '8 characters minimum', labelKey: 'common.passwordMinLength' },
+  { key: 'uppercase', label: 'At least one uppercase letter', labelKey: 'common.passwordUppercase' },
+  { key: 'lowercase', label: 'At least one lowercase letter', labelKey: 'common.passwordLowercase' },
 ];
 
 export function passwordPolicyOk(password) {

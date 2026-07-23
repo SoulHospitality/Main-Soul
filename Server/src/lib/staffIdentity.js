@@ -8,6 +8,7 @@ const ROLE_PREFIX = {
   reservations: 'R',
   resale: 'S',
   hr: 'H',
+  owner: 'O',
 };
 
 function randomDigitString(length) {

@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { CurrencyProvider } from './context/CurrencyContext';
+import { LocaleProvider } from './context/LocaleContext';
 import RouteFallback from './components/RouteFallback';
 import WhatsAppFAB from './components/layout/WhatsAppFAB';
 
@@ -35,43 +36,45 @@ const ContactPage = lazy(() => import('./pages/ContactPage'));
 export default function App() {
   return (
     <AuthProvider>
-      <CurrencyProvider>
-        <BrowserRouter>
-          <Suspense fallback={<RouteFallback />}>
-            <Routes>
-              <Route path="/" element={<HomePage />} />
-              <Route path="/home" element={<Navigate to="/" replace />} />
-              <Route path="/search" element={<SearchPage listingType="rent" />} />
-              <Route path="/for-sale" element={<SearchPage listingType="sale" />} />
-              <Route path="/listings/:slug" element={<ListingDetailPage />} />
-              <Route path="/checkout" element={<CheckoutPage />} />
-              <Route path="/checkout/payment" element={<PaymentPage />} />
-              <Route path="/checkout/payment/callback" element={<PaymentCallbackPage />} />
-              <Route path="/booking-success" element={<BookingSuccessPage />} />
-              <Route path="/sign-in" element={<SignInPage />} />
-              <Route path="/sign-up" element={<SignUpPage />} />
-              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-              <Route path="/reset-password" element={<ResetPasswordPage />} />
-              <Route path="/account" element={<AccountPage />} />
-              <Route path="/wishlist" element={<WishlistPage />} />
-              <Route path="/careers" element={<CareersPage />} />
-              <Route path="/about" element={<AboutPage />} />
-              <Route path="/compounds" element={<Compounds />} />
-              <Route path="/contact" element={<ContactPage />} />
-              <Route path="/faq" element={<Faq />} />
-              <Route path="/owners" element={<Owners />} />
-              <Route path="/host-onboarding" element={<Owners />} />
-              <Route path="/terms" element={<Legal kind="terms" />} />
-              <Route path="/privacy" element={<Legal kind="privacy" />} />
-              <Route path="/refund-policy" element={<Legal kind="refund-policy" />} />
-              <Route path="/sales/*" element={<SalesRoutes />} />
-              <Route path="/admin/*" element={<AdminApp />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </Suspense>
-          <WhatsAppFAB />
-        </BrowserRouter>
-      </CurrencyProvider>
+      <BrowserRouter>
+        <LocaleProvider>
+          <CurrencyProvider>
+            <Suspense fallback={<RouteFallback />}>
+              <Routes>
+                <Route path="/" element={<HomePage />} />
+                <Route path="/home" element={<Navigate to="/" replace />} />
+                <Route path="/search" element={<SearchPage listingType="rent" />} />
+                <Route path="/for-sale" element={<SearchPage listingType="sale" />} />
+                <Route path="/listings/:slug" element={<ListingDetailPage />} />
+                <Route path="/checkout" element={<CheckoutPage />} />
+                <Route path="/checkout/payment" element={<PaymentPage />} />
+                <Route path="/checkout/payment/callback" element={<PaymentCallbackPage />} />
+                <Route path="/booking-success" element={<BookingSuccessPage />} />
+                <Route path="/sign-in" element={<SignInPage />} />
+                <Route path="/sign-up" element={<SignUpPage />} />
+                <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+                <Route path="/reset-password" element={<ResetPasswordPage />} />
+                <Route path="/account" element={<AccountPage />} />
+                <Route path="/wishlist" element={<WishlistPage />} />
+                <Route path="/careers" element={<CareersPage />} />
+                <Route path="/about" element={<AboutPage />} />
+                <Route path="/compounds" element={<Compounds />} />
+                <Route path="/contact" element={<ContactPage />} />
+                <Route path="/faq" element={<Faq />} />
+                <Route path="/owners" element={<Owners />} />
+                <Route path="/host-onboarding" element={<Owners />} />
+                <Route path="/terms" element={<Legal kind="terms" />} />
+                <Route path="/privacy" element={<Legal kind="privacy" />} />
+                <Route path="/refund-policy" element={<Legal kind="refund-policy" />} />
+                <Route path="/sales/*" element={<SalesRoutes />} />
+                <Route path="/admin/*" element={<AdminApp />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </Suspense>
+            <WhatsAppFAB />
+          </CurrencyProvider>
+        </LocaleProvider>
+      </BrowserRouter>
     </AuthProvider>
   );
 }

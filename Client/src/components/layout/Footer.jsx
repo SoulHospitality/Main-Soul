@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { brand } from '../../theme/brand';
+import { useLocale } from '../../context/LocaleContext';
 
 const FacebookIcon = (props) => (
   <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
@@ -20,12 +21,14 @@ function FooterLink({ label, href }) {
       className="group relative inline-flex text-sm font-medium text-slate-400 transition-colors duration-300 hover:text-white"
     >
       {label}
-      <span className="absolute -bottom-1 left-0 h-[1.5px] w-full origin-left scale-x-0 bg-soul-blue transition-transform duration-300 group-hover:scale-x-100" />
+      <span className="absolute -bottom-1 start-0 h-[1.5px] w-full origin-left scale-x-0 bg-soul-blue transition-transform duration-300 group-hover:scale-x-100 rtl:origin-right" />
     </Link>
   );
 }
 
 export default function Footer() {
+  const { t } = useLocale();
+
   return (
     <footer className="mt-14 bg-[#172331] text-white sm:mt-16">
       <div className="mx-auto max-w-soul px-5 sm:px-8 py-12 sm:py-16">
@@ -36,10 +39,7 @@ export default function Footer() {
               alt={brand.name}
               className="h-20 w-auto object-contain brightness-0 invert sm:h-24"
             />
-            <p className="max-w-md text-sm leading-7 text-white/75">
-              Boutique hospitality curated with premium restraint, direct booking clarity, and a calm
-              editorial luxury tone.
-            </p>
+            <p className="max-w-md text-sm leading-7 text-white/75">{t('footer.tagline')}</p>
             <div className="space-y-2 text-sm text-white/75">
               <p>{brand.address}</p>
               <p>{brand.phoneDisplay}</p>
@@ -49,45 +49,45 @@ export default function Footer() {
               to="/careers"
               className="inline-flex rounded-full border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-white/10"
             >
-              Work with us
+              {t('footer.workWithUs')}
             </Link>
           </div>
 
           <div>
             <p className="mb-4 text-xs font-semibold uppercase tracking-[0.22em] text-white/60">
-              Soul Hospitality
+              {t('footer.hospitality')}
             </p>
             <div className="flex flex-col gap-3">
-              <FooterLink label="Properties For Rent" href="/search" />
-              <FooterLink label="Properties For Sale" href="/for-sale" />
-              <FooterLink label="About Soul" href="/about" />
-              <FooterLink label="FAQ" href="/faq" />
-              <FooterLink label="Become a Host" href="/owners" />
-              <FooterLink label="Contact" href="/contact" />
+              <FooterLink label={t('nav.propertiesForRent')} href="/search" />
+              <FooterLink label={t('nav.propertiesForSale')} href="/for-sale" />
+              <FooterLink label={t('nav.about')} href="/about" />
+              <FooterLink label={t('nav.faq')} href="/faq" />
+              <FooterLink label={t('nav.becomeAHost')} href="/owners" />
+              <FooterLink label={t('footer.contact')} href="/contact" />
             </div>
           </div>
 
           <div>
             <p className="mb-4 text-xs font-semibold uppercase tracking-[0.22em] text-white/60">
-              Support
+              {t('footer.support')}
             </p>
             <div className="space-y-3 text-sm text-white/75">
-              <p>Calm premium support</p>
-              <p>Direct booking guidance</p>
-              <p>Owner and guest care</p>
+              <p>{t('footer.supportCalm')}</p>
+              <p>{t('footer.supportBooking')}</p>
+              <p>{t('footer.supportCare')}</p>
             </div>
           </div>
 
           <div>
             <p className="mb-4 text-xs font-semibold uppercase tracking-[0.22em] text-white/60">
-              Follow Us
+              {t('footer.followUs')}
             </p>
             <div className="flex items-center gap-3">
               <a
                 href={brand.social.facebook}
                 target="_blank"
                 rel="noreferrer"
-                aria-label="Facebook"
+                aria-label={t('footer.facebook')}
                 className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white transition-colors hover:bg-white/10"
               >
                 <FacebookIcon className="h-5 w-5" />
@@ -96,7 +96,7 @@ export default function Footer() {
                 href={brand.social.instagram}
                 target="_blank"
                 rel="noreferrer"
-                aria-label="Instagram"
+                aria-label={t('footer.instagram')}
                 className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white transition-colors hover:bg-white/10"
               >
                 <InstagramIcon className="h-5 w-5" />

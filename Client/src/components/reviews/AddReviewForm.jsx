@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { Star } from 'lucide-react';
+import { useLocale } from '../../context/LocaleContext';
 
 const MAX_COMMENT_LENGTH = 500;
 
 export default function AddReviewForm({ onSubmit, submitting = false }) {
+  const { t } = useLocale();
   const [rating, setRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
   const [comment, setComment] = useState('');
@@ -15,13 +17,13 @@ export default function AddReviewForm({ onSubmit, submitting = false }) {
     event.preventDefault();
 
     if (!rating) {
-      setError('Please select a star rating from 1 to 5.');
+      setError(t('listing.needRating'));
       return;
     }
 
     const trimmedComment = comment.trim();
     if (!trimmedComment) {
-      setError('Please write a short comment about your stay.');
+      setError(t('listing.needComment'));
       return;
     }
 
@@ -41,13 +43,13 @@ export default function AddReviewForm({ onSubmit, submitting = false }) {
       className="space-y-4 rounded-3xl border border-soul-line bg-white p-5 shadow-[0_20px_50px_-35px_rgba(40,63,94,0.35)]"
     >
       <div className="space-y-2">
-        <h3 className="font-display text-lg font-semibold text-soul-blue">Add Your Review</h3>
+        <h3 className="font-display text-lg font-semibold text-soul-blue">{t('listing.addReviewTitle')}</h3>
         <p className="text-sm text-soul-muted">
-          Share your experience to help future guests choose with confidence.
+          {t('listing.addReviewBody')}
         </p>
       </div>
 
-      <div className="flex items-center gap-2" role="radiogroup" aria-label="Select star rating">
+      <div className="flex items-center gap-2" role="radiogroup" aria-label={t('listing.selectRating')}>
         {Array.from({ length: 5 }, (_, index) => {
           const value = index + 1;
           const filled = value <= activeRating;
@@ -64,7 +66,7 @@ export default function AddReviewForm({ onSubmit, submitting = false }) {
                   ? 'border-amber-300 bg-amber-50 text-amber-500'
                   : 'border-soul-line bg-white text-soul-muted hover:border-amber-300 hover:text-amber-500'
               }`}
-              aria-label={`Rate ${value} star${value > 1 ? 's' : ''}`}
+              aria-label={t('listing.rateStars', { count: value })}
             >
               <Star className="h-5 w-5" strokeWidth={2} fill={filled ? 'currentColor' : 'none'} aria-hidden="true" />
             </button>
@@ -74,7 +76,7 @@ export default function AddReviewForm({ onSubmit, submitting = false }) {
 
       <div className="space-y-2">
         <label htmlFor="review-comment" className="text-sm font-semibold text-soul-blue">
-          Comment
+          {t('listing.comment')}
         </label>
         <textarea
           id="review-comment"
@@ -82,7 +84,7 @@ export default function AddReviewForm({ onSubmit, submitting = false }) {
           onChange={(event) => setComment(event.target.value.slice(0, MAX_COMMENT_LENGTH))}
           rows={4}
           maxLength={MAX_COMMENT_LENGTH}
-          placeholder="What stood out during your stay?"
+          placeholder={t('listing.commentPlaceholder')}
           className="w-full rounded-2xl border border-soul-line bg-white px-4 py-3 text-sm text-soul-blue outline-none transition-colors focus:border-soul-blue focus:ring-2 focus:ring-soul-blue/20"
         />
         <p className="text-xs text-soul-muted">
@@ -97,7 +99,7 @@ export default function AddReviewForm({ onSubmit, submitting = false }) {
         disabled={submitting}
         className="inline-flex items-center justify-center rounded-full bg-soul-blue px-6 py-2.5 text-sm font-semibold uppercase tracking-[0.12em] text-white transition-colors hover:bg-soul-blue-dark disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {submitting ? 'Submitting...' : 'Post review'}
+        {submitting ? t('listing.submitting') : t('listing.postReview')}
       </button>
     </form>
   );

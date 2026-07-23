@@ -10,6 +10,7 @@ import PartnersSection from '../components/home/PartnersSection';
 import ListingCard, { ListingCardSkeleton } from '../components/ListingCard';
 import api from '../api/http';
 import { brand } from '../theme/brand';
+import { useLocale } from '../context/LocaleContext';
 
 const HERO_IMAGES = [
   '/soul-brand/coast-hero-2.jpg',
@@ -18,6 +19,7 @@ const HERO_IMAGES = [
 ];
 
 export default function HomePage() {
+  const { t } = useLocale();
   const [heroIndex, setHeroIndex] = useState(0);
   const [featured, setFeatured] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -111,25 +113,24 @@ export default function HomePage() {
               className="font-display font-normal leading-[0.95] text-white max-w-3xl"
               style={{ fontSize: 'clamp(42px, 8vw, 96px)' }}
             >
-              <span className="font-light">Experience coastal</span>{' '}
-              <em className="italic font-normal">luxury.</em>
+              <span className="font-light">{t('home.heroTitleLight')}</span>{' '}
+              <em className="italic font-normal">{t('home.heroTitleEm')}</em>
             </h1>
             <p className="mt-5 max-w-xl text-base leading-relaxed text-white/85 md:text-lg">
-              Hand-picked homes along Egypt&apos;s most beautiful coastlines — Fouka Bay, GAIA,
-              Hacienda West, Marassi and Ain Sokhna.
+              {t('home.heroSubtitle')}
             </p>
 
             <div className="mt-8 flex flex-wrap gap-6 border-t border-white/15 pt-6 text-sm text-white/75">
               <span>
-                <strong className="text-white">{total || '—'}</strong> homes to call yours
+                {t('home.homesCount', { count: total || '—' })}
               </span>
-              <span>5 coastal destinations</span>
-              <span>North Coast &amp; Red Sea</span>
+              <span>{t('home.destinations')}</span>
+              <span>{t('home.regions')}</span>
             </div>
           </div>
 
           <div
-            className={`relative z-20 w-full shrink-0 md:ml-auto md:w-[460px] md:max-w-[460px] lg:translate-x-2 ${entered ? 'soul-fade-up' : 'opacity-0'}`}
+            className={`relative z-20 w-full shrink-0 md:ms-auto md:w-[460px] md:max-w-[460px] lg:translate-x-2 rtl:lg:-translate-x-2 ${entered ? 'soul-fade-up' : 'opacity-0'}`}
             style={{ animationDelay: '0.38s' }}
           >
             <HeroSearch />
@@ -145,13 +146,13 @@ export default function HomePage() {
       <section className="mx-auto max-w-soul px-5 sm:px-8 py-4 md:py-8 pb-16 md:pb-20">
         <div className="flex items-end justify-between gap-4 mb-8">
           <div>
-            <p className="soul-eyebrow text-soul-muted mb-2">Collection</p>
+            <p className="soul-eyebrow text-soul-muted mb-2">{t('home.collection')}</p>
             <h2 className="font-display text-3xl md:text-4xl text-soul-blue">
-              Stays guests <em className="italic font-normal">return</em> to
+              {t('home.featuredTitle')}
             </h2>
           </div>
           <Link to="/search" className="text-sm font-semibold text-soul-blue shrink-0">
-            View all
+            {t('home.viewAll')}
           </Link>
         </div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
@@ -163,7 +164,7 @@ export default function HomePage() {
             ))}
           {!loading && !featured.length && (
             <p className="text-soul-muted col-span-full">
-              Featured homes will appear here once published units are available.
+              {t('home.featuredEmpty')}
             </p>
           )}
         </div>

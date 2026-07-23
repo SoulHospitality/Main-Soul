@@ -1,23 +1,39 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { ChevronDown, Menu, User, X, Heart } from 'lucide-react';
+import { ChevronDown, Globe, Menu, User, X, Heart } from 'lucide-react';
 import { brand, whatsappHref } from '../../theme/brand';
 import { useCurrency } from '../../context/CurrencyContext';
 import { useAuth } from '../../context/AuthContext';
+import { useLocale } from '../../context/LocaleContext';
 
-const NAV = [
-  { label: 'About Soul', to: '/about' },
-  { label: 'FAQ', to: '/faq' },
-  { label: 'Become a Host', to: '/owners' },
+const NAV_KEYS = [
+  { labelKey: 'nav.about', to: '/about' },
+  { labelKey: 'nav.faq', to: '/faq' },
+  { labelKey: 'nav.becomeAHost', to: '/owners' },
 ];
 
-const PROPERTY_LINKS = [
-  { label: 'Properties For Rent', to: '/search' },
-  { label: 'Properties For Sale', to: '/for-sale' },
+const PROPERTY_LINK_KEYS = [
+  { labelKey: 'nav.propertiesForRent', to: '/search' },
+  { labelKey: 'nav.propertiesForSale', to: '/for-sale' },
 ];
 
 function isPropertiesPath(pathname) {
   return pathname.startsWith('/search') || pathname.startsWith('/for-sale') || pathname.startsWith('/listings');
+}
+
+function LanguageToggle({ className = '' }) {
+  const { locale, toggleLocale, t } = useLocale();
+  return (
+    <button
+      type="button"
+      onClick={toggleLocale}
+      className={`inline-flex items-center gap-1.5 text-sm font-medium transition ${className}`}
+      aria-label={locale === 'en' ? t('nav.switchToAr') : t('nav.switchToEn')}
+    >
+      <Globe size={16} strokeWidth={1.8} />
+      <span>{locale === 'en' ? t('nav.switchToAr') : t('nav.switchToEn')}</span>
+    </button>
+  );
 }
 
 export default function Header({ overHero = false }) {
@@ -27,6 +43,7 @@ export default function Header({ overHero = false }) {
   const propsRef = useRef(null);
   const { currency, setCurrency } = useCurrency();
   const { user } = useAuth();
+  const { t } = useLocale();
   const navigate = useNavigate();
   const { pathname } = useLocation();
 
@@ -105,7 +122,7 @@ export default function Header({ overHero = false }) {
                     : linkCls
                 }`}
               >
-                Properties
+                {t('nav.properties')}
                 <ChevronDown
                   size={14}
                   strokeWidth={2.5}
@@ -116,9 +133,9 @@ export default function Header({ overHero = false }) {
               {propsOpen && (
                 <div
                   role="menu"
-                  className="absolute left-1/2 top-full z-50 mt-3 min-w-[240px] -translate-x-1/2 overflow-hidden rounded-[14px] border border-soul-line bg-white p-1.5 shadow-[0_18px_50px_rgba(40,63,94,0.18)]"
+                  className="absolute start-1/2 top-full z-50 mt-3 min-w-[240px] -translate-x-1/2 overflow-hidden rounded-[14px] border border-soul-line bg-white p-1.5 shadow-[0_18px_50px_rgba(40,63,94,0.18)] rtl:translate-x-1/2"
                 >
-                  {PROPERTY_LINKS.map((item) => {
+                  {PROPERTY_LINK_KEYS.map((item) => {
                     const active =
                       pathname === item.to ||
                       (item.to === '/search' && pathname.startsWith('/search')) ||
@@ -135,7 +152,7 @@ export default function Header({ overHero = false }) {
                             : 'text-soul-blue hover:bg-soul-blue-50/70'
                         }`}
                       >
-                        {item.label}
+                        {t(item.labelKey)}
                       </Link>
                     );
                   })}
@@ -143,20 +160,26 @@ export default function Header({ overHero = false }) {
               )}
             </div>
 
-            {NAV.map((item) => (
+            {NAV_KEYS.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
                 className={`pointer-events-auto text-[13px] font-bold uppercase tracking-[0.16em] ${linkCls}`}
               >
-                {item.label}
+                {t(item.labelKey)}
               </NavLink>
             ))}
           </nav>
 
           <div className="relative z-10 flex items-center gap-2 sm:gap-3">
+            <LanguageToggle
+              className={`hidden sm:inline-flex ${
+                solid ? 'text-soul-blue/80 hover:text-soul-blue' : 'text-white/90 hover:text-white'
+              }`}
+            />
+
             <select
-              aria-label="Currency"
+              aria-label={t('common.currency')}
               value={currency}
               onChange={(e) => setCurrency(e.target.value)}
               className={`hidden sm:block text-sm rounded-full border px-3 py-1.5 bg-transparent outline-none ${
@@ -174,7 +197,7 @@ export default function Header({ overHero = false }) {
               className={`hidden md:grid h-9 w-9 place-items-center rounded-full ${
                 solid ? 'text-soul-blue hover:bg-soul-blue-50' : 'text-white hover:bg-white/10'
               }`}
-              aria-label="Wishlist"
+              aria-label={t('nav.wishlist')}
             >
               <Heart size={18} />
             </Link>
@@ -189,7 +212,7 @@ export default function Header({ overHero = false }) {
               }`}
             >
               <User size={16} />
-              <span className="hidden sm:inline">{user ? 'Account' : 'Sign In'}</span>
+              <span className="hidden sm:inline">{user ? t('nav.account') : t('nav.signIn')}</span>
             </button>
 
             <button
@@ -198,7 +221,7 @@ export default function Header({ overHero = false }) {
                 solid ? 'text-soul-blue' : 'text-white'
               }`}
               onClick={() => setMobileOpen(true)}
-              aria-label="Open menu"
+              aria-label={t('nav.openMenu')}
             >
               <Menu size={22} />
             </button>
@@ -222,17 +245,18 @@ export default function Header({ overHero = false }) {
 function MobileDrawer({ onClose, currency, setCurrency, user, pathname }) {
   const [propsOpen, setPropsOpen] = useState(isPropertiesPath(pathname));
   const panelRef = useRef(null);
+  const { t } = useLocale();
 
   return (
     <div className="fixed inset-0 z-[60] lg:hidden">
-      <button type="button" className="absolute inset-0 bg-soul-ink/50" aria-label="Close" onClick={onClose} />
+      <button type="button" className="absolute inset-0 bg-soul-ink/50" aria-label={t('common.close')} onClick={onClose} />
       <div
         ref={panelRef}
-        className="absolute right-0 top-0 h-full w-[min(100%,360px)] bg-white shadow-2xl flex flex-col"
+        className="absolute end-0 top-0 h-full w-[min(100%,360px)] bg-white shadow-2xl flex flex-col"
       >
         <div className="h-[68px] px-5 flex items-center justify-between border-b border-soul-line">
           <span className="font-display text-xl text-soul-blue">Soul</span>
-          <button type="button" onClick={onClose} className="h-10 w-10 grid place-items-center" aria-label="Close menu">
+          <button type="button" onClick={onClose} className="h-10 w-10 grid place-items-center" aria-label={t('nav.closeMenu')}>
             <X size={22} />
           </button>
         </div>
@@ -244,7 +268,7 @@ function MobileDrawer({ onClose, currency, setCurrency, user, pathname }) {
               className="flex w-full items-center justify-between py-3 text-[13px] font-bold uppercase tracking-[0.16em] text-soul-blue"
               aria-expanded={propsOpen}
             >
-              Properties
+              {t('nav.properties')}
               <ChevronDown
                 size={16}
                 className={`transition-transform ${propsOpen ? 'rotate-180' : ''}`}
@@ -252,7 +276,7 @@ function MobileDrawer({ onClose, currency, setCurrency, user, pathname }) {
             </button>
             {propsOpen && (
               <div className="mt-1 space-y-1 pb-1">
-                {PROPERTY_LINKS.map((item) => {
+                {PROPERTY_LINK_KEYS.map((item) => {
                   const active = pathname === item.to || pathname.startsWith(`${item.to}?`);
                   return (
                     <Link
@@ -265,43 +289,48 @@ function MobileDrawer({ onClose, currency, setCurrency, user, pathname }) {
                           : 'text-soul-blue/80 hover:bg-soul-blue-50/60'
                       }`}
                     >
-                      {item.label}
+                      {t(item.labelKey)}
                     </Link>
                   );
                 })}
               </div>
             )}
           </div>
-          {NAV.map((item) => (
+          {NAV_KEYS.map((item) => (
             <Link
               key={item.to}
               to={item.to}
               onClick={onClose}
               className="block border-b border-soul-line/60 py-3 text-[13px] font-bold uppercase tracking-[0.16em] text-soul-blue"
             >
-              {item.label}
+              {t(item.labelKey)}
             </Link>
           ))}
           <Link to="/wishlist" onClick={onClose} className="block py-3 text-soul-blue font-medium border-b border-soul-line/60">
-            Wishlist
+            {t('nav.wishlist')}
           </Link>
           <Link
             to={user ? '/account' : '/sign-in'}
             onClick={onClose}
             className="block py-3 text-soul-blue font-medium border-b border-soul-line/60"
           >
-            {user ? 'Account' : 'Sign In'}
+            {user ? t('nav.account') : t('nav.signIn')}
           </Link>
-          <div className="pt-4">
-            <label className="soul-eyebrow text-soul-muted">Currency</label>
-            <select
-              value={currency}
-              onChange={(e) => setCurrency(e.target.value)}
-              className="mt-2 w-full border border-soul-line rounded-xl px-3 py-2 text-soul-blue"
-            >
-              <option value="EGP">EGP</option>
-              <option value="USD">USD</option>
-            </select>
+          <div className="pt-4 space-y-4">
+            <div>
+              <LanguageToggle className="text-soul-blue" />
+            </div>
+            <div>
+              <label className="soul-eyebrow text-soul-muted">{t('common.currency')}</label>
+              <select
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value)}
+                className="mt-2 w-full border border-soul-line rounded-xl px-3 py-2 text-soul-blue"
+              >
+                <option value="EGP">EGP</option>
+                <option value="USD">USD</option>
+              </select>
+            </div>
           </div>
         </nav>
         <div className="p-5 border-t border-soul-line">
@@ -312,7 +341,7 @@ function MobileDrawer({ onClose, currency, setCurrency, user, pathname }) {
             className="btn-pill block text-center bg-soul-blue text-white py-3 font-semibold"
             onClick={onClose}
           >
-            WhatsApp us
+            {t('nav.whatsappUs')}
           </a>
         </div>
       </div>

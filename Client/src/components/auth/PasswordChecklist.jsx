@@ -1,12 +1,19 @@
-import { passwordRuleItems } from '../../utils/passwordRules';
+import { useLocale } from '../../context/LocaleContext';
+
+const RULE_KEYS = [
+  { key: 'minLength', i18nKey: 'common.passwordMinLength' },
+  { key: 'uppercase', i18nKey: 'common.passwordUppercase' },
+  { key: 'lowercase', i18nKey: 'common.passwordLowercase' },
+];
 
 /** Live checklist matching SoulHospitality change/reset password UX */
 export default function PasswordChecklist({ checks, className = '' }) {
+  const { t } = useLocale();
   return (
     <div
       className={`grid gap-2 rounded-xl border border-soul-line bg-[var(--pms-header-tint,rgba(40,63,94,0.04))] p-3 sm:grid-cols-2 ${className}`}
     >
-      {passwordRuleItems.map((rule) => {
+      {RULE_KEYS.map((rule) => {
         const passed = checks[rule.key];
         return (
           <div
@@ -24,7 +31,7 @@ export default function PasswordChecklist({ checks, className = '' }) {
             >
               {passed ? '✓' : '×'}
             </span>
-            <span>{rule.label}</span>
+            <span>{t(rule.i18nKey)}</span>
           </div>
         );
       })}

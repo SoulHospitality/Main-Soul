@@ -14,13 +14,14 @@ export const formatDateTime = (dateStr) => {
 export const nightsText = (n) => `${n} night${n !== 1 ? 's' : ''}`;
 
 export const STATUS_CONFIG = {
-  // Reservation status
+  // Reservation / owner portal status
   confirmed:   { label: 'Confirmed',   className: 'badge-blue'   },
+  pending:     { label: 'Pending',     className: 'badge-yellow' },
+  rejected:    { label: 'Rejected',    className: 'badge-red'    },
   checked_in:  { label: 'Checked In',  className: 'badge-green'  },
   checked_out: { label: 'Checked Out', className: 'badge-gray'   },
   cancelled:   { label: 'Cancelled',   className: 'badge-red'    },
   // Payment status
-  pending:     { label: 'Pending',     className: 'badge-yellow' },
   partial:     { label: 'Partial',     className: 'badge-orange' },
   paid:        { label: 'Paid',        className: 'badge-green'  },
   // Unit status

@@ -5,19 +5,20 @@ import api from '../api/http';
 import { useProjectCatalog } from '../hooks/useProjectCatalog';
 import { AREAS } from '../data/compounds';
 import { UNIT_TYPES } from '../admin/utils/formatters';
+import { useLocale } from '../context/LocaleContext';
 
 const FURNISHING_OPTIONS = [
-  'Fully Furnished',
-  'Semi Furnished',
-  'Unfurnished',
-  'Negotiable',
+  { value: 'Fully Furnished', key: 'fullyFurnished' },
+  { value: 'Semi Furnished', key: 'semiFurnished' },
+  { value: 'Unfurnished', key: 'unfurnished' },
+  { value: 'Negotiable', key: 'negotiable' },
 ];
 
 const CONTACT_TIMES = [
-  'Morning (9am–12pm)',
-  'Afternoon (12pm–5pm)',
-  'Evening (5pm–9pm)',
-  'Anytime',
+  { value: 'Morning (9am–12pm)', key: 'morning' },
+  { value: 'Afternoon (12pm–5pm)', key: 'afternoon' },
+  { value: 'Evening (5pm–9pm)', key: 'evening' },
+  { value: 'Anytime', key: 'anytime' },
 ];
 
 const COUNTRY_CODES = [
@@ -53,6 +54,7 @@ const fieldClass =
   'w-full rounded-xl border border-soul-line bg-white px-4 py-3 text-sm text-soul-blue outline-none transition focus:border-soul-blue';
 
 export default function BecomeAHostPage() {
+  const { t } = useLocale();
   const { destinations, projectsByDestination } = useProjectCatalog();
   const destinationOptions = destinations?.length ? destinations : AREAS;
 
@@ -111,12 +113,12 @@ export default function BecomeAHostPage() {
       setForm({ ...EMPTY, countryCode: form.countryCode });
       setStatus({
         type: 'success',
-        message: 'Thank you — our team will contact you soon to discuss listing your property.',
+        message: t('owners.success'),
       });
     } catch (err) {
       setStatus({
         type: 'error',
-        message: err.response?.data?.error || err.message || 'Could not submit your request.',
+        message: err.response?.data?.error || err.message || t('owners.error'),
       });
     } finally {
       setSubmitting(false);
@@ -137,13 +139,12 @@ export default function BecomeAHostPage() {
             <div className="absolute inset-0 bg-gradient-to-r from-soul-blue-dark/95 via-soul-blue-dark/80 to-soul-blue-dark/55" />
           </div>
           <div className="relative mx-auto max-w-soul px-5 sm:px-8 py-16 md:py-20">
-            <p className="soul-eyebrow text-white/55">Become a Host</p>
+            <p className="soul-eyebrow text-white/55">{t('owners.eyebrow')}</p>
             <h1 className="mt-3 max-w-2xl font-display text-4xl font-medium leading-tight sm:text-5xl">
-              List your coastal home with Soul
+              {t('owners.title')}
             </h1>
             <p className="mt-4 max-w-xl text-base leading-relaxed text-white/75 sm:text-lg">
-              Share a few details and our team will get in touch to help you publish your unit —
-              guest care, pricing, and stays handled with Soul.
+              {t('owners.subtitle')}
             </p>
           </div>
         </section>
@@ -152,24 +153,23 @@ export default function BecomeAHostPage() {
           <div className="grid gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-14">
             <div className="space-y-5">
               <h2 className="font-display text-2xl text-soul-blue sm:text-3xl">
-                Request a callback
+                {t('owners.formTitle')}
               </h2>
               <p className="text-sm leading-7 text-soul-muted sm:text-base">
-                Tell us about yourself and your property. We typically respond within one business
-                day to discuss next steps.
+                {t('owners.formBody')}
               </p>
               <ul className="space-y-3 text-sm text-soul-blue/90">
                 <li className="flex gap-3">
                   <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-soul-blue" />
-                  Professional guest communication and stay operations
+                  {t('owners.bullet0')}
                 </li>
                 <li className="flex gap-3">
                   <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-soul-blue" />
-                  Pricing guidance tailored to your destination
+                  {t('owners.bullet1')}
                 </li>
                 <li className="flex gap-3">
                   <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-soul-blue" />
-                  A calm, premium listing experience for your home
+                  {t('owners.bullet2')}
                 </li>
               </ul>
             </div>
@@ -180,7 +180,7 @@ export default function BecomeAHostPage() {
             >
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-soul-muted sm:col-span-2">
-                  Full name
+                  {t('owners.fullName')}
                   <input
                     type="text"
                     autoComplete="name"
@@ -192,7 +192,7 @@ export default function BecomeAHostPage() {
                 </label>
 
                 <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-soul-muted sm:col-span-2">
-                  Email
+                  {t('owners.email')}
                   <input
                     type="email"
                     autoComplete="email"
@@ -205,11 +205,11 @@ export default function BecomeAHostPage() {
 
                 <div className="sm:col-span-2">
                   <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-soul-muted">
-                    Phone number
+                    {t('owners.phone')}
                   </p>
                   <div className="flex flex-col gap-3 sm:flex-row">
                     <label className="sr-only" htmlFor="host-country-code">
-                      Country code
+                      {t('owners.countryCode')}
                     </label>
                     <select
                       id="host-country-code"
@@ -228,7 +228,7 @@ export default function BecomeAHostPage() {
                       type="tel"
                       inputMode="tel"
                       autoComplete="tel-national"
-                      placeholder="Phone number"
+                      placeholder={t('owners.phonePh')}
                       value={form.phone}
                       onChange={setField('phone')}
                       className={fieldClass}
@@ -238,27 +238,27 @@ export default function BecomeAHostPage() {
                 </div>
 
                 <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-soul-muted">
-                  Destination
+                  {t('owners.destination')}
                   <select
                     value={form.destination}
                     onChange={setField('destination')}
                     className={fieldClass}
                     required
                   >
-                    <option value="">Select destination</option>
+                    <option value="">{t('owners.selectDestination')}</option>
                     {destinationOptions.map((d) => (
                       <option key={d} value={d}>
                         {d}
                       </option>
                     ))}
                     {!destinationOptions.includes('Other') && (
-                      <option value="Other">Other</option>
+                      <option value="Other">{t('owners.other')}</option>
                     )}
                   </select>
                 </label>
 
                 <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-soul-muted">
-                  Project
+                  {t('owners.project')}
                   <select
                     value={form.project}
                     onChange={setField('project')}
@@ -267,63 +267,63 @@ export default function BecomeAHostPage() {
                     disabled={!form.destination}
                   >
                     <option value="">
-                      {form.destination ? 'Select project' : 'Pick destination first'}
+                      {form.destination ? t('owners.selectProject') : t('owners.pickDestinationFirst')}
                     </option>
                     {projectOptions.map((p) => (
                       <option key={p} value={p}>
                         {p}
                       </option>
                     ))}
-                    <option value="Other">Other</option>
+                    <option value="Other">{t('owners.other')}</option>
                   </select>
                 </label>
 
                 <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-soul-muted">
-                  Property type
+                  {t('owners.propertyType')}
                   <select
                     value={form.propertyType}
                     onChange={setField('propertyType')}
                     className={fieldClass}
                     required
                   >
-                    <option value="">Select type</option>
-                    {UNIT_TYPES.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
+                    <option value="">{t('owners.selectType')}</option>
+                    {UNIT_TYPES.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
                       </option>
                     ))}
                   </select>
                 </label>
 
                 <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-soul-muted">
-                  Furnishing status
+                  {t('owners.furnishing')}
                   <select
                     value={form.furnishingStatus}
                     onChange={setField('furnishingStatus')}
                     className={fieldClass}
                     required
                   >
-                    <option value="">Select status</option>
+                    <option value="">{t('owners.selectStatus')}</option>
                     {FURNISHING_OPTIONS.map((o) => (
-                      <option key={o} value={o}>
-                        {o}
+                      <option key={o.value} value={o.value}>
+                        {t(`owners.${o.key}`)}
                       </option>
                     ))}
                   </select>
                 </label>
 
                 <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-soul-muted sm:col-span-2">
-                  Preferred contact time
+                  {t('owners.contactTime')}
                   <select
                     value={form.preferredContactTime}
                     onChange={setField('preferredContactTime')}
                     className={fieldClass}
                     required
                   >
-                    <option value="">Select time</option>
-                    {CONTACT_TIMES.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
+                    <option value="">{t('owners.selectTime')}</option>
+                    {CONTACT_TIMES.map((c) => (
+                      <option key={c.value} value={c.value}>
+                        {t(`owners.${c.key}`)}
                       </option>
                     ))}
                   </select>
@@ -348,7 +348,7 @@ export default function BecomeAHostPage() {
                 disabled={!canSubmit || submitting}
                 className="mt-6 inline-flex w-full items-center justify-center rounded-full bg-soul-blue px-6 py-3.5 text-sm font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-soul-blue-dark disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {submitting ? 'Sending…' : 'Request contact'}
+                {submitting ? t('owners.sending') : t('owners.submit')}
               </button>
             </form>
           </div>

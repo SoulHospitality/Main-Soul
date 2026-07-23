@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays } from 'lucide-react';
+import { useLocale } from '../../context/LocaleContext';
 
 const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
@@ -10,8 +11,8 @@ const isBeforeDay = (a, b) => startOfDay(a).getTime() < startOfDay(b).getTime();
 const isAfterDay = (a, b) => startOfDay(a).getTime() > startOfDay(b).getTime();
 const addMonths = (date, offset) => new Date(date.getFullYear(), date.getMonth() + offset, 1);
 
-const formatMonthLabel = (date) =>
-  date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+const formatMonthLabel = (date, localeTag = 'en-US') =>
+  date.toLocaleDateString(localeTag, { month: 'long', year: 'numeric' });
 
 const toIsoLocal = (date) => {
   const y = date.getFullYear();
@@ -20,11 +21,12 @@ const toIsoLocal = (date) => {
   return `${y}-${m}-${d}`;
 };
 
-export const formatStayDate = (value, empty = 'Add date') => {
-  if (!value) return empty;
+export const formatStayDate = (value, empty, localeTag = 'en-US') => {
+  const fallback = empty ?? 'Add date';
+  if (!value) return fallback;
   const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return empty;
-  return date.toLocaleDateString('en-US', {
+  if (Number.isNaN(date.getTime())) return fallback;
+  return date.toLocaleDateString(localeTag, {
     weekday: 'short',
     month: 'short',
     day: 'numeric',
@@ -54,6 +56,7 @@ export default function DateRangePicker({
   variant = 'default',
   onOpenChange,
 }) {
+  const { t, localeTag } = useLocale();
   const rootRef = useRef(null);
   const [open, setOpen] = useState(defaultOpen);
   const [activeField, setActiveField] = useState('arrive');
@@ -165,9 +168,9 @@ export default function DateRangePicker({
           onClick={() => openPicker('arrive')}
           className={`border-e ${isHero ? 'border-white/20' : 'border-soul-line'} ${isHero ? 'px-5 py-4' : 'px-3.5 py-2.5'} text-start transition ${halfActive('arrive')}`}
         >
-          <span className={labelCls}>{isHero ? 'Arrive' : 'From'}</span>
+          <span className={labelCls}>{isHero ? t('home.arrive') : t('common.from')}</span>
           <span className={valueCls(!!checkin)}>
-            {formatStayDate(checkin, isHero ? 'Select date' : 'Add date')}
+            {formatStayDate(checkin, isHero ? t('common.selectDate') : t('common.addDate'), localeTag)}
           </span>
         </button>
         <button
@@ -175,9 +178,9 @@ export default function DateRangePicker({
           onClick={() => openPicker('depart')}
           className={`${isHero ? 'px-5 py-4' : 'px-3.5 py-2.5'} text-start transition ${halfActive('depart')}`}
         >
-          <span className={labelCls}>{isHero ? 'Depart' : 'To'}</span>
+          <span className={labelCls}>{isHero ? t('home.depart') : t('common.to')}</span>
           <span className={valueCls(!!checkout)}>
-            {formatStayDate(checkout, isHero ? 'Select date' : 'Add date')}
+            {formatStayDate(checkout, isHero ? t('common.selectDate') : t('common.addDate'), localeTag)}
           </span>
         </button>
       </div>
@@ -195,7 +198,7 @@ export default function DateRangePicker({
                     : 'text-soul-muted hover:text-soul-blue'
                 }`}
               >
-                {isHero ? 'Arrive' : 'From'}
+                {isHero ? t('home.arrive') : t('common.from')}
               </button>
               <button
                 type="button"
@@ -206,7 +209,7 @@ export default function DateRangePicker({
                     : 'text-soul-muted hover:text-soul-blue'
                 }`}
               >
-                {isHero ? 'Depart' : 'To'}
+                {isHero ? t('home.depart') : t('common.to')}
               </button>
             </div>
             {(checkin || checkout) && (
@@ -215,7 +218,7 @@ export default function DateRangePicker({
                 onClick={clearDates}
                 className="text-[11px] font-semibold text-soul-muted hover:text-soul-blue"
               >
-                Clear
+                {t('common.clear')}
               </button>
             )}
           </div>
@@ -225,18 +228,18 @@ export default function DateRangePicker({
               type="button"
               onClick={() => setCalendarMonth((c) => addMonths(c, -1))}
               className="rounded-full px-2 py-1 text-lg font-semibold transition-colors hover:bg-soul-blue-50"
-              aria-label="Previous month"
+              aria-label={t('common.previousMonth')}
             >
               ←
             </button>
             <span className="text-sm font-semibold uppercase tracking-[0.18em]">
-              {formatMonthLabel(calendarMonth)}
+              {formatMonthLabel(calendarMonth, localeTag)}
             </span>
             <button
               type="button"
               onClick={() => setCalendarMonth((c) => addMonths(c, 1))}
               className="rounded-full px-2 py-1 text-lg font-semibold transition-colors hover:bg-soul-blue-50"
-              aria-label="Next month"
+              aria-label={t('common.nextMonth')}
             >
               →
             </button>
@@ -293,10 +296,11 @@ export default function DateRangePicker({
 }
 
 export function DateRangeFieldLabel() {
+  const { t } = useLocale();
   return (
     <span className="mb-1.5 flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wider text-soul-muted">
       <CalendarDays size={13} strokeWidth={2} />
-      Dates
+      {t('common.dates')}
     </span>
   );
 }

@@ -1,7 +1,7 @@
 const express = require('express');
 const { query } = require('../../config/db');
 const { requireRoles } = require('../../middleware/auth');
-const { calcReservationFinancials, calcStatementFinancials, round2 } = require('../../lib/commission');
+const { calcReservationFinancials, calcStatementFinancials, ownerPortalFinancials, round2 } = require('../../lib/commission');
 const { FINANCIAL_EPOCH, clampFromDate } = require('../../lib/financialEpoch');
 const { logAudit } = require('../../lib/audit');
 
@@ -187,9 +187,7 @@ router.get('/owner/dashboard', requireRoles('owner', 'admin'), async (req, res, 
     for (const r of reservations) {
       const nights = Number(r.nights) || 0;
       bookedNights += nights;
-      const utilitiesAmount =
-        parseFloat(r.utilities_amount) || nights * (parseFloat(r.utilities_cost) || 0);
-      const fin = calcReservationFinancials(r, { ...r, utilities_amount: utilitiesAmount });
+      const fin = calcReservationFinancials(r, r);
       gbv += fin.grossAmount;
       commission += fin.companyCommission;
       ownerNet += fin.ownerNet;
@@ -244,43 +242,126 @@ router.get('/owner/reservations', requireRoles('owner', 'admin'), async (req, re
     const unitIds = await ownerUnitIds(ownerId);
     if (!unitIds.length) return res.json([]);
 
-    const { rows } = await query(
+    const { rows: reservations } = await query(
       `SELECT r.id, r.check_in, r.check_out, r.nights, r.total_amount, r.status, r.payment_status,
-              u.title AS unit_name, u.unit_number,
+              r.booking_id, u.title AS unit_name, u.unit_number,
               u.company_commission_pct, u.company_commission_owner_pct,
               u.commission_mode, u.commission_tenant_pct, u.utilities_cost,
               r.housekeeping_fees, r.utilities_amount, r.owner_collected_type, r.owner_collected_amount,
-              r.price_per_night
+              r.price_per_night, r.updated_at, r.created_at
        FROM reservations r
        JOIN units u ON u.id = r.unit_id
        WHERE r.unit_id = ANY($1::uuid[])
-         AND r.status <> 'cancelled'
        ORDER BY r.check_in DESC
        LIMIT 200`,
       [unitIds]
     );
 
-    res.json(
-      rows.map((r) => {
-        const utilitiesAmount =
-          parseFloat(r.utilities_amount) ||
-          (Number(r.nights) || 0) * (parseFloat(r.utilities_cost) || 0);
-        const fin = calcReservationFinancials(r, { ...r, utilities_amount: utilitiesAmount });
-        return {
-          booking_ref: `SH-${r.id}`,
-          check_in: r.check_in,
-          check_out: r.check_out,
-          nights: r.nights,
-          status: r.status,
-          payment_status: r.payment_status,
-          unit_name: r.unit_name,
-          unit_number: r.unit_number,
-          gross: fin.grossAmount,
-          commission: fin.companyCommission,
-          net: fin.ownerNet,
-        };
-      })
+    // Pending website requests for owner units (not yet mirrored as PMS reservations)
+    const { rows: pendingBookings } = await query(
+      `SELECT b.id, b.checkin AS check_in, b.checkout AS check_out, b.total_egp AS total_amount,
+              b.status, b.payment_status, b.created_at, b.cancellation_reason,
+              u.title AS unit_name, u.unit_number,
+              u.company_commission_pct, u.company_commission_owner_pct,
+              u.commission_mode, u.commission_tenant_pct, u.utilities_cost, u.property_type
+       FROM bookings b
+       JOIN units u ON u.id = b.unit_id
+       WHERE b.unit_id = ANY($1::uuid[])
+         AND (
+           (b.status IN ('pending', 'held') AND (b.hold_expires_at IS NULL OR b.hold_expires_at > now()))
+           OR b.status = 'cancelled'
+         )
+         AND NOT EXISTS (SELECT 1 FROM reservations r WHERE r.booking_id = b.id)
+       ORDER BY b.checkin DESC
+       LIMIT 150`,
+      [unitIds]
     );
+
+    const { housekeepingFeeForUnit } = require('../../lib/housekeeping');
+
+    const mappedReservations = reservations.map((r) => {
+      const raw = String(r.status || '').toLowerCase();
+      let ownerStatus = 'confirmed';
+      if (raw === 'cancelled') ownerStatus = 'rejected';
+      else if (raw === 'pending') ownerStatus = 'pending';
+      else ownerStatus = 'confirmed'; // confirmed / checked_in / checked_out
+
+      const unit = {
+        company_commission_pct: r.company_commission_pct,
+        company_commission_owner_pct: r.company_commission_owner_pct,
+        commission_mode: r.commission_mode,
+        commission_tenant_pct: r.commission_tenant_pct,
+        utilities_cost: r.utilities_cost,
+      };
+      const fin = ownerPortalFinancials(unit, r, { status: ownerStatus });
+      return {
+        id: `res-${r.id}`,
+        booking_ref: `SH-${r.id}`,
+        check_in: r.check_in,
+        check_out: r.check_out,
+        nights: r.nights,
+        status: ownerStatus,
+        payment_status: r.payment_status,
+        unit_name: r.unit_name || r.unit_number,
+        unit_number: r.unit_number,
+        gross: fin.showMoney ? fin.gross : null,
+        commission: fin.showMoney ? fin.commission : null,
+        net: fin.showMoney ? fin.net : null,
+        commission_pct: fin.commissionPct,
+        show_money: fin.showMoney,
+        sort_at: r.check_in,
+      };
+    });
+
+    const mappedBookings = pendingBookings.map((b) => {
+      const nights = Math.max(
+        1,
+        Math.round((new Date(b.check_out) - new Date(b.check_in)) / 86400000)
+      );
+      const ownerStatus =
+        b.status === 'cancelled' || String(b.status).toLowerCase() === 'rejected'
+          ? 'rejected'
+          : 'pending';
+      const hk = housekeepingFeeForUnit(b);
+      const util = nights * (parseFloat(b.utilities_cost) || 0);
+      const unit = {
+        company_commission_pct: b.company_commission_pct,
+        utilities_cost: b.utilities_cost,
+      };
+      const fin = ownerPortalFinancials(
+        unit,
+        {
+          nights,
+          total_amount: b.total_amount,
+          housekeeping_fees: hk,
+          utilities_amount: util,
+        },
+        { status: ownerStatus }
+      );
+      return {
+        id: `book-${b.id}`,
+        booking_ref: `WB-${String(b.id).slice(0, 8)}`,
+        check_in: b.check_in,
+        check_out: b.check_out,
+        nights,
+        status: ownerStatus,
+        payment_status: b.payment_status,
+        unit_name: b.unit_name || b.unit_number,
+        unit_number: b.unit_number,
+        gross: fin.showMoney ? fin.gross : null,
+        commission: fin.showMoney ? fin.commission : null,
+        net: fin.showMoney ? fin.net : null,
+        commission_pct: fin.commissionPct,
+        show_money: fin.showMoney,
+        sort_at: b.check_in,
+      };
+    });
+
+    const combined = [...mappedBookings, ...mappedReservations].sort(
+      (a, b) => new Date(b.sort_at) - new Date(a.sort_at)
+    );
+
+    res.json(combined);
   } catch (e) {
     next(e);
   }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { BedDouble, Building2, MapPin, Search, Users, Wallet, X } from 'lucide-react';
 import { resolveLocationFilter, useProjectCatalog } from '../../hooks/useProjectCatalog';
 import DateRangePicker, { DateRangeFieldLabel } from '../ui/DateRangePicker';
+import { useLocale } from '../../context/LocaleContext';
 
 function parseIso(iso) {
   return iso || '';
@@ -15,6 +16,15 @@ export const RENTAL_TYPES = [
   'Townhouse',
   'Penthouse',
 ];
+
+const RENTAL_TYPE_KEYS = {
+  Apartment: 'search.typeApartment',
+  Studio: 'search.typeStudio',
+  Chalet: 'search.typeChalet',
+  Villa: 'search.typeVilla',
+  Townhouse: 'search.typeTownhouse',
+  Penthouse: 'search.typePenthouse',
+};
 
 const inputCls =
   'w-full rounded-xl border border-soul-line bg-white px-3.5 py-2.5 text-sm text-soul-blue outline-none focus:border-soul-blue focus:ring-2 focus:ring-soul-blue/10 disabled:cursor-not-allowed disabled:opacity-55';
@@ -32,6 +42,7 @@ export default function PropertyFiltersSidebar({
   onClose,
   mode = 'rent',
 }) {
+  const { t } = useLocale();
   const isSale = mode === 'sale';
   const { destinations, projectsByDestination } = useProjectCatalog();
   const [destination, setDestination] = useState('');
@@ -57,10 +68,10 @@ export default function PropertyFiltersSidebar({
     setRentalTypes(Array.isArray(values.types) ? values.types : []);
     setPriceMin(values.priceMin ? Number(values.priceMin) : 0);
     setPriceMax(values.priceMax ? Number(values.priceMax) : 0);
-    const t = window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
       skipLive.current = false;
     }, 0);
-    return () => window.clearTimeout(t);
+    return () => window.clearTimeout(timer);
   }, [
     values.where,
     values.destination,
@@ -139,7 +150,7 @@ export default function PropertyFiltersSidebar({
 
   function toggleRentalType(type) {
     const next = rentalTypes.includes(type)
-      ? rentalTypes.filter((t) => t !== type)
+      ? rentalTypes.filter((t2) => t2 !== type)
       : [...rentalTypes, type];
     setRentalTypes(next);
     liveApply({ types: next });
@@ -170,13 +181,13 @@ export default function PropertyFiltersSidebar({
 
   const fields = (
     <>
-      <Field label="Destination" icon={MapPin}>
+      <Field label={t('search.destination')} icon={MapPin}>
         <select
           className={inputCls}
           value={destination}
           onChange={(e) => setDestinationLive(e.target.value)}
         >
-          <option value="">Anywhere</option>
+          <option value="">{t('search.anywhere')}</option>
           {destinations.map((d) => (
             <option key={d} value={d}>{d}</option>
           ))}
@@ -194,7 +205,7 @@ export default function PropertyFiltersSidebar({
             />
           </div>
 
-          <Field label="Guests" icon={Users}>
+          <Field label={t('home.searchGuests')} icon={Users}>
             <div className="flex items-center justify-between gap-3 rounded-xl border border-soul-line bg-white px-3 py-2.5">
               <button
                 type="button"
@@ -218,7 +229,7 @@ export default function PropertyFiltersSidebar({
         </>
       )}
 
-      <Field label="Bedrooms" icon={BedDouble}>
+      <Field label={t('search.bedrooms')} icon={BedDouble}>
         <div className="flex flex-wrap gap-1.5">
           {[0, 1, 2, 3, 4, 5, 6].map((n) => (
             <button
@@ -231,13 +242,13 @@ export default function PropertyFiltersSidebar({
                   : 'border-soul-line bg-white text-soul-blue hover:border-soul-blue'
               }`}
             >
-              {n === 0 ? 'Any' : n === 6 ? '6+' : `${n}+`}
+              {n === 0 ? t('search.any') : n === 6 ? '6+' : t('search.bedsPlus', { n })}
             </button>
           ))}
         </div>
       </Field>
 
-      <Field label={isSale ? 'Property type' : 'Rental type'} icon={Building2}>
+      <Field label={isSale ? t('search.propertyType') : t('search.rentalType')} icon={Building2}>
         <div className="space-y-2 rounded-xl border border-soul-line bg-white px-3.5 py-3">
           {RENTAL_TYPES.map((type) => {
             const checked = rentalTypes.includes(type);
@@ -252,14 +263,14 @@ export default function PropertyFiltersSidebar({
                   onChange={() => toggleRentalType(type)}
                   className="h-4 w-4 rounded border-soul-line text-soul-blue accent-soul-blue focus:ring-soul-blue/30"
                 />
-                <span>{type}</span>
+                <span>{t(RENTAL_TYPE_KEYS[type])}</span>
               </label>
             );
           })}
         </div>
       </Field>
 
-      <Field label={isSale ? 'Price range (EGP)' : 'Price range (EGP / night)'} icon={Wallet}>
+      <Field label={isSale ? t('search.priceRange') : t('search.priceRangeNight')} icon={Wallet}>
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
           <input
             type="number"
@@ -267,29 +278,29 @@ export default function PropertyFiltersSidebar({
             step={isSale ? 100000 : 500}
             className={inputCls}
             value={priceMin || ''}
-            placeholder="Min"
-            aria-label="Minimum price"
+            placeholder={t('search.min')}
+            aria-label={t('search.min')}
             onChange={(e) => setPriceRangeLive(Number(e.target.value) || 0, priceMax)}
           />
-          <span className="text-xs font-semibold text-soul-muted">to</span>
+          <span className="text-xs font-semibold text-soul-muted">{t('common.to')}</span>
           <input
             type="number"
             min={0}
             step={isSale ? 100000 : 500}
             className={inputCls}
             value={priceMax || ''}
-            placeholder="Max"
-            aria-label="Maximum price"
+            placeholder={t('search.max')}
+            aria-label={t('search.max')}
             onChange={(e) => setPriceRangeLive(priceMin, Number(e.target.value) || 0)}
           />
         </div>
         {(priceMin > 0 || priceMax > 0) && (
           <p className="mt-1.5 text-[11px] text-soul-muted">
             {priceMin > 0 && priceMax > 0
-              ? `EGP ${priceMin.toLocaleString()} – ${priceMax.toLocaleString()}`
+              ? t('search.priceRangeBoth', { min: priceMin.toLocaleString(), max: priceMax.toLocaleString() })
               : priceMin > 0
-                ? `From EGP ${priceMin.toLocaleString()}`
-                : `Up to EGP ${priceMax.toLocaleString()}`}
+                ? t('search.fromEgp', { amount: priceMin.toLocaleString() })
+                : t('search.upToEgp', { amount: priceMax.toLocaleString() })}
           </p>
         )}
       </Field>
@@ -303,17 +314,17 @@ export default function PropertyFiltersSidebar({
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close filters"
+            aria-label={t('search.closeFilters')}
             className="grid h-9 w-9 place-items-center rounded-full hover:bg-soul-blue-50"
           >
             <X size={20} className="text-soul-blue" />
           </button>
           <div className="min-w-0 flex-1">
-            <div className="font-display text-lg font-semibold text-soul-blue">Filters</div>
-            <div className="truncate text-xs text-soul-muted">Updates as you change them</div>
+            <div className="font-display text-lg font-semibold text-soul-blue">{t('search.filters')}</div>
+            <div className="truncate text-xs text-soul-muted">{t('search.filtersLive')}</div>
           </div>
           <button type="button" onClick={clearAll} className="text-sm font-semibold text-soul-muted">
-            Clear
+            {t('common.clear')}
           </button>
         </div>
 
@@ -327,7 +338,7 @@ export default function PropertyFiltersSidebar({
             onClick={onClose}
             className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-soul-blue py-3.5 text-sm font-bold text-white"
           >
-            Done
+            {t('common.done')}
           </button>
         </div>
       </div>
@@ -338,9 +349,9 @@ export default function PropertyFiltersSidebar({
     <aside className="hidden lg:block">
       <div className="sticky top-[104px] max-h-[calc(100vh-120px)] overflow-visible rounded-2xl border border-soul-line bg-white p-5 shadow-[0_12px_40px_rgba(40,63,94,0.08)]">
         <div className="mb-4">
-          <p className="text-[10.5px] font-bold uppercase tracking-[0.18em] text-soul-muted">Filters</p>
-          <h2 className="mt-1 font-display text-xl font-semibold text-soul-blue">Find a stay</h2>
-          <p className="mt-1 text-xs text-soul-muted">Results update as you filter</p>
+          <p className="text-[10.5px] font-bold uppercase tracking-[0.18em] text-soul-muted">{t('search.filters')}</p>
+          <h2 className="mt-1 font-display text-xl font-semibold text-soul-blue">{t('search.findStay')}</h2>
+          <p className="mt-1 text-xs text-soul-muted">{t('search.resultsUpdate')}</p>
         </div>
         <div className="flex flex-col gap-4">
           {fields}
@@ -349,7 +360,7 @@ export default function PropertyFiltersSidebar({
             onClick={clearAll}
             className="mt-1 w-full rounded-xl border border-soul-line py-2.5 text-sm font-semibold text-soul-muted transition hover:border-soul-blue hover:text-soul-blue"
           >
-            Clear filters
+            {t('search.clearFilters')}
           </button>
         </div>
       </div>
@@ -370,22 +381,23 @@ function Field({ label, icon: Icon, children }) {
 }
 
 export function MobileSearchPill({ values, onOpen, filterCount = 0, mode = 'rent' }) {
+  const { t, localeTag } = useLocale();
   const isSale = mode === 'sale';
-  const place = values.where || 'Anywhere';
+  const place = values.where || t('search.anywhere');
   const guests = Number(values.guests) || 1;
   const dateStr = useMemo(() => {
-    if (isSale) return 'For sale';
-    if (!values.checkin || !values.checkout) return 'Any dates';
+    if (isSale) return t('search.forSale');
+    if (!values.checkin || !values.checkout) return t('search.anyDates');
     try {
       const da = new Date(`${values.checkin}T00:00:00`);
       const db = new Date(`${values.checkout}T00:00:00`);
-      const fmt = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const fmt = (d) => d.toLocaleDateString(localeTag, { month: 'short', day: 'numeric' });
       const nights = Math.max(1, Math.round((+db - +da) / 86400000));
-      return `${fmt(da)} – ${fmt(db)} · ${nights} night${nights === 1 ? '' : 's'}`;
+      return t('listing.rangeSummary', { start: fmt(da), end: fmt(db), nights });
     } catch {
-      return 'Any dates';
+      return t('search.anyDates');
     }
-  }, [values.checkin, values.checkout, isSale]);
+  }, [values.checkin, values.checkout, isSale, localeTag, t]);
 
   return (
     <button
@@ -398,7 +410,7 @@ export function MobileSearchPill({ values, onOpen, filterCount = 0, mode = 'rent
       </span>
       <div className="min-w-0 flex-1">
         <div className="truncate text-[14px] font-bold text-soul-blue">
-          {isSale ? place : `${place} · ${guests} guest${guests === 1 ? '' : 's'}`}
+          {isSale ? place : `${place} · ${t('home.guestsLower', { count: guests })}`}
         </div>
         <div className="truncate text-[12px] text-soul-muted">{dateStr}</div>
       </div>
@@ -412,6 +424,7 @@ export function MobileSearchPill({ values, onOpen, filterCount = 0, mode = 'rent
 }
 
 export function FloatingFilterSort({ filterCount, sort, sortLabels, onOpenFilters, onSort }) {
+  const { t } = useLocale();
   const [sortOpen, setSortOpen] = useState(false);
   const ref = useRef(null);
 
@@ -427,7 +440,7 @@ export function FloatingFilterSort({ filterCount, sort, sortLabels, onOpenFilter
     <div ref={ref} className="fixed bottom-5 left-1/2 z-[120] -translate-x-1/2 lg:hidden">
       {sortOpen && (
         <div className="absolute bottom-[calc(100%+10px)] left-1/2 min-w-[210px] -translate-x-1/2 rounded-[14px] border border-soul-line bg-white p-1.5 shadow-[0_18px_50px_rgba(40,63,94,0.18)]">
-          {Object.entries(sortLabels).map(([key, label]) => (
+          {Object.entries(sortLabels).map(([key, labelKey]) => (
             <button
               key={key}
               type="button"
@@ -439,18 +452,18 @@ export function FloatingFilterSort({ filterCount, sort, sortLabels, onOpenFilter
                 sort === key ? 'bg-soul-blue-50 font-semibold text-soul-blue' : 'hover:bg-soul-blue-50/60'
               }`}
             >
-              {label}
+              {t(labelKey)}
             </button>
           ))}
         </div>
       )}
       <div className="flex items-center overflow-hidden rounded-full bg-soul-blue text-sm font-bold text-white shadow-[0_12px_36px_-8px_rgba(40,63,94,0.55)]">
         <button type="button" onClick={onOpenFilters} className="inline-flex items-center gap-2 px-5 py-3.5">
-          Filters{filterCount > 0 ? ` · ${filterCount}` : ''}
+          {t('search.filters')}{filterCount > 0 ? ` · ${filterCount}` : ''}
         </button>
         <span className="h-5 w-px bg-white/35" />
         <button type="button" onClick={() => setSortOpen((o) => !o)} className="inline-flex items-center gap-2 px-5 py-3.5">
-          Sort
+          {t('search.sort')}
         </button>
       </div>
     </div>

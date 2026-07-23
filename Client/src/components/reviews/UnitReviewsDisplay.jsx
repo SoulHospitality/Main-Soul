@@ -1,18 +1,13 @@
 import { useMemo } from 'react';
 import { Star } from 'lucide-react';
-
-const formatDate = (value) => {
-  if (!value) return 'Recently';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Recently';
-  return date.toLocaleDateString();
-};
+import { useLocale } from '../../context/LocaleContext';
 
 function ReviewStars({ value }) {
+  const { t } = useLocale();
   const rounded = Math.round(Number(value) || 0);
 
   return (
-    <div className="flex items-center gap-1" aria-label={`${rounded} out of 5 stars`}>
+    <div className="flex items-center gap-1" aria-label={t('listing.starRatingOutOf', { count: rounded })}>
       {Array.from({ length: 5 }, (_, index) => {
         const filled = index + 1 <= rounded;
         return (
@@ -36,6 +31,15 @@ export default function UnitReviewsDisplay({
   loading = false,
   error = '',
 }) {
+  const { t, localeTag } = useLocale();
+
+  const formatDate = (value) => {
+    if (!value) return t('listing.recently');
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return t('listing.recently');
+    return date.toLocaleDateString(localeTag);
+  };
+
   const summary = useMemo(() => {
     if (!reviews.length) {
       return {
@@ -54,23 +58,23 @@ export default function UnitReviewsDisplay({
   return (
     <section className="space-y-4">
       <div className="rounded-3xl border border-soul-line bg-white p-5 shadow-[0_20px_50px_-35px_rgba(40,63,94,0.35)]">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-soul-muted">Guest Feedback</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-soul-muted">{t('listing.guestFeedback')}</p>
         <div className="mt-2 flex flex-wrap items-end gap-3">
           <div className="font-num text-3xl font-semibold text-soul-blue">
             {summary.averageRating.toFixed(1)}
           </div>
           <ReviewStars value={summary.averageRating} />
           <p className="pb-1 text-sm text-soul-muted">
-            {summary.reviewCount} review{summary.reviewCount === 1 ? '' : 's'}
+            {t('listing.reviewCount', { count: summary.reviewCount })}
           </p>
         </div>
       </div>
 
-      {loading ? <p className="text-sm text-soul-muted">Loading reviews...</p> : null}
+      {loading ? <p className="text-sm text-soul-muted">{t('listing.loadingReviews')}</p> : null}
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
       {!loading && !error && reviews.length === 0 ? (
-        <p className="text-sm text-soul-muted">No reviews yet. Be the first guest to share your stay.</p>
+        <p className="text-sm text-soul-muted">{t('listing.reviewsEmpty')}</p>
       ) : null}
 
       {reviews.length > 0 ? (
@@ -84,7 +88,7 @@ export default function UnitReviewsDisplay({
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <h4 className="text-sm font-semibold text-soul-blue">{review.guestName || 'Guest'}</h4>
+                    <h4 className="text-sm font-semibold text-soul-blue">{review.guestName || t('common.guest')}</h4>
                     <p className="text-xs text-soul-muted">{formatDate(review.createdAt || review.created_at)}</p>
                   </div>
                   <ReviewStars value={review.rating} />

@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { X } from 'lucide-react';
 import { brand } from '../../theme/brand';
+import { useLocale } from '../../context/LocaleContext';
 
 /**
  * SoulHospitality-style split auth shell, restyled with soul-website palette.
@@ -13,11 +14,12 @@ export default function AuthShell({
   imageAlt = 'Soul Hospitality',
   variant = 'overlay', // 'overlay' | 'badge'
 }) {
+  const { t } = useLocale();
   return (
     <main className="relative grid min-h-screen w-full grid-cols-1 bg-white md:grid-cols-2">
       <Link
         to="/"
-        aria-label="Close and go home"
+        aria-label={t('auth.closeGoHome')}
         className="fixed right-5 top-5 z-50 flex h-11 w-11 items-center justify-center rounded-full border border-soul-line bg-white text-soul-blue shadow-[0_10px_30px_rgba(40,63,94,0.12)] transition-all duration-300 hover:-translate-y-0.5 hover:border-soul-blue hover:bg-soul-blue hover:text-white sm:right-6 sm:top-6"
       >
         <X className="h-5 w-5" strokeWidth={2.25} />
@@ -135,13 +137,14 @@ export function AuthError({ message }) {
 }
 
 export function AuthSubmit({ loading, children, loadingLabel, disabled }) {
+  const { t } = useLocale();
   return (
     <button
       type="submit"
       disabled={loading || disabled}
       className="mt-2 w-full rounded-full bg-soul-blue py-3.5 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(40,63,94,0.22)] transition-all duration-300 hover:bg-soul-blue-dark hover:shadow-[0_16px_36px_rgba(40,63,94,0.28)] disabled:cursor-not-allowed disabled:opacity-60"
     >
-      {loading ? loadingLabel || 'Please wait…' : children}
+      {loading ? loadingLabel || t('auth.pleaseWait') : children}
     </button>
   );
 }

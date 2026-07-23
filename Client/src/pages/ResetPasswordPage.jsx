@@ -2,15 +2,13 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Eye, EyeOff, Lock } from 'lucide-react';
 import api from '../api/http';
+import { useLocale } from '../context/LocaleContext';
 import AuthShell, { AuthError, AuthField, AuthSubmit } from '../components/auth/AuthShell';
 import PasswordChecklist from '../components/auth/PasswordChecklist';
-import {
-  getPasswordRuleChecks,
-  passwordPolicyMessage,
-  passwordPolicyOk,
-} from '../utils/passwordRules';
+import { getPasswordRuleChecks, passwordPolicyOk } from '../utils/passwordRules';
 
 export default function ResetPasswordPage() {
+  const { t } = useLocale();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const token = params.get('token') || '';
@@ -29,28 +27,28 @@ export default function ResetPasswordPage() {
   return (
     <AuthShell
       imageSrc="/soul-brand/coast-hero-1.jpg"
-      eyebrow="Account recovery"
-      title="Choose a new password"
+      eyebrow={t('auth.accountRecovery')}
+      title={t('auth.chooseNewPassword')}
       imageAlt="Soul Hospitality living space"
     >
       <div className="mb-8">
-        <p className="soul-eyebrow text-soul-muted">Guests</p>
+        <p className="soul-eyebrow text-soul-muted">{t('auth.guests')}</p>
         <h1 className="mt-2 font-display text-3xl font-semibold text-soul-blue sm:text-4xl">
-          Reset password
+          {t('auth.resetTitle')}
         </h1>
         <p className="mt-2 text-sm text-soul-muted">
-          Create a strong password to regain access to your Soul account.
+          {t('auth.resetSubtitle')}
         </p>
       </div>
 
       {!token ? (
         <div className="space-y-4">
-          <AuthError message="This reset link is missing or invalid. Request a new one." />
+          <AuthError message={t('auth.invalidLink')} />
           <Link
             to="/forgot-password"
             className="inline-flex font-semibold text-soul-blue hover:text-soul-blue-dark"
           >
-            Request a new reset link
+            {t('auth.requestNew')}
           </Link>
         </div>
       ) : (
@@ -61,7 +59,7 @@ export default function ResetPasswordPage() {
             setError('');
             if (!canSubmit) {
               setError(
-                !match ? 'Passwords do not match' : passwordPolicyMessage()
+                !match ? t('common.passwordsDoNotMatch') : t('common.passwordPolicy')
               );
               return;
             }
@@ -79,40 +77,40 @@ export default function ResetPasswordPage() {
               }
               navigate('/sign-in', { replace: true });
             } catch (err) {
-              setError(err.response?.data?.error || err.message || 'Unable to reset password');
+              setError(err.response?.data?.error || err.message || t('auth.unableReset'));
             } finally {
               setLoading(false);
             }
           }}
         >
           <AuthField
-            label="New password"
+            label={t('auth.newPassword')}
             icon={Lock}
             name="password"
             type={showPassword ? 'text' : 'password'}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Create a new password"
+            placeholder={t('auth.newPasswordPh')}
             autoComplete="new-password"
             rightSlot={
               <button
                 type="button"
                 onClick={() => setShowPassword((v) => !v)}
                 className="text-soul-muted transition-colors hover:text-soul-blue"
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                aria-label={showPassword ? t('common.hidePassword') : t('common.showPassword')}
               >
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             }
           />
           <AuthField
-            label="Confirm password"
+            label={t('auth.confirmPassword')}
             icon={Lock}
             name="confirmPassword"
             type={showPassword ? 'text' : 'password'}
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
-            placeholder="Repeat your password"
+            placeholder={t('auth.confirmPasswordPh')}
             autoComplete="new-password"
           />
           <PasswordChecklist checks={checks} />
@@ -122,11 +120,11 @@ export default function ResetPasswordPage() {
             }`}
           >
             <span>{match && confirmPassword ? '✓' : '×'}</span>
-            Passwords match
+            {t('common.passwordsMatch')}
           </div>
           <AuthError message={error} />
-          <AuthSubmit loading={loading} loadingLabel="Saving…" disabled={!canSubmit}>
-            Save new password
+          <AuthSubmit loading={loading} loadingLabel={t('auth.saving')} disabled={!canSubmit}>
+            {t('auth.savePassword')}
           </AuthSubmit>
         </form>
       )}

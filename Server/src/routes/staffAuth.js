@@ -7,6 +7,7 @@ const {
   passwordPolicyOk,
   passwordPolicyMessage,
 } = require('../lib/staffIdentity');
+const { normalizeOwnerPhone, ownerPhoneLoginVariants } = require('../lib/ownerPhone');
 
 const router = express.Router();
 
@@ -52,6 +53,9 @@ router.post('/login', async (req, res, next) => {
       return res.status(400).json({ error: 'Username and password required' });
     }
 
+    const phoneVariants = ownerPhoneLoginVariants(identity);
+    const canonicalPhone = normalizeOwnerPhone(identity);
+
     const { rows } = await query(
       `SELECT * FROM staff_users
        WHERE is_active = 1
@@ -59,9 +63,11 @@ router.post('/login', async (req, res, next) => {
            lower(username) = lower($1)
            OR lower(COALESCE(email, '')) = lower($1)
            OR lower(COALESCE(staff_code, '')) = lower($1)
+           OR ($2::text IS NOT NULL AND username = $2)
+           OR ($3::text[] IS NOT NULL AND cardinality($3::text[]) > 0 AND username = ANY($3::text[]))
          )
        LIMIT 1`,
-      [identity]
+      [identity, canonicalPhone, phoneVariants.length ? phoneVariants : null]
     );
     const user = rows[0];
     if (!user || !(await bcrypt.compare(password, user.password_hash))) {

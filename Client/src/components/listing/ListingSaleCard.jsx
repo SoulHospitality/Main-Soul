@@ -1,4 +1,5 @@
 import { useCurrency } from '../../context/CurrencyContext';
+import { useLocale } from '../../context/LocaleContext';
 import { whatsappHref } from '../../theme/brand';
 import { getDisplayPriceEgp } from '../../utils/displayPrice';
 
@@ -6,51 +7,53 @@ import { getDisplayPriceEgp } from '../../utils/displayPrice';
  * Sticky inquire card for for-sale listings (no nightly booking).
  */
 export default function ListingSaleCard({ unit }) {
+  const { t } = useLocale();
   const { formatPrice } = useCurrency();
   const amount = getDisplayPriceEgp(unit);
   const price = amount != null ? formatPrice(amount, { perNight: false }) : null;
   const sizeM2 = Number(unit?.size_m2 || unit?.unit_area || 0);
-  const message = `Hi Soul — I'm interested in ${unit?.title || 'this property'} for sale${unit?.slug ? ` (${unit.slug})` : ''}.`;
+  const listingUrl = typeof window !== 'undefined' ? window.location.href : '';
+  const message = `${listingUrl}\nعندي استفسار بخصوص الوحده دي المعروضة للبيع`;
 
   return (
     <div className="sticky top-[108px] rounded-[22px] border border-soul-line bg-white p-5 shadow-[0_18px_50px_-28px_rgba(40,63,94,0.35)]">
-      <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.16em] text-soul-muted">For sale</p>
+      <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.16em] text-soul-muted">{t('search.forSale')}</p>
       <div className="mb-4 flex flex-wrap items-baseline gap-2">
         {price ? (
           <span className="font-num text-[28px] font-semibold leading-none text-soul-blue">{price}</span>
         ) : (
-          <span className="text-lg font-semibold text-soul-blue">Inquire for price</span>
+          <span className="text-lg font-semibold text-soul-blue">{t('listing.saleInquireForPrice')}</span>
         )}
       </div>
 
       <dl className="mb-5 space-y-2 text-sm">
         {(unit?.beds ?? 0) > 0 && (
           <div className="flex justify-between gap-3">
-            <dt className="text-soul-muted">Bedrooms</dt>
+            <dt className="text-soul-muted">{t('listing.specBedrooms')}</dt>
             <dd className="font-semibold text-soul-blue">{unit.beds}</dd>
           </div>
         )}
         {(unit?.baths ?? 0) > 0 && (
           <div className="flex justify-between gap-3">
-            <dt className="text-soul-muted">Baths</dt>
+            <dt className="text-soul-muted">{t('listing.specBaths')}</dt>
             <dd className="font-semibold text-soul-blue">{unit.baths}</dd>
           </div>
         )}
         {sizeM2 > 0 && (
           <div className="flex justify-between gap-3">
-            <dt className="text-soul-muted">Area</dt>
+            <dt className="text-soul-muted">{t('listing.specArea')}</dt>
             <dd className="font-semibold text-soul-blue">{sizeM2} m²</dd>
           </div>
         )}
         {unit?.property_type && (
           <div className="flex justify-between gap-3">
-            <dt className="text-soul-muted">Type</dt>
+            <dt className="text-soul-muted">{t('listing.saleType')}</dt>
             <dd className="font-semibold text-soul-blue">{unit.property_type}</dd>
           </div>
         )}
         {unit?.compound && (
           <div className="flex justify-between gap-3">
-            <dt className="text-soul-muted">Compound</dt>
+            <dt className="text-soul-muted">{t('listing.saleCompound')}</dt>
             <dd className="font-semibold text-soul-blue text-end">{unit.compound}</dd>
           </div>
         )}
@@ -62,10 +65,10 @@ export default function ListingSaleCard({ unit }) {
         rel="noreferrer"
         className="btn-pill flex w-full items-center justify-center bg-soul-blue py-3.5 text-sm font-semibold text-white"
       >
-        Inquire on WhatsApp
+        {t('listing.saleInquire')}
       </a>
       <p className="mt-3 text-center text-[12px] text-soul-muted">
-        Our team will share details and arrange a viewing.
+        {t('listing.saleInquireNote')}
       </p>
     </div>
   );

@@ -3,23 +3,30 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Banknote, Building2, Calendar, CreditCard, ShieldCheck, Wallet } from 'lucide-react';
 import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
+import CheckoutAuthGate from '../components/booking/CheckoutAuthGate';
 import { createBookingCheckout } from '../api/http';
-import { BOOKING_POLICIES } from '../constants/bookingPolicies';
+import { useAuth } from '../context/AuthContext';
+import { useLocale } from '../context/LocaleContext';
 
 const money = (n) => `EGP ${Number(n || 0).toLocaleString('en-US')}`;
 
 /**
  * SoulHospitality-style payment page — Paymob card / InstaPay / cash.
  * Expects router state from BookingDrawer.
+ * Guest auth is required before confirming payment (inline, so checkout state is preserved).
  */
 export default function PaymentPage() {
+  const { t } = useLocale();
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const checkoutState = location.state;
   const [selectedMethod, setSelectedMethod] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState('');
   const [successCard, setSuccessCard] = useState(null);
+
+  const policies = Array.from({ length: 10 }, (_, i) => t(`payment.policy${i}`));
 
   if (!checkoutState) {
     return (
@@ -27,15 +34,15 @@ export default function PaymentPage() {
         <Header />
         <main className="flex min-h-[70vh] flex-col items-center justify-center px-4 text-center">
           <div className="max-w-md rounded-3xl border border-soul-line bg-white p-8 shadow-xl">
-            <h2 className="font-display text-2xl font-semibold text-soul-blue">No booking data found</h2>
+            <h2 className="font-display text-2xl font-semibold text-soul-blue">{t('payment.noData')}</h2>
             <p className="mt-3 text-sm text-soul-muted">
-              Start from a listing and use Request to book to open checkout.
+              {t('payment.noDataHint')}
             </p>
             <Link
               to="/search"
               className="mt-6 inline-flex items-center justify-center gap-2 rounded-full bg-soul-blue px-6 py-3 text-sm font-semibold text-white hover:bg-soul-blue-dark"
             >
-              <ArrowLeft className="h-4 w-4" /> Browse stays
+              <ArrowLeft className="h-4 w-4" /> {t('payment.browseStays')}
             </Link>
           </div>
         </main>
@@ -50,17 +57,17 @@ export default function PaymentPage() {
         <Header />
         <main className="flex min-h-[70vh] flex-col items-center justify-center px-4 text-center">
           <div className="max-w-xl rounded-3xl border border-soul-line bg-white p-8 shadow-xl">
-            <h2 className="font-display text-2xl font-semibold text-soul-blue">Reservation request submitted</h2>
+            <h2 className="font-display text-2xl font-semibold text-soul-blue">{t('payment.submitted')}</h2>
             <p className="mt-3 text-sm text-soul-muted">{successCard.description}</p>
             <p className="mt-2 text-sm text-soul-muted">
-              Your request stays pending until Soul staff accepts. We typically reply within 24 hours.
+              {t('payment.pendingNote')}
             </p>
             <button
               type="button"
               onClick={() => navigate('/search')}
               className="mt-6 rounded-full bg-soul-blue px-6 py-3 text-sm font-semibold uppercase tracking-[0.16em] text-white hover:bg-soul-blue-dark"
             >
-              Back to stays
+              {t('payment.backToStays')}
             </button>
           </div>
         </main>
@@ -88,13 +95,17 @@ export default function PaymentPage() {
   } = checkoutState;
 
   async function handleConfirmReservation() {
+    if (!user) {
+      setMessage(t('payment.needAuth'));
+      return;
+    }
     if (!selectedMethod) {
-      setMessage('Please select a payment method first.');
+      setMessage(t('payment.needMethod'));
       return;
     }
     const identityDocuments = Array.isArray(formState?.identityDocuments) ? formState.identityDocuments : [];
     if (!identityDocuments.length) {
-      setMessage('Please upload ID or passport photos before confirming payment.');
+      setMessage(t('payment.needId'));
       return;
     }
 
@@ -131,31 +142,29 @@ export default function PaymentPage() {
           window.location.assign(data.checkoutUrl);
           return;
         }
-        setMessage('Card checkout is not configured yet. Please try InstaPay or cash, or contact Soul.');
+        setMessage(t('payment.cardNotConfigured'));
         return;
       }
 
       if (selectedMethod === 'instapay') {
         setSuccessCard({
-          description:
-            'InstaPay reservation request is marked as Pending. You will receive an official response within 24 hours.',
+          description: t('payment.instapaySuccess'),
         });
         return;
       }
 
       setSuccessCard({
-        description:
-          'Cash reservation request recorded as Pending. A deposit clearance may be required to confirm your booking.',
+        description: t('payment.cashSuccess'),
       });
     } catch (err) {
-      setMessage(err.response?.data?.error || err.message || 'Unable to complete reservation.');
+      setMessage(err.response?.data?.error || err.message || t('payment.unable'));
     } finally {
       setSubmitting(false);
     }
   }
 
   const methodLabel =
-    selectedMethod === 'paymob_card' ? 'Paymob' : selectedMethod === 'instapay' ? 'InstaPay' : 'Cash';
+    selectedMethod === 'paymob_card' ? t('payment.card') : selectedMethod === 'instapay' ? t('payment.instapay') : t('payment.cash');
 
   return (
     <div>
@@ -168,16 +177,16 @@ export default function PaymentPage() {
               onClick={() => navigate(-1)}
               className="inline-flex items-center gap-2 text-sm font-medium text-soul-muted hover:text-soul-blue"
             >
-              <ArrowLeft className="h-4 w-4" /> Back to reservation details
+              <ArrowLeft className="h-4 w-4" /> {t('payment.backDetails')}
             </button>
-            <h1 className="mt-3 font-display text-3xl font-semibold text-soul-blue md:text-4xl">Secure Checkout</h1>
-            <p className="mt-1.5 text-sm text-soul-muted">Choose how you&apos;d like to pay — requests stay pending until staff accept.</p>
+            <h1 className="mt-3 font-display text-3xl font-semibold text-soul-blue md:text-4xl">{t('payment.title')}</h1>
+            <p className="mt-1.5 text-sm text-soul-muted">{t('payment.subtitle')}</p>
           </div>
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:gap-8">
             <div className="order-1 lg:order-2 lg:col-span-4">
               <div className="rounded-3xl border border-soul-line bg-white p-6 shadow-sm lg:sticky lg:top-24">
-                <h2 className="text-lg font-bold text-soul-blue">Reservation Summary</h2>
+                <h2 className="text-lg font-bold text-soul-blue">{t('payment.summary')}</h2>
 
                 <div className="mt-4 border-b border-soul-line pb-4">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-soul-muted">
@@ -186,7 +195,7 @@ export default function PaymentPage() {
                   <h3 className="mt-1 text-sm font-bold text-soul-blue">{unit?.title}</h3>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <span className="inline-flex items-center gap-1 text-[11px] font-medium text-soul-muted">
-                      <Building2 className="h-3 w-3" /> {unit?.property_type || 'Residence'}
+                      <Building2 className="h-3 w-3" /> {unit?.property_type || t('payment.residenceFallback')}
                     </span>
                   </div>
                 </div>
@@ -195,14 +204,14 @@ export default function PaymentPage() {
                   <div className="flex items-center gap-3 text-xs text-soul-muted">
                     <Calendar className="h-4 w-4 text-soul-blue" />
                     <div>
-                      <p className="font-semibold text-soul-blue">Check-in</p>
+                      <p className="font-semibold text-soul-blue">{t('payment.checkIn')}</p>
                       <p>{formState.checkInDate}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3 text-xs text-soul-muted">
                     <Calendar className="h-4 w-4 text-soul-blue" />
                     <div>
-                      <p className="font-semibold text-soul-blue">Check-out</p>
+                      <p className="font-semibold text-soul-blue">{t('payment.checkOut')}</p>
                       <p>{formState.checkOutDate}</p>
                     </div>
                   </div>
@@ -210,25 +219,25 @@ export default function PaymentPage() {
 
                 <div className="mt-4 space-y-2 text-xs text-soul-muted">
                   <div className="flex justify-between">
-                    <span>Nightly rate</span>
+                    <span>{t('payment.nightlyRate')}</span>
                     <span className="font-semibold text-soul-blue">{money(nightlyRate)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Duration</span>
+                    <span>{t('payment.duration')}</span>
                     <span className="font-semibold text-soul-blue">
-                      {nights} {nights === 1 ? 'night' : 'nights'}
+                      {nights} {nights === 1 ? t('common.night') : t('common.nights')}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Subtotal</span>
+                    <span>{t('payment.subtotal')}</span>
                     <span className="font-semibold text-soul-blue">{money(subtotalAmount)}</span>
                   </div>
                   {(feeLines.length ? feeLines : [
-                    cleaningFee > 0 && { key: 'cleaning', label: 'Cleaning', amount: cleaningFee },
-                    accessFee > 0 && { key: 'access', label: 'Access / beach', amount: accessFee },
+                    cleaningFee > 0 && { key: 'cleaning', label: t('payment.cleaning'), amount: cleaningFee },
+                    accessFee > 0 && { key: 'access', label: t('payment.accessBeach'), amount: accessFee },
                     serviceFee > 0 && {
                       key: 'service',
-                      label: 'Service fees + Taxes (15%)',
+                      label: t('payment.serviceTax'),
                       amount: serviceFee,
                     },
                   ].filter(Boolean)
@@ -239,20 +248,20 @@ export default function PaymentPage() {
                     </div>
                   ))}
                   <div className="flex justify-between">
-                    <span>Invoice before discount</span>
+                    <span>{t('payment.invoiceBefore')}</span>
                     <span className="font-semibold text-soul-blue">{money(grossAmount ?? quote?.total_egp)}</span>
                   </div>
                   {promoCode ? (
                     <div className="flex justify-between text-emerald-700">
                       <span>
-                        Promo {promoCode}
+                        {t('payment.promoLabel', { code: promoCode })}
                         {discountPercentage ? ` (${discountPercentage}%)` : ''}
                       </span>
                       <span className="font-semibold">− {money(discountAmount)}</span>
                     </div>
                   ) : null}
                   <div className="mt-2 flex items-baseline justify-between border-t border-soul-line pt-3">
-                    <span className="text-sm font-bold text-soul-blue">Final total</span>
+                    <span className="text-sm font-bold text-soul-blue">{t('payment.finalTotal')}</span>
                     <span className="font-num text-xl font-semibold text-soul-blue">
                       {money(finalTotalAmount)}
                     </span>
@@ -260,9 +269,9 @@ export default function PaymentPage() {
                 </div>
 
                 <div className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 p-4">
-                  <h3 className="text-sm font-bold text-rose-900">Booking Policies</h3>
+                  <h3 className="text-sm font-bold text-rose-900">{t('payment.policiesTitle')}</h3>
                   <ul className="mt-3 space-y-2 text-xs text-rose-700">
-                    {BOOKING_POLICIES.map((policy) => (
+                    {policies.map((policy) => (
                       <li key={policy} className="flex items-start gap-2">
                         <span className="mt-1 h-1.5 w-1.5 rounded-full bg-rose-600 flex-none" />
                         <span>{policy}</span>
@@ -274,10 +283,19 @@ export default function PaymentPage() {
             </div>
 
             <div className="order-2 space-y-6 lg:order-1 lg:col-span-8">
+              {!user ? (
+                <CheckoutAuthGate
+                  prefill={{
+                    fullName: formState?.fullName || '',
+                    email: formState?.email || '',
+                    phone: formState?.phone || '',
+                  }}
+                />
+              ) : (
               <div className="rounded-3xl border border-soul-line bg-white p-6 shadow-sm sm:p-8">
-                <h2 className="text-xl font-bold text-soul-blue">Select payment method</h2>
+                <h2 className="text-xl font-bold text-soul-blue">{t('payment.selectMethod')}</h2>
                 <p className="mt-1 text-sm text-soul-muted">
-                  Choose one option below to submit your reservation request.
+                  {t('payment.signedInAs', { who: user.email || user.full_name })}
                 </p>
 
                 <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -287,9 +305,10 @@ export default function PaymentPage() {
                     icon={<Wallet className="h-6 w-6" strokeWidth={1.8} />}
                     iconClass="bg-indigo-50 text-indigo-600"
                     activeClass="border-indigo-600 bg-indigo-50/20 ring-indigo-600/10"
-                    title="InstaPay"
-                    subtitle="Instant mobile bank transfer"
+                    title={t('payment.instapay')}
+                    subtitle={t('payment.instapaySub')}
                     badgeActive="bg-indigo-100 text-indigo-700"
+                    t={t}
                   />
                   <MethodCard
                     disabled
@@ -299,9 +318,10 @@ export default function PaymentPage() {
                     icon={<CreditCard className="h-6 w-6" strokeWidth={1.8} />}
                     iconClass="bg-slate-100 text-slate-400"
                     activeClass=""
-                    title="Card (Paymob)"
-                    subtitle="Debit or credit card"
+                    title={t('payment.card')}
+                    subtitle={t('payment.cardSub')}
                     badgeActive=""
+                    t={t}
                   />
                   <MethodCard
                     active={selectedMethod === 'cash'}
@@ -309,9 +329,10 @@ export default function PaymentPage() {
                     icon={<Banknote className="h-6 w-6" strokeWidth={1.8} />}
                     iconClass="bg-emerald-50 text-emerald-600"
                     activeClass="border-emerald-600 bg-emerald-50/20 ring-emerald-600/10"
-                    title="Cash"
-                    subtitle="Pay on arrival / hold"
+                    title={t('payment.cash')}
+                    subtitle={t('payment.cashSub')}
                     badgeActive="bg-emerald-100 text-emerald-700"
+                    t={t}
                   />
                 </div>
 
@@ -320,13 +341,13 @@ export default function PaymentPage() {
                     <div className="flex gap-3">
                       <ShieldCheck className="h-5 w-5 text-rose-700 flex-shrink-0" />
                       <div>
-                        <h4 className="text-sm font-bold text-rose-900">Ready to confirm via {methodLabel}</h4>
+                        <h4 className="text-sm font-bold text-rose-900">{t('payment.readyVia', { method: methodLabel })}</h4>
                         <p className="mt-1 text-xs leading-5 text-rose-700">
                           {selectedMethod === 'cash'
-                            ? 'Cash bookings are submitted as Pending and reviewed manually. A deposit may be required.'
+                            ? t('payment.cashHint')
                             : selectedMethod === 'instapay'
-                              ? 'InstaPay requests are submitted with Pending status. You will receive an official response within 24 hours.'
-                              : 'You will be redirected to Paymob. After payment, your request remains Pending until staff accept.'}
+                              ? t('payment.instapayHint')
+                              : t('payment.paymobHint')}
                         </p>
                       </div>
                     </div>
@@ -341,9 +362,10 @@ export default function PaymentPage() {
                   disabled={!selectedMethod || submitting}
                   className="mt-6 inline-flex items-center justify-center rounded-full bg-soul-blue px-6 py-3 text-sm font-semibold uppercase tracking-[0.16em] text-white hover:bg-soul-blue-dark disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {submitting ? 'Processing…' : 'Confirm Reservation'}
+                  {submitting ? t('payment.processing') : t('payment.confirm')}
                 </button>
               </div>
+              )}
             </div>
           </div>
         </div>
@@ -364,6 +386,7 @@ function MethodCard({
   badgeActive,
   disabled = false,
   comingSoon = false,
+  t,
 }) {
   return (
     <button
@@ -381,7 +404,7 @@ function MethodCard({
     >
       {comingSoon ? (
         <span className="absolute right-3 top-3 rounded-full bg-slate-200/90 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600">
-          Coming soon
+          {t('payment.comingSoon')}
         </span>
       ) : null}
       <div className={`flex h-12 w-12 items-center justify-center rounded-full ${iconClass}`}>{icon}</div>
@@ -398,7 +421,7 @@ function MethodCard({
               : 'bg-soul-blue-50 text-soul-muted'
         }`}
       >
-        {comingSoon ? 'Coming soon' : active ? 'Selected' : 'Select'}
+        {comingSoon ? t('payment.comingSoon') : active ? t('payment.selected') : t('payment.select')}
       </span>
     </button>
   );

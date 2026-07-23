@@ -2,12 +2,14 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Bath, BedDouble, ChevronLeft, ChevronRight, Heart, Maximize2, Users } from 'lucide-react';
 import { useCurrency } from '../context/CurrencyContext';
+import { useLocale } from '../context/LocaleContext';
 import { getListingWpId, useWishlist } from '../hooks/useWishlist';
 import { optimizeImageUrl } from '../utils/imageUrl';
 import { getDisplayPriceEgp } from '../utils/displayPrice';
 
 export default function ListingCard({ listing, carryDates, wishlistMode = false, onRemove, priority = false }) {
   const { formatPrice } = useCurrency();
+  const { t } = useLocale();
   const { has, toggle, remove } = useWishlist();
   const removeFromWishlist = onRemove || remove;
   const isSale = String(listing.listing_type || 'rent').toLowerCase() === 'sale';
@@ -71,12 +73,12 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
             draggable={false}
           />
         ) : (
-          <div className="grid h-full w-full place-items-center text-sm text-soul-muted">No photo</div>
+          <div className="grid h-full w-full place-items-center text-sm text-soul-muted">{t('listing.noPhoto')}</div>
         )}
 
         {isSale && (
-          <span className="absolute left-3 top-3 rounded-full bg-soul-blue px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-white">
-            For sale
+          <span className="absolute start-3 top-3 rounded-full bg-soul-blue px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-white">
+            {t('listing.forSaleBadge')}
           </span>
         )}
 
@@ -85,18 +87,18 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
             <button
               type="button"
               onClick={prev}
-              className="absolute left-2 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full bg-white/90 opacity-0 shadow-sm transition group-hover:opacity-100"
-              aria-label="Previous photo"
+              className="absolute start-2 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full bg-white/90 opacity-0 shadow-sm transition group-hover:opacity-100"
+              aria-label={t('common.previousMonth')}
             >
-              <ChevronLeft size={16} />
+              <ChevronLeft size={16} className="rtl:rotate-180" />
             </button>
             <button
               type="button"
               onClick={next}
-              className="absolute right-2 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full bg-white/90 opacity-0 shadow-sm transition group-hover:opacity-100"
-              aria-label="Next photo"
+              className="absolute end-2 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full bg-white/90 opacity-0 shadow-sm transition group-hover:opacity-100"
+              aria-label={t('common.nextMonth')}
             >
-              <ChevronRight size={16} />
+              <ChevronRight size={16} className="rtl:rotate-180" />
             </button>
             <div className="absolute inset-x-0 bottom-2 flex justify-center gap-1.5">
               {photos.slice(0, 6).map((_, i) => (
@@ -117,8 +119,8 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
             if (wishlistMode && wished) removeFromWishlist(listing);
             else toggle({ ...listing, wp_post_id: wpId, listing_wp_id: wpId });
           }}
-          className="absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-white/95 shadow-sm"
-          aria-label={wishlistMode ? 'Remove from wishlist' : 'Toggle wishlist'}
+          className="absolute end-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-white/95 shadow-sm"
+          aria-label={wishlistMode ? t('account.removeWishlist') : t('nav.wishlist')}
         >
           <Heart
             size={16}
@@ -149,7 +151,7 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
                 <span className="rounded-md border border-soul-line bg-soul-ivory/60 px-2 py-0.5 text-[11px] font-bold text-soul-muted">
                   ★ —
                 </span>
-                <span className="text-[11px] italic text-soul-muted">No reviews yet</span>
+                <span className="text-[11px] italic text-soul-muted">{t('listing.noReviewsYet')}</span>
               </>
             )}
           </div>
@@ -161,10 +163,10 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
               <span className="font-num text-[19px] font-semibold leading-tight text-soul-blue">
                 {priceCore}
               </span>
-              {!isSale && <span className="text-[12.5px] text-soul-muted">/ night</span>}
+              {!isSale && <span className="text-[12.5px] text-soul-muted">{t('listing.perNightShort')}</span>}
             </>
           ) : (
-            <span className="text-[13px] text-soul-muted">{isSale ? 'Inquire for price' : 'View pricing'}</span>
+            <span className="text-[13px] text-soul-muted">{isSale ? t('listing.inquireForPrice') : t('listing.viewPricing')}</span>
           )}
         </div>
 

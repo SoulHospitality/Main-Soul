@@ -3,8 +3,10 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
 import api from '../api/http';
+import { useLocale } from '../context/LocaleContext';
 
 export default function CheckoutPage() {
+  const { t } = useLocale();
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const slug = params.get('slug');
@@ -27,6 +29,12 @@ export default function CheckoutPage() {
     () => ({ slug, checkin, checkout, guests }),
     [slug, checkin, checkout, guests]
   );
+
+  const fieldLabels = {
+    guest_name: t('checkout.name'),
+    guest_email: t('checkout.email'),
+    guest_phone: t('checkout.phone'),
+  };
 
   async function onSubmit(e) {
     e.preventDefault();
@@ -55,14 +63,14 @@ export default function CheckoutPage() {
     <div>
       <Header />
       <main className="mx-auto max-w-xl px-5 py-12">
-        <h1 className="font-display text-4xl text-soul-blue">Checkout</h1>
+        <h1 className="font-display text-4xl text-soul-blue">{t('checkout.title')}</h1>
         <p className="mt-2 text-soul-muted text-sm">
-          {slug} · {checkin} → {checkout} · {guests} guests
+          {t('checkout.summary', { slug, checkin, checkout, guests })}
         </p>
         <form onSubmit={onSubmit} className="mt-8 space-y-4">
           {['guest_name', 'guest_email', 'guest_phone'].map((k) => (
-            <label key={k} className="block text-sm capitalize">
-              {k.replace('guest_', '').replace('_', ' ')}
+            <label key={k} className="block text-sm">
+              {fieldLabels[k]}
               <input
                 required={k !== 'guest_email'}
                 type={k.includes('email') ? 'email' : 'text'}
@@ -73,21 +81,21 @@ export default function CheckoutPage() {
             </label>
           ))}
           <label className="block text-sm">
-            Payment method
+            {t('checkout.paymentMethod')}
             <select
               className="mt-1 w-full border border-soul-line rounded-xl px-3 py-2"
               value={form.payment_method}
               onChange={(e) => setForm({ ...form, payment_method: e.target.value })}
             >
-              <option value="instapay">InstaPay</option>
-              <option value="cash">Cash / Hold</option>
+              <option value="instapay">{t('checkout.instapay')}</option>
+              <option value="cash">{t('checkout.cashHold')}</option>
               <option value="paymob_card" disabled>
-                Card (Paymob) — Coming soon
+                {t('checkout.cardSoon')}
               </option>
             </select>
           </label>
           <label className="block text-sm">
-            Promo code
+            {t('checkout.promo')}
             <input
               className="mt-1 w-full border border-soul-line rounded-xl px-3 py-2"
               value={form.promo_code}
@@ -95,7 +103,7 @@ export default function CheckoutPage() {
             />
           </label>
           <label className="block text-sm">
-            Notes
+            {t('checkout.notes')}
             <textarea
               className="mt-1 w-full border border-soul-line rounded-xl px-3 py-2"
               rows={3}
@@ -105,14 +113,14 @@ export default function CheckoutPage() {
           </label>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <button disabled={busy || !slug} className="w-full btn-pill bg-soul-blue text-white py-3 font-semibold disabled:opacity-40">
-            {busy ? 'Processing…' : 'Submit request'}
+            {busy ? t('checkout.processing') : t('checkout.submit')}
           </button>
           <p className="text-xs text-soul-muted text-center">
-            Requests stay pending until Soul staff accepts. Unpaid holds expire automatically.
+            {t('checkout.pendingNote')}
           </p>
         </form>
         <Link to={`/listings/${slug}`} className="block text-center text-sm mt-4 text-soul-muted">
-          Back to listing
+          {t('checkout.backListing')}
         </Link>
       </main>
       <Footer />
