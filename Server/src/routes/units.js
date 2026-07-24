@@ -34,10 +34,15 @@ const GUEST_UNIT_OMIT = new Set([
 
 function toPublicUnit(row) {
   if (!row) return row;
+  const { applyGuestTenantMarkup } = require('../lib/commission');
   const out = {};
   for (const [k, v] of Object.entries(row)) {
     if (GUEST_UNIT_OMIT.has(k)) continue;
     out[k] = v;
+  }
+  // Fold tenant commission into the displayed nightly rate (no separate fee label).
+  if (out.price_fallback != null && Number(out.price_fallback) > 0) {
+    out.price_fallback = applyGuestTenantMarkup(out.price_fallback, row);
   }
   return out;
 }
@@ -247,8 +252,15 @@ router.get('/:idOrSlug/pricing', async (req, res, next) => {
       [unit.wp_post_id, from, to]
     );
     const map = {};
-    for (const r of rows) map[r.date] = r.price;
-    res.json({ wp_post_id: unit.wp_post_id, prices: map, rows });
+    const { applyGuestTenantMarkup } = require('../lib/commission');
+    for (const r of rows) {
+      map[r.date] = applyGuestTenantMarkup(r.price, unit);
+    }
+    const markedRows = rows.map((r) => ({
+      ...r,
+      price: applyGuestTenantMarkup(r.price, unit),
+    }));
+    res.json({ wp_post_id: unit.wp_post_id, prices: map, rows: markedRows });
   } catch (err) {
     next(err);
   }

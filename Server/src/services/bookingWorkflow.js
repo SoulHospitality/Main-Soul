@@ -162,7 +162,8 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
             skipBlockCheck: true,
           });
           if (quote?.available) {
-            pricePerNight = nights > 0 ? Number(quote.subtotal || 0) / nights : 0;
+            // Store nights-only base rate (without guest tenant markup) for owner commission
+            pricePerNight = nights > 0 ? Number(quote.base_subtotal || quote.subtotal || 0) / nights : 0;
             housekeepingFees = Number(quote.cleaning_fee_egp) || housekeepingFees;
             stayTotal = Number(quote.total_egp) || stayTotal;
           }

@@ -2,6 +2,10 @@ const { query } = require('../config/db');
 const { fetchUpstreamBusyDates } = require('./ical');
 const { getMinimumStayNights } = require('../lib/minStay');
 
+function roundMoney(n) {
+  return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+}
+
 function nightsBetween(checkin, checkout) {
   const a = new Date(`${checkin}T00:00:00`);
   const b = new Date(`${checkout}T00:00:00`);
@@ -113,15 +117,27 @@ async function quoteStay({
     }
   }
 
+  let baseSubtotal = 0;
   let subtotal = 0;
   const perNight = [];
+  const { applyGuestTenantMarkup, guestTenantMarkupPct } = require('../lib/commission');
+  const tenantMarkupPct = guestTenantMarkupPct(unit);
+
   for (const dateStr of eachNight(checkin, checkout)) {
     const row = await priceForNight(wpPostId, dateStr);
     if (!row) {
       return { available: false, reason: `No price for ${dateStr}`, nights };
     }
-    subtotal += Number(row.price);
-    perNight.push({ date: dateStr, price: Number(row.price), currency: row.currency });
+    const basePrice = Number(row.price);
+    const guestPrice = applyGuestTenantMarkup(basePrice, unit);
+    baseSubtotal += basePrice;
+    subtotal += guestPrice;
+    perNight.push({
+      date: dateStr,
+      price: guestPrice,
+      base_price: basePrice,
+      currency: row.currency,
+    });
   }
 
   const fees = computeFees(unit, { nights, subtotal, adults, teens });
@@ -132,6 +148,8 @@ async function quoteStay({
     nights,
     perNight,
     subtotal,
+    base_subtotal: roundMoney(baseSubtotal),
+    tenant_markup_pct: tenantMarkupPct,
     ...fees,
     total_egp: total,
     currency: unit?.price_currency || 'EGP',

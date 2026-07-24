@@ -17,6 +17,27 @@ function round2(n) {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 }
 
+/**
+ * Guest-facing markup from tenant commission %.
+ * Applied when the unit is mode B, or any mode with a tenant commission %.
+ * Folded into nightly rates silently (not shown as a separate fee line).
+ */
+function guestTenantMarkupPct(unit) {
+  const mode = String(unit?.commission_mode || 'A').toUpperCase();
+  const tenantPct = parseFloat(unit?.commission_tenant_pct) || 0;
+  if (!(tenantPct > 0)) return 0;
+  if (mode === 'B' || mode === 'C' || tenantPct > 0) return tenantPct;
+  return 0;
+}
+
+/** Apply silent tenant markup to a nightly (or accommodation) amount. */
+function applyGuestTenantMarkup(amount, unit) {
+  const base = Number(amount) || 0;
+  const pct = guestTenantMarkupPct(unit);
+  if (!(pct > 0) || !(base > 0)) return round2(base);
+  return round2(base * (1 + pct / 100));
+}
+
 function rentalBase(reservation) {
   const nights = Math.max(parseInt(reservation.nights, 10) || 1, 1);
   const pricePerNight = parseFloat(reservation.price_per_night) || 0;
@@ -44,21 +65,9 @@ function ownerAccommodationGross(reservation, unit = {}) {
   const ppn = parseFloat(reservation.price_per_night) || 0;
   const fromPpn = ppn > 0 ? round2(ppn * nights) : 0;
 
-  // Prefer explicit nightly rate when it is clearly accommodation-only
-  // (total ≈ nights + known fees + 15% service on nights).
-  if (fromPpn > 0 && total > 0) {
-    const expectedWithService = round2(
-      fromPpn + hk + util + fromPpn * (GUEST_SERVICE_FEE_PCT / 100)
-    );
-    const expectedWithoutService = round2(fromPpn + hk + util);
-    if (
-      Math.abs(total - expectedWithService) <= Math.max(5, total * 0.02) ||
-      Math.abs(total - expectedWithoutService) <= Math.max(5, total * 0.02)
-    ) {
-      return fromPpn;
-    }
-    // price_per_night was likely stored as total/nights (includes fees) — fall through
-  }
+  // Explicit nights-only rate is the source of truth for owner Gross
+  // (guest totals may silently include tenant markup + fees + service).
+  if (fromPpn > 0) return fromPpn;
 
   // Reverse guest quote: total = nights + HK + utilities + 15% service on nights
   const extras = round2(hk + util);
@@ -66,7 +75,6 @@ function ownerAccommodationGross(reservation, unit = {}) {
     return round2((total - extras) / (1 + GUEST_SERVICE_FEE_PCT / 100));
   }
 
-  if (fromPpn > 0) return fromPpn;
   return round2(total);
 }
 
@@ -211,6 +219,8 @@ module.exports = {
   calcStatementFinancials,
   ownerAccommodationGross,
   ownerPortalFinancials,
+  guestTenantMarkupPct,
+  applyGuestTenantMarkup,
   round2,
   rentalBase,
   DEFAULT_OWNER_COMMISSION_PCT,
