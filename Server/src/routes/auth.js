@@ -258,10 +258,23 @@ router.post('/refresh', async (req, res, next) => {
 });
 
 router.post('/forgot-password', async (req, res, next) => {
-  // Never reveal whether email exists
+  // Never reveal whether a *guest* email exists.
+  // Non-owner staff emails are directed to ask Admin (explicit product rule).
   try {
     const email = String(req.body?.email || '').trim().toLowerCase();
     if (!email) return res.json({ ok: true });
+
+    const { rows: staffRows } = await query(
+      `SELECT id, role FROM staff_users
+       WHERE lower(COALESCE(email, '')) = lower($1)
+         AND COALESCE(is_active, 1) = 1
+       LIMIT 1`,
+      [email]
+    );
+    const staff = staffRows[0];
+    if (staff && String(staff.role || '').toLowerCase() !== 'owner') {
+      return res.json({ ok: true, staff_contact_admin: true });
+    }
 
     if (supabaseAuthEnabled()) {
       const supabase = getAnonClient();

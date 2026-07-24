@@ -17,6 +17,7 @@ const SignInPage = lazy(() => import('./pages/SignInPage'));
 const SignUpPage = lazy(() => import('./pages/SignUpPage'));
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'));
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'));
+const StaffPasswordHelpPage = lazy(() => import('./pages/StaffPasswordHelpPage'));
 const AccountPage = lazy(() => import('./pages/AccountPage'));
 const WishlistPage = lazy(() =>
   import('./pages/AccountPage').then((m) => ({ default: m.WishlistPage }))
@@ -54,6 +55,7 @@ export default function App() {
                 <Route path="/sign-up" element={<SignUpPage />} />
                 <Route path="/forgot-password" element={<ForgotPasswordPage />} />
                 <Route path="/reset-password" element={<ResetPasswordPage />} />
+                <Route path="/staff-password-help" element={<StaffPasswordHelpPage />} />
                 <Route path="/account" element={<AccountPage />} />
                 <Route path="/wishlist" element={<WishlistPage />} />
                 <Route path="/careers" element={<CareersPage />} />

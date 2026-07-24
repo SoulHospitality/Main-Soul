@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Mail } from 'lucide-react';
 import api from '../api/http';
 import { useLocale } from '../context/LocaleContext';
@@ -7,6 +7,7 @@ import AuthShell, { AuthError, AuthField, AuthSubmit } from '../components/auth/
 
 export default function ForgotPasswordPage() {
   const { t } = useLocale();
+  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -49,7 +50,11 @@ export default function ForgotPasswordPage() {
             setError('');
             setLoading(true);
             try {
-              await api.post('/auth/forgot-password', { email: email.trim() });
+              const { data } = await api.post('/auth/forgot-password', { email: email.trim() });
+              if (data?.staff_contact_admin) {
+                navigate('/staff-password-help', { replace: true });
+                return;
+              }
               setSent(true);
             } catch (err) {
               setError(err.response?.data?.error || err.message || t('auth.unableSend'));
