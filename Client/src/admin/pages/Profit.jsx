@@ -60,7 +60,8 @@ export default function Profit() {
 
   const revenue = data?.totalRevenue || 0;
   const expenses = data?.totalExpenses || 0;
-  const profit = data?.profit || 0;
+  const profit = data?.netProfit ?? data?.profit ?? 0;
+  const commissionProfit = data?.commissionProfit || 0;
   const profitPositive = profit >= 0;
   const expenseShare = revenue > 0 ? Math.min(100, Math.round((expenses / revenue) * 100)) : 0;
   const profitShare = revenue > 0 ? Math.max(0, 100 - expenseShare) : 0;
@@ -79,7 +80,7 @@ export default function Profit() {
         <div className="page-header mb-0">
           <h1 className="page-title">Profit</h1>
           <p className="page-subtitle">
-            Profit = Total Revenue − Expenses (housekeeping, utilities, salaries, petty cash, expenses)
+            Net profit = Revenue (reservations + housekeeping) − all expenses. Commission profit = company % − agent %.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -117,7 +118,7 @@ export default function Profit() {
             <TrendingDown className="w-4 h-4 text-rose-600" />
           )}
           <span className={profitPositive ? 'text-emerald-700/80' : 'text-rose-700/80'}>
-            Live Profit
+            Net Profit
           </span>
         </div>
         <p
@@ -132,7 +133,10 @@ export default function Profit() {
           <ArrowRight className="w-3.5 h-3.5 text-slate-400" />
           <span>{currency(expenses)} expenses</span>
           <ArrowRight className="w-3.5 h-3.5 text-slate-400" />
-          <span className="font-semibold">{currency(profit)} profit</span>
+          <span className="font-semibold">{currency(profit)} net profit</span>
+          <span className="ml-2 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-semibold">
+            Commission profit {currency(commissionProfit)}
+          </span>
         </div>
 
         {/* Visual bar: expenses eat into revenue */}
@@ -186,11 +190,14 @@ export default function Profit() {
         <div className="card p-5">
           <h2 className="font-semibold text-slate-900 mb-1">Expense breakdown</h2>
           <p className="text-xs text-slate-400 mb-2">These reduce profit</p>
-          <Row label="Housekeeping" value={breakdown.housekeeping} href="/admin/housekeeping" negative />
+          <Row label="Owner Share" value={breakdown.ownerShare} negative />
+          <Row label="Agent Commissions" value={breakdown.agentCommissions} href="/admin/commissions" negative />
+          <Row label="Housekeeping Cost" value={breakdown.housekeeping} href="/admin/housekeeping" negative />
           <Row label="Utilities" value={breakdown.utilities} href="/admin/utilities" negative />
-          <Row label="Salaries" value={breakdown.salaries} negative />
+          <Row label="Salaries" value={breakdown.salaries} href="/admin/salaries" negative />
           <Row label="Petty Cash" value={breakdown.pettyCash} href="/admin/petty-cash" negative />
-          <Row label="Expenses" value={breakdown.expenses} href="/admin/expenses" negative />
+          <Row label="Marketing" value={breakdown.marketing} href="/admin/marketing" negative />
+          <Row label="Other Expenses" value={breakdown.expenses} href="/admin/expenses" negative />
           <div className="flex items-center justify-between pt-3 mt-1">
             <span className="text-sm font-semibold text-slate-800">Total Expenses</span>
             <span className="text-sm font-bold tabular-nums text-rose-700">{currency(expenses)}</span>
@@ -235,7 +242,7 @@ export default function Profit() {
         <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-slate-100"><Zap className="w-3 h-3" /> Utilities</span>
         <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-slate-100"><Users2 className="w-3 h-3" /> Salaries</span>
         <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-slate-100"><Wallet className="w-3 h-3" /> Petty Cash</span>
-        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-slate-100"><Receipt className="w-3 h-3" /> Expenses</span>
+        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-slate-100"><Receipt className="w-3 h-3" /> Marketing &amp; Expenses</span>
       </div>
     </div>
   );

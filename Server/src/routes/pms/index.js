@@ -2,7 +2,13 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const { query, pool } = require('../../config/db');
 const { authStaff, requireRoles, requirePasswordChanged } = require('../../middleware/auth');
-const { upload, attachCloudinaryUrls } = require('../../config/cloudinary');
+const {
+  upload,
+  attachCloudinaryUrls,
+  setCloudinaryFolder,
+  FOLDER_UNITS,
+  FOLDER_PAYMENTS,
+} = require('../../config/cloudinary');
 const compat = require('./compat');
 const housekeepingOps = require('./housekeepingOps');
 const ownerPortal = require('./ownerPortal');
@@ -1047,7 +1053,13 @@ router.delete('/units/:id', requireRoles('admin', 'resale'), async (req, res, ne
   }
 });
 
-router.post('/units/:id/photos', requireRoles('admin', 'resale'), upload.array('photos', 20), attachCloudinaryUrls, async (req, res, next) => {
+router.post(
+  '/units/:id/photos',
+  requireRoles('admin', 'resale'),
+  upload.array('photos', 20),
+  setCloudinaryFolder(FOLDER_UNITS),
+  attachCloudinaryUrls,
+  async (req, res, next) => {
   try {
     const urls = (req.files || []).map((f) => f.path || f.secure_url).filter(Boolean);
     const { rows } = await query(
@@ -1540,7 +1552,13 @@ router.get('/payments', requireRoles('admin'), async (req, res, next) => {
   }
 });
 
-router.post('/payments', requireRoles('admin'), upload.single('document'), attachCloudinaryUrls, async (req, res, next) => {
+router.post(
+  '/payments',
+  requireRoles('admin'),
+  upload.single('document'),
+  setCloudinaryFolder(FOLDER_PAYMENTS),
+  attachCloudinaryUrls,
+  async (req, res, next) => {
   try {
     const b = req.body;
     const doc = req.file?.path || req.file?.secure_url || null;
@@ -1589,6 +1607,13 @@ router.post('/payments/:id/approve', requireRoles('admin'), async (req, res, nex
 });
 
 // ── Expenses / commissions / dashboard snippets ─────────────
+const EXPENSE_CATEGORIES = new Set(['marketing', 'salary', 'housekeeping_cost', 'other']);
+
+function normalizeExpenseCategory(raw, fallback = 'other') {
+  const cat = String(raw || fallback).toLowerCase();
+  return EXPENSE_CATEGORIES.has(cat) ? cat : fallback;
+}
+
 router.get('/expenses', async (req, res, next) => {
   try {
     const from = clampFromDate(req.query.from_date);
@@ -1607,8 +1632,19 @@ router.get('/expenses', async (req, res, next) => {
       params.push(req.query.paid_by);
       where += ` AND paid_by = $${params.length}`;
     }
+    if (req.query.category) {
+      params.push(normalizeExpenseCategory(req.query.category));
+      where += ` AND COALESCE(category, 'other') = $${params.length}`;
+    }
     const { rows } = await query(
-      `SELECT * FROM expenses WHERE ${where} ORDER BY expense_date DESC NULLS LAST, created_at DESC LIMIT 200`,
+      `SELECT e.*,
+              COALESCE(u.title, u.unit_number) AS unit_name,
+              COALESCE(u.project, u.compound) AS project
+       FROM expenses e
+       LEFT JOIN units u ON u.id = e.unit_id
+       WHERE ${where}
+       ORDER BY e.expense_date DESC NULLS LAST, e.created_at DESC
+       LIMIT 200`,
       params
     );
     sendList(res, rows);
@@ -1620,12 +1656,74 @@ router.get('/expenses', async (req, res, next) => {
 router.post('/expenses', requireRoles('admin'), async (req, res, next) => {
   try {
     const b = req.body;
+    const category = normalizeExpenseCategory(b.category, 'other');
+    const unitId = b.unit_id || null;
+    if (category === 'other' && !unitId) {
+      return res.status(400).json({ error: 'unit_id required for general expenses' });
+    }
     const { rows } = await query(
-      `INSERT INTO expenses (unit_id, description, amount, paid_by, expense_date, notes, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [b.unit_id, b.description, b.amount, b.paid_by, b.expense_date, b.notes, req.user.id]
+      `INSERT INTO expenses (unit_id, description, amount, paid_by, expense_date, notes, created_by, category)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [
+        unitId,
+        b.description,
+        b.amount,
+        b.paid_by || 'company',
+        b.expense_date,
+        b.notes,
+        req.user.id,
+        category,
+      ]
     );
     res.status(201).json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.put('/expenses/:id', requireRoles('admin'), async (req, res, next) => {
+  try {
+    const b = req.body;
+    const existing = await query(`SELECT * FROM expenses WHERE id = $1`, [req.params.id]);
+    if (!existing.rows[0]) return res.status(404).json({ error: 'Expense not found' });
+    const cur = existing.rows[0];
+    const category =
+      b.category != null ? normalizeExpenseCategory(b.category, cur.category || 'other') : cur.category || 'other';
+    const unitId =
+      b.unit_id !== undefined ? b.unit_id || null : cur.unit_id;
+    const { rows } = await query(
+      `UPDATE expenses SET
+         unit_id = $1,
+         description = $2,
+         amount = $3,
+         paid_by = $4,
+         expense_date = $5,
+         notes = $6,
+         category = $7
+       WHERE id = $8
+       RETURNING *`,
+      [
+        unitId,
+        b.description != null ? b.description : cur.description,
+        b.amount != null ? b.amount : cur.amount,
+        b.paid_by != null ? b.paid_by : cur.paid_by,
+        b.expense_date != null ? b.expense_date : cur.expense_date,
+        b.notes !== undefined ? b.notes : cur.notes,
+        category,
+        req.params.id,
+      ]
+    );
+    res.json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.delete('/expenses/:id', requireRoles('admin'), async (req, res, next) => {
+  try {
+    const { rowCount } = await query(`DELETE FROM expenses WHERE id = $1`, [req.params.id]);
+    if (!rowCount) return res.status(404).json({ error: 'Expense not found' });
+    res.json({ ok: true });
   } catch (e) {
     next(e);
   }

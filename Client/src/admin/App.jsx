@@ -13,7 +13,10 @@ const UnitsForSale = lazy(() => import('./pages/UnitsForSale'));
 const Reservations = lazy(() => import('./pages/Reservations'));
 const Finance = lazy(() => import('./pages/Finance'));
 const Profit = lazy(() => import('./pages/Profit'));
+const Commissions = lazy(() => import('./pages/Commissions'));
 const Expenses = lazy(() => import('./pages/Expenses'));
+const Marketing = lazy(() => import('./pages/Marketing'));
+const Salaries = lazy(() => import('./pages/Salaries'));
 const Users = lazy(() => import('./pages/Users'));
 const Profile = lazy(() => import('./pages/Profile'));
 const Schedule = lazy(() => import('./pages/Schedule'));
@@ -89,8 +92,10 @@ function AppRoutes() {
       <Route path="utilities" element={<ProtectedRoute page="utilities"><Utilities /></ProtectedRoute>} />
       <Route path="finance" element={<ProtectedRoute page="finance"><Finance /></ProtectedRoute>} />
       <Route path="profit" element={<ProtectedRoute page="profit"><Profit /></ProtectedRoute>} />
-      <Route path="commissions" element={<Navigate to="/admin/finance" replace />} />
+      <Route path="commissions" element={<ProtectedRoute page="commissions"><Commissions /></ProtectedRoute>} />
       <Route path="expenses" element={<ProtectedRoute page="expenses"><Expenses /></ProtectedRoute>} />
+      <Route path="marketing" element={<ProtectedRoute page="marketing"><Marketing /></ProtectedRoute>} />
+      <Route path="salaries" element={<ProtectedRoute page="salaries"><Salaries /></ProtectedRoute>} />
       <Route path="owner-settlements" element={<ProtectedRoute page="owner_settlements"><OwnerSettlementsAdmin /></ProtectedRoute>} />
       <Route path="petty-cash" element={<ProtectedRoute page="petty_cash"><PettyCash /></ProtectedRoute>} />
       <Route path="housekeeping" element={<ProtectedRoute page="housekeeping"><Housekeeping /></ProtectedRoute>} />

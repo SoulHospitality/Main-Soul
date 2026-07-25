@@ -122,6 +122,20 @@ function createApp() {
     }
   });
 
+  app.post('/api/cron/data-retention', async (req, res, next) => {
+    try {
+      const auth = req.headers.authorization || '';
+      if (process.env.CRON_SECRET && auth !== `Bearer ${process.env.CRON_SECRET}`) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      const { runDataRetentionCleanup } = require('./jobs/dataRetention');
+      const result = await runDataRetentionCleanup();
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  });
+
   app.use(errorHandler);
   return app;
 }

@@ -2,13 +2,14 @@ import { useState, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
-import { Home, DollarSign, ClipboardList, Download, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Home, DollarSign, ClipboardList, Download, Sparkles, CheckCircle2, Wrench } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import { usePermissions } from '../hooks/usePermissions';
 import { useSortableTable } from '../hooks/useSortableTable';
 import SortTh from '../components/ui/SortTh';
 import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
+import CategoryLedgerPage from '../components/finance/CategoryLedgerPage';
 
 const fmt = (n) =>
   Number(n || 0).toLocaleString('en-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -448,6 +449,286 @@ function FeesTab() {
   );
 }
 
+const EMPTY_SERVICE_FORM = {
+  client_name: '',
+  client_phone: '',
+  unit_number: '',
+  amount: '',
+  period_start: todayStr(),
+  period_end: todayStr(),
+  notes: '',
+};
+
+const SERVICE_STATUSES = ['requested', 'scheduled', 'done', 'cancelled'];
+
+function ServicesTab() {
+  const qc = useQueryClient();
+  const { isAdmin } = usePermissions();
+  const [statusFilter, setStatusFilter] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState(EMPTY_SERVICE_FORM);
+
+  const { data: orders = [], isLoading } = useQuery({
+    queryKey: ['hk-service-orders', statusFilter],
+    queryFn: () =>
+      api
+        .get('/housekeeping-service-orders', {
+          params: statusFilter ? { status: statusFilter } : { include_cancelled: '1' },
+        })
+        .then((r) => r.data),
+  });
+
+  const create = useMutation({
+    mutationFn: (d) => api.post('/housekeeping-service-orders', d),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['hk-service-orders'] });
+      qc.invalidateQueries({ queryKey: ['finance-summary'] });
+      toast.success('Service request added');
+      setForm(EMPTY_SERVICE_FORM);
+      setShowForm(false);
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed to add request'),
+  });
+
+  const setStatus = useMutation({
+    mutationFn: ({ id, status }) => api.patch(`/housekeeping-service-orders/${id}`, { status }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['hk-service-orders'] });
+      qc.invalidateQueries({ queryKey: ['finance-summary'] });
+      toast.success('Updated');
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Update failed'),
+  });
+
+  const submit = () => {
+    if (!form.client_name.trim()) return toast.error('Client name is required');
+    if (!form.unit_number.trim()) return toast.error('Unit number is required');
+    if (!form.amount || Number(form.amount) < 0) return toast.error('Valid amount is required');
+    if (!form.period_start || !form.period_end) return toast.error('Period is required');
+    if (form.period_end < form.period_start) return toast.error('Period end must be after start');
+    create.mutate(form);
+  };
+
+  const activeOrders = orders.filter((o) => o.status !== 'cancelled');
+  const totalRevenue = activeOrders.reduce((s, o) => s + (parseFloat(o.amount) || 0), 0);
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <SummaryCard
+          icon={DollarSign}
+          label="Service Revenue"
+          value={`EGP ${fmt(totalRevenue)}`}
+          color="bg-emerald-500"
+        />
+        <SummaryCard
+          icon={ClipboardList}
+          label="Requests"
+          value={activeOrders.length.toLocaleString()}
+          color="bg-blue-500"
+        />
+        <SummaryCard
+          icon={Sparkles}
+          label="Scheduled / Requested"
+          value={activeOrders
+            .filter((o) => o.status === 'requested' || o.status === 'scheduled')
+            .length.toLocaleString()}
+          color="bg-indigo-500"
+        />
+      </div>
+
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="w-44">
+          <SearchableSelect
+            value={statusFilter}
+            onChange={setStatusFilter}
+            placeholder="All statuses"
+            options={[
+              { value: '', label: 'All statuses' },
+              ...SERVICE_STATUSES.map((s) => ({
+                value: s,
+                label: s.replace(/\b\w/g, (c) => c.toUpperCase()),
+              })),
+            ]}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowForm((v) => !v)}
+          className="px-4 py-2 bg-soul-blue text-white rounded-lg text-sm font-medium hover:opacity-90"
+        >
+          {showForm ? 'Close form' : '+ Add request'}
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 space-y-4">
+          <p className="text-sm font-semibold text-gray-800">
+            New housekeeping request (outside client — no reservation needed)
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1 font-medium">Client name *</label>
+              <input
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                value={form.client_name}
+                onChange={(e) => setForm((f) => ({ ...f, client_name: e.target.value }))}
+                placeholder="e.g. Mohamed Salah"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1 font-medium">Phone</label>
+              <input
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                value={form.client_phone}
+                onChange={(e) => setForm((f) => ({ ...f, client_phone: e.target.value }))}
+                placeholder="01xxxxxxxxx"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1 font-medium">
+                Unit number * (type it — any unit)
+              </label>
+              <input
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                value={form.unit_number}
+                onChange={(e) => setForm((f) => ({ ...f, unit_number: e.target.value }))}
+                placeholder="e.g. B-124, Gaia Villa 7"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1 font-medium">
+                Amount to be paid (EGP) *
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                value={form.amount}
+                onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+                placeholder="0.00"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1 font-medium">Period from *</label>
+              <input
+                type="date"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                value={form.period_start}
+                onChange={(e) => setForm((f) => ({ ...f, period_start: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1 font-medium">Period to *</label>
+              <input
+                type="date"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                value={form.period_end}
+                onChange={(e) => setForm((f) => ({ ...f, period_end: e.target.value }))}
+              />
+            </div>
+            <div className="sm:col-span-2 lg:col-span-3">
+              <label className="block text-xs text-gray-500 mb-1 font-medium">Notes</label>
+              <textarea
+                rows={2}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none"
+                value={form.notes}
+                onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+                placeholder="Special instructions…"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <button
+              type="button"
+              disabled={create.isPending}
+              onClick={submit}
+              className="px-5 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-50"
+            >
+              {create.isPending ? 'Saving…' : 'Save request'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        {isLoading ? (
+          <div className="flex items-center justify-center h-48 text-gray-400 text-sm">Loading…</div>
+        ) : orders.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-48 text-gray-400 text-sm gap-2">
+            <Sparkles className="w-8 h-8 opacity-30" />
+            <span>No service requests yet — add one for an outside client</span>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-800 text-white text-xs uppercase tracking-wide">
+                  <th className="px-4 py-3 text-left">Client</th>
+                  <th className="px-4 py-3 text-left">Unit #</th>
+                  <th className="px-4 py-3 text-left">Period</th>
+                  <th className="px-4 py-3 text-right">Amount</th>
+                  <th className="px-4 py-3 text-left">Status</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {orders.map((o, idx) => (
+                  <tr key={o.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-gray-800">{o.client_name}</div>
+                      {o.client_phone && <div className="text-xs text-gray-400">{o.client_phone}</div>}
+                    </td>
+                    <td className="px-4 py-3 font-medium text-gray-700">{o.unit_number}</td>
+                    <td className="px-4 py-3 text-gray-600">
+                      {normDate(o.period_start)} → {normDate(o.period_end)}
+                    </td>
+                    <td className="px-4 py-3 text-right font-semibold text-emerald-700">
+                      EGP {fmt(o.amount)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <StatusBadge status={o.status} />
+                    </td>
+                    <td className="px-4 py-3 text-right space-x-2 whitespace-nowrap">
+                      {o.status === 'requested' && (
+                        <button
+                          className="text-xs text-blue-700 font-medium"
+                          onClick={() => setStatus.mutate({ id: o.id, status: 'scheduled' })}
+                        >
+                          Schedule
+                        </button>
+                      )}
+                      {(o.status === 'requested' || o.status === 'scheduled') && (
+                        <>
+                          <button
+                            className="text-xs text-emerald-700 font-medium"
+                            onClick={() => setStatus.mutate({ id: o.id, status: 'done' })}
+                          >
+                            Mark done
+                          </button>
+                          {isAdmin && (
+                            <button
+                              className="text-xs text-red-600 font-medium"
+                              onClick={() => setStatus.mutate({ id: o.id, status: 'cancelled' })}
+                            >
+                              Cancel
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Housekeeping() {
   const [tab, setTab] = useState('tasks');
 
@@ -456,7 +737,9 @@ export default function Housekeeping() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Housekeeping &amp; Ops</h1>
-          <p className="text-gray-500 text-sm mt-0.5">Task readiness workflow and fee ledger</p>
+          <p className="text-gray-500 text-sm mt-0.5">
+            Task readiness workflow, fee ledger and outside service requests
+          </p>
         </div>
         <div className="flex rounded-lg border border-gray-200 overflow-hidden">
           <button
@@ -477,9 +760,42 @@ export default function Housekeeping() {
           >
             <DollarSign className="w-4 h-4" /> Fees
           </button>
+          <button
+            type="button"
+            onClick={() => setTab('services')}
+            className={`px-4 py-2 text-sm font-medium flex items-center gap-2 ${
+              tab === 'services' ? 'bg-soul-blue text-white' : 'bg-white text-gray-600'
+            }`}
+          >
+            <ClipboardList className="w-4 h-4" /> Service requests
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab('costs')}
+            className={`px-4 py-2 text-sm font-medium flex items-center gap-2 ${
+              tab === 'costs' ? 'bg-soul-blue text-white' : 'bg-white text-gray-600'
+            }`}
+          >
+            <Wrench className="w-4 h-4" /> Costs
+          </button>
         </div>
       </div>
-      {tab === 'tasks' ? <TasksTab /> : <FeesTab />}
+      {tab === 'tasks' ? (
+        <TasksTab />
+      ) : tab === 'fees' ? (
+        <FeesTab />
+      ) : tab === 'services' ? (
+        <ServicesTab />
+      ) : (
+        <CategoryLedgerPage
+          category="housekeeping_cost"
+          title="Housekeeping Costs"
+          subtitle="Ops cost of cleaning — deducted from revenue (separate from guest fees / service revenue)"
+          icon={Wrench}
+          entryLabel="cost"
+          descriptionPlaceholder="e.g. Cleaner overtime, supplies"
+        />
+      )}
     </div>
   );
 }

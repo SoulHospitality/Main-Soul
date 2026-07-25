@@ -57,6 +57,10 @@ const PAGE_ACCESS = {
   owner: new Set(['owner', 'owner_reservations', 'owner_statement', 'owner_payouts', 'owner_blocks', 'profile']),
 };
 
+// Admin finance page keys (admin:true covers all): finance, profit, commissions,
+// housekeeping, utilities, salaries, petty_cash, marketing, expenses, owner_settlements
+
+
 export function hasPermission(user, permission) {
   if (!user) return false;
   if (user.role === 'admin') return true;

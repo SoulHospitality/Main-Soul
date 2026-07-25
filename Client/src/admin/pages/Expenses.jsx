@@ -65,8 +65,8 @@ export default function Expenses() {
   const { data: units = [] } = useQuery({ queryKey: ['units'], queryFn: () => api.get('/units').then(r => r.data) });
 
   const { data: expenses = [], isLoading } = useQuery({
-    queryKey: ['expenses', filterUnit, filterPaidBy, fromDate, toDate],
-    queryFn: () => api.get('/expenses', { params: { unit_id: filterUnit || undefined, paid_by: filterPaidBy || undefined, from_date: fromDate || undefined, to_date: toDate || undefined } }).then(r => r.data),
+    queryKey: ['expenses', 'other', filterUnit, filterPaidBy, fromDate, toDate],
+    queryFn: () => api.get('/expenses', { params: { category: 'other', unit_id: filterUnit || undefined, paid_by: filterPaidBy || undefined, from_date: fromDate || undefined, to_date: toDate || undefined } }).then(r => r.data),
   });
 
   const filtered = expenses.filter(e => !search || e.description?.toLowerCase().includes(search.toLowerCase()) || e.unit_name?.toLowerCase().includes(search.toLowerCase()));
@@ -78,7 +78,7 @@ export default function Expenses() {
   const totalTenant  = filtered.filter(e => e.paid_by === 'tenant').reduce((s, e) => s + e.amount, 0);
 
   const saveMutation = useMutation({
-    mutationFn: (d) => editId ? api.put(`/expenses/${editId}`, d) : api.post('/expenses', d),
+    mutationFn: (d) => editId ? api.put(`/expenses/${editId}`, { ...d, category: 'other' }) : api.post('/expenses', { ...d, category: 'other' }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['expenses'] }); toast.success(editId ? 'Updated' : 'Expense added'); setModal(false); },
     onError: (e) => toast.error(e.response?.data?.error || 'Error saving'),
   });
@@ -103,8 +103,8 @@ export default function Expenses() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="page-header mb-0">
-          <h1 className="page-title">Expenses</h1>
-          <p className="page-subtitle">{filtered.length} records</p>
+          <h1 className="page-title">Expenses (General)</h1>
+          <p className="page-subtitle">{filtered.length} records — marketing, salaries and housekeeping costs have their own pages</p>
         </div>
         <div className="flex gap-2">
           {(isAdmin) && <button onClick={exportExcel} className="btn-secondary"><Download className="w-4 h-4" />Export</button>}

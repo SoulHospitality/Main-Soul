@@ -201,4 +201,121 @@ router.post('/housekeeping-tasks/:id/inspect', requireRoles('admin', 'reservatio
   }
 });
 
+// ── Outsider housekeeping service orders (revenue) ─────────
+router.get('/housekeeping-service-orders', requireRoles('admin', 'reservations'), async (req, res, next) => {
+  try {
+    const { FINANCIAL_EPOCH, clampFromDate } = require('../../lib/financialEpoch');
+    const from = clampFromDate(req.query.from_date || FINANCIAL_EPOCH);
+    const to = req.query.to_date || null;
+    const params = [from];
+    let where = `period_start >= $1::date`;
+    if (to) {
+      params.push(to);
+      where += ` AND period_end <= $${params.length}::date`;
+    }
+    if (req.query.status) {
+      params.push(req.query.status);
+      where += ` AND status = $${params.length}`;
+    } else if (req.query.include_cancelled !== '1') {
+      where += ` AND status <> 'cancelled'`;
+    }
+    const { rows } = await query(
+      `SELECT * FROM housekeeping_service_orders
+       WHERE ${where}
+       ORDER BY period_start DESC, created_at DESC
+       LIMIT 300`,
+      params
+    );
+    res.json(rows);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/housekeeping-service-orders', requireRoles('admin', 'reservations'), async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const clientName = String(b.client_name || '').trim();
+    const unitNumber = String(b.unit_number || '').trim();
+    const amount = parseFloat(b.amount);
+    const periodStart = b.period_start;
+    const periodEnd = b.period_end || b.period_start;
+    if (!clientName) return res.status(400).json({ error: 'client_name required' });
+    if (!unitNumber) return res.status(400).json({ error: 'unit_number required' });
+    if (!Number.isFinite(amount) || amount < 0) {
+      return res.status(400).json({ error: 'Valid amount required' });
+    }
+    if (!periodStart || !periodEnd) {
+      return res.status(400).json({ error: 'period_start and period_end required' });
+    }
+    if (String(periodEnd) < String(periodStart)) {
+      return res.status(400).json({ error: 'period_end must be on or after period_start' });
+    }
+    const { rows } = await query(
+      `INSERT INTO housekeeping_service_orders (
+         client_name, client_phone, unit_number, amount,
+         period_start, period_end, status, notes, unit_id, created_by
+       ) VALUES ($1,$2,$3,$4,$5,$6,COALESCE($7,'requested'),$8,$9,$10)
+       RETURNING *`,
+      [
+        clientName,
+        b.client_phone || null,
+        unitNumber,
+        amount,
+        periodStart,
+        periodEnd,
+        b.status || 'requested',
+        b.notes || null,
+        b.unit_id || null,
+        req.user.id,
+      ]
+    );
+    await logAudit({
+      userId: req.user.id,
+      action: 'CREATE_HK_SERVICE_ORDER',
+      entityType: 'housekeeping_service_order',
+      entityId: rows[0].id,
+      details: { unit_number: unitNumber, amount },
+    });
+    res.status(201).json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.patch('/housekeeping-service-orders/:id', requireRoles('admin', 'reservations'), async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const { rows } = await query(
+      `UPDATE housekeeping_service_orders SET
+         client_name = COALESCE($1, client_name),
+         client_phone = COALESCE($2, client_phone),
+         unit_number = COALESCE($3, unit_number),
+         amount = COALESCE($4, amount),
+         period_start = COALESCE($5, period_start),
+         period_end = COALESCE($6, period_end),
+         status = COALESCE($7, status),
+         notes = COALESCE($8, notes),
+         updated_at = now()
+       WHERE id = $9
+       RETURNING *`,
+      [
+        b.client_name ?? null,
+        b.client_phone !== undefined ? b.client_phone : null,
+        b.unit_number ?? null,
+        b.amount != null ? parseFloat(b.amount) : null,
+        b.period_start ?? null,
+        b.period_end ?? null,
+        b.status ?? null,
+        b.notes !== undefined ? b.notes : null,
+        req.params.id,
+      ]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Service order not found' });
+    res.json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
 module.exports = router;

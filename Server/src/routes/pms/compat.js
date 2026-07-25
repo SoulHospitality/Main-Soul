@@ -4,7 +4,12 @@ const { authStaff, requireRoles } = require('../../middleware/auth');
 const { syncUnitListingStatus } = require('../../lib/unitListingStatus');
 const { FINANCIAL_EPOCH, clampFromDate } = require('../../lib/financialEpoch');
 const { bookingAssigneeClause, loadReservationAccess, assertReservationOwned, assertBookingAssigned, isAdmin } = require('../../lib/reservationScope');
-const { upload, attachCloudinaryUrls } = require('../../config/cloudinary');
+const {
+  upload,
+  attachCloudinaryUrls,
+  setCloudinaryFolder,
+  FOLDER_PAYMENTS,
+} = require('../../config/cloudinary');
 
 /** Extra PMS endpoints expected by the legacy admin SPA (stubs + thin adapters). */
 const router = express.Router();
@@ -181,9 +186,12 @@ router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, nex
 });
 
 /**
- * Finance / Profit hub summary.
- * Total Revenue = rental gross from reservations.
- * Deductible expenses = housekeeping + utilities + salaries + petty cash (out) + expenses table.
+ * Finance / Profit hub summary (diagram-aligned).
+ * Revenue = reservation rental gross + housekeeping (stay fees + outsider service orders).
+ * Expense buckets: owner share, agent commissions, HK cost, utilities, salaries,
+ * petty cash outs, marketing, other expenses.
+ * commissionProfit = company commission − agent commissions.
+ * netProfit = total revenue − all expense buckets.
  */
 router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => {
   try {
@@ -211,11 +219,11 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
       resParams
     );
 
-    let totalRevenue = 0;
+    let reservationRevenue = 0;
     let companyCommission = 0;
     let tenantCommission = 0;
     let ownerOwed = 0;
-    let housekeeping = 0;
+    let housekeepingStayFees = 0;
     let utilities = 0;
 
     for (const r of reservations) {
@@ -226,14 +234,34 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
         ...r,
         utilities_amount: utilitiesAmount,
       });
-      totalRevenue += fin.grossAmount;
+      reservationRevenue += fin.grossAmount;
       companyCommission += fin.companyCommission;
       tenantCommission += fin.tenantDeduction;
       ownerOwed += fin.ownerNet;
-      housekeeping += fin.housekeepingFees;
+      housekeepingStayFees += fin.housekeepingFees;
       utilities += fin.utilitiesDeduction || utilitiesAmount;
     }
 
+    // Outsider housekeeping service orders — revenue
+    const hkParams = [from_date];
+    let hkWhere = `status <> 'cancelled' AND period_start >= $1::date`;
+    if (to_date) {
+      hkParams.push(to_date);
+      hkWhere += ` AND period_end <= $${hkParams.length}::date`;
+    }
+    let housekeepingServiceRevenue = 0;
+    try {
+      const { rows: hkOrders } = await query(
+        `SELECT COALESCE(SUM(amount), 0)::float AS total
+         FROM housekeeping_service_orders WHERE ${hkWhere}`,
+        hkParams
+      );
+      housekeepingServiceRevenue = Number(hkOrders[0]?.total) || 0;
+    } catch (_) {
+      // table may not exist before migration runs
+    }
+
+    // Categorized expense ledger
     const expParams = [from_date];
     let expWhere = `expense_date >= $1::date`;
     if (to_date) {
@@ -241,10 +269,23 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
       expWhere += ` AND expense_date <= $${expParams.length}::date`;
     }
     const { rows: expenseRows } = await query(
-      `SELECT COALESCE(SUM(amount), 0)::float AS total FROM expenses WHERE ${expWhere}`,
+      `SELECT COALESCE(category, 'other') AS category,
+              COALESCE(SUM(amount), 0)::float AS total
+       FROM expenses WHERE ${expWhere}
+       GROUP BY COALESCE(category, 'other')`,
       expParams
     );
-    const expenses = Number(expenseRows[0]?.total) || 0;
+    let marketing = 0;
+    let salaryLedger = 0;
+    let housekeepingCost = 0;
+    let otherExpenses = 0;
+    for (const row of expenseRows) {
+      const total = Number(row.total) || 0;
+      if (row.category === 'marketing') marketing += total;
+      else if (row.category === 'salary') salaryLedger += total;
+      else if (row.category === 'housekeeping_cost') housekeepingCost += total;
+      else otherExpenses += total;
+    }
 
     const pcParams = [from_date];
     let pcWhere = `entry_type = 'out' AND entry_date >= $1::date`;
@@ -258,16 +299,30 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
     );
     const pettyCash = Number(pettyRows[0]?.total) || 0;
 
-    // Salaries count only after books open (Aug 2026+)
-    let salaries = 0;
+    // Payroll snapshot: active staff base salaries (after books open) + salary ledger
+    let payrollSnapshot = 0;
     const todayIso = new Date().toISOString().slice(0, 10);
     if (todayIso >= FINANCIAL_EPOCH) {
       const { rows: salaryRows } = await query(
         `SELECT COALESCE(SUM(base_salary), 0)::float AS total
          FROM employees WHERE COALESCE(is_active, 1) = 1`
       );
-      salaries = Number(salaryRows[0]?.total) || 0;
+      payrollSnapshot = Number(salaryRows[0]?.total) || 0;
     }
+    const salaries = round2(salaryLedger + payrollSnapshot);
+
+    // Agent (reservation staff) commissions in period
+    const agentParams = [from_date];
+    let agentWhere = `c.created_at::date >= $1::date`;
+    if (to_date) {
+      agentParams.push(to_date);
+      agentWhere += ` AND c.created_at::date <= $${agentParams.length}::date`;
+    }
+    const { rows: agentRows } = await query(
+      `SELECT COALESCE(SUM(c.amount), 0)::float AS total FROM commissions c WHERE ${agentWhere}`,
+      agentParams
+    );
+    const agentCommissions = Number(agentRows[0]?.total) || 0;
 
     const cfParams = [from_date];
     let cfWhere = `entry_date >= $1::date`;
@@ -289,38 +344,68 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
       if (row.entry_type === 'out') cashOut = Number(row.total) || 0;
     }
 
-    // Expenses deducted from revenue for profit (per product rules)
+    // Revenue per diagram: reservations + housekeeping (stay fees + service orders)
+    const housekeepingRevenue = round2(housekeepingStayFees + housekeepingServiceRevenue);
+    const totalRevenue = round2(reservationRevenue + housekeepingRevenue);
+
+    // Expense buckets per diagram
     const deductibleExpenses = round2(
-      housekeeping + utilities + salaries + pettyCash + expenses
+      ownerOwed +
+        agentCommissions +
+        housekeepingCost +
+        utilities +
+        salaries +
+        pettyCash +
+        marketing +
+        otherExpenses
     );
-    const profit = round2(totalRevenue - deductibleExpenses);
+
+    const commissionProfit = round2(companyCommission - agentCommissions);
+    const netProfit = round2(totalRevenue - deductibleExpenses);
 
     res.json({
       from_date,
       to_date: to_date || null,
       financial_epoch: FINANCIAL_EPOCH,
-      totalRevenue: round2(totalRevenue),
+      // Revenue
+      totalRevenue,
+      reservationRevenue: round2(reservationRevenue),
+      housekeepingRevenue,
+      housekeepingStayFees: round2(housekeepingStayFees),
+      housekeepingServiceRevenue: round2(housekeepingServiceRevenue),
+      // Commission split
       companyCommission: round2(companyCommission),
       tenantCommission: round2(tenantCommission),
       ownerOwed: round2(ownerOwed),
-      housekeeping: round2(housekeeping),
+      agentCommissions: round2(agentCommissions),
+      // Expense buckets
+      housekeeping: round2(housekeepingCost),
+      housekeepingCost: round2(housekeepingCost),
       utilities: round2(utilities),
-      salaries: round2(salaries),
+      salaries,
       pettyCash: round2(pettyCash),
-      expenses: round2(expenses),
+      marketing: round2(marketing),
+      expenses: round2(otherExpenses),
+      otherExpenses: round2(otherExpenses),
       cashflow: {
         inflow: round2(cashIn),
         outflow: round2(cashOut),
         net: round2(cashIn - cashOut),
       },
       totalExpenses: deductibleExpenses,
-      profit,
+      // Profit views
+      commissionProfit,
+      netProfit,
+      profit: netProfit,
       expenseBreakdown: {
-        housekeeping: round2(housekeeping),
+        ownerShare: round2(ownerOwed),
+        agentCommissions: round2(agentCommissions),
+        housekeeping: round2(housekeepingCost),
         utilities: round2(utilities),
-        salaries: round2(salaries),
+        salaries,
         pettyCash: round2(pettyCash),
-        expenses: round2(expenses),
+        marketing: round2(marketing),
+        expenses: round2(otherExpenses),
       },
     });
   } catch (e) {
@@ -588,6 +673,7 @@ router.post(
   '/website-bookings/:id/accept',
   requireRoles('reservations'),
   upload.single('evidence'),
+  setCloudinaryFolder(FOLDER_PAYMENTS),
   attachCloudinaryUrls,
   async (req, res, next) => {
     try {
