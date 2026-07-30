@@ -223,9 +223,8 @@ export default function ManualReservationForm({
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto bg-[#f6f8fb] px-4 pb-8 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1280px]">
-        <div className="max-w-[640px] space-y-5 rounded-[16px] border border-[#e6ebf2] bg-white p-5 sm:p-6">
+    <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
+      <div className="space-y-5">
           <div>
             <Label>Unit <span className="text-[#ff7a59]">*</span></Label>
             <SearchableSelect
@@ -660,7 +659,6 @@ export default function ManualReservationForm({
           <p className="text-[12.5px] text-[#5b6b80]">
             These dates will immediately block the unit calendar after the reservation is created.
           </p>
-        </div>
       </div>
     </div>
   );
