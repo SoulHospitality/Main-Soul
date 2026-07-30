@@ -94,21 +94,10 @@ export default function ManualReservationForm({
     staleTime: 30_000,
   });
 
-  const { data: pricing, isLoading: pricingLoading } = useQuery({
-    queryKey: ['manual-pricing', form.unit_id, from, to],
-    queryFn: () =>
-      guestApi
-        .get(`/units/${form.unit_id}/pricing`, { params: { from, to } })
-        .then((r) => r.data),
-    enabled: Boolean(form.unit_id),
-    staleTime: 30_000,
-  });
-
   const blockedDates = useMemo(
     () => (availability?.blocked || []).map((item) => item.date || item).filter(Boolean),
     [availability]
   );
-  const dailyPrices = pricing?.prices || {};
 
   const nights = useMemo(() => {
     if (!form.check_in || !form.check_out) return 0;
@@ -120,32 +109,6 @@ export default function ManualReservationForm({
       )
     );
   }, [form.check_in, form.check_out]);
-
-  const scheduledStay = useMemo(() => {
-    if (!form.check_in || !form.check_out || !nights) {
-      return { complete: false, total: 0, average: 0 };
-    }
-    let total = 0;
-    let count = 0;
-    let complete = true;
-    const cursor = new Date(`${form.check_in}T00:00:00`);
-    const end = new Date(`${form.check_out}T00:00:00`);
-    while (cursor < end) {
-      const iso = localDateToIso(cursor);
-      const price = Number(dailyPrices[iso]);
-      if (!(price > 0)) complete = false;
-      else {
-        total += price;
-        count += 1;
-      }
-      cursor.setDate(cursor.getDate() + 1);
-    }
-    return {
-      complete: complete && count === nights,
-      total,
-      average: count ? total / count : 0,
-    };
-  }, [dailyPrices, form.check_in, form.check_out, nights]);
 
   const housekeeping = selectedUnit ? housekeepingFeeForUnit(selectedUnit) : 0;
   const total = Number(form.total_amount) || 0;
@@ -179,37 +142,35 @@ export default function ManualReservationForm({
     );
   }, [selectedUnit?.id, setForm]);
 
-  useEffect(() => {
-    if (!nights) return;
-    if (scheduledStay.complete) {
-      setForm((cur) => ({
-        ...cur,
-        price_per_night: scheduledStay.average.toFixed(2),
-        total_amount: scheduledStay.total.toFixed(2),
-        owner_collected_amount:
-          cur.owner_collected_type === 'full'
-            ? scheduledStay.total.toFixed(2)
-            : cur.owner_collected_amount,
-      }));
-      return;
-    }
-    const fallback = Number(selectedUnit?.price_per_night || selectedUnit?.price_fallback) || 0;
-    if (fallback > 0) {
-      setForm((cur) => ({
-        ...cur,
-        price_per_night: fallback.toFixed(2),
-        total_amount: (fallback * nights).toFixed(2),
-      }));
-    }
-  }, [
-    nights,
-    scheduledStay.complete,
-    scheduledStay.average,
-    scheduledStay.total,
-    selectedUnit?.price_per_night,
-    selectedUnit?.price_fallback,
-    setForm,
-  ]);
+  function setPricePerNight(value) {
+    const rate = Number(value);
+    setForm((cur) => ({
+      ...cur,
+      price_per_night: value,
+      total_amount:
+        nights > 0 && rate >= 0 && value !== ''
+          ? (rate * nights).toFixed(2)
+          : cur.total_amount,
+      owner_collected_amount:
+        cur.owner_collected_type === 'full' && nights > 0 && rate >= 0 && value !== ''
+          ? (rate * nights).toFixed(2)
+          : cur.owner_collected_amount,
+    }));
+  }
+
+  function setTotalAmount(value) {
+    const amount = Number(value);
+    setForm((cur) => ({
+      ...cur,
+      total_amount: value,
+      price_per_night:
+        nights > 0 && amount >= 0 && value !== ''
+          ? (amount / nights).toFixed(2)
+          : cur.price_per_night,
+      owner_collected_amount:
+        cur.owner_collected_type === 'full' ? value : cur.owner_collected_amount,
+    }));
+  }
 
   function selectUnit(value) {
     setForm((cur) => ({
@@ -259,32 +220,51 @@ export default function ManualReservationForm({
                     }))
                   }
                   blockedDates={blockedDates}
-                  dailyPrices={dailyPrices}
                   minNights={1}
                 />
-                {(availabilityLoading || pricingLoading) && (
+                {availabilityLoading && (
                   <p className="mt-2 text-xs text-[#5b6b80]">Loading availability…</p>
                 )}
               </>
             ) : (
               <div className="rounded-[10px] border border-dashed border-[#e6ebf2] bg-[#f6f8fb] px-4 py-8 text-center text-sm text-[#5b6b80]">
-                Select a unit to view its calendar, nightly prices, and blocked dates.
+                Select a unit to view blocked dates on the calendar.
               </div>
             )}
           </div>
 
-          {nights > 0 && (
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Nights</Label>
-                <div className={`${fieldClass} bg-[#f6f8fb] font-semibold`}>{nights}</div>
-              </div>
-              <div>
-                <Label>Accommodation total</Label>
-                <div className={`${fieldClass} bg-[#f6f8fb] font-semibold`}>{money(total)}</div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div>
+              <Label>Nights</Label>
+              <div className={`${fieldClass} bg-[#f6f8fb] font-semibold`}>
+                {nights || '—'}
               </div>
             </div>
-          )}
+            <div>
+              <Label>Price / night <span className="text-[#ff7a59]">*</span></Label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.price_per_night}
+                onChange={(e) => setPricePerNight(e.target.value)}
+                className={fieldClass}
+                placeholder="EGP"
+              />
+            </div>
+            <div>
+              <Label>Total (EGP) <span className="text-[#ff7a59]">*</span></Label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.total_amount}
+                onChange={(e) => setTotalAmount(e.target.value)}
+                className={fieldClass}
+                placeholder="EGP"
+              />
+            </div>
+          </div>
 
           <hr className="border-[#e6ebf2]" />
 
