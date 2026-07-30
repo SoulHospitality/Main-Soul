@@ -5,33 +5,44 @@ import {
   canManageUnits,
   canDeleteUnits,
   canManageReservations,
+  canHandleWebsiteBookings,
   canViewAllReservations,
   canEditSchedulePricing,
   canAccessFinance,
   canManageUsers,
+  isReservationsTeam,
+  isWebsiteReservationsRole,
+  isManualReservationsRole,
 } from '../utils/permissions';
 
 export function usePermissions() {
   const { user } = useAuth();
+  const isReservations = isReservationsTeam(user);
+  const isWebsiteReservations = isWebsiteReservationsRole(user);
+  const isManualReservations = isManualReservationsRole(user);
+
   return {
     can: (permission) => hasPermission(user, permission),
     canAccess: (page) => canAccess(user, page),
     canManageUnits: canManageUnits(user),
     canDeleteUnits: canDeleteUnits(user),
     canManageReservations: canManageReservations(user),
+    canHandleWebsiteBookings: canHandleWebsiteBookings(user),
     canViewAllReservations: canViewAllReservations(user),
     canEditSchedulePricing: canEditSchedulePricing(user),
     canAccessFinance: canAccessFinance(user),
     canManageUsers: canManageUsers(user),
     isAdmin: user?.role === 'admin',
-    isReservations: user?.role === 'reservations',
+    isReservations,
+    isWebsiteReservations,
+    isManualReservations,
     isResale: user?.role === 'resale',
     isHr: user?.role === 'hr',
     isOwner: user?.role === 'owner',
     // Legacy aliases used in older pages — map to new roles
     isFinance: user?.role === 'admin',
     isOpManager: user?.role === 'admin',
-    isSales: user?.role === 'reservations',
+    isSales: isReservations,
     isOwnerExperience: user?.role === 'resale',
     isBroker: false,
     role: user?.role,

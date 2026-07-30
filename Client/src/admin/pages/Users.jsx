@@ -24,7 +24,7 @@ function avatarStyle(role) {
 const EMPTY_FORM = {
   full_name: '',
   email: '',
-  role: 'reservations',
+  role: 'reservations_manual',
   base_salary: '',
   is_active: 1,
   sales_commission_pct: 0,
@@ -182,7 +182,7 @@ export default function Users() {
   });
 
   const openAdd = () => {
-    setForm({ ...EMPTY_FORM, role: roleOptions[0] || 'reservations' });
+    setForm({ ...EMPTY_FORM, role: roleOptions[0] || 'reservations_manual' });
     setEditId(null);
     setModal('add');
   };
@@ -212,8 +212,8 @@ export default function Users() {
   };
 
   const filterRoleOptions = isAdmin
-    ? ['admin', 'reservations', 'resale', 'hr']
-    : ['reservations', 'resale', 'hr'];
+    ? ['admin', 'reservations_web', 'reservations_manual', 'reservations', 'resale', 'hr']
+    : ['reservations_web', 'reservations_manual', 'reservations', 'resale', 'hr'];
 
   return (
     <div className="space-y-6">
@@ -402,7 +402,7 @@ export default function Users() {
           isEdit={modal === 'edit'}
           roleOptions={
             modal === 'edit' && isAdmin
-              ? ['admin', 'reservations', 'resale', 'hr']
+              ? ['admin', 'reservations_web', 'reservations_manual', 'reservations', 'resale', 'hr']
               : roleOptions
           }
           isAdmin={isAdmin}

@@ -315,7 +315,7 @@ router.get('/:id', async (req, res, next) => {
 
 async function notifySales(booking) {
   const { rows } = await query(
-    `SELECT id FROM staff_users WHERE role IN ('reservations','admin') AND is_active = 1`
+    `SELECT id FROM staff_users WHERE role IN ('reservations_web','reservations','admin') AND is_active = 1`
   );
   for (const u of rows) {
     await query(

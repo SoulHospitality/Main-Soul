@@ -1,27 +1,47 @@
 export const ROLES = {
   ADMIN: 'admin',
   RESERVATIONS: 'reservations',
+  RESERVATIONS_WEB: 'reservations_web',
+  RESERVATIONS_MANUAL: 'reservations_manual',
   RESALE: 'resale',
   HR: 'hr',
   OWNER: 'owner',
 };
 
+const RESERVATIONS_TEAM = new Set([
+  'reservations',
+  'reservations_web',
+  'reservations_manual',
+]);
+
+const RESERVATIONS_PAGE_ACCESS = new Set([
+  'dashboard',
+  'reservations',
+  'schedule',
+  'housekeeping',
+  'profile',
+]);
+
+const RESERVATIONS_PERMISSIONS = [
+  'dashboard:read',
+  'units:read',
+  'reservations:read',
+  'reservations:write',
+  'reservations:confirm',
+  'reservations:delete',
+  'schedule:read',
+  'housekeeping:read',
+  'housekeeping:write',
+  'notifications:read',
+  'documents:read',
+  'documents:write',
+];
+
 const PERMISSIONS = {
   admin: ['*'],
-  reservations: [
-    'dashboard:read',
-    'units:read',
-    'reservations:read',
-    'reservations:write',
-    'reservations:confirm',
-    'reservations:delete',
-    'schedule:read',
-    'housekeeping:read',
-    'housekeeping:write',
-    'notifications:read',
-    'documents:read',
-    'documents:write',
-  ],
+  reservations: RESERVATIONS_PERMISSIONS,
+  reservations_web: RESERVATIONS_PERMISSIONS,
+  reservations_manual: RESERVATIONS_PERMISSIONS,
   resale: [
     'units:read',
     'units:write',
@@ -48,18 +68,35 @@ const PERMISSIONS = {
   ],
 };
 
-/** Three separate PMS surfaces + full admin + owner portal */
+/** Separate PMS surfaces + full admin + owner portal */
 const PAGE_ACCESS = {
   admin: true,
-  reservations: new Set(['dashboard', 'reservations', 'schedule', 'housekeeping', 'profile']),
+  reservations: RESERVATIONS_PAGE_ACCESS,
+  reservations_web: RESERVATIONS_PAGE_ACCESS,
+  reservations_manual: RESERVATIONS_PAGE_ACCESS,
   resale: new Set(['units_sale', 'acquisition', 'sales', 'profile']),
   hr: new Set(['users', 'profile']),
-  owner: new Set(['owner', 'owner_reservations', 'owner_statement', 'owner_payouts', 'owner_blocks', 'profile']),
+  owner: new Set([
+    'owner',
+    'owner_reservations',
+    'owner_statement',
+    'owner_payouts',
+    'owner_blocks',
+    'profile',
+  ]),
 };
 
-// Admin finance page keys (admin:true covers all): finance, profit, commissions,
-// housekeeping, utilities, salaries, petty_cash, marketing, expenses, owner_settlements
+export function isReservationsTeam(user) {
+  return !!user && RESERVATIONS_TEAM.has(user.role);
+}
 
+export function isWebsiteReservationsRole(user) {
+  return !!user && (user.role === 'reservations_web' || user.role === 'reservations');
+}
+
+export function isManualReservationsRole(user) {
+  return !!user && (user.role === 'reservations_manual' || user.role === 'reservations');
+}
 
 export function hasPermission(user, permission) {
   if (!user) return false;
@@ -85,12 +122,18 @@ export function canDeleteUnits(user) {
   return canManageUnits(user);
 }
 
+/** Create / edit manual reservations */
 export function canManageReservations(user) {
-  return !!user && user.role === 'reservations';
+  return isManualReservationsRole(user);
+}
+
+/** Accept / reject website booking requests */
+export function canHandleWebsiteBookings(user) {
+  return isWebsiteReservationsRole(user);
 }
 
 export function canViewAllReservations(user) {
-  return !!user && (user.role === 'admin' || user.role === 'reservations');
+  return !!user && (user.role === 'admin' || isReservationsTeam(user));
 }
 
 export function canEditSchedulePricing(user) {
@@ -110,14 +153,17 @@ export function isOwnerRole(user) {
 }
 
 export function creatableRoles(actorRole) {
-  if (actorRole === 'admin') return ['admin', 'reservations', 'resale', 'hr', 'owner'];
-  if (actorRole === 'hr') return ['reservations', 'resale', 'hr'];
+  const reservationRoles = ['reservations_web', 'reservations_manual'];
+  if (actorRole === 'admin') return ['admin', ...reservationRoles, 'resale', 'hr', 'owner'];
+  if (actorRole === 'hr') return [...reservationRoles, 'resale', 'hr'];
   return [];
 }
 
 export const ROLE_LABELS = {
   admin: 'Admin',
-  reservations: 'Reservations',
+  reservations: 'Reservations (legacy)',
+  reservations_web: 'Website Reservations',
+  reservations_manual: 'Manual Reservations',
   resale: 'Resale',
   hr: 'HR',
   owner: 'Owner',
@@ -126,6 +172,8 @@ export const ROLE_LABELS = {
 export const ROLE_COLORS = {
   admin: 'badge-soul-accent',
   reservations: 'badge-soul-orange',
+  reservations_web: 'badge-soul-orange',
+  reservations_manual: 'badge-soul-orange',
   resale: 'badge-soul-teal',
   hr: 'badge-soul-slate',
   owner: 'badge-soul-teal',
@@ -134,6 +182,8 @@ export const ROLE_COLORS = {
 export const PMS_LABELS = {
   admin: 'Admin PMS',
   reservations: 'Reservations PMS',
+  reservations_web: 'Website Reservations PMS',
+  reservations_manual: 'Manual Reservations PMS',
   resale: 'Resale PMS',
   hr: 'HR PMS',
   owner: 'Owner Portal',

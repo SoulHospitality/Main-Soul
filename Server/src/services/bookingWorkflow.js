@@ -4,7 +4,7 @@ const { sendBookingAcceptedEmail } = require('./guestEmails');
 const {
   pickLeastLoadedReservationsAgent,
   assertBookingAssigned,
-  isReservationsAgent,
+  isWebsiteReservationsAgent,
   isAdmin,
 } = require('../lib/reservationScope');
 
@@ -97,7 +97,7 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
 
   const assignee =
     booking.assigned_sales_id ||
-    (isReservationsAgent(staffUser) ? staffUser.id : null) ||
+    (isWebsiteReservationsAgent(staffUser) ? staffUser.id : null) ||
     (await pickLeastLoadedReservationsAgent());
 
   const depositNote = alreadyPaid

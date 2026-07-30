@@ -3,6 +3,8 @@ const A = '/admin';
 export function defaultAdminPage(role) {
   switch (role) {
     case 'reservations':
+    case 'reservations_web':
+    case 'reservations_manual':
       return `${A}/reservations`;
     case 'resale':
       return `${A}/units-for-sale`;

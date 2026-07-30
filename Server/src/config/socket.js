@@ -12,7 +12,15 @@ function initSocket(server) {
 
   io.on('connection', (socket) => {
     const { userId, role } = socket.handshake.query || {};
-    if (userId && (role === 'reservations' || role === 'admin' || role === 'sales' || role === 'Sales')) {
+    if (
+      userId &&
+      (role === 'reservations' ||
+        role === 'reservations_web' ||
+        role === 'reservations_manual' ||
+        role === 'admin' ||
+        role === 'sales' ||
+        role === 'Sales')
+    ) {
       socket.join(`sales-user:${userId}`);
     }
   });

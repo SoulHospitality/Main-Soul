@@ -1,6 +1,8 @@
 const PERMS = {
   admin: ['*'],
   reservations: ['reservations', 'schedule', 'dashboard', 'units_readonly'],
+  reservations_web: ['reservations', 'schedule', 'dashboard', 'units_readonly'],
+  reservations_manual: ['reservations', 'schedule', 'dashboard', 'units_readonly'],
   resale: ['units', 'projects', 'dashboard'],
 };
 

@@ -6,6 +6,8 @@ const TEMP_PASSWORD = 'Soul@123';
 const ROLE_PREFIX = {
   admin: 'A',
   reservations: 'R',
+  reservations_web: 'W',
+  reservations_manual: 'M',
   resale: 'S',
   hr: 'H',
   owner: 'O',

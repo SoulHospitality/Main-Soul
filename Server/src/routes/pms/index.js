@@ -26,7 +26,14 @@ const {
   syncUnitListingStatus,
 } = require('../../lib/unitListingStatus');
 const { FINANCIAL_EPOCH, clampFromDate } = require('../../lib/financialEpoch');
-const { reservationScopeClause, bookingAssigneeClause, loadReservationAccess, assertReservationOwned, isReservationsAgent } = require('../../lib/reservationScope');
+const {
+  reservationScopeClause,
+  bookingAssigneeClause,
+  loadReservationAccess,
+  assertReservationOwned,
+  isReservationsAgent,
+  isManualReservationsAgent,
+} = require('../../lib/reservationScope');
 const { getMinimumStayNights } = require('../../lib/minStay');
 const { beachAccessPersistValues } = require('../../lib/beachAccess');
 const { normalizeProjectName } = require('../../lib/projectNames');
@@ -151,14 +158,26 @@ function assertCanAssignRole(actorRole, targetRole) {
     err.status = 403;
     throw err;
   }
-  const allowed = ['admin', 'reservations', 'resale', 'hr'];
+  const allowed = [
+    'admin',
+    'reservations_web',
+    'reservations_manual',
+    'reservations',
+    'resale',
+    'hr',
+  ];
   if (!allowed.includes(targetRole)) {
-    const err = new Error('Invalid role. Use admin, reservations, resale, or hr.');
+    const err = new Error(
+      'Invalid role. Use admin, reservations_web, reservations_manual, resale, or hr.'
+    );
     err.status = 400;
     throw err;
   }
-  if (actorRole === 'hr' && !['reservations', 'resale', 'hr'].includes(targetRole)) {
-    const err = new Error('HR can only create reservations, resale, or HR users');
+  if (
+    actorRole === 'hr' &&
+    !['reservations_web', 'reservations_manual', 'reservations', 'resale', 'hr'].includes(targetRole)
+  ) {
+    const err = new Error('HR can only create reservation, resale, or HR users');
     err.status = 403;
     throw err;
   }
@@ -1216,7 +1235,7 @@ router.get('/reservations', async (req, res, next) => {
 
 router.post(
   '/reservations',
-  requireRoles('reservations'),
+  requireRoles('reservations_manual', 'reservations'),
   upload.single('transfer_proof'),
   setCloudinaryFolder(FOLDER_PAYMENTS),
   attachCloudinaryUrls,
@@ -1226,8 +1245,9 @@ router.post(
     const { getBlockedDates } = require('../../services/pricing');
     const { paymentStatusFrom } = require('../../lib/syncReservationPayment');
 
-    const salesPersonId =
-      req.user.role === 'reservations' ? req.user.id : (b.sales_person_id || req.user.id);
+    const salesPersonId = isManualReservationsAgent(req.user)
+      ? req.user.id
+      : (b.sales_person_id || req.user.id);
     const checkIn = new Date(b.check_in);
     const checkOut = new Date(b.check_out);
     if (!b.unit_id || !b.check_in || !b.check_out || Number.isNaN(checkIn) || Number.isNaN(checkOut) || checkOut <= checkIn) {
@@ -1433,7 +1453,11 @@ function truthyFlag(v) {
   return v === true || v === 1 || v === '1' || v === 'true' || v === 'on';
 }
 
-router.patch('/reservations/:id', requireRoles('reservations'), async (req, res, next) => {
+router.patch(
+  '/reservations/:id',
+  requireRoles('reservations_manual', 'reservations_web', 'reservations'),
+  async (req, res, next) => {
+
   try {
     const existing = await loadReservationAccess(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Not found' });
@@ -1534,7 +1558,11 @@ router.patch('/reservations/:id', requireRoles('reservations'), async (req, res,
   }
 });
 
-router.delete('/reservations/:id', requireRoles('reservations'), async (req, res, next) => {
+router.delete(
+  '/reservations/:id',
+  requireRoles('reservations_manual', 'reservations_web', 'reservations'),
+  async (req, res, next) => {
+
   try {
     const id = req.params.id;
     const { rows: existing } = await query(
@@ -1568,7 +1596,11 @@ router.delete('/reservations/:id', requireRoles('reservations'), async (req, res
   }
 });
 
-router.post('/reservations/:id/cancel-request', requireRoles('reservations'), async (req, res, next) => {
+router.post(
+  '/reservations/:id/cancel-request',
+  requireRoles('reservations_manual', 'reservations_web', 'reservations'),
+  async (req, res, next) => {
+
   try {
     const existing = await loadReservationAccess(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Not found' });

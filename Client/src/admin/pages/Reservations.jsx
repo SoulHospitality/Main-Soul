@@ -749,7 +749,15 @@ function DateRangeFilter({ label, from, to, onFromChange, onToChange, onClear })
 
 export default function Reservations() {
   const qc = useQueryClient();
-  const { isAdmin, isReservations, canManageReservations, canAccessFinance, user } = usePermissions();
+  const {
+    isAdmin,
+    isReservations,
+    isWebsiteReservations,
+    isManualReservations,
+    canManageReservations,
+    canAccessFinance,
+    user,
+  } = usePermissions();
   const allowPastDates = isReservations;
   const [searchParams] = useSearchParams();
   const [search, setSearch] = useState(searchParams.get('search') || '');
@@ -934,7 +942,7 @@ export default function Reservations() {
   const openAdd = () => {
     setForm({
       ...EMPTY_FORM,
-      sales_person_id: isReservations && user?.id ? String(user.id) : '',
+      sales_person_id: isManualReservations && user?.id ? String(user.id) : '',
       payment_method: 'cash',
     });
     setEditId(null);
@@ -1047,7 +1055,7 @@ export default function Reservations() {
 
   return (
     <div className="space-y-6">
-      {isReservations && <WebsiteBookingRequests />}
+      {isWebsiteReservations && <WebsiteBookingRequests />}
       <div className="flex items-center justify-between">
         <div className="page-header mb-0">
           <h1 className="page-title">Reservations</h1>
@@ -1374,7 +1382,7 @@ export default function Reservations() {
           users={users}
           transferProof={transferProof}
           onTransferProofChange={setTransferProof}
-          lockSalesPerson={isReservations}
+          lockSalesPerson={isManualReservations}
           currentUserName={user?.full_name || user?.username || ''}
           onCancel={() => { setModal(null); setTransferProof(null); }}
           onSubmit={handleSave}
@@ -1395,7 +1403,7 @@ export default function Reservations() {
         <ReservationForm form={form} setForm={setForm} units={units} users={users}
           isNew={false} editId={editId} transferProof={transferProof} onTransferProofChange={setTransferProof}
           allowPastDates={allowPastDates}
-          lockSalesPerson={isReservations}
+          lockSalesPerson={isManualReservations}
           currentUserName={user?.full_name || user?.username || ''} />
       </Modal>
 

@@ -64,7 +64,7 @@ router.get('/users/sales', async (_req, res, next) => {
   try {
     const { rows } = await query(
       `SELECT id, full_name, username, role FROM staff_users
-       WHERE is_active = 1 AND role IN ('reservations','admin')`
+       WHERE is_active = 1 AND role IN ('reservations_manual','reservations','admin')`
     );
     res.json(rows);
   } catch (e) {
@@ -671,7 +671,7 @@ router.get('/website-bookings', async (req, res, next) => {
 
 router.post(
   '/website-bookings/:id/accept',
-  requireRoles('reservations'),
+  requireRoles('reservations_web', 'reservations'),
   upload.single('evidence'),
   setCloudinaryFolder(FOLDER_PAYMENTS),
   attachCloudinaryUrls,
@@ -692,7 +692,7 @@ router.post(
   }
 );
 
-router.post('/website-bookings/:id/reject', requireRoles('reservations'), async (req, res, next) => {
+router.post('/website-bookings/:id/reject', requireRoles('reservations_web', 'reservations'), async (req, res, next) => {
   try {
     const { rejectWebsiteBooking } = require('../../services/bookingWorkflow');
     const booking = await rejectWebsiteBooking(
@@ -1024,7 +1024,7 @@ router.put('/tasks/:id', async (req, res, next) => {
   }
 });
 
-router.put('/reservations/:id', requireRoles('reservations'), async (req, res, next) => {
+router.put('/reservations/:id', requireRoles('reservations_manual', 'reservations_web', 'reservations'), async (req, res, next) => {
   // Delegate to the richer PATCH handler on the main router by forwarding body
   try {
     const existing = await loadReservationAccess(req.params.id);
