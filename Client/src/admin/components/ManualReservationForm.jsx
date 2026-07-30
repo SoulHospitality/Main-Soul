@@ -13,6 +13,11 @@ import {
   MANUAL_PAYMENT_METHODS,
   PAYMENT_METHOD_LABELS,
 } from '../utils/formatters';
+import {
+  appliedPctLabel,
+  calcReservationFinancials,
+  commissionModeLabel,
+} from '../utils/commission';
 
 const money = (value) =>
   `EGP ${Number(value || 0).toLocaleString('en-EG', {
@@ -145,6 +150,18 @@ export default function ManualReservationForm({
   const insurance = Number(form.insurance) || 0;
   const ownerCollected = Number(form.owner_collected_amount) || 0;
   const brokerPerNight = Number(form.broker_amount_per_night) || 0;
+  const brokerTotal = brokerPerNight * nights;
+  const utilitiesPerNight = form.is_owner_reservation
+    ? 0
+    : Number(form.utilities_cost_override || selectedUnit?.utilities_cost) || 0;
+  const commissionFinancials = selectedUnit
+    ? calcReservationFinancials(selectedUnit, {
+        ...form,
+        nights,
+        broker_total: brokerTotal,
+        utilities_amount: utilitiesPerNight * nights,
+      })
+    : null;
 
   let toCollect = total - downPayment;
   if (form.owner_collected_type === 'full') toCollect = housekeeping + insurance - downPayment;
@@ -204,8 +221,8 @@ export default function ManualReservationForm({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex-1 overflow-y-auto px-6 py-5">
-        <div className="space-y-5">
+      <div className="flex-1 overflow-y-auto px-6 py-5 lg:px-10">
+        <div className="mx-auto w-full max-w-6xl space-y-5">
           {/* Unit */}
           <div>
             <Label>Unit</Label>
@@ -355,6 +372,96 @@ export default function ManualReservationForm({
             />
           </label>
 
+          <div className="rounded-2xl border border-purple-200 bg-purple-50 p-4">
+            <div className="mb-3">
+              <p className="text-sm font-semibold text-purple-900">Broker commission</p>
+              <p className="text-xs text-purple-700">
+                Deducted from the accommodation amount before company commission.
+              </p>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-purple-700">
+                Broker name
+                <input
+                  className="rounded-2xl border border-purple-200 bg-white px-4 py-3 text-sm font-normal normal-case tracking-normal text-soul-blue outline-none focus:border-purple-500"
+                  value={form.broker_name}
+                  onChange={(e) => setForm((cur) => ({ ...cur, broker_name: e.target.value }))}
+                  placeholder="Optional"
+                />
+              </label>
+              <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-purple-700">
+                Broker amount / night
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className="rounded-2xl border border-purple-200 bg-white px-4 py-3 text-sm font-normal normal-case tracking-normal text-soul-blue outline-none focus:border-purple-500"
+                  value={form.broker_amount_per_night}
+                  onChange={(e) =>
+                    setForm((cur) => ({ ...cur, broker_amount_per_night: e.target.value }))
+                  }
+                  placeholder="EGP 0"
+                />
+              </label>
+            </div>
+            {brokerPerNight > 0 && (
+              <div className="mt-3 grid gap-2 rounded-xl bg-purple-100 px-3 py-2 text-xs text-purple-900 md:grid-cols-2">
+                <span>
+                  Broker total: <strong>{nights ? money(brokerTotal) : 'Select dates'}</strong>
+                </span>
+                <span>
+                  Net / night after broker:{' '}
+                  <strong>{money(Math.max(0, Number(form.price_per_night) - brokerPerNight))}</strong>
+                </span>
+              </div>
+            )}
+          </div>
+
+          {selectedUnit && (
+            <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="text-sm font-semibold text-blue-900">Company commission</p>
+                  <p className="text-xs text-blue-700">{commissionModeLabel(selectedUnit)}</p>
+                </div>
+                <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-900">
+                  Applied: {appliedPctLabel(commissionFinancials, selectedUnit)}
+                </span>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-xl bg-white px-3 py-2">
+                  <p className="text-xs text-soul-muted">Accommodation</p>
+                  <p className="mt-1 text-sm font-semibold text-soul-blue">
+                    {nights ? money(commissionFinancials?.grossAmount) : 'Select dates'}
+                  </p>
+                </div>
+                <div className="rounded-xl bg-white px-3 py-2">
+                  <p className="text-xs text-soul-muted">Broker deduction</p>
+                  <p className="mt-1 text-sm font-semibold text-purple-700">
+                    {nights ? `− ${money(commissionFinancials?.brokerDeduction)}` : '—'}
+                  </p>
+                </div>
+                <div className="rounded-xl bg-white px-3 py-2">
+                  <p className="text-xs text-soul-muted">Company commission</p>
+                  <p className="mt-1 text-sm font-semibold text-blue-900">
+                    {nights ? money(commissionFinancials?.companyCommission) : '—'}
+                  </p>
+                </div>
+                <div className="rounded-xl bg-white px-3 py-2">
+                  <p className="text-xs text-soul-muted">Estimated owner net</p>
+                  <p className="mt-1 text-sm font-semibold text-emerald-700">
+                    {nights ? money(commissionFinancials?.ownerNet) : '—'}
+                  </p>
+                </div>
+              </div>
+              {commissionFinancials?.tenantDeduction > 0 && nights > 0 && (
+                <p className="mt-3 text-xs text-blue-800">
+                  Tenant commission deduction: {money(commissionFinancials.tenantDeduction)}
+                </p>
+              )}
+            </div>
+          )}
+
           {!form.is_owner_reservation && (
             <div>
               <Label>Payment method</Label>
@@ -438,7 +545,7 @@ export default function ManualReservationForm({
             onClick={() => setShowAdvanced((v) => !v)}
             className="flex w-full items-center justify-between rounded-2xl border border-soul-line px-4 py-3 text-sm font-semibold text-soul-blue hover:bg-soul-blue-50"
           >
-            Owner collection, broker & utilities
+            Owner collection & utilities
             <ChevronDown className={`h-4 w-4 transition ${showAdvanced ? 'rotate-180' : ''}`} />
           </button>
 
@@ -477,26 +584,6 @@ export default function ManualReservationForm({
                   />
                 </label>
               )}
-              <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted">
-                Broker name
-                <input
-                  className="rounded-2xl border border-soul-line bg-white px-4 py-3 text-sm outline-none"
-                  value={form.broker_name}
-                  onChange={(e) => setForm((cur) => ({ ...cur, broker_name: e.target.value }))}
-                />
-              </label>
-              <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted">
-                Broker / night
-                <input
-                  type="number"
-                  min="0"
-                  className="rounded-2xl border border-soul-line bg-white px-4 py-3 text-sm outline-none"
-                  value={form.broker_amount_per_night}
-                  onChange={(e) =>
-                    setForm((cur) => ({ ...cur, broker_amount_per_night: e.target.value }))
-                  }
-                />
-              </label>
               {!form.is_owner_reservation && (
                 <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted md:col-span-2">
                   Utilities override / night
@@ -515,11 +602,6 @@ export default function ManualReservationForm({
                     }
                   />
                 </label>
-              )}
-              {brokerPerNight > 0 && nights > 0 && (
-                <p className="text-xs text-soul-muted md:col-span-2">
-                  Broker total: {money(brokerPerNight * nights)}
-                </p>
               )}
             </div>
           )}
