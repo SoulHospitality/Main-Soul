@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronDown, Mail, Upload, UserRound } from 'lucide-react';
+import { ChevronDown, Upload } from 'lucide-react';
 import guestApi from '../../api/http';
 import ListingDatePicker, {
   isoToLocalDate,
@@ -24,6 +24,9 @@ const money = (value) =>
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   })}`;
+
+const fieldClass =
+  'w-full rounded-[10px] border border-[#e6ebf2] bg-white px-3 py-2.5 text-sm text-[#0f1c2e] outline-none placeholder:text-[#8b97aa] focus:border-[#1e5fbf] focus:ring-2 focus:ring-[#eef4ff]';
 
 export const EMPTY_MANUAL_RESERVATION_FORM = {
   unit_id: '',
@@ -52,7 +55,7 @@ export const EMPTY_MANUAL_RESERVATION_FORM = {
 
 function Label({ children }) {
   return (
-    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted">
+    <p className="mb-1.5 block text-[11.5px] font-bold uppercase tracking-wider text-[#5b6b80]">
       {children}
     </p>
   );
@@ -220,16 +223,15 @@ export default function ManualReservationForm({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex-1 overflow-y-auto px-6 py-5 lg:px-10">
-        <div className="mx-auto w-full max-w-6xl space-y-5">
-          {/* Unit */}
+    <div className="min-h-0 flex-1 overflow-y-auto bg-[#f6f8fb] px-4 pb-8 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1280px]">
+        <div className="max-w-[640px] space-y-5 rounded-[16px] border border-[#e6ebf2] bg-white p-5 sm:p-6">
           <div>
-            <Label>Unit</Label>
+            <Label>Unit <span className="text-[#ff7a59]">*</span></Label>
             <SearchableSelect
               value={form.unit_id}
               onChange={selectUnit}
-              placeholder="Select a unit…"
+              placeholder="Search or select a unit…"
               options={[
                 { value: '', label: 'Select a unit…' },
                 ...units.map((unit) => ({
@@ -240,9 +242,8 @@ export default function ManualReservationForm({
             />
           </div>
 
-          {/* Calendar — guest parity */}
           <div>
-            <Label>Check-in / Check-out</Label>
+            <Label>Check-in / Check-out <span className="text-[#ff7a59]">*</span></Label>
             {form.unit_id ? (
               <>
                 <ListingDatePicker
@@ -263,204 +264,133 @@ export default function ManualReservationForm({
                   minNights={1}
                 />
                 {(availabilityLoading || pricingLoading) && (
-                  <p className="mt-2 text-xs text-soul-muted">Loading availability…</p>
+                  <p className="mt-2 text-xs text-[#5b6b80]">Loading availability…</p>
                 )}
               </>
             ) : (
-              <div className="rounded-[22px] border border-soul-line bg-[#faf9f7] px-4 py-8 text-center text-sm text-soul-muted">
-                Select a unit to open the calendar with prices and blocked dates.
+              <div className="rounded-[10px] border border-dashed border-[#e6ebf2] bg-[#f6f8fb] px-4 py-8 text-center text-sm text-[#5b6b80]">
+                Select a unit to view its calendar, nightly prices, and blocked dates.
               </div>
             )}
           </div>
 
-          {/* Guest */}
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted md:col-span-2">
-              Guest name *
-              <div className="flex items-center gap-3 rounded-2xl border border-soul-line bg-white px-4 py-3 focus-within:border-soul-blue">
-                <UserRound className="h-4 w-4 text-soul-muted" />
-                <input
-                  value={form.guest_name}
-                  onChange={(e) => setForm((cur) => ({ ...cur, guest_name: e.target.value }))}
-                  className="w-full bg-transparent text-sm outline-none"
-                  placeholder="Full name"
-                />
+          {nights > 0 && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Nights</Label>
+                <div className={`${fieldClass} bg-[#f6f8fb] font-semibold`}>{nights}</div>
               </div>
-            </label>
+              <div>
+                <Label>Accommodation total</Label>
+                <div className={`${fieldClass} bg-[#f6f8fb] font-semibold`}>{money(total)}</div>
+              </div>
+            </div>
+          )}
 
-            <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted">
-              Mobile *
+          <hr className="border-[#e6ebf2]" />
+
+          <div className="-mb-2 text-[11.5px] font-bold uppercase tracking-wider text-[#5b6b80]">
+            Guest
+          </div>
+          <div>
+            <Label>Name <span className="text-[#ff7a59]">*</span></Label>
+            <input
+              value={form.guest_name}
+              onChange={(e) => setForm((cur) => ({ ...cur, guest_name: e.target.value }))}
+              className={fieldClass}
+              placeholder="Guest full name"
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <Label>Phone <span className="text-[#ff7a59]">*</span></Label>
               <input
                 value={form.guest_phone}
                 onChange={(e) => setForm((cur) => ({ ...cur, guest_phone: e.target.value }))}
-                className="rounded-2xl border border-soul-line bg-white px-4 py-3 text-sm outline-none focus:border-soul-blue"
+                className={fieldClass}
                 placeholder="+20…"
               />
-            </label>
-
-            <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted">
-              Nationality
+            </div>
+            <div>
+              <Label>Email</Label>
               <input
-                value={form.guest_nationality}
-                onChange={(e) => setForm((cur) => ({ ...cur, guest_nationality: e.target.value }))}
-                className="rounded-2xl border border-soul-line bg-white px-4 py-3 text-sm outline-none focus:border-soul-blue"
-                placeholder="Optional"
+                type="email"
+                value={form.guest_email}
+                onChange={(e) => setForm((cur) => ({ ...cur, guest_email: e.target.value }))}
+                className={fieldClass}
+                placeholder="optional"
               />
-            </label>
-
-            <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted md:col-span-2">
-              Email
-              <div className="flex items-center gap-3 rounded-2xl border border-soul-line bg-white px-4 py-3 focus-within:border-soul-blue">
-                <Mail className="h-4 w-4 text-soul-muted" />
-                <input
-                  type="email"
-                  value={form.guest_email}
-                  onChange={(e) => setForm((cur) => ({ ...cur, guest_email: e.target.value }))}
-                  className="w-full bg-transparent text-sm outline-none"
-                  placeholder="guest@email.com"
-                />
-              </div>
-            </label>
+            </div>
+          </div>
+          <div>
+            <Label>Nationality</Label>
+            <input
+              value={form.guest_nationality}
+              onChange={(e) => setForm((cur) => ({ ...cur, guest_nationality: e.target.value }))}
+              className={fieldClass}
+              placeholder="optional"
+            />
           </div>
 
-          {/* Ops fields */}
-          <div className="grid gap-4 md:grid-cols-2">
+          <hr className="border-[#e6ebf2]" />
+
+          <div className="-mb-2 text-[11.5px] font-bold uppercase tracking-wider text-[#5b6b80]">
+            Booking
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <Label>Booking source</Label>
               <SearchableSelect
                 value={form.booking_source}
-                onChange={(v) => setForm((cur) => ({ ...cur, booking_source: v }))}
+                onChange={(value) => setForm((cur) => ({ ...cur, booking_source: value }))}
                 placeholder="Select source…"
                 options={[
                   { value: '', label: 'Select source…' },
-                  ...BOOKING_SOURCES.map((s) => ({ value: s, label: s })),
+                  ...BOOKING_SOURCES.map((source) => ({ value: source, label: source })),
                 ]}
               />
             </div>
             <div>
               <Label>Sales person{!form.is_owner_reservation ? ' *' : ''}</Label>
               {lockSalesPerson ? (
-                <div className="rounded-2xl border border-soul-line bg-[#faf9f7] px-4 py-3 text-sm text-soul-blue">
+                <div className={`${fieldClass} bg-[#f6f8fb] text-[#5b6b80]`}>
                   {currentUserName || 'Assigned to you'}
                 </div>
               ) : (
                 <SearchableSelect
                   value={form.sales_person_id}
-                  onChange={(v) => setForm((cur) => ({ ...cur, sales_person_id: v }))}
+                  onChange={(value) => setForm((cur) => ({ ...cur, sales_person_id: value }))}
                   placeholder="Select salesperson…"
                   options={[
                     { value: '', label: 'None' },
-                    ...users.map((u) => ({ value: String(u.id), label: u.full_name })),
+                    ...users.map((user) => ({ value: String(user.id), label: user.full_name })),
                   ]}
                 />
               )}
             </div>
           </div>
-
-          <label className="flex items-center justify-between gap-3 rounded-2xl border border-soul-line bg-[#faf9f7] px-4 py-3">
-            <div>
-              <p className="text-sm font-semibold text-soul-blue">Owner reservation</p>
-              <p className="text-xs text-soul-muted">No utilities deduction</p>
-            </div>
+          <label className="flex cursor-pointer items-start gap-3 rounded-[10px] border border-[#e6ebf2] bg-[#f6f8fb] px-3 py-2.5">
             <input
               type="checkbox"
               checked={Boolean(form.is_owner_reservation)}
-              onChange={(e) =>
-                setForm((cur) => ({ ...cur, is_owner_reservation: e.target.checked }))
+              onChange={(event) =>
+                setForm((cur) => ({ ...cur, is_owner_reservation: event.target.checked }))
               }
-              className="h-4 w-4 accent-[var(--soul-blue)]"
+              className="mt-0.5 h-4 w-4 accent-[#1e5fbf]"
             />
+            <span>
+              <span className="block text-sm font-semibold text-[#0f1c2e]">Owner reservation</span>
+              <span className="block text-[12.5px] text-[#5b6b80]">
+                Mark owner stays and skip utilities deduction.
+              </span>
+            </span>
           </label>
 
-          <div className="rounded-2xl border border-purple-200 bg-purple-50 p-4">
-            <div className="mb-3">
-              <p className="text-sm font-semibold text-purple-900">Broker commission</p>
-              <p className="text-xs text-purple-700">
-                Deducted from the accommodation amount before company commission.
-              </p>
-            </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-purple-700">
-                Broker name
-                <input
-                  className="rounded-2xl border border-purple-200 bg-white px-4 py-3 text-sm font-normal normal-case tracking-normal text-soul-blue outline-none focus:border-purple-500"
-                  value={form.broker_name}
-                  onChange={(e) => setForm((cur) => ({ ...cur, broker_name: e.target.value }))}
-                  placeholder="Optional"
-                />
-              </label>
-              <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-purple-700">
-                Broker amount / night
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  className="rounded-2xl border border-purple-200 bg-white px-4 py-3 text-sm font-normal normal-case tracking-normal text-soul-blue outline-none focus:border-purple-500"
-                  value={form.broker_amount_per_night}
-                  onChange={(e) =>
-                    setForm((cur) => ({ ...cur, broker_amount_per_night: e.target.value }))
-                  }
-                  placeholder="EGP 0"
-                />
-              </label>
-            </div>
-            {brokerPerNight > 0 && (
-              <div className="mt-3 grid gap-2 rounded-xl bg-purple-100 px-3 py-2 text-xs text-purple-900 md:grid-cols-2">
-                <span>
-                  Broker total: <strong>{nights ? money(brokerTotal) : 'Select dates'}</strong>
-                </span>
-                <span>
-                  Net / night after broker:{' '}
-                  <strong>{money(Math.max(0, Number(form.price_per_night) - brokerPerNight))}</strong>
-                </span>
-              </div>
-            )}
-          </div>
+          <hr className="border-[#e6ebf2]" />
 
-          {selectedUnit && (
-            <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <p className="text-sm font-semibold text-blue-900">Company commission</p>
-                  <p className="text-xs text-blue-700">{commissionModeLabel(selectedUnit)}</p>
-                </div>
-                <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-900">
-                  Applied: {appliedPctLabel(commissionFinancials, selectedUnit)}
-                </span>
-              </div>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="rounded-xl bg-white px-3 py-2">
-                  <p className="text-xs text-soul-muted">Accommodation</p>
-                  <p className="mt-1 text-sm font-semibold text-soul-blue">
-                    {nights ? money(commissionFinancials?.grossAmount) : 'Select dates'}
-                  </p>
-                </div>
-                <div className="rounded-xl bg-white px-3 py-2">
-                  <p className="text-xs text-soul-muted">Broker deduction</p>
-                  <p className="mt-1 text-sm font-semibold text-purple-700">
-                    {nights ? `− ${money(commissionFinancials?.brokerDeduction)}` : '—'}
-                  </p>
-                </div>
-                <div className="rounded-xl bg-white px-3 py-2">
-                  <p className="text-xs text-soul-muted">Company commission</p>
-                  <p className="mt-1 text-sm font-semibold text-blue-900">
-                    {nights ? money(commissionFinancials?.companyCommission) : '—'}
-                  </p>
-                </div>
-                <div className="rounded-xl bg-white px-3 py-2">
-                  <p className="text-xs text-soul-muted">Estimated owner net</p>
-                  <p className="mt-1 text-sm font-semibold text-emerald-700">
-                    {nights ? money(commissionFinancials?.ownerNet) : '—'}
-                  </p>
-                </div>
-              </div>
-              {commissionFinancials?.tenantDeduction > 0 && nights > 0 && (
-                <p className="mt-3 text-xs text-blue-800">
-                  Tenant commission deduction: {money(commissionFinancials.tenantDeduction)}
-                </p>
-              )}
-            </div>
-          )}
+          <div className="-mb-2 text-[11.5px] font-bold uppercase tracking-wider text-[#5b6b80]">
+            Payment & commission
+          </div>
 
           {!form.is_owner_reservation && (
             <div>
@@ -473,10 +403,10 @@ export default function ManualReservationForm({
                       key={method}
                       type="button"
                       onClick={() => setForm((cur) => ({ ...cur, payment_method: method }))}
-                      className={`rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${
+                      className={`rounded-[10px] border px-3 py-2.5 text-sm font-semibold transition ${
                         active
-                          ? 'border-soul-blue bg-soul-blue text-white'
-                          : 'border-soul-line text-soul-blue hover:bg-soul-blue-50'
+                          ? 'border-[#1e5fbf] bg-[#eef4ff] text-[#1e5fbf]'
+                          : 'border-[#e6ebf2] bg-white text-[#5b6b80] hover:bg-[#f6f8fb]'
                       }`}
                     >
                       {PAYMENT_METHOD_LABELS[method]}
@@ -484,116 +414,173 @@ export default function ManualReservationForm({
                   );
                 })}
               </div>
-              <p className="mt-2 text-xs text-soul-muted">
-                Stays pending until payment is collected.
-              </p>
             </div>
           )}
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted">
-              Down payment
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <Label>Down payment</Label>
               <input
                 type="number"
                 min="0"
                 value={form.down_payment}
-                onChange={(e) => setForm((cur) => ({ ...cur, down_payment: e.target.value }))}
-                className="rounded-2xl border border-soul-line bg-white px-4 py-3 text-sm outline-none focus:border-soul-blue"
+                onChange={(event) =>
+                  setForm((cur) => ({ ...cur, down_payment: event.target.value }))
+                }
+                className={fieldClass}
                 placeholder="0"
               />
-            </label>
-            <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted">
-              Insurance
+            </div>
+            <div>
+              <Label>Insurance</Label>
               <input
                 type="number"
                 min="0"
                 value={form.insurance}
-                onChange={(e) => setForm((cur) => ({ ...cur, insurance: e.target.value }))}
-                className="rounded-2xl border border-soul-line bg-white px-4 py-3 text-sm outline-none focus:border-soul-blue"
+                onChange={(event) =>
+                  setForm((cur) => ({ ...cur, insurance: event.target.value }))
+                }
+                className={fieldClass}
                 placeholder="0"
               />
-            </label>
+            </div>
           </div>
 
-          <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted">
-            Notes
-            <textarea
-              rows={3}
-              value={form.notes}
-              onChange={(e) => setForm((cur) => ({ ...cur, notes: e.target.value }))}
-              className="rounded-2xl border border-soul-line bg-white px-4 py-3 text-sm outline-none focus:border-soul-blue"
-              placeholder="Optional"
-            />
-          </label>
-
-          <div>
-            <Label>Transfer proof</Label>
-            <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-dashed border-soul-line px-4 py-3 text-sm text-soul-muted hover:border-soul-blue hover:text-soul-blue">
-              <Upload className="h-4 w-4" />
-              <span>{transferProof?.name || 'Upload image or PDF (optional)'}</span>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <Label>Broker name</Label>
               <input
-                type="file"
-                accept="image/*,.pdf"
-                className="hidden"
-                onChange={(e) => onTransferProofChange?.(e.target.files?.[0] || null)}
+                value={form.broker_name}
+                onChange={(event) =>
+                  setForm((cur) => ({ ...cur, broker_name: event.target.value }))
+                }
+                className={fieldClass}
+                placeholder="optional"
               />
-            </label>
+            </div>
+            <div>
+              <Label>Broker amount / night</Label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.broker_amount_per_night}
+                onChange={(event) =>
+                  setForm((cur) => ({ ...cur, broker_amount_per_night: event.target.value }))
+                }
+                className={fieldClass}
+                placeholder="0"
+              />
+            </div>
           </div>
+
+          {brokerPerNight > 0 && (
+            <p className="rounded-[10px] bg-[#faf5ff] px-3 py-2 text-[12.5px] text-purple-800">
+              Broker total: <strong>{nights ? money(brokerTotal) : 'select dates'}</strong>
+              {nights > 0 && (
+                <> · Net nightly rate after broker: <strong>{money(Math.max(0, Number(form.price_per_night) - brokerPerNight))}</strong></>
+              )}
+            </p>
+          )}
+
+          {selectedUnit && (
+            <div className="rounded-[10px] border border-[#dbe7f8] bg-[#eef4ff] p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-[#0f1c2e]">Company commission</p>
+                  <p className="mt-0.5 text-[12px] text-[#5b6b80]">
+                    {commissionModeLabel(selectedUnit)}
+                  </p>
+                </div>
+                <span className="whitespace-nowrap rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-[#1e5fbf]">
+                  {appliedPctLabel(commissionFinancials, selectedUnit)}
+                </span>
+              </div>
+              {nights > 0 && (
+                <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-[12.5px]">
+                  <span className="text-[#5b6b80]">Company commission</span>
+                  <strong className="text-right text-[#0f1c2e]">
+                    {money(commissionFinancials?.companyCommission)}
+                  </strong>
+                  <span className="text-[#5b6b80]">Estimated owner net</span>
+                  <strong className="text-right text-[#0f7d3a]">
+                    {money(commissionFinancials?.ownerNet)}
+                  </strong>
+                  {commissionFinancials?.tenantDeduction > 0 && (
+                    <>
+                      <span className="text-[#5b6b80]">Tenant deduction</span>
+                      <strong className="text-right text-[#0f1c2e]">
+                        {money(commissionFinancials.tenantDeduction)}
+                      </strong>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           <button
             type="button"
-            onClick={() => setShowAdvanced((v) => !v)}
-            className="flex w-full items-center justify-between rounded-2xl border border-soul-line px-4 py-3 text-sm font-semibold text-soul-blue hover:bg-soul-blue-50"
+            onClick={() => setShowAdvanced((value) => !value)}
+            className="flex w-full items-center justify-between rounded-[10px] border border-[#e6ebf2] px-3 py-2.5 text-sm font-semibold text-[#1e5fbf] hover:bg-[#eef4ff]"
           >
             Owner collection & utilities
             <ChevronDown className={`h-4 w-4 transition ${showAdvanced ? 'rotate-180' : ''}`} />
           </button>
 
           {showAdvanced && (
-            <div className="grid gap-4 rounded-2xl border border-soul-line bg-[#faf9f7] p-4 md:grid-cols-2">
-              <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted">
-                Owner collected
-                <select
-                  className="rounded-2xl border border-soul-line bg-white px-4 py-3 text-sm outline-none"
-                  value={form.owner_collected_type}
-                  onChange={(e) =>
-                    setForm((cur) => ({
-                      ...cur,
-                      owner_collected_type: e.target.value,
-                      owner_collected_amount:
-                        e.target.value === 'full' ? cur.total_amount : '',
-                    }))
-                  }
-                >
-                  <option value="">No</option>
-                  <option value="partial">Partial</option>
-                  <option value="full">Full accommodation</option>
-                </select>
-              </label>
-              {form.owner_collected_type === 'partial' && (
-                <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted">
-                  Amount
-                  <input
-                    type="number"
-                    min="0"
-                    className="rounded-2xl border border-soul-line bg-white px-4 py-3 text-sm outline-none"
-                    value={form.owner_collected_amount}
-                    onChange={(e) =>
-                      setForm((cur) => ({ ...cur, owner_collected_amount: e.target.value }))
+            <div className="space-y-4 rounded-[10px] border border-[#e6ebf2] bg-[#f6f8fb] p-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <Label>Owner collected</Label>
+                  <select
+                    className={fieldClass}
+                    value={form.owner_collected_type}
+                    onChange={(event) =>
+                      setForm((cur) => ({
+                        ...cur,
+                        owner_collected_type: event.target.value,
+                        owner_collected_amount:
+                          event.target.value === 'full' ? cur.total_amount : '',
+                      }))
                     }
-                  />
-                </label>
-              )}
+                  >
+                    <option value="">No</option>
+                    <option value="partial">Partial</option>
+                    <option value="full">Full accommodation</option>
+                  </select>
+                </div>
+                {form.owner_collected_type === 'partial' && (
+                  <div>
+                    <Label>Amount collected</Label>
+                    <input
+                      type="number"
+                      min="0"
+                      className={fieldClass}
+                      value={form.owner_collected_amount}
+                      onChange={(event) =>
+                        setForm((cur) => ({
+                          ...cur,
+                          owner_collected_amount: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                )}
+              </div>
               {!form.is_owner_reservation && (
-                <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted md:col-span-2">
-                  Utilities override / night
+                <div>
+                  <Label>Utilities override / night</Label>
                   <input
                     type="number"
                     min="0"
-                    className="rounded-2xl border border-soul-line bg-white px-4 py-3 text-sm outline-none"
+                    className={fieldClass}
                     value={form.utilities_cost_override}
-                    onChange={(e) =>
-                      setForm((cur) => ({ ...cur, utilities_cost_override: e.target.value }))
+                    onChange={(event) =>
+                      setForm((cur) => ({
+                        ...cur,
+                        utilities_cost_override: event.target.value,
+                      }))
                     }
                     placeholder={
                       selectedUnit?.utilities_cost
@@ -601,60 +588,78 @@ export default function ManualReservationForm({
                         : 'Unit default'
                     }
                   />
-                </label>
+                </div>
               )}
             </div>
           )}
-        </div>
-      </div>
 
-      {/* Sticky footer — same pattern as guest BookingDrawer */}
-      <div className="border-t border-soul-line bg-white px-6 py-5">
-        <div className="grid gap-3 rounded-3xl border border-soul-line bg-soul-blue-50/40 p-4">
-          <div className="flex items-center justify-between text-sm text-soul-muted">
-            <span>Average / night</span>
-            <span className="font-semibold text-soul-blue">
-              {nights ? money(form.price_per_night) : '—'}
-            </span>
+          <div>
+            <Label>Notes (internal)</Label>
+            <textarea
+              rows={3}
+              value={form.notes}
+              onChange={(event) => setForm((cur) => ({ ...cur, notes: event.target.value }))}
+              className={`${fieldClass} resize-none`}
+              placeholder="Payment details, guest requests, or internal notes…"
+            />
           </div>
-          <div className="flex items-center justify-between text-sm text-soul-muted">
-            <span>Accommodation ({nights || '—'} nights)</span>
-            <span className="font-semibold text-soul-blue">{nights ? money(total) : '—'}</span>
-          </div>
-          {housekeeping > 0 && (
-            <div className="flex items-center justify-between text-sm text-soul-muted">
-              <span>Housekeeping</span>
-              <span className="font-semibold text-soul-blue">{money(housekeeping)}</span>
-            </div>
-          )}
-          {downPayment > 0 && (
-            <div className="flex items-center justify-between text-sm text-soul-muted">
-              <span>Down payment</span>
-              <span className="font-semibold text-soul-blue">− {money(downPayment)}</span>
-            </div>
-          )}
-          <div className="flex items-center justify-between border-t border-soul-line pt-3 text-sm text-soul-muted">
-            <span>Still to collect</span>
-            <span className="text-lg font-bold text-soul-blue">{money(toCollect)}</span>
-          </div>
-        </div>
 
-        <div className="mt-4 flex gap-3">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="inline-flex flex-1 items-center justify-center rounded-full border border-soul-line px-5 py-3.5 text-xs font-semibold uppercase tracking-widest text-soul-blue hover:bg-soul-blue-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onSubmit}
-            disabled={submitting}
-            className="inline-flex flex-[1.4] items-center justify-center rounded-full bg-soul-blue px-5 py-3.5 text-xs font-semibold uppercase tracking-widest text-white hover:bg-soul-blue-dark disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            {submitting ? 'Saving…' : 'Create reservation'}
-          </button>
+          <div>
+            <Label>Transfer proof</Label>
+            <label className="flex cursor-pointer items-center gap-3 rounded-[10px] border border-dashed border-[#e6ebf2] px-3 py-2.5 text-sm text-[#5b6b80] hover:border-[#1e5fbf] hover:bg-[#eef4ff]">
+              <Upload className="h-4 w-4" />
+              <span>{transferProof?.name || 'Upload image or PDF (optional)'}</span>
+              <input
+                type="file"
+                accept="image/*,.pdf"
+                className="hidden"
+                onChange={(event) => onTransferProofChange?.(event.target.files?.[0] || null)}
+              />
+            </label>
+          </div>
+
+          <div className="rounded-[10px] border border-[#e6ebf2] bg-[#f6f8fb] p-3 text-sm">
+            <div className="flex justify-between py-1">
+              <span className="text-[#5b6b80]">Accommodation ({nights || '—'} nights)</span>
+              <strong className="text-[#0f1c2e]">{nights ? money(total) : '—'}</strong>
+            </div>
+            <div className="flex justify-between py-1">
+              <span className="text-[#5b6b80]">Housekeeping</span>
+              <strong className="text-[#0f1c2e]">{money(housekeeping)}</strong>
+            </div>
+            {downPayment > 0 && (
+              <div className="flex justify-between py-1">
+                <span className="text-[#5b6b80]">Down payment</span>
+                <strong className="text-[#0f7d3a]">− {money(downPayment)}</strong>
+              </div>
+            )}
+            <div className="mt-2 flex justify-between border-t border-[#e6ebf2] pt-3">
+              <span className="font-semibold text-[#0f1c2e]">Still to collect</span>
+              <strong className="text-base text-[#1e5fbf]">{money(toCollect)}</strong>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onSubmit}
+              disabled={submitting}
+              className="rounded-[12px] bg-[#1e5fbf] px-6 py-3 font-semibold text-white hover:bg-[#16489a] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {submitting ? 'Saving…' : 'Create reservation'}
+            </button>
+            <button
+              type="button"
+              onClick={onCancel}
+              className="text-sm font-semibold text-[#5b6b80] hover:text-[#0f1c2e]"
+            >
+              Cancel
+            </button>
+          </div>
+
+          <p className="text-[12.5px] text-[#5b6b80]">
+            These dates will immediately block the unit calendar after the reservation is created.
+          </p>
         </div>
       </div>
     </div>
