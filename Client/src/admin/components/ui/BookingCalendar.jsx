@@ -192,6 +192,11 @@ export default function BookingCalendar({ checkIn, checkOut, onChange, unitId, e
     const blocked = new Set();
     const turnover = new Set(); // both check-in and check-out days of existing reservations
     reservedRanges.forEach(r => {
+      // Guest-parity single nights (iCal / manual / booking / unpriced)
+      if (r._guest_block || r.date) {
+        blocked.add(normaliseDate(r.date || r.check_in));
+        return;
+      }
       const ci = normaliseDate(r.check_in);
       const co = normaliseDate(r.check_out);
       // Interior nights only: from day AFTER check_in up to (not including) check_out

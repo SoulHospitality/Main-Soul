@@ -1214,13 +1214,25 @@ router.get('/reservations', async (req, res, next) => {
   }
 });
 
-router.post('/reservations', requireRoles('reservations'), async (req, res, next) => {
+router.post(
+  '/reservations',
+  requireRoles('reservations'),
+  upload.single('transfer_proof'),
+  setCloudinaryFolder(FOLDER_PAYMENTS),
+  attachCloudinaryUrls,
+  async (req, res, next) => {
   try {
     const b = req.body;
+    const { getBlockedDates } = require('../../services/pricing');
+    const { paymentStatusFrom } = require('../../lib/syncReservationPayment');
+
     const salesPersonId =
       req.user.role === 'reservations' ? req.user.id : (b.sales_person_id || req.user.id);
     const checkIn = new Date(b.check_in);
     const checkOut = new Date(b.check_out);
+    if (!b.unit_id || !b.check_in || !b.check_out || Number.isNaN(checkIn) || Number.isNaN(checkOut) || checkOut <= checkIn) {
+      return res.status(400).json({ error: 'Unit, check-in, and check-out are required' });
+    }
     const nights = Math.max(1, Math.round((checkOut - checkIn) / 86400000));
     const pricePerNight = parseFloat(b.price_per_night) || (nights > 0 ? (parseFloat(b.total_amount) || 0) / nights : 0);
     const utilitiesOverride = b.utilities_cost_override !== '' && b.utilities_cost_override != null
@@ -1228,21 +1240,93 @@ router.post('/reservations', requireRoles('reservations'), async (req, res, next
       : null;
     let utilitiesAmount = parseFloat(b.utilities_amount) || 0;
     let housekeepingFees = 0;
+    let wpPostId = null;
     if (b.unit_id) {
       const { rows: units } = await query(
-        `SELECT utilities_cost, property_type FROM units WHERE id = $1`,
+        `SELECT utilities_cost, property_type, wp_post_id FROM units WHERE id = $1`,
         [b.unit_id]
       );
       const { housekeepingFeeForUnit } = require('../../lib/housekeeping');
-      housekeepingFees = housekeepingFeeForUnit(units[0]);
+      housekeepingFees = b.housekeeping_fees != null && b.housekeeping_fees !== ''
+        ? parseFloat(b.housekeeping_fees) || housekeepingFeeForUnit(units[0])
+        : housekeepingFeeForUnit(units[0]);
+      wpPostId = units[0]?.wp_post_id || null;
       if (!utilitiesAmount) {
         const costPerNight = utilitiesOverride != null && !Number.isNaN(utilitiesOverride)
           ? utilitiesOverride
           : parseFloat(units[0]?.utilities_cost) || 0;
-        if (costPerNight > 0 && !b.is_owner_reservation) {
+        if (costPerNight > 0 && !truthyFlag(b.is_owner_reservation)) {
           utilitiesAmount = costPerNight * nights;
         }
       }
+    }
+
+    // Conflict check against guest-parity blocked nights
+    if (wpPostId) {
+      const blocked = await getBlockedDates(wpPostId, b.check_in, b.check_out, {
+        includeUnpriced: true,
+      });
+      const blockedSet = new Set(blocked.map((x) => x.date));
+      const start = new Date(`${b.check_in}T00:00:00`);
+      const end = new Date(`${b.check_out}T00:00:00`);
+      const conflicts = [];
+      for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)) {
+        const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        if (blockedSet.has(iso)) conflicts.push(iso);
+      }
+      if (conflicts.length) {
+        return res.status(409).json({
+          error: 'Selected dates include unavailable nights',
+          conflicts: conflicts.slice(0, 12),
+        });
+      }
+    }
+
+    const brokerPerNight = parseFloat(b.broker_amount_per_night) || 0;
+    const brokerTotal =
+      parseFloat(b.broker_total) ||
+      (brokerPerNight > 0 ? brokerPerNight * nights : 0);
+    const ownerCollectedType = b.owner_collected_type || null;
+    const ownerCollectedAmount =
+      ownerCollectedType === 'full'
+        ? parseFloat(b.total_amount) || 0
+        : parseFloat(b.owner_collected_amount) || 0;
+
+    const allowedMethods = new Set(['cash', 'instapay', 'bank_transfer', 'credit_card', 'online', 'paymob_card']);
+    let paymentMethod = String(b.payment_method || '').toLowerCase() || null;
+    if (paymentMethod && !allowedMethods.has(paymentMethod)) paymentMethod = null;
+    // Manual guest-style creates: only cash / instapay
+    if (paymentMethod && !['cash', 'instapay'].includes(paymentMethod) && !truthyFlag(b.is_owner_reservation) && !truthyFlag(b.is_hold)) {
+      paymentMethod = 'cash';
+    }
+
+    const downPayment = parseFloat(b.down_payment) || 0;
+    const amountPaid = parseFloat(b.amount_paid) || downPayment || 0;
+    const totalAmount = parseFloat(b.total_amount) || 0;
+    let paymentStatus = b.payment_status || paymentStatusFrom(totalAmount, amountPaid);
+    // Owner blocks / holds keep their own status rules
+    const isHold = truthyFlag(b.is_hold);
+    const isOwnerBlock = truthyFlag(b.is_owner_reservation) && totalAmount === 0;
+    let status = b.status || (isHold ? 'hold' : 'pending');
+    if (isOwnerBlock) {
+      status = b.status || 'confirmed';
+      paymentStatus = 'paid';
+    } else if (isHold) {
+      paymentStatus = 'pending';
+    } else {
+      // Manual reservation: pending payment until collected
+      paymentStatus = amountPaid > 0 ? paymentStatusFrom(totalAmount, amountPaid) : 'pending';
+      if (!b.status) status = 'pending';
+    }
+
+    const proofPath = req.file?.path || req.file?.secure_url || b.transfer_proof_path || null;
+    const proofName = req.file?.originalname || b.transfer_proof_name || null;
+
+    let holdExpiresAt = null;
+    if (isHold) {
+      const hours = Math.max(1, parseInt(b.hold_hours, 10) || 24);
+      holdExpiresAt = new Date(Date.now() + hours * 3600000);
+      status = 'pending';
     }
 
     const { rows } = await query(
@@ -1251,48 +1335,103 @@ router.post('/reservations', requireRoles('reservations'), async (req, res, next
          check_in, check_out, nights, total_amount, amount_paid, payment_status,
          booking_source, sales_person_id, is_owner_reservation, status, notes, created_by,
          booking_id, price_per_night, housekeeping_fees, insurance, down_payment,
-         utilities_amount, utilities_cost_override
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,COALESCE($11,'pending'),$12,$13,COALESCE($14,0),COALESCE($15,'confirmed'),$16,$17,$18,$19,$20,$21,$22,$23,$24)
+         utilities_amount, utilities_cost_override,
+         broker_name, broker_amount_per_night, broker_total,
+         owner_collected_type, owner_collected_amount,
+         payment_method, transfer_proof_path, transfer_proof_name,
+         hold_expires_at
+       ) VALUES (
+         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,COALESCE($14,0),$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,
+         $25,$26,$27,$28,$29,$30,$31,$32,$33
+       )
        RETURNING *`,
       [
         b.unit_id,
         b.guest_name,
-        b.guest_email,
-        b.guest_phone,
-        b.guest_nationality,
+        b.guest_email || null,
+        b.guest_phone || null,
+        b.guest_nationality || null,
         b.check_in,
         b.check_out,
         nights,
-        b.total_amount,
-        b.amount_paid || 0,
-        b.payment_status,
-        b.booking_source,
+        totalAmount,
+        amountPaid,
+        paymentStatus,
+        b.booking_source || null,
         salesPersonId,
-        b.is_owner_reservation ? 1 : 0,
-        b.status,
-        b.notes,
+        truthyFlag(b.is_owner_reservation) ? 1 : 0,
+        status,
+        b.notes || null,
         req.user.id,
         b.booking_id || null,
         pricePerNight,
         housekeepingFees,
         parseFloat(b.insurance) || 0,
-        parseFloat(b.down_payment) || 0,
+        downPayment,
         utilitiesAmount,
         utilitiesOverride,
+        b.broker_name || null,
+        brokerPerNight,
+        brokerTotal,
+        ownerCollectedType,
+        ownerCollectedAmount,
+        paymentMethod,
+        proofPath,
+        proofName,
+        holdExpiresAt,
       ]
     );
+
+    const reservation = rows[0];
+
+    // Pending payment stub for cash/InstaPay collect amount (manual creates)
+    if (
+      reservation &&
+      !isHold &&
+      !isOwnerBlock &&
+      paymentMethod &&
+      ['cash', 'instapay'].includes(paymentMethod)
+    ) {
+      let amountToCollect = totalAmount - amountPaid;
+      if (ownerCollectedType === 'full') {
+        amountToCollect = housekeepingFees + (parseFloat(b.insurance) || 0) - amountPaid;
+      } else if (ownerCollectedType === 'partial') {
+        amountToCollect = totalAmount - ownerCollectedAmount - amountPaid;
+      }
+      amountToCollect = Math.max(0, amountToCollect);
+      if (amountToCollect > 0.009) {
+        await query(
+          `INSERT INTO payments (
+             reservation_id, amount, payment_date, payment_method,
+             notes, created_by, status, is_approved
+           ) VALUES ($1,$2,CURRENT_DATE,$3,$4,$5,'pending',0)`,
+          [
+            reservation.id,
+            amountToCollect,
+            paymentMethod,
+            'Awaiting collection (manual reservation)',
+            req.user.id,
+          ]
+        );
+      }
+    }
+
     await logAudit({
       userId: req.user.id,
       action: 'CREATE_RESERVATION',
       entityType: 'reservation',
-      entityId: rows[0].id,
-      details: { unit_id: b.unit_id, check_in: b.check_in, check_out: b.check_out },
+      entityId: reservation.id,
+      details: { unit_id: b.unit_id, check_in: b.check_in, check_out: b.check_out, payment_method: paymentMethod },
     });
-    res.status(201).json(rows[0]);
+    res.status(201).json(reservation);
   } catch (e) {
     next(e);
   }
 });
+
+function truthyFlag(v) {
+  return v === true || v === 1 || v === '1' || v === 'true' || v === 'on';
+}
 
 router.patch('/reservations/:id', requireRoles('reservations'), async (req, res, next) => {
   try {
@@ -1301,15 +1440,93 @@ router.patch('/reservations/:id', requireRoles('reservations'), async (req, res,
     assertReservationOwned(req.user, existing);
 
     const b = req.body;
+    const checkIn = b.check_in || existing.check_in;
+    const checkOut = b.check_out || existing.check_out;
+    const ci = new Date(checkIn);
+    const co = new Date(checkOut);
+    const nights = Math.max(1, Math.round((co - ci) / 86400000));
+    const brokerPerNight =
+      b.broker_amount_per_night !== undefined
+        ? parseFloat(b.broker_amount_per_night) || 0
+        : parseFloat(existing.broker_amount_per_night) || 0;
+    const brokerTotal =
+      b.broker_total !== undefined
+        ? parseFloat(b.broker_total) || 0
+        : brokerPerNight * nights;
+
     const { rows } = await query(
       `UPDATE reservations SET
          status = COALESCE($1, status),
          payment_status = COALESCE($2, payment_status),
          amount_paid = COALESCE($3, amount_paid),
          notes = COALESCE($4, notes),
+         guest_name = COALESCE($5, guest_name),
+         guest_email = COALESCE($6, guest_email),
+         guest_phone = COALESCE($7, guest_phone),
+         guest_nationality = COALESCE($8, guest_nationality),
+         check_in = COALESCE($9, check_in),
+         check_out = COALESCE($10, check_out),
+         nights = COALESCE($11, nights),
+         total_amount = COALESCE($12, total_amount),
+         price_per_night = COALESCE($13, price_per_night),
+         booking_source = COALESCE($14, booking_source),
+         sales_person_id = COALESCE($15, sales_person_id),
+         is_owner_reservation = COALESCE($16, is_owner_reservation),
+         housekeeping_fees = COALESCE($17, housekeeping_fees),
+         insurance = COALESCE($18, insurance),
+         down_payment = COALESCE($19, down_payment),
+         utilities_amount = COALESCE($20, utilities_amount),
+         utilities_cost_override = COALESCE($21, utilities_cost_override),
+         broker_name = COALESCE($22, broker_name),
+         broker_amount_per_night = COALESCE($23, broker_amount_per_night),
+         broker_total = COALESCE($24, broker_total),
+         owner_collected_type = COALESCE($25, owner_collected_type),
+         owner_collected_amount = COALESCE($26, owner_collected_amount),
+         payment_method = COALESCE($27, payment_method),
+         unit_id = COALESCE($28, unit_id),
+         hold_expires_at = CASE
+           WHEN $29::int = 0 THEN NULL
+           WHEN $29::int = 1 THEN COALESCE(hold_expires_at, now() + interval '24 hours')
+           ELSE hold_expires_at
+         END,
          updated_at = now()
-       WHERE id = $5 RETURNING *`,
-      [b.status, b.payment_status, b.amount_paid, b.notes, req.params.id]
+       WHERE id = $30 RETURNING *`,
+      [
+        b.status ?? null,
+        b.payment_status ?? null,
+        b.amount_paid != null && b.amount_paid !== '' ? parseFloat(b.amount_paid) : null,
+        b.notes ?? null,
+        b.guest_name ?? null,
+        b.guest_email ?? null,
+        b.guest_phone ?? null,
+        b.guest_nationality ?? null,
+        b.check_in ?? null,
+        b.check_out ?? null,
+        b.check_in || b.check_out ? nights : null,
+        b.total_amount != null && b.total_amount !== '' ? parseFloat(b.total_amount) : null,
+        b.price_per_night != null && b.price_per_night !== '' ? parseFloat(b.price_per_night) : null,
+        b.booking_source ?? null,
+        b.sales_person_id || null,
+        b.is_owner_reservation !== undefined ? (truthyFlag(b.is_owner_reservation) ? 1 : 0) : null,
+        b.housekeeping_fees != null && b.housekeeping_fees !== '' ? parseFloat(b.housekeeping_fees) : null,
+        b.insurance != null && b.insurance !== '' ? parseFloat(b.insurance) : null,
+        b.down_payment != null && b.down_payment !== '' ? parseFloat(b.down_payment) : null,
+        b.utilities_amount != null && b.utilities_amount !== '' ? parseFloat(b.utilities_amount) : null,
+        b.utilities_cost_override !== undefined
+          ? (b.utilities_cost_override === '' || b.utilities_cost_override == null
+              ? null
+              : parseFloat(b.utilities_cost_override))
+          : null,
+        b.broker_name ?? null,
+        b.broker_amount_per_night !== undefined ? brokerPerNight : null,
+        b.broker_amount_per_night !== undefined || b.broker_total !== undefined ? brokerTotal : null,
+        b.owner_collected_type !== undefined ? (b.owner_collected_type || null) : null,
+        b.owner_collected_amount !== undefined ? parseFloat(b.owner_collected_amount) || 0 : null,
+        b.payment_method ?? null,
+        b.unit_id ?? null,
+        b.is_hold !== undefined ? (truthyFlag(b.is_hold) ? 1 : 0) : null,
+        req.params.id,
+      ]
     );
     res.json(rows[0]);
   } catch (e) {
@@ -1554,7 +1771,7 @@ router.get('/payments', requireRoles('admin'), async (req, res, next) => {
 
 router.post(
   '/payments',
-  requireRoles('admin'),
+  requireRoles('admin', 'reservations'),
   upload.single('document'),
   setCloudinaryFolder(FOLDER_PAYMENTS),
   attachCloudinaryUrls,
@@ -1562,38 +1779,80 @@ router.post(
   try {
     const b = req.body;
     const doc = req.file?.path || req.file?.secure_url || null;
+    const method = String(b.payment_method || 'cash').toLowerCase();
+    const { syncReservationPaymentStatus } = require('../../lib/syncReservationPayment');
+
+    const autoApprove = ['admin', 'finance'].includes(req.user.role);
     const { rows } = await query(
       `INSERT INTO payments (
          reservation_id, booking_id, amount, payment_date, payment_method,
-         reference_number, notes, document_path, document_name, created_by, status
-       ) VALUES ($1,$2,$3,COALESCE($4,CURRENT_DATE),$5,$6,$7,$8,$9,$10,'pending')
+         reference_number, notes, document_path, document_name, created_by, status,
+         is_approved, approved_by, approved_at, paid_at
+       ) VALUES (
+         $1,$2,$3,COALESCE($4,CURRENT_DATE),$5,$6,$7,$8,$9,$10,
+         $11, $12, $13, $14, $15
+       )
        RETURNING *`,
       [
         b.reservation_id || null,
         b.booking_id || null,
         b.amount,
         b.payment_date,
-        b.payment_method,
+        method,
         b.reference_number,
         b.notes,
         doc,
         req.file?.originalname || null,
         req.user.id,
+        autoApprove ? 'successful' : 'pending',
+        autoApprove ? 1 : 0,
+        autoApprove ? req.user.id : null,
+        autoApprove ? new Date() : null,
+        autoApprove ? new Date() : null,
       ]
     );
+
+    if (b.reservation_id) {
+      if (autoApprove) {
+        await query(
+          `UPDATE payments SET status = 'cancelled'
+           WHERE reservation_id = $1
+             AND status = 'pending'
+             AND notes = 'Awaiting collection (manual reservation)'
+             AND id <> $2`,
+          [b.reservation_id, rows[0].id]
+        );
+      }
+      await syncReservationPaymentStatus(b.reservation_id);
+    }
+
     res.status(201).json(rows[0]);
   } catch (e) {
     next(e);
   }
 });
 
-router.post('/payments/:id/approve', requireRoles('admin'), async (req, res, next) => {
+async function approvePaymentHandler(req, res, next) {
   try {
+    const { syncReservationPaymentStatus } = require('../../lib/syncReservationPayment');
     const { rows } = await query(
-      `UPDATE payments SET is_approved = 1, approved_by = $1, approved_at = now(), status = 'successful'
+      `UPDATE payments SET is_approved = 1, approved_by = $1, approved_at = now(),
+         status = 'successful', paid_at = COALESCE(paid_at, now())
        WHERE id = $2 RETURNING *`,
       [req.user.id, req.params.id]
     );
+    if (!rows[0]) return res.status(404).json({ error: 'Not found' });
+    if (rows[0].reservation_id) {
+      await query(
+        `UPDATE payments SET status = 'cancelled'
+         WHERE reservation_id = $1
+           AND status = 'pending'
+           AND notes = 'Awaiting collection (manual reservation)'
+           AND id <> $2`,
+        [rows[0].reservation_id, rows[0].id]
+      );
+      await syncReservationPaymentStatus(rows[0].reservation_id);
+    }
     await logAudit({
       userId: req.user.id,
       action: 'APPROVE_PAYMENT',
@@ -1604,7 +1863,10 @@ router.post('/payments/:id/approve', requireRoles('admin'), async (req, res, nex
   } catch (e) {
     next(e);
   }
-});
+}
+
+router.post('/payments/:id/approve', requireRoles('admin'), approvePaymentHandler);
+router.put('/payments/:id/approve', requireRoles('admin'), approvePaymentHandler);
 
 // ── Expenses / commissions / dashboard snippets ─────────────
 const EXPENSE_CATEGORIES = new Set(['marketing', 'salary', 'housekeeping_cost', 'other']);

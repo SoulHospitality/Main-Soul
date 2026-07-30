@@ -101,9 +101,16 @@ function ownerPortalFinancials(unit, reservation, { status } = {}) {
   }
 
   const gross = ownerAccommodationGross(reservation, unit);
-  const commission = round2((gross * commissionPct) / 100);
-  const net = round2(gross - commission);
-  return { gross, commission, net, commissionPct, showMoney: true };
+  const nights = Math.max(parseInt(reservation?.nights, 10) || 1, 1);
+  let brokerDeduction = parseFloat(reservation?.broker_total) || 0;
+  if (!(brokerDeduction > 0)) {
+    const brokerNight = parseFloat(reservation?.broker_amount_per_night) || 0;
+    if (brokerNight > 0) brokerDeduction = round2(brokerNight * nights);
+  }
+  const commissionBase = round2(Math.max(0, gross - brokerDeduction));
+  const commission = round2((commissionBase * commissionPct) / 100);
+  const net = round2(commissionBase - commission);
+  return { gross, commission, net, commissionPct, brokerDeduction, showMoney: true };
 }
 
 function calcReservationFinancials(unit, reservation) {
@@ -112,6 +119,7 @@ function calcReservationFinancials(unit, reservation) {
       mode: 'A',
       grossAmount: 0,
       rentalBase: 0,
+      brokerDeduction: 0,
       tenantDeduction: 0,
       utilitiesDeduction: 0,
       housekeepingFees: 0,
@@ -143,6 +151,11 @@ function calcReservationFinancials(unit, reservation) {
     nights * (parseFloat(unit.utilities_cost) || 0) ||
     0;
   const housekeepingFees = parseFloat(reservation.housekeeping_fees) || 0;
+  let brokerDeduction = parseFloat(reservation.broker_total) || 0;
+  if (!(brokerDeduction > 0)) {
+    const brokerNight = parseFloat(reservation.broker_amount_per_night) || 0;
+    if (brokerNight > 0) brokerDeduction = round2(brokerNight * nights);
+  }
 
   let appliedCommissionPct = 0;
   if (mode === 'C' && isOwner) {
@@ -151,15 +164,19 @@ function calcReservationFinancials(unit, reservation) {
     appliedCommissionPct = companyPct || DEFAULT_OWNER_COMMISSION_PCT;
   }
 
-  const companyCommission =
-    appliedCommissionPct > 0 ? round2((base * appliedCommissionPct) / 100) : 0;
+  // Broker comes off the nights base before tenant % and company commission
+  const afterBroker = round2(Math.max(0, base - brokerDeduction));
 
   let tenantDeduction = 0;
   if ((mode === 'B' || mode === 'C') && tenantPct > 0 && !isOwner) {
-    tenantDeduction = round2((base * tenantPct) / 100);
+    tenantDeduction = round2((afterBroker * tenantPct) / 100);
   }
 
-  const subtotal = round2(base - tenantDeduction);
+  const commissionBase = round2(Math.max(0, afterBroker - tenantDeduction));
+  const companyCommission =
+    appliedCommissionPct > 0 ? round2((commissionBase * appliedCommissionPct) / 100) : 0;
+
+  const subtotal = commissionBase;
   const ownerNet = round2(subtotal - companyCommission);
   const intermediatePricePerNight = nights > 0 ? round2(subtotal / nights) : 0;
   const adjustedPricePerNight = nights > 0 ? round2(ownerNet / nights) : 0;
@@ -168,6 +185,7 @@ function calcReservationFinancials(unit, reservation) {
     mode,
     grossAmount: base,
     rentalBase: base,
+    brokerDeduction,
     tenantDeduction,
     utilitiesDeduction,
     housekeepingFees,

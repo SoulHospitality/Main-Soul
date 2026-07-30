@@ -941,7 +941,49 @@ router.get('/reservations/blocked-dates', async (req, res, next) => {
        ORDER BY r.check_in`,
       params
     );
-    res.json(rows);
+
+    // Guest-parity blocked nights (iCal, unit_blocked_dates, bookings, unpriced)
+    let guestBlocked = [];
+    try {
+      const { rows: units } = await query(
+        `SELECT wp_post_id FROM units WHERE id = $1::uuid`,
+        [unitId]
+      );
+      const wp = units[0]?.wp_post_id;
+      if (wp) {
+        const { getBlockedDates } = require('../../services/pricing');
+        const from = req.query.from || new Date().toISOString().slice(0, 10);
+        const toDate = new Date(from);
+        toDate.setMonth(toDate.getMonth() + 8);
+        const to = req.query.to || toDate.toISOString().slice(0, 10);
+        const blocked = await getBlockedDates(wp, from, to, { includeUnpriced: true });
+        // Reservations already returned above with turnover semantics — only extra sources here
+        guestBlocked = blocked
+          .filter((b) => b.source !== 'reservation')
+          .map((b) => ({
+          date: b.date,
+          source: b.source,
+          check_in: b.date,
+          check_out: (() => {
+            const [y, m, d] = b.date.split('-').map(Number);
+            const next = new Date(y, m - 1, d + 1);
+            const yy = next.getFullYear();
+            const mm = String(next.getMonth() + 1).padStart(2, '0');
+            const dd = String(next.getDate()).padStart(2, '0');
+            return `${yy}-${mm}-${dd}`;
+          })(),
+          status: 'blocked',
+          guest_name: b.source,
+          is_owner_reservation: 0,
+          total_amount: 0,
+          _guest_block: true,
+        }));
+      }
+    } catch (err) {
+      console.warn('[blocked-dates] guest parity failed', err.message);
+    }
+
+    res.json([...rows, ...guestBlocked]);
   } catch (e) {
     next(e);
   }
@@ -983,21 +1025,99 @@ router.put('/tasks/:id', async (req, res, next) => {
 });
 
 router.put('/reservations/:id', requireRoles('reservations'), async (req, res, next) => {
+  // Delegate to the richer PATCH handler on the main router by forwarding body
   try {
     const existing = await loadReservationAccess(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Not found' });
     assertReservationOwned(req.user, existing);
 
     const b = req.body;
+    const checkIn = b.check_in || existing.check_in;
+    const checkOut = b.check_out || existing.check_out;
+    const ci = new Date(checkIn);
+    const co = new Date(checkOut);
+    const nights = Math.max(1, Math.round((co - ci) / 86400000));
+    const brokerPerNight =
+      b.broker_amount_per_night !== undefined
+        ? parseFloat(b.broker_amount_per_night) || 0
+        : parseFloat(existing.broker_amount_per_night) || 0;
+    const brokerTotal =
+      b.broker_total !== undefined
+        ? parseFloat(b.broker_total) || 0
+        : brokerPerNight * nights;
+
+    const clearHold =
+      b.is_hold === false || b.is_hold === 0 || b.is_hold === '0' || b.is_hold === 'false';
+
     const { rows } = await query(
       `UPDATE reservations SET
          status = COALESCE($1, status),
          payment_status = COALESCE($2, payment_status),
          amount_paid = COALESCE($3, amount_paid),
          notes = COALESCE($4, notes),
+         guest_name = COALESCE($5, guest_name),
+         guest_email = COALESCE($6, guest_email),
+         guest_phone = COALESCE($7, guest_phone),
+         guest_nationality = COALESCE($8, guest_nationality),
+         check_in = COALESCE($9, check_in),
+         check_out = COALESCE($10, check_out),
+         nights = COALESCE($11, nights),
+         total_amount = COALESCE($12, total_amount),
+         price_per_night = COALESCE($13, price_per_night),
+         booking_source = COALESCE($14, booking_source),
+         sales_person_id = COALESCE($15, sales_person_id),
+         is_owner_reservation = COALESCE($16, is_owner_reservation),
+         housekeeping_fees = COALESCE($17, housekeeping_fees),
+         insurance = COALESCE($18, insurance),
+         down_payment = COALESCE($19, down_payment),
+         utilities_cost_override = COALESCE($20, utilities_cost_override),
+         broker_name = COALESCE($21, broker_name),
+         broker_amount_per_night = COALESCE($22, broker_amount_per_night),
+         broker_total = COALESCE($23, broker_total),
+         owner_collected_type = COALESCE($24, owner_collected_type),
+         owner_collected_amount = COALESCE($25, owner_collected_amount),
+         payment_method = COALESCE($26, payment_method),
+         unit_id = COALESCE($27, unit_id),
+         hold_expires_at = CASE WHEN $28::boolean THEN NULL ELSE hold_expires_at END,
          updated_at = now()
-       WHERE id = $5 RETURNING *`,
-      [b.status, b.payment_status, b.amount_paid, b.notes, req.params.id]
+       WHERE id = $29 RETURNING *`,
+      [
+        b.status ?? null,
+        b.payment_status ?? null,
+        b.amount_paid != null && b.amount_paid !== '' ? parseFloat(b.amount_paid) : null,
+        b.notes ?? null,
+        b.guest_name ?? null,
+        b.guest_email ?? null,
+        b.guest_phone ?? null,
+        b.guest_nationality ?? null,
+        b.check_in ?? null,
+        b.check_out ?? null,
+        b.check_in || b.check_out ? nights : null,
+        b.total_amount != null && b.total_amount !== '' ? parseFloat(b.total_amount) : null,
+        b.price_per_night != null && b.price_per_night !== '' ? parseFloat(b.price_per_night) : null,
+        b.booking_source ?? null,
+        b.sales_person_id || null,
+        b.is_owner_reservation !== undefined
+          ? (b.is_owner_reservation === true || b.is_owner_reservation === 1 || b.is_owner_reservation === '1' ? 1 : 0)
+          : null,
+        b.housekeeping_fees != null && b.housekeeping_fees !== '' ? parseFloat(b.housekeeping_fees) : null,
+        b.insurance != null && b.insurance !== '' ? parseFloat(b.insurance) : null,
+        b.down_payment != null && b.down_payment !== '' ? parseFloat(b.down_payment) : null,
+        b.utilities_cost_override !== undefined
+          ? (b.utilities_cost_override === '' || b.utilities_cost_override == null
+              ? null
+              : parseFloat(b.utilities_cost_override))
+          : null,
+        b.broker_name ?? null,
+        b.broker_amount_per_night !== undefined ? brokerPerNight : null,
+        b.broker_amount_per_night !== undefined || b.broker_total !== undefined ? brokerTotal : null,
+        b.owner_collected_type !== undefined ? (b.owner_collected_type || null) : null,
+        b.owner_collected_amount !== undefined ? parseFloat(b.owner_collected_amount) || 0 : null,
+        b.payment_method ?? null,
+        b.unit_id ?? null,
+        clearHold,
+        req.params.id,
+      ]
     );
     res.json(rows[0]);
   } catch (e) {

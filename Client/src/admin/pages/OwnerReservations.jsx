@@ -35,6 +35,7 @@ export default function OwnerReservations() {
                   <th className="px-4 py-3 text-right">Commission</th>
                   <th className="px-4 py-3 text-right">Net</th>
                   <th className="px-4 py-3 text-left">Status</th>
+                  <th className="px-4 py-3 text-left">Payment</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -67,6 +68,9 @@ export default function OwnerReservations() {
                       </td>
                       <td className="px-4 py-3">
                         <Badge status={r.status} />
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge status={r.payment_status || 'pending'} />
                       </td>
                     </tr>
                   );

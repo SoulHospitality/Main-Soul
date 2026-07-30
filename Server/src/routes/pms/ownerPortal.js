@@ -248,7 +248,8 @@ router.get('/owner/reservations', requireRoles('owner', 'admin'), async (req, re
               u.company_commission_pct, u.company_commission_owner_pct,
               u.commission_mode, u.commission_tenant_pct, u.utilities_cost,
               r.housekeeping_fees, r.utilities_amount, r.owner_collected_type, r.owner_collected_amount,
-              r.price_per_night, r.updated_at, r.created_at
+              r.broker_name, r.broker_amount_per_night, r.broker_total,
+              r.price_per_night, r.payment_method, r.updated_at, r.created_at
        FROM reservations r
        JOIN units u ON u.id = r.unit_id
        WHERE r.unit_id = ANY($1::uuid[])
@@ -302,11 +303,17 @@ router.get('/owner/reservations', requireRoles('owner', 'admin'), async (req, re
         nights: r.nights,
         status: ownerStatus,
         payment_status: r.payment_status,
+        payment_method: r.payment_method || null,
+        owner_collected_type: r.owner_collected_type || null,
+        owner_collected_amount: r.owner_collected_amount != null ? Number(r.owner_collected_amount) : null,
+        broker_name: r.broker_name || null,
+        broker_total: r.broker_total != null ? Number(r.broker_total) : null,
         unit_name: r.unit_name || r.unit_number,
         unit_number: r.unit_number,
         gross: fin.showMoney ? fin.gross : null,
         commission: fin.showMoney ? fin.commission : null,
         net: fin.showMoney ? fin.net : null,
+        broker_deduction: fin.showMoney ? fin.brokerDeduction || 0 : null,
         commission_pct: fin.commissionPct,
         show_money: fin.showMoney,
         sort_at: r.check_in,

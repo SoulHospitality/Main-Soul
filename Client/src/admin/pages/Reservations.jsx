@@ -18,12 +18,13 @@ import { idDocumentThumbUrl, isPdfUrl } from '../utils/idDocuments';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import SortTh from '../components/ui/SortTh';
 import BookingCalendar from '../components/ui/BookingCalendar';
-import { currency, formatDate, nightsText, BOOKING_SOURCES, PAYMENT_METHODS, PAYMENT_METHOD_LABELS } from '../utils/formatters';
+import { currency, formatDate, nightsText, BOOKING_SOURCES, PAYMENT_METHODS, PAYMENT_METHOD_LABELS, MANUAL_PAYMENT_METHODS } from '../utils/formatters';
 import { calcReservationFinancials, commissionModeLabel, appliedPctLabel } from '../utils/commission';
 import WebsiteBookingRequests from '../components/WebsiteBookingRequests';
 import { housekeepingFeeForUnit } from '../../utils/housekeeping';
+import AdminReservationDrawer from '../components/AdminReservationDrawer';
 
-const EMPTY_FORM = {
+export const EMPTY_FORM = {
   unit_id: '', guest_name: '', guest_email: '', guest_phone: '', guest_nationality: '',
   check_in: '', check_out: '', price_per_night: '', total_amount: '',
   down_payment: '', housekeeping_fees: '', insurance: '',
@@ -33,6 +34,7 @@ const EMPTY_FORM = {
   utilities_cost_override: '',
   broker_name: '',
   broker_amount_per_night: '',
+  payment_method: 'cash',
 };
 const EMPTY_PMT = { amount: '', payment_date: new Date().toISOString().split('T')[0], payment_method: 'cash', reference_number: '', notes: '' };
 
@@ -42,7 +44,7 @@ function calcNights(checkIn, checkOut) {
   return d > 0 ? d : 0;
 }
 
-function ReservationForm({ form, setForm, units, users, isNew, transferProof, onTransferProofChange, editId, allowPastDates, lockSalesPerson = false, currentUserName = '' }) {
+export function ReservationForm({ form, setForm, units, users, isNew, transferProof, onTransferProofChange, editId, allowPastDates, lockSalesPerson = false, currentUserName = '' }) {
   // Auto-fill price_per_night from selected unit
   const selectedUnit = units.find(u => String(u.id) === String(form.unit_id));
 
@@ -378,6 +380,38 @@ function ReservationForm({ form, setForm, units, users, isNew, transferProof, on
 
       <div><label className="label">Notes</label><textarea className="input resize-none" rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
 
+      {/* Payment method — create only: cash / InstaPay */}
+      {isNew && !form.is_owner_reservation && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 space-y-3">
+          <h4 className="text-sm font-semibold text-emerald-900">Payment method</h4>
+          <p className="text-xs text-emerald-800">
+            Reservation stays <strong>pending</strong> until this payment is collected/approved.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            {MANUAL_PAYMENT_METHODS.map((m) => (
+              <label
+                key={m}
+                className={`flex cursor-pointer items-center gap-2 rounded-xl border-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+                  form.payment_method === m
+                    ? 'border-emerald-600 bg-white text-emerald-900'
+                    : 'border-emerald-100 bg-white/60 text-gray-600 hover:border-emerald-300'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="payment_method"
+                  value={m}
+                  checked={form.payment_method === m}
+                  onChange={() => setForm((f) => ({ ...f, payment_method: m }))}
+                  className="accent-emerald-600"
+                />
+                {PAYMENT_METHOD_LABELS[m]}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Transfer proof (new reservations only) */}
       {isNew && (
         <div className="border border-dashed border-gray-300 rounded-lg px-4 py-3">
@@ -511,6 +545,12 @@ function ReservationDetail({ reservation, onAddPayment, canPay, canApprove, onAp
           <div className="flex justify-between">
             <span className="text-gray-500">Tenant Commission</span>
             <span className="text-orange-600">− {currency(fin.tenantDeduction)}</span>
+          </div>
+        )}
+        {fin.brokerDeduction > 0 && (
+          <div className="flex justify-between">
+            <span className="text-gray-500">Broker{reservation.broker_name ? ` (${reservation.broker_name})` : ''}</span>
+            <span className="text-purple-600">− {currency(fin.brokerDeduction)}</span>
           </div>
         )}
         {fin.companyCommission > 0 && (
@@ -782,7 +822,14 @@ export default function Reservations() {
       if (d instanceof FormData) return api.post('/reservations', d, { headers: { 'Content-Type': 'multipart/form-data' } });
       return editId ? api.put(`/reservations/${editId}`, d) : api.post('/reservations', d);
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['reservations'] }); toast.success(editId ? 'Updated' : 'Reservation created'); setModal(null); setTransferProof(null); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['reservations'] });
+      qc.invalidateQueries({ queryKey: ['blocked-dates'] });
+      qc.invalidateQueries({ queryKey: ['schedule'] });
+      toast.success(editId ? 'Updated' : 'Reservation created — pending payment');
+      setModal(null);
+      setTransferProof(null);
+    },
     onError: (e) => toast.error(e.response?.data?.error || 'Error saving'),
   });
 
@@ -887,10 +934,11 @@ export default function Reservations() {
     setForm({
       ...EMPTY_FORM,
       sales_person_id: isReservations && user?.id ? String(user.id) : '',
+      payment_method: 'cash',
     });
     setEditId(null);
     setTransferProof(null);
-    setModal('form');
+    setModal('drawer');
   };
   const openEdit = (r) => {
     setForm({
@@ -1313,18 +1361,36 @@ export default function Reservations() {
         </div>
       </Modal>
 
-      {/* Form Modal */}
-      <Modal open={modal === 'form'} onClose={() => { setModal(null); setTransferProof(null); }}
-        title={editId ? 'Edit Reservation' : 'New Reservation'} size="xl"
+      {/* Create drawer (guest-style) */}
+      <AdminReservationDrawer
+        open={modal === 'drawer'}
+        onClose={() => { setModal(null); setTransferProof(null); }}
         footer={<>
           <button onClick={() => { setModal(null); setTransferProof(null); }} className="btn-secondary">Cancel</button>
           <button onClick={handleSave} disabled={saveMutation.isPending} className="btn-primary">
-            {saveMutation.isPending ? 'Saving...' : editId ? 'Save Changes' : 'Create Reservation'}
+            {saveMutation.isPending ? 'Saving...' : 'Create Reservation'}
           </button>
         </>}
       >
         <ReservationForm form={form} setForm={setForm} units={units} users={users}
-          isNew={!editId} editId={editId} transferProof={transferProof} onTransferProofChange={setTransferProof}
+          isNew transferProof={transferProof} onTransferProofChange={setTransferProof}
+          allowPastDates={allowPastDates}
+          lockSalesPerson={isReservations}
+          currentUserName={user?.full_name || user?.username || ''} />
+      </AdminReservationDrawer>
+
+      {/* Edit Modal */}
+      <Modal open={modal === 'form'} onClose={() => { setModal(null); setTransferProof(null); }}
+        title="Edit Reservation" size="xl"
+        footer={<>
+          <button onClick={() => { setModal(null); setTransferProof(null); }} className="btn-secondary">Cancel</button>
+          <button onClick={handleSave} disabled={saveMutation.isPending} className="btn-primary">
+            {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
+          </button>
+        </>}
+      >
+        <ReservationForm form={form} setForm={setForm} units={units} users={users}
+          isNew={false} editId={editId} transferProof={transferProof} onTransferProofChange={setTransferProof}
           allowPastDates={allowPastDates}
           lockSalesPerson={isReservations}
           currentUserName={user?.full_name || user?.username || ''} />

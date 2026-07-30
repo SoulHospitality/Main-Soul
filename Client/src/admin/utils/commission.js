@@ -37,6 +37,11 @@ export function calcReservationFinancials(unit, reservation) {
   const base = rentalBase(reservation);
   const utilitiesDeduction = parseFloat(reservation.utilities_amount) || 0;
   const housekeepingFees = parseFloat(reservation.housekeeping_fees) || 0;
+  let brokerDeduction = parseFloat(reservation.broker_total) || 0;
+  if (!(brokerDeduction > 0)) {
+    const brokerNight = parseFloat(reservation.broker_amount_per_night) || 0;
+    if (brokerNight > 0) brokerDeduction = round2(brokerNight * nights);
+  }
 
   let appliedCommissionPct = 0;
   if (mode === 'C' && isOwner) {
@@ -45,15 +50,19 @@ export function calcReservationFinancials(unit, reservation) {
     appliedCommissionPct = companyPct;
   }
 
-  const companyCommission =
-    appliedCommissionPct > 0 ? round2((base * appliedCommissionPct) / 100) : 0;
+  const afterBroker = round2(Math.max(0, base - brokerDeduction));
 
   let tenantDeduction = 0;
   if ((mode === 'B' || mode === 'C') && tenantPct > 0 && !isOwner) {
-    tenantDeduction = round2((base * tenantPct) / 100);
+    tenantDeduction = round2((afterBroker * tenantPct) / 100);
   }
 
-  const subtotal = round2(base - tenantDeduction);
+  const companyCommission =
+    appliedCommissionPct > 0
+      ? round2(((afterBroker - tenantDeduction) * appliedCommissionPct) / 100)
+      : 0;
+
+  const subtotal = round2(afterBroker - tenantDeduction);
   const ownerNet = round2(subtotal - companyCommission - utilitiesDeduction);
   const intermediatePricePerNight = nights > 0 ? round2(subtotal / nights) : 0;
   const adjustedPricePerNight = nights > 0 ? round2(ownerNet / nights) : 0;
@@ -62,6 +71,7 @@ export function calcReservationFinancials(unit, reservation) {
     mode,
     grossAmount: base,
     rentalBase: base,
+    brokerDeduction,
     tenantDeduction,
     utilitiesDeduction,
     housekeepingFees,
@@ -80,6 +90,7 @@ function nullFinancials() {
     mode: 'A',
     grossAmount: 0,
     rentalBase: 0,
+    brokerDeduction: 0,
     tenantDeduction: 0,
     utilitiesDeduction: 0,
     housekeepingFees: 0,

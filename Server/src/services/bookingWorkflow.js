@@ -197,8 +197,10 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
            total_amount, amount_paid, payment_status, booking_source, sales_person_id,
            status, notes, booking_id, created_by, id_photo_urls, price_per_night,
            utilities_amount, housekeeping_fees, transfer_proof_path, transfer_proof_name,
-           down_payment
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'Website',$11,'confirmed',$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+           down_payment, payment_method,
+           broker_name, broker_amount_per_night, broker_total,
+           owner_collected_type, owner_collected_amount
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'Website',$11,'confirmed',$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
          RETURNING id`,
         [
           booking.unit_id,
@@ -222,6 +224,18 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
           evidenceUrl,
           evidenceName,
           paidCap,
+          method.includes('instapay')
+            ? 'instapay'
+            : method.includes('cash')
+              ? 'cash'
+              : method.includes('paymob') || method.includes('card')
+                ? 'paymob_card'
+                : null,
+          booking.broker_name || null,
+          parseFloat(booking.broker_amount_per_night) || 0,
+          parseFloat(booking.broker_total) || 0,
+          booking.owner_collected_type || null,
+          parseFloat(booking.owner_collected_amount) || 0,
         ]
       );
       reservationId = inserted[0]?.id || null;

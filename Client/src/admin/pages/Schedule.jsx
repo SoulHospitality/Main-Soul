@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight, CalendarRange, Edit2, X, DollarSign, Eye, ExternalLink, Clock, Hourglass, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CalendarRange, Edit2, X, DollarSign, Eye, ExternalLink, Clock, Hourglass, Trash2, Plus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
@@ -9,6 +9,10 @@ import Badge from '../components/ui/Badge';
 import { currency, formatDate, nightsText, BOOKING_SOURCES } from '../utils/formatters';
 import { usePermissions } from '../hooks/usePermissions';
 import SearchableSelect from '../components/ui/SearchableSelect';
+import AdminReservationDrawer from '../components/AdminReservationDrawer';
+import { ReservationForm, EMPTY_FORM } from './Reservations';
+import { housekeepingFeeForUnit } from '../../utils/housekeeping';
+import { useAuth } from '../context/AuthContext';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 // Always use LOCAL date components — toISOString() converts to UTC which
@@ -582,7 +586,9 @@ function BulkPriceModal({ open, onClose, unitCount, onSave, saving }) {
 
 export default function Schedule() {
   const qc = useQueryClient();
-  const { canEditSchedulePricing, canManageReservations } = usePermissions();
+  const { user } = useAuth();
+  const { canEditSchedulePricing, canManageReservations, isReservations, isAdmin, isFinance, isOwnerExperience } = usePermissions();
+  const allowPastDates = isAdmin || isFinance || isOwnerExperience;
   const TODAY = todayStr();
   const TOMORROW = addDays(TODAY, 1);
   const now = new Date();
@@ -591,6 +597,11 @@ export default function Schedule() {
   const [viewYear, setViewYear]   = useState(now.getFullYear());
   const [viewMonth, setViewMonth] = useState(now.getMonth());
   const [spanMonths, setSpanMonths] = useState(2);
+
+  // Manual reservation drawer
+  const [createDrawer, setCreateDrawer] = useState(false);
+  const [createForm, setCreateForm] = useState({ ...EMPTY_FORM });
+  const [createProof, setCreateProof] = useState(null);
 
   // ── Filters
   const [filterBedrooms,  setFilterBedrooms]  = useState('');
@@ -768,6 +779,63 @@ export default function Schedule() {
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Error creating hold'),
   });
+
+  const createReservationMutation = useMutation({
+    mutationFn: (d) => {
+      if (d instanceof FormData) {
+        return api.post('/reservations', d, { headers: { 'Content-Type': 'multipart/form-data' } });
+      }
+      return api.post('/reservations', d);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['schedule'] });
+      qc.invalidateQueries({ queryKey: ['reservations'] });
+      qc.invalidateQueries({ queryKey: ['blocked-dates'] });
+      toast.success('Reservation created — pending payment');
+      setCreateDrawer(false);
+      setCreateProof(null);
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Error creating reservation'),
+  });
+
+  const openCreateDrawer = () => {
+    setCreateForm({
+      ...EMPTY_FORM,
+      sales_person_id: isReservations && user?.id ? String(user.id) : '',
+      payment_method: 'cash',
+    });
+    setCreateProof(null);
+    setCreateDrawer(true);
+  };
+
+  const handleCreateReservation = () => {
+    if (!createForm.guest_phone?.trim()) return toast.error('Mobile number is required');
+    if (!createForm.is_owner_reservation && !createForm.sales_person_id) {
+      return toast.error('Please select a Sales Person or mark as Owner Reservation');
+    }
+    if (!createForm.unit_id || !createForm.check_in || !createForm.check_out) {
+      return toast.error('Unit and dates are required');
+    }
+    const selectedUnit = unitsList.find((u) => String(u.id) === String(createForm.unit_id));
+    const payload = {
+      ...createForm,
+      housekeeping_fees: selectedUnit
+        ? housekeepingFeeForUnit(selectedUnit)
+        : createForm.housekeeping_fees,
+    };
+    if (createProof) {
+      const fd = new FormData();
+      Object.entries(payload).forEach(([k, v]) => {
+        if (v !== '' && v !== null && v !== undefined) {
+          fd.append(k, typeof v === 'boolean' ? (v ? '1' : '0') : v);
+        }
+      });
+      fd.append('transfer_proof', createProof);
+      createReservationMutation.mutate(fd);
+    } else {
+      createReservationMutation.mutate(payload);
+    }
+  };
 
   const deleteHoldMutation = useMutation({
     mutationFn: (id) => api.delete(`/reservations/${id}`),
@@ -958,10 +1026,15 @@ export default function Schedule() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {canWrite && (
-            <button onClick={() => { setHoldPrefill({}); setHoldModal(true); }}
-              className="btn-secondary flex items-center gap-2 text-sm border-yellow-300 text-yellow-700 hover:bg-yellow-50">
-              <Hourglass className="w-4 h-4" /><span className="hidden lg:inline">Add Hold</span><span className="lg:hidden">Hold</span>
-            </button>
+            <>
+              <button onClick={openCreateDrawer} className="btn-primary flex items-center gap-2 text-sm">
+                <Plus className="w-4 h-4" /><span className="hidden lg:inline">New Reservation</span><span className="lg:hidden">New</span>
+              </button>
+              <button onClick={() => { setHoldPrefill({}); setHoldModal(true); }}
+                className="btn-secondary flex items-center gap-2 text-sm border-yellow-300 text-yellow-700 hover:bg-yellow-50">
+                <Hourglass className="w-4 h-4" /><span className="hidden lg:inline">Add Hold</span><span className="lg:hidden">Hold</span>
+              </button>
+            </>
           )}
           <div className="flex items-center rounded-lg border border-gray-200 overflow-hidden">
             {[1, 2, 3].map((n) => (
@@ -1448,6 +1521,30 @@ export default function Schedule() {
         onDelete={(id) => deleteHoldMutation.mutate(id)}
         deleting={deleteHoldMutation.isPending}
       />
+
+      <AdminReservationDrawer
+        open={createDrawer}
+        onClose={() => { setCreateDrawer(false); setCreateProof(null); }}
+        footer={<>
+          <button type="button" onClick={() => { setCreateDrawer(false); setCreateProof(null); }} className="btn-secondary">Cancel</button>
+          <button type="button" onClick={handleCreateReservation} disabled={createReservationMutation.isPending} className="btn-primary">
+            {createReservationMutation.isPending ? 'Saving...' : 'Create Reservation'}
+          </button>
+        </>}
+      >
+        <ReservationForm
+          form={createForm}
+          setForm={setCreateForm}
+          units={unitsList}
+          users={usersList}
+          isNew
+          transferProof={createProof}
+          onTransferProofChange={setCreateProof}
+          allowPastDates={allowPastDates}
+          lockSalesPerson={isReservations}
+          currentUserName={user?.full_name || user?.username || ''}
+        />
+      </AdminReservationDrawer>
     </div>
   );
 }

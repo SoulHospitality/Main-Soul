@@ -34,8 +34,16 @@ export const getStatusConfig = (status) =>
   STATUS_CONFIG[status] || { label: status, className: 'badge-gray' };
 
 export const BOOKING_SOURCES = ['Private', 'Broker', 'Campaign', 'Facebook Post'];
-export const PAYMENT_METHODS = ['cash', 'bank_transfer', 'credit_card', 'online'];
-export const PAYMENT_METHOD_LABELS = { cash: 'Cash', bank_transfer: 'Bank Transfer', credit_card: 'Credit Card', online: 'Online' };
+export const PAYMENT_METHODS = ['cash', 'instapay', 'bank_transfer', 'credit_card', 'online'];
+export const MANUAL_PAYMENT_METHODS = ['cash', 'instapay'];
+export const PAYMENT_METHOD_LABELS = {
+  cash: 'Cash',
+  instapay: 'InstaPay',
+  bank_transfer: 'Bank Transfer',
+  credit_card: 'Credit Card',
+  online: 'Online',
+  paymob_card: 'Card (Paymob)',
+};
 export const UNIT_TYPES = ['Apartment', 'Studio', 'Villa', 'Penthouse', 'Chalet', 'Hotel Room'];
 
 /** Townhouse / town home → Villa; otherwise keep known casing. */
