@@ -23,6 +23,7 @@ import { calcReservationFinancials, commissionModeLabel, appliedPctLabel } from 
 import WebsiteBookingRequests from '../components/WebsiteBookingRequests';
 import { housekeepingFeeForUnit } from '../../utils/housekeeping';
 import AdminReservationDrawer from '../components/AdminReservationDrawer';
+import ManualReservationForm from '../components/ManualReservationForm';
 
 export const EMPTY_FORM = {
   unit_id: '', guest_name: '', guest_email: '', guest_phone: '', guest_nationality: '',
@@ -1372,9 +1373,8 @@ export default function Reservations() {
           </button>
         </>}
       >
-        <ReservationForm form={form} setForm={setForm} units={units} users={users}
-          isNew transferProof={transferProof} onTransferProofChange={setTransferProof}
-          allowPastDates={allowPastDates}
+        <ManualReservationForm form={form} setForm={setForm} units={units} users={users}
+          transferProof={transferProof} onTransferProofChange={setTransferProof}
           lockSalesPerson={isReservations}
           currentUserName={user?.full_name || user?.username || ''} />
       </AdminReservationDrawer>

@@ -10,7 +10,9 @@ import { currency, formatDate, nightsText, BOOKING_SOURCES } from '../utils/form
 import { usePermissions } from '../hooks/usePermissions';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import AdminReservationDrawer from '../components/AdminReservationDrawer';
-import { ReservationForm, EMPTY_FORM } from './Reservations';
+import ManualReservationForm, {
+  EMPTY_MANUAL_RESERVATION_FORM,
+} from '../components/ManualReservationForm';
 import { housekeepingFeeForUnit } from '../../utils/housekeeping';
 import { useAuth } from '../context/AuthContext';
 
@@ -587,8 +589,7 @@ function BulkPriceModal({ open, onClose, unitCount, onSave, saving }) {
 export default function Schedule() {
   const qc = useQueryClient();
   const { user } = useAuth();
-  const { canEditSchedulePricing, canManageReservations, isReservations, isAdmin, isFinance, isOwnerExperience } = usePermissions();
-  const allowPastDates = isAdmin || isFinance || isOwnerExperience;
+  const { canEditSchedulePricing, canManageReservations, isReservations } = usePermissions();
   const TODAY = todayStr();
   const TOMORROW = addDays(TODAY, 1);
   const now = new Date();
@@ -600,7 +601,7 @@ export default function Schedule() {
 
   // Manual reservation drawer
   const [createDrawer, setCreateDrawer] = useState(false);
-  const [createForm, setCreateForm] = useState({ ...EMPTY_FORM });
+  const [createForm, setCreateForm] = useState({ ...EMPTY_MANUAL_RESERVATION_FORM });
   const [createProof, setCreateProof] = useState(null);
 
   // ── Filters
@@ -800,7 +801,7 @@ export default function Schedule() {
 
   const openCreateDrawer = () => {
     setCreateForm({
-      ...EMPTY_FORM,
+      ...EMPTY_MANUAL_RESERVATION_FORM,
       sales_person_id: isReservations && user?.id ? String(user.id) : '',
       payment_method: 'cash',
     });
@@ -1532,15 +1533,13 @@ export default function Schedule() {
           </button>
         </>}
       >
-        <ReservationForm
+        <ManualReservationForm
           form={createForm}
           setForm={setCreateForm}
           units={unitsList}
           users={usersList}
-          isNew
           transferProof={createProof}
           onTransferProofChange={setCreateProof}
-          allowPastDates={allowPastDates}
           lockSalesPerson={isReservations}
           currentUserName={user?.full_name || user?.username || ''}
         />
