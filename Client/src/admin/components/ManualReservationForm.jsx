@@ -1,16 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import {
-  Banknote,
-  Building2,
-  ChevronDown,
-  CircleDollarSign,
-  FileUp,
-  Landmark,
-  ReceiptText,
-  UserRound,
-  UsersRound,
-} from 'lucide-react';
+import { ChevronDown, Mail, Upload, UserRound } from 'lucide-react';
 import guestApi from '../../api/http';
 import ListingDatePicker, {
   isoToLocalDate,
@@ -55,32 +45,11 @@ export const EMPTY_MANUAL_RESERVATION_FORM = {
   payment_method: 'cash',
 };
 
-function Section({ icon: Icon, title, description, children }) {
+function Label({ children }) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-      <div className="mb-4 flex items-start gap-3">
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-900 text-white">
-          <Icon className="h-4 w-4" />
-        </span>
-        <div>
-          <h3 className="font-semibold text-slate-900">{title}</h3>
-          {description && <p className="mt-0.5 text-xs text-slate-500">{description}</p>}
-        </div>
-      </div>
+    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted">
       {children}
-    </section>
-  );
-}
-
-function Field({ label, required, children, hint }) {
-  return (
-    <label className="block">
-      <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-        {label} {required && <span className="text-rose-500">*</span>}
-      </span>
-      {children}
-      {hint && <span className="mt-1 block text-xs text-slate-400">{hint}</span>}
-    </label>
+    </p>
   );
 }
 
@@ -93,18 +62,14 @@ export default function ManualReservationForm({
   onTransferProofChange,
   lockSalesPerson = false,
   currentUserName = '',
+  onCancel,
+  onSubmit,
+  submitting = false,
 }) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const selectedUnit = units.find((unit) => String(unit.id) === String(form.unit_id));
-  const selectedRange = useMemo(
-    () => ({
-      start: isoToLocalDate(form.check_in),
-      end: isoToLocalDate(form.check_out),
-    }),
-    [form.check_in, form.check_out]
-  );
 
-  const from = new Date().toISOString().slice(0, 10);
+  const from = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const to = useMemo(() => {
     const d = new Date();
     d.setMonth(d.getMonth() + 12);
@@ -116,7 +81,7 @@ export default function ManualReservationForm({
     queryFn: () =>
       guestApi
         .get(`/units/${form.unit_id}/availability`, { params: { from, to } })
-        .then((response) => response.data),
+        .then((r) => r.data),
     enabled: Boolean(form.unit_id),
     staleTime: 30_000,
   });
@@ -126,7 +91,7 @@ export default function ManualReservationForm({
     queryFn: () =>
       guestApi
         .get(`/units/${form.unit_id}/pricing`, { params: { from, to } })
-        .then((response) => response.data),
+        .then((r) => r.data),
     enabled: Boolean(form.unit_id),
     staleTime: 30_000,
   });
@@ -142,15 +107,16 @@ export default function ManualReservationForm({
     return Math.max(
       0,
       Math.round(
-        (new Date(`${form.check_out}T00:00:00`) -
-          new Date(`${form.check_in}T00:00:00`)) /
+        (new Date(`${form.check_out}T00:00:00`) - new Date(`${form.check_in}T00:00:00`)) /
           86_400_000
       )
     );
   }, [form.check_in, form.check_out]);
 
   const scheduledStay = useMemo(() => {
-    if (!form.check_in || !form.check_out) return { complete: false, total: 0, average: 0 };
+    if (!form.check_in || !form.check_out || !nights) {
+      return { complete: false, total: 0, average: 0 };
+    }
     let total = 0;
     let count = 0;
     let complete = true;
@@ -179,42 +145,38 @@ export default function ManualReservationForm({
   const insurance = Number(form.insurance) || 0;
   const ownerCollected = Number(form.owner_collected_amount) || 0;
   const brokerPerNight = Number(form.broker_amount_per_night) || 0;
-  const brokerTotal = brokerPerNight * nights;
 
   let toCollect = total - downPayment;
   if (form.owner_collected_type === 'full') toCollect = housekeeping + insurance - downPayment;
-  if (form.owner_collected_type === 'partial') {
-    toCollect = total - ownerCollected - downPayment;
-  }
+  if (form.owner_collected_type === 'partial') toCollect = total - ownerCollected - downPayment;
   toCollect = Math.max(0, toCollect);
 
   useEffect(() => {
     if (!selectedUnit) return;
     const fee = housekeepingFeeForUnit(selectedUnit);
-    setForm((current) => ({
-      ...current,
-      housekeeping_fees: String(fee),
-    }));
+    setForm((cur) =>
+      Number(cur.housekeeping_fees) === fee ? cur : { ...cur, housekeeping_fees: String(fee) }
+    );
   }, [selectedUnit?.id, setForm]);
 
   useEffect(() => {
     if (!nights) return;
     if (scheduledStay.complete) {
-      setForm((current) => ({
-        ...current,
+      setForm((cur) => ({
+        ...cur,
         price_per_night: scheduledStay.average.toFixed(2),
         total_amount: scheduledStay.total.toFixed(2),
         owner_collected_amount:
-          current.owner_collected_type === 'full'
+          cur.owner_collected_type === 'full'
             ? scheduledStay.total.toFixed(2)
-            : current.owner_collected_amount,
+            : cur.owner_collected_amount,
       }));
       return;
     }
     const fallback = Number(selectedUnit?.price_per_night || selectedUnit?.price_fallback) || 0;
     if (fallback > 0) {
-      setForm((current) => ({
-        ...current,
+      setForm((cur) => ({
+        ...cur,
         price_per_night: fallback.toFixed(2),
         total_amount: (fallback * nights).toFixed(2),
       }));
@@ -230,8 +192,8 @@ export default function ManualReservationForm({
   ]);
 
   function selectUnit(value) {
-    setForm((current) => ({
-      ...current,
+    setForm((cur) => ({
+      ...cur,
       unit_id: value,
       check_in: '',
       check_out: '',
@@ -241,39 +203,42 @@ export default function ManualReservationForm({
   }
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-      <div className="space-y-5">
-        <Section
-          icon={Building2}
-          title="Choose a unit and dates"
-          description="The calendar uses the same availability and nightly prices guests see."
-        >
-          <Field label="Unit" required>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex-1 overflow-y-auto px-6 py-5">
+        <div className="space-y-5">
+          {/* Unit */}
+          <div>
+            <Label>Unit</Label>
             <SearchableSelect
               value={form.unit_id}
               onChange={selectUnit}
-              placeholder="Search by unit number or property"
+              placeholder="Select a unit…"
               options={[
-                { value: '', label: 'Select a unit' },
+                { value: '', label: 'Select a unit…' },
                 ...units.map((unit) => ({
                   value: String(unit.id),
                   label: `${unit.unit_number || 'Unit'} — ${unit.name} (${unit.project})`,
                 })),
               ]}
             />
-          </Field>
+          </div>
 
-          <div className="mt-4">
+          {/* Calendar — guest parity */}
+          <div>
+            <Label>Check-in / Check-out</Label>
             {form.unit_id ? (
               <>
                 <ListingDatePicker
                   inline
-                  value={selectedRange}
+                  value={{
+                    start: isoToLocalDate(form.check_in),
+                    end: isoToLocalDate(form.check_out),
+                  }}
                   onChange={({ start, end }) =>
-                    setForm((current) => ({
-                      ...current,
-                      check_in: localDateToIso(start),
-                      check_out: localDateToIso(end),
+                    setForm((cur) => ({
+                      ...cur,
+                      check_in: start ? localDateToIso(start) : '',
+                      check_out: end ? localDateToIso(end) : '',
                     }))
                   }
                   blockedDates={blockedDates}
@@ -281,364 +246,335 @@ export default function ManualReservationForm({
                   minNights={1}
                 />
                 {(availabilityLoading || pricingLoading) && (
-                  <p className="mt-2 text-xs text-slate-400">Loading live availability and prices…</p>
+                  <p className="mt-2 text-xs text-soul-muted">Loading availability…</p>
                 )}
               </>
             ) : (
-              <div className="grid min-h-52 place-items-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 text-center">
-                <div>
-                  <Building2 className="mx-auto mb-2 h-7 w-7 text-slate-300" />
-                  <p className="text-sm font-medium text-slate-500">Select a unit to view its calendar</p>
-                </div>
+              <div className="rounded-[22px] border border-soul-line bg-[#faf9f7] px-4 py-8 text-center text-sm text-soul-muted">
+                Select a unit to open the calendar with prices and blocked dates.
               </div>
             )}
           </div>
-        </Section>
 
-        <Section
-          icon={UserRound}
-          title="Guest details"
-          description="Contact information for the reservation."
-        >
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Guest name" required>
+          {/* Guest */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted md:col-span-2">
+              Guest name *
+              <div className="flex items-center gap-3 rounded-2xl border border-soul-line bg-white px-4 py-3 focus-within:border-soul-blue">
+                <UserRound className="h-4 w-4 text-soul-muted" />
+                <input
+                  value={form.guest_name}
+                  onChange={(e) => setForm((cur) => ({ ...cur, guest_name: e.target.value }))}
+                  className="w-full bg-transparent text-sm outline-none"
+                  placeholder="Full name"
+                />
+              </div>
+            </label>
+
+            <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted">
+              Mobile *
               <input
-                className="input"
-                value={form.guest_name}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, guest_name: event.target.value }))
-                }
-                placeholder="Full name"
-              />
-            </Field>
-            <Field label="Mobile number" required>
-              <input
-                className="input"
                 value={form.guest_phone}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, guest_phone: event.target.value }))
-                }
-                placeholder="+20"
+                onChange={(e) => setForm((cur) => ({ ...cur, guest_phone: e.target.value }))}
+                className="rounded-2xl border border-soul-line bg-white px-4 py-3 text-sm outline-none focus:border-soul-blue"
+                placeholder="+20…"
               />
-            </Field>
-            <Field label="Email">
-              <input
-                type="email"
-                className="input"
-                value={form.guest_email}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, guest_email: event.target.value }))
-                }
-                placeholder="guest@email.com"
-              />
-            </Field>
-            <Field label="Nationality">
-              <input
-                className="input"
-                value={form.guest_nationality}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, guest_nationality: event.target.value }))
-                }
-                placeholder="Egyptian"
-              />
-            </Field>
-          </div>
-        </Section>
+            </label>
 
-        <Section
-          icon={UsersRound}
-          title="Reservation ownership"
-          description="Choose the source, salesperson, and owner/broker handling."
-        >
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Booking source">
+            <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted">
+              Nationality
+              <input
+                value={form.guest_nationality}
+                onChange={(e) => setForm((cur) => ({ ...cur, guest_nationality: e.target.value }))}
+                className="rounded-2xl border border-soul-line bg-white px-4 py-3 text-sm outline-none focus:border-soul-blue"
+                placeholder="Optional"
+              />
+            </label>
+
+            <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted md:col-span-2">
+              Email
+              <div className="flex items-center gap-3 rounded-2xl border border-soul-line bg-white px-4 py-3 focus-within:border-soul-blue">
+                <Mail className="h-4 w-4 text-soul-muted" />
+                <input
+                  type="email"
+                  value={form.guest_email}
+                  onChange={(e) => setForm((cur) => ({ ...cur, guest_email: e.target.value }))}
+                  className="w-full bg-transparent text-sm outline-none"
+                  placeholder="guest@email.com"
+                />
+              </div>
+            </label>
+          </div>
+
+          {/* Ops fields */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <Label>Booking source</Label>
               <SearchableSelect
                 value={form.booking_source}
-                onChange={(value) =>
-                  setForm((current) => ({ ...current, booking_source: value }))
-                }
-                placeholder="Select source"
+                onChange={(v) => setForm((cur) => ({ ...cur, booking_source: v }))}
+                placeholder="Select source…"
                 options={[
-                  { value: '', label: 'Select source' },
-                  ...BOOKING_SOURCES.map((source) => ({ value: source, label: source })),
+                  { value: '', label: 'Select source…' },
+                  ...BOOKING_SOURCES.map((s) => ({ value: s, label: s })),
                 ]}
               />
-            </Field>
-            <Field label="Sales person" required={!form.is_owner_reservation}>
+            </div>
+            <div>
+              <Label>Sales person{!form.is_owner_reservation ? ' *' : ''}</Label>
               {lockSalesPerson ? (
-                <div className="input bg-slate-50 text-slate-700">
+                <div className="rounded-2xl border border-soul-line bg-[#faf9f7] px-4 py-3 text-sm text-soul-blue">
                   {currentUserName || 'Assigned to you'}
                 </div>
               ) : (
                 <SearchableSelect
                   value={form.sales_person_id}
-                  onChange={(value) =>
-                    setForm((current) => ({ ...current, sales_person_id: value }))
-                  }
-                  placeholder="Select salesperson"
+                  onChange={(v) => setForm((cur) => ({ ...cur, sales_person_id: v }))}
+                  placeholder="Select salesperson…"
                   options={[
                     { value: '', label: 'None' },
-                    ...users.map((user) => ({
-                      value: String(user.id),
-                      label: user.full_name,
-                    })),
+                    ...users.map((u) => ({ value: String(u.id), label: u.full_name })),
                   ]}
                 />
               )}
-            </Field>
+            </div>
           </div>
 
-          <label className="mt-4 flex cursor-pointer items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <label className="flex items-center justify-between gap-3 rounded-2xl border border-soul-line bg-[#faf9f7] px-4 py-3">
             <div>
-              <p className="text-sm font-semibold text-amber-900">Owner reservation</p>
-              <p className="text-xs text-amber-700">No utilities deduction will be applied.</p>
+              <p className="text-sm font-semibold text-soul-blue">Owner reservation</p>
+              <p className="text-xs text-soul-muted">No utilities deduction</p>
             </div>
             <input
               type="checkbox"
               checked={Boolean(form.is_owner_reservation)}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  is_owner_reservation: event.target.checked,
-                }))
+              onChange={(e) =>
+                setForm((cur) => ({ ...cur, is_owner_reservation: e.target.checked }))
               }
-              className="h-4 w-4 accent-amber-600"
+              className="h-4 w-4 accent-[var(--soul-blue)]"
             />
           </label>
 
+          {!form.is_owner_reservation && (
+            <div>
+              <Label>Payment method</Label>
+              <div className="grid grid-cols-2 gap-3">
+                {MANUAL_PAYMENT_METHODS.map((method) => {
+                  const active = form.payment_method === method;
+                  return (
+                    <button
+                      key={method}
+                      type="button"
+                      onClick={() => setForm((cur) => ({ ...cur, payment_method: method }))}
+                      className={`rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${
+                        active
+                          ? 'border-soul-blue bg-soul-blue text-white'
+                          : 'border-soul-line text-soul-blue hover:bg-soul-blue-50'
+                      }`}
+                    >
+                      {PAYMENT_METHOD_LABELS[method]}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-2 text-xs text-soul-muted">
+                Stays pending until payment is collected.
+              </p>
+            </div>
+          )}
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted">
+              Down payment
+              <input
+                type="number"
+                min="0"
+                value={form.down_payment}
+                onChange={(e) => setForm((cur) => ({ ...cur, down_payment: e.target.value }))}
+                className="rounded-2xl border border-soul-line bg-white px-4 py-3 text-sm outline-none focus:border-soul-blue"
+                placeholder="0"
+              />
+            </label>
+            <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted">
+              Insurance
+              <input
+                type="number"
+                min="0"
+                value={form.insurance}
+                onChange={(e) => setForm((cur) => ({ ...cur, insurance: e.target.value }))}
+                className="rounded-2xl border border-soul-line bg-white px-4 py-3 text-sm outline-none focus:border-soul-blue"
+                placeholder="0"
+              />
+            </label>
+          </div>
+
+          <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted">
+            Notes
+            <textarea
+              rows={3}
+              value={form.notes}
+              onChange={(e) => setForm((cur) => ({ ...cur, notes: e.target.value }))}
+              className="rounded-2xl border border-soul-line bg-white px-4 py-3 text-sm outline-none focus:border-soul-blue"
+              placeholder="Optional"
+            />
+          </label>
+
+          <div>
+            <Label>Transfer proof</Label>
+            <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-dashed border-soul-line px-4 py-3 text-sm text-soul-muted hover:border-soul-blue hover:text-soul-blue">
+              <Upload className="h-4 w-4" />
+              <span>{transferProof?.name || 'Upload image or PDF (optional)'}</span>
+              <input
+                type="file"
+                accept="image/*,.pdf"
+                className="hidden"
+                onChange={(e) => onTransferProofChange?.(e.target.files?.[0] || null)}
+              />
+            </label>
+          </div>
+
           <button
             type="button"
-            onClick={() => setShowAdvanced((current) => !current)}
-            className="mt-4 flex w-full items-center justify-between rounded-xl border border-slate-200 px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            onClick={() => setShowAdvanced((v) => !v)}
+            className="flex w-full items-center justify-between rounded-2xl border border-soul-line px-4 py-3 text-sm font-semibold text-soul-blue hover:bg-soul-blue-50"
           >
-            Owner collection, broker and utilities
-            <ChevronDown
-              className={`h-4 w-4 transition-transform ${showAdvanced ? 'rotate-180' : ''}`}
-            />
+            Owner collection, broker & utilities
+            <ChevronDown className={`h-4 w-4 transition ${showAdvanced ? 'rotate-180' : ''}`} />
           </button>
 
           {showAdvanced && (
-            <div className="mt-3 space-y-4 rounded-xl bg-slate-50 p-4">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Field label="Owner collected">
-                  <select
-                    className="input"
-                    value={form.owner_collected_type}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        owner_collected_type: event.target.value,
-                        owner_collected_amount:
-                          event.target.value === 'full' ? current.total_amount : '',
-                      }))
-                    }
-                  >
-                    <option value="">No</option>
-                    <option value="partial">Partial payment</option>
-                    <option value="full">Full accommodation</option>
-                  </select>
-                </Field>
-                {form.owner_collected_type === 'partial' && (
-                  <Field label="Amount collected">
-                    <input
-                      type="number"
-                      min="0"
-                      className="input"
-                      value={form.owner_collected_amount}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          owner_collected_amount: event.target.value,
-                        }))
-                      }
-                    />
-                  </Field>
-                )}
-                <Field label="Broker name">
-                  <input
-                    className="input"
-                    value={form.broker_name}
-                    onChange={(event) =>
-                      setForm((current) => ({ ...current, broker_name: event.target.value }))
-                    }
-                    placeholder="Optional"
-                  />
-                </Field>
-                <Field label="Broker amount / night">
+            <div className="grid gap-4 rounded-2xl border border-soul-line bg-[#faf9f7] p-4 md:grid-cols-2">
+              <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted">
+                Owner collected
+                <select
+                  className="rounded-2xl border border-soul-line bg-white px-4 py-3 text-sm outline-none"
+                  value={form.owner_collected_type}
+                  onChange={(e) =>
+                    setForm((cur) => ({
+                      ...cur,
+                      owner_collected_type: e.target.value,
+                      owner_collected_amount:
+                        e.target.value === 'full' ? cur.total_amount : '',
+                    }))
+                  }
+                >
+                  <option value="">No</option>
+                  <option value="partial">Partial</option>
+                  <option value="full">Full accommodation</option>
+                </select>
+              </label>
+              {form.owner_collected_type === 'partial' && (
+                <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted">
+                  Amount
                   <input
                     type="number"
                     min="0"
-                    className="input"
-                    value={form.broker_amount_per_night}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        broker_amount_per_night: event.target.value,
-                      }))
+                    className="rounded-2xl border border-soul-line bg-white px-4 py-3 text-sm outline-none"
+                    value={form.owner_collected_amount}
+                    onChange={(e) =>
+                      setForm((cur) => ({ ...cur, owner_collected_amount: e.target.value }))
                     }
-                    placeholder="0"
                   />
-                </Field>
-                {!form.is_owner_reservation && (
-                  <Field
-                    label="Utilities override / night"
-                    hint={`Default: ${money(selectedUnit?.utilities_cost)}`}
-                  >
-                    <input
-                      type="number"
-                      min="0"
-                      className="input"
-                      value={form.utilities_cost_override}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          utilities_cost_override: event.target.value,
-                        }))
-                      }
-                      placeholder="Use unit default"
-                    />
-                  </Field>
-                )}
-              </div>
-              {brokerTotal > 0 && (
-                <p className="text-xs font-medium text-purple-700">
-                  Broker total: {money(brokerTotal)} for {nights} nights
+                </label>
+              )}
+              <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted">
+                Broker name
+                <input
+                  className="rounded-2xl border border-soul-line bg-white px-4 py-3 text-sm outline-none"
+                  value={form.broker_name}
+                  onChange={(e) => setForm((cur) => ({ ...cur, broker_name: e.target.value }))}
+                />
+              </label>
+              <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted">
+                Broker / night
+                <input
+                  type="number"
+                  min="0"
+                  className="rounded-2xl border border-soul-line bg-white px-4 py-3 text-sm outline-none"
+                  value={form.broker_amount_per_night}
+                  onChange={(e) =>
+                    setForm((cur) => ({ ...cur, broker_amount_per_night: e.target.value }))
+                  }
+                />
+              </label>
+              {!form.is_owner_reservation && (
+                <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-soul-muted md:col-span-2">
+                  Utilities override / night
+                  <input
+                    type="number"
+                    min="0"
+                    className="rounded-2xl border border-soul-line bg-white px-4 py-3 text-sm outline-none"
+                    value={form.utilities_cost_override}
+                    onChange={(e) =>
+                      setForm((cur) => ({ ...cur, utilities_cost_override: e.target.value }))
+                    }
+                    placeholder={
+                      selectedUnit?.utilities_cost
+                        ? `Default ${selectedUnit.utilities_cost}`
+                        : 'Unit default'
+                    }
+                  />
+                </label>
+              )}
+              {brokerPerNight > 0 && nights > 0 && (
+                <p className="text-xs text-soul-muted md:col-span-2">
+                  Broker total: {money(brokerPerNight * nights)}
                 </p>
               )}
             </div>
           )}
-        </Section>
+        </div>
       </div>
 
-      <aside className="space-y-5 xl:sticky xl:top-0 xl:self-start">
-        <Section icon={ReceiptText} title="Price summary">
-          <div className="space-y-3 text-sm">
-            <div className="flex justify-between text-slate-600">
-              <span>{nights || 0} nights</span>
-              <span>{nights ? money(total) : '—'}</span>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="Average / night">
-                <input
-                  type="number"
-                  min="0"
-                  className="input"
-                  value={form.price_per_night}
-                  onChange={(event) => {
-                    const rate = event.target.value;
-                    setForm((current) => ({
-                      ...current,
-                      price_per_night: rate,
-                      total_amount: nights ? (Number(rate || 0) * nights).toFixed(2) : '',
-                    }));
-                  }}
-                />
-              </Field>
-              <Field label="Accommodation">
-                <input
-                  type="number"
-                  min="0"
-                  className="input"
-                  value={form.total_amount}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, total_amount: event.target.value }))
-                  }
-                />
-              </Field>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="Down payment">
-                <input
-                  type="number"
-                  min="0"
-                  className="input"
-                  value={form.down_payment}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, down_payment: event.target.value }))
-                  }
-                />
-              </Field>
-              <Field label="Insurance">
-                <input
-                  type="number"
-                  min="0"
-                  className="input"
-                  value={form.insurance}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, insurance: event.target.value }))
-                  }
-                />
-              </Field>
-            </div>
-            <div className="flex justify-between border-t border-slate-200 pt-3 text-slate-600">
-              <span>Housekeeping</span>
-              <span>{selectedUnit ? money(housekeeping) : '—'}</span>
-            </div>
-            <div className="flex items-center justify-between rounded-xl bg-slate-900 px-3 py-3 text-white">
-              <span className="text-xs font-semibold uppercase tracking-wide">Still to collect</span>
-              <strong>{money(toCollect)}</strong>
-            </div>
-          </div>
-        </Section>
-
-        {!form.is_owner_reservation && (
-          <Section icon={CircleDollarSign} title="Collection">
-            <p className="mb-3 text-xs text-slate-500">
-              The reservation remains pending until Finance records or approves payment.
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              {MANUAL_PAYMENT_METHODS.map((method) => {
-                const Icon = method === 'cash' ? Banknote : Landmark;
-                const active = form.payment_method === method;
-                return (
-                  <button
-                    key={method}
-                    type="button"
-                    onClick={() =>
-                      setForm((current) => ({ ...current, payment_method: method }))
-                    }
-                    className={`rounded-xl border p-3 text-left transition ${
-                      active
-                        ? 'border-slate-900 bg-slate-900 text-white'
-                        : 'border-slate-200 text-slate-600 hover:border-slate-400'
-                    }`}
-                  >
-                    <Icon className="mb-2 h-4 w-4" />
-                    <span className="text-sm font-semibold">
-                      {PAYMENT_METHOD_LABELS[method]}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </Section>
-        )}
-
-        <Section icon={FileUp} title="Notes and proof">
-          <Field label="Internal notes">
-            <textarea
-              className="input min-h-20 resize-none"
-              value={form.notes}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, notes: event.target.value }))
-              }
-              placeholder="Anything the operations team should know"
-            />
-          </Field>
-          <label className="mt-3 block cursor-pointer rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center hover:border-slate-500">
-            <FileUp className="mx-auto mb-1 h-5 w-5 text-slate-400" />
-            <span className="text-xs font-semibold text-slate-600">
-              {transferProof?.name || 'Upload payment proof'}
+      {/* Sticky footer — same pattern as guest BookingDrawer */}
+      <div className="border-t border-soul-line bg-white px-6 py-5">
+        <div className="grid gap-3 rounded-3xl border border-soul-line bg-soul-blue-50/40 p-4">
+          <div className="flex items-center justify-between text-sm text-soul-muted">
+            <span>Average / night</span>
+            <span className="font-semibold text-soul-blue">
+              {nights ? money(form.price_per_night) : '—'}
             </span>
-            <input
-              type="file"
-              accept="image/*,.pdf"
-              className="hidden"
-              onChange={(event) => onTransferProofChange(event.target.files?.[0] || null)}
-            />
-          </label>
-        </Section>
-      </aside>
+          </div>
+          <div className="flex items-center justify-between text-sm text-soul-muted">
+            <span>Accommodation ({nights || '—'} nights)</span>
+            <span className="font-semibold text-soul-blue">{nights ? money(total) : '—'}</span>
+          </div>
+          {housekeeping > 0 && (
+            <div className="flex items-center justify-between text-sm text-soul-muted">
+              <span>Housekeeping</span>
+              <span className="font-semibold text-soul-blue">{money(housekeeping)}</span>
+            </div>
+          )}
+          {downPayment > 0 && (
+            <div className="flex items-center justify-between text-sm text-soul-muted">
+              <span>Down payment</span>
+              <span className="font-semibold text-soul-blue">− {money(downPayment)}</span>
+            </div>
+          )}
+          <div className="flex items-center justify-between border-t border-soul-line pt-3 text-sm text-soul-muted">
+            <span>Still to collect</span>
+            <span className="text-lg font-bold text-soul-blue">{money(toCollect)}</span>
+          </div>
+        </div>
+
+        <div className="mt-4 flex gap-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="inline-flex flex-1 items-center justify-center rounded-full border border-soul-line px-5 py-3.5 text-xs font-semibold uppercase tracking-widest text-soul-blue hover:bg-soul-blue-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onSubmit}
+            disabled={submitting}
+            className="inline-flex flex-[1.4] items-center justify-center rounded-full bg-soul-blue px-5 py-3.5 text-xs font-semibold uppercase tracking-widest text-white hover:bg-soul-blue-dark disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {submitting ? 'Saving…' : 'Create reservation'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1366,17 +1366,20 @@ export default function Reservations() {
       <AdminReservationDrawer
         open={modal === 'drawer'}
         onClose={() => { setModal(null); setTransferProof(null); }}
-        footer={<>
-          <button onClick={() => { setModal(null); setTransferProof(null); }} className="btn-secondary">Cancel</button>
-          <button onClick={handleSave} disabled={saveMutation.isPending} className="btn-primary">
-            {saveMutation.isPending ? 'Saving...' : 'Create Reservation'}
-          </button>
-        </>}
       >
-        <ManualReservationForm form={form} setForm={setForm} units={units} users={users}
-          transferProof={transferProof} onTransferProofChange={setTransferProof}
+        <ManualReservationForm
+          form={form}
+          setForm={setForm}
+          units={units}
+          users={users}
+          transferProof={transferProof}
+          onTransferProofChange={setTransferProof}
           lockSalesPerson={isReservations}
-          currentUserName={user?.full_name || user?.username || ''} />
+          currentUserName={user?.full_name || user?.username || ''}
+          onCancel={() => { setModal(null); setTransferProof(null); }}
+          onSubmit={handleSave}
+          submitting={saveMutation.isPending}
+        />
       </AdminReservationDrawer>
 
       {/* Edit Modal */}

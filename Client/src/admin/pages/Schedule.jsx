@@ -1526,12 +1526,6 @@ export default function Schedule() {
       <AdminReservationDrawer
         open={createDrawer}
         onClose={() => { setCreateDrawer(false); setCreateProof(null); }}
-        footer={<>
-          <button type="button" onClick={() => { setCreateDrawer(false); setCreateProof(null); }} className="btn-secondary">Cancel</button>
-          <button type="button" onClick={handleCreateReservation} disabled={createReservationMutation.isPending} className="btn-primary">
-            {createReservationMutation.isPending ? 'Saving...' : 'Create Reservation'}
-          </button>
-        </>}
       >
         <ManualReservationForm
           form={createForm}
@@ -1542,6 +1536,9 @@ export default function Schedule() {
           onTransferProofChange={setCreateProof}
           lockSalesPerson={isReservations}
           currentUserName={user?.full_name || user?.username || ''}
+          onCancel={() => { setCreateDrawer(false); setCreateProof(null); }}
+          onSubmit={handleCreateReservation}
+          submitting={createReservationMutation.isPending}
         />
       </AdminReservationDrawer>
     </div>
