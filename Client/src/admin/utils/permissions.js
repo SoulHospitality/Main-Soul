@@ -124,12 +124,12 @@ export function canDeleteUnits(user) {
 
 /** Create / edit manual reservations */
 export function canManageReservations(user) {
-  return isManualReservationsRole(user);
+  return !!user && (user.role === 'admin' || isManualReservationsRole(user));
 }
 
 /** Accept / reject website booking requests */
 export function canHandleWebsiteBookings(user) {
-  return isWebsiteReservationsRole(user);
+  return !!user && (user.role === 'admin' || isWebsiteReservationsRole(user));
 }
 
 export function canViewAllReservations(user) {

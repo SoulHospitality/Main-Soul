@@ -755,10 +755,11 @@ export default function Reservations() {
     isWebsiteReservations,
     isManualReservations,
     canManageReservations,
+    canHandleWebsiteBookings,
     canAccessFinance,
     user,
   } = usePermissions();
-  const allowPastDates = isReservations;
+  const allowPastDates = isReservations || isAdmin;
   const [searchParams] = useSearchParams();
   const [search, setSearch] = useState(searchParams.get('search') || '');
   const [filterStatus,      setFilterStatus]      = useState('');
@@ -942,7 +943,7 @@ export default function Reservations() {
   const openAdd = () => {
     setForm({
       ...EMPTY_FORM,
-      sales_person_id: isManualReservations && user?.id ? String(user.id) : '',
+      sales_person_id: isManualReservations && !isAdmin && user?.id ? String(user.id) : '',
       payment_method: 'cash',
     });
     setEditId(null);
@@ -1015,8 +1016,9 @@ export default function Reservations() {
   };
 
   const canWrite = canManageReservations;
-  const canPay = canAccessFinance;
+  const canPay = canAccessFinance || isManualReservations || isAdmin;
   const canApprove = isAdmin;
+  const canView = canWrite || isAdmin || isReservations;
 
   const canSeeOwnerStays = isAdmin;
 
@@ -1055,7 +1057,7 @@ export default function Reservations() {
 
   return (
     <div className="space-y-6">
-      {isWebsiteReservations && <WebsiteBookingRequests />}
+      {canHandleWebsiteBookings && <WebsiteBookingRequests />}
       <div className="flex items-center justify-between">
         <div className="page-header mb-0">
           <h1 className="page-title">Reservations</h1>
@@ -1228,6 +1230,16 @@ export default function Reservations() {
                       </td>
                       <td>
                         <div className="flex gap-1 flex-wrap">
+                          {canView && (
+                            <button onClick={() => setViewRes(r.id)} className="p-1.5 rounded text-gray-400 hover:text-primary-600 hover:bg-primary-50" title="View">
+                              <Eye className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {canWrite && r.status !== 'cancelled' && (
+                            <button onClick={() => openEdit(r)} className="p-1.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50" title="Edit">
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                           {canWrite && (
                             <button onClick={() => setCancelId(r.id)} className="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50" title="Delete reservation">
                               <Trash2 className="w-3.5 h-3.5" />
@@ -1382,7 +1394,7 @@ export default function Reservations() {
           users={users}
           transferProof={transferProof}
           onTransferProofChange={setTransferProof}
-          lockSalesPerson={isManualReservations}
+          lockSalesPerson={isManualReservations && !isAdmin}
           currentUserName={user?.full_name || user?.username || ''}
           onCancel={() => { setModal(null); setTransferProof(null); }}
           onSubmit={handleSave}
@@ -1403,7 +1415,7 @@ export default function Reservations() {
         <ReservationForm form={form} setForm={setForm} units={units} users={users}
           isNew={false} editId={editId} transferProof={transferProof} onTransferProofChange={setTransferProof}
           allowPastDates={allowPastDates}
-          lockSalesPerson={isManualReservations}
+          lockSalesPerson={isManualReservations && !isAdmin}
           currentUserName={user?.full_name || user?.username || ''} />
       </Modal>
 

@@ -69,7 +69,16 @@ async function pickLeastLoadedReservationsAgent() {
      ORDER BY COALESCE(load.cnt, 0) ASC, random()
      LIMIT 1`
   );
-  return rows[0]?.id ?? null;
+  if (rows[0]?.id) return rows[0].id;
+
+  // Fallback so website bookings are never orphaned with no assignee
+  const { rows: admins } = await query(
+    `SELECT id FROM staff_users
+     WHERE is_active = 1 AND role = 'admin'
+     ORDER BY id
+     LIMIT 1`
+  );
+  return admins[0]?.id ?? null;
 }
 
 /** SQL fragment restricting reservation rows to the logged-in reservations agent. */
@@ -125,6 +134,7 @@ async function loadBookingAccess(id) {
 }
 
 function assertReservationOwned(user, reservation) {
+  if (isAdmin(user)) return;
   if (!isReservationsTeam(user)) return;
   if (!reservation || Number(reservation.sales_person_id) !== Number(user.id)) {
     const err = new Error('You can only access reservations assigned to you');
@@ -144,6 +154,7 @@ function assertReservationOwned(user, reservation) {
 }
 
 function assertBookingAssigned(user, booking) {
+  if (isAdmin(user)) return;
   if (!isWebsiteReservationsAgent(user)) {
     const err = new Error('Only website reservation agents can manage website bookings');
     err.status = 403;

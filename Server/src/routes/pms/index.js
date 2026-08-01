@@ -1235,7 +1235,7 @@ router.get('/reservations', async (req, res, next) => {
 
 router.post(
   '/reservations',
-  requireRoles('reservations_manual', 'reservations'),
+  requireRoles('reservations_manual', 'reservations', 'admin'),
   upload.single('transfer_proof'),
   setCloudinaryFolder(FOLDER_PAYMENTS),
   attachCloudinaryUrls,
@@ -1244,10 +1244,12 @@ router.post(
     const b = req.body;
     const { getBlockedDates } = require('../../services/pricing');
     const { paymentStatusFrom } = require('../../lib/syncReservationPayment');
+    const { isAdmin } = require('../../lib/reservationScope');
 
-    const salesPersonId = isManualReservationsAgent(req.user)
-      ? req.user.id
-      : (b.sales_person_id || req.user.id);
+    const salesPersonId =
+      isManualReservationsAgent(req.user) && !isAdmin(req.user)
+        ? req.user.id
+        : (b.sales_person_id || req.user.id);
     const checkIn = new Date(b.check_in);
     const checkOut = new Date(b.check_out);
     if (!b.unit_id || !b.check_in || !b.check_out || Number.isNaN(checkIn) || Number.isNaN(checkOut) || checkOut <= checkIn) {
@@ -1455,7 +1457,7 @@ function truthyFlag(v) {
 
 router.patch(
   '/reservations/:id',
-  requireRoles('reservations_manual', 'reservations_web', 'reservations'),
+  requireRoles('reservations_manual', 'reservations_web', 'reservations', 'admin'),
   async (req, res, next) => {
 
   try {
@@ -1560,7 +1562,7 @@ router.patch(
 
 router.delete(
   '/reservations/:id',
-  requireRoles('reservations_manual', 'reservations_web', 'reservations'),
+  requireRoles('reservations_manual', 'reservations_web', 'reservations', 'admin'),
   async (req, res, next) => {
 
   try {
@@ -1598,7 +1600,7 @@ router.delete(
 
 router.post(
   '/reservations/:id/cancel-request',
-  requireRoles('reservations_manual', 'reservations_web', 'reservations'),
+  requireRoles('reservations_manual', 'reservations_web', 'reservations', 'admin'),
   async (req, res, next) => {
 
   try {
@@ -1780,6 +1782,70 @@ router.get('/reservations/schedule', async (req, res, next) => {
   }
 });
 
+router.get('/reservations/:id', async (req, res, next) => {
+  try {
+    if (!/^\d+$/.test(String(req.params.id))) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const existing = await loadReservationAccess(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    assertReservationOwned(req.user, existing);
+
+    const { rows } = await query(
+      `SELECT r.*,
+              COALESCE(u.title, u.unit_number, 'Unit') AS unit_name,
+              u.title AS unit_title,
+              u.slug AS unit_slug,
+              u.unit_number,
+              u.compound AS project,
+              u.utilities_cost AS unit_utilities_cost,
+              u.commission_mode,
+              u.company_commission_pct,
+              u.company_commission_owner_pct,
+              u.commission_tenant_pct,
+              su.full_name AS sales_person_name,
+              COALESCE(
+                NULLIF(r.id_photo_urls, '{}'),
+                NULLIF(b.id_photo_urls, '{}'),
+                '{}'::text[]
+              ) AS id_photo_urls
+       FROM reservations r
+       JOIN units u ON u.id = r.unit_id
+       LEFT JOIN bookings b ON b.id = r.booking_id
+       LEFT JOIN staff_users su ON su.id = r.sales_person_id
+       WHERE r.id = $1`,
+      [req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Not found' });
+
+    const { rows: payments } = await query(
+      `SELECT * FROM payments
+       WHERE reservation_id = $1 OR ($2::int IS NOT NULL AND booking_id = $2)
+       ORDER BY payment_date DESC NULLS LAST, created_at DESC`,
+      [req.params.id, rows[0].booking_id || null]
+    );
+
+    let commissions = [];
+    try {
+      const { rows: commissionRows } = await query(
+        `SELECT c.*, su.full_name
+         FROM commissions c
+         LEFT JOIN staff_users su ON su.id = c.user_id
+         WHERE c.reservation_id = $1
+         ORDER BY c.id`,
+        [req.params.id]
+      );
+      commissions = commissionRows;
+    } catch (_) {
+      commissions = [];
+    }
+
+    res.json({ ...rows[0], payments, commissions });
+  } catch (e) {
+    next(e);
+  }
+});
+
 // ── Payments ────────────────────────────────────────────────
 router.get('/payments', requireRoles('admin'), async (req, res, next) => {
   try {
@@ -1803,7 +1869,7 @@ router.get('/payments', requireRoles('admin'), async (req, res, next) => {
 
 router.post(
   '/payments',
-  requireRoles('admin', 'reservations'),
+  requireRoles('admin', 'reservations', 'reservations_manual', 'reservations_web'),
   upload.single('document'),
   setCloudinaryFolder(FOLDER_PAYMENTS),
   attachCloudinaryUrls,

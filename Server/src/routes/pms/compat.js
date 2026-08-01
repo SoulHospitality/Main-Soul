@@ -3,7 +3,7 @@ const { query } = require('../../config/db');
 const { authStaff, requireRoles } = require('../../middleware/auth');
 const { syncUnitListingStatus } = require('../../lib/unitListingStatus');
 const { FINANCIAL_EPOCH, clampFromDate } = require('../../lib/financialEpoch');
-const { bookingAssigneeClause, loadReservationAccess, assertReservationOwned, assertBookingAssigned, isAdmin } = require('../../lib/reservationScope');
+const { bookingAssigneeClause, loadReservationAccess, assertReservationOwned, assertBookingAssigned } = require('../../lib/reservationScope');
 const {
   upload,
   attachCloudinaryUrls,
@@ -64,7 +64,7 @@ router.get('/users/sales', async (_req, res, next) => {
   try {
     const { rows } = await query(
       `SELECT id, full_name, username, role FROM staff_users
-       WHERE is_active = 1 AND role IN ('reservations_manual','reservations','admin')`
+       WHERE is_active = 1 AND role IN ('reservations_manual','reservations_web','reservations','admin')`
     );
     res.json(rows);
   } catch (e) {
@@ -112,7 +112,7 @@ router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, nex
       `SELECT
          r.id, r.guest_name, r.check_in, r.check_out, r.nights,
          r.total_amount, r.price_per_night, r.utilities_amount, r.housekeeping_fees,
-         r.is_owner_reservation,
+         r.is_owner_reservation, r.broker_total, r.broker_amount_per_night, r.broker_name,
          COALESCE(u.title, u.unit_number, 'Unit') AS unit_name,
          COALESCE(u.project, u.compound, 'Unassigned') AS project,
          u.commission_mode,
@@ -210,6 +210,7 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
       `SELECT
          r.id, r.nights, r.total_amount, r.price_per_night, r.utilities_amount,
          r.housekeeping_fees, r.is_owner_reservation,
+         r.broker_total, r.broker_amount_per_night,
          u.commission_mode, u.company_commission_pct,
          u.company_commission_owner_pct, u.commission_tenant_pct,
          COALESCE(u.utilities_cost, 0) AS utilities_cost
@@ -610,10 +611,6 @@ router.put('/blocked-dates/:unitId', requireRoles('admin'), async (req, res, nex
 
 router.get('/website-bookings', async (req, res, next) => {
   try {
-    if (isAdmin(req.user)) {
-      return res.json([]);
-    }
-
     const status = req.query.status;
     const params = [];
     let where = 'TRUE';
@@ -671,7 +668,7 @@ router.get('/website-bookings', async (req, res, next) => {
 
 router.post(
   '/website-bookings/:id/accept',
-  requireRoles('reservations_web', 'reservations'),
+  requireRoles('reservations_web', 'reservations', 'admin'),
   upload.single('evidence'),
   setCloudinaryFolder(FOLDER_PAYMENTS),
   attachCloudinaryUrls,
@@ -692,7 +689,7 @@ router.post(
   }
 );
 
-router.post('/website-bookings/:id/reject', requireRoles('reservations_web', 'reservations'), async (req, res, next) => {
+router.post('/website-bookings/:id/reject', requireRoles('reservations_web', 'reservations', 'admin'), async (req, res, next) => {
   try {
     const { rejectWebsiteBooking } = require('../../services/bookingWorkflow');
     const booking = await rejectWebsiteBooking(
@@ -1024,7 +1021,7 @@ router.put('/tasks/:id', async (req, res, next) => {
   }
 });
 
-router.put('/reservations/:id', requireRoles('reservations_manual', 'reservations_web', 'reservations'), async (req, res, next) => {
+router.put('/reservations/:id', requireRoles('reservations_manual', 'reservations_web', 'reservations', 'admin'), async (req, res, next) => {
   // Delegate to the richer PATCH handler on the main router by forwarding body
   try {
     const existing = await loadReservationAccess(req.params.id);

@@ -13,12 +13,6 @@ async function pickSalesAssignee() {
 }
 
 async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
-  if (isAdmin(staffUser)) {
-    const err = new Error('Admins cannot accept website bookings');
-    err.status = 403;
-    throw err;
-  }
-
   const { rows } = await query(`SELECT * FROM bookings WHERE id = $1`, [bookingId]);
   const booking = rows[0];
   if (!booking) {
@@ -97,7 +91,7 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
 
   const assignee =
     booking.assigned_sales_id ||
-    (isWebsiteReservationsAgent(staffUser) ? staffUser.id : null) ||
+    (isWebsiteReservationsAgent(staffUser) || isAdmin(staffUser) ? staffUser.id : null) ||
     (await pickLeastLoadedReservationsAgent());
 
   const depositNote = alreadyPaid
@@ -286,6 +280,18 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
     } catch (payErr) {
       console.error('[accept] payment insert failed:', payErr.message);
     }
+  } else if (alreadyPaid && reservationId) {
+    // Link existing Paymob payment rows to the new PMS reservation
+    try {
+      await query(
+        `UPDATE payments
+         SET reservation_id = COALESCE(reservation_id, $1)
+         WHERE booking_id = $2`,
+        [reservationId, bookingId]
+      );
+    } catch (linkErr) {
+      console.error('[accept] payment link failed:', linkErr.message);
+    }
   }
 
   try {
@@ -336,12 +342,6 @@ async function cancelWebsiteBooking(bookingId, reason = 'cancelled_by_staff') {
 }
 
 async function rejectWebsiteBooking(bookingId, staffUser, reason = 'rejected_by_staff') {
-  if (isAdmin(staffUser)) {
-    const err = new Error('Admins cannot reject website bookings');
-    err.status = 403;
-    throw err;
-  }
-
   const { rows } = await query(`SELECT * FROM bookings WHERE id = $1`, [bookingId]);
   const booking = rows[0];
   if (!booking) {
