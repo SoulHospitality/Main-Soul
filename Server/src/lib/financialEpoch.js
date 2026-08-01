@@ -3,7 +3,7 @@
  * ignore anything before this date.
  */
 const FINANCIAL_EPOCH =
-  process.env.FINANCIAL_EPOCH || '2026-08-01';
+  process.env.FINANCIAL_EPOCH || '2026-04-01';
 
 function maxDate(a, b) {
   if (!a) return b || null;
