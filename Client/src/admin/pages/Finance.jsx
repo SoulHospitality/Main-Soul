@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   BadgeDollarSign, Sparkles, Zap, TrendingUp, Users2, Wallet,
   Receipt, Home, DollarSign, ChevronRight, Megaphone, CalendarDays,
-  UserCheck,
+  UserCheck, Percent,
 } from 'lucide-react';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
@@ -71,7 +71,7 @@ export default function Finance() {
     );
   }
 
-  const cash = data?.cashflow || {};
+  const model = data?.model || {};
 
   return (
     <div className="space-y-6">
@@ -79,145 +79,84 @@ export default function Finance() {
         <div className="page-header mb-0">
           <h1 className="page-title">Finance</h1>
           <p className="page-subtitle">
-            Revenue = reservations + housekeeping. Books start {FINANCIAL_EPOCH}. Each expense bucket has its own page.
+            Revenue (reservations + housekeeping + utilities) → expenses → gross profit → {model.tax_pct || 14}% tax → net profit.
+            Books from {FINANCIAL_EPOCH}.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="date"
-            className="input w-36 text-sm"
-            value={fromDate}
-            onChange={(e) => setFromDate(e.target.value)}
-          />
+          <input type="date" className="input w-36 text-sm" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
           <span className="text-slate-400 text-sm">to</span>
-          <input
-            type="date"
-            className="input w-36 text-sm"
-            value={toDate}
-            onChange={(e) => setToDate(e.target.value)}
-          />
+          <input type="date" className="input w-36 text-sm" value={toDate} onChange={(e) => setToDate(e.target.value)} />
           <Link to="/admin/profit" className="btn-primary text-sm whitespace-nowrap">
             View Profit
           </Link>
         </div>
       </div>
 
-      {/* Total Revenue hero */}
       <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50 p-6 sm:p-8">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700/80">Total Revenue</p>
         <p className="mt-2 text-4xl sm:text-5xl font-bold tabular-nums text-emerald-900">
           {currency(data?.totalRevenue)}
         </p>
         <p className="mt-2 text-sm text-emerald-800/70">
-          Reservations {currency(data?.reservationRevenue)} + Housekeeping {currency(data?.housekeepingRevenue)}
-          {(fromDate || toDate) ? ' — selected period' : ''}
+          Reservations {currency(data?.reservationRevenue)}
+          {' · '}HK {currency(data?.housekeepingRevenue)}
+          {' · '}Utilities {currency(data?.utilitiesRevenue)}
         </p>
         <div className="mt-4 flex flex-wrap gap-4 text-sm">
           <span className="text-slate-600">
-            Total expenses:{' '}
-            <strong className="text-rose-700">{currency(data?.totalExpenses)}</strong>
+            Expenses: <strong className="text-rose-700">{currency(data?.totalExpenses)}</strong>
           </span>
           <span className="text-slate-600">
-            Commission profit:{' '}
-            <strong className={(data?.commissionProfit || 0) >= 0 ? 'text-emerald-700' : 'text-rose-700'}>
-              {currency(data?.commissionProfit)}
-            </strong>
+            Gross: <strong className={(data?.grossProfit || 0) >= 0 ? 'text-emerald-700' : 'text-rose-700'}>{currency(data?.grossProfit)}</strong>
           </span>
           <span className="text-slate-600">
-            Net profit:{' '}
-            <strong className={(data?.netProfit || 0) >= 0 ? 'text-emerald-700' : 'text-rose-700'}>
-              {currency(data?.netProfit)}
-            </strong>
+            Tax ({model.tax_pct || 14}%): <strong className="text-amber-800">{currency(data?.taxAmount)}</strong>
+          </span>
+          <span className="text-slate-600">
+            Net: <strong className={(data?.netProfit || 0) >= 0 ? 'text-emerald-700' : 'text-rose-700'}>{currency(data?.netProfit)}</strong>
           </span>
         </div>
       </div>
 
-      {/* Revenue sources */}
       <div>
         <h2 className="text-sm font-semibold text-slate-700 mb-3">Revenue sources</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <MetricCard
             icon={CalendarDays}
             label="Reservations"
             value={data?.reservationRevenue}
             href="/admin/reservations"
             tone="emerald"
-            sub="Rental gross (nights × rate)"
+            sub="Accommodation gross"
           />
           <MetricCard
             icon={Sparkles}
-            label="Housekeeping Service"
+            label="Housekeeping"
             value={data?.housekeepingRevenue}
             href="/admin/housekeeping"
             tone="emerald"
-            sub={`Stay fees ${currency(data?.housekeepingStayFees)} + outside jobs ${currency(data?.housekeepingServiceRevenue)}`}
-          />
-          <MetricCard
-            icon={TrendingUp}
-            label="Cashflow"
-            value={cash.net}
-            tone="blue"
-            sub={`In ${currency(cash.inflow)} · Out ${currency(cash.outflow)}`}
-          />
-        </div>
-      </div>
-
-      {/* Commission split */}
-      <div>
-        <h2 className="text-sm font-semibold text-slate-700 mb-3">Commission split</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          <MetricCard
-            icon={BadgeDollarSign}
-            label="Company Commission"
-            value={data?.companyCommission}
-            href="/admin/commissions"
-            tone="amber"
-            sub="Nightly rate × commission %"
-          />
-          <MetricCard
-            icon={Home}
-            label="Owner Share"
-            value={data?.ownerOwed}
-            tone="slate"
-            sub="Net amount due to owners"
-          />
-          <MetricCard
-            icon={UserCheck}
-            label="Reservation Agent %"
-            value={data?.agentCommissions}
-            href="/admin/commissions"
-            tone="violet"
-            sub="Staff commission — deducted from company %"
-          />
-          <MetricCard
-            icon={DollarSign}
-            label="Tenant Commission"
-            value={data?.tenantCommission}
-            tone="violet"
-            sub="Mode B / C tenant %"
-          />
-        </div>
-      </div>
-
-      {/* Expense buckets — one page each */}
-      <div>
-        <h2 className="text-sm font-semibold text-slate-700 mb-3">Expenses — each has its own page</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-          <MetricCard
-            icon={Sparkles}
-            label="Housekeeping Cost"
-            value={data?.housekeepingCost}
-            href="/admin/housekeeping"
-            tone="rose"
-            sub="Ops cost of cleaning (not guest fees)"
+            sub="Collected guest HK fees"
           />
           <MetricCard
             icon={Zap}
             label="Utilities"
-            value={data?.utilities}
-            href="/admin/utilities"
+            value={data?.utilitiesRevenue}
+            tone="emerald"
+            sub="Collected on stays (not actual cost)"
+          />
+        </div>
+      </div>
+
+      <div>
+        <h2 className="text-sm font-semibold text-slate-700 mb-3">Automatic expenses</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          <MetricCard
+            icon={Home}
+            label="Owner %"
+            value={data?.ownerOwed}
             tone="rose"
-            sub="Deducted from revenue"
+            sub="Owner share (auto)"
           />
           <MetricCard
             icon={Users2}
@@ -225,11 +164,65 @@ export default function Finance() {
             value={data?.salaries}
             href="/admin/salaries"
             tone="rose"
-            sub="Payroll + recorded salary payments"
+            sub="Payroll + salary ledger"
+          />
+          <MetricCard
+            icon={UserCheck}
+            label={`Manual agents ${model.manual_agent_pct ?? 1.5}%`}
+            value={data?.manualAgentCommission}
+            href="/admin/commissions"
+            tone="violet"
+            sub="Of company commission"
+          />
+          <MetricCard
+            icon={UserCheck}
+            label={`Website agents ${model.website_agent_pct ?? 1}%`}
+            value={data?.websiteAgentCommission}
+            href="/admin/commissions"
+            tone="violet"
+            sub="Of company commission"
+          />
+          <MetricCard
+            icon={Percent}
+            label={`Website's commission ${model.website_maker_pct ?? 0.5}%`}
+            value={data?.websiteMakerCommission}
+            href="/admin/commissions"
+            tone="amber"
+            sub="Of website company commission"
+          />
+          <MetricCard
+            icon={BadgeDollarSign}
+            label="Company commission (base)"
+            value={data?.companyCommission}
+            href="/admin/commissions"
+            tone="amber"
+            sub="Base for agent / website %"
+          />
+        </div>
+      </div>
+
+      <div>
+        <h2 className="text-sm font-semibold text-slate-700 mb-3">Manual expenses</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          <MetricCard
+            icon={Sparkles}
+            label="Actual housekeeping"
+            value={data?.actualHousekeeping}
+            href="/admin/housekeeping"
+            tone="rose"
+            sub="Enter real HK cost"
+          />
+          <MetricCard
+            icon={Zap}
+            label="Actual utilities"
+            value={data?.actualUtilities}
+            href="/admin/utilities"
+            tone="rose"
+            sub="Enter real utility cost"
           />
           <MetricCard
             icon={Wallet}
-            label="Petty Cash"
+            label="Petty cash"
             value={data?.pettyCash}
             href="/admin/petty-cash"
             tone="rose"
@@ -241,39 +234,46 @@ export default function Finance() {
             value={data?.marketing}
             href="/admin/marketing"
             tone="rose"
-            sub="Ads and promotion spend"
+            sub="Optional ads spend"
           />
           <MetricCard
             icon={Receipt}
-            label="Other Expenses"
+            label="Other expenses"
             value={data?.expenses}
             href="/admin/expenses"
             tone="rose"
-            sub="General expense ledger"
+            sub="General ledger"
           />
         </div>
       </div>
 
-      {/* Profit views */}
       <div>
         <h2 className="text-sm font-semibold text-slate-700 mb-3">Profit</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <MetricCard
-            icon={BadgeDollarSign}
-            label="Commission Profit"
-            value={data?.commissionProfit}
+            icon={TrendingUp}
+            label="Gross profit"
+            value={data?.grossProfit}
             href="/admin/profit"
-            tone={(data?.commissionProfit || 0) >= 0 ? 'emerald' : 'rose'}
-            sub="Company commission − agent commissions"
+            tone={(data?.grossProfit || 0) >= 0 ? 'emerald' : 'rose'}
+            sub="Revenue − expenses"
             emphasize
           />
           <MetricCard
+            icon={DollarSign}
+            label={`Tax ${model.tax_pct || 14}%`}
+            value={data?.taxAmount}
+            href="/admin/profit"
+            tone="amber"
+            sub="Of gross profit"
+          />
+          <MetricCard
             icon={TrendingUp}
-            label="Net Profit"
+            label="Net profit"
             value={data?.netProfit}
             href="/admin/profit"
             tone={(data?.netProfit || 0) >= 0 ? 'emerald' : 'rose'}
-            sub="Total revenue − all expenses"
+            sub="Gross − tax"
             emphasize
           />
         </div>

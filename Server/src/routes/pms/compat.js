@@ -129,6 +129,12 @@ router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, nex
 
     const { calcReservationFinancials, round2 } = require('../../lib/commission');
     const { isWebsiteOriginReservation } = require('../../lib/reservationScope');
+    const {
+      MANUAL_AGENT_PCT,
+      WEBSITE_AGENT_PCT,
+      WEBSITE_MAKER_PCT,
+      autoCommissionsFromCompany,
+    } = require('../../lib/financeModel');
 
     let totalGross = 0;
     let totalTenant = 0;
@@ -187,6 +193,8 @@ router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, nex
     });
 
     const websiteProfitRounded = round2(websiteProfit);
+    const manualAuto = autoCommissionsFromCompany(manualProfit, false);
+    const websiteAuto = autoCommissionsFromCompany(websiteProfitRounded, true);
     const channelBlock = (count, revenue, profit, extra = {}) => ({
       reservation_count: count,
       revenue: round2(revenue),
@@ -207,18 +215,31 @@ router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, nex
         // Company commission revenue only (HK + utilities tracked on their own pages)
         grandTotal: round2(totalCompany + totalTenant),
       },
+      model: {
+        manual_agent_pct: MANUAL_AGENT_PCT,
+        website_agent_pct: WEBSITE_AGENT_PCT,
+        website_maker_pct: WEBSITE_MAKER_PCT,
+        commission_base: 'company_commission',
+      },
       channels: {
         all: channelBlock(rows.length, totalGross, totalCompany),
-        manual: channelBlock(manualCount, manualRevenue, manualProfit),
+        manual: channelBlock(manualCount, manualRevenue, manualProfit, {
+          agent_pct: MANUAL_AGENT_PCT,
+          agent_commission: manualAuto.agentAmount,
+        }),
         website: channelBlock(websiteCount, websiteRevenue, websiteProfitRounded, {
-          commission_pct: 0.5,
-          website_commission: round2(websiteProfitRounded * 0.005),
+          agent_pct: WEBSITE_AGENT_PCT,
+          agent_commission: websiteAuto.agentAmount,
+          commission_pct: WEBSITE_MAKER_PCT,
+          website_commission: websiteAuto.makerAmount,
         }),
       },
       // Kept for older clients
       website: channelBlock(websiteCount, websiteRevenue, websiteProfitRounded, {
-        commission_pct: 0.5,
-        website_commission: round2(websiteProfitRounded * 0.005),
+        agent_pct: WEBSITE_AGENT_PCT,
+        agent_commission: websiteAuto.agentAmount,
+        commission_pct: WEBSITE_MAKER_PCT,
+        website_commission: websiteAuto.makerAmount,
       }),
     });
   } catch (e) {
@@ -227,18 +248,27 @@ router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, nex
 });
 
 /**
- * Finance / Profit hub summary (diagram-aligned).
- * Revenue = reservation rental gross + housekeeping (stay fees + outsider service orders).
- * Expense buckets: owner share, agent commissions, HK cost, utilities, salaries,
- * petty cash outs, marketing, other expenses.
- * commissionProfit = company commission − agent commissions.
- * netProfit = total revenue − all expense buckets.
+ * Finance / Profit hub — Soul P&L diagram.
+ *
+ * Revenue = reservation accommodation + housekeeping collected + utilities collected
+ * Auto expenses = owner share + salaries + agent % of company commission
+ *   manual 1.5% | website agent 1% | website maker 0.5%
+ * Manual expenses = actual HK + actual utilities + petty cash
+ * Gross profit → tax 14% → net profit
  */
 router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => {
   try {
     const from_date = clampFromDate(req.query.from_date);
     const to_date = req.query.to_date || null;
     const { calcReservationFinancials, round2 } = require('../../lib/commission');
+    const { isWebsiteOriginReservation } = require('../../lib/reservationScope');
+    const {
+      MANUAL_AGENT_PCT,
+      WEBSITE_AGENT_PCT,
+      WEBSITE_MAKER_PCT,
+      TAX_PCT,
+      autoCommissionsFromCompany,
+    } = require('../../lib/financeModel');
 
     const resParams = [from_date];
     let resWhere = `r.status <> 'cancelled' AND r.check_in >= $1::date`;
@@ -252,6 +282,7 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
          r.id, r.nights, r.total_amount, r.price_per_night, r.utilities_amount,
          r.housekeeping_fees, r.is_owner_reservation,
          r.broker_total, r.broker_amount_per_night,
+         r.booking_id, r.booking_source,
          u.commission_mode, u.company_commission_pct,
          u.company_commission_owner_pct, u.commission_tenant_pct,
          COALESCE(u.utilities_cost, 0) AS utilities_cost
@@ -266,7 +297,12 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
     let tenantCommission = 0;
     let ownerOwed = 0;
     let housekeepingStayFees = 0;
-    let utilities = 0;
+    let utilitiesCollected = 0;
+    let manualAgentCommission = 0;
+    let websiteAgentCommission = 0;
+    let websiteMakerCommission = 0;
+    let websiteCompanyCommission = 0;
+    let manualCompanyCommission = 0;
 
     for (const r of reservations) {
       const utilitiesAmount =
@@ -281,7 +317,18 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
       tenantCommission += fin.tenantDeduction;
       ownerOwed += fin.ownerNet;
       housekeepingStayFees += fin.housekeepingFees;
-      utilities += fin.utilitiesDeduction || utilitiesAmount;
+      utilitiesCollected += fin.utilitiesDeduction || utilitiesAmount;
+
+      const fromWebsite = isWebsiteOriginReservation(r);
+      const auto = autoCommissionsFromCompany(fin.companyCommission, fromWebsite);
+      if (fromWebsite) {
+        websiteCompanyCommission += fin.companyCommission;
+        websiteAgentCommission += auto.agentAmount;
+        websiteMakerCommission += auto.makerAmount;
+      } else {
+        manualCompanyCommission += fin.companyCommission;
+        manualAgentCommission += auto.agentAmount;
+      }
     }
 
     // Outsider housekeeping service orders — revenue
@@ -303,7 +350,7 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
       // table may not exist before migration runs
     }
 
-    // Categorized expense ledger
+    // Categorized expense ledger (manual actual costs + optional other buckets)
     const expParams = [from_date];
     let expWhere = `expense_date >= $1::date`;
     if (to_date) {
@@ -319,13 +366,15 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
     );
     let marketing = 0;
     let salaryLedger = 0;
-    let housekeepingCost = 0;
+    let actualHousekeeping = 0;
+    let actualUtilities = 0;
     let otherExpenses = 0;
     for (const row of expenseRows) {
       const total = Number(row.total) || 0;
       if (row.category === 'marketing') marketing += total;
       else if (row.category === 'salary') salaryLedger += total;
-      else if (row.category === 'housekeeping_cost') housekeepingCost += total;
+      else if (row.category === 'housekeeping_cost') actualHousekeeping += total;
+      else if (row.category === 'utilities_cost') actualUtilities += total;
       else otherExpenses += total;
     }
 
@@ -345,26 +394,22 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
     let payrollSnapshot = 0;
     const todayIso = new Date().toISOString().slice(0, 10);
     if (todayIso >= FINANCIAL_EPOCH) {
-      const { rows: salaryRows } = await query(
-        `SELECT COALESCE(SUM(base_salary), 0)::float AS total
-         FROM employees WHERE COALESCE(is_active, 1) = 1`
-      );
-      payrollSnapshot = Number(salaryRows[0]?.total) || 0;
+      try {
+        const { rows: salaryRows } = await query(
+          `SELECT COALESCE(SUM(base_salary), 0)::float AS total
+           FROM employees WHERE COALESCE(is_active, 1) = 1`
+        );
+        payrollSnapshot = Number(salaryRows[0]?.total) || 0;
+      } catch (_) {
+        // employees table may be absent
+      }
     }
     const salaries = round2(salaryLedger + payrollSnapshot);
 
-    // Agent (reservation staff) commissions in period
-    const agentParams = [from_date];
-    let agentWhere = `c.created_at::date >= $1::date`;
-    if (to_date) {
-      agentParams.push(to_date);
-      agentWhere += ` AND c.created_at::date <= $${agentParams.length}::date`;
-    }
-    const { rows: agentRows } = await query(
-      `SELECT COALESCE(SUM(c.amount), 0)::float AS total FROM commissions c WHERE ${agentWhere}`,
-      agentParams
+    const agentCommissions = round2(manualAgentCommission + websiteAgentCommission);
+    const salaryAndCommissions = round2(
+      salaries + agentCommissions + websiteMakerCommission
     );
-    const agentCommissions = Number(agentRows[0]?.total) || 0;
 
     const cfParams = [from_date];
     let cfWhere = `entry_date >= $1::date`;
@@ -372,59 +417,80 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
       cfParams.push(to_date);
       cfWhere += ` AND entry_date <= $${cfParams.length}::date`;
     }
-    const { rows: cashRows } = await query(
-      `SELECT entry_type, COALESCE(SUM(amount), 0)::float AS total
-       FROM cash_ledger
-       WHERE ${cfWhere}
-       GROUP BY entry_type`,
-      cfParams
-    );
     let cashIn = 0;
     let cashOut = 0;
-    for (const row of cashRows) {
-      if (row.entry_type === 'in') cashIn = Number(row.total) || 0;
-      if (row.entry_type === 'out') cashOut = Number(row.total) || 0;
+    try {
+      const { rows: cashRows } = await query(
+        `SELECT entry_type, COALESCE(SUM(amount), 0)::float AS total
+         FROM cash_ledger
+         WHERE ${cfWhere}
+         GROUP BY entry_type`,
+        cfParams
+      );
+      for (const row of cashRows) {
+        if (row.entry_type === 'in') cashIn = Number(row.total) || 0;
+        if (row.entry_type === 'out') cashOut = Number(row.total) || 0;
+      }
+    } catch (_) {
+      // optional
     }
 
-    // Revenue per diagram: reservations + housekeeping (stay fees + service orders)
     const housekeepingRevenue = round2(housekeepingStayFees + housekeepingServiceRevenue);
-    const totalRevenue = round2(reservationRevenue + housekeepingRevenue);
+    const utilitiesRevenue = round2(utilitiesCollected);
+    const totalRevenue = round2(reservationRevenue + housekeepingRevenue + utilitiesRevenue);
 
-    // Expense buckets per diagram
     const deductibleExpenses = round2(
       ownerOwed +
-        agentCommissions +
-        housekeepingCost +
-        utilities +
-        salaries +
+        salaryAndCommissions +
+        actualHousekeeping +
+        actualUtilities +
         pettyCash +
         marketing +
         otherExpenses
     );
 
-    const commissionProfit = round2(companyCommission - agentCommissions);
-    const netProfit = round2(totalRevenue - deductibleExpenses);
+    const grossProfit = round2(totalRevenue - deductibleExpenses);
+    const taxAmount = round2(Math.max(0, grossProfit) * (TAX_PCT / 100));
+    const netProfit = round2(grossProfit - taxAmount);
+    const commissionProfit = round2(companyCommission - agentCommissions - websiteMakerCommission);
 
     res.json({
       from_date,
       to_date: to_date || null,
       financial_epoch: FINANCIAL_EPOCH,
-      // Revenue
+      model: {
+        manual_agent_pct: MANUAL_AGENT_PCT,
+        website_agent_pct: WEBSITE_AGENT_PCT,
+        website_maker_pct: WEBSITE_MAKER_PCT,
+        tax_pct: TAX_PCT,
+        commission_base: 'company_commission',
+      },
+      // Revenue (3 streams)
       totalRevenue,
       reservationRevenue: round2(reservationRevenue),
       housekeepingRevenue,
       housekeepingStayFees: round2(housekeepingStayFees),
       housekeepingServiceRevenue: round2(housekeepingServiceRevenue),
-      // Commission split
+      utilitiesRevenue,
+      // Company / owner split (reference)
       companyCommission: round2(companyCommission),
       tenantCommission: round2(tenantCommission),
       ownerOwed: round2(ownerOwed),
-      agentCommissions: round2(agentCommissions),
+      websiteCompanyCommission: round2(websiteCompanyCommission),
+      manualCompanyCommission: round2(manualCompanyCommission),
+      // Auto commissions (of company commission)
+      agentCommissions,
+      manualAgentCommission: round2(manualAgentCommission),
+      websiteAgentCommission: round2(websiteAgentCommission),
+      websiteMakerCommission: round2(websiteMakerCommission),
+      salaryAndCommissions,
       // Expense buckets
-      housekeeping: round2(housekeepingCost),
-      housekeepingCost: round2(housekeepingCost),
-      utilities: round2(utilities),
       salaries,
+      housekeeping: round2(actualHousekeeping),
+      housekeepingCost: round2(actualHousekeeping),
+      actualHousekeeping: round2(actualHousekeeping),
+      utilities: round2(actualUtilities),
+      actualUtilities: round2(actualUtilities),
       pettyCash: round2(pettyCash),
       marketing: round2(marketing),
       expenses: round2(otherExpenses),
@@ -436,15 +502,24 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
       },
       totalExpenses: deductibleExpenses,
       // Profit views
+      grossProfit,
+      taxPct: TAX_PCT,
+      taxAmount,
       commissionProfit,
       netProfit,
       profit: netProfit,
       expenseBreakdown: {
         ownerShare: round2(ownerOwed),
-        agentCommissions: round2(agentCommissions),
-        housekeeping: round2(housekeepingCost),
-        utilities: round2(utilities),
         salaries,
+        manualAgentCommission: round2(manualAgentCommission),
+        websiteAgentCommission: round2(websiteAgentCommission),
+        websiteMakerCommission: round2(websiteMakerCommission),
+        agentCommissions,
+        salaryAndCommissions,
+        actualHousekeeping: round2(actualHousekeeping),
+        housekeeping: round2(actualHousekeeping),
+        actualUtilities: round2(actualUtilities),
+        utilities: round2(actualUtilities),
         pettyCash: round2(pettyCash),
         marketing: round2(marketing),
         expenses: round2(otherExpenses),

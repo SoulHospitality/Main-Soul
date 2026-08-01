@@ -16,7 +16,8 @@ import { currency, formatDate } from '../../utils/formatters';
 import { FINANCIAL_EPOCH } from '../../utils/financialEpoch';
 
 /**
- * Reusable ledger page for a fixed expense category (marketing / salary / housekeeping_cost).
+ * Reusable ledger page for a fixed expense category
+ * (marketing / salary / housekeeping_cost / utilities_cost).
  * Simple flow for admin: date, description, amount, optional notes.
  */
 export default function CategoryLedgerPage({

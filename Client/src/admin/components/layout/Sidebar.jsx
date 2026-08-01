@@ -21,7 +21,7 @@ const NAV_ITEMS = [
   { path: '/admin/profit',           label: 'Profit',             icon: TrendingUp,         page: 'profit' },
   { path: '/admin/commissions',      label: 'Commissions',        icon: BadgeDollarSign,    page: 'commissions' },
   { path: '/admin/housekeeping',     label: 'Housekeeping',       icon: Sparkles,           page: 'housekeeping' },
-  { path: '/admin/utilities',        label: 'Utilities',          icon: Zap,                page: 'utilities' },
+  { path: '/admin/utilities',        label: 'Actual utilities',   icon: Zap,                page: 'utilities' },
   { path: '/admin/salaries',         label: 'Salaries',           icon: Users2,             page: 'salaries' },
   { path: '/admin/petty-cash',       label: 'Petty Cash',         icon: Wallet,             page: 'petty_cash' },
   { path: '/admin/marketing',        label: 'Marketing',          icon: Megaphone,          page: 'marketing' },

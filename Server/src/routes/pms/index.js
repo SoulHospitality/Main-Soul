@@ -1967,7 +1967,13 @@ router.post('/payments/:id/approve', requireRoles('admin'), approvePaymentHandle
 router.put('/payments/:id/approve', requireRoles('admin'), approvePaymentHandler);
 
 // ── Expenses / commissions / dashboard snippets ─────────────
-const EXPENSE_CATEGORIES = new Set(['marketing', 'salary', 'housekeeping_cost', 'other']);
+const EXPENSE_CATEGORIES = new Set([
+  'marketing',
+  'salary',
+  'housekeeping_cost',
+  'utilities_cost',
+  'other',
+]);
 
 function normalizeExpenseCategory(raw, fallback = 'other') {
   const cat = String(raw || fallback).toLowerCase();

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  BadgeDollarSign, Download, TrendingUp, Users, Zap, Wallet, DollarSign, Globe, ClipboardList, Layers,
+  BadgeDollarSign, Download, TrendingUp, Users, Wallet, DollarSign, Globe, ClipboardList, Layers,
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { useSortableTable } from '../hooks/useSortableTable';
@@ -47,19 +47,25 @@ export default function Commissions() {
 
   const rows = data?.breakdown || [];
   const totals = data?.totals || {};
+  const model = data?.model || finance?.model || {};
   const emptyChannel = { reservation_count: 0, revenue: 0, profit: 0 };
   const channels = data?.channels || {
     all: emptyChannel,
     manual: emptyChannel,
     website: {
       ...emptyChannel,
-      commission_pct: 0.5,
+      agent_pct: model.website_agent_pct ?? 1,
+      agent_commission: 0,
+      commission_pct: model.website_maker_pct ?? 0.5,
       website_commission: 0,
     },
   };
   const website = channels.website || data?.website || emptyChannel;
   const manual = channels.manual || emptyChannel;
   const allChannel = channels.all || emptyChannel;
+  const manualAgentPct = manual.agent_pct ?? model.manual_agent_pct ?? 1.5;
+  const websiteAgentPct = website.agent_pct ?? model.website_agent_pct ?? 1;
+  const websiteMakerPct = website.commission_pct ?? model.website_maker_pct ?? 0.5;
   const { sorted, sortKey, sortDir, handleSort } = useSortableTable(rows, 'check_in', 'desc');
 
   const exportExcel = () => {
@@ -92,8 +98,10 @@ export default function Commissions() {
       (totals.totalTenant || 0) -
       (totals.totalUtilities || 0);
   const agentTotal = finance?.agentCommissions ?? 0;
+  const websiteMakerTotal = finance?.websiteMakerCommission ?? website.website_commission ?? 0;
   const commissionProfit =
-    finance?.commissionProfit ?? (totals.totalCompany || 0) - agentTotal;
+    finance?.commissionProfit ??
+    (totals.totalCompany || 0) - agentTotal - websiteMakerTotal;
 
   const SUMMARY_CARDS = [
     {
@@ -106,6 +114,7 @@ export default function Commissions() {
       iconClr: 'text-yellow-600',
       valClr: 'text-yellow-800',
       lblClr: 'text-yellow-700',
+      subtitle: 'Base for agent / website %',
     },
     {
       label: 'Owner Share',
@@ -120,8 +129,8 @@ export default function Commissions() {
       subtitle: 'Net amount due to owners',
     },
     {
-      label: 'Reservation Agent %',
-      value: agentTotal,
+      label: `Manual agents ${manualAgentPct}%`,
+      value: finance?.manualAgentCommission ?? manual.agent_commission ?? 0,
       icon: Users,
       bg: 'bg-violet-50',
       border: 'border-violet-200',
@@ -129,7 +138,31 @@ export default function Commissions() {
       iconClr: 'text-violet-600',
       valClr: 'text-violet-800',
       lblClr: 'text-violet-700',
-      subtitle: 'Staff commissions in period',
+      subtitle: 'Of manual company commission',
+    },
+    {
+      label: `Website agents ${websiteAgentPct}%`,
+      value: finance?.websiteAgentCommission ?? website.agent_commission ?? 0,
+      icon: Users,
+      bg: 'bg-sky-50',
+      border: 'border-sky-200',
+      iconBg: 'bg-sky-100',
+      iconClr: 'text-sky-600',
+      valClr: 'text-sky-800',
+      lblClr: 'text-sky-700',
+      subtitle: 'Of website company commission',
+    },
+    {
+      label: `Website's commission ${websiteMakerPct}%`,
+      value: websiteMakerTotal,
+      icon: Globe,
+      bg: 'bg-amber-50',
+      border: 'border-amber-200',
+      iconBg: 'bg-amber-100',
+      iconClr: 'text-amber-600',
+      valClr: 'text-amber-800',
+      lblClr: 'text-amber-700',
+      subtitle: 'Of website company commission',
     },
     {
       label: 'Commission Profit',
@@ -141,29 +174,7 @@ export default function Commissions() {
       iconClr: 'text-primary-600',
       valClr: 'text-primary-800',
       lblClr: 'text-primary-700',
-      subtitle: 'Company % − agent %',
-    },
-    {
-      label: 'Tenant Commission',
-      value: finance?.tenantCommission ?? totals.totalTenant ?? 0,
-      icon: Users,
-      bg: 'bg-blue-50',
-      border: 'border-blue-200',
-      iconBg: 'bg-blue-100',
-      iconClr: 'text-blue-600',
-      valClr: 'text-blue-800',
-      lblClr: 'text-blue-700',
-    },
-    {
-      label: 'Utilities (see Utilities page)',
-      value: finance?.utilities ?? totals.totalUtilities ?? 0,
-      icon: Zap,
-      bg: 'bg-green-50',
-      border: 'border-green-200',
-      iconBg: 'bg-green-100',
-      iconClr: 'text-green-600',
-      valClr: 'text-green-800',
-      lblClr: 'text-green-700',
+      subtitle: 'Company − agents − website %',
     },
   ];
 
@@ -173,7 +184,8 @@ export default function Commissions() {
         <div className="page-header mb-0">
           <h1 className="page-title">Commissions</h1>
           <p className="page-subtitle">
-            Owner share, company commission, and reservation-agent commissions
+            Company commission base: manual agents {manualAgentPct}% · website agents{' '}
+            {websiteAgentPct}% · website maker {websiteMakerPct}%
           </p>
         </div>
         {isAdmin && (
@@ -281,6 +293,15 @@ export default function Commissions() {
               </p>
               <p className="mt-0.5 text-[11px] text-slate-400">Company commission</p>
             </div>
+            <div className="rounded-xl border border-violet-200 bg-violet-100/60 px-4 py-3">
+              <p className="text-xs font-semibold text-violet-800">
+                Agent commission {manualAgentPct}%
+              </p>
+              <p className="mt-1 text-xl font-bold tabular-nums text-violet-950">
+                {currency(manual.agent_commission ?? finance?.manualAgentCommission ?? 0)}
+              </p>
+              <p className="mt-0.5 text-[11px] text-violet-700/80">Of company commission</p>
+            </div>
           </div>
         </div>
 
@@ -314,14 +335,23 @@ export default function Commissions() {
               </p>
               <p className="mt-0.5 text-[11px] text-slate-400">Company commission</p>
             </div>
+            <div className="rounded-xl border border-sky-200 bg-sky-50/90 px-4 py-3">
+              <p className="text-xs font-semibold text-sky-800">
+                Agent commission {websiteAgentPct}%
+              </p>
+              <p className="mt-1 text-xl font-bold tabular-nums text-sky-950">
+                {currency(website.agent_commission ?? finance?.websiteAgentCommission ?? 0)}
+              </p>
+              <p className="mt-0.5 text-[11px] text-sky-700/80">Of company commission</p>
+            </div>
             <div className="rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-3 ring-1 ring-amber-100">
-              <p className="text-xs font-semibold text-amber-800">Website's commission</p>
+              <p className="text-xs font-semibold text-amber-800">
+                Website&apos;s commission {websiteMakerPct}%
+              </p>
               <p className="mt-1 text-xl font-bold tabular-nums text-amber-950">
                 {currency(website.website_commission ?? 0)}
               </p>
-              <p className="mt-0.5 text-[11px] text-amber-700/80">
-                {website.commission_pct ?? 0.5}% of website profit
-              </p>
+              <p className="mt-0.5 text-[11px] text-amber-700/80">Of company commission</p>
             </div>
           </div>
         </div>
