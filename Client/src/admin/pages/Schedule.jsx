@@ -108,32 +108,39 @@ function buildRow(unitId, dates, reservations) {
   return cells;
 }
 
-// Color rules: hold(yellow) > red > orange > purple(blocked) > blue(owner) > green > grey
+// Color rules: hold > urgency > blocked > owner > sales > past
 function resColors(res, today) {
   const tomorrow = addDays(today, 1);
   const co = normDate(res.check_out);
   const ci = normDate(res.check_in);
   const isBlocked = res.is_owner_reservation && parseFloat(res.total_amount) === 0;
   if (res.is_hold || res.status === 'hold')
-                                 return { bg: 'bg-yellow-400',  text: 'text-yellow-900', hover: 'hover:bg-yellow-500' };
-  if (co < today)               return { bg: 'bg-gray-300',    text: 'text-gray-700',   hover: 'hover:bg-gray-400'   };
-  if (co === tomorrow)          return { bg: 'bg-red-500',     text: 'text-white',      hover: 'hover:bg-red-600'    };
-  if (ci === tomorrow)          return { bg: 'bg-orange-400',  text: 'text-white',      hover: 'hover:bg-orange-500' };
-  if (isBlocked)                return { bg: 'bg-purple-500',  text: 'text-white',      hover: 'hover:bg-purple-600' };
-  if (res.is_owner_reservation) return { bg: 'bg-blue-500',   text: 'text-white',      hover: 'hover:bg-blue-600'   };
-  return                               { bg: 'bg-emerald-500', text: 'text-white',      hover: 'hover:bg-emerald-600' };
+    return { bg: 'bg-amber-400', text: 'text-amber-950', hover: 'hover:brightness-95', ring: 'ring-amber-300/60' };
+  if (co < today)
+    return { bg: 'bg-slate-300', text: 'text-slate-700', hover: 'hover:brightness-95', ring: 'ring-slate-200' };
+  if (co === tomorrow)
+    return { bg: 'bg-rose-500', text: 'text-white', hover: 'hover:brightness-95', ring: 'ring-rose-300/50' };
+  if (ci === tomorrow)
+    return { bg: 'bg-orange-500', text: 'text-white', hover: 'hover:brightness-95', ring: 'ring-orange-300/50' };
+  if (isBlocked)
+    return { bg: 'bg-violet-500', text: 'text-white', hover: 'hover:brightness-95', ring: 'ring-violet-300/50' };
+  if (res.is_owner_reservation)
+    return { bg: 'bg-sky-500', text: 'text-white', hover: 'hover:brightness-95', ring: 'ring-sky-300/50' };
+  return { bg: 'bg-[#2a9d8f]', text: 'text-white', hover: 'hover:brightness-95', ring: 'ring-teal-300/40' };
 }
 
 const COLOR_FILTERS = [
-  { value: '', label: 'All Reservations' },
-  { value: 'hold',             label: '🟡 Hold' },
-  { value: 'owner',            label: '🔵 Owner' },
-  { value: 'sales',            label: '🟢 Sales' },
-  { value: 'blocked',          label: '🟣 Blocked / Owner Stay' },
-  { value: 'checkin_tomorrow', label: '🟠 Check-in Tomorrow' },
-  { value: 'checkout_tomorrow',label: '🔴 Check-out Tomorrow' },
-  { value: 'past',             label: '⚪ Past' },
+  { value: '', label: 'All stays' },
+  { value: 'hold', label: 'Holds' },
+  { value: 'owner', label: 'Owner reservations' },
+  { value: 'sales', label: 'Guest / sales' },
+  { value: 'blocked', label: 'Blocked nights' },
+  { value: 'checkin_tomorrow', label: 'Check-in tomorrow' },
+  { value: 'checkout_tomorrow', label: 'Check-out tomorrow' },
+  { value: 'past', label: 'Past stays' },
 ];
+
+const CELL_W = 44;
 
 // ─── Price Editor Modal ──────────────────────────────────────────────────────
 function PriceEditorModal({ open, onClose, unitId, unitName, dateStr, currentPrice, onSave, onClear, saving }) {
@@ -167,28 +174,30 @@ function PriceEditorModal({ open, onClose, unitId, unitName, dateStr, currentPri
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Edit Nightly Price" size="sm"
+    <Modal open={open} onClose={onClose} title="Set nightly price" size="sm"
       footer={<>
         <button onClick={onClose} className="btn-secondary">Cancel</button>
         {currentPrice > 0 && (
-          <button onClick={handleClear} disabled={saving} className="btn-secondary text-red-700 border-red-200 hover:bg-red-50">
-            Clear / block
+          <button onClick={handleClear} disabled={saving} className="btn-secondary text-rose-700 border-rose-200 hover:bg-rose-50">
+            Clear night
           </button>
         )}
         <button onClick={handleSave} disabled={saving} className="btn-primary">
-          <DollarSign className="w-3.5 h-3.5" />{saving ? 'Saving…' : 'Apply Price'}
+          <DollarSign className="w-3.5 h-3.5" />{saving ? 'Saving…' : 'Apply price'}
         </button>
       </>}
     >
       <div className="space-y-4">
-        <div className="bg-blue-50 rounded-lg px-4 py-2 text-sm text-blue-800">
-          <span className="font-semibold">{unitName}</span>
-          <span className="mx-2">·</span>{formatDate(dateStr)}
-          {currentPrice > 0 && <span className="ml-2 text-blue-500">(current: {currency(currentPrice)})</span>}
+        <div className="rounded-2xl border border-soul-line bg-[#f7f9fc] px-4 py-3">
+          <p className="text-sm font-semibold text-soul-blue">{unitName}</p>
+          <p className="mt-0.5 text-xs text-soul-muted">
+            {formatDate(dateStr)}
+            {currentPrice > 0 ? ` · Current ${currency(currentPrice)}` : ' · Unpriced'}
+          </p>
         </div>
 
         <div>
-          <label className="label">New Price per Night (EGP) *</label>
+          <label className="label">Price per night (EGP)</label>
           <input type="number" min="0" step="0.01" autoFocus className="input text-lg font-semibold"
             value={price} onChange={e => setPrice(e.target.value)} placeholder="0.00" />
         </div>
@@ -196,9 +205,9 @@ function PriceEditorModal({ open, onClose, unitId, unitName, dateStr, currentPri
         <div>
           <label className="label">Apply to</label>
           <div className="grid grid-cols-2 gap-2">
-            {[['day','This Day'],['week','This Week'],['month','This Month'],['range','Custom Range']].map(([v,l]) => (
+            {[['day','This day'],['week','This week'],['month','This month'],['range','Custom range']].map(([v,l]) => (
               <button key={v} onClick={() => setApplyTo(v)}
-                className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${applyTo === v ? 'bg-primary-600 text-white border-primary-600' : 'border-gray-200 text-gray-700 hover:border-primary-300'}`}>
+                className={`rounded-xl border px-3 py-2.5 text-sm font-semibold transition ${applyTo === v ? 'border-[var(--pms-accent,#283f5e)] bg-[var(--pms-accent,#283f5e)] text-white shadow-sm' : 'border-soul-line text-soul-blue hover:bg-slate-50'}`}>
                 {l}
               </button>
             ))}
@@ -213,14 +222,14 @@ function PriceEditorModal({ open, onClose, unitId, unitName, dateStr, currentPri
         )}
 
         {applyTo !== 'day' && applyTo !== 'range' && (
-          <p className="text-xs text-gray-400">
+          <p className="text-xs text-soul-muted">
             {applyTo === 'week'  && `Mon – Sun of the week containing ${formatDate(dateStr)}`}
             {applyTo === 'month' && `All days of ${new Date(dateStr).toLocaleDateString('en-US',{month:'long',year:'numeric'})}`}
           </p>
         )}
 
-        <p className="text-xs text-gray-500">
-          Clearing a price blocks that night for guests (same as the website calendar).
+        <p className="rounded-xl bg-rose-50 px-3 py-2 text-xs text-rose-700">
+          Clearing a price marks the night unpriced — guests see it as unavailable.
         </p>
       </div>
     </Modal>
@@ -544,21 +553,21 @@ function BulkPriceModal({ open, onClose, unitCount, onSave, saving }) {
   };
 
   return (
-    <Modal open={open} onClose={onClose} title={`Bulk Edit Price — ${unitCount} Unit${unitCount !== 1 ? 's' : ''}`} size="sm"
+    <Modal open={open} onClose={onClose} title={`Bulk price · ${unitCount} unit${unitCount !== 1 ? 's' : ''}`} size="sm"
       footer={<>
         <button onClick={onClose} className="btn-secondary">Cancel</button>
         <button onClick={handleSave} disabled={saving || unitCount === 0} className="btn-primary">
-          <DollarSign className="w-3.5 h-3.5" />{saving ? 'Saving…' : `Apply to ${unitCount} Unit${unitCount !== 1 ? 's' : ''}`}
+          <DollarSign className="w-3.5 h-3.5" />{saving ? 'Saving…' : `Apply to ${unitCount}`}
         </button>
       </>}
     >
       <div className="space-y-4">
-        <div className="bg-indigo-50 rounded-lg px-4 py-2 text-sm text-indigo-800">
-          This price will be applied to <strong>{unitCount} selected unit{unitCount !== 1 ? 's' : ''}</strong>.
+        <div className="rounded-2xl border border-soul-line bg-[#f7f9fc] px-4 py-3 text-sm text-soul-blue">
+          Price will apply to <strong>{unitCount}</strong> selected unit{unitCount !== 1 ? 's' : ''}.
         </div>
 
         <div>
-          <label className="label">New Price per Night (EGP) *</label>
+          <label className="label">Price per night (EGP)</label>
           <input type="number" min="0" step="0.01" autoFocus className="input text-lg font-semibold"
             value={price} onChange={e => setPrice(e.target.value)} placeholder="0.00" />
         </div>
@@ -566,9 +575,9 @@ function BulkPriceModal({ open, onClose, unitCount, onSave, saving }) {
         <div>
           <label className="label">Apply to</label>
           <div className="grid grid-cols-2 gap-2">
-            {[['day','Today'],['week','This Week'],['month','This Month'],['range','Custom Range']].map(([v,l]) => (
+            {[['day','Today'],['week','This week'],['month','This month'],['range','Custom range']].map(([v,l]) => (
               <button key={v} onClick={() => setApplyTo(v)}
-                className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${applyTo === v ? 'bg-indigo-600 text-white border-indigo-600' : 'border-gray-200 text-gray-700 hover:border-indigo-300'}`}>
+                className={`rounded-xl border px-3 py-2.5 text-sm font-semibold transition ${applyTo === v ? 'border-[var(--pms-accent,#283f5e)] bg-[var(--pms-accent,#283f5e)] text-white shadow-sm' : 'border-soul-line text-soul-blue hover:bg-slate-50'}`}>
                 {l}
               </button>
             ))}
@@ -1015,341 +1024,452 @@ export default function Schedule() {
   return (
     <div className="space-y-4">
       {/* ── Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="page-header mb-0">
-          <h1 className="page-title">Reservation Calendar</h1>
-          <p className="page-subtitle text-xs">
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-soul-muted">Operations</p>
+          <h1 className="page-title mt-1">Schedule</h1>
+          <p className="page-subtitle">
             {filterFrom || filterTo
               ? `${formatDate(fromStr)} — ${filterTo ? formatDate(filterTo) : formatDate(addDays(toStr, -1))}`
               : monthLabel}
-            {canEditPrice && <span className="ml-2 text-primary-500">· Click a night to set/clear price</span>}
+            {canEditPrice ? ' · Tap an open night to price or clear it' : ''}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {canWrite && (
             <>
-              <button onClick={openCreateDrawer} className="btn-primary flex items-center gap-2 text-sm">
-                <Plus className="w-4 h-4" /><span className="hidden lg:inline">New Reservation</span><span className="lg:hidden">New</span>
+              <button onClick={openCreateDrawer} className="btn-primary flex items-center gap-2">
+                <Plus className="w-4 h-4" />
+                <span className="hidden sm:inline">New reservation</span>
+                <span className="sm:hidden">New</span>
               </button>
-              <button onClick={() => { setHoldPrefill({}); setHoldModal(true); }}
-                className="btn-secondary flex items-center gap-2 text-sm border-yellow-300 text-yellow-700 hover:bg-yellow-50">
-                <Hourglass className="w-4 h-4" /><span className="hidden lg:inline">Add Hold</span><span className="lg:hidden">Hold</span>
+              <button
+                onClick={() => { setHoldPrefill({}); setHoldModal(true); }}
+                className="btn-secondary flex items-center gap-2"
+              >
+                <Hourglass className="w-4 h-4 text-amber-600" />
+                <span className="hidden sm:inline">Hold</span>
               </button>
             </>
           )}
-          <div className="flex items-center rounded-lg border border-gray-200 overflow-hidden">
+          <div className="flex items-center rounded-xl border border-soul-line bg-white p-0.5 shadow-sm">
             {[1, 2, 3].map((n) => (
               <button
                 key={n}
                 type="button"
                 onClick={() => setSpanMonths(n)}
-                className={`px-2.5 py-1.5 text-xs font-semibold ${
-                  spanMonths === n ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                  spanMonths === n
+                    ? 'bg-[var(--pms-accent,#283f5e)] text-white shadow-sm'
+                    : 'text-soul-muted hover:bg-slate-50 hover:text-soul-blue'
                 }`}
               >
                 {n} mo
               </button>
             ))}
           </div>
-          <button onClick={goThisMonth} className="btn-secondary text-sm px-3 py-1.5 hidden lg:inline-flex">This Month</button>
-          <div className="flex items-center gap-1">
-            <button onClick={goPrevMonth} className="btn-secondary p-2"><ChevronLeft className="w-4 h-4" /></button>
-            <span className="text-sm font-semibold text-gray-700 min-w-[110px] lg:min-w-[160px] text-center">{monthLabel}</span>
-            <button onClick={goNextMonth} className="btn-secondary p-2"><ChevronRight className="w-4 h-4" /></button>
+          <div className="flex items-center gap-1 rounded-xl border border-soul-line bg-white p-0.5 shadow-sm">
+            <button onClick={goPrevMonth} className="rounded-lg p-2 text-soul-muted hover:bg-slate-50 hover:text-soul-blue">
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <button
+              onClick={goThisMonth}
+              className="min-w-[7.5rem] px-2 text-center text-sm font-semibold text-soul-blue hover:text-[var(--pms-accent,#283f5e)]"
+              title="Jump to this month"
+            >
+              {monthLabel}
+            </button>
+            <button onClick={goNextMonth} className="rounded-lg p-2 text-soul-muted hover:bg-slate-50 hover:text-soul-blue">
+              <ChevronRight className="w-4 h-4" />
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Legend */}
-      <div className="flex flex-wrap items-center gap-3 text-[11px] text-gray-500 px-1">
-        <span className="inline-flex items-center gap-1.5"><span className="w-3.5 h-3.5 rounded-sm bg-[#e6f7ee] border border-[#b7e4c7]" /> Priced</span>
-        <span className="inline-flex items-center gap-1.5"><span className="w-3.5 h-3.5 rounded-sm bg-[#fdecea] border border-[#f5c2c0]" /> Unpriced (blocked for guests)</span>
-        <span className="inline-flex items-center gap-1.5"><span className="w-3.5 h-3.5 rounded-sm border border-gray-300" style={{ backgroundImage: 'repeating-linear-gradient(45deg, rgba(40,63,94,0.16) 0 3px, transparent 3px 7px)' }} /> OTA / manual block</span>
-        <span className="inline-flex items-center gap-1.5"><span className="w-3.5 h-3.5 rounded-sm bg-emerald-500" /> Reservation</span>
-        <span className="inline-flex items-center gap-1.5"><span className="w-3.5 h-3.5 rounded-sm bg-yellow-400" /> Hold</span>
-      </div>
-
-      {/* ── Filters */}
-      <div className="card p-3">
-        {/* Mobile: toggle button */}
-        <button
-          className="lg:hidden w-full flex items-center justify-between text-sm font-medium text-gray-700 mb-2"
-          onClick={() => setFiltersOpen(v => !v)}
-        >
-          <span>Filters & Search</span>
-          <span className="text-gray-400">{filtersOpen ? '▲' : '▼'}</span>
-        </button>
-        <div className={`flex flex-wrap items-end gap-3 ${filtersOpen ? '' : 'hidden lg:flex'}`}>
-          <div><label className="label text-xs">Project</label>
-            <SearchableSelect className="w-44" value={filterProject} onChange={v => { setFilterProject(v); setFilterUnits([]); }}
-              placeholder="All Projects"
-              options={[{ value: '', label: 'All Projects' }, ...projectsList.map(p => ({ value: p, label: p }))]}
-            />
-          </div>
-          <div><label className="label text-xs">Bedrooms</label>
-            <SearchableSelect className="w-32" value={filterBedrooms} onChange={setFilterBedrooms}
-              placeholder="All"
-              options={[{ value: '', label: 'All' }, ...[0,1,2,3,4,5,6].map(n => ({ value: String(n), label: n === 0 ? 'Studio' : `${n} BR` }))]}
-            />
-          </div>
-          {/* ── Floor filter ─────────────────────────────────────────── */}
-          <div><label className="label text-xs">Floor</label>
-            <SearchableSelect className="w-28" value={filterFloor} onChange={setFilterFloor}
-              placeholder="All"
-              options={[{ value: '', label: 'All' }, ...availableFloors.map(f => ({ value: String(f), label: f === 0 ? 'Ground' : `Floor ${f}` }))]}
-            />
-          </div>
-          <div><label className="label text-xs">From Date</label>
-            <input type="date" className="input w-38" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} />
-          </div>
-          <div><label className="label text-xs">To Date</label>
-            <input type="date" className="input w-38" value={filterTo} onChange={e => setFilterTo(e.target.value)} />
-          </div>
-          {/* ── Price range filter ────────────────────────────────────── */}
-          <div><label className="label text-xs">Price From (EGP)</label>
-            <input type="number" min="0" step="100" className="input w-32" placeholder="Any" value={filterPriceMin} onChange={e => setFilterPriceMin(e.target.value)} />
-          </div>
-          <div><label className="label text-xs">Price To (EGP)</label>
-            <input type="number" min="0" step="100" className="input w-32" placeholder="Any" value={filterPriceMax} onChange={e => setFilterPriceMax(e.target.value)} />
-          </div>
-          {/* ── Multi-unit picker ──────────────────────────────────────── */}
-          <div className="relative" ref={unitPickerRef}><label className="label text-xs">Units</label>
-            <button
-              type="button"
-              onClick={() => { setUnitPickerOpen(v => !v); setUnitPickerSearch(''); }}
-              className={`input w-44 text-left flex items-center justify-between gap-2 cursor-pointer
-                ${filterUnits.length > 0 ? 'border-primary-400 bg-primary-50' : ''}`}
-            >
-              <span className="truncate text-sm">
-                {filterUnits.length === 0 ? 'All Units' : `${filterUnits.length} selected`}
-              </span>
-              <span className="text-gray-400 text-xs">▾</span>
-            </button>
-            {unitPickerOpen && (
-              <div className="absolute z-50 top-full mt-1 left-0 w-56 bg-white border border-gray-200 rounded-xl shadow-lg max-h-64 overflow-y-auto">
-                <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between gap-2">
-                  <input
-                    autoFocus
-                    type="text"
-                    placeholder="Search units…"
-                    value={unitPickerSearch}
-                    onChange={e => setUnitPickerSearch(e.target.value)}
-                    className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1 outline-none focus:border-primary-400"
-                    onClick={e => e.stopPropagation()}
-                  />
-                  {filterUnits.length > 0 && (
-                    <button onClick={() => setFilterUnits([])} className="text-xs text-primary-600 hover:underline whitespace-nowrap">Clear</button>
-                  )}
-                </div>
-                {(() => {
-                  const q = unitPickerSearch.trim().toLowerCase();
-                  const pool = sortUnits((data?.units || []).filter(u => !filterProject || u.project === filterProject));
-                  const visible = q ? pool.filter(u => u.name.toLowerCase().includes(q) || (u.unit_number || '').toLowerCase().includes(q)) : pool;
-                  if (visible.length === 0) return <p className="px-3 py-4 text-sm text-gray-400 text-center">No units found</p>;
-                  return visible.map(u => {
-                    const isChecked = filterUnits.includes(String(u.id));
-                    return (
-                      <label key={u.id} className={`flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-gray-50 transition-colors ${isChecked ? 'bg-primary-50' : ''}`}>
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => setFilterUnits(prev =>
-                            prev.includes(String(u.id)) ? prev.filter(id => id !== String(u.id)) : [...prev, String(u.id)]
-                          )}
-                          className="w-4 h-4 rounded border-gray-300 text-primary-600 flex-shrink-0"
-                        />
-                        <div className="min-w-0">
-                          <div className="text-sm font-medium text-gray-800 truncate">{u.name}</div>
-                          <div className="text-xs text-gray-400">{u.unit_number} · {u.project}</div>
-                        </div>
-                      </label>
-                    );
-                  });
-                })()}
-              </div>
-            )}
-          </div>
-          {/* ── Available only toggle ────────────────────────────────── */}
-          <div className="flex flex-col justify-end">
-            <label className="label text-xs opacity-0 select-none">_</label>
-            <button
-              onClick={() => setFilterAvailable(v => !v)}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors whitespace-nowrap
-                ${filterAvailable
-                  ? 'bg-emerald-500 text-white border-emerald-500'
-                  : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-300'}`}
-            >
-              <span className={`w-3.5 h-3.5 rounded-sm border-2 flex items-center justify-center flex-shrink-0
-                ${filterAvailable ? 'bg-white border-white' : 'border-gray-400'}`}>
-                {filterAvailable && <span className="block w-2 h-2 bg-emerald-500 rounded-sm" />}
-              </span>
-              Available Only
-            </button>
-          </div>
-          <div><label className="label text-xs">Color Filter</label>
-            <SearchableSelect className="w-52" value={filterColor} onChange={setFilterColor}
-              placeholder="All Reservations"
-              options={COLOR_FILTERS.map(cf => ({ value: cf.value, label: cf.label }))}
-            />
-          </div>
-          {hasFilters && (
-            <button onClick={clearFilters} className="btn-secondary flex items-center gap-1.5 text-sm">
-              <X className="w-3.5 h-3.5" />Clear
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* ── Legend */}
-      <div className="hidden lg:flex flex-wrap items-center gap-4 text-xs">
+      {/* ── Compact legend + bulk */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-soul-line bg-white/90 px-4 py-3 shadow-sm">
         {[
-          ['bg-yellow-400','Hold'],
-          ['bg-red-500','Checkout Tomorrow'],
-          ['bg-orange-400','Check-in Tomorrow'],
-          ['bg-purple-500','Blocked / Owner Stay'],
-          ['bg-blue-500','Owner Reservation'],
-          ['bg-emerald-500','Sales'],
-          ['bg-gray-300','Past'],
-        ].map(([c,l])=>(
-          <div key={l} className="flex items-center gap-1.5"><span className={`w-3 h-3 rounded-sm ${c}`}/><span className="text-gray-600">{l}</span></div>
-        ))}
-        {canEditPrice && (
-          <div className="flex items-center gap-1.5 ml-2">
-            <DollarSign className="w-3 h-3 text-primary-400"/>
-            <span className="text-primary-600">Click empty cell → edit price</span>
+          { swatch: 'bg-emerald-50 border border-emerald-200', label: 'Priced' },
+          { swatch: 'bg-rose-50 border border-rose-200', label: 'Unpriced' },
+          { swatch: 'border border-slate-300', label: 'OTA / block', style: { backgroundImage: 'repeating-linear-gradient(135deg, rgba(40,63,94,0.14) 0 4px, transparent 4px 8px)' } },
+          { swatch: 'bg-[#2a9d8f]', label: 'Guest stay' },
+          { swatch: 'bg-amber-400', label: 'Hold' },
+          { swatch: 'bg-violet-500', label: 'Blocked' },
+          { swatch: 'bg-sky-500', label: 'Owner' },
+          { swatch: 'bg-rose-500', label: 'Checkout soon' },
+          { swatch: 'bg-orange-500', label: 'Check-in soon' },
+        ].map((item) => (
+          <div key={item.label} className="inline-flex items-center gap-1.5 text-[11px] font-medium text-soul-muted">
+            <span className={`h-3 w-3 rounded-md ${item.swatch}`} style={item.style} />
+            {item.label}
           </div>
-        )}
+        ))}
         {canEditPrice && !bulkMode && (
           <button
             onClick={() => { setBulkMode(true); setSelectedUnitIds(new Set()); }}
-            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-medium hover:bg-indigo-100 transition-colors"
+            className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-soul-line bg-slate-50 px-3 py-1.5 text-xs font-semibold text-soul-blue hover:bg-[var(--pms-accent-soft,rgba(40,63,94,0.08))]"
           >
-            <Edit2 className="w-3.5 h-3.5" />Bulk Edit Price
+            <Edit2 className="w-3.5 h-3.5" />
+            Bulk price
           </button>
         )}
         {canEditPrice && bulkMode && (
-          <div className="ml-auto flex items-center gap-2">
-            <span className="text-xs text-indigo-600 font-medium">{selectedUnitIds.size} unit{selectedUnitIds.size !== 1 ? 's' : ''} selected</span>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold text-soul-blue">
+              {selectedUnitIds.size} selected
+            </span>
             <button
-              onClick={() => setSelectedUnitIds(new Set(filteredUnits.map(u => u.id)))}
-              className="px-2 py-1 rounded-lg bg-gray-100 text-gray-600 text-xs hover:bg-gray-200 transition-colors"
-            >Select All</button>
+              onClick={() => setSelectedUnitIds(new Set(filteredUnits.map((u) => u.id)))}
+              className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-soul-muted hover:bg-slate-200"
+            >
+              All
+            </button>
             <button
               onClick={() => setSelectedUnitIds(new Set())}
-              className="px-2 py-1 rounded-lg bg-gray-100 text-gray-600 text-xs hover:bg-gray-200 transition-colors"
-            >Clear</button>
+              className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-soul-muted hover:bg-slate-200"
+            >
+              Clear
+            </button>
             <button
               disabled={selectedUnitIds.size === 0}
               onClick={() => setBulkPriceModal(true)}
-              className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >Apply Price to {selectedUnitIds.size} Unit{selectedUnitIds.size !== 1 ? 's' : ''}</button>
+              className="rounded-full bg-[var(--pms-accent,#283f5e)] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
+            >
+              Apply price
+            </button>
             <button
               onClick={() => { setBulkMode(false); setSelectedUnitIds(new Set()); }}
-              className="px-2 py-1 rounded-lg bg-gray-100 text-gray-600 text-xs hover:bg-gray-200 transition-colors"
-            >Cancel</button>
+              className="rounded-full px-2 py-1 text-xs font-medium text-soul-muted hover:text-soul-blue"
+            >
+              Done
+            </button>
           </div>
         )}
+      </div>
+
+      {/* ── Filters */}
+      <div className="overflow-hidden rounded-2xl border border-soul-line bg-white shadow-sm">
+        <button
+          type="button"
+          className="flex w-full items-center justify-between px-4 py-3 text-left lg:cursor-default"
+          onClick={() => setFiltersOpen((v) => !v)}
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-soul-blue">Filters</span>
+            {hasFilters && (
+              <span className="rounded-full bg-[var(--pms-accent-soft,rgba(40,63,94,0.12))] px-2 py-0.5 text-[11px] font-semibold text-soul-blue">
+                Active
+              </span>
+            )}
+          </div>
+          <span className="text-xs font-medium text-soul-muted lg:hidden">
+            {filtersOpen ? 'Hide' : 'Show'}
+          </span>
+        </button>
+        <div className={`border-t border-soul-line px-4 py-4 ${filtersOpen ? '' : 'hidden lg:block'}`}>
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <label className="label text-xs">Project</label>
+              <SearchableSelect
+                className="w-44"
+                value={filterProject}
+                onChange={(v) => { setFilterProject(v); setFilterUnits([]); }}
+                placeholder="All projects"
+                options={[{ value: '', label: 'All projects' }, ...projectsList.map((p) => ({ value: p, label: p }))]}
+              />
+            </div>
+            <div>
+              <label className="label text-xs">Bedrooms</label>
+              <SearchableSelect
+                className="w-32"
+                value={filterBedrooms}
+                onChange={setFilterBedrooms}
+                placeholder="All"
+                options={[{ value: '', label: 'All' }, ...[0, 1, 2, 3, 4, 5, 6].map((n) => ({ value: String(n), label: n === 0 ? 'Studio' : `${n} BR` }))]}
+              />
+            </div>
+            <div>
+              <label className="label text-xs">Floor</label>
+              <SearchableSelect
+                className="w-28"
+                value={filterFloor}
+                onChange={setFilterFloor}
+                placeholder="All"
+                options={[{ value: '', label: 'All' }, ...availableFloors.map((f) => ({ value: String(f), label: f === 0 ? 'Ground' : `Floor ${f}` }))]}
+              />
+            </div>
+            <div>
+              <label className="label text-xs">From</label>
+              <input type="date" className="input w-38" value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)} />
+            </div>
+            <div>
+              <label className="label text-xs">To</label>
+              <input type="date" className="input w-38" value={filterTo} onChange={(e) => setFilterTo(e.target.value)} />
+            </div>
+            <div>
+              <label className="label text-xs">Min price</label>
+              <input type="number" min="0" step="100" className="input w-28" placeholder="Any" value={filterPriceMin} onChange={(e) => setFilterPriceMin(e.target.value)} />
+            </div>
+            <div>
+              <label className="label text-xs">Max price</label>
+              <input type="number" min="0" step="100" className="input w-28" placeholder="Any" value={filterPriceMax} onChange={(e) => setFilterPriceMax(e.target.value)} />
+            </div>
+            <div className="relative" ref={unitPickerRef}>
+              <label className="label text-xs">Units</label>
+              <button
+                type="button"
+                onClick={() => { setUnitPickerOpen((v) => !v); setUnitPickerSearch(''); }}
+                className={`input w-44 flex cursor-pointer items-center justify-between gap-2 text-left ${
+                  filterUnits.length > 0 ? 'border-[var(--pms-accent,#283f5e)] bg-[var(--pms-accent-soft,rgba(40,63,94,0.08))]' : ''
+                }`}
+              >
+                <span className="truncate text-sm">
+                  {filterUnits.length === 0 ? 'All units' : `${filterUnits.length} selected`}
+                </span>
+                <ChevronRight className={`h-3.5 w-3.5 text-soul-muted transition ${unitPickerOpen ? 'rotate-90' : ''}`} />
+              </button>
+              {unitPickerOpen && (
+                <div className="absolute left-0 top-full z-50 mt-1 max-h-64 w-56 overflow-y-auto rounded-2xl border border-soul-line bg-white shadow-xl">
+                  <div className="flex items-center justify-between gap-2 border-b border-soul-line px-3 py-2">
+                    <input
+                      autoFocus
+                      type="text"
+                      placeholder="Search units…"
+                      value={unitPickerSearch}
+                      onChange={(e) => setUnitPickerSearch(e.target.value)}
+                      className="flex-1 rounded-lg border border-soul-line px-2 py-1 text-xs outline-none focus:border-[var(--pms-accent,#283f5e)]"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    {filterUnits.length > 0 && (
+                      <button onClick={() => setFilterUnits([])} className="whitespace-nowrap text-xs font-semibold text-soul-blue hover:underline">
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  {(() => {
+                    const q = unitPickerSearch.trim().toLowerCase();
+                    const pool = sortUnits((data?.units || []).filter((u) => !filterProject || u.project === filterProject));
+                    const visible = q
+                      ? pool.filter((u) => u.name.toLowerCase().includes(q) || (u.unit_number || '').toLowerCase().includes(q))
+                      : pool;
+                    if (visible.length === 0) {
+                      return <p className="px-3 py-4 text-center text-sm text-soul-muted">No units found</p>;
+                    }
+                    return visible.map((u) => {
+                      const isChecked = filterUnits.includes(String(u.id));
+                      return (
+                        <label
+                          key={u.id}
+                          className={`flex cursor-pointer items-center gap-2.5 px-3 py-2 transition-colors hover:bg-slate-50 ${
+                            isChecked ? 'bg-[var(--pms-accent-soft,rgba(40,63,94,0.08))]' : ''
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() =>
+                              setFilterUnits((prev) =>
+                                prev.includes(String(u.id))
+                                  ? prev.filter((id) => id !== String(u.id))
+                                  : [...prev, String(u.id)]
+                              )
+                            }
+                            className="h-4 w-4 flex-shrink-0 rounded border-soul-line accent-[var(--pms-accent,#283f5e)]"
+                          />
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-medium text-soul-blue">{u.name}</div>
+                            <div className="text-xs text-soul-muted">
+                              {u.unit_number} · {u.project}
+                            </div>
+                          </div>
+                        </label>
+                      );
+                    });
+                  })()}
+                </div>
+              )}
+            </div>
+            <div className="flex flex-col justify-end">
+              <label className="label text-xs opacity-0 select-none">_</label>
+              <button
+                onClick={() => setFilterAvailable((v) => !v)}
+                className={`flex items-center gap-2 whitespace-nowrap rounded-xl border px-3 py-2.5 text-sm font-semibold transition ${
+                  filterAvailable
+                    ? 'border-emerald-500 bg-emerald-500 text-white'
+                    : 'border-soul-line bg-white text-soul-muted hover:border-emerald-300'
+                }`}
+              >
+                Available only
+              </button>
+            </div>
+            <div>
+              <label className="label text-xs">Stay type</label>
+              <SearchableSelect
+                className="w-48"
+                value={filterColor}
+                onChange={setFilterColor}
+                placeholder="All stays"
+                options={COLOR_FILTERS.map((cf) => ({ value: cf.value, label: cf.label }))}
+              />
+            </div>
+            {hasFilters && (
+              <button onClick={clearFilters} className="btn-secondary flex items-center gap-1.5 text-sm">
+                <X className="w-3.5 h-3.5" />
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* ── Calendar grid */}
       {isLoading ? <LoadingSpinner /> : (
-        <div className="card p-0 shadow-sm" style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: '75vh' }}>
-          <table className="w-full text-sm border-collapse" style={{ minWidth: Math.max(500, 120 + displayDates.length * 38) }}>
+        <div
+          className="overflow-auto rounded-2xl border border-soul-line bg-white shadow-sm"
+          style={{ maxHeight: '75vh' }}
+        >
+          <table
+            className="w-full border-collapse text-sm"
+            style={{ minWidth: Math.max(560, 168 + displayDates.length * CELL_W) }}
+          >
             <thead className="sticky top-0 z-30">
-              <tr className="bg-gray-50 border-b border-gray-200">
-                {/* Unit column header */}
-                <th className="sticky left-0 z-40 bg-gray-50 border-r border-gray-200 px-2 lg:px-4 py-3 text-left min-w-[110px] lg:min-w-[200px] font-semibold text-gray-700">
-                  <div className="flex items-center gap-2"><CalendarRange className="w-4 h-4 text-gray-400" />Unit</div>
+              <tr className="border-b border-soul-line bg-[#f7f9fc]">
+                <th className="sticky left-0 z-40 min-w-[120px] border-r border-soul-line bg-[#f7f9fc] px-3 py-3 text-left font-semibold text-soul-blue lg:min-w-[220px] lg:px-4">
+                  <div className="flex items-center gap-2 text-xs uppercase tracking-[0.14em] text-soul-muted">
+                    <CalendarRange className="h-3.5 w-3.5" />
+                    Unit
+                  </div>
                 </th>
                 {displayDates.map((d, i) => {
                   const dStr = isoDate(d);
-                  const isToday    = dStr === TODAY;
+                  const isToday = dStr === TODAY;
                   const isTomorrow = dStr === TOMORROW;
-                  const isWeekend  = d.getDay() === 0 || d.getDay() === 6;
+                  const isWeekend = d.getDay() === 0 || d.getDay() === 6;
                   return (
-                    <th key={i} style={{ minWidth: 38 }}
-                      className={`border-r border-gray-100 px-0 py-1.5 text-center font-medium
-                        ${isToday    ? 'bg-primary-100 text-primary-700 border-primary-200'
-                        : isTomorrow ? 'bg-orange-50 text-orange-700'
-                        : isWeekend  ? 'bg-amber-50/60 text-amber-700'
-                                     : 'text-gray-500'}`}>
-                      <div className="text-[11px] font-bold leading-tight">{d.getDate()}</div>
-                      <div className="text-[9px] opacity-60 hidden lg:block">{d.toLocaleDateString('en-GB',{weekday:'short'})}</div>
+                    <th
+                      key={i}
+                      style={{ minWidth: CELL_W, width: CELL_W }}
+                      className={`border-r border-slate-100 px-0 py-2 text-center font-medium ${
+                        isToday
+                          ? 'bg-[var(--pms-accent-soft,rgba(40,63,94,0.12))] text-soul-blue'
+                          : isTomorrow
+                            ? 'bg-orange-50 text-orange-700'
+                            : isWeekend
+                              ? 'bg-amber-50/70 text-amber-700'
+                              : 'text-soul-muted'
+                      }`}
+                    >
+                      <div className={`mx-auto flex h-7 w-7 items-center justify-center text-[12px] font-bold leading-none ${
+                        isToday ? 'rounded-full bg-[var(--pms-accent,#283f5e)] text-white' : ''
+                      }`}>
+                        {d.getDate()}
+                      </div>
+                      <div className="mt-0.5 hidden text-[9px] font-semibold uppercase tracking-wide opacity-70 lg:block">
+                        {d.toLocaleDateString('en-GB', { weekday: 'short' })}
+                      </div>
                     </th>
                   );
                 })}
               </tr>
             </thead>
             <tbody>
-              {filteredUnits.map(unit => {
+              {filteredUnits.map((unit) => {
                 const cells = buildRow(unit.id, displayDates, allReservations);
                 return (
-                  <tr key={unit.id} className="border-b border-gray-100 hover:bg-gray-50/40 transition-colors">
-                    {/* Unit name — sticky left */}
-                    <td className="sticky left-0 z-10 bg-white border-r border-gray-200 px-2 lg:px-4 py-1.5 lg:py-2">
+                  <tr key={unit.id} className="border-b border-slate-100 transition-colors hover:bg-slate-50/50">
+                    <td className="sticky left-0 z-10 border-r border-soul-line bg-white px-3 py-2.5 lg:px-4">
                       {bulkMode && (
-                        <label className="flex items-center gap-2 cursor-pointer mb-1">
-                          <input type="checkbox"
+                        <label className="mb-1.5 flex cursor-pointer items-center gap-2">
+                          <input
+                            type="checkbox"
                             checked={selectedUnitIds.has(unit.id)}
-                            onChange={e => setSelectedUnitIds(prev => {
-                              const next = new Set(prev);
-                              e.target.checked ? next.add(unit.id) : next.delete(unit.id);
-                              return next;
-                            })}
-                            className="w-4 h-4 rounded accent-indigo-600"
+                            onChange={(e) =>
+                              setSelectedUnitIds((prev) => {
+                                const next = new Set(prev);
+                                e.target.checked ? next.add(unit.id) : next.delete(unit.id);
+                                return next;
+                              })
+                            }
+                            className="h-4 w-4 rounded accent-[var(--pms-accent,#283f5e)]"
                           />
                         </label>
                       )}
-                      <div className="text-xs lg:text-sm font-semibold text-gray-900 leading-tight truncate max-w-[100px] lg:max-w-none">{unit.name}</div>
-                      <div className="text-[10px] lg:text-xs text-gray-400 hidden lg:flex items-center gap-1">
-                        {unit.unit_number} · {unit.project}{unit.bedrooms > 0 ? ` · ${unit.bedrooms}BR` : ' · Studio'}
-                        {unit.photos_link && (
-                          <a href={unit.photos_link} target="_blank" rel="noreferrer"
-                            className="ml-0.5 text-primary-400 hover:text-primary-600 transition-colors flex-shrink-0"
-                            title="View Photos"
-                            onClick={e => e.stopPropagation()}
-                          >
-                            <ExternalLink className="w-3 h-3" />
-                          </a>
-                        )}
-                      </div>
-                      <div className="text-[9px] text-gray-400 lg:hidden truncate max-w-[100px]">
-                        {unit.unit_number}
-                      </div>
-                      {(unit.view || (unit.floor !== null && unit.floor !== undefined)) && (
-                        <div className="text-[10px] lg:text-xs text-indigo-400 mt-0.5 truncate max-w-[100px] lg:max-w-[190px] hidden lg:block">
-                          {[unit.view, unit.floor !== null && unit.floor !== undefined ? (parseInt(unit.floor) === 0 ? 'Ground' : `Floor ${unit.floor}`) : null].filter(Boolean).join(' · ')}
+                      <div className="flex items-start gap-2.5">
+                        <div className="mt-0.5 hidden h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-[var(--pms-accent-soft,rgba(40,63,94,0.1))] text-[11px] font-bold text-soul-blue lg:flex">
+                          {(unit.unit_number || unit.name || '?').toString().slice(0, 2).toUpperCase()}
                         </div>
-                      )}
+                        <div className="min-w-0">
+                          <div className="truncate text-xs font-semibold leading-tight text-soul-blue lg:text-sm">
+                            {unit.name}
+                          </div>
+                          <div className="mt-0.5 hidden items-center gap-1 text-[11px] text-soul-muted lg:flex">
+                            <span>
+                              {unit.unit_number} · {unit.project}
+                              {unit.bedrooms > 0 ? ` · ${unit.bedrooms}BR` : ' · Studio'}
+                            </span>
+                            {unit.photos_link && (
+                              <a
+                                href={unit.photos_link}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-soul-muted transition-colors hover:text-soul-blue"
+                                title="View photos"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                            )}
+                          </div>
+                          <div className="truncate text-[10px] text-soul-muted lg:hidden">
+                            {unit.unit_number}
+                          </div>
+                          {(unit.view || (unit.floor !== null && unit.floor !== undefined)) && (
+                            <div className="mt-0.5 hidden truncate text-[10px] text-slate-400 lg:block">
+                              {[
+                                unit.view,
+                                unit.floor !== null && unit.floor !== undefined
+                                  ? (parseInt(unit.floor, 10) === 0 ? 'Ground' : `Floor ${unit.floor}`)
+                                  : null,
+                              ]
+                                .filter(Boolean)
+                                .join(' · ')}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </td>
 
-                    {/* Calendar cells */}
                     {cells.map((cell, j) => {
-
-                      // ── Price cell ──────────────────────────────────────────────
                       if (cell.type === 'price') {
                         const price = getUnitDayPrice(unit, cell.date);
                         const blockSrc = blockMap[unit.id]?.[cell.date];
-                        const isToday    = cell.date === TODAY;
-                        const isPast     = cell.date < TODAY;
-                        const isPriced   = price != null && price > 0;
-                        const hasCheckinTomorrow = cell.date === TODAY && allReservations.some(r => r.unit_id === unit.id && normDate(r.check_in) === TOMORROW);
-                        const hatch = 'repeating-linear-gradient(45deg, rgba(40,63,94,0.16) 0 3px, transparent 3px 7px)';
-                        let cellBg = '';
-                        if (blockSrc) cellBg = '';
-                        else if (isPriced) cellBg = 'bg-[#e6f7ee]';
-                        else if (!isPast) cellBg = 'bg-[#fdecea]';
+                        const isToday = cell.date === TODAY;
+                        const isPast = cell.date < TODAY;
+                        const isPriced = price != null && price > 0;
+                        const hasCheckinTomorrow =
+                          cell.date === TODAY &&
+                          allReservations.some(
+                            (r) => r.unit_id === unit.id && normDate(r.check_in) === TOMORROW
+                          );
+                        const hatch =
+                          'repeating-linear-gradient(135deg, rgba(40,63,94,0.14) 0 4px, transparent 4px 8px)';
+                        let cellBg = 'bg-white';
+                        if (blockSrc) cellBg = 'bg-slate-50';
+                        else if (isPriced) cellBg = 'bg-emerald-50/90';
+                        else if (!isPast) cellBg = 'bg-rose-50/80';
                         return (
-                          <td key={j} style={{
-                            minWidth: 38,
-                            ...(blockSrc ? { backgroundImage: hatch } : {}),
-                          }}
-                            className={`border-r border-gray-100 p-0 text-center align-middle
-                              ${cellBg}
-                              ${isPast ? 'opacity-50' : ''}
-                              ${isToday ? 'ring-1 ring-inset ring-primary-400' : ''}
-                              ${hasCheckinTomorrow && !blockSrc ? 'bg-orange-50' : ''}
-                              ${canEditPrice && !isPast ? 'cursor-pointer group hover:brightness-95' : ''}`}
+                          <td
+                            key={j}
+                            style={{
+                              minWidth: CELL_W,
+                              width: CELL_W,
+                              ...(blockSrc ? { backgroundImage: hatch } : {}),
+                            }}
+                            className={`border-r border-slate-100 p-0 text-center align-middle ${cellBg} ${
+                              isPast ? 'opacity-45' : ''
+                            } ${isToday ? 'ring-1 ring-inset ring-[var(--pms-accent,#283f5e)]/35' : ''} ${
+                              hasCheckinTomorrow && !blockSrc ? 'bg-orange-50' : ''
+                            } ${canEditPrice && !isPast ? 'cursor-pointer group hover:brightness-[0.98]' : ''}`}
                             onClick={() => canEditPrice && !isPast && handlePriceClick(unit, cell.date)}
                             title={
                               blockSrc
@@ -1359,38 +1479,53 @@ export default function Schedule() {
                                   : `No price — guests see unavailable · ${formatDate(cell.date)}`
                             }
                           >
-                            <div className={`py-1 h-9 flex flex-col items-center justify-center relative
-                              ${hasCheckinTomorrow ? 'text-orange-700' : isPriced ? 'text-[#0f7d3a]' : 'text-red-300'}`}>
-                              {hasCheckinTomorrow && <span className="text-orange-500 text-xs leading-none mb-0.5">⚑</span>}
+                            <div
+                              className={`relative flex h-11 flex-col items-center justify-center py-1 ${
+                                hasCheckinTomorrow
+                                  ? 'text-orange-700'
+                                  : isPriced
+                                    ? 'text-emerald-700'
+                                    : 'text-rose-300'
+                              }`}
+                            >
+                              {hasCheckinTomorrow && (
+                                <span className="mb-0.5 text-[10px] leading-none text-orange-500">●</span>
+                              )}
                               {blockSrc && !isPriced ? (
-                                <span className="text-[9px] text-violet-600 font-semibold">{blockSrc === 'ical' ? 'OTA' : 'BLK'}</span>
+                                <span className="rounded-md bg-white/80 px-1 text-[9px] font-bold tracking-wide text-violet-700">
+                                  {blockSrc === 'ical' ? 'OTA' : 'BLK'}
+                                </span>
                               ) : isPriced ? (
-                                <span className="text-[10px] font-bold leading-none">
-                                  {price >= 1000 ? `${(price / 1000).toFixed(price % 1000 === 0 ? 0 : 1)}k` : price}
+                                <span className="text-[11px] font-bold leading-none tracking-tight">
+                                  {price >= 1000
+                                    ? `${(price / 1000).toFixed(price % 1000 === 0 ? 0 : 1)}k`
+                                    : price}
                                 </span>
                               ) : (
-                                <span className="text-[10px] font-medium">—</span>
+                                <span className="text-[11px] font-semibold">—</span>
                               )}
-                              {canEditPrice && !isPast && <Edit2 className="w-2.5 h-2.5 absolute bottom-1 right-1 opacity-0 group-hover:opacity-40 text-primary-500" />}
+                              {canEditPrice && !isPast && (
+                                <Edit2 className="absolute bottom-1 right-1 h-2.5 w-2.5 text-soul-blue opacity-0 transition group-hover:opacity-50" />
+                              )}
                             </div>
                           </td>
                         );
                       }
 
-                      const { bg, text, hover } = resColors(cell.res, TODAY);
+                      const { bg, text, hover, ring } = resColors(cell.res, TODAY);
                       const tipText = `${cell.res.guest_name}\n${formatDate(normDate(cell.res.check_in))} → ${formatDate(normDate(cell.res.check_out))}\n${nightsText(cell.res.nights)} · ${currency(cell.res.total_amount)}`;
 
-                      // ── Check-in cell: bar fills right 50%, left-rounded cap ──
                       if (cell.type === 'checkin') {
                         return (
-                          <td key={j} style={{ minWidth: 38 }}
-                            className="border-r border-gray-100 p-0 align-middle">
-                            <div className="h-9 flex items-center">
-                              {/* Left half — empty */}
-                              <div className="w-1/2 h-full" />
-                              {/* Right half — reservation starts */}
+                          <td
+                            key={j}
+                            style={{ minWidth: CELL_W, width: CELL_W }}
+                            className="border-r border-slate-100 p-0 align-middle"
+                          >
+                            <div className="flex h-11 items-center">
+                              <div className="h-full w-1/2" />
                               <div
-                                className={`flex-1 h-6 ${bg} ${hover} rounded-l-full cursor-pointer transition-all`}
+                                className={`h-7 flex-1 cursor-pointer rounded-l-full shadow-sm ring-1 ${bg} ${hover} ${ring} transition`}
                                 title={tipText}
                                 onClick={() => handleResClick(cell.res)}
                               />
@@ -1399,23 +1534,30 @@ export default function Schedule() {
                         );
                       }
 
-                      // ── Mid cell: full-width bar with guest name (colSpan) ────
                       if (cell.type === 'mid') {
                         return (
-                          <td key={j} colSpan={cell.span} style={{ minWidth: 38 * cell.span }}
-                            className="border-r border-gray-100 p-0 align-middle">
+                          <td
+                            key={j}
+                            colSpan={cell.span}
+                            style={{ minWidth: CELL_W * cell.span }}
+                            className="border-r border-slate-100 p-0 align-middle"
+                          >
                             <div
-                              className={`${bg} ${text} ${hover} h-6 my-1.5 mx-0 flex items-center justify-between px-1 cursor-pointer transition-all`}
+                              className={`mx-0 my-2 flex h-7 cursor-pointer items-center justify-between px-2 shadow-sm ring-1 ${bg} ${text} ${hover} ${ring} transition`}
                               title={tipText}
                               onClick={() => handleResClick(cell.res)}
                             >
-                              <div className="flex items-center gap-1.5 min-w-0">
-                                <Eye className="w-3 h-3 flex-shrink-0 opacity-70" />
-                                <span className="text-xs font-semibold truncate">{cell.res.guest_name}</span>
+                              <div className="flex min-w-0 items-center gap-1.5">
+                                <Eye className="h-3 w-3 flex-shrink-0 opacity-80" />
+                                <span className="truncate text-[11px] font-semibold tracking-tight">
+                                  {cell.res.guest_name}
+                                </span>
                               </div>
                               {cell.span > 2 && (
-                                <span className="text-xs opacity-60 flex-shrink-0 truncate max-w-[80px]">
-                                  {cell.res.is_owner_reservation ? 'Owner' : (cell.res.sales_person_name || '')}
+                                <span className="max-w-[80px] flex-shrink-0 truncate text-[10px] opacity-75">
+                                  {cell.res.is_owner_reservation
+                                    ? 'Owner'
+                                    : cell.res.sales_person_name || ''}
                                 </span>
                               )}
                             </div>
@@ -1423,34 +1565,46 @@ export default function Schedule() {
                         );
                       }
 
-                      // ── Check-out cell: bar fills left 25%, right-rounded cap ─
                       if (cell.type === 'checkout') {
                         return (
-                          <td key={j} style={{ minWidth: 38 }}
-                            className="border-r border-gray-100 p-0 align-middle">
-                            <div className="h-9 flex items-center">
-                              {/* Left quarter — reservation ends */}
+                          <td
+                            key={j}
+                            style={{ minWidth: CELL_W, width: CELL_W }}
+                            className="border-r border-slate-100 p-0 align-middle"
+                          >
+                            <div className="flex h-11 items-center">
                               <div
-                                className={`w-1/4 h-6 ${bg} ${hover} rounded-r-full cursor-pointer transition-all`}
+                                className={`h-7 w-1/4 cursor-pointer rounded-r-full shadow-sm ring-1 ${bg} ${hover} ${ring} transition`}
                                 title={tipText}
                                 onClick={() => handleResClick(cell.res)}
                               />
-                              {/* Right 3/4 — empty */}
-                              <div className="flex-1 h-full" />
+                              <div className="h-full flex-1" />
                             </div>
                           </td>
                         );
                       }
+
+                      return null;
                     })}
                   </tr>
                 );
               })}
               {filteredUnits.length === 0 && (
                 <tr>
-                  <td colSpan={displayDates.length + 1} className="text-center py-16 text-gray-400">
-                    {(data?.units || []).length === 0
-                      ? 'No units found — add units in the Units page first'
-                      : 'No units match the selected filters'}
+                  <td colSpan={displayDates.length + 1} className="px-6 py-20 text-center">
+                    <div className="mx-auto flex max-w-sm flex-col items-center gap-2">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#f7f9fc] text-soul-muted">
+                        <CalendarRange className="h-5 w-5" />
+                      </div>
+                      <p className="text-sm font-semibold text-soul-blue">
+                        {(data?.units || []).length === 0 ? 'No units yet' : 'No matching units'}
+                      </p>
+                      <p className="text-xs text-soul-muted">
+                        {(data?.units || []).length === 0
+                          ? 'Add units in the Units page to start scheduling.'
+                          : 'Try clearing filters or widening the date range.'}
+                      </p>
+                    </div>
                   </td>
                 </tr>
               )}
@@ -1459,9 +1613,8 @@ export default function Schedule() {
         </div>
       )}
 
-      {/* Footnote */}
-      <p className="text-xs text-gray-400 text-right">
-        Green = priced night · Red = unpriced (guests can&apos;t book) · Hatched = OTA/manual block · Bars = reservations/holds
+      <p className="text-right text-[11px] text-soul-muted">
+        Tap a night to price it · Unpriced nights stay closed to guests · Bars open reservation details
       </p>
 
       {/* ── Modals */}
