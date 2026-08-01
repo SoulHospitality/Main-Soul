@@ -24,9 +24,7 @@ const Projects = lazy(() => import('./pages/Projects'));
 const ChangePassword = lazy(() => import('./pages/ChangePassword'));
 const OwnerDashboard = lazy(() => import('./pages/OwnerDashboard'));
 const OwnerReservations = lazy(() => import('./pages/OwnerReservations'));
-const OwnerStatementPage = lazy(() =>
-  import('./pages/OwnerPortalPages').then((m) => ({ default: m.default }))
-);
+const OwnerStatement = lazy(() => import('./pages/OwnerStatement'));
 const OwnerPayoutsPage = lazy(() =>
   import('./pages/OwnerPortalPages').then((m) => ({ default: m.OwnerPayoutsPage }))
 );
@@ -94,6 +92,7 @@ function AppRoutes() {
       <Route path="marketing" element={<Navigate to="/admin/expenses?category=marketing" replace />} />
       <Route path="salaries" element={<Navigate to="/admin/expenses?category=salary" replace />} />
       <Route path="owner-settlements" element={<ProtectedRoute page="owner_settlements"><OwnerSettlementsAdmin /></ProtectedRoute>} />
+      <Route path="owner-statement" element={<ProtectedRoute page="owner_settlements"><OwnerStatement /></ProtectedRoute>} />
       <Route path="petty-cash" element={<ProtectedRoute page="petty_cash"><PettyCash /></ProtectedRoute>} />
       <Route path="housekeeping" element={<ProtectedRoute page="housekeeping"><Housekeeping /></ProtectedRoute>} />
       <Route path="users" element={<ProtectedRoute page="users"><Users /></ProtectedRoute>} />
@@ -101,7 +100,7 @@ function AppRoutes() {
       <Route path="sales" element={<ProtectedRoute page="sales"><ResaleSales /></ProtectedRoute>} />
       <Route path="owner" element={<ProtectedRoute page="owner"><OwnerDashboard /></ProtectedRoute>} />
       <Route path="owner/reservations" element={<ProtectedRoute page="owner_reservations"><OwnerReservations /></ProtectedRoute>} />
-      <Route path="owner/statement" element={<ProtectedRoute page="owner_statement"><OwnerStatementPage /></ProtectedRoute>} />
+      <Route path="owner/statement" element={<ProtectedRoute page="owner_statement"><OwnerStatement /></ProtectedRoute>} />
       <Route path="owner/payouts" element={<ProtectedRoute page="owner_payouts"><OwnerPayoutsPage /></ProtectedRoute>} />
       <Route path="owner/blocks" element={<ProtectedRoute page="owner_blocks"><OwnerDateBlocks /></ProtectedRoute>} />
       <Route path="profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />

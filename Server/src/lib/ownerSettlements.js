@@ -41,15 +41,18 @@ async function generateOwnerSettlement({ ownerId, periodStart, periodEnd }) {
     net += fin.ownerNet;
   }
 
-  // Deduct owner-paid expenses in period
+  // Deduct owner-paid expenses in period (attributed to this owner)
   const { rows: expRows } = await query(
     `SELECT COALESCE(SUM(amount), 0)::float AS total
      FROM expenses
-     WHERE unit_id = ANY($1::uuid[])
-       AND paid_by = 'owner'
+     WHERE paid_by = 'owner'
        AND expense_date >= $2::date
-       AND expense_date <= $3::date`,
-    [unitIds, from, to]
+       AND expense_date <= $3::date
+       AND (
+         owner_id = $4
+         OR (owner_id IS NULL AND unit_id = ANY($1::uuid[]))
+       )`,
+    [unitIds, from, to, ownerId]
   );
   const ownerExpenses = Number(expRows[0]?.total) || 0;
   net = round2(net - ownerExpenses);

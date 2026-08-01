@@ -26,6 +26,7 @@ const NAV_ITEMS = [
   { path: '/admin/acquisition',      label: 'Owner leads',        icon: Briefcase,          page: 'acquisition', resaleLabel: 'Owners requests' },
   { path: '/admin/sales',            label: 'Sales',              icon: TrendingUp,         page: 'sales' },
   { path: '/admin/owner-settlements', label: 'Owner Settlements', icon: FileBarChart2, page: 'owner_settlements' },
+  { path: '/admin/owner-statement',  label: 'Owner Statement',   icon: FileBarChart2, page: 'owner_settlements' },
   { path: '/admin/users',            label: 'User Management',    icon: Users,              page: 'users' },
 ];
 

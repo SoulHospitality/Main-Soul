@@ -91,17 +91,25 @@ router.get('/reports/owner-statement', async (req, res, next) => {
     });
 
     const expParams = [unitId, from];
-    let expWhere = `unit_id = $1 AND expense_date >= $2::date`;
+    let expWhere = `expense_date >= $2::date AND (
+         unit_id = $1
+         OR (
+           paid_by = 'owner'
+           AND owner_id IN (SELECT owner_id FROM owner_units WHERE unit_id = $1)
+           AND unit_id IS NULL
+         )
+       )`;
     if (to) {
       expParams.push(to);
       expWhere += ` AND expense_date <= $${expParams.length}::date`;
     }
     const { rows: expenses } = await query(
-      `SELECT id, description, amount, paid_by, expense_date, notes
+      `SELECT id, description, amount, paid_by, expense_date, notes, owner_id, unit_id
        FROM expenses WHERE ${expWhere} ORDER BY expense_date`,
       expParams
     );
 
+    // Only expenses attributed to the owner reduce final due (never company / staff)
     const ownerExpTotal = expenses
       .filter((e) => e.paid_by === 'owner')
       .reduce((s, e) => s + Number(e.amount || 0), 0);
@@ -119,6 +127,7 @@ router.get('/reports/owner-statement', async (req, res, next) => {
       totalSubtotal: statement.totalSubtotal,
       totalCompanyCommission: statement.totalCompanyCommission,
       totalOwnerNet: statement.totalOwnerNet,
+      ownerExpenses: round2(ownerExpTotal),
       finalDue,
     };
 
@@ -219,6 +228,24 @@ router.get('/owner/dashboard', requireRoles('owner', 'admin'), async (req, res, 
       .filter((s) => s.status === 'open' || s.status === 'ready')
       .reduce((s, r) => s + Number(r.net_amount || 0), 0);
 
+    const { rows: expenseRows } = await query(
+      `SELECT e.id, e.description, e.amount, e.paid_by, e.expense_date, e.notes, e.owner_id,
+              COALESCE(u.title, u.unit_number) AS unit_name
+       FROM expenses e
+       LEFT JOIN units u ON u.id = e.unit_id
+       WHERE e.paid_by = 'owner'
+         AND e.expense_date >= $2::date
+         AND (
+           e.owner_id = $3
+           OR (e.owner_id IS NULL AND e.unit_id = ANY($1::uuid[]))
+         )
+       ORDER BY e.expense_date DESC
+       LIMIT 50`,
+      [unitIds, from, ownerId]
+    );
+    const ownerExpensesTotal = expenseRows.reduce((s, e) => s + Number(e.amount || 0), 0);
+    const netAfterExpenses = round2(ownerNet - ownerExpensesTotal);
+
     res.json({
       units: unitRows,
       occupancy_pct: Math.round(occupancy * 1000) / 10,
@@ -226,8 +253,11 @@ router.get('/owner/dashboard', requireRoles('owner', 'admin'), async (req, res, 
       gbv: round2(gbv),
       commission: round2(commission),
       owner_net: round2(ownerNet),
+      owner_expenses: round2(ownerExpensesTotal),
+      net_after_expenses: netAfterExpenses,
+      expenses: expenseRows,
       paid: round2(paidSum),
-      pending: round2(pendingSum || ownerNet),
+      pending: round2(pendingSum || netAfterExpenses),
       next_payout_date: ready?.period_end || null,
       settlements,
     });
@@ -385,7 +415,13 @@ router.get('/owner/units', requireRoles('owner', 'admin'), async (req, res, next
        ORDER BY u.title`,
       [ownerId]
     );
-    res.json(rows);
+    res.json(
+      rows.map((u) => ({
+        ...u,
+        name: u.title || u.unit_number,
+        project: u.project || u.compound,
+      }))
+    );
   } catch (e) {
     next(e);
   }

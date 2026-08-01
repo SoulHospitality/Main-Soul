@@ -37,7 +37,8 @@ const OUT_REQUIRES_DATES = ['Beach Access Out', 'Housekeeping'];
 const EMPTY_FORM = {
   type: 'out',
   unit_id: '', category: '', custom_description: '',
-  amount: '', paid_by: 'company', expense_date: '',
+  amount: '', paid_by: 'company', owner_id: '',
+  expense_date: '',
   res_from_date: '', res_to_date: '', notes: '',
   is_general: false,
   is_advance: false,
@@ -50,11 +51,13 @@ function PaidByBadge({ paidBy }) {
   return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">Company</span>;
 }
 
-function EntryForm({ form, setForm, units }) {
+function EntryForm({ form, setForm, units, owners = [], ownerUnits = [] }) {
   const isIn = form.type === 'in';
   const categories = isIn ? IN_CATEGORIES : OUT_CATEGORIES;
   const requiresDates = isIn ? IN_REQUIRES_DATES : OUT_REQUIRES_DATES;
   const needsDates = requiresDates.includes(form.category);
+  const costOnOwner = !isIn && form.paid_by === 'owner';
+  const unitOptions = costOnOwner ? ownerUnits : units;
 
   return (
     <div className="space-y-4">
@@ -123,8 +126,57 @@ function EntryForm({ form, setForm, units }) {
         />
       </div>
 
-      {/* ── General expense checkbox (Out only) ── */}
+      {/* ── Cost On ── */}
       {!isIn && (
+        <div>
+          <label className="label">Cost On *</label>
+          <SearchableSelect
+            value={form.paid_by}
+            onChange={(v) =>
+              setForm((f) => ({
+                ...f,
+                paid_by: v,
+                is_general: v === 'owner' ? false : f.is_general,
+                owner_id: v === 'owner' ? f.owner_id : '',
+                unit_id: v === 'owner' ? '' : f.unit_id,
+              }))
+            }
+            placeholder="Cost On…"
+            options={[
+              { value: 'company', label: 'Company' },
+              { value: 'owner', label: 'Owner' },
+              { value: 'tenant', label: 'Tenant' },
+            ]}
+          />
+          {costOnOwner && (
+            <p className="mt-1 text-[11px] text-amber-700">
+              Charged only to the owner you select below — not company and not you as staff
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* ── Owner picker (owner-paid only) ── */}
+      {costOnOwner && (
+        <div>
+          <label className="label">Which owner pays? *</label>
+          <SearchableSelect
+            value={form.owner_id}
+            onChange={(v) => setForm((f) => ({ ...f, owner_id: v, unit_id: '' }))}
+            placeholder="Select owner…"
+            options={[
+              { value: '', label: 'Select owner…' },
+              ...owners.map((o) => ({
+                value: String(o.id),
+                label: `${o.full_name}${o.unit_count != null ? ` (${o.unit_count} units)` : ''}`,
+              })),
+            ]}
+          />
+        </div>
+      )}
+
+      {/* ── General expense checkbox (Out only, not owner) ── */}
+      {!isIn && !costOnOwner && (
         <div className="flex items-center gap-2">
           <input
             type="checkbox"
@@ -134,18 +186,32 @@ function EntryForm({ form, setForm, units }) {
             className="w-4 h-4 rounded border-gray-300 text-primary-600"
           />
           <label htmlFor="is_general" className="text-sm font-medium text-gray-700">
-            🏢 General company expense — no unit
+            General company expense — no unit
           </label>
         </div>
       )}
 
       {/* ── Unit ── */}
-      {(!isIn ? !form.is_general : true) && (
+      {(!isIn ? (costOnOwner || !form.is_general) : true) && (
         <div>
-          <label className="label">Unit {needsDates ? '*' : ''}</label>
-          <SearchableSelect value={form.unit_id} onChange={v => setForm(f => ({ ...f, unit_id: v }))}
-            placeholder="Select unit…"
-            options={[{ value: '', label: 'Select unit…' }, ...units.map(u => ({ value: String(u.id), label: `${u.name} — ${u.project}` }))]}
+          <label className="label">
+            Unit {costOnOwner || needsDates ? '*' : ''}
+            {costOnOwner && !form.owner_id ? (
+              <span className="ml-1 text-[11px] font-normal text-slate-400">Select an owner first</span>
+            ) : null}
+          </label>
+          <SearchableSelect
+            value={form.unit_id}
+            onChange={(v) => setForm((f) => ({ ...f, unit_id: v }))}
+            placeholder={costOnOwner && !form.owner_id ? 'Select owner first…' : 'Select unit…'}
+            disabled={costOnOwner && !form.owner_id}
+            options={[
+              { value: '', label: 'Select unit…' },
+              ...unitOptions.map((u) => ({
+                value: String(u.id),
+                label: `${u.name || u.title || u.unit_number} — ${u.project || u.compound || '—'}`,
+              })),
+            ]}
           />
         </div>
       )}
@@ -179,7 +245,7 @@ function EntryForm({ form, setForm, units }) {
         </div>
       )}
 
-      {/* ── Amount / Cost On / Date ── */}
+      {/* ── Amount / Date ── */}
       <div className="form-grid">
         <div>
           <label className="label">Amount (EGP) *</label>
@@ -187,15 +253,6 @@ function EntryForm({ form, setForm, units }) {
             value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
             placeholder="0.00" />
         </div>
-        {!isIn && (
-          <div>
-            <label className="label">Cost On *</label>
-            <SearchableSelect value={form.paid_by} onChange={v => setForm(f => ({ ...f, paid_by: v }))}
-              placeholder="Cost On…"
-              options={[{ value: 'company', label: 'Company' }, { value: 'owner', label: 'Owner' }, { value: 'tenant', label: 'Tenant' }]}
-            />
-          </div>
-        )}
         <div>
           <label className="label">Date *</label>
           <input type="date" className="input" value={form.expense_date}
@@ -267,6 +324,17 @@ export default function PettyCash() {
     queryFn:  () => api.get('/units').then(r => r.data),
   });
 
+  const { data: owners = [] } = useQuery({
+    queryKey: ['users-owners'],
+    queryFn: () => api.get('/users/owners').then((r) => r.data),
+  });
+
+  const { data: ownerUnits = [] } = useQuery({
+    queryKey: ['owner-units-for-petty', form.owner_id],
+    queryFn: () => api.get(`/users/owners/${form.owner_id}/units`).then((r) => r.data),
+    enabled: !!form.owner_id && form.paid_by === 'owner',
+  });
+
   const { data: reservationsList = [] } = useQuery({
     queryKey: ['reservations-simple'],
     queryFn:  () => api.get('/reservations').then(r => {
@@ -283,6 +351,8 @@ export default function PettyCash() {
       : api.post('/petty-cash', d),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['petty-cash'] });
+      qc.invalidateQueries({ queryKey: ['expenses'] });
+      qc.invalidateQueries({ queryKey: ['finance-summary'] });
       toast.success(editId ? 'Entry updated' : 'Entry added');
       setModal(false);
       setEditId(null);
@@ -343,11 +413,12 @@ export default function PettyCash() {
       custom_description: category === 'Others' ? (entry.description || '') : '',
       amount:             entry.amount       || '',
       paid_by:            entry.paid_by      || 'company',
+      owner_id:           entry.owner_id != null ? String(entry.owner_id) : '',
       expense_date:       entry.expense_date ? String(entry.expense_date).split('T')[0] : '',
       res_from_date:      entry.res_from_date ? String(entry.res_from_date).split('T')[0] : '',
       res_to_date:        entry.res_to_date   ? String(entry.res_to_date).split('T')[0]   : '',
       notes:              entry.notes        || '',
-      is_general:         !entry.unit_id && !isIn,
+      is_general:         !entry.unit_id && !isIn && entry.paid_by !== 'owner',
       is_advance:         !!entry.is_advance,
     });
     setEditId(entry.id);
@@ -361,9 +432,13 @@ export default function PettyCash() {
 
     if (!form.category || !form.amount || !form.expense_date)
       return toast.error('Please fill all required fields');
-    if (!isIn && !form.is_general && needsDates && !form.unit_id)
-      return toast.error('Please select a unit for this category');
-    if (!isIn && !form.is_general && !needsDates && !form.unit_id)
+    if (!isIn && form.paid_by === 'owner' && !form.owner_id)
+      return toast.error('Select which owner pays this cost');
+    if (!isIn && form.paid_by === 'owner' && !form.unit_id)
+      return toast.error('Select a unit for that owner');
+    if (!isIn && form.is_general && form.paid_by === 'owner')
+      return toast.error('Owner costs must be linked to an owner and unit');
+    if (!isIn && !form.is_general && form.paid_by !== 'owner' && !form.unit_id)
       return toast.error('Please select a unit or check "General company expense"');
     if (isIn && !form.unit_id && needsDates)
       return toast.error('Please select a unit for this category');
@@ -380,6 +455,7 @@ export default function PettyCash() {
 
     saveMutation.mutate({
       unit_id:      form.unit_id || null,
+      owner_id:     !isIn && form.paid_by === 'owner' ? form.owner_id : null,
       description,
       amount:       form.amount,
       paid_by:      isIn ? 'company' : form.paid_by,
@@ -466,7 +542,7 @@ export default function PettyCash() {
         <div className="page-header mb-0">
           <h1 className="page-title">Petty Cash — {TAB_LABELS[location]}</h1>
           <p className="page-subtitle">
-            Temporary expense tracking — not included in reports until moved to Expenses
+            Cash drawer tracking. Owner-paid outs are charged to the owner statement immediately.
           </p>
         </div>
         {canWrite && (
@@ -638,7 +714,12 @@ export default function PettyCash() {
                     </td>
 
                     <td className="text-center">
-                      <PaidByBadge paidBy={entry.paid_by} />
+                      <div className="flex flex-col items-center gap-0.5">
+                        <PaidByBadge paidBy={entry.paid_by} />
+                        {entry.paid_by === 'owner' && entry.owner_name && (
+                          <span className="text-[11px] text-amber-800 font-medium">{entry.owner_name}</span>
+                        )}
+                      </div>
                     </td>
 
                     <td className="text-gray-600 text-sm">{entry.created_by_name || '—'}</td>
@@ -724,7 +805,13 @@ export default function PettyCash() {
           </>
         }
       >
-        <EntryForm form={form} setForm={setForm} units={units} />
+        <EntryForm
+          form={form}
+          setForm={setForm}
+          units={units}
+          owners={owners}
+          ownerUnits={ownerUnits}
+        />
       </Modal>
 
       {/* ── Move to Expenses Confirm ─────────────────────────────────────────── */}

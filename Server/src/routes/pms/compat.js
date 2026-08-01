@@ -72,6 +72,49 @@ router.get('/users/sales', async (_req, res, next) => {
   }
 });
 
+/** Active property owners (for attributing owner-paid costs). */
+router.get('/users/owners', requireRoles('admin'), async (_req, res, next) => {
+  try {
+    const { rows } = await query(
+      `SELECT s.id, s.full_name, s.email, s.username,
+              COUNT(ou.unit_id)::int AS unit_count
+       FROM staff_users s
+       LEFT JOIN owner_units ou ON ou.owner_id = s.id
+       WHERE s.role = 'owner' AND COALESCE(s.is_active, 1) = 1
+       GROUP BY s.id, s.full_name, s.email, s.username
+       ORDER BY s.full_name`
+    );
+    res.json(rows);
+  } catch (e) {
+    next(e);
+  }
+});
+
+/** Units linked to a specific owner. */
+router.get('/users/owners/:id/units', requireRoles('admin'), async (req, res, next) => {
+  try {
+    const { rows } = await query(
+      `SELECT u.id, u.title, u.unit_number, u.project, u.compound,
+              COALESCE(u.title, u.unit_number) AS name,
+              COALESCE(u.project, u.compound) AS project_label
+       FROM owner_units ou
+       JOIN units u ON u.id = ou.unit_id
+       WHERE ou.owner_id = $1
+       ORDER BY u.title NULLS LAST, u.unit_number`,
+      [req.params.id]
+    );
+    res.json(
+      rows.map((u) => ({
+        ...u,
+        name: u.name || u.title || u.unit_number,
+        project: u.project || u.compound || u.project_label,
+      }))
+    );
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.get('/payments/all', requireRoles('admin'), async (req, res, next) => {
   try {
     const from = clampFromDate(req.query.from_date);
@@ -354,7 +397,9 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
     const { rows: expenseRows } = await query(
       `SELECT COALESCE(category, 'other') AS category,
               COALESCE(SUM(amount), 0)::float AS total
-       FROM expenses WHERE ${expWhere}
+       FROM expenses
+       WHERE ${expWhere}
+         AND COALESCE(paid_by, 'company') <> 'owner'
        GROUP BY COALESCE(category, 'other')`,
       expParams
     );
@@ -373,7 +418,10 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
     }
 
     const pcParams = [from_date];
-    let pcWhere = `entry_type = 'out' AND entry_date >= $1::date`;
+    let pcWhere = `entry_type = 'out'
+      AND COALESCE(status, 'open') <> 'moved'
+      AND COALESCE(paid_by, 'company') <> 'owner'
+      AND entry_date >= $1::date`;
     if (to_date) {
       pcParams.push(to_date);
       pcWhere += ` AND entry_date <= $${pcParams.length}::date`;

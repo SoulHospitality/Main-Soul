@@ -2498,31 +2498,375 @@ router.get('/petty-cash', requireRoles('admin'), async (req, res, next) => {
   try {
     const from = clampFromDate(req.query.from_date);
     const location = req.query.location;
+    const unitId = req.query.unit_id || null;
+    const paidBy = req.query.paid_by || null;
     const params = [from];
-    let sql = `SELECT * FROM petty_cash WHERE entry_date >= $1::date`;
+    let sql = `
+      SELECT pc.*,
+             COALESCE(u.title, u.unit_number) AS unit_name,
+             COALESCE(u.project, u.compound) AS project,
+             ow.full_name AS owner_name,
+             pc.entry_type AS type,
+             pc.entry_date AS expense_date
+      FROM petty_cash pc
+      LEFT JOIN units u ON u.id = pc.unit_id
+      LEFT JOIN staff_users ow ON ow.id = pc.owner_id
+      WHERE pc.entry_date >= $1::date`;
     if (location) {
       params.push(location);
-      sql += ` AND location = $${params.length}`;
+      sql += ` AND pc.location = $${params.length}`;
     }
-    sql += ' ORDER BY entry_date DESC, created_at DESC LIMIT 200';
+    if (unitId) {
+      params.push(unitId);
+      sql += ` AND pc.unit_id = $${params.length}`;
+    }
+    if (paidBy) {
+      params.push(paidBy);
+      sql += ` AND pc.paid_by = $${params.length}`;
+    }
+    sql += ' ORDER BY pc.entry_date DESC, pc.created_at DESC LIMIT 200';
     const { rows } = await query(sql, params);
-    sendList(res, rows);
+    sendList(
+      res,
+      rows.map((r) => ({
+        ...r,
+        type: r.entry_type || r.type,
+        expense_date: r.entry_date || r.expense_date,
+      }))
+    );
   } catch (e) {
     next(e);
   }
 });
 
 router.post('/petty-cash', requireRoles('admin'), async (req, res, next) => {
+  const client = await pool.connect();
   try {
-    const b = req.body;
-    const { rows } = await query(
-      `INSERT INTO petty_cash (location, description, amount, entry_type, entry_date, created_by)
-       VALUES ($1,$2,$3,$4,COALESCE($5,CURRENT_DATE),$6) RETURNING *`,
-      [b.location, b.description, b.amount, b.entry_type, b.entry_date, req.user.id]
+    const b = req.body || {};
+    const entryType = String(b.entry_type || b.type || 'out').toLowerCase() === 'in' ? 'in' : 'out';
+    const paidBy =
+      entryType === 'in'
+        ? 'company'
+        : ['owner', 'tenant', 'company'].includes(String(b.paid_by || '').toLowerCase())
+          ? String(b.paid_by).toLowerCase()
+          : 'company';
+    const unitId = b.unit_id || null;
+    const ownerId =
+      paidBy === 'owner' && b.owner_id != null && b.owner_id !== ''
+        ? Number(b.owner_id)
+        : null;
+    const amount = parseFloat(b.amount);
+    const description = String(b.description || '').trim();
+    const entryDate = b.expense_date || b.entry_date || null;
+    const location = b.location || 'north_coast';
+
+    if (!description || Number.isNaN(amount) || amount < 0) {
+      return res.status(400).json({ error: 'Description and amount are required' });
+    }
+    if (entryType === 'out' && paidBy === 'owner') {
+      if (!ownerId || Number.isNaN(ownerId)) {
+        return res.status(400).json({ error: 'Select which owner pays this cost' });
+      }
+      if (!unitId) {
+        return res.status(400).json({ error: 'Select a unit belonging to that owner' });
+      }
+      const { rows: linkRows } = await query(
+        `SELECT 1 FROM owner_units WHERE owner_id = $1 AND unit_id = $2`,
+        [ownerId, unitId]
+      );
+      if (!linkRows[0]) {
+        return res.status(400).json({ error: 'That unit is not linked to the selected owner' });
+      }
+    }
+
+    await client.query('BEGIN');
+
+    let linkedExpenseId = null;
+    let status = 'open';
+
+    // Owner-paid outs are charged to the selected owner only (not company / not staff)
+    if (entryType === 'out' && paidBy === 'owner' && ownerId && unitId) {
+      const exp = await client.query(
+        `INSERT INTO expenses (
+           unit_id, description, amount, paid_by, expense_date, notes, created_by, category, owner_id
+         ) VALUES ($1,$2,$3,'owner',COALESCE($4::date, CURRENT_DATE),$5,$6,'other',$7)
+         RETURNING id`,
+        [
+          unitId,
+          description,
+          amount,
+          entryDate,
+          b.notes || 'From petty cash',
+          req.user.id,
+          ownerId,
+        ]
+      );
+      linkedExpenseId = exp.rows[0].id;
+      status = 'moved';
+    }
+
+    const { rows } = await client.query(
+      `INSERT INTO petty_cash (
+         location, description, amount, entry_type, entry_date, created_by,
+         unit_id, paid_by, notes, status, is_advance, res_from_date, res_to_date,
+         linked_expense_id, moved_to, owner_id
+       ) VALUES (
+         $1,$2,$3,$4,COALESCE($5::date, CURRENT_DATE),$6,
+         $7,$8,$9,$10,COALESCE($11,0),$12,$13,$14,$15,$16
+       ) RETURNING *`,
+      [
+        location,
+        description,
+        amount,
+        entryType,
+        entryDate,
+        req.user.id,
+        unitId,
+        paidBy,
+        b.notes || null,
+        status,
+        b.is_advance ? 1 : 0,
+        b.res_from_date || null,
+        b.res_to_date || null,
+        linkedExpenseId,
+        linkedExpenseId ? 'expenses' : null,
+        ownerId,
+      ]
     );
-    res.status(201).json(rows[0]);
+
+    await client.query('COMMIT');
+    const row = rows[0];
+    res.status(201).json({
+      ...row,
+      type: row.entry_type,
+      expense_date: row.entry_date,
+    });
+  } catch (e) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (_) {
+      /* ignore */
+    }
+    next(e);
+  } finally {
+    client.release();
+  }
+});
+
+router.patch('/petty-cash/:id', requireRoles('admin'), async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const { rows: existingRows } = await query(`SELECT * FROM petty_cash WHERE id = $1`, [
+      req.params.id,
+    ]);
+    const existing = existingRows[0];
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    if (existing.status === 'moved') {
+      return res.status(400).json({ error: 'Cannot edit an entry that was moved to expenses' });
+    }
+
+    const entryType =
+      b.entry_type != null || b.type != null
+        ? String(b.entry_type || b.type).toLowerCase() === 'in'
+          ? 'in'
+          : 'out'
+        : existing.entry_type;
+    const paidBy =
+      b.paid_by != null
+        ? String(b.paid_by).toLowerCase()
+        : existing.paid_by || 'company';
+
+    const { rows } = await query(
+      `UPDATE petty_cash SET
+         description = COALESCE($1, description),
+         amount = COALESCE($2, amount),
+         entry_type = $3,
+         entry_date = COALESCE($4::date, entry_date),
+         unit_id = COALESCE($5, unit_id),
+         paid_by = $6,
+         notes = COALESCE($7, notes),
+         is_advance = COALESCE($8, is_advance),
+         res_from_date = COALESCE($9::date, res_from_date),
+         res_to_date = COALESCE($10::date, res_to_date),
+         location = COALESCE($11, location)
+       WHERE id = $12
+       RETURNING *`,
+      [
+        b.description ?? null,
+        b.amount != null ? parseFloat(b.amount) : null,
+        entryType,
+        b.expense_date || b.entry_date || null,
+        b.unit_id !== undefined ? b.unit_id || null : null,
+        paidBy,
+        b.notes ?? null,
+        b.is_advance != null ? (b.is_advance ? 1 : 0) : null,
+        b.res_from_date || null,
+        b.res_to_date || null,
+        b.location || null,
+        req.params.id,
+      ]
+    );
+    const row = rows[0];
+    res.json({ ...row, type: row.entry_type, expense_date: row.entry_date });
   } catch (e) {
     next(e);
+  }
+});
+
+router.post('/petty-cash/:id/move', requireRoles('admin'), async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: existingRows } = await client.query(`SELECT * FROM petty_cash WHERE id = $1 FOR UPDATE`, [
+      req.params.id,
+    ]);
+    const pc = existingRows[0];
+    if (!pc) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Not found' });
+    }
+    if (pc.status === 'moved' || pc.linked_expense_id) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Already moved to expenses' });
+    }
+    if (pc.entry_type !== 'out') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Only cash-out entries can move to expenses' });
+    }
+    if ((pc.paid_by || 'company') === 'owner' && (!pc.unit_id || !pc.owner_id)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Owner and unit required for owner-paid entries' });
+    }
+
+    const paidBy = pc.paid_by || 'company';
+
+    const exp = await client.query(
+      `INSERT INTO expenses (
+         unit_id, description, amount, paid_by, expense_date, notes, created_by, category, owner_id
+       ) VALUES ($1,$2,$3,$4,COALESCE($5::date, CURRENT_DATE),$6,$7,'other',$8)
+       RETURNING *`,
+      [
+        pc.unit_id,
+        pc.description,
+        pc.amount,
+        paidBy,
+        pc.entry_date,
+        pc.notes || 'From petty cash',
+        req.user.id,
+        paidBy === 'owner' ? pc.owner_id : null,
+      ]
+    );
+
+    const { rows } = await client.query(
+      `UPDATE petty_cash SET
+         status = 'moved',
+         moved_to = 'expenses',
+         linked_expense_id = $1
+       WHERE id = $2
+       RETURNING *`,
+      [exp.rows[0].id, pc.id]
+    );
+
+    if (paidBy === 'company') {
+      try {
+        await client.query(
+          `INSERT INTO cash_ledger (entry_type, category, description, amount, entry_date, reference, created_by)
+           VALUES ('out','petty_cash',$1,$2,COALESCE($3::date, CURRENT_DATE),$4,$5)`,
+          [
+            pc.description,
+            pc.amount,
+            pc.entry_date,
+            `petty_cash:${pc.id}`,
+            req.user.id,
+          ]
+        );
+      } catch (_) {
+        // cash_ledger optional
+      }
+    }
+
+    await client.query('COMMIT');
+    const row = rows[0];
+    res.json({ ...row, type: row.entry_type, expense_date: row.entry_date, expense: exp.rows[0] });
+  } catch (e) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (_) {
+      /* ignore */
+    }
+    next(e);
+  } finally {
+    client.release();
+  }
+});
+
+router.post('/petty-cash/:id/pay', requireRoles('admin'), async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const reservationId = Number(req.body?.reservation_id);
+    const paymentMethod = req.body?.payment_method || 'cash';
+    if (!reservationId) return res.status(400).json({ error: 'reservation_id required' });
+
+    await client.query('BEGIN');
+    const { rows: existingRows } = await client.query(`SELECT * FROM petty_cash WHERE id = $1 FOR UPDATE`, [
+      req.params.id,
+    ]);
+    const pc = existingRows[0];
+    if (!pc) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Not found' });
+    }
+    if (pc.status === 'moved') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Entry already moved' });
+    }
+
+    const { rows: resRows } = await client.query(`SELECT id, unit_id FROM reservations WHERE id = $1`, [
+      reservationId,
+    ]);
+    if (!resRows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Reservation not found' });
+    }
+
+    const pay = await client.query(
+      `INSERT INTO payments (
+         reservation_id, amount, payment_method, payment_date, notes, created_by,
+         status, is_approved
+       ) VALUES ($1,$2,$3,COALESCE($4::date, CURRENT_DATE),$5,$6,'successful',1)
+       RETURNING *`,
+      [
+        reservationId,
+        pc.amount,
+        paymentMethod,
+        pc.entry_date,
+        `From petty cash #${pc.id}: ${pc.description}`,
+        req.user.id,
+      ]
+    );
+
+    const { rows } = await client.query(
+      `UPDATE petty_cash SET
+         status = 'moved',
+         moved_to = 'payment',
+         linked_reservation_id = $1
+       WHERE id = $2
+       RETURNING *`,
+      [reservationId, pc.id]
+    );
+
+    await client.query('COMMIT');
+    const row = rows[0];
+    res.json({ ...row, type: row.entry_type, expense_date: row.entry_date, payment: pay.rows[0] });
+  } catch (e) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (_) {
+      /* ignore */
+    }
+    next(e);
+  } finally {
+    client.release();
   }
 });
 

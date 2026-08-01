@@ -9,6 +9,7 @@ import { currency, formatDate } from '../utils/formatters';
 import { useAuth } from '../context/AuthContext';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import { isOwnerRole as checkOwner } from '../utils/permissions';
+import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
 
 // ─── Internal-only commission mode badge ─────────────────────────────────────
 function ModeBadge({ mode }) {
@@ -58,7 +59,7 @@ export default function OwnerStatement() {
   const isStaffRole  = !isOwnerRole;
 
   const [unitId,    setUnitId]    = useState('');
-  const [fromDate,  setFromDate]  = useState('');
+  const [fromDate,  setFromDate]  = useState(FINANCIAL_EPOCH);
   const [toDate,    setToDate]    = useState('');
   const [generated, setGenerated] = useState(false);
 
@@ -75,14 +76,18 @@ export default function OwnerStatement() {
     queryKey: ['owner-statement', unitId, fromDate, toDate],
     queryFn: () =>
       api.get('/reports/owner-statement', {
-        params: { unit_id: unitId, from_date: fromDate, to_date: toDate },
+        params: {
+          unit_id: unitId,
+          from_date: fromDate,
+          to_date: toDate || undefined,
+        },
       }).then(r => r.data),
     enabled: false,
   });
 
   const handleGenerate = () => {
-    if (!unitId || !fromDate || !toDate) {
-      alert('Please select a unit and date range');
+    if (!unitId || !fromDate) {
+      alert('Please select a unit and from date');
       return;
     }
     setGenerated(true);
@@ -149,7 +154,7 @@ export default function OwnerStatement() {
             <SearchableSelect value={unitId} onChange={v => { setUnitId(v); setGenerated(false); }}
               placeholder={unitsLoading ? 'Loading units…' : 'Select unit…'}
               disabled={unitsLoading}
-              options={[{ value: '', label: unitsLoading ? 'Loading units…' : 'Select unit…' }, ...units.map(u => ({ value: String(u.id), label: `${u.name} — ${u.project}` }))]}
+              options={[{ value: '', label: unitsLoading ? 'Loading units…' : 'Select unit…' }, ...units.map(u => ({ value: String(u.id), label: `${u.name || u.title || u.unit_number || 'Unit'} — ${u.project || u.compound || '—'}` }))]}
             />
           </div>
           <div>
@@ -173,7 +178,7 @@ export default function OwnerStatement() {
           <div className="flex items-end">
             <button
               onClick={handleGenerate}
-              disabled={!unitId || !fromDate || !toDate}
+              disabled={!unitId || !fromDate}
               className="btn-primary w-full disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Generate Statement
@@ -196,7 +201,8 @@ export default function OwnerStatement() {
                   {data.unit?.name} — {data.unit?.project}
                 </p>
                 <p className="text-blue-300 text-sm mt-1">
-                  Period: {formatDate(fromDate)} → {formatDate(toDate)}
+                  Period: {formatDate(fromDate)}
+                  {toDate ? ` → ${formatDate(toDate)}` : ' → present'}
                 </p>
                 {data.unit?.owner_name && (
                   <p className="text-blue-300 text-sm">
