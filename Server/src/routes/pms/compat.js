@@ -140,6 +140,9 @@ router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, nex
     let websiteCount = 0;
     let websiteRevenue = 0;
     let websiteProfit = 0;
+    let manualCount = 0;
+    let manualRevenue = 0;
+    let manualProfit = 0;
 
     const breakdown = rows.map((r) => {
       const fin = calcReservationFinancials(r, r);
@@ -156,6 +159,10 @@ router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, nex
         websiteCount += 1;
         websiteRevenue += fin.grossAmount;
         websiteProfit += fin.companyCommission;
+      } else {
+        manualCount += 1;
+        manualRevenue += fin.grossAmount;
+        manualProfit += fin.companyCommission;
       }
 
       return {
@@ -180,6 +187,13 @@ router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, nex
     });
 
     const websiteProfitRounded = round2(websiteProfit);
+    const channelBlock = (count, revenue, profit, extra = {}) => ({
+      reservation_count: count,
+      revenue: round2(revenue),
+      profit: round2(profit),
+      ...extra,
+    });
+
     res.json({
       breakdown,
       totals: {
@@ -193,13 +207,19 @@ router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, nex
         // Company commission revenue only (HK + utilities tracked on their own pages)
         grandTotal: round2(totalCompany + totalTenant),
       },
-      website: {
-        reservation_count: websiteCount,
-        revenue: round2(websiteRevenue),
-        profit: websiteProfitRounded,
+      channels: {
+        all: channelBlock(rows.length, totalGross, totalCompany),
+        manual: channelBlock(manualCount, manualRevenue, manualProfit),
+        website: channelBlock(websiteCount, websiteRevenue, websiteProfitRounded, {
+          commission_pct: 0.5,
+          website_commission: round2(websiteProfitRounded * 0.005),
+        }),
+      },
+      // Kept for older clients
+      website: channelBlock(websiteCount, websiteRevenue, websiteProfitRounded, {
         commission_pct: 0.5,
         website_commission: round2(websiteProfitRounded * 0.005),
-      },
+      }),
     });
   } catch (e) {
     next(e);

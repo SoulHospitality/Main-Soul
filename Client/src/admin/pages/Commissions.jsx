@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  BadgeDollarSign, Download, TrendingUp, Users, Zap, Wallet, DollarSign, Globe,
+  BadgeDollarSign, Download, TrendingUp, Users, Zap, Wallet, DollarSign, Globe, ClipboardList, Layers,
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { useSortableTable } from '../hooks/useSortableTable';
@@ -47,13 +47,19 @@ export default function Commissions() {
 
   const rows = data?.breakdown || [];
   const totals = data?.totals || {};
-  const website = data?.website || {
-    reservation_count: 0,
-    revenue: 0,
-    profit: 0,
-    commission_pct: 0.5,
-    website_commission: 0,
+  const emptyChannel = { reservation_count: 0, revenue: 0, profit: 0 };
+  const channels = data?.channels || {
+    all: emptyChannel,
+    manual: emptyChannel,
+    website: {
+      ...emptyChannel,
+      commission_pct: 0.5,
+      website_commission: 0,
+    },
   };
+  const website = channels.website || data?.website || emptyChannel;
+  const manual = channels.manual || emptyChannel;
+  const allChannel = channels.all || emptyChannel;
   const { sorted, sortKey, sortDir, handleSort } = useSortableTable(rows, 'check_in', 'desc');
 
   const exportExcel = () => {
@@ -210,49 +216,113 @@ export default function Commissions() {
         )}
       </div>
 
-      {/* Website maker analytics — guest-site bookings only */}
-      <div className="card border border-sky-200 bg-gradient-to-br from-sky-50 to-white p-5">
-        <div className="mb-4 flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-100">
-            <Globe className="h-4 w-4 text-sky-700" />
+      {/* Channel split: all / manual / website */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="card border border-slate-200 bg-slate-50/80 p-5">
+          <div className="mb-4 flex items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-200/80">
+              <Layers className="h-4 w-4 text-slate-700" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900">All reservations</h2>
+              <p className="text-xs text-slate-500">Website + manual combined</p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-sm font-semibold text-sky-950">Website reservations</h2>
-            <p className="text-xs text-sky-700/80">
-              Only bookings made through the guest website — manual PMS reservations are excluded
-            </p>
+          <div className="space-y-3">
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+              <p className="text-xs font-medium text-slate-500">Reservations</p>
+              <p className="mt-1 text-xl font-bold tabular-nums text-slate-900">
+                {allChannel.reservation_count ?? 0}
+              </p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+              <p className="text-xs font-medium text-slate-500">Revenue</p>
+              <p className="mt-1 text-lg font-bold tabular-nums text-slate-900">
+                {currency(allChannel.revenue ?? 0)}
+              </p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+              <p className="text-xs font-medium text-slate-500">Profit</p>
+              <p className="mt-1 text-lg font-bold tabular-nums text-slate-900">
+                {currency(allChannel.profit ?? 0)}
+              </p>
+              <p className="mt-0.5 text-[11px] text-slate-400">Company commission</p>
+            </div>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <div className="rounded-xl border border-sky-100 bg-white/80 px-4 py-3">
-            <p className="text-xs font-medium text-sky-700">Reservations</p>
-            <p className="mt-1 text-xl font-bold tabular-nums text-sky-950">
-              {website.reservation_count ?? 0}
-            </p>
-            <p className="mt-0.5 text-[11px] text-slate-400">Website bookings in range</p>
+
+        <div className="card border border-violet-200 bg-violet-50/50 p-5">
+          <div className="mb-4 flex items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-100">
+              <ClipboardList className="h-4 w-4 text-violet-700" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-violet-950">Manual reservations</h2>
+              <p className="text-xs text-violet-700/80">Created in PMS (not guest website)</p>
+            </div>
           </div>
-          <div className="rounded-xl border border-sky-100 bg-white/80 px-4 py-3">
-            <p className="text-xs font-medium text-sky-700">Revenue</p>
-            <p className="mt-1 text-xl font-bold tabular-nums text-sky-950">
-              {currency(website.revenue ?? 0)}
-            </p>
-            <p className="mt-0.5 text-[11px] text-slate-400">Gross from website stays</p>
+          <div className="space-y-3">
+            <div className="rounded-xl border border-violet-100 bg-white/90 px-4 py-3">
+              <p className="text-xs font-medium text-violet-700">Reservations</p>
+              <p className="mt-1 text-xl font-bold tabular-nums text-violet-950">
+                {manual.reservation_count ?? 0}
+              </p>
+            </div>
+            <div className="rounded-xl border border-violet-100 bg-white/90 px-4 py-3">
+              <p className="text-xs font-medium text-violet-700">Revenue</p>
+              <p className="mt-1 text-lg font-bold tabular-nums text-violet-950">
+                {currency(manual.revenue ?? 0)}
+              </p>
+            </div>
+            <div className="rounded-xl border border-violet-100 bg-white/90 px-4 py-3">
+              <p className="text-xs font-medium text-violet-700">Profit</p>
+              <p className="mt-1 text-lg font-bold tabular-nums text-violet-950">
+                {currency(manual.profit ?? 0)}
+              </p>
+              <p className="mt-0.5 text-[11px] text-slate-400">Company commission</p>
+            </div>
           </div>
-          <div className="rounded-xl border border-sky-100 bg-white/80 px-4 py-3">
-            <p className="text-xs font-medium text-sky-700">Profit</p>
-            <p className="mt-1 text-xl font-bold tabular-nums text-sky-950">
-              {currency(website.profit ?? 0)}
-            </p>
-            <p className="mt-0.5 text-[11px] text-slate-400">Company commission on website stays</p>
+        </div>
+
+        <div className="card border border-sky-200 bg-gradient-to-br from-sky-50 to-white p-5">
+          <div className="mb-4 flex items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-100">
+              <Globe className="h-4 w-4 text-sky-700" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-sky-950">Website reservations</h2>
+              <p className="text-xs text-sky-700/80">Guest-site bookings only</p>
+            </div>
           </div>
-          <div className="rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-3 ring-1 ring-amber-100">
-            <p className="text-xs font-semibold text-amber-800">Website maker commission</p>
-            <p className="mt-1 text-xl font-bold tabular-nums text-amber-950">
-              {currency(website.website_commission ?? 0)}
-            </p>
-            <p className="mt-0.5 text-[11px] text-amber-700/80">
-              {website.commission_pct ?? 0.5}% of website profit
-            </p>
+          <div className="space-y-3">
+            <div className="rounded-xl border border-sky-100 bg-white/80 px-4 py-3">
+              <p className="text-xs font-medium text-sky-700">Reservations</p>
+              <p className="mt-1 text-xl font-bold tabular-nums text-sky-950">
+                {website.reservation_count ?? 0}
+              </p>
+            </div>
+            <div className="rounded-xl border border-sky-100 bg-white/80 px-4 py-3">
+              <p className="text-xs font-medium text-sky-700">Revenue</p>
+              <p className="mt-1 text-lg font-bold tabular-nums text-sky-950">
+                {currency(website.revenue ?? 0)}
+              </p>
+            </div>
+            <div className="rounded-xl border border-sky-100 bg-white/80 px-4 py-3">
+              <p className="text-xs font-medium text-sky-700">Profit</p>
+              <p className="mt-1 text-lg font-bold tabular-nums text-sky-950">
+                {currency(website.profit ?? 0)}
+              </p>
+              <p className="mt-0.5 text-[11px] text-slate-400">Company commission</p>
+            </div>
+            <div className="rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-3 ring-1 ring-amber-100">
+              <p className="text-xs font-semibold text-amber-800">Website maker commission</p>
+              <p className="mt-1 text-xl font-bold tabular-nums text-amber-950">
+                {currency(website.website_commission ?? 0)}
+              </p>
+              <p className="mt-0.5 text-[11px] text-amber-700/80">
+                {website.commission_pct ?? 0.5}% of website profit
+              </p>
+            </div>
           </div>
         </div>
       </div>
