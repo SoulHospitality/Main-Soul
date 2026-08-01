@@ -3,54 +3,45 @@
  *
  * Revenue = reservation accommodation + housekeeping collected + utilities collected
  * Auto expenses = owner share + salaries + agent % of company commission
- *   - manual bookings: 1.5% of company commission
- *   - website bookings: agent 1% + website maker 0.5% of company commission
+ *   - agent % comes from the reservation agent's staff profile (sales_commission_pct)
  * Manual expenses = actual HK + actual utilities + petty cash outs
  * Gross profit = revenue − expenses
  * Tax = 14% of gross profit
  * Net profit = gross − tax
  */
 
-const MANUAL_AGENT_PCT = 1.5;
-const WEBSITE_AGENT_PCT = 1.0;
-const WEBSITE_MAKER_PCT = 0.5;
 const TAX_PCT = 14;
 
 function round2(n) {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 }
 
-function agentRatesForReservation(isWebsite) {
-  if (isWebsite) {
-    return {
-      agentPct: WEBSITE_AGENT_PCT,
-      makerPct: WEBSITE_MAKER_PCT,
-    };
-  }
+/**
+ * @param {number} companyCommission
+ * @param {number} agentPct  staff_users.sales_commission_pct for the reservation agent
+ */
+function agentCommissionFromCompany(companyCommission, agentPct) {
+  const base = Math.max(0, Number(companyCommission) || 0);
+  const pct = Math.max(0, Number(agentPct) || 0);
   return {
-    agentPct: MANUAL_AGENT_PCT,
-    makerPct: 0,
+    agentPct: pct,
+    agentAmount: round2((base * pct) / 100),
   };
 }
 
-/** @param {number} companyCommission */
-function autoCommissionsFromCompany(companyCommission, isWebsite) {
-  const base = Math.max(0, Number(companyCommission) || 0);
-  const { agentPct, makerPct } = agentRatesForReservation(isWebsite);
+/** @deprecated use agentCommissionFromCompany — kept for older call sites */
+function autoCommissionsFromCompany(companyCommission, _isWebsite, agentPct = 0) {
+  const result = agentCommissionFromCompany(companyCommission, agentPct);
   return {
-    agentPct,
-    makerPct,
-    agentAmount: round2((base * agentPct) / 100),
-    makerAmount: round2((base * makerPct) / 100),
+    ...result,
+    makerPct: 0,
+    makerAmount: 0,
   };
 }
 
 module.exports = {
-  MANUAL_AGENT_PCT,
-  WEBSITE_AGENT_PCT,
-  WEBSITE_MAKER_PCT,
   TAX_PCT,
   round2,
-  agentRatesForReservation,
+  agentCommissionFromCompany,
   autoCommissionsFromCompany,
 };

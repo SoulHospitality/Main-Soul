@@ -27,10 +27,15 @@ const EMPTY_FORM = {
   role: 'reservations_manual',
   base_salary: '',
   is_active: 1,
-  sales_commission_pct: 0,
+  sales_commission_pct: '',
 };
 
+function isReservationAgentRole(role) {
+  return ['reservations_web', 'reservations_manual', 'reservations'].includes(role);
+}
+
 function UserForm({ form, setForm, isEdit, roleOptions, isAdmin }) {
+  const showCommission = isReservationAgentRole(form.role);
   return (
     <div className="space-y-4">
       <p className="text-xs text-slate-500">
@@ -62,7 +67,15 @@ function UserForm({ form, setForm, isEdit, roleOptions, isAdmin }) {
           <label className="label">Role *</label>
           <SearchableSelect
             value={form.role}
-            onChange={(v) => setForm((f) => ({ ...f, role: v }))}
+            onChange={(v) =>
+              setForm((f) => ({
+                ...f,
+                role: v,
+                sales_commission_pct: isReservationAgentRole(v)
+                  ? f.sales_commission_pct
+                  : '',
+              }))
+            }
             placeholder="Select role…"
             options={roleOptions.map((r) => ({ value: r, label: ROLE_LABELS[r] }))}
           />
@@ -82,6 +95,24 @@ function UserForm({ form, setForm, isEdit, roleOptions, isAdmin }) {
             <p className="mt-1 text-[11px] text-amber-600">Change requests go to admin for approval.</p>
           )}
         </div>
+        {showCommission && (
+          <div>
+            <label className="label">Commission % *</label>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+              className="input"
+              value={form.sales_commission_pct}
+              onChange={(e) => setForm((f) => ({ ...f, sales_commission_pct: e.target.value }))}
+              placeholder="e.g. 1.5"
+            />
+            <p className="mt-1 text-[11px] text-slate-400">
+              Of company commission on reservations assigned to this agent
+            </p>
+          </div>
+        )}
         {isEdit && (
           <div>
             <label className="label">Status</label>
@@ -194,7 +225,10 @@ export default function Users() {
       role: u.role,
       base_salary: u.base_salary ?? '',
       is_active: u.is_active,
-      sales_commission_pct: u.sales_commission_pct || 0,
+      sales_commission_pct:
+        u.sales_commission_pct != null && u.sales_commission_pct !== ''
+          ? String(u.sales_commission_pct)
+          : '',
     });
     setEditId(u.id);
     setModal('edit');
@@ -205,9 +239,23 @@ export default function Users() {
       toast.error('Name, email, and base salary are required');
       return;
     }
+    if (isReservationAgentRole(form.role)) {
+      if (form.sales_commission_pct === '' || form.sales_commission_pct == null) {
+        toast.error('Commission % is required for reservation agents');
+        return;
+      }
+      const pct = Number(form.sales_commission_pct);
+      if (Number.isNaN(pct) || pct < 0 || pct > 100) {
+        toast.error('Commission % must be between 0 and 100');
+        return;
+      }
+    }
     saveMutation.mutate({
       ...form,
       base_salary: Number(form.base_salary),
+      sales_commission_pct: isReservationAgentRole(form.role)
+        ? Number(form.sales_commission_pct)
+        : Number(form.sales_commission_pct) || 0,
     });
   };
 
@@ -274,6 +322,14 @@ export default function Users() {
                   <SortTh col="base_salary" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>
                     Base Salary
                   </SortTh>
+                  <SortTh
+                    col="sales_commission_pct"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={handleSort}
+                  >
+                    Commission %
+                  </SortTh>
                   <SortTh col="is_active" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>
                     Status
                   </SortTh>
@@ -334,6 +390,11 @@ export default function Users() {
                           )}
                         </div>
                       )}
+                    </td>
+                    <td className="tabular-nums">
+                      {isReservationAgentRole(u.role)
+                        ? `${Number(u.sales_commission_pct || 0)}%`
+                        : '—'}
                     </td>
                     <td>
                       {u.is_active ? (

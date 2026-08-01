@@ -70,7 +70,6 @@ export default function Profit() {
   const profitPositive = profit >= 0;
   const expenseShare = revenue > 0 ? Math.min(100, Math.round((expenses / revenue) * 100)) : 0;
   const profitShare = revenue > 0 ? Math.max(0, 100 - expenseShare) : 0;
-  const model = data?.model || {};
   const breakdown = data?.expenseBreakdown || {};
 
   const chartData = [
@@ -169,25 +168,18 @@ export default function Profit() {
           <Row label="Owner %" value={breakdown.ownerShare} negative hint="Automatic" />
           <Row label="Salaries" value={breakdown.salaries} href="/admin/expenses?category=salary" negative hint="Payroll + ledger" />
           <Row
-            label={`Manual agents ${model.manual_agent_pct ?? 1.5}%`}
+            label="Manual agents"
             value={breakdown.manualAgentCommission}
             href="/admin/commissions"
             negative
-            hint="Of company commission"
+            hint="Per-agent % of company commission"
           />
           <Row
-            label={`Website agents ${model.website_agent_pct ?? 1}%`}
+            label="Website agents"
             value={breakdown.websiteAgentCommission}
             href="/admin/commissions"
             negative
-            hint="Of company commission"
-          />
-          <Row
-            label={`Website's commission ${model.website_maker_pct ?? 0.5}%`}
-            value={breakdown.websiteMakerCommission}
-            href="/admin/commissions"
-            negative
-            hint="Of website company commission"
+            hint="Per-agent % of company commission"
           />
           <Row label="Actual housekeeping" value={breakdown.actualHousekeeping ?? breakdown.housekeeping} href="/admin/expenses?category=housekeeping_cost" negative hint="Manual" />
           <Row label="Actual utilities" value={breakdown.actualUtilities ?? breakdown.utilities} href="/admin/expenses?category=utilities_cost" negative hint="Manual" />

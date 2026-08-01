@@ -63,7 +63,7 @@ router.get('/id-documents/view', async (req, res, next) => {
 router.get('/users/sales', async (_req, res, next) => {
   try {
     const { rows } = await query(
-      `SELECT id, full_name, username, role FROM staff_users
+      `SELECT id, full_name, username, role, sales_commission_pct FROM staff_users
        WHERE is_active = 1 AND role IN ('reservations_manual','reservations_web','reservations','admin')`
     );
     res.json(rows);
@@ -113,15 +113,18 @@ router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, nex
          r.id, r.guest_name, r.check_in, r.check_out, r.nights,
          r.total_amount, r.price_per_night, r.utilities_amount, r.housekeeping_fees,
          r.is_owner_reservation, r.broker_total, r.broker_amount_per_night, r.broker_name,
-         r.booking_id, r.booking_source,
+         r.booking_id, r.booking_source, r.sales_person_id,
          COALESCE(u.title, u.unit_number, 'Unit') AS unit_name,
          COALESCE(u.project, u.compound, 'Unassigned') AS project,
          u.commission_mode,
          u.company_commission_pct,
          u.company_commission_owner_pct,
-         u.commission_tenant_pct
+         u.commission_tenant_pct,
+         COALESCE(sp.sales_commission_pct, 0) AS agent_commission_pct,
+         sp.full_name AS sales_person_name
        FROM reservations r
        JOIN units u ON u.id = r.unit_id
+       LEFT JOIN staff_users sp ON sp.id = r.sales_person_id
        WHERE ${where}
        ORDER BY r.check_in DESC`,
       params
@@ -129,12 +132,7 @@ router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, nex
 
     const { calcReservationFinancials, round2 } = require('../../lib/commission');
     const { isWebsiteOriginReservation } = require('../../lib/reservationScope');
-    const {
-      MANUAL_AGENT_PCT,
-      WEBSITE_AGENT_PCT,
-      WEBSITE_MAKER_PCT,
-      autoCommissionsFromCompany,
-    } = require('../../lib/financeModel');
+    const { agentCommissionFromCompany } = require('../../lib/financeModel');
 
     let totalGross = 0;
     let totalTenant = 0;
@@ -146,9 +144,11 @@ router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, nex
     let websiteCount = 0;
     let websiteRevenue = 0;
     let websiteProfit = 0;
+    let websiteAgentCommission = 0;
     let manualCount = 0;
     let manualRevenue = 0;
     let manualProfit = 0;
+    let manualAgentCommission = 0;
 
     const breakdown = rows.map((r) => {
       const fin = calcReservationFinancials(r, r);
@@ -160,15 +160,18 @@ router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, nex
       if (fin.isOwner) ownerCommission += fin.companyCommission;
       else regularCommission += fin.companyCommission;
 
+      const agent = agentCommissionFromCompany(fin.companyCommission, r.agent_commission_pct);
       const fromWebsite = isWebsiteOriginReservation(r);
       if (fromWebsite) {
         websiteCount += 1;
         websiteRevenue += fin.grossAmount;
         websiteProfit += fin.companyCommission;
+        websiteAgentCommission += agent.agentAmount;
       } else {
         manualCount += 1;
         manualRevenue += fin.grossAmount;
         manualProfit += fin.companyCommission;
+        manualAgentCommission += agent.agentAmount;
       }
 
       return {
@@ -181,6 +184,10 @@ router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, nex
         nights: r.nights,
         is_owner: fin.isOwner,
         from_website: fromWebsite,
+        sales_person_id: r.sales_person_id,
+        sales_person_name: r.sales_person_name || null,
+        agent_commission_pct: agent.agentPct,
+        agent_commission: agent.agentAmount,
         gross: fin.grossAmount,
         tenant_deduction: fin.tenantDeduction,
         utilities: fin.utilitiesDeduction,
@@ -192,9 +199,6 @@ router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, nex
       };
     });
 
-    const websiteProfitRounded = round2(websiteProfit);
-    const manualAuto = autoCommissionsFromCompany(manualProfit, false);
-    const websiteAuto = autoCommissionsFromCompany(websiteProfitRounded, true);
     const channelBlock = (count, revenue, profit, extra = {}) => ({
       reservation_count: count,
       revenue: round2(revenue),
@@ -214,32 +218,28 @@ router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, nex
         ownerRevenue: round2(ownerCommission),
         // Company commission revenue only (HK + utilities tracked on their own pages)
         grandTotal: round2(totalCompany + totalTenant),
+        manualAgentCommission: round2(manualAgentCommission),
+        websiteAgentCommission: round2(websiteAgentCommission),
+        agentCommissions: round2(manualAgentCommission + websiteAgentCommission),
       },
       model: {
-        manual_agent_pct: MANUAL_AGENT_PCT,
-        website_agent_pct: WEBSITE_AGENT_PCT,
-        website_maker_pct: WEBSITE_MAKER_PCT,
         commission_base: 'company_commission',
+        agent_pct_source: 'staff_sales_commission_pct',
       },
       channels: {
-        all: channelBlock(rows.length, totalGross, totalCompany),
-        manual: channelBlock(manualCount, manualRevenue, manualProfit, {
-          agent_pct: MANUAL_AGENT_PCT,
-          agent_commission: manualAuto.agentAmount,
+        all: channelBlock(rows.length, totalGross, totalCompany, {
+          agent_commission: round2(manualAgentCommission + websiteAgentCommission),
         }),
-        website: channelBlock(websiteCount, websiteRevenue, websiteProfitRounded, {
-          agent_pct: WEBSITE_AGENT_PCT,
-          agent_commission: websiteAuto.agentAmount,
-          commission_pct: WEBSITE_MAKER_PCT,
-          website_commission: websiteAuto.makerAmount,
+        manual: channelBlock(manualCount, manualRevenue, manualProfit, {
+          agent_commission: round2(manualAgentCommission),
+        }),
+        website: channelBlock(websiteCount, websiteRevenue, websiteProfit, {
+          agent_commission: round2(websiteAgentCommission),
         }),
       },
       // Kept for older clients
-      website: channelBlock(websiteCount, websiteRevenue, websiteProfitRounded, {
-        agent_pct: WEBSITE_AGENT_PCT,
-        agent_commission: websiteAuto.agentAmount,
-        commission_pct: WEBSITE_MAKER_PCT,
-        website_commission: websiteAuto.makerAmount,
+      website: channelBlock(websiteCount, websiteRevenue, websiteProfit, {
+        agent_commission: round2(websiteAgentCommission),
       }),
     });
   } catch (e) {
@@ -252,7 +252,7 @@ router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, nex
  *
  * Revenue = reservation accommodation + housekeeping collected + utilities collected
  * Auto expenses = owner share + salaries + agent % of company commission
- *   manual 1.5% | website agent 1% | website maker 0.5%
+ *   (agent % from staff_users.sales_commission_pct on the reservation agent)
  * Manual expenses = actual HK + actual utilities + petty cash
  * Gross profit → tax 14% → net profit
  */
@@ -262,13 +262,7 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
     const to_date = req.query.to_date || null;
     const { calcReservationFinancials, round2 } = require('../../lib/commission');
     const { isWebsiteOriginReservation } = require('../../lib/reservationScope');
-    const {
-      MANUAL_AGENT_PCT,
-      WEBSITE_AGENT_PCT,
-      WEBSITE_MAKER_PCT,
-      TAX_PCT,
-      autoCommissionsFromCompany,
-    } = require('../../lib/financeModel');
+    const { TAX_PCT, agentCommissionFromCompany } = require('../../lib/financeModel');
 
     const resParams = [from_date];
     let resWhere = `r.status <> 'cancelled' AND r.check_in >= $1::date`;
@@ -282,12 +276,14 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
          r.id, r.nights, r.total_amount, r.price_per_night, r.utilities_amount,
          r.housekeeping_fees, r.is_owner_reservation,
          r.broker_total, r.broker_amount_per_night,
-         r.booking_id, r.booking_source,
+         r.booking_id, r.booking_source, r.sales_person_id,
          u.commission_mode, u.company_commission_pct,
          u.company_commission_owner_pct, u.commission_tenant_pct,
-         COALESCE(u.utilities_cost, 0) AS utilities_cost
+         COALESCE(u.utilities_cost, 0) AS utilities_cost,
+         COALESCE(sp.sales_commission_pct, 0) AS agent_commission_pct
        FROM reservations r
        JOIN units u ON u.id = r.unit_id
+       LEFT JOIN staff_users sp ON sp.id = r.sales_person_id
        WHERE ${resWhere}`,
       resParams
     );
@@ -300,7 +296,6 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
     let utilitiesCollected = 0;
     let manualAgentCommission = 0;
     let websiteAgentCommission = 0;
-    let websiteMakerCommission = 0;
     let websiteCompanyCommission = 0;
     let manualCompanyCommission = 0;
 
@@ -320,11 +315,10 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
       utilitiesCollected += fin.utilitiesDeduction || utilitiesAmount;
 
       const fromWebsite = isWebsiteOriginReservation(r);
-      const auto = autoCommissionsFromCompany(fin.companyCommission, fromWebsite);
+      const auto = agentCommissionFromCompany(fin.companyCommission, r.agent_commission_pct);
       if (fromWebsite) {
         websiteCompanyCommission += fin.companyCommission;
         websiteAgentCommission += auto.agentAmount;
-        websiteMakerCommission += auto.makerAmount;
       } else {
         manualCompanyCommission += fin.companyCommission;
         manualAgentCommission += auto.agentAmount;
@@ -407,9 +401,7 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
     const salaries = round2(salaryLedger + payrollSnapshot);
 
     const agentCommissions = round2(manualAgentCommission + websiteAgentCommission);
-    const salaryAndCommissions = round2(
-      salaries + agentCommissions + websiteMakerCommission
-    );
+    const salaryAndCommissions = round2(salaries + agentCommissions);
 
     const cfParams = [from_date];
     let cfWhere = `entry_date >= $1::date`;
@@ -452,18 +444,16 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
     const grossProfit = round2(totalRevenue - deductibleExpenses);
     const taxAmount = round2(Math.max(0, grossProfit) * (TAX_PCT / 100));
     const netProfit = round2(grossProfit - taxAmount);
-    const commissionProfit = round2(companyCommission - agentCommissions - websiteMakerCommission);
+    const commissionProfit = round2(companyCommission - agentCommissions);
 
     res.json({
       from_date,
       to_date: to_date || null,
       financial_epoch: FINANCIAL_EPOCH,
       model: {
-        manual_agent_pct: MANUAL_AGENT_PCT,
-        website_agent_pct: WEBSITE_AGENT_PCT,
-        website_maker_pct: WEBSITE_MAKER_PCT,
         tax_pct: TAX_PCT,
         commission_base: 'company_commission',
+        agent_pct_source: 'staff_sales_commission_pct',
       },
       // Revenue (3 streams)
       totalRevenue,
@@ -478,11 +468,11 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
       ownerOwed: round2(ownerOwed),
       websiteCompanyCommission: round2(websiteCompanyCommission),
       manualCompanyCommission: round2(manualCompanyCommission),
-      // Auto commissions (of company commission)
+      // Auto commissions (of company commission, per agent %)
       agentCommissions,
       manualAgentCommission: round2(manualAgentCommission),
       websiteAgentCommission: round2(websiteAgentCommission),
-      websiteMakerCommission: round2(websiteMakerCommission),
+      websiteMakerCommission: 0,
       salaryAndCommissions,
       // Expense buckets
       salaries,
@@ -513,7 +503,7 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
         salaries,
         manualAgentCommission: round2(manualAgentCommission),
         websiteAgentCommission: round2(websiteAgentCommission),
-        websiteMakerCommission: round2(websiteMakerCommission),
+        websiteMakerCommission: 0,
         agentCommissions,
         salaryAndCommissions,
         actualHousekeeping: round2(actualHousekeeping),

@@ -183,6 +183,30 @@ function assertCanAssignRole(actorRole, targetRole) {
   }
 }
 
+function isReservationAgentRole(role) {
+  return ['reservations_web', 'reservations_manual', 'reservations'].includes(String(role || ''));
+}
+
+function parseAgentCommissionPct(b, role) {
+  if (!isReservationAgentRole(role)) {
+    return b.sales_commission_pct != null && b.sales_commission_pct !== ''
+      ? parseFloat(b.sales_commission_pct)
+      : 0;
+  }
+  if (b.sales_commission_pct === '' || b.sales_commission_pct == null) {
+    const err = new Error('Commission % is required for reservation agents');
+    err.status = 400;
+    throw err;
+  }
+  const pct = parseFloat(b.sales_commission_pct);
+  if (Number.isNaN(pct) || pct < 0 || pct > 100) {
+    const err = new Error('Commission % must be between 0 and 100');
+    err.status = 400;
+    throw err;
+  }
+  return pct;
+}
+
 router.get('/users', requireRoles('admin', 'hr'), async (_req, res, next) => {
   try {
     const { rows } = await query(
@@ -211,6 +235,12 @@ router.post('/users', requireRoles('admin', 'hr'), async (req, res, next) => {
       return res.status(400).json({ error: 'Fixed base salary is required' });
     }
     assertCanAssignRole(req.user.role, role);
+    let agentCommissionPct;
+    try {
+      agentCommissionPct = parseAgentCommissionPct(b, role);
+    } catch (err) {
+      return res.status(err.status || 400).json({ error: err.message });
+    }
 
     const staff_code = await generateUniqueStaffCode(role);
     const username = String(b.username || staff_code).trim().toLowerCase();
@@ -222,7 +252,7 @@ router.post('/users', requireRoles('admin', 'hr'), async (req, res, next) => {
          username, password_hash, email, full_name, role, staff_code,
          base_salary, salary_change_status, is_first_login, is_active,
          sales_commission_pct
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,'none',1,1,COALESCE($8,0))
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,'none',1,1,$8)
        RETURNING ${STAFF_SELECT}`,
       [
         username,
@@ -232,7 +262,7 @@ router.post('/users', requireRoles('admin', 'hr'), async (req, res, next) => {
         role,
         staff_code,
         baseSalary,
-        b.sales_commission_pct ?? 0,
+        agentCommissionPct,
       ]
     );
 
@@ -267,6 +297,20 @@ router.patch('/users/:id', requireRoles('admin', 'hr'), async (req, res, next) =
 
     let nextRole = b.role != null ? String(b.role) : existing.role;
     if (b.role != null) assertCanAssignRole(req.user.role, nextRole);
+
+    let nextCommissionPct = existing.sales_commission_pct;
+    if (b.sales_commission_pct != null || isReservationAgentRole(nextRole)) {
+      try {
+        // When role is an agent, always validate (use existing value if body omits it)
+        const payload =
+          b.sales_commission_pct != null && b.sales_commission_pct !== ''
+            ? b
+            : { sales_commission_pct: existing.sales_commission_pct };
+        nextCommissionPct = parseAgentCommissionPct(payload, nextRole);
+      } catch (err) {
+        return res.status(err.status || 400).json({ error: err.message });
+      }
+    }
 
     let baseSalary = existing.base_salary;
     let pendingSalary = existing.pending_base_salary;
@@ -309,7 +353,7 @@ router.patch('/users/:id', requireRoles('admin', 'hr'), async (req, res, next) =
         b.email ?? null,
         b.role != null ? nextRole : null,
         b.is_active != null ? b.is_active : null,
-        b.sales_commission_pct ?? null,
+        nextCommissionPct,
         b.operation_specialist_pct ?? null,
         b.operation_manager_pct ?? null,
         b.reservation_manager_pct ?? null,

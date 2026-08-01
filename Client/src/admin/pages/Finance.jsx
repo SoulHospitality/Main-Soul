@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   BadgeDollarSign, Sparkles, Zap, TrendingUp, Users2, Wallet,
   Receipt, Home, DollarSign, ChevronRight, Megaphone, CalendarDays,
-  UserCheck, Percent,
+  UserCheck,
 } from 'lucide-react';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
@@ -168,27 +168,19 @@ export default function Finance() {
           />
           <MetricCard
             icon={UserCheck}
-            label={`Manual agents ${model.manual_agent_pct ?? 1.5}%`}
+            label="Manual agents"
             value={data?.manualAgentCommission}
             href="/admin/commissions"
             tone="violet"
-            sub="Of company commission"
+            sub="Per-agent % of company commission"
           />
           <MetricCard
             icon={UserCheck}
-            label={`Website agents ${model.website_agent_pct ?? 1}%`}
+            label="Website agents"
             value={data?.websiteAgentCommission}
             href="/admin/commissions"
             tone="violet"
-            sub="Of company commission"
-          />
-          <MetricCard
-            icon={Percent}
-            label={`Website's commission ${model.website_maker_pct ?? 0.5}%`}
-            value={data?.websiteMakerCommission}
-            href="/admin/commissions"
-            tone="amber"
-            sub="Of website company commission"
+            sub="Per-agent % of company commission"
           />
           <MetricCard
             icon={BadgeDollarSign}
@@ -196,7 +188,7 @@ export default function Finance() {
             value={data?.companyCommission}
             href="/admin/commissions"
             tone="amber"
-            sub="Base for agent / website %"
+            sub="Base for agent commission %"
           />
         </div>
       </div>
