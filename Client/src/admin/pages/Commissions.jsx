@@ -315,7 +315,7 @@ export default function Commissions() {
               <p className="mt-0.5 text-[11px] text-slate-400">Company commission</p>
             </div>
             <div className="rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-3 ring-1 ring-amber-100">
-              <p className="text-xs font-semibold text-amber-800">Website maker commission</p>
+              <p className="text-xs font-semibold text-amber-800">Website's commission</p>
               <p className="mt-1 text-xl font-bold tabular-nums text-amber-950">
                 {currency(website.website_commission ?? 0)}
               </p>
