@@ -15,12 +15,9 @@ const Finance = lazy(() => import('./pages/Finance'));
 const Profit = lazy(() => import('./pages/Profit'));
 const Commissions = lazy(() => import('./pages/Commissions'));
 const Expenses = lazy(() => import('./pages/Expenses'));
-const Marketing = lazy(() => import('./pages/Marketing'));
-const Salaries = lazy(() => import('./pages/Salaries'));
 const Users = lazy(() => import('./pages/Users'));
 const Profile = lazy(() => import('./pages/Profile'));
 const Schedule = lazy(() => import('./pages/Schedule'));
-const Utilities = lazy(() => import('./pages/Utilities'));
 const PettyCash = lazy(() => import('./pages/PettyCash'));
 const Housekeeping = lazy(() => import('./pages/Housekeeping'));
 const Projects = lazy(() => import('./pages/Projects'));
@@ -89,13 +86,13 @@ function AppRoutes() {
       <Route path="projects" element={<ProtectedRoute page="projects"><Projects /></ProtectedRoute>} />
       <Route path="reservations" element={<ProtectedRoute page="reservations"><Reservations /></ProtectedRoute>} />
       <Route path="schedule" element={<ProtectedRoute page="schedule"><Schedule /></ProtectedRoute>} />
-      <Route path="utilities" element={<ProtectedRoute page="utilities"><Utilities /></ProtectedRoute>} />
+      <Route path="utilities" element={<Navigate to="/admin/expenses?category=utilities_cost" replace />} />
       <Route path="finance" element={<ProtectedRoute page="finance"><Finance /></ProtectedRoute>} />
       <Route path="profit" element={<ProtectedRoute page="profit"><Profit /></ProtectedRoute>} />
       <Route path="commissions" element={<ProtectedRoute page="commissions"><Commissions /></ProtectedRoute>} />
       <Route path="expenses" element={<ProtectedRoute page="expenses"><Expenses /></ProtectedRoute>} />
-      <Route path="marketing" element={<ProtectedRoute page="marketing"><Marketing /></ProtectedRoute>} />
-      <Route path="salaries" element={<ProtectedRoute page="salaries"><Salaries /></ProtectedRoute>} />
+      <Route path="marketing" element={<Navigate to="/admin/expenses?category=marketing" replace />} />
+      <Route path="salaries" element={<Navigate to="/admin/expenses?category=salary" replace />} />
       <Route path="owner-settlements" element={<ProtectedRoute page="owner_settlements"><OwnerSettlementsAdmin /></ProtectedRoute>} />
       <Route path="petty-cash" element={<ProtectedRoute page="petty_cash"><PettyCash /></ProtectedRoute>} />
       <Route path="housekeeping" element={<ProtectedRoute page="housekeeping"><Housekeeping /></ProtectedRoute>} />

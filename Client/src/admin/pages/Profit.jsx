@@ -167,7 +167,7 @@ export default function Profit() {
           <h2 className="font-semibold text-slate-900 mb-1">Expense breakdown</h2>
           <p className="text-xs text-slate-400 mb-2">Auto + manual costs</p>
           <Row label="Owner %" value={breakdown.ownerShare} negative hint="Automatic" />
-          <Row label="Salaries" value={breakdown.salaries} href="/admin/salaries" negative hint="Automatic" />
+          <Row label="Salaries" value={breakdown.salaries} href="/admin/expenses?category=salary" negative hint="Payroll + ledger" />
           <Row
             label={`Manual agents ${model.manual_agent_pct ?? 1.5}%`}
             value={breakdown.manualAgentCommission}
@@ -189,11 +189,11 @@ export default function Profit() {
             negative
             hint="Of website company commission"
           />
-          <Row label="Actual housekeeping" value={breakdown.actualHousekeeping ?? breakdown.housekeeping} href="/admin/housekeeping" negative hint="Manual" />
-          <Row label="Actual utilities" value={breakdown.actualUtilities ?? breakdown.utilities} href="/admin/utilities" negative hint="Manual" />
+          <Row label="Actual housekeeping" value={breakdown.actualHousekeeping ?? breakdown.housekeeping} href="/admin/expenses?category=housekeeping_cost" negative hint="Manual" />
+          <Row label="Actual utilities" value={breakdown.actualUtilities ?? breakdown.utilities} href="/admin/expenses?category=utilities_cost" negative hint="Manual" />
           <Row label="Petty cash" value={breakdown.pettyCash} href="/admin/petty-cash" negative hint="Manual" />
-          <Row label="Marketing" value={breakdown.marketing} href="/admin/marketing" negative />
-          <Row label="Other expenses" value={breakdown.expenses} href="/admin/expenses" negative />
+          <Row label="Marketing" value={breakdown.marketing} href="/admin/expenses?category=marketing" negative />
+          <Row label="Other expenses" value={breakdown.expenses} href="/admin/expenses?category=other" negative />
           <div className="flex items-center justify-between pt-3 mt-1">
             <span className="text-sm font-semibold text-slate-800">Total expenses</span>
             <span className="text-sm font-bold tabular-nums text-rose-700">{currency(expenses)}</span>

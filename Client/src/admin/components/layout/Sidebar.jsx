@@ -6,8 +6,8 @@ import { getRoleTheme } from '../../utils/roleTheme';
 import {
   LayoutDashboard, Building2, CalendarDays,
   BadgeDollarSign, Receipt, FileBarChart2, Users, UserCircle,
-  LogOut, Building, CalendarRange, Zap, Wallet,
-  TrendingUp, Sparkles, Briefcase, Megaphone, Users2,
+  LogOut, Building, CalendarRange, Wallet,
+  TrendingUp, Sparkles, Briefcase,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -21,10 +21,7 @@ const NAV_ITEMS = [
   { path: '/admin/profit',           label: 'Profit',             icon: TrendingUp,         page: 'profit' },
   { path: '/admin/commissions',      label: 'Commissions',        icon: BadgeDollarSign,    page: 'commissions' },
   { path: '/admin/housekeeping',     label: 'Housekeeping',       icon: Sparkles,           page: 'housekeeping' },
-  { path: '/admin/utilities',        label: 'Actual utilities',   icon: Zap,                page: 'utilities' },
-  { path: '/admin/salaries',         label: 'Salaries',           icon: Users2,             page: 'salaries' },
   { path: '/admin/petty-cash',       label: 'Petty Cash',         icon: Wallet,             page: 'petty_cash' },
-  { path: '/admin/marketing',        label: 'Marketing',          icon: Megaphone,          page: 'marketing' },
   { path: '/admin/expenses',         label: 'Expenses',           icon: Receipt,            page: 'expenses' },
   { path: '/admin/acquisition',      label: 'Owner leads',        icon: Briefcase,          page: 'acquisition', resaleLabel: 'Owners requests' },
   { path: '/admin/sales',            label: 'Sales',              icon: TrendingUp,         page: 'sales' },

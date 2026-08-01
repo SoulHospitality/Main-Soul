@@ -162,7 +162,7 @@ export default function Finance() {
             icon={Users2}
             label="Salaries"
             value={data?.salaries}
-            href="/admin/salaries"
+            href="/admin/expenses?category=salary"
             tone="rose"
             sub="Payroll + salary ledger"
           />
@@ -208,17 +208,17 @@ export default function Finance() {
             icon={Sparkles}
             label="Actual housekeeping"
             value={data?.actualHousekeeping}
-            href="/admin/housekeeping"
+            href="/admin/expenses?category=housekeeping_cost"
             tone="rose"
-            sub="Enter real HK cost"
+            sub="Enter on Expenses"
           />
           <MetricCard
             icon={Zap}
             label="Actual utilities"
             value={data?.actualUtilities}
-            href="/admin/utilities"
+            href="/admin/expenses?category=utilities_cost"
             tone="rose"
-            sub="Enter real utility cost"
+            sub="Enter on Expenses"
           />
           <MetricCard
             icon={Wallet}
@@ -232,17 +232,17 @@ export default function Finance() {
             icon={Megaphone}
             label="Marketing"
             value={data?.marketing}
-            href="/admin/marketing"
+            href="/admin/expenses?category=marketing"
             tone="rose"
-            sub="Optional ads spend"
+            sub="Enter on Expenses"
           />
           <MetricCard
             icon={Receipt}
             label="Other expenses"
             value={data?.expenses}
-            href="/admin/expenses"
+            href="/admin/expenses?category=other"
             tone="rose"
-            sub="General ledger"
+            sub="Enter on Expenses"
           />
         </div>
       </div>

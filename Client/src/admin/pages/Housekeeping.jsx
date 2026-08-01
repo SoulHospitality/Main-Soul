@@ -2,14 +2,13 @@ import { useState, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
-import { Home, DollarSign, ClipboardList, Download, Sparkles, CheckCircle2, Wrench } from 'lucide-react';
+import { Home, DollarSign, ClipboardList, Download, Sparkles, CheckCircle2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import { usePermissions } from '../hooks/usePermissions';
 import { useSortableTable } from '../hooks/useSortableTable';
 import SortTh from '../components/ui/SortTh';
 import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
-import CategoryLedgerPage from '../components/finance/CategoryLedgerPage';
 
 const fmt = (n) =>
   Number(n || 0).toLocaleString('en-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -769,32 +768,14 @@ export default function Housekeeping() {
           >
             <ClipboardList className="w-4 h-4" /> Service requests
           </button>
-          <button
-            type="button"
-            onClick={() => setTab('costs')}
-            className={`px-4 py-2 text-sm font-medium flex items-center gap-2 ${
-              tab === 'costs' ? 'bg-soul-blue text-white' : 'bg-white text-gray-600'
-            }`}
-          >
-            <Wrench className="w-4 h-4" /> Costs
-          </button>
         </div>
       </div>
       {tab === 'tasks' ? (
         <TasksTab />
       ) : tab === 'fees' ? (
         <FeesTab />
-      ) : tab === 'services' ? (
-        <ServicesTab />
       ) : (
-        <CategoryLedgerPage
-          category="housekeeping_cost"
-          title="Housekeeping Costs"
-          subtitle="Ops cost of cleaning — deducted from revenue (separate from guest fees / service revenue)"
-          icon={Wrench}
-          entryLabel="cost"
-          descriptionPlaceholder="e.g. Cleaner overtime, supplies"
-        />
+        <ServicesTab />
       )}
     </div>
   );
