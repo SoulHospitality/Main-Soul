@@ -21,6 +21,7 @@ import {
   beachAccessFormDefaults,
   beachAccessRequiresManualEntry,
   isFreeBeachProject,
+  isIlMonteGalalaUnit,
 } from '../../utils/beachAccess';
 import { isGaiaUnit } from '../../utils/bookingRules';
 import TagSelect from '../components/ui/TagSelect';
@@ -245,6 +246,7 @@ function UnitForm({ form, setForm, listingType = 'rent' }) {
   const projectCtx = { project: form.project, compound: form.project, listing_type: listingType };
   const showBeachFields = !isSale && beachAccessRequiresManualEntry(projectCtx);
   const gaiaProject = !isSale && isGaiaUnit(projectCtx);
+  const galalaProject = !isSale && isIlMonteGalalaUnit(projectCtx);
   const freeBeach = !isSale && isFreeBeachProject(projectCtx);
 
   function applyProjectChange(project) {
@@ -398,6 +400,11 @@ function UnitForm({ form, setForm, listingType = 'rent' }) {
                 <strong>GAIA beach access</strong> is automatic by stay length (no fields needed):
                 3 nights → 1,900 / extra 2,500 · 4 nights → 2,500 / extra 3,100 · 5+ nights → 3,500 / extra 4,100 (per 7 nights).
               </div>
+            ) : galalaProject ? (
+              <div className="sm:col-span-2 rounded-lg border border-cyan-100 bg-cyan-50 px-3 py-2.5 text-sm text-cyan-950">
+                <strong>IL Monte Galala beach access</strong> is automatic:
+                750 EGP per guest / 7 days · Extra person 1,000 EGP.
+              </div>
             ) : freeBeach ? (
               <div className="sm:col-span-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-900">
                 <strong>Free beach access</strong> for this project (Hacienda West / D-Bay). No beach fees are charged.
@@ -477,7 +484,7 @@ function UnitForm({ form, setForm, listingType = 'rent' }) {
               Auto — published when every field is filled, otherwise draft
             </div>
             <p className="text-xs text-gray-400 mt-1">
-              Status is set automatically. Missing required fields keeps the unit as draft and hidden from guests. GAIA and free-beach projects do not need beach access fields.
+              Status is set automatically. Missing required fields keeps the unit as draft and hidden from guests. GAIA, IL Monte Galala, and free-beach projects do not need beach access fields.
             </p>
           </div>
         </div>

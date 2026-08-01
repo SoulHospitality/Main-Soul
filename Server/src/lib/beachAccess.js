@@ -1,11 +1,14 @@
 /**
  * Beach-access rules by project.
  * - GAIA: night-tiered rates at quote time (no manual unit fields)
+ * - IL Monte Galala: fixed 750 / 7 days, extra guest 1000
  * - Hacienda West / D-Bay: free
  * - Others: stored unit fields
  */
 
 const { isGaiaUnit } = require('./minStay');
+
+const GALALA_BEACH = { adult: 750, extra: 1000, days: 7 };
 
 function projectText(unit = {}) {
   return [
@@ -19,6 +22,13 @@ function projectText(unit = {}) {
     .join(' ');
 }
 
+function isIlMonteGalalaUnit(unit = {}) {
+  const s = projectText(unit);
+  if (!s) return false;
+  // IL Monte Galala / Ilmonte Galala / Monte Galala
+  return /(?:il\s*)?monte\s*galala|ilmonte\s*galala/.test(s);
+}
+
 function isFreeBeachProject(unit = {}) {
   const s = projectText(unit);
   if (!s) return false;
@@ -27,16 +37,17 @@ function isFreeBeachProject(unit = {}) {
   return false;
 }
 
-/** Beach fields are entered manually only for standard (non-GAIA, non-free) rentals. */
+/** Beach fields are entered manually only for standard (non-GAIA, non-Galala, non-free) rentals. */
 function beachAccessRequiresManualEntry(unit = {}) {
   if (String(unit?.listing_type || 'rent').toLowerCase() === 'sale') return false;
   if (isGaiaUnit(unit)) return false;
+  if (isIlMonteGalalaUnit(unit)) return false;
   if (isFreeBeachProject(unit)) return false;
   return true;
 }
 
 /**
- * @returns {{ adult: number, extra: number, days: number, mode: 'gaia'|'free'|'manual' }}
+ * @returns {{ adult: number, extra: number, days: number, mode: 'gaia'|'galala'|'free'|'manual' }}
  */
 function resolveBeachAccessRates(unit = {}, nights = 0) {
   if (isFreeBeachProject(unit)) {
@@ -55,6 +66,10 @@ function resolveBeachAccessRates(unit = {}, nights = 0) {
     return { adult: 3500, extra: 4100, days: 7, mode: 'gaia' };
   }
 
+  if (isIlMonteGalalaUnit(unit)) {
+    return { ...GALALA_BEACH, mode: 'galala' };
+  }
+
   const adult = Number(unit.access_fee_per_adult_egp ?? unit.beach_access_price ?? 0);
   const extra = Number(unit.access_fee_per_teen_egp ?? unit.beach_access_extra_guest ?? 0);
   const days = Number(unit.access_card_count_included ?? unit.beach_access_days ?? 7) || 7;
@@ -68,7 +83,7 @@ function resolveBeachAccessRates(unit = {}, nights = 0) {
 
 /**
  * Values to persist on create/update for rent units.
- * GAIA → null (priced at quote); free projects → 0; else passthrough.
+ * GAIA → null (priced at quote); Galala → fixed rates; free projects → 0; else passthrough.
  */
 function beachAccessPersistValues(unit = {}, incoming = {}) {
   if (String(unit?.listing_type || incoming.listing_type || 'rent').toLowerCase() === 'sale') {
@@ -78,6 +93,9 @@ function beachAccessPersistValues(unit = {}, incoming = {}) {
   if (isGaiaUnit(ctx)) {
     return { adult: null, extra: null, days: null };
   }
+  if (isIlMonteGalalaUnit(ctx)) {
+    return { adult: GALALA_BEACH.adult, extra: GALALA_BEACH.extra, days: GALALA_BEACH.days };
+  }
   if (isFreeBeachProject(ctx)) {
     return { adult: 0, extra: 0, days: 7 };
   }
@@ -86,7 +104,9 @@ function beachAccessPersistValues(unit = {}, incoming = {}) {
 
 module.exports = {
   isFreeBeachProject,
+  isIlMonteGalalaUnit,
   beachAccessRequiresManualEntry,
   resolveBeachAccessRates,
   beachAccessPersistValues,
+  GALALA_BEACH,
 };
