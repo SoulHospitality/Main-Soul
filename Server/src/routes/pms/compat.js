@@ -113,6 +113,7 @@ router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, nex
          r.id, r.guest_name, r.check_in, r.check_out, r.nights,
          r.total_amount, r.price_per_night, r.utilities_amount, r.housekeeping_fees,
          r.is_owner_reservation, r.broker_total, r.broker_amount_per_night, r.broker_name,
+         r.booking_id, r.booking_source,
          COALESCE(u.title, u.unit_number, 'Unit') AS unit_name,
          COALESCE(u.project, u.compound, 'Unassigned') AS project,
          u.commission_mode,
@@ -127,6 +128,7 @@ router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, nex
     );
 
     const { calcReservationFinancials, round2 } = require('../../lib/commission');
+    const { isWebsiteOriginReservation } = require('../../lib/reservationScope');
 
     let totalGross = 0;
     let totalTenant = 0;
@@ -135,6 +137,9 @@ router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, nex
     let totalCompany = 0;
     let ownerCommission = 0;
     let regularCommission = 0;
+    let websiteCount = 0;
+    let websiteRevenue = 0;
+    let websiteProfit = 0;
 
     const breakdown = rows.map((r) => {
       const fin = calcReservationFinancials(r, r);
@@ -146,6 +151,13 @@ router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, nex
       if (fin.isOwner) ownerCommission += fin.companyCommission;
       else regularCommission += fin.companyCommission;
 
+      const fromWebsite = isWebsiteOriginReservation(r);
+      if (fromWebsite) {
+        websiteCount += 1;
+        websiteRevenue += fin.grossAmount;
+        websiteProfit += fin.companyCommission;
+      }
+
       return {
         id: r.id,
         guest_name: r.guest_name,
@@ -155,6 +167,7 @@ router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, nex
         check_out: r.check_out,
         nights: r.nights,
         is_owner: fin.isOwner,
+        from_website: fromWebsite,
         gross: fin.grossAmount,
         tenant_deduction: fin.tenantDeduction,
         utilities: fin.utilitiesDeduction,
@@ -166,6 +179,7 @@ router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, nex
       };
     });
 
+    const websiteProfitRounded = round2(websiteProfit);
     res.json({
       breakdown,
       totals: {
@@ -178,6 +192,13 @@ router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, nex
         ownerRevenue: round2(ownerCommission),
         // Company commission revenue only (HK + utilities tracked on their own pages)
         grandTotal: round2(totalCompany + totalTenant),
+      },
+      website: {
+        reservation_count: websiteCount,
+        revenue: round2(websiteRevenue),
+        profit: websiteProfitRounded,
+        commission_pct: 0.5,
+        website_commission: round2(websiteProfitRounded * 0.005),
       },
     });
   } catch (e) {

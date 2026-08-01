@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  BadgeDollarSign, Download, TrendingUp, Users, Zap, Wallet, DollarSign,
+  BadgeDollarSign, Download, TrendingUp, Users, Zap, Wallet, DollarSign, Globe,
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { useSortableTable } from '../hooks/useSortableTable';
@@ -47,6 +47,13 @@ export default function Commissions() {
 
   const rows = data?.breakdown || [];
   const totals = data?.totals || {};
+  const website = data?.website || {
+    reservation_count: 0,
+    revenue: 0,
+    profit: 0,
+    commission_pct: 0.5,
+    website_commission: 0,
+  };
   const { sorted, sortKey, sortDir, handleSort } = useSortableTable(rows, 'check_in', 'desc');
 
   const exportExcel = () => {
@@ -201,6 +208,53 @@ export default function Commissions() {
             Reset
           </button>
         )}
+      </div>
+
+      {/* Website maker analytics — guest-site bookings only */}
+      <div className="card border border-sky-200 bg-gradient-to-br from-sky-50 to-white p-5">
+        <div className="mb-4 flex items-center gap-2">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-100">
+            <Globe className="h-4 w-4 text-sky-700" />
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold text-sky-950">Website reservations</h2>
+            <p className="text-xs text-sky-700/80">
+              Only bookings made through the guest website — manual PMS reservations are excluded
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="rounded-xl border border-sky-100 bg-white/80 px-4 py-3">
+            <p className="text-xs font-medium text-sky-700">Reservations</p>
+            <p className="mt-1 text-xl font-bold tabular-nums text-sky-950">
+              {website.reservation_count ?? 0}
+            </p>
+            <p className="mt-0.5 text-[11px] text-slate-400">Website bookings in range</p>
+          </div>
+          <div className="rounded-xl border border-sky-100 bg-white/80 px-4 py-3">
+            <p className="text-xs font-medium text-sky-700">Revenue</p>
+            <p className="mt-1 text-xl font-bold tabular-nums text-sky-950">
+              {currency(website.revenue ?? 0)}
+            </p>
+            <p className="mt-0.5 text-[11px] text-slate-400">Gross from website stays</p>
+          </div>
+          <div className="rounded-xl border border-sky-100 bg-white/80 px-4 py-3">
+            <p className="text-xs font-medium text-sky-700">Profit</p>
+            <p className="mt-1 text-xl font-bold tabular-nums text-sky-950">
+              {currency(website.profit ?? 0)}
+            </p>
+            <p className="mt-0.5 text-[11px] text-slate-400">Company commission on website stays</p>
+          </div>
+          <div className="rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-3 ring-1 ring-amber-100">
+            <p className="text-xs font-semibold text-amber-800">Website maker commission</p>
+            <p className="mt-1 text-xl font-bold tabular-nums text-amber-950">
+              {currency(website.website_commission ?? 0)}
+            </p>
+            <p className="mt-0.5 text-[11px] text-amber-700/80">
+              {website.commission_pct ?? 0.5}% of website profit
+            </p>
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
