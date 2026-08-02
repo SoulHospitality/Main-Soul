@@ -23,7 +23,7 @@ function normalizeLeadStatus(value, fallback = 'pending') {
 router.get('/acquisition-leads', requireRoles('admin', 'resale'), async (_req, res, next) => {
   try {
     const { rows } = await query(
-      `SELECT * FROM acquisition_leads ORDER BY updated_at DESC LIMIT 200`
+      `SELECT * FROM acquisition_leads ORDER BY created_at DESC LIMIT 200`
     );
     res.json(rows);
   } catch (e) {

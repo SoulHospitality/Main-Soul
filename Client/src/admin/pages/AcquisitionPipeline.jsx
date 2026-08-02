@@ -6,6 +6,7 @@ import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { usePermissions } from '../hooks/usePermissions';
+import { formatDateTime } from '../utils/formatters';
 
 const STATUSES = [
   { value: 'pending', label: 'Pending' },
@@ -72,6 +73,7 @@ export default function AcquisitionPipeline() {
         <table className="w-full min-w-[960px] text-sm">
           <thead className="bg-gray-50 text-xs uppercase text-gray-500">
             <tr>
+              <th className="px-4 py-3 text-left">Requested</th>
               <th className="px-4 py-3 text-left">Name</th>
               <th className="px-4 py-3 text-left">Phone</th>
               <th className="px-4 py-3 text-left">Email</th>
@@ -87,6 +89,9 @@ export default function AcquisitionPipeline() {
               const status = normalizeStatus(lead.stage);
               return (
                 <tr key={lead.id} className="hover:bg-gray-50">
+                  <td className="whitespace-nowrap px-4 py-3 text-gray-600">
+                    {lead.created_at ? formatDateTime(lead.created_at) : '—'}
+                  </td>
                   <td className="px-4 py-3 font-medium text-gray-900">{lead.owner_name || '—'}</td>
                   <td className="whitespace-nowrap px-4 py-3 text-gray-600">
                     {lead.owner_phone ? (
