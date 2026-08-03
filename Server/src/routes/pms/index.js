@@ -8,6 +8,7 @@ const {
   setCloudinaryFolder,
   FOLDER_UNITS,
   FOLDER_PAYMENTS,
+  FOLDER_ID_DOCS,
 } = require('../../config/cloudinary');
 const compat = require('./compat');
 const housekeepingOps = require('./housekeepingOps');
@@ -1269,20 +1270,7 @@ router.get('/reservations', async (req, res, next) => {
               u.compound AS project,
               creator.full_name AS created_by_name,
               su.full_name AS sales_person_name,
-              COALESCE(
-                NULLIF(r.id_photo_urls, '{}'),
-                NULLIF(b.id_photo_urls, '{}'),
-                (
-                  SELECT ARRAY(
-                    SELECT jsonb_array_elements_text(ccs.payload->'photo_urls')
-                  )
-                  FROM card_checkout_sessions ccs
-                  WHERE ccs.booking_id = r.booking_id
-                    AND jsonb_typeof(ccs.payload->'photo_urls') = 'array'
-                  LIMIT 1
-                ),
-                '{}'::text[]
-              ) AS id_photo_urls
+              COALESCE(r.id_photo_urls, '{}'::text[]) AS id_photo_urls
        FROM reservations r
        JOIN units u ON u.id = r.unit_id
        LEFT JOIN bookings b ON b.id = r.booking_id
@@ -1668,6 +1656,69 @@ router.patch(
   }
 });
 
+/** Upload guest ID / passport documents onto a reservation (fresh uploads only). */
+router.post(
+  '/reservations/:id/id-documents',
+  requireRoles('reservations_manual', 'reservations_web', 'reservations', 'admin'),
+  upload.array('id_photos', 10),
+  setCloudinaryFolder(FOLDER_ID_DOCS),
+  attachCloudinaryUrls,
+  async (req, res, next) => {
+    try {
+      const existing = await loadReservationAccess(req.params.id);
+      if (!existing) return res.status(404).json({ error: 'Not found' });
+      assertReservationOwned(req.user, existing);
+
+      const urls = (req.files || [])
+        .map((f) => f.path || f.secure_url)
+        .filter(Boolean);
+      if (!urls.length) {
+        return res.status(400).json({ error: 'Upload at least one ID document (image or PDF)' });
+      }
+
+      const { rows } = await query(
+        `UPDATE reservations SET
+           id_photo_urls = COALESCE(id_photo_urls, '{}'::text[]) || $1::text[],
+           updated_at = now()
+         WHERE id = $2
+         RETURNING id, id_photo_urls`,
+        [urls, req.params.id]
+      );
+      res.json(rows[0]);
+    } catch (e) {
+      next(e);
+    }
+  }
+);
+
+/** Remove one guest ID document URL from a reservation. */
+router.delete(
+  '/reservations/:id/id-documents',
+  requireRoles('reservations_manual', 'reservations_web', 'reservations', 'admin'),
+  async (req, res, next) => {
+    try {
+      const existing = await loadReservationAccess(req.params.id);
+      if (!existing) return res.status(404).json({ error: 'Not found' });
+      assertReservationOwned(req.user, existing);
+
+      const url = String(req.body?.url || req.query?.url || '').trim();
+      if (!url) return res.status(400).json({ error: 'url is required' });
+
+      const { rows } = await query(
+        `UPDATE reservations SET
+           id_photo_urls = array_remove(COALESCE(id_photo_urls, '{}'::text[]), $1),
+           updated_at = now()
+         WHERE id = $2
+         RETURNING id, id_photo_urls`,
+        [url, req.params.id]
+      );
+      res.json(rows[0]);
+    } catch (e) {
+      next(e);
+    }
+  }
+);
+
 router.delete(
   '/reservations/:id',
   requireRoles('reservations_manual', 'reservations_web', 'reservations', 'admin'),
@@ -1916,11 +1967,7 @@ router.get('/reservations/:id', async (req, res, next) => {
               su.full_name AS sales_person_name,
               creator.full_name AS created_by_name,
               b.notes AS booking_notes,
-              COALESCE(
-                NULLIF(r.id_photo_urls, '{}'),
-                NULLIF(b.id_photo_urls, '{}'),
-                '{}'::text[]
-              ) AS id_photo_urls
+              COALESCE(r.id_photo_urls, '{}'::text[]) AS id_photo_urls
        FROM reservations r
        JOIN units u ON u.id = r.unit_id
        LEFT JOIN bookings b ON b.id = r.booking_id

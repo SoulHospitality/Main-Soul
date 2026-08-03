@@ -481,13 +481,27 @@ function InfoRow({ label, value, bold }) {
   );
 }
 
-function ReservationDetail({ reservation, onAddPayment, canPay, canApprove, onApprovePayment }) {
+function ReservationDetail({
+  reservation,
+  onAddPayment,
+  canPay,
+  canApprove,
+  onApprovePayment,
+  canWrite,
+  onUploadIdDocs,
+  onRemoveIdDoc,
+  uploadingDocs,
+  onPreviewDocs,
+}) {
   if (!reservation) return null;
   const downPmt   = parseFloat(reservation.down_payment) || 0;
   const total     = parseFloat(reservation.total_amount) || 0;
   const hkFees    = parseFloat(reservation.housekeeping_fees) || 0;
   const ins       = parseFloat(reservation.insurance) || 0;
   const ownerAmt  = parseFloat(reservation.owner_collected_amount) || 0;
+  const idPhotos = Array.isArray(reservation.id_photo_urls)
+    ? reservation.id_photo_urls.filter(Boolean)
+    : [];
   let amountToPay;
   if (reservation.owner_collected_type === 'full') {
     amountToPay = hkFees + ins - downPmt;
@@ -650,6 +664,80 @@ function ReservationDetail({ reservation, onAddPayment, canPay, canApprove, onAp
           <span className="font-medium text-gray-700">Notes: </span>{reservation.notes}
         </div>
       )}
+
+      {/* Guest ID documents (fresh uploads only — legacy booking/checkout docs ignored) */}
+      <div>
+        <div className="flex items-center justify-between mb-2 gap-2">
+          <h4 className="font-semibold text-gray-900 text-sm">Guest documents</h4>
+          {canWrite && (
+            <label className="btn-secondary btn-sm cursor-pointer">
+              <Upload className="w-3.5 h-3.5" />
+              {uploadingDocs ? 'Uploading…' : 'Upload'}
+              <input
+                type="file"
+                accept="image/*,.pdf,application/pdf"
+                multiple
+                className="hidden"
+                disabled={uploadingDocs}
+                onChange={(e) => {
+                  const files = Array.from(e.target.files || []);
+                  e.target.value = '';
+                  if (files.length) onUploadIdDocs?.(files);
+                }}
+              />
+            </label>
+          )}
+        </div>
+        {idPhotos.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {idPhotos.map((photo) => (
+              <div key={photo} className="relative group">
+                <button
+                  type="button"
+                  onClick={() => onPreviewDocs?.(idPhotos, photo)}
+                  className="relative block"
+                  title={isPdfUrl(photo) ? 'View ID PDF' : 'View ID photo'}
+                >
+                  {isPdfUrl(photo) ? (
+                    idDocumentThumbUrl(photo) !== photo ? (
+                      <img
+                        src={idDocumentThumbUrl(photo)}
+                        alt="ID PDF"
+                        className="h-16 w-16 rounded-md border border-gray-200 object-cover bg-white"
+                      />
+                    ) : (
+                      <span className="flex h-16 w-16 items-center justify-center rounded-md border border-gray-200 bg-white text-rose-700">
+                        <FileText className="h-6 w-6" />
+                      </span>
+                    )
+                  ) : (
+                    <img
+                      src={photo}
+                      alt="Guest ID"
+                      className="h-16 w-16 rounded-md border border-gray-200 object-cover"
+                    />
+                  )}
+                  <span className="absolute -right-1 -top-1 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-slate-700 text-white">
+                    <Maximize2 className="h-2 w-2" strokeWidth={2} aria-hidden="true" />
+                  </span>
+                </button>
+                {canWrite && (
+                  <button
+                    type="button"
+                    onClick={() => onRemoveIdDoc?.(photo)}
+                    className="absolute -left-1 -bottom-1 hidden group-hover:inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-white text-xs"
+                    title="Remove"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-gray-400 text-sm italic">No documents uploaded yet</p>
+        )}
+      </div>
 
       {reservation.transfer_proof_path && (
         <div className="bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 text-sm">
@@ -988,6 +1076,33 @@ export default function Reservations() {
     onError: (e) => toast.error(e.response?.data?.error || 'Error approving'),
   });
 
+  const uploadIdDocsMutation = useMutation({
+    mutationFn: (files) => {
+      const fd = new FormData();
+      files.forEach((f) => fd.append('id_photos', f));
+      return api.post(`/reservations/${viewRes}/id-documents`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['reservation', viewRes] });
+      qc.invalidateQueries({ queryKey: ['reservations'] });
+      toast.success('Documents uploaded');
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Error uploading documents'),
+  });
+
+  const removeIdDocMutation = useMutation({
+    mutationFn: (url) =>
+      api.delete(`/reservations/${viewRes}/id-documents`, { data: { url } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['reservation', viewRes] });
+      qc.invalidateQueries({ queryKey: ['reservations'] });
+      toast.success('Document removed');
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Error removing document'),
+  });
+
   const blockMutation = useMutation({
     mutationFn: (d) => api.post('/reservations', d),
     onSuccess: () => {
@@ -1295,6 +1410,7 @@ export default function Reservations() {
                   <SortTh col="payment_status" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Payment Status</SortTh>
                   <SortTh col="status" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Status</SortTh>
                   <th className="whitespace-nowrap">Sales / Owner</th>
+                  <th className="whitespace-nowrap">Documents</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -1314,6 +1430,7 @@ export default function Reservations() {
                   const salesLabel =
                     r.sales_owner_label ||
                     (r.is_owner_reservation ? 'Owner' : r.sales_person_name || r.sales_label || '—');
+                  const idPhotos = Array.isArray(r.id_photo_urls) ? r.id_photo_urls.filter(Boolean) : [];
                   return (
                     <tr key={r.id}>
                       <td className="whitespace-nowrap">{formatDate(r.check_in)}</td>
@@ -1337,6 +1454,36 @@ export default function Reservations() {
                       </td>
                       <td className="whitespace-nowrap"><Badge status={r.status} /></td>
                       <td className="whitespace-nowrap text-gray-700">{salesLabel}</td>
+                      <td>
+                        <div className="flex flex-wrap gap-1 min-w-[4rem]">
+                          {idPhotos.length > 0 ? idPhotos.slice(0, 3).map((photo) => (
+                            <button
+                              key={photo}
+                              type="button"
+                              onClick={() => { setPreviewPhotos(idPhotos); setPreviewPhotoIndex(idPhotos.indexOf(photo)); }}
+                              className="relative"
+                              title={isPdfUrl(photo) ? 'View ID PDF' : 'View ID photo'}
+                            >
+                              {isPdfUrl(photo) ? (
+                                idDocumentThumbUrl(photo) !== photo ? (
+                                  <img src={idDocumentThumbUrl(photo)} alt="ID" className="h-9 w-9 rounded border border-gray-200 object-cover" />
+                                ) : (
+                                  <span className="flex h-9 w-9 items-center justify-center rounded border border-gray-200 bg-white text-rose-700">
+                                    <FileText className="h-4 w-4" />
+                                  </span>
+                                )
+                              ) : (
+                                <img src={photo} alt="ID" className="h-9 w-9 rounded border border-gray-200 object-cover" />
+                              )}
+                            </button>
+                          )) : (
+                            <span className="text-gray-300 italic text-[10px]">—</span>
+                          )}
+                          {idPhotos.length > 3 && (
+                            <span className="text-[10px] text-gray-400 self-center">+{idPhotos.length - 3}</span>
+                          )}
+                        </div>
+                      </td>
                       <td>
                         <div className="flex gap-1 flex-wrap">
                           {canView && (
@@ -1532,8 +1679,21 @@ export default function Reservations() {
       <Modal open={!!viewRes} onClose={() => setViewRes(null)} title={`Reservation #${viewRes}`} size="lg"
         footer={<button onClick={() => setViewRes(null)} className="btn-secondary">Close</button>}
       >
-        <ReservationDetail reservation={viewDetail} onAddPayment={handleAddPayment}
-          canPay={canPay} canApprove={canApprove} onApprovePayment={(pmtId) => approveMutation.mutate(pmtId)} />
+        <ReservationDetail
+          reservation={viewDetail}
+          onAddPayment={handleAddPayment}
+          canPay={canPay}
+          canApprove={canApprove}
+          onApprovePayment={(pmtId) => approveMutation.mutate(pmtId)}
+          canWrite={canWrite}
+          uploadingDocs={uploadIdDocsMutation.isPending}
+          onUploadIdDocs={(files) => uploadIdDocsMutation.mutate(files)}
+          onRemoveIdDoc={(url) => removeIdDocMutation.mutate(url)}
+          onPreviewDocs={(photos, photo) => {
+            setPreviewPhotos(photos);
+            setPreviewPhotoIndex(Math.max(0, photos.indexOf(photo)));
+          }}
+        />
       </Modal>
 
       {/* Payment Modal */}
