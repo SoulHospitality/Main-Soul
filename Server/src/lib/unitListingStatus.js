@@ -23,16 +23,10 @@ async function unitHasPrice(unitId, { priceFallback, wpPostId } = {}) {
 }
 
 /** Recompute draft/published from completeness. Returns fresh unit row. */
-async function syncUnitListingStatus(unitId, { requestedStatus = null } = {}) {
+async function syncUnitListingStatus(unitId) {
   const { rows } = await query(`SELECT * FROM units WHERE id = $1`, [unitId]);
   const unit = rows[0];
   if (!unit) return null;
-
-  const terminal = new Set(['archived', 'cancelled', 'delisted']);
-  // Leave terminal units alone unless an explicit terminal change is requested
-  if (terminal.has(unit.status) && !(requestedStatus && terminal.has(requestedStatus))) {
-    return unit;
-  }
 
   const hasPrice =
     String(unit.listing_type || 'rent').toLowerCase() === 'sale'
@@ -44,8 +38,6 @@ async function syncUnitListingStatus(unitId, { requestedStatus = null } = {}) {
   const resolved = resolveListingStatus({
     unit,
     hasPrice,
-    requestedStatus,
-    previousStatus: unit.status,
   });
   if (resolved.status === unit.status) {
     return { ...unit, _completeness: resolved };

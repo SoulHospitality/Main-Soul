@@ -1,30 +1,44 @@
 /**
- * One-shot: demote published incomplete units to draft; leave complete drafts alone.
- * Usage: DATABASE_URL=... node scripts/sync-unit-listing-status.js
+ * Recompute every unit to draft or published from completeness.
+ * Usage: node scripts/sync-unit-listing-status.js
  */
 require('dotenv').config();
 const { query, pool } = require('../src/config/db');
 const { syncUnitListingStatus } = require('../src/lib/unitListingStatus');
 
 async function main() {
-  const { rows } = await query(
-    `SELECT id, title, status FROM units WHERE status IN ('published', 'draft') ORDER BY title`
+  const { rows: beforeCounts } = await query(
+    `SELECT status, COUNT(*)::int AS count FROM units GROUP BY status ORDER BY status`
   );
-  let demoted = 0;
-  let unchanged = 0;
+  console.log('Before:', JSON.stringify(beforeCounts));
+
+  const { rows } = await query(
+    `SELECT id, title, unit_number, status FROM units ORDER BY unit_number NULLS LAST, title`
+  );
+  let changed = 0;
+  let published = 0;
+  let draft = 0;
   for (const row of rows) {
     const before = row.status;
-    const synced = await syncUnitListingStatus(row.id, { requestedStatus: row.status });
+    const synced = await syncUnitListingStatus(row.id);
     if (!synced) continue;
+    if (synced.status === 'published') published += 1;
+    else draft += 1;
     if (synced.status !== before) {
-      demoted += 1;
+      changed += 1;
       const missing = synced._completeness?.missing?.join(', ') || '';
-      console.log(`${before} → ${synced.status}: ${row.title} (${missing})`);
-    } else {
-      unchanged += 1;
+      const label = row.unit_number || row.title || row.id;
+      console.log(`${before} → ${synced.status}: ${label}${missing ? ` (${missing})` : ''}`);
     }
   }
-  console.log(`Done. Changed: ${demoted}, unchanged: ${unchanged}, total: ${rows.length}`);
+
+  const { rows: afterCounts } = await query(
+    `SELECT status, COUNT(*)::int AS count FROM units GROUP BY status ORDER BY status`
+  );
+  console.log(
+    `Done. total=${rows.length} changed=${changed} published=${published} draft=${draft}`
+  );
+  console.log('After:', JSON.stringify(afterCounts));
 }
 
 main()

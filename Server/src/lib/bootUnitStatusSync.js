@@ -2,14 +2,12 @@ const { query } = require('../config/db');
 const { syncUnitListingStatus } = require('./unitListingStatus');
 
 /**
- * Recompute draft/published for every active unit from completeness rules.
- * Runs on boot so unit status does not depend only on SQL migrations landing.
+ * Recompute draft/published for every unit from completeness rules.
+ * Runs on boot so legacy archived/cancelled/delisted rows are normalized.
  */
 async function syncAllUnitListingStatusesOnBoot() {
   const { rows } = await query(
-    `SELECT id, status FROM units
-     WHERE status IN ('draft', 'published')
-     ORDER BY created_at`
+    `SELECT id, status FROM units ORDER BY created_at`
   );
   let changed = 0;
   for (const row of rows) {

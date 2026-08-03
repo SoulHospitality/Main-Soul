@@ -94,24 +94,13 @@ function assessUnitCompleteness(unit, { hasPrice = false } = {}) {
 
 /**
  * Resolve guest listing status automatically from completeness.
- * - Incomplete → draft (hidden from guests)
- * - Complete → published
- * - Terminal statuses (archived/cancelled/delisted) preserved when already set / requested
+ * Only draft | published are used — incomplete → draft, complete → published.
+ * Legacy archived/cancelled/delisted requests are ignored and recomputed.
  */
 function resolveListingStatus({
   unit,
   hasPrice = false,
-  requestedStatus = null,
-  previousStatus = null,
 } = {}) {
-  const terminal = new Set(['archived', 'cancelled', 'delisted']);
-  if (requestedStatus && terminal.has(requestedStatus)) {
-    return { status: requestedStatus, ...assessUnitCompleteness(unit, { hasPrice }) };
-  }
-  if (previousStatus && terminal.has(previousStatus) && !requestedStatus) {
-    return { status: previousStatus, ...assessUnitCompleteness(unit, { hasPrice }) };
-  }
-
   const assessment = assessUnitCompleteness(unit, { hasPrice });
   return {
     status: assessment.complete ? 'published' : 'draft',
