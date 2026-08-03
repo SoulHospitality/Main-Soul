@@ -33,6 +33,7 @@ const {
   assertReservationOwned,
   isReservationsAgent,
   isManualReservationsAgent,
+  isAdmin,
 } = require('../../lib/reservationScope');
 const { getMinimumStayNights } = require('../../lib/minStay');
 const { beachAccessPersistValues } = require('../../lib/beachAccess');
@@ -1570,6 +1571,9 @@ router.patch(
     assertReservationOwned(req.user, existing);
 
     const b = req.body;
+    if (isReservationsAgent(req.user) && !isAdmin(req.user)) {
+      b.sales_person_id = req.user.id;
+    }
     const checkIn = b.check_in || existing.check_in;
     const checkOut = b.check_out || existing.check_out;
     const ci = new Date(checkIn);
@@ -2299,7 +2303,7 @@ router.get('/dashboard/stats', async (req, res, next) => {
          JOIN units u ON u.id = r.unit_id
          WHERE r.check_in = $1::date
            AND r.status IN ('confirmed', 'pending', 'checked_in')
-           AND ($2::int IS NULL OR r.sales_person_id = $2)
+           AND ($2::int IS NULL OR r.sales_person_id = $2 OR r.created_by = $2)
          ORDER BY COALESCE(u.project, u.compound), u.title`,
         [today, agentId]
       ),
@@ -2312,7 +2316,7 @@ router.get('/dashboard/stats', async (req, res, next) => {
          JOIN units u ON u.id = r.unit_id
          WHERE r.check_out = $1::date
            AND r.status IN ('confirmed', 'checked_in')
-           AND ($2::int IS NULL OR r.sales_person_id = $2)
+           AND ($2::int IS NULL OR r.sales_person_id = $2 OR r.created_by = $2)
          ORDER BY COALESCE(u.project, u.compound), u.title`,
         [today, agentId]
       ),
@@ -2321,7 +2325,7 @@ router.get('/dashboard/stats', async (req, res, next) => {
          FROM reservations
          WHERE check_in BETWEEN $1::date AND $2::date
            AND status IN ('confirmed', 'pending')
-           AND ($3::int IS NULL OR sales_person_id = $3)`,
+           AND ($3::int IS NULL OR sales_person_id = $3 OR created_by = $3)`,
         [today, nextWeekStr, agentId]
       ),
       query(
@@ -2337,7 +2341,7 @@ router.get('/dashboard/stats', async (req, res, next) => {
            END)::int AS occupied_units
          FROM units u
          LEFT JOIN reservations r ON r.unit_id = u.id
-           AND ($1::int IS NULL OR r.sales_person_id = $1)
+           AND ($1::int IS NULL OR r.sales_person_id = $1 OR r.created_by = $1)
          WHERE COALESCE(u.status, 'draft') NOT IN ('archived', 'cancelled', 'delisted')
          GROUP BY COALESCE(u.project, u.compound, 'Unassigned')
          ORDER BY COALESCE(u.project, u.compound, 'Unassigned')`,
@@ -2350,7 +2354,7 @@ router.get('/dashboard/stats', async (req, res, next) => {
          FROM reservations r
          LEFT JOIN units u ON u.id = r.unit_id
          WHERE r.status <> 'cancelled'
-           AND ($1::int IS NULL OR r.sales_person_id = $1)
+           AND ($1::int IS NULL OR r.sales_person_id = $1 OR r.created_by = $1)
          ORDER BY r.created_at DESC
          LIMIT 6`,
         [agentId]
@@ -2403,7 +2407,7 @@ router.get('/dashboard/stats', async (req, res, next) => {
            WHERE r.status IN ('confirmed', 'checked_in', 'checked_out', 'pending')
              AND r.check_in < ($2::date + INTERVAL '1 day')
              AND r.check_out > $1::date
-             AND ($3::int IS NULL OR r.sales_person_id = $3)`,
+             AND ($3::int IS NULL OR r.sales_person_id = $3 OR r.created_by = $3)`,
           [kpiFrom, kpiTo, agentId]
         ),
         query(
@@ -2426,7 +2430,7 @@ router.get('/dashboard/stats', async (req, res, next) => {
            JOIN units u ON u.id = r.unit_id
            WHERE r.check_in = $1::date
              AND r.status IN ('confirmed', 'pending', 'checked_in')
-             AND ($2::int IS NULL OR r.sales_person_id = $2)
+             AND ($2::int IS NULL OR r.sales_person_id = $2 OR r.created_by = $2)
              AND (
                u.ops_status = 'maintenance'
                OR NOT EXISTS (
@@ -2445,7 +2449,7 @@ router.get('/dashboard/stats', async (req, res, next) => {
            FROM reservations r
            JOIN units u ON u.id = r.unit_id
            WHERE r.status <> 'cancelled' AND r.check_in >= $1::date
-             AND ($2::int IS NULL OR r.sales_person_id = $2)`,
+             AND ($2::int IS NULL OR r.sales_person_id = $2 OR r.created_by = $2)`,
           [FINANCIAL_EPOCH, agentId]
         ).catch(() => ({ rows: [] })),
       ]);

@@ -87,7 +87,11 @@ function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
     return { clause: '', params: [], nextIndex: paramIndex };
   }
 
-  let clause = ` AND ${alias}.sales_person_id = $${paramIndex}`;
+  // Own bookings: assigned sales person or creator (covers edge cases)
+  let clause = ` AND (
+    ${alias}.sales_person_id = $${paramIndex}
+    OR ${alias}.created_by = $${paramIndex}
+  )`;
   const params = [user.id];
   const nextIndex = paramIndex + 1;
 
@@ -100,17 +104,23 @@ function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
   return { clause, params, nextIndex };
 }
 
-/** SQL fragment restricting website booking rows to the assignee. */
+/** SQL fragment restricting website booking rows for agents.
+ * Pending/held unassigned bookings are a shared pool; confirmed ones are assignee-only.
+ */
 function bookingAssigneeClause(user, alias = 'b', paramIndex = 1) {
   if (user?.role === 'reservations_manual') {
     return { clause: ' AND FALSE', params: [], nextIndex: paramIndex };
   }
-  if (!isWebsiteReservationsAgent(user)) {
+  if (isAdmin(user) || !isWebsiteReservationsAgent(user)) {
     return { clause: '', params: [], nextIndex: paramIndex };
   }
   const col = alias ? `${alias}.assigned_sales_id` : 'assigned_sales_id';
+  const statusCol = alias ? `${alias}.status` : 'status';
   return {
-    clause: ` AND ${col} = $${paramIndex}`,
+    clause: ` AND (
+      ${col} = $${paramIndex}
+      OR (${col} IS NULL AND ${statusCol} IN ('pending', 'held'))
+    )`,
     params: [user.id],
     nextIndex: paramIndex + 1,
   };
@@ -136,8 +146,12 @@ async function loadBookingAccess(id) {
 function assertReservationOwned(user, reservation) {
   if (isAdmin(user)) return;
   if (!isReservationsTeam(user)) return;
-  if (!reservation || Number(reservation.sales_person_id) !== Number(user.id)) {
-    const err = new Error('You can only access reservations assigned to you');
+  const mine =
+    reservation &&
+    (Number(reservation.sales_person_id) === Number(user.id) ||
+      Number(reservation.created_by) === Number(user.id));
+  if (!mine) {
+    const err = new Error('You can only access your own reservations');
     err.status = 403;
     throw err;
   }
@@ -160,7 +174,19 @@ function assertBookingAssigned(user, booking) {
     err.status = 403;
     throw err;
   }
-  if (!booking || Number(booking.assigned_sales_id) !== Number(user.id)) {
+  if (!booking) {
+    const err = new Error('Booking not found');
+    err.status = 404;
+    throw err;
+  }
+  // Shared pending pool — any website agent may accept/reject unassigned requests
+  if (
+    !booking.assigned_sales_id &&
+    ['pending', 'held'].includes(String(booking.status || '').toLowerCase())
+  ) {
+    return;
+  }
+  if (Number(booking.assigned_sales_id) !== Number(user.id)) {
     const err = new Error('This website booking is not assigned to you');
     err.status = 403;
     throw err;

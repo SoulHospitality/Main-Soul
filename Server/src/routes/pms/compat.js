@@ -140,7 +140,10 @@ router.get('/payments/all', requireRoles('admin'), async (req, res, next) => {
   }
 });
 
-router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, next) => {
+router.get(
+  '/commissions/breakdown',
+  requireRoles('admin', 'reservations', 'reservations_web', 'reservations_manual'),
+  async (req, res, next) => {
   try {
     const from_date = clampFromDate(req.query.from_date);
     const { to_date } = req.query;
@@ -150,6 +153,18 @@ router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, nex
       params.push(to_date);
       where += ` AND r.check_out <= $${params.length}::date`;
     }
+
+    const {
+      isAdmin,
+      isReservationsTeam,
+      reservationScopeClause,
+    } = require('../../lib/reservationScope');
+    const agentScoped = isReservationsTeam(req.user) && !isAdmin(req.user);
+    const scope = agentScoped
+      ? reservationScopeClause(req.user, 'r', params.length + 1)
+      : { clause: '', params: [] };
+    params.push(...scope.params);
+    where += scope.clause;
 
     const { rows } = await query(
       `SELECT
@@ -251,6 +266,8 @@ router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, nex
 
     res.json({
       breakdown,
+      scoped_to_agent: agentScoped,
+      agent_id: agentScoped ? req.user.id : null,
       totals: {
         totalGross: round2(totalGross),
         totalTenant: round2(totalTenant),
@@ -264,6 +281,8 @@ router.get('/commissions/breakdown', requireRoles('admin'), async (req, res, nex
         manualAgentCommission: round2(manualAgentCommission),
         websiteAgentCommission: round2(websiteAgentCommission),
         agentCommissions: round2(manualAgentCommission + websiteAgentCommission),
+        // Agent's own commission total (same as agentCommissions when scoped)
+        myCommission: round2(manualAgentCommission + websiteAgentCommission),
       },
       model: {
         commission_base: 'company_commission',
@@ -1183,6 +1202,11 @@ router.put('/reservations/:id', requireRoles('reservations_manual', 'reservation
     assertReservationOwned(req.user, existing);
 
     const b = req.body;
+    const { isAdmin, isReservationsTeam } = require('../../lib/reservationScope');
+    // Agents cannot reassign reservations to someone else
+    if (isReservationsTeam(req.user) && !isAdmin(req.user)) {
+      b.sales_person_id = req.user.id;
+    }
     const checkIn = b.check_in || existing.check_in;
     const checkOut = b.check_out || existing.check_out;
     const ci = new Date(checkIn);

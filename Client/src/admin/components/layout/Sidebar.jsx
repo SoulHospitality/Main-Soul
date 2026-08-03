@@ -20,7 +20,7 @@ const NAV_ITEMS = [
   { path: '/admin/schedule',         label: 'Schedule',           icon: CalendarRange,      page: 'schedule' },
   { path: '/admin/finance',          label: 'Finance',            icon: BadgeDollarSign,    page: 'finance' },
   { path: '/admin/profit',           label: 'Profit',             icon: TrendingUp,         page: 'profit' },
-  { path: '/admin/commissions',      label: 'Commissions',        icon: BadgeDollarSign,    page: 'commissions' },
+  { path: '/admin/commissions',      label: 'Commissions',        icon: BadgeDollarSign,    page: 'commissions', agentLabel: 'My Profit' },
   { path: '/admin/housekeeping',     label: 'Housekeeping',       icon: Sparkles,           page: 'housekeeping' },
   { path: '/admin/petty-cash',       label: 'Petty Cash',         icon: Wallet,             page: 'petty_cash' },
   { path: '/admin/expenses',         label: 'Expenses',           icon: Receipt,            page: 'expenses' },
@@ -83,7 +83,14 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
       <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
         {NAV_ITEMS.filter((item) => canAccess(item.page)).map((item) => {
           const label =
-            user?.role === 'resale' && item.resaleLabel ? item.resaleLabel : item.label;
+            user?.role === 'resale' && item.resaleLabel
+              ? item.resaleLabel
+              : item.agentLabel &&
+                  (user?.role === 'reservations_web' ||
+                    user?.role === 'reservations_manual' ||
+                    user?.role === 'reservations')
+                ? item.agentLabel
+                : item.label;
           return (
           <NavLink
             key={item.path}

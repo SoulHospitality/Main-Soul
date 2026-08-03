@@ -16,12 +16,13 @@ import * as XLSX from 'xlsx';
 const normDate = (d) => String(d).split('T')[0];
 
 export default function Commissions() {
-  const { isAdmin } = usePermissions();
+  const { isAdmin, isReservations } = usePermissions();
+  const agentOnly = isReservations && !isAdmin;
   const [fromDate, setFromDate] = useState(FINANCIAL_EPOCH);
   const [toDate, setToDate] = useState('');
 
   const { data, isLoading } = useQuery({
-    queryKey: ['commissions-breakdown', fromDate, toDate],
+    queryKey: ['commissions-breakdown', fromDate, toDate, agentOnly],
     queryFn: () =>
       api
         .get('/commissions/breakdown', {
@@ -38,11 +39,13 @@ export default function Commissions() {
           params: { from_date: fromDate || undefined, to_date: toDate || undefined },
         })
         .then((r) => r.data),
+    enabled: isAdmin,
   });
 
   const { data: agentRows = [] } = useQuery({
     queryKey: ['staff-commissions'],
     queryFn: () => api.get('/commissions').then((r) => r.data),
+    enabled: isAdmin,
   });
 
   const rows = data?.breakdown || [];
@@ -57,6 +60,11 @@ export default function Commissions() {
   const manual = channels.manual || emptyChannel;
   const allChannel = channels.all || emptyChannel;
   const { sorted, sortKey, sortDir, handleSort } = useSortableTable(rows, 'check_in', 'desc');
+
+  const myCommission =
+    totals.myCommission ??
+    totals.agentCommissions ??
+    (manual.agent_commission || 0) + (website.agent_commission || 0);
 
   const exportExcel = () => {
     if (!rows.length) return;
@@ -98,7 +106,47 @@ export default function Commissions() {
   const commissionProfit =
     finance?.commissionProfit ?? (totals.totalCompany || 0) - agentTotal;
 
-  const SUMMARY_CARDS = [
+  const SUMMARY_CARDS = agentOnly
+    ? [
+        {
+          label: 'My commission',
+          value: myCommission,
+          icon: BadgeDollarSign,
+          bg: 'bg-amber-50',
+          border: 'border-amber-200',
+          iconBg: 'bg-amber-100',
+          iconClr: 'text-amber-600',
+          valClr: 'text-amber-800',
+          lblClr: 'text-amber-700',
+          subtitle: 'Your % of company commission on your reservations',
+        },
+        {
+          label: 'My reservations',
+          value: allChannel.reservation_count ?? rows.length,
+          icon: ClipboardList,
+          bg: 'bg-slate-50',
+          border: 'border-slate-200',
+          iconBg: 'bg-slate-100',
+          iconClr: 'text-slate-600',
+          valClr: 'text-slate-800',
+          lblClr: 'text-slate-700',
+          subtitle: 'In selected date range',
+          format: 'count',
+        },
+        {
+          label: 'Revenue handled',
+          value: allChannel.revenue ?? totals.totalGross ?? 0,
+          icon: Wallet,
+          bg: 'bg-emerald-50',
+          border: 'border-emerald-200',
+          iconBg: 'bg-emerald-100',
+          iconClr: 'text-emerald-600',
+          valClr: 'text-emerald-800',
+          lblClr: 'text-emerald-700',
+          subtitle: 'Gross on your reservations',
+        },
+      ]
+    : [
     {
       label: 'Company Commission',
       value: finance?.companyCommission ?? totals.regularCommission ?? totals.totalCompany ?? 0,
@@ -177,9 +225,11 @@ export default function Commissions() {
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="page-header mb-0">
-          <h1 className="page-title">Commissions</h1>
+          <h1 className="page-title">{agentOnly ? 'My Profit' : 'Commissions'}</h1>
           <p className="page-subtitle">
-            Agent commission % is set per user — applied to company commission on their reservations
+            {agentOnly
+              ? 'Commission earned on reservations assigned to you'
+              : 'Agent commission % is set per user — applied to company commission on their reservations'}
           </p>
         </div>
         {isAdmin && (
@@ -222,7 +272,8 @@ export default function Commissions() {
         )}
       </div>
 
-      {/* Channel split: all / manual / website */}
+      {/* Channel split: all / manual / website (admin only) */}
+      {!agentOnly && (
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="card border border-slate-200 bg-slate-50/80 p-5">
           <div className="mb-4 flex items-center gap-2">
@@ -337,10 +388,11 @@ export default function Commissions() {
           </div>
         </div>
       </div>
+      )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
+      <div className={`grid gap-4 ${agentOnly ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-2 sm:grid-cols-3 xl:grid-cols-6'}`}>
         {SUMMARY_CARDS.map(
-          ({ label, value, icon: Icon, bg, border, iconBg, iconClr, valClr, lblClr, subtitle }) => (
+          ({ label, value, icon: Icon, bg, border, iconBg, iconClr, valClr, lblClr, subtitle, format }) => (
             <div key={label} className={`card p-4 ${bg} ${border}`}>
               <div className="flex items-center gap-2 mb-2">
                 <div className={`w-8 h-8 rounded-xl ${iconBg} flex items-center justify-center flex-shrink-0`}>
@@ -348,14 +400,16 @@ export default function Commissions() {
                 </div>
                 <p className={`text-xs font-medium leading-tight ${lblClr}`}>{label}</p>
               </div>
-              <p className={`text-lg font-bold tabular-nums ${valClr}`}>{currency(value)}</p>
+              <p className={`text-lg font-bold tabular-nums ${valClr}`}>
+                {format === 'count' ? value : currency(value)}
+              </p>
               {subtitle && <p className="text-xs text-gray-400 mt-1 leading-tight">{subtitle}</p>}
             </div>
           )
         )}
       </div>
 
-      {agentRows.length > 0 && (
+      {isAdmin && agentRows.length > 0 && (
         <div className="card p-0 overflow-x-auto">
           <div className="px-4 py-3 font-semibold border-b text-sm">Reservation agent commissions</div>
           <table className="table text-sm">
@@ -452,15 +506,27 @@ export default function Commissions() {
                 >
                   Company Comm.
                 </SortTh>
-                <SortTh
-                  col="owner_net"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={handleSort}
-                  className="text-right"
-                >
-                  Owner Net
-                </SortTh>
+                {agentOnly ? (
+                  <SortTh
+                    col="agent_commission"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={handleSort}
+                    className="text-right"
+                  >
+                    My Commission
+                  </SortTh>
+                ) : (
+                  <SortTh
+                    col="owner_net"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={handleSort}
+                    className="text-right"
+                  >
+                    Owner Net
+                  </SortTh>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -505,7 +571,16 @@ export default function Commissions() {
                       <span className="text-gray-300">—</span>
                     )}
                   </td>
-                  <td className="text-right tabular-nums text-gray-700">{currency(r.owner_net)}</td>
+                  {agentOnly ? (
+                    <td className="text-right tabular-nums text-amber-700 font-bold">
+                      {currency(r.agent_commission || 0)}
+                      {r.agent_commission_pct != null ? (
+                        <div className="text-[10px] font-normal text-gray-400">{r.agent_commission_pct}%</div>
+                      ) : null}
+                    </td>
+                  ) : (
+                    <td className="text-right tabular-nums text-gray-700">{currency(r.owner_net)}</td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -522,7 +597,9 @@ export default function Commissions() {
                 <td className="text-right tabular-nums text-yellow-700">
                   {currency(totals.totalCompany)}
                 </td>
-                <td className="text-right tabular-nums text-gray-700">{currency(totalOwnerNet)}</td>
+                <td className="text-right tabular-nums text-amber-800">
+                  {agentOnly ? currency(myCommission) : currency(totalOwnerNet)}
+                </td>
               </tr>
             </tfoot>
           </table>

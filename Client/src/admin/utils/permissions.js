@@ -19,6 +19,7 @@ const RESERVATIONS_PAGE_ACCESS = new Set([
   'reservations',
   'schedule',
   'housekeeping',
+  'commissions',
   'profile',
 ]);
 
@@ -138,6 +139,11 @@ export function canHandleWebsiteBookings(user) {
 }
 
 export function canViewAllReservations(user) {
+  return !!user && user.role === 'admin';
+}
+
+/** Agents may open Commissions to see only their own profit */
+export function canViewOwnCommissions(user) {
   return !!user && (user.role === 'admin' || isReservationsTeam(user));
 }
 
