@@ -540,7 +540,15 @@ function ReservationDetail({ reservation, onAddPayment, canPay, canApprove, onAp
               .join(' · ') || '—'}
           />
           <InfoRow label="Source" value={reservation.booking_source} />
-          <InfoRow label="Sales person" value={reservation.sales_person_name} />
+          <InfoRow
+            label="Sales / Owner"
+            value={
+              reservation.sales_owner_label ||
+              (reservation.is_owner_reservation
+                ? 'Owner'
+                : reservation.sales_person_name || reservation.sales_label || '—')
+            }
+          />
           <InfoRow label="Created by" value={reservation.created_by_name || '—'} />
           {reservation.booking_id && (
             <InfoRow
@@ -562,6 +570,20 @@ function ReservationDetail({ reservation, onAddPayment, canPay, canApprove, onAp
           <InfoRow label="Price/Night" value={reservation.price_per_night > 0 ? currency(reservation.price_per_night) : '—'} />
           <InfoRow label="Total" value={currency(total)} bold />
           <InfoRow label="Down Payment" value={currency(downPmt)} />
+          <InfoRow
+            label="Amt to Pay"
+            value={currency(
+              reservation.amount_to_pay != null
+                ? reservation.amount_to_pay
+                : Math.max(0, total - (parseFloat(reservation.amount_paid) || 0))
+            )}
+            bold
+          />
+          <InfoRow label="Housekeeping" value={currency(reservation.housekeeping_fees)} />
+          <InfoRow label="Insurance" value={currency(reservation.insurance)} />
+          <InfoRow label="Utilities" value={currency(reservation.utilities_amount)} />
+          <InfoRow label="Payment Status" value={reservation.payment_status} />
+          <InfoRow label="Status" value={reservation.status} />
         </div>
       </div>
 
@@ -859,7 +881,8 @@ export default function Reservations() {
     queryFn: () => api.get('/reservations', { params: {
       search:          search              || undefined,
       status:          filterStatus        || undefined,
-      payment_status:  filterPayment       || undefined,
+      payment_status:
+        filterPayment === 'unpaid' ? 'pending' : filterPayment || undefined,
       unit_id:         filterUnit          || undefined,
       created_from:    filterCreatedFrom   || undefined,
       created_to:      filterCreatedTo     || undefined,
@@ -1091,29 +1114,54 @@ export default function Reservations() {
   const allFiltered = reservations.filter(r => {
     if (filterProject && r.project !== filterProject) return false;
     if (filterUnitNumber && !String(r.unit_number || '').toLowerCase().includes(filterUnitNumber.toLowerCase())) return false;
+    if (filterStatus && r.status !== filterStatus) return false;
+    if (filterPayment) {
+      const want = filterPayment === 'unpaid' ? 'pending' : filterPayment;
+      if (r.payment_status !== want) return false;
+    }
     return true;
   });
   const isBlocked      = r => r.is_owner_reservation && (parseFloat(r.total_amount) || 0) === 0;
   const filteredByUnit = allFiltered.filter(r => !isBlocked(r));
   const ownerStays     = allFiltered.filter(r =>  isBlocked(r));
-  const { sorted, sortKey, sortDir, handleSort } = useSortableTable(filteredByUnit, 'created_at', 'desc');
+  const { sorted, sortKey, sortDir, handleSort } = useSortableTable(filteredByUnit, 'check_in', 'desc');
   const { sorted: ownerSorted, sortKey: ownerSortKey, sortDir: ownerSortDir, handleSort: ownerHandleSort } = useSortableTable(ownerStays, 'check_in', 'desc');
 
   const exportExcel = () => {
-    const rows = reservations
-      .map(r => {
-        const total = parseFloat(r.total_amount) || 0;
-        const paid = parseFloat(r.amount_paid) || parseFloat(r.down_payment) || 0;
-        return {
-          Name: r.guest_name || '',
-          Phone: r.guest_phone || '',
-          'Check-in': r.check_in ? String(r.check_in).split('T')[0] : '',
-          'Check-out': r.check_out ? String(r.check_out).split('T')[0] : '',
-          Email: r.guest_email || '',
-          'Total to be paid': Math.max(0, total - paid),
-          'ID Photos': Array.isArray(r.id_photo_urls) ? r.id_photo_urls.filter(Boolean).join(', ') : '',
-        };
-      });
+    const rows = filteredByUnit.map((r) => {
+      const total = parseFloat(r.total_amount) || 0;
+      const paid = parseFloat(r.amount_paid) || 0;
+      const down = parseFloat(r.down_payment) || 0;
+      const amtToPay =
+        r.amount_to_pay != null ? Number(r.amount_to_pay) : Math.max(0, total - paid);
+      const payLabel =
+        r.payment_status === 'paid'
+          ? 'paid'
+          : r.payment_status === 'partial'
+            ? 'partial'
+            : 'unpaid';
+      return {
+        'Check In': r.check_in ? String(r.check_in).split('T')[0] : '',
+        'Check Out': r.check_out ? String(r.check_out).split('T')[0] : '',
+        Unit: r.unit_number || '',
+        Project: r.project || '',
+        'Tenant Name': r.guest_name || '',
+        Mobile: r.guest_phone || '',
+        Nights: r.nights ?? '',
+        'Price/Night': parseFloat(r.price_per_night) || 0,
+        Total: total,
+        'Down Payment': down,
+        'Amt to Pay': amtToPay,
+        Housekeeping: parseFloat(r.housekeeping_fees) || 0,
+        Insurance: parseFloat(r.insurance) || 0,
+        Utilities: parseFloat(r.utilities_amount ?? r.utilities) || 0,
+        'Payment Status': payLabel,
+        Status: r.status || '',
+        'Sales / Owner':
+          r.sales_owner_label ||
+          (r.is_owner_reservation ? 'Owner' : r.sales_person_name || r.sales_label || ''),
+      };
+    });
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Reservations');
@@ -1173,11 +1221,11 @@ export default function Reservations() {
       <SearchFilter value={search} onChange={setSearch} placeholder="Search tenant, email, phone...">
         <SearchableSelect className="w-40" value={filterStatus} onChange={setFilterStatus}
           placeholder="All Status"
-          options={[{ value: '', label: 'All Status' }, ...['confirmed','checked_in','checked_out','cancelled'].map(s => ({ value: s, label: s.replace(/_/g,' ') }))]}
+          options={[{ value: '', label: 'All Status' }, ...['pending','confirmed','checked_in','checked_out','cancelled'].map(s => ({ value: s, label: s.replace(/_/g,' ') }))]}
         />
         <SearchableSelect className="w-40" value={filterPayment} onChange={setFilterPayment}
           placeholder="All Payments"
-          options={[{ value: '', label: 'All Payments' }, ...['pending','partial','paid'].map(s => ({ value: s, label: s }))]}
+          options={[{ value: '', label: 'All Payments' }, ...['unpaid','pending','partial','paid'].map(s => ({ value: s, label: s === 'unpaid' ? 'unpaid' : s }))]}
         />
         <SearchableSelect className="w-44" value={filterProject}
           onChange={v => { setFilterProject(v); setFilterUnit(''); }}
@@ -1230,77 +1278,65 @@ export default function Reservations() {
             <table className="table text-xs">
               <thead>
                 <tr>
-                  <SortTh col="guest_name" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Name</SortTh>
+                  <SortTh col="check_in" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Check In</SortTh>
+                  <SortTh col="check_out" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Check Out</SortTh>
                   <SortTh col="unit_number" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Unit</SortTh>
-                  <SortTh col="guest_phone" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Phone</SortTh>
-                  <SortTh col="check_in" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Check-in</SortTh>
-                  <SortTh col="check_out" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Check-out</SortTh>
-                  <SortTh col="guest_email" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Email</SortTh>
-                  <th className="whitespace-nowrap text-right">Total to be paid</th>
-                  <th className="whitespace-nowrap">ID Documents</th>
+                  <SortTh col="project" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Project</SortTh>
+                  <SortTh col="guest_name" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Tenant Name</SortTh>
+                  <SortTh col="guest_phone" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Mobile</SortTh>
+                  <SortTh col="nights" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap text-center">Nights</SortTh>
+                  <SortTh col="price_per_night" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap text-right">Price/Night</SortTh>
+                  <SortTh col="total_amount" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap text-right">Total</SortTh>
+                  <SortTh col="down_payment" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap text-right">Down Payment</SortTh>
+                  <th className="whitespace-nowrap text-right">Amt to Pay</th>
+                  <th className="whitespace-nowrap text-right">Housekeeping</th>
+                  <th className="whitespace-nowrap text-right">Insurance</th>
+                  <th className="whitespace-nowrap text-right">Utilities</th>
+                  <SortTh col="payment_status" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Payment Status</SortTh>
+                  <SortTh col="status" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Status</SortTh>
+                  <th className="whitespace-nowrap">Sales / Owner</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {sorted.map(r => {
                   const total = parseFloat(r.total_amount) || 0;
-                  const paid = parseFloat(r.amount_paid) || parseFloat(r.down_payment) || 0;
-                  const amtToPay = Math.max(0, total - paid);
-                  const idPhotos = Array.isArray(r.id_photo_urls) ? r.id_photo_urls.filter(Boolean) : [];
+                  const paid = parseFloat(r.amount_paid) || 0;
+                  const down = parseFloat(r.down_payment) || 0;
+                  const amtToPay =
+                    r.amount_to_pay != null ? Number(r.amount_to_pay) : Math.max(0, total - paid);
+                  const payLabel =
+                    r.payment_status === 'paid'
+                      ? 'paid'
+                      : r.payment_status === 'partial'
+                        ? 'partial'
+                        : 'unpaid';
+                  const salesLabel =
+                    r.sales_owner_label ||
+                    (r.is_owner_reservation ? 'Owner' : r.sales_person_name || r.sales_label || '—');
                   return (
                     <tr key={r.id}>
-                      <td>
-                        <div className="font-medium text-gray-900">{r.guest_name || '—'}</div>
-                      </td>
-                      <td className="whitespace-nowrap text-gray-700 font-medium">
-                        {r.unit_number || '—'}
-                        {r.unit_name || r.unit_title ? (
-                          <div className="text-[10px] text-gray-400 font-normal truncate max-w-[9rem]">
-                            {r.unit_name || r.unit_title}
-                          </div>
-                        ) : null}
-                      </td>
-                      <td className="text-gray-600 whitespace-nowrap">{r.guest_phone || '—'}</td>
                       <td className="whitespace-nowrap">{formatDate(r.check_in)}</td>
                       <td className="whitespace-nowrap">{formatDate(r.check_out)}</td>
-                      <td className="text-gray-600">{r.guest_email || '—'}</td>
+                      <td className="whitespace-nowrap font-medium text-gray-800">{r.unit_number || '—'}</td>
+                      <td className="whitespace-nowrap text-gray-600">{r.project || '—'}</td>
+                      <td className="font-medium text-gray-900 whitespace-nowrap">{r.guest_name || '—'}</td>
+                      <td className="text-gray-600 whitespace-nowrap">{r.guest_phone || '—'}</td>
+                      <td className="text-center whitespace-nowrap">{r.nights ?? '—'}</td>
+                      <td className="text-right whitespace-nowrap">{currency(r.price_per_night)}</td>
+                      <td className="text-right whitespace-nowrap font-medium">{currency(total)}</td>
+                      <td className="text-right whitespace-nowrap">{currency(down)}</td>
                       <td className={`text-right font-medium whitespace-nowrap ${amtToPay > 0 ? 'text-red-600' : 'text-green-600'}`}>
                         {currency(amtToPay)}
                       </td>
-                      <td>
-                        <div className="flex flex-wrap gap-1.5 min-w-[5rem]">
-                          {idPhotos.length > 0 ? idPhotos.map((photo) => (
-                            <button
-                              key={photo}
-                              type="button"
-                              onClick={() => { setPreviewPhotos(idPhotos); setPreviewPhotoIndex(idPhotos.indexOf(photo)); }}
-                              className="relative"
-                              title={isPdfUrl(photo) ? 'View ID PDF' : 'View ID photo'}
-                            >
-                              {isPdfUrl(photo) ? (
-                                idDocumentThumbUrl(photo) !== photo ? (
-                                  <img
-                                    src={idDocumentThumbUrl(photo)}
-                                    alt="ID PDF"
-                                    className="h-10 w-10 rounded-md border border-gray-200 object-cover"
-                                  />
-                                ) : (
-                                  <span className="flex h-10 w-10 items-center justify-center rounded-md border border-gray-200 bg-white text-rose-700">
-                                    <FileText className="h-4 w-4" />
-                                  </span>
-                                )
-                              ) : (
-                                <img src={photo} alt="ID" className="h-10 w-10 rounded-md border border-gray-200 object-cover" />
-                              )}
-                              <span className="absolute -right-1 -top-1 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-slate-700 text-white">
-                                <Maximize2 className="h-2 w-2" strokeWidth={2} aria-hidden="true" />
-                              </span>
-                            </button>
-                          )) : (
-                            <span className="text-gray-400 italic">No documents</span>
-                          )}
-                        </div>
+                      <td className="text-right whitespace-nowrap">{currency(r.housekeeping_fees)}</td>
+                      <td className="text-right whitespace-nowrap">{currency(r.insurance)}</td>
+                      <td className="text-right whitespace-nowrap">{currency(r.utilities_amount ?? r.utilities)}</td>
+                      <td className="whitespace-nowrap"><Badge status={payLabel === 'unpaid' ? 'pending' : payLabel} />
+                        <div className="text-[10px] text-gray-400 mt-0.5">{payLabel}</div>
                       </td>
+                      <td className="whitespace-nowrap"><Badge status={r.status} /></td>
+                      <td className="whitespace-nowrap text-gray-700">{salesLabel}</td>
                       <td>
                         <div className="flex gap-1 flex-wrap">
                           {canView && (

@@ -1270,6 +1270,8 @@ router.put('/reservations/:id', requireRoles('reservations_manual', 'reservation
          adults = COALESCE($30, adults),
          children = COALESCE($31, children),
          nanny_count = COALESCE($32, nanny_count),
+         sales_label = COALESCE($33, sales_label),
+         utilities_amount = COALESCE($34, utilities_amount),
          updated_at = now()
        WHERE id = $29 RETURNING *`,
       [
@@ -1312,6 +1314,12 @@ router.put('/reservations/:id', requireRoles('reservations_manual', 'reservation
         b.children !== undefined && b.children !== '' ? Math.max(0, parseInt(b.children, 10) || 0) : null,
         b.nanny_count !== undefined || b.nanny !== undefined
           ? Math.max(0, parseInt(b.nanny_count ?? b.nanny, 10) || 0)
+          : null,
+        b.sales_label !== undefined || b.sales_owner !== undefined
+          ? (b.sales_label ?? b.sales_owner ?? null)
+          : null,
+        b.utilities_amount != null && b.utilities_amount !== ''
+          ? parseFloat(b.utilities_amount) || 0
           : null,
       ]
     );

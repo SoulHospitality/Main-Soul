@@ -1288,11 +1288,30 @@ router.get('/reservations', async (req, res, next) => {
        LEFT JOIN staff_users creator ON creator.id = r.created_by
        LEFT JOIN staff_users su ON su.id = r.sales_person_id
        WHERE r.status <> 'cancelled'${scope.clause}
-       ORDER BY r.created_at DESC
-       LIMIT 200`,
+       ORDER BY r.check_in DESC NULLS LAST, r.created_at DESC
+       LIMIT 5000`,
       scope.params
     );
-    sendList(res, rows);
+    sendList(
+      res,
+      rows.map((r) => {
+        const total = parseFloat(r.total_amount) || 0;
+        const paid = parseFloat(r.amount_paid) || 0;
+        const down = parseFloat(r.down_payment) || 0;
+        const utilities =
+          r.utilities_amount != null && r.utilities_amount !== ''
+            ? parseFloat(r.utilities_amount) || 0
+            : 0;
+        return {
+          ...r,
+          amount_to_pay: Math.max(0, Math.round((total - paid) * 100) / 100),
+          utilities,
+          sales_owner_label: r.is_owner_reservation
+            ? 'Owner'
+            : r.sales_person_name || r.sales_label || null,
+        };
+      })
+    );
   } catch (e) {
     next(e);
   }
@@ -1442,10 +1461,10 @@ router.post(
          broker_name, broker_amount_per_night, broker_total,
          owner_collected_type, owner_collected_amount,
          payment_method, transfer_proof_path, transfer_proof_name,
-         hold_expires_at, adults, children, nanny_count
+         hold_expires_at, adults, children, nanny_count, sales_label
        ) VALUES (
          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,COALESCE($14,0),$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,
-         $25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36
+         $25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37
        )
        RETURNING *`,
       [
@@ -1485,6 +1504,7 @@ router.post(
         party.adults,
         party.children,
         party.nanny_count,
+        b.sales_label || b.sales_owner || null,
       ]
     );
 
@@ -1962,8 +1982,15 @@ router.get('/reservations/:id', async (req, res, next) => {
       commissions = [];
     }
 
+    const total = parseFloat(row.total_amount) || 0;
+    const paid = parseFloat(row.amount_paid) || 0;
+
     res.json({
       ...row,
+      amount_to_pay: Math.max(0, Math.round((total - paid) * 100) / 100),
+      sales_owner_label: row.is_owner_reservation
+        ? 'Owner'
+        : row.sales_person_name || row.sales_label || null,
       accepted_by_name,
       accepted_at,
       rejected_by_name,
