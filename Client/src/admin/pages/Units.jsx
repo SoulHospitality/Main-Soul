@@ -787,10 +787,14 @@ export default function Units({ listingType = 'rent' }) {
             <div key={u.id} className="card hover:shadow-md transition-shadow p-5">
               <div className="flex items-start justify-between mb-3">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                  <p className="text-lg font-bold tracking-tight text-gray-900">
                     {u.unit_number || '—'}
                   </p>
-                  <h3 className="font-semibold text-gray-900 text-base">{u.name || u.title}</h3>
+                  {(u.name || u.title) && (
+                    <p className="mt-0.5 text-xs font-normal text-gray-400 truncate max-w-[16rem]">
+                      {u.name || u.title}
+                    </p>
+                  )}
                   <p className="text-sm text-gray-500">{u.project}</p>
                 </div>
                 <div className="flex flex-col items-end gap-1">
