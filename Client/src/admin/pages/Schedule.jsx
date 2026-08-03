@@ -140,7 +140,7 @@ const COLOR_FILTERS = [
   { value: 'past', label: 'Past stays' },
 ];
 
-const CELL_W = 44;
+const CELL_W = 32;
 
 // ─── Price Editor Modal ──────────────────────────────────────────────────────
 function PriceEditorModal({ open, onClose, unitId, unitName, dateStr, currentPrice, onSave, onClear, saving }) {
@@ -264,11 +264,37 @@ function ReservationDetailModal({ open, onClose, reservationId }) {
           {/* Guest + unit */}
           <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
             <Info label="Tenant"     value={res.guest_name} bold />
-            <Info label="Unit"       value={res.unit_name} />
+            <Info
+              label="Unit"
+              value={
+                res.unit_number
+                  ? `${res.unit_number}${res.unit_name || res.unit_title ? ` — ${res.unit_name || res.unit_title}` : ''}`
+                  : res.unit_name
+              }
+            />
             <Info label="Phone"      value={res.guest_phone} />
             <Info label="Email"      value={res.guest_email} />
+            <Info label="Nationality" value={res.guest_nationality} />
+            <Info
+              label="Party"
+              value={[
+                res.adults != null ? `${res.adults} adult${Number(res.adults) === 1 ? '' : 's'}` : null,
+                res.children != null && Number(res.children) > 0
+                  ? `${res.children} child${Number(res.children) === 1 ? '' : 'ren'}`
+                  : null,
+                res.nanny_count != null && Number(res.nanny_count) > 0
+                  ? `${res.nanny_count} nanny`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(' · ') || '—'}
+            />
             <Info label="Source"     value={res.booking_source} />
             <Info label="Sales"      value={res.sales_person_name} />
+            <Info label="Created by" value={res.created_by_name} />
+            {res.booking_id ? (
+              <Info label="Accepted by" value={res.accepted_by_name} />
+            ) : null}
           </div>
 
           {/* Dates + financials */}
@@ -329,11 +355,23 @@ function EditReservationModal({ open, onClose, editId, editForm, setEditForm, un
             <label className="label">Unit *</label>
             <SearchableSelect value={editForm.unit_id} onChange={v => setEditForm(f => ({ ...f, unit_id: v }))}
               placeholder="Select…"
-              options={[{ value: '', label: 'Select…' }, ...unitsList.map(u => ({ value: String(u.id), label: `${u.name} (${u.project})` }))]}
+              options={[{ value: '', label: 'Select…' }, ...unitsList.map(u => ({ value: String(u.id), label: `${u.unit_number || u.name} (${u.project})` }))]}
             />
           </div>
           <div><label className="label">Tenant Name *</label><input className="input" value={editForm.guest_name} onChange={e => setEditForm(f => ({ ...f, guest_name: e.target.value }))} /></div>
           <div><label className="label">Phone</label><input className="input" value={editForm.guest_phone} onChange={e => setEditForm(f => ({ ...f, guest_phone: e.target.value }))} /></div>
+          <div>
+            <label className="label">Adults</label>
+            <input type="number" min="0" className="input" value={editForm.adults ?? '2'} onChange={e => setEditForm(f => ({ ...f, adults: e.target.value }))} />
+          </div>
+          <div>
+            <label className="label">Children</label>
+            <input type="number" min="0" className="input" value={editForm.children ?? '0'} onChange={e => setEditForm(f => ({ ...f, children: e.target.value }))} />
+          </div>
+          <div>
+            <label className="label">Nanny</label>
+            <input type="number" min="0" className="input" value={editForm.nanny_count ?? '0'} onChange={e => setEditForm(f => ({ ...f, nanny_count: e.target.value }))} />
+          </div>
           <div>
             <label className="label">Booking Source</label>
             <SearchableSelect value={editForm.booking_source} onChange={v => setEditForm(f => ({ ...f, booking_source: v }))}
@@ -523,7 +561,13 @@ function HoldDetailModal({ open, onClose, holdId, onConfirm, onDelete, deleting 
 }
 
 // ─── Main Schedule ────────────────────────────────────────────────────────────
-const EMPTY_EDIT = { unit_id:'', guest_name:'', guest_email:'', guest_phone:'', guest_nationality:'', check_in:'', check_out:'', total_amount:'', price_per_night:'', booking_source:'', sales_person_id:'', is_owner_reservation: false, is_hold: false, status:'confirmed', notes:'' };
+const EMPTY_EDIT = {
+  unit_id: '', guest_name: '', guest_email: '', guest_phone: '', guest_nationality: '',
+  adults: '2', children: '0', nanny_count: '0',
+  check_in: '', check_out: '', total_amount: '', price_per_night: '',
+  booking_source: '', sales_person_id: '', is_owner_reservation: false, is_hold: false,
+  status: 'confirmed', notes: '',
+};
 
 function BulkPriceModal({ open, onClose, unitCount, onSave, saving }) {
   const [price,     setPrice]     = useState('');
@@ -889,6 +933,9 @@ export default function Schedule() {
         unit_id: res.unit_id, guest_name: isHold && res.guest_name === 'Hold' ? '' : (res.guest_name || ''),
         guest_email: res.guest_email || '',
         guest_phone: res.guest_phone || '', guest_nationality: res.guest_nationality || '',
+        adults: res.adults != null ? String(res.adults) : '2',
+        children: res.children != null ? String(res.children) : '0',
+        nanny_count: res.nanny_count != null ? String(res.nanny_count) : '0',
         check_in: normDate(res.check_in), check_out: normDate(res.check_out),
         total_amount: isHold ? '' : res.total_amount,
         price_per_night: res.price_per_night || '',
@@ -1330,13 +1377,13 @@ export default function Schedule() {
         >
           <table
             className="w-full border-collapse text-sm"
-            style={{ minWidth: Math.max(560, 168 + displayDates.length * CELL_W) }}
+            style={{ minWidth: Math.max(480, 140 + displayDates.length * CELL_W) }}
           >
             <thead className="sticky top-0 z-30">
               <tr className="border-b border-soul-line bg-[#f7f9fc]">
-                <th className="sticky left-0 z-40 min-w-[120px] border-r border-soul-line bg-[#f7f9fc] px-3 py-3 text-left font-semibold text-soul-blue lg:min-w-[220px] lg:px-4">
-                  <div className="flex items-center gap-2 text-xs uppercase tracking-[0.14em] text-soul-muted">
-                    <CalendarRange className="h-3.5 w-3.5" />
+                <th className="sticky left-0 z-40 min-w-[96px] border-r border-soul-line bg-[#f7f9fc] px-2 py-1.5 text-left font-semibold text-soul-blue lg:min-w-[168px] lg:px-3">
+                  <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em] text-soul-muted">
+                    <CalendarRange className="h-3 w-3" />
                     Unit
                   </div>
                 </th>
@@ -1349,7 +1396,7 @@ export default function Schedule() {
                     <th
                       key={i}
                       style={{ minWidth: CELL_W, width: CELL_W }}
-                      className={`border-r border-slate-100 px-0 py-2 text-center font-medium ${
+                      className={`border-r border-slate-100 px-0 py-1 text-center font-medium ${
                         isToday
                           ? 'bg-[var(--pms-accent-soft,rgba(40,63,94,0.12))] text-soul-blue'
                           : isTomorrow
@@ -1359,12 +1406,12 @@ export default function Schedule() {
                               : 'text-soul-muted'
                       }`}
                     >
-                      <div className={`mx-auto flex h-7 w-7 items-center justify-center text-[12px] font-bold leading-none ${
+                      <div className={`mx-auto flex h-5 w-5 items-center justify-center text-[10px] font-bold leading-none ${
                         isToday ? 'rounded-full bg-[var(--pms-accent,#283f5e)] text-white' : ''
                       }`}>
                         {d.getDate()}
                       </div>
-                      <div className="mt-0.5 hidden text-[9px] font-semibold uppercase tracking-wide opacity-70 lg:block">
+                      <div className="mt-0.5 hidden text-[8px] font-semibold uppercase tracking-wide opacity-70 lg:block">
                         {d.toLocaleDateString('en-GB', { weekday: 'short' })}
                       </div>
                     </th>
@@ -1377,9 +1424,9 @@ export default function Schedule() {
                 const cells = buildRow(unit.id, displayDates, allReservations);
                 return (
                   <tr key={unit.id} className="border-b border-slate-100 transition-colors hover:bg-slate-50/50">
-                    <td className="sticky left-0 z-10 border-r border-soul-line bg-white px-3 py-2.5 lg:px-4">
+                    <td className="sticky left-0 z-10 border-r border-soul-line bg-white px-2 py-1 lg:px-3">
                       {bulkMode && (
-                        <label className="mb-1.5 flex cursor-pointer items-center gap-2">
+                        <label className="mb-1 flex cursor-pointer items-center gap-2">
                           <input
                             type="checkbox"
                             checked={selectedUnitIds.has(unit.id)}
@@ -1390,21 +1437,22 @@ export default function Schedule() {
                                 return next;
                               })
                             }
-                            className="h-4 w-4 rounded accent-[var(--pms-accent,#283f5e)]"
+                            className="h-3.5 w-3.5 rounded accent-[var(--pms-accent,#283f5e)]"
                           />
                         </label>
                       )}
-                      <div className="flex items-start gap-2.5">
-                        <div className="mt-0.5 hidden h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-[var(--pms-accent-soft,rgba(40,63,94,0.1))] text-[11px] font-bold text-soul-blue lg:flex">
+                      <div className="flex items-start gap-1.5">
+                        <div className="mt-0.5 hidden h-6 w-6 flex-shrink-0 items-center justify-center rounded-lg bg-[var(--pms-accent-soft,rgba(40,63,94,0.1))] text-[9px] font-bold text-soul-blue lg:flex">
                           {(unit.unit_number || unit.name || '?').toString().slice(0, 2).toUpperCase()}
                         </div>
                         <div className="min-w-0">
-                          <div className="truncate text-xs font-semibold leading-tight text-soul-blue lg:text-sm">
-                            {unit.name}
+                          <div className="truncate text-[11px] font-semibold leading-tight text-soul-blue lg:text-xs">
+                            {unit.unit_number || unit.name}
                           </div>
-                          <div className="mt-0.5 hidden items-center gap-1 text-[11px] text-soul-muted lg:flex">
+                          <div className="mt-0.5 hidden items-center gap-1 text-[9px] text-soul-muted lg:flex">
                             <span>
-                              {unit.unit_number} · {unit.project}
+                              {unit.name && unit.unit_number ? `${unit.name} · ` : ''}
+                              {unit.project}
                               {unit.bedrooms > 0 ? ` · ${unit.bedrooms}BR` : ' · Studio'}
                             </span>
                             {unit.photos_link && (
@@ -1421,7 +1469,7 @@ export default function Schedule() {
                             )}
                           </div>
                           <div className="truncate text-[10px] text-soul-muted lg:hidden">
-                            {unit.unit_number}
+                            {unit.name && unit.unit_number ? unit.name : unit.project}
                           </div>
                           {(unit.view || (unit.floor !== null && unit.floor !== undefined)) && (
                             <div className="mt-0.5 hidden truncate text-[10px] text-slate-400 lg:block">
@@ -1492,17 +1540,17 @@ export default function Schedule() {
                                 <span className="mb-0.5 text-[10px] leading-none text-orange-500">●</span>
                               )}
                               {blockSrc && !isPriced ? (
-                                <span className="rounded-md bg-white/80 px-1 text-[9px] font-bold tracking-wide text-violet-700">
+                                <span className="rounded-md bg-white/80 px-0.5 text-[8px] font-bold tracking-wide text-violet-700">
                                   {blockSrc === 'ical' ? 'OTA' : 'BLK'}
                                 </span>
                               ) : isPriced ? (
-                                <span className="text-[11px] font-bold leading-none tracking-tight">
+                                <span className="text-[10px] font-bold leading-none tracking-tight">
                                   {price >= 1000
                                     ? `${(price / 1000).toFixed(price % 1000 === 0 ? 0 : 1)}k`
                                     : price}
                                 </span>
                               ) : (
-                                <span className="text-[11px] font-semibold">—</span>
+                                <span className="text-[10px] font-semibold">—</span>
                               )}
                               {canEditPrice && !isPast && (
                                 <Edit2 className="absolute bottom-1 right-1 h-2.5 w-2.5 text-soul-blue opacity-0 transition group-hover:opacity-50" />
@@ -1522,10 +1570,10 @@ export default function Schedule() {
                             style={{ minWidth: CELL_W, width: CELL_W }}
                             className="border-r border-slate-100 p-0 align-middle"
                           >
-                            <div className="flex h-11 items-center">
+                            <div className="flex h-9 items-center">
                               <div className="h-full w-1/2" />
                               <div
-                                className={`h-7 flex-1 cursor-pointer rounded-l-full shadow-sm ring-1 ${bg} ${hover} ${ring} transition`}
+                                className={`h-6 flex-1 cursor-pointer rounded-l-full shadow-sm ring-1 ${bg} ${hover} ${ring} transition`}
                                 title={tipText}
                                 onClick={() => handleResClick(cell.res)}
                               />
@@ -1543,18 +1591,18 @@ export default function Schedule() {
                             className="border-r border-slate-100 p-0 align-middle"
                           >
                             <div
-                              className={`mx-0 my-2 flex h-7 cursor-pointer items-center justify-between px-2 shadow-sm ring-1 ${bg} ${text} ${hover} ${ring} transition`}
+                              className={`mx-0 my-1 flex h-6 cursor-pointer items-center justify-between px-1.5 shadow-sm ring-1 ${bg} ${text} ${hover} ${ring} transition`}
                               title={tipText}
                               onClick={() => handleResClick(cell.res)}
                             >
-                              <div className="flex min-w-0 items-center gap-1.5">
-                                <Eye className="h-3 w-3 flex-shrink-0 opacity-80" />
-                                <span className="truncate text-[11px] font-semibold tracking-tight">
+                              <div className="flex min-w-0 items-center gap-1">
+                                <Eye className="h-2.5 w-2.5 flex-shrink-0 opacity-80" />
+                                <span className="truncate text-[10px] font-semibold tracking-tight">
                                   {cell.res.guest_name}
                                 </span>
                               </div>
                               {cell.span > 2 && (
-                                <span className="max-w-[80px] flex-shrink-0 truncate text-[10px] opacity-75">
+                                <span className="max-w-[64px] flex-shrink-0 truncate text-[9px] opacity-75">
                                   {cell.res.is_owner_reservation
                                     ? 'Owner'
                                     : cell.res.sales_person_name || ''}
@@ -1572,9 +1620,9 @@ export default function Schedule() {
                             style={{ minWidth: CELL_W, width: CELL_W }}
                             className="border-r border-slate-100 p-0 align-middle"
                           >
-                            <div className="flex h-11 items-center">
+                            <div className="flex h-9 items-center">
                               <div
-                                className={`h-7 w-1/4 cursor-pointer rounded-r-full shadow-sm ring-1 ${bg} ${hover} ${ring} transition`}
+                                className={`h-6 w-1/4 cursor-pointer rounded-r-full shadow-sm ring-1 ${bg} ${hover} ${ring} transition`}
                                 title={tipText}
                                 onClick={() => handleResClick(cell.res)}
                               />

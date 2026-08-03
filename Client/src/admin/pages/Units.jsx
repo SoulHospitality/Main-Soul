@@ -116,7 +116,7 @@ const FLOOR_OPTIONS = [
 
 const EMPTY_FORM = {
   name: '', destination: '', project: '', unit_number: '', type: 'Apartment',
-  bedrooms: 1, bathrooms: 1, floor: 0, guests: 2,
+  bedrooms: 1, bathrooms: 1, floor: 0, guests: 2, has_nanny_room: false,
   owner_name: '', owner_email: '', owner_phone: '',
   commission_mode: 'A',
   company_commission_pct: 20,
@@ -138,11 +138,12 @@ const EMPTY_FORM = {
   unit_area: '',
 };
 
-/** Capacity rule: studio (0 BR) → 2 guests; otherwise 2 × bedrooms. */
-function guestsFromBedrooms(bedrooms) {
+/** Capacity: studio → 2; else 2 × bedrooms (+1 if nanny room). */
+function guestsFromBedrooms(bedrooms, hasNannyRoom = false) {
   const n = Number(bedrooms);
   if (!Number.isFinite(n) || n <= 0) return 2;
-  return Math.round(n) * 2;
+  const base = Math.round(n) * 2;
+  return hasNannyRoom ? base + 1 : base;
 }
 
 function toTagList(value) {
@@ -327,7 +328,11 @@ function UnitForm({ form, setForm, listingType = 'rent' }) {
             value={form.bedrooms}
             onChange={(e) => {
               const bedrooms = e.target.value;
-              setForm((f) => ({ ...f, bedrooms, guests: guestsFromBedrooms(bedrooms) }));
+              setForm((f) => ({
+                ...f,
+                bedrooms,
+                guests: guestsFromBedrooms(bedrooms, f.has_nanny_room),
+              }));
             }}
           />
         </div>
@@ -344,10 +349,41 @@ function UnitForm({ form, setForm, listingType = 'rent' }) {
             ))}
           </select>
         </div>
+        <div className="sm:col-span-2 flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5">
+          <input
+            id="has_nanny_room"
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600"
+            checked={!!form.has_nanny_room}
+            onChange={(e) => {
+              const has_nanny_room = e.target.checked;
+              setForm((f) => ({
+                ...f,
+                has_nanny_room,
+                guests: guestsFromBedrooms(f.bedrooms, has_nanny_room),
+              }));
+            }}
+          />
+          <div>
+            <label htmlFor="has_nanny_room" className="text-sm font-medium text-gray-800">
+              Nanny room
+            </label>
+            <p className="text-xs text-gray-500">
+              Optional. Capacity becomes (bedrooms × 2) + 1. Nannies are not charged beach access.
+            </p>
+          </div>
+        </div>
         <div>
           <label className="label">Guests / capacity</label>
-          <input type="number" className="input bg-gray-50" value={guestsFromBedrooms(form.bedrooms)} readOnly />
-          <p className="text-xs text-gray-400 mt-1">Auto: 2 × bedrooms (studio = 2)</p>
+          <input
+            type="number"
+            className="input bg-gray-50"
+            value={guestsFromBedrooms(form.bedrooms, form.has_nanny_room)}
+            readOnly
+          />
+          <p className="text-xs text-gray-400 mt-1">
+            Auto: {form.has_nanny_room ? '2 × bedrooms + 1 nanny' : '2 × bedrooms'} (studio = 2)
+          </p>
         </div>
         {isSale ? (
           <div>
@@ -597,6 +633,8 @@ export default function Units({ listingType = 'rent' }) {
       bedrooms: u.bedrooms ?? u.beds ?? 1,
       bathrooms: u.bathrooms ?? u.baths ?? 1,
       floor: u.floor ?? 0,
+      has_nanny_room: !!u.has_nanny_room,
+      guests: guestsFromBedrooms(u.bedrooms ?? u.beds ?? 1, !!u.has_nanny_room),
       description: u.description || u.the_property || '',
       amenities: toTagList(u.amenities),
       location_link: u.location_link || u.source_url || '',
@@ -664,8 +702,9 @@ export default function Units({ listingType = 'rent' }) {
       type: normalizePropertyType(form.type),
       bedrooms: form.bedrooms,
       beds: form.bedrooms,
-      guests: guestsFromBedrooms(form.bedrooms),
-      capacity: guestsFromBedrooms(form.bedrooms),
+      has_nanny_room: !!form.has_nanny_room,
+      guests: guestsFromBedrooms(form.bedrooms, form.has_nanny_room),
+      capacity: guestsFromBedrooms(form.bedrooms, form.has_nanny_room),
       the_property: form.description,
       description: form.description,
       amenities: form.amenities,
@@ -748,6 +787,9 @@ export default function Units({ listingType = 'rent' }) {
             <div key={u.id} className="card hover:shadow-md transition-shadow p-5">
               <div className="flex items-start justify-between mb-3">
                 <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                    {u.unit_number || '—'}
+                  </p>
                   <h3 className="font-semibold text-gray-900 text-base">{u.name || u.title}</h3>
                   <p className="text-sm text-gray-500">{u.project}</p>
                 </div>
@@ -799,6 +841,7 @@ export default function Units({ listingType = 'rent' }) {
             <table className="table">
               <thead>
                 <tr>
+                  <SortTh col="unit_number" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>Code</SortTh>
                   <SortTh col="name" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>Unit</SortTh>
                   <SortTh col="project" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>Project</SortTh>
                   <SortTh col="type" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>Type</SortTh>
@@ -815,6 +858,7 @@ export default function Units({ listingType = 'rent' }) {
               <tbody>
                 {sorted.map(u => (
                   <tr key={u.id}>
+                    <td className="font-semibold text-gray-800 whitespace-nowrap">{u.unit_number || '—'}</td>
                     <td className="font-medium">{u.name || u.title}</td>
                     <td>{u.project}</td>
                     <td>{u.type || u.property_type}</td>

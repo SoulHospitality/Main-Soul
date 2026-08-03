@@ -34,6 +34,9 @@ export const EMPTY_MANUAL_RESERVATION_FORM = {
   guest_email: '',
   guest_phone: '',
   guest_nationality: '',
+  adults: '2',
+  children: '0',
+  nanny_count: '0',
   check_in: '',
   check_out: '',
   price_per_night: '',
@@ -310,6 +313,45 @@ export default function ManualReservationForm({
               placeholder="optional"
             />
           </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <Label>Adults {!form.is_owner_reservation ? <span className="text-[#ff7a59]">*</span> : null}</Label>
+              <input
+                type="number"
+                min="0"
+                value={form.adults}
+                onChange={(e) => setForm((cur) => ({ ...cur, adults: e.target.value }))}
+                className={fieldClass}
+              />
+            </div>
+            <div>
+              <Label>Children</Label>
+              <input
+                type="number"
+                min="0"
+                value={form.children}
+                onChange={(e) => setForm((cur) => ({ ...cur, children: e.target.value }))}
+                className={fieldClass}
+              />
+            </div>
+            <div>
+              <Label>Nanny</Label>
+              <input
+                type="number"
+                min="0"
+                value={form.nanny_count}
+                onChange={(e) => setForm((cur) => ({ ...cur, nanny_count: e.target.value }))}
+                className={fieldClass}
+                title="Nannies are not charged beach access"
+              />
+            </div>
+          </div>
+          {selectedUnit?.guests != null && (
+            <p className="text-xs text-[#8b97aa]">
+              Capacity {selectedUnit.guests}
+              {selectedUnit.has_nanny_room ? ' (includes nanny room)' : ''}. Nanny is excluded from beach access.
+            </p>
+          )}
 
           <hr className="border-[#e6ebf2]" />
 

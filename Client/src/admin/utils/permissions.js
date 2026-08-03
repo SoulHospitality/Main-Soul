@@ -22,6 +22,11 @@ const RESERVATIONS_PAGE_ACCESS = new Set([
   'profile',
 ]);
 
+const RESERVATIONS_WEB_PAGE_ACCESS = new Set([
+  ...RESERVATIONS_PAGE_ACCESS,
+  'website_bookings',
+]);
+
 const RESERVATIONS_PERMISSIONS = [
   'dashboard:read',
   'units:read',
@@ -71,8 +76,8 @@ const PERMISSIONS = {
 /** Separate PMS surfaces + full admin + owner portal */
 const PAGE_ACCESS = {
   admin: true,
-  reservations: RESERVATIONS_PAGE_ACCESS,
-  reservations_web: RESERVATIONS_PAGE_ACCESS,
+  reservations: RESERVATIONS_WEB_PAGE_ACCESS,
+  reservations_web: RESERVATIONS_WEB_PAGE_ACCESS,
   reservations_manual: RESERVATIONS_PAGE_ACCESS,
   resale: new Set(['units_sale', 'acquisition', 'sales', 'profile']),
   hr: new Set(['users', 'profile']),

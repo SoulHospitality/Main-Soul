@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Building2, CalendarDays,
   BadgeDollarSign, Receipt, FileBarChart2, Users, UserCircle,
   LogOut, Building, CalendarRange, Wallet,
-  TrendingUp, Sparkles, Briefcase,
+  TrendingUp, Sparkles, Briefcase, Globe,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { path: '/admin/units-for-sale',   label: 'Units for Sale',     icon: Building2,          page: 'units_sale', resaleLabel: 'Units' },
   { path: '/admin/projects',         label: 'Destinations',       icon: Building,           page: 'projects' },
   { path: '/admin/reservations',     label: 'Reservations',       icon: CalendarDays,       page: 'reservations' },
+  { path: '/admin/website-bookings', label: 'Website Bookings',   icon: Globe,              page: 'website_bookings' },
   { path: '/admin/schedule',         label: 'Schedule',           icon: CalendarRange,      page: 'schedule' },
   { path: '/admin/finance',          label: 'Finance',            icon: BadgeDollarSign,    page: 'finance' },
   { path: '/admin/profit',           label: 'Profit',             icon: TrendingUp,         page: 'profit' },

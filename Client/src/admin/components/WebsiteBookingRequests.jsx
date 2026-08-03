@@ -53,6 +53,8 @@ export default function WebsiteBookingRequests() {
   const [paymentMode, setPaymentMode] = useState('half');
   const [customAmount, setCustomAmount] = useState('');
   const [evidenceFile, setEvidenceFile] = useState(null);
+  const [rejectBooking, setRejectBooking] = useState(null);
+  const [rejectReason, setRejectReason] = useState('');
 
   const { data: bookings = [], isLoading } = useQuery({
     queryKey: ['website-bookings-pending'],
@@ -87,9 +89,11 @@ export default function WebsiteBookingRequests() {
   });
 
   const rejectMutation = useMutation({
-    mutationFn: (id) => api.post(`/website-bookings/${id}/reject`, { reason: 'rejected_by_staff' }),
+    mutationFn: ({ id, reason }) =>
+      api.post(`/website-bookings/${id}/reject`, { reason }),
     onSuccess: () => {
       toast.success('Booking rejected');
+      closeRejectModal();
       qc.invalidateQueries({ queryKey: ['website-bookings-pending'] });
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Reject failed'),
@@ -112,6 +116,26 @@ export default function WebsiteBookingRequests() {
   const closeAcceptModal = () => {
     setAcceptBooking(null);
     setEvidenceFile(null);
+  };
+
+  const openRejectModal = (booking) => {
+    setRejectBooking(booking);
+    setRejectReason('');
+  };
+
+  const closeRejectModal = () => {
+    setRejectBooking(null);
+    setRejectReason('');
+  };
+
+  const submitReject = () => {
+    if (!rejectBooking) return;
+    const reason = rejectReason.trim();
+    if (!reason) {
+      toast.error('Please enter a rejection reason');
+      return;
+    }
+    rejectMutation.mutate({ id: rejectBooking.id, reason });
   };
 
   const submitAccept = () => {
@@ -146,7 +170,13 @@ export default function WebsiteBookingRequests() {
   };
 
   if (isLoading) return <LoadingSpinner />;
-  if (!bookings.length) return null;
+  if (!bookings.length) {
+    return (
+      <div className="card p-8 text-center text-sm text-gray-500">
+        No pending website booking requests.
+      </div>
+    );
+  }
 
   return (
     <>
@@ -194,7 +224,12 @@ export default function WebsiteBookingRequests() {
                         {formatDate(b.checkin)} → {formatDate(b.checkout)}
                       </div>
                     </td>
-                    <td className="py-2.5 pr-3">{b.unit_title || b.listing_title}</td>
+                    <td className="py-2.5 pr-3">
+                      <div className="font-medium text-gray-900">{b.unit_number || '—'}</div>
+                      <div className="text-xs text-gray-500 truncate max-w-[10rem]">
+                        {b.unit_title || b.listing_title || ''}
+                      </div>
+                    </td>
                     <td className="py-2.5 pr-3 font-medium">{currency(b.total_egp)}</td>
                     <td className="py-2.5 pr-3">
                       <Badge status={b.payment_status || 'pending'} />
@@ -259,7 +294,7 @@ export default function WebsiteBookingRequests() {
                           type="button"
                           className="btn-secondary text-xs text-red-600"
                           disabled={rejectMutation.isPending}
-                          onClick={() => rejectMutation.mutate(b.id)}
+                          onClick={() => openRejectModal(b)}
                         >
                           <X className="w-3.5 h-3.5" /> Reject
                         </button>
@@ -301,6 +336,15 @@ export default function WebsiteBookingRequests() {
                 <div className="text-xs uppercase text-gray-500">Name</div>
                 <div className="font-medium text-gray-900">{acceptBooking.guest_name}</div>
                 <div className="text-xs text-gray-500">{acceptBooking.guest_phone}</div>
+              </div>
+              <div>
+                <div className="text-xs uppercase text-gray-500">Unit</div>
+                <div className="font-medium text-gray-900">
+                  {acceptBooking.unit_number || '—'}
+                </div>
+                <div className="text-xs text-gray-500">
+                  {acceptBooking.unit_title || acceptBooking.listing_title || ''}
+                </div>
               </div>
               <div>
                 <div className="text-xs uppercase text-gray-500">Guests</div>
@@ -437,6 +481,60 @@ export default function WebsiteBookingRequests() {
                 This booking is already paid online. No deposit entry needed.
               </div>
             )}
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={!!rejectBooking}
+        onClose={closeRejectModal}
+        title="Reject booking"
+        size="md"
+        footer={
+          <>
+            <button type="button" className="btn-secondary" onClick={closeRejectModal}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn-primary bg-red-600 hover:bg-red-700 border-red-600"
+              disabled={rejectMutation.isPending || !rejectReason.trim()}
+              onClick={submitReject}
+            >
+              {rejectMutation.isPending ? 'Rejecting…' : 'Confirm reject'}
+            </button>
+          </>
+        }
+      >
+        {rejectBooking ? (
+          <div className="space-y-4">
+            <div className="text-sm text-gray-600">
+              Reject request for{' '}
+              <span className="font-medium text-gray-900">{rejectBooking.guest_name}</span>
+              {rejectBooking.unit_number ? (
+                <>
+                  {' '}
+                  · unit <span className="font-medium text-gray-900">{rejectBooking.unit_number}</span>
+                </>
+              ) : null}
+              .
+            </div>
+            <div>
+              <label className="label">
+                Reason <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                className="input resize-none"
+                rows={4}
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="Explain why this booking is being rejected…"
+                required
+              />
+              {!rejectReason.trim() ? (
+                <p className="mt-1 text-xs text-red-500">A reason is required before rejecting.</p>
+              ) : null}
+            </div>
           </div>
         ) : null}
       </Modal>

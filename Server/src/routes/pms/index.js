@@ -134,7 +134,22 @@ function mapUnitRow(u) {
     beach_access_days: u.access_card_count_included || 7,
     listing_type: u.listing_type || 'rent',
     unit_area: u.size_m2,
+    has_nanny_room: !!u.has_nanny_room,
   };
+}
+
+function truthyNanny(v) {
+  return v === true || v === 1 || v === '1' || v === 'true' || v === 'on' || v === 'yes';
+}
+
+function parsePartyCounts(b, { isOwner = false } = {}) {
+  const adults = Math.max(0, parseInt(b.adults, 10) || 0);
+  const children = Math.max(0, parseInt(b.children, 10) || 0);
+  const nannyCount = Math.max(0, parseInt(b.nanny_count ?? b.nanny, 10) || 0);
+  if (!isOwner && adults < 1 && (children > 0 || nannyCount > 0 || b.guest_name)) {
+    // Non-owner stays need at least one adult when party is provided
+  }
+  return { adults, children, nanny_count: nannyCount };
 }
 
 async function resolvePhotosFromBody(b) {
@@ -625,7 +640,7 @@ router.get('/units', async (req, res, next) => {
               commission_tenant_pct, utilities_cost, internal_code, unit_number, price_fallback,
               cleaning_fee_egp, service_fee_percent, security_deposit_egp,
               access_fee_per_adult_egp, access_fee_per_teen_egp, access_card_count_included,
-              min_nights, ical_url, notes, listing_type, created_at
+              min_nights, ical_url, notes, listing_type, has_nanny_room, created_at
        FROM units
        WHERE ${where.join(' AND ')}
        ORDER BY created_at DESC`,
@@ -669,7 +684,8 @@ router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) =>
       listingType === 'sale' ? null : toNum(b.price_per_night || b.price_fallback, { int: true });
     const beds = toNum(b.beds ?? b.bedrooms, { int: true, fallback: 1 });
     const baths = toNum(b.baths ?? b.bathrooms, { int: true, fallback: 1 });
-    const guests = guestsFromBedrooms(beds);
+    const hasNannyRoom = truthyNanny(b.has_nanny_room);
+    const guests = guestsFromBedrooms(beds, hasNannyRoom);
 
     const slug = toText(b.slug) || slugify(title || `unit-${Date.now()}`);
     const amenities = normalizeTagList(b.amenities);
@@ -768,12 +784,12 @@ router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) =>
          utilities_cost, ops_status, unit_number, internal_code, created_by_staff, price_fallback,
          property_type, view, floor, source_url, min_nights, cleaning_fee_egp,
          access_fee_per_adult_egp, access_fee_per_teen_egp, access_card_count_included,
-         listing_type
+         listing_type, has_nanny_room
        ) VALUES (
          $1,$2,COALESCE($3,'draft'),'manual',$4,COALESCE($5,$4),COALESCE($6,'North Coast'),
          $7,$8,$9,$10,$11,COALESCE($12::text[], '{}'::text[]),COALESCE($13::text[], '{}'::text[]),$14,$15,$16,
          $17,$18,$19,$20,$21,$22,$23,$24,COALESCE($25,'available'),$26,$27,$28,$29,
-         $30,$31,$32,$33,$34,$35,$36,$37,$38,$39
+         $30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40
        ) RETURNING *`,
       [
         slug,
@@ -815,6 +831,7 @@ router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) =>
         beachExtra,
         beachDays,
         listingType,
+        hasNannyRoom,
       ]
     );
     const payload = mapUnitRow(rows[0]);
@@ -978,6 +995,7 @@ async function updateUnitHandler(req, res, next) {
          access_fee_per_teen_egp = COALESCE($34, access_fee_per_teen_egp),
          access_card_count_included = COALESCE($35, access_card_count_included),
          cleaning_fee_egp = $36,
+         has_nanny_room = COALESCE($38, has_nanny_room),
          updated_at = now()
        WHERE id = $37 RETURNING *`,
       [
@@ -992,8 +1010,13 @@ async function updateUnitHandler(req, res, next) {
           const bedsNum = toNum(b.beds ?? b.bedrooms, { int: true });
           const nextBeds =
             bedsNum != null ? bedsNum : Number(existingRows[0]?.beds);
+          const hasNanny =
+            b.has_nanny_room !== undefined
+              ? truthyNanny(b.has_nanny_room)
+              : !!existingRows[0]?.has_nanny_room;
           return guestsFromBedrooms(
-            Number.isFinite(nextBeds) ? nextBeds : existingRows[0]?.beds
+            Number.isFinite(nextBeds) ? nextBeds : existingRows[0]?.beds,
+            hasNanny
           );
         })(),
         toNum(b.size_m2 || b.area_sqft || b.unit_area, { int: true }),
@@ -1031,6 +1054,7 @@ async function updateUnitHandler(req, res, next) {
         beachDays,
         cleaningFee,
         req.params.id,
+        b.has_nanny_room !== undefined ? truthyNanny(b.has_nanny_room) : null,
       ]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Not found' });
@@ -1246,9 +1270,12 @@ router.get('/reservations', async (req, res, next) => {
     const { rows } = await query(
       `SELECT r.*,
               u.title AS unit_title,
+              COALESCE(u.title, u.unit_number, 'Unit') AS unit_name,
               u.slug AS unit_slug,
               u.unit_number,
               u.compound AS project,
+              creator.full_name AS created_by_name,
+              su.full_name AS sales_person_name,
               COALESCE(
                 NULLIF(r.id_photo_urls, '{}'),
                 NULLIF(b.id_photo_urls, '{}'),
@@ -1266,6 +1293,8 @@ router.get('/reservations', async (req, res, next) => {
        FROM reservations r
        JOIN units u ON u.id = r.unit_id
        LEFT JOIN bookings b ON b.id = r.booking_id
+       LEFT JOIN staff_users creator ON creator.id = r.created_by
+       LEFT JOIN staff_users su ON su.id = r.sales_person_id
        WHERE r.status <> 'cancelled'${scope.clause}
        ORDER BY r.created_at DESC
        LIMIT 200`,
@@ -1307,9 +1336,10 @@ router.post(
     let utilitiesAmount = parseFloat(b.utilities_amount) || 0;
     let housekeepingFees = 0;
     let wpPostId = null;
+    let unitGuestsCap = 0;
     if (b.unit_id) {
       const { rows: units } = await query(
-        `SELECT utilities_cost, property_type, wp_post_id FROM units WHERE id = $1`,
+        `SELECT utilities_cost, property_type, wp_post_id, guests, has_nanny_room FROM units WHERE id = $1`,
         [b.unit_id]
       );
       const { housekeepingFeeForUnit } = require('../../lib/housekeeping');
@@ -1317,6 +1347,7 @@ router.post(
         ? parseFloat(b.housekeeping_fees) || housekeepingFeeForUnit(units[0])
         : housekeepingFeeForUnit(units[0]);
       wpPostId = units[0]?.wp_post_id || null;
+      unitGuestsCap = Number(units[0]?.guests) || 0;
       if (!utilitiesAmount) {
         const costPerNight = utilitiesOverride != null && !Number.isNaN(utilitiesOverride)
           ? utilitiesOverride
@@ -1324,6 +1355,20 @@ router.post(
         if (costPerNight > 0 && !truthyFlag(b.is_owner_reservation)) {
           utilitiesAmount = costPerNight * nights;
         }
+      }
+    }
+
+    const isOwnerResEarly = truthyFlag(b.is_owner_reservation);
+    const party = parsePartyCounts(b, { isOwner: isOwnerResEarly || truthyFlag(b.is_hold) });
+    if (!truthyFlag(b.is_hold) && !isOwnerResEarly) {
+      if (party.adults < 1) {
+        return res.status(400).json({ error: 'At least one adult is required' });
+      }
+      const partyTotal = party.adults + party.children + party.nanny_count;
+      if (unitGuestsCap > 0 && partyTotal > unitGuestsCap) {
+        return res.status(400).json({
+          error: `Party size (${partyTotal}) exceeds unit capacity (${unitGuestsCap})`,
+        });
       }
     }
 
@@ -1405,10 +1450,10 @@ router.post(
          broker_name, broker_amount_per_night, broker_total,
          owner_collected_type, owner_collected_amount,
          payment_method, transfer_proof_path, transfer_proof_name,
-         hold_expires_at
+         hold_expires_at, adults, children, nanny_count
        ) VALUES (
          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,COALESCE($14,0),$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,
-         $25,$26,$27,$28,$29,$30,$31,$32,$33
+         $25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36
        )
        RETURNING *`,
       [
@@ -1445,6 +1490,9 @@ router.post(
         proofPath,
         proofName,
         holdExpiresAt,
+        party.adults,
+        party.children,
+        party.nanny_count,
       ]
     );
 
@@ -1739,7 +1787,7 @@ router.get('/reservations/schedule', async (req, res, next) => {
     const { rows: unitRows } = await query(
       `SELECT id, slug, title, status, ops_status, compound, project, area, beds, baths, guests,
               size_m2, floor, view, property_type, wp_post_id, cover_url, unit_number,
-              internal_code, price_fallback, other_details, min_nights
+              internal_code, price_fallback, other_details, min_nights, has_nanny_room
        FROM units
        WHERE ${unitWhere.join(' AND ')}
        ORDER BY COALESCE(project, compound), title`,
@@ -1847,7 +1895,11 @@ router.get('/reservations/:id', async (req, res, next) => {
               u.company_commission_pct,
               u.company_commission_owner_pct,
               u.commission_tenant_pct,
+              u.has_nanny_room,
+              u.guests AS unit_guests,
               su.full_name AS sales_person_name,
+              creator.full_name AS created_by_name,
+              b.notes AS booking_notes,
               COALESCE(
                 NULLIF(r.id_photo_urls, '{}'),
                 NULLIF(b.id_photo_urls, '{}'),
@@ -1857,16 +1909,50 @@ router.get('/reservations/:id', async (req, res, next) => {
        JOIN units u ON u.id = r.unit_id
        LEFT JOIN bookings b ON b.id = r.booking_id
        LEFT JOIN staff_users su ON su.id = r.sales_person_id
+       LEFT JOIN staff_users creator ON creator.id = r.created_by
        WHERE r.id = $1`,
       [req.params.id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Not found' });
 
+    const row = rows[0];
+    let accepted_by_name = null;
+    let accepted_at = null;
+    let rejected_by_name = null;
+    let rejected_at = null;
+    let reject_reason = null;
+    try {
+      const meta = typeof row.booking_notes === 'string' ? JSON.parse(row.booking_notes) : row.booking_notes;
+      if (meta && typeof meta === 'object') {
+        accepted_by_name = meta.accepted_by_name || null;
+        accepted_at = meta.accepted_at || null;
+        rejected_by_name = meta.rejected_by_name || null;
+        rejected_at = meta.rejected_at || null;
+        reject_reason = meta.reject_reason || meta.reason || null;
+        if (meta.accepted_by && !accepted_by_name) {
+          const { rows: acc } = await query(
+            `SELECT full_name FROM staff_users WHERE id = $1`,
+            [meta.accepted_by]
+          );
+          accepted_by_name = acc[0]?.full_name || null;
+        }
+        if (meta.rejected_by && !rejected_by_name) {
+          const { rows: rej } = await query(
+            `SELECT full_name FROM staff_users WHERE id = $1`,
+            [meta.rejected_by]
+          );
+          rejected_by_name = rej[0]?.full_name || null;
+        }
+      }
+    } catch (_) {
+      /* notes may be plain text */
+    }
+
     const { rows: payments } = await query(
       `SELECT * FROM payments
        WHERE reservation_id = $1 OR ($2::int IS NOT NULL AND booking_id = $2)
        ORDER BY payment_date DESC NULLS LAST, created_at DESC`,
-      [req.params.id, rows[0].booking_id || null]
+      [req.params.id, row.booking_id || null]
     );
 
     let commissions = [];
@@ -1884,7 +1970,16 @@ router.get('/reservations/:id', async (req, res, next) => {
       commissions = [];
     }
 
-    res.json({ ...rows[0], payments, commissions });
+    res.json({
+      ...row,
+      accepted_by_name,
+      accepted_at,
+      rejected_by_name,
+      rejected_at,
+      reject_reason,
+      payments,
+      commissions,
+    });
   } catch (e) {
     next(e);
   }

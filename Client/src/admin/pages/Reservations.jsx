@@ -18,15 +18,15 @@ import { idDocumentThumbUrl, isPdfUrl } from '../utils/idDocuments';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import SortTh from '../components/ui/SortTh';
 import BookingCalendar from '../components/ui/BookingCalendar';
-import { currency, formatDate, nightsText, BOOKING_SOURCES, PAYMENT_METHODS, PAYMENT_METHOD_LABELS, MANUAL_PAYMENT_METHODS } from '../utils/formatters';
+import { currency, formatDate, formatDateTime, nightsText, BOOKING_SOURCES, PAYMENT_METHODS, PAYMENT_METHOD_LABELS, MANUAL_PAYMENT_METHODS } from '../utils/formatters';
 import { calcReservationFinancials, commissionModeLabel, appliedPctLabel } from '../utils/commission';
-import WebsiteBookingRequests from '../components/WebsiteBookingRequests';
 import { housekeepingFeeForUnit } from '../../utils/housekeeping';
 import AdminReservationDrawer from '../components/AdminReservationDrawer';
 import ManualReservationForm from '../components/ManualReservationForm';
 
 export const EMPTY_FORM = {
   unit_id: '', guest_name: '', guest_email: '', guest_phone: '', guest_nationality: '',
+  adults: '2', children: '0', nanny_count: '0',
   check_in: '', check_out: '', price_per_night: '', total_amount: '',
   down_payment: '', housekeeping_fees: '', insurance: '',
   booking_source: '', sales_person_id: '', is_owner_reservation: false, notes: '',
@@ -115,6 +115,24 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
         <div><label className="label">Mobile No. *</label><input className="input" value={form.guest_phone} onChange={e => setForm(f => ({ ...f, guest_phone: e.target.value }))} placeholder="+20..." /></div>
         <div><label className="label">Email</label><input type="email" className="input" value={form.guest_email} onChange={e => setForm(f => ({ ...f, guest_email: e.target.value }))} /></div>
         <div><label className="label">Nationality</label><input className="input" value={form.guest_nationality} onChange={e => setForm(f => ({ ...f, guest_nationality: e.target.value }))} /></div>
+        <div>
+          <label className="label">Adults {!form.is_owner_reservation ? '*' : ''}</label>
+          <input type="number" min="0" className="input" value={form.adults ?? '2'} onChange={e => setForm(f => ({ ...f, adults: e.target.value }))} />
+        </div>
+        <div>
+          <label className="label">Children</label>
+          <input type="number" min="0" className="input" value={form.children ?? '0'} onChange={e => setForm(f => ({ ...f, children: e.target.value }))} />
+        </div>
+        <div>
+          <label className="label">Nanny</label>
+          <input type="number" min="0" className="input" value={form.nanny_count ?? '0'} onChange={e => setForm(f => ({ ...f, nanny_count: e.target.value }))} />
+          {selectedUnit?.guests != null && (
+            <p className="mt-1 text-[11px] text-gray-400">
+              Capacity {selectedUnit.guests}
+              {selectedUnit.has_nanny_room ? ' (incl. nanny room)' : ''}. Nanny excluded from beach access.
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Dates */}
@@ -495,12 +513,47 @@ function ReservationDetail({ reservation, onAddPayment, canPay, canApprove, onAp
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-4 text-sm">
         <div className="space-y-2">
-          <InfoRow label="Unit" value={reservation.unit_name} />
+          <InfoRow
+            label="Unit"
+            value={
+              reservation.unit_number
+                ? `${reservation.unit_number} — ${reservation.unit_name || reservation.unit_title || ''}`
+                : reservation.unit_name
+            }
+          />
           <InfoRow label="Tenant" value={reservation.guest_name} />
           <InfoRow label="Mobile" value={reservation.guest_phone} />
           <InfoRow label="Email" value={reservation.guest_email} />
           <InfoRow label="Nationality" value={reservation.guest_nationality} />
+          <InfoRow
+            label="Party"
+            value={[
+              reservation.adults != null ? `${reservation.adults} adult${Number(reservation.adults) === 1 ? '' : 's'}` : null,
+              reservation.children != null && Number(reservation.children) > 0
+                ? `${reservation.children} child${Number(reservation.children) === 1 ? '' : 'ren'}`
+                : null,
+              reservation.nanny_count != null && Number(reservation.nanny_count) > 0
+                ? `${reservation.nanny_count} nanny`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(' · ') || '—'}
+          />
           <InfoRow label="Source" value={reservation.booking_source} />
+          <InfoRow label="Sales person" value={reservation.sales_person_name} />
+          <InfoRow label="Created by" value={reservation.created_by_name || '—'} />
+          {reservation.booking_id && (
+            <InfoRow
+              label="Accepted by"
+              value={
+                reservation.accepted_by_name
+                  ? reservation.accepted_at
+                    ? `${reservation.accepted_by_name} (${formatDateTime(reservation.accepted_at)})`
+                    : reservation.accepted_by_name
+                  : '—'
+              }
+            />
+          )}
         </div>
         <div className="space-y-2">
           <InfoRow label="Check-in" value={formatDate(reservation.check_in)} />
@@ -755,7 +808,6 @@ export default function Reservations() {
     isWebsiteReservations,
     isManualReservations,
     canManageReservations,
-    canHandleWebsiteBookings,
     canAccessFinance,
     user,
   } = usePermissions();
@@ -954,6 +1006,9 @@ export default function Reservations() {
     setForm({
       unit_id: r.unit_id, guest_name: r.guest_name, guest_email: r.guest_email || '',
       guest_phone: r.guest_phone || '', guest_nationality: r.guest_nationality || '',
+      adults: r.adults != null ? String(r.adults) : '2',
+      children: r.children != null ? String(r.children) : '0',
+      nanny_count: r.nanny_count != null ? String(r.nanny_count) : '0',
       check_in: r.check_in, check_out: r.check_out,
       price_per_night: r.price_per_night || '',
       total_amount: r.total_amount,
@@ -979,8 +1034,18 @@ export default function Reservations() {
     if (!form.is_owner_reservation && !form.sales_person_id)
       return toast.error('Please select a Sales Person or mark as Owner Reservation');
     const selectedUnit = units.find((u) => String(u.id) === String(form.unit_id));
+    const adults = Math.max(0, parseInt(form.adults, 10) || 0);
+    const children = Math.max(0, parseInt(form.children, 10) || 0);
+    const nannyCount = Math.max(0, parseInt(form.nanny_count, 10) || 0);
+    if (!form.is_owner_reservation && adults < 1)
+      return toast.error('At least 1 adult is required');
+    if (selectedUnit?.guests != null && adults + children + nannyCount > Number(selectedUnit.guests))
+      return toast.error(`Party exceeds unit capacity (${selectedUnit.guests})`);
     const payload = {
       ...form,
+      adults,
+      children,
+      nanny_count: nannyCount,
       housekeeping_fees: selectedUnit
         ? housekeepingFeeForUnit(selectedUnit)
         : form.housekeeping_fees,
@@ -1057,7 +1122,6 @@ export default function Reservations() {
 
   return (
     <div className="space-y-6">
-      {canHandleWebsiteBookings && <WebsiteBookingRequests />}
       <div className="flex items-center justify-between">
         <div className="page-header mb-0">
           <h1 className="page-title">Reservations</h1>
@@ -1167,6 +1231,7 @@ export default function Reservations() {
               <thead>
                 <tr>
                   <SortTh col="guest_name" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Name</SortTh>
+                  <SortTh col="unit_number" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Unit</SortTh>
                   <SortTh col="guest_phone" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Phone</SortTh>
                   <SortTh col="check_in" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Check-in</SortTh>
                   <SortTh col="check_out" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Check-out</SortTh>
@@ -1186,6 +1251,14 @@ export default function Reservations() {
                     <tr key={r.id}>
                       <td>
                         <div className="font-medium text-gray-900">{r.guest_name || '—'}</div>
+                      </td>
+                      <td className="whitespace-nowrap text-gray-700 font-medium">
+                        {r.unit_number || '—'}
+                        {r.unit_name || r.unit_title ? (
+                          <div className="text-[10px] text-gray-400 font-normal truncate max-w-[9rem]">
+                            {r.unit_name || r.unit_title}
+                          </div>
+                        ) : null}
                       </td>
                       <td className="text-gray-600 whitespace-nowrap">{r.guest_phone || '—'}</td>
                       <td className="whitespace-nowrap">{formatDate(r.check_in)}</td>

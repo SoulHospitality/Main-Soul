@@ -81,6 +81,7 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
         company_commission_owner_pct: unit.company_commission_owner_pct,
         commission_tenant_pct: unit.commission_tenant_pct,
         accepted_by: staffUser?.id || null,
+        accepted_by_name: staffUser?.full_name || staffUser?.username || null,
         accepted_at: new Date().toISOString(),
         deposit_mode: paymentMode || (alreadyPaid ? 'prepaid' : 'manual'),
         amount_paid: amountPaid,
@@ -146,13 +147,18 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
 
         try {
           const { quoteStay } = require('./pricing');
+          const partyAdults = Number(booking.adults) > 0
+            ? Number(booking.adults)
+            : Number(booking.guests) || 1;
+          const partyChildren = Number(booking.children) || 0;
+          // Nanny excluded from beach access (teens/extra guest fees)
           const quote = await quoteStay({
             wpPostId: unit.wp_post_id,
             checkin: booking.checkin,
             checkout: booking.checkout,
             unit,
-            adults: Number(booking.guests) || 1,
-            teens: 0,
+            adults: partyAdults,
+            teens: partyChildren,
             skipBlockCheck: true,
           });
           if (quote?.available) {
@@ -185,6 +191,12 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
       const rem = Math.max(0, Math.round((stayTotal - paidCap) * 100) / 100);
       const resPayStatus = rem <= 0.5 ? 'paid' : paidCap > 0 ? 'partial' : 'pending';
 
+      const partyAdults = Number(booking.adults) > 0
+        ? Number(booking.adults)
+        : Number(booking.guests) || 1;
+      const partyChildren = Math.max(0, Number(booking.children) || 0);
+      const partyNanny = Math.max(0, Number(booking.nanny_count) || 0);
+
       const { rows: inserted } = await query(
         `INSERT INTO reservations (
            unit_id, guest_name, guest_email, guest_phone, check_in, check_out, nights,
@@ -193,8 +205,9 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
            utilities_amount, housekeeping_fees, transfer_proof_path, transfer_proof_name,
            down_payment, payment_method,
            broker_name, broker_amount_per_night, broker_total,
-           owner_collected_type, owner_collected_amount
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'Website',$11,'confirmed',$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
+           owner_collected_type, owner_collected_amount,
+           adults, children, nanny_count
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'Website',$11,'confirmed',$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
          RETURNING id`,
         [
           booking.unit_id,
@@ -230,6 +243,9 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
           parseFloat(booking.broker_total) || 0,
           booking.owner_collected_type || null,
           parseFloat(booking.owner_collected_amount) || 0,
+          partyAdults,
+          partyChildren,
+          partyNanny,
         ]
       );
       reservationId = inserted[0]?.id || null;
@@ -341,7 +357,14 @@ async function cancelWebsiteBooking(bookingId, reason = 'cancelled_by_staff') {
   return updated[0] || null;
 }
 
-async function rejectWebsiteBooking(bookingId, staffUser, reason = 'rejected_by_staff') {
+async function rejectWebsiteBooking(bookingId, staffUser, reason = '') {
+  const reasonText = String(reason || '').trim();
+  if (!reasonText) {
+    const err = new Error('A rejection reason is required');
+    err.status = 400;
+    throw err;
+  }
+
   const { rows } = await query(`SELECT * FROM bookings WHERE id = $1`, [bookingId]);
   const booking = rows[0];
   if (!booking) {
@@ -357,11 +380,35 @@ async function rejectWebsiteBooking(bookingId, staffUser, reason = 'rejected_by_
 
   assertBookingAssigned(staffUser, booking);
 
-  const updated = await cancelWebsiteBooking(bookingId, reason);
+  const rejectMeta = JSON.stringify({
+    rejected_by: staffUser?.id || null,
+    rejected_by_name: staffUser?.full_name || staffUser?.username || null,
+    rejected_at: new Date().toISOString(),
+    reject_reason: reasonText,
+  });
 
   await query(
-    `UPDATE reservations SET status = 'cancelled', updated_at = now() WHERE booking_id = $1`,
-    [bookingId]
+    `UPDATE bookings SET
+       notes = CASE
+         WHEN notes IS NULL OR btrim(notes) = '' THEN $2
+         ELSE notes || E'\n' || $2
+       END
+     WHERE id = $1`,
+    [bookingId, rejectMeta]
+  );
+
+  const updated = await cancelWebsiteBooking(bookingId, reasonText);
+
+  await query(
+    `UPDATE reservations SET
+       status = 'cancelled',
+       notes = CASE
+         WHEN notes IS NULL OR btrim(notes) = '' THEN $2
+         ELSE notes || E'\n' || $2
+       END,
+       updated_at = now()
+     WHERE booking_id = $1`,
+    [bookingId, `[rejected] ${reasonText}`]
   );
 
   return updated;

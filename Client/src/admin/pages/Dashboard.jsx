@@ -152,12 +152,6 @@ export default function Dashboard() {
           value={currency(data?.kpis?.adr)}
           sub={`RevPAR ${currency(data?.kpis?.revpar)}`}
         />
-        <StatCard
-          icon={AlertCircle} iconBg="bg-red-50" iconColor="text-red-600"
-          title="Units Not Ready"
-          value={data?.kpis?.units_not_ready_today ?? 0}
-          sub="Check-ins at risk today"
-        />
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -309,8 +303,8 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── Today: check-ins + check-outs + at risk ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      {/* ── Today: check-ins + check-outs ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <TodayCard
           icon={LogIn}   iconBg="bg-teal-100"   iconColor="text-teal-600"
           title="Check-ins Today"
@@ -326,19 +320,6 @@ export default function Dashboard() {
           rows={checkoutsToday}
           emptyText="No check-outs today"
           rowColor="bg-orange-50"
-        />
-        <TodayCard
-          icon={AlertCircle} iconBg="bg-red-100" iconColor="text-red-600"
-          title="Units at Risk"
-          count={(data?.unitsAtRisk || []).length}
-          rows={(data?.unitsAtRisk || []).map((r) => ({
-            ...r,
-            guest_name: r.unit_name,
-            project: r.risk_reason || r.ops_status || 'not ready',
-            unit_name: r.guest_name || '',
-          }))}
-          emptyText="All check-ins look ready"
-          rowColor="bg-red-50"
         />
       </div>
 

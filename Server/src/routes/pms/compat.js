@@ -845,12 +845,12 @@ router.post(
 
 router.post('/website-bookings/:id/reject', requireRoles('reservations_web', 'reservations', 'admin'), async (req, res, next) => {
   try {
+    const reason = String(req.body?.reason || '').trim();
+    if (!reason) {
+      return res.status(400).json({ error: 'A rejection reason is required' });
+    }
     const { rejectWebsiteBooking } = require('../../services/bookingWorkflow');
-    const booking = await rejectWebsiteBooking(
-      req.params.id,
-      req.user,
-      req.body?.reason || 'rejected_by_staff'
-    );
+    const booking = await rejectWebsiteBooking(req.params.id, req.user, reason);
     res.json(booking);
   } catch (e) {
     next(e);
@@ -1200,6 +1200,43 @@ router.put('/reservations/:id', requireRoles('reservations_manual', 'reservation
     const clearHold =
       b.is_hold === false || b.is_hold === 0 || b.is_hold === '0' || b.is_hold === 'false';
 
+    if (
+      b.adults !== undefined ||
+      b.children !== undefined ||
+      b.nanny_count !== undefined ||
+      b.nanny !== undefined
+    ) {
+      const adults =
+        b.adults !== undefined && b.adults !== ''
+          ? Math.max(0, parseInt(b.adults, 10) || 0)
+          : Math.max(0, parseInt(existing.adults, 10) || 0);
+      const children =
+        b.children !== undefined && b.children !== ''
+          ? Math.max(0, parseInt(b.children, 10) || 0)
+          : Math.max(0, parseInt(existing.children, 10) || 0);
+      const nannyCount =
+        b.nanny_count !== undefined || b.nanny !== undefined
+          ? Math.max(0, parseInt(b.nanny_count ?? b.nanny, 10) || 0)
+          : Math.max(0, parseInt(existing.nanny_count, 10) || 0);
+      const isOwner =
+        b.is_owner_reservation !== undefined
+          ? b.is_owner_reservation === true ||
+            b.is_owner_reservation === 1 ||
+            b.is_owner_reservation === '1'
+          : !!existing.is_owner_reservation;
+      if (!isOwner && adults < 1) {
+        return res.status(400).json({ error: 'At least 1 adult is required' });
+      }
+      const unitId = b.unit_id || existing.unit_id;
+      const { rows: unitRows } = await query(`SELECT guests FROM units WHERE id = $1`, [unitId]);
+      const cap = Number(unitRows[0]?.guests);
+      if (Number.isFinite(cap) && adults + children + nannyCount > cap) {
+        return res
+          .status(400)
+          .json({ error: `Party size exceeds unit capacity (${cap})` });
+      }
+    }
+
     const { rows } = await query(
       `UPDATE reservations SET
          status = COALESCE($1, status),
@@ -1230,6 +1267,9 @@ router.put('/reservations/:id', requireRoles('reservations_manual', 'reservation
          payment_method = COALESCE($26, payment_method),
          unit_id = COALESCE($27, unit_id),
          hold_expires_at = CASE WHEN $28::boolean THEN NULL ELSE hold_expires_at END,
+         adults = COALESCE($30, adults),
+         children = COALESCE($31, children),
+         nanny_count = COALESCE($32, nanny_count),
          updated_at = now()
        WHERE id = $29 RETURNING *`,
       [
@@ -1268,6 +1308,11 @@ router.put('/reservations/:id', requireRoles('reservations_manual', 'reservation
         b.unit_id ?? null,
         clearHold,
         req.params.id,
+        b.adults !== undefined && b.adults !== '' ? Math.max(0, parseInt(b.adults, 10) || 0) : null,
+        b.children !== undefined && b.children !== '' ? Math.max(0, parseInt(b.children, 10) || 0) : null,
+        b.nanny_count !== undefined || b.nanny !== undefined
+          ? Math.max(0, parseInt(b.nanny_count ?? b.nanny, 10) || 0)
+          : null,
       ]
     );
     res.json(rows[0]);
