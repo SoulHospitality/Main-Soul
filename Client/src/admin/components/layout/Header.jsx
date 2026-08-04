@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Menu, Bell, Search, X } from 'lucide-react';
+import { io } from 'socket.io-client';
 import { useAuth } from '../../context/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../api/axios';
@@ -10,10 +11,27 @@ import { getRoleTheme } from '../../utils/roleTheme';
 
 const NOTIFICATION_ICONS = {
   new_booking: '🏠',
+  booking_accepted: '✅',
+  booking_rejected: '❌',
+  reservation_created: '📝',
+  cancel_request: '⚠️',
   payment_pending: '💳',
   checkin_reminder: '📅',
+  checkin: '📅',
+  payment: '💳',
   default: '🔔',
 };
+
+function notificationHref(n) {
+  if (n.entity_type === 'booking') return '/admin/website-bookings';
+  if (n.entity_type === 'reservation' && n.entity_id) {
+    return `/admin/reservations?view=${n.entity_id}`;
+  }
+  if (n.type === 'new_booking' || n.type === 'booking_accepted' || n.type === 'booking_rejected') {
+    return '/admin/website-bookings';
+  }
+  return '/admin/reservations';
+}
 
 export default function Header({ onToggleSidebar, sidebarWidth = 256 }) {
   const { user } = useAuth();
@@ -29,12 +47,13 @@ export default function Header({ onToggleSidebar, sidebarWidth = 256 }) {
     queryKey: ['notifications'],
     queryFn: () => api.get('/notifications?limit=15').then((r) => r.data),
     refetchInterval: 30000,
+    enabled: !!user?.id,
   });
 
   const markRead = useMutation({
     mutationFn: (id) =>
       id === 'all' ? api.put('/notifications/read-all') : api.put(`/notifications/${id}/read`),
-    onSuccess: () => qc.invalidateQueries(['notifications']),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
   });
 
   useEffect(() => {
@@ -45,9 +64,32 @@ export default function Header({ onToggleSidebar, sidebarWidth = 256 }) {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  useEffect(() => {
+    if (!user?.id) return undefined;
+    const base = import.meta.env.VITE_API_URL || window.location.origin;
+    const socket = io(base, {
+      query: { userId: String(user.id), role: user.role || '' },
+      transports: ['websocket', 'polling'],
+    });
+    const refresh = () => qc.invalidateQueries({ queryKey: ['notifications'] });
+    socket.on('pms:notification', refresh);
+    socket.on('sales:notification', refresh);
+    return () => {
+      socket.off('pms:notification', refresh);
+      socket.off('sales:notification', refresh);
+      socket.disconnect();
+    };
+  }, [user?.id, user?.role, qc]);
+
   const handleSearch = (e) => {
     e.preventDefault();
     if (search.trim()) navigate(`/admin/reservations?search=${encodeURIComponent(search.trim())}`);
+  };
+
+  const openNotification = (n) => {
+    markRead.mutate(n.id);
+    setShowNotifs(false);
+    navigate(notificationHref(n));
   };
 
   const unread = notifData?.unreadCount || 0;
@@ -157,7 +199,7 @@ export default function Header({ onToggleSidebar, sidebarWidth = 256 }) {
                   notifications.map((n) => (
                     <div
                       key={n.id}
-                      onClick={() => markRead.mutate(n.id)}
+                      onClick={() => openNotification(n)}
                       className={`px-4 py-3 border-b border-soul-line/60 cursor-pointer hover:bg-[var(--pms-accent-soft)] transition-colors ${
                         !n.is_read ? 'bg-[var(--pms-header-tint)]' : ''
                       }`}

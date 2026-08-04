@@ -1,5 +1,4 @@
 const { query } = require('../config/db');
-const { emitSalesNotification } = require('../config/socket');
 const { sendBookingAcceptedEmail } = require('./guestEmails');
 const {
   pickLeastLoadedReservationsAgent,
@@ -415,26 +414,23 @@ async function rejectWebsiteBooking(bookingId, staffUser, reason = '') {
 }
 
 async function assignSalesOnCreate(bookingId) {
+  const { rows: bookingRows } = await query(`SELECT * FROM bookings WHERE id = $1`, [bookingId]);
+  const booking = bookingRows[0];
+  if (!booking) return null;
+
   const assignee = await pickLeastLoadedReservationsAgent();
-  if (!assignee) return null;
+  if (assignee) {
+    await query(`UPDATE bookings SET assigned_sales_id = $1 WHERE id = $2`, [assignee, bookingId]);
+    booking.assigned_sales_id = assignee;
+  }
 
-  await query(`UPDATE bookings SET assigned_sales_id = $1 WHERE id = $2`, [assignee, bookingId]);
+  try {
+    const { notifyNewWebsiteBooking } = require('./pmsNotifications');
+    await notifyNewWebsiteBooking(booking, { assigneeId: assignee });
+  } catch (err) {
+    console.error('[assignSalesOnCreate] notify failed', err.message);
+  }
 
-  await query(
-    `INSERT INTO sales_notifications (user_id, title, message, meta)
-     VALUES ($1,$2,$3,$4)`,
-    [
-      assignee,
-      'New website booking',
-      'A guest request was assigned to you',
-      JSON.stringify({ booking_id: bookingId, assigned: true }),
-    ]
-  );
-  emitSalesNotification(assignee, {
-    title: 'New website booking',
-    message: 'A guest request was assigned to you',
-    bookingId,
-  });
   return assignee;
 }
 

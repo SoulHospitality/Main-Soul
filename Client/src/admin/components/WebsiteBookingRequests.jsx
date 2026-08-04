@@ -8,13 +8,39 @@ import Badge from './ui/Badge';
 import LoadingSpinner from './ui/LoadingSpinner';
 import Modal from './ui/Modal';
 import { idDocumentThumbUrl, isPdfUrl } from '../utils/idDocuments';
-import { currency, formatDate } from '../utils/formatters';
+import { currency, formatDate, PAYMENT_METHOD_LABELS } from '../utils/formatters';
 
 function toIdPhotos(booking) {
   if (Array.isArray(booking?.id_photo_urls)) {
     return booking.id_photo_urls.filter(Boolean);
   }
   return [];
+}
+
+function partyCount(booking) {
+  const party =
+    (Number(booking?.adults) || 0) +
+    (Number(booking?.children) || 0) +
+    (Number(booking?.nanny_count) || 0);
+  if (party > 0) return party;
+  return booking?.guests != null ? booking.guests : '—';
+}
+
+function paymentMethodLabel(method) {
+  const key = String(method || '').toLowerCase();
+  if (PAYMENT_METHOD_LABELS[key]) return PAYMENT_METHOD_LABELS[key];
+  if (key.includes('paymob') || key.includes('card')) return 'Card';
+  if (key.includes('instapay')) return 'InstaPay';
+  if (key.includes('cash')) return 'Cash';
+  return method || '—';
+}
+
+function paymentMethodTone(method) {
+  const key = String(method || '').toLowerCase();
+  if (key.includes('instapay')) return 'bg-violet-100 text-violet-800 border-violet-200';
+  if (key.includes('paymob') || key.includes('card')) return 'bg-sky-100 text-sky-800 border-sky-200';
+  if (key.includes('cash')) return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+  return 'bg-slate-100 text-slate-700 border-slate-200';
 }
 
 function nightsBetween(checkin, checkout) {
@@ -190,14 +216,14 @@ export default function WebsiteBookingRequests() {
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="text-left text-xs uppercase text-gray-500">
+            <thead className="text-left text-xs uppercase tracking-wide text-gray-500">
               <tr>
-                <th className="py-2 pr-3">Name</th>
+                <th className="py-2 pr-3">Guest contact</th>
                 <th className="py-2 pr-3">Guests</th>
                 <th className="py-2 pr-3">Duration</th>
                 <th className="py-2 pr-3">Unit</th>
                 <th className="py-2 pr-3">Total</th>
-                <th className="py-2 pr-3">Payment</th>
+                <th className="py-2 pr-3">Payment method</th>
                 <th className="py-2 pr-3">Guest documents</th>
                 <th className="py-2">Actions</th>
               </tr>
@@ -206,81 +232,118 @@ export default function WebsiteBookingRequests() {
               {bookings.map((b) => {
                 const idPhotos = toIdPhotos(b);
                 const nights = nightsBetween(b.checkin, b.checkout);
+                const methodLabel = paymentMethodLabel(b.payment_method);
                 return (
-                  <tr key={b.id} className="border-t border-amber-100/80">
-                    <td className="py-2.5 pr-3">
-                      <div className="font-medium">{b.guest_name}</div>
-                      <div className="text-xs text-gray-500">{b.guest_phone}</div>
-                      {b.guest_email ? <div className="text-xs text-gray-400">{b.guest_email}</div> : null}
+                  <tr key={b.id} className="border-t border-amber-100/80 align-top">
+                    <td className="py-3 pr-3 min-w-[14rem]">
+                      <div className="rounded-lg border border-amber-200/80 bg-white px-3 py-2.5 shadow-sm space-y-1.5">
+                        <div>
+                          <div className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">Name</div>
+                          <div className="text-base font-semibold text-gray-900 leading-snug">
+                            {b.guest_name || '—'}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">Phone</div>
+                          <div className="text-sm font-semibold text-gray-800 tabular-nums">
+                            {b.guest_phone || <span className="font-normal italic text-rose-600">Missing phone</span>}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">Email</div>
+                          <div className="text-sm font-medium text-gray-700 break-all">
+                            {b.guest_email || <span className="font-normal italic text-rose-600">Missing email</span>}
+                          </div>
+                        </div>
+                      </div>
                     </td>
-                    <td className="py-2.5 pr-3 whitespace-nowrap">
-                      {b.guests != null ? b.guests : '—'}
+                    <td className="py-3 pr-3 whitespace-nowrap">
+                      <span className="inline-flex min-w-[2rem] items-center justify-center rounded-md bg-white border border-gray-200 px-2 py-1 text-sm font-semibold text-gray-900">
+                        {partyCount(b)}
+                      </span>
                     </td>
-                    <td className="py-2.5 pr-3 whitespace-nowrap">
-                      <div>
+                    <td className="py-3 pr-3 whitespace-nowrap">
+                      <div className="font-medium text-gray-900">
                         {nights} night{nights === 1 ? '' : 's'}
                       </div>
-                      <div className="text-xs text-gray-500">
+                      <div className="text-xs text-gray-500 mt-0.5">
                         {formatDate(b.checkin)} → {formatDate(b.checkout)}
                       </div>
                     </td>
-                    <td className="py-2.5 pr-3">
-                      <div className="font-medium text-gray-900">{b.unit_number || '—'}</div>
+                    <td className="py-3 pr-3">
+                      <div className="font-semibold text-gray-900">{b.unit_number || '—'}</div>
                       <div className="text-xs text-gray-500 truncate max-w-[10rem]">
                         {b.unit_title || b.listing_title || ''}
                       </div>
                     </td>
-                    <td className="py-2.5 pr-3 font-medium">{currency(b.total_egp)}</td>
-                    <td className="py-2.5 pr-3">
-                      <Badge status={b.payment_status || 'pending'} />
-                      <div className="text-[10px] text-gray-400 mt-0.5">{b.payment_method}</div>
-                      {needsDeposit(b) ? (
-                        <div className="text-[10px] text-amber-700 mt-0.5">Min 50% to accept</div>
-                      ) : (
-                        <div className="text-[10px] text-emerald-700 mt-0.5">Already paid</div>
-                      )}
+                    <td className="py-3 pr-3">
+                      <div className="text-base font-bold text-soul-blue tabular-nums">{currency(b.total_egp)}</div>
                     </td>
-                    <td className="py-2.5 pr-3">
-                      <div className="flex flex-wrap gap-1.5 min-w-[5rem]">
-                        {idPhotos.length > 0 ? (
-                          idPhotos.map((photo) => (
-                            <button
-                              key={photo}
-                              type="button"
-                              onClick={() => openPreview(idPhotos, photo)}
-                              className="relative"
-                              title={isPdfUrl(photo) ? 'Review ID PDF' : 'Review guest photo'}
-                            >
-                              {isPdfUrl(photo) ? (
-                                idDocumentThumbUrl(photo) !== photo ? (
-                                  <img
-                                    src={idDocumentThumbUrl(photo)}
-                                    alt="Guest ID PDF"
-                                    className="h-12 w-12 rounded-md border border-amber-200 object-cover bg-white"
-                                  />
-                                ) : (
-                                  <span className="flex h-12 w-12 items-center justify-center rounded-md border border-amber-200 bg-white text-rose-700">
-                                    <FileText className="h-5 w-5" />
-                                  </span>
-                                )
-                              ) : (
-                                <img
-                                  src={photo}
-                                  alt="Guest ID"
-                                  className="h-12 w-12 rounded-md border border-amber-200 object-cover bg-white"
-                                />
-                              )}
-                              <span className="absolute -right-1 -top-1 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-slate-700 text-white">
-                                <Maximize2 className="h-2 w-2" strokeWidth={2} aria-hidden="true" />
-                              </span>
-                            </button>
-                          ))
+                    <td className="py-3 pr-3 min-w-[9rem]">
+                      <div className="space-y-1.5">
+                        <span
+                          className={`inline-flex items-center rounded-md border px-2.5 py-1 text-sm font-bold tracking-wide ${paymentMethodTone(
+                            b.payment_method
+                          )}`}
+                        >
+                          {methodLabel}
+                        </span>
+                        <div>
+                          <Badge status={b.payment_status || 'pending'} />
+                        </div>
+                        {needsDeposit(b) ? (
+                          <div className="text-[11px] font-medium text-amber-800">Min 50% to accept</div>
                         ) : (
-                          <span className="text-xs italic text-gray-400">No documents</span>
+                          <div className="text-[11px] font-medium text-emerald-700">Already paid</div>
                         )}
                       </div>
                     </td>
-                    <td className="py-2.5">
+                    <td className="py-3 pr-3">
+                      <div className="rounded-lg border border-sky-200 bg-sky-50/60 px-2 py-2">
+                        <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-800 mb-1.5">
+                          ID / passport {idPhotos.length > 0 ? `(${idPhotos.length})` : ''}
+                        </div>
+                        <div className="flex flex-wrap gap-2 min-w-[5.5rem]">
+                          {idPhotos.length > 0 ? (
+                            idPhotos.map((photo) => (
+                              <button
+                                key={photo}
+                                type="button"
+                                onClick={() => openPreview(idPhotos, photo)}
+                                className="relative ring-2 ring-sky-300/70 rounded-md hover:ring-sky-500 transition"
+                                title={isPdfUrl(photo) ? 'Review ID PDF' : 'Review guest photo'}
+                              >
+                                {isPdfUrl(photo) ? (
+                                  idDocumentThumbUrl(photo) !== photo ? (
+                                    <img
+                                      src={idDocumentThumbUrl(photo)}
+                                      alt="Guest ID PDF"
+                                      className="h-14 w-14 rounded-md border border-sky-200 object-cover bg-white"
+                                    />
+                                  ) : (
+                                    <span className="flex h-14 w-14 items-center justify-center rounded-md border border-sky-200 bg-white text-rose-700">
+                                      <FileText className="h-6 w-6" />
+                                    </span>
+                                  )
+                                ) : (
+                                  <img
+                                    src={photo}
+                                    alt="Guest ID"
+                                    className="h-14 w-14 rounded-md border border-sky-200 object-cover bg-white"
+                                  />
+                                )}
+                                <span className="absolute -right-1 -top-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-sky-700 text-white shadow">
+                                  <Maximize2 className="h-2.5 w-2.5" strokeWidth={2} aria-hidden="true" />
+                                </span>
+                              </button>
+                            ))
+                          ) : (
+                            <span className="text-xs font-medium italic text-rose-600">No documents</span>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-3">
                       <div className="flex gap-1">
                         <button
                           type="button"
@@ -332,10 +395,29 @@ export default function WebsiteBookingRequests() {
         {acceptBooking ? (
           <div className="space-y-5">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-              <div>
-                <div className="text-xs uppercase text-gray-500">Name</div>
-                <div className="font-medium text-gray-900">{acceptBooking.guest_name}</div>
-                <div className="text-xs text-gray-500">{acceptBooking.guest_phone}</div>
+              <div className="rounded-lg border border-amber-200 bg-amber-50/50 px-3 py-2.5 space-y-2 sm:col-span-2">
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">Name</div>
+                  <div className="text-base font-semibold text-gray-900">{acceptBooking.guest_name || '—'}</div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">Phone</div>
+                    <div className="text-sm font-semibold text-gray-800 tabular-nums">
+                      {acceptBooking.guest_phone || (
+                        <span className="font-normal italic text-rose-600">Missing phone</span>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">Email</div>
+                    <div className="text-sm font-medium text-gray-700 break-all">
+                      {acceptBooking.guest_email || (
+                        <span className="font-normal italic text-rose-600">Missing email</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
               <div>
                 <div className="text-xs uppercase text-gray-500">Unit</div>
@@ -348,7 +430,7 @@ export default function WebsiteBookingRequests() {
               </div>
               <div>
                 <div className="text-xs uppercase text-gray-500">Guests</div>
-                <div className="font-medium">{acceptBooking.guests ?? '—'}</div>
+                <div className="font-medium">{partyCount(acceptBooking)}</div>
               </div>
               <div>
                 <div className="text-xs uppercase text-gray-500">Duration</div>
@@ -363,12 +445,23 @@ export default function WebsiteBookingRequests() {
               <div>
                 <div className="text-xs uppercase text-gray-500">Total</div>
                 <div className="font-semibold text-lg text-gray-900">{currency(acceptTotal)}</div>
-                <div className="text-xs text-gray-500">{acceptBooking.payment_method}</div>
+              </div>
+              <div>
+                <div className="text-xs uppercase text-gray-500">Payment method</div>
+                <span
+                  className={`mt-1 inline-flex items-center rounded-md border px-2.5 py-1 text-sm font-bold ${paymentMethodTone(
+                    acceptBooking.payment_method
+                  )}`}
+                >
+                  {paymentMethodLabel(acceptBooking.payment_method)}
+                </span>
               </div>
             </div>
 
-            <div>
-              <div className="text-xs uppercase text-gray-500 mb-2">Guest ID documents</div>
+            <div className="rounded-lg border border-sky-200 bg-sky-50/50 px-3 py-2.5">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-800 mb-2">
+                Guest ID documents
+              </div>
               <div className="flex flex-wrap gap-2">
                 {toIdPhotos(acceptBooking).length ? (
                   toIdPhotos(acceptBooking).map((photo) => (
@@ -376,16 +469,17 @@ export default function WebsiteBookingRequests() {
                       key={photo}
                       type="button"
                       onClick={() => openPreview(toIdPhotos(acceptBooking), photo)}
+                      className="relative ring-2 ring-sky-300/70 rounded-md"
                     >
                       {isPdfUrl(photo) ? (
                         idDocumentThumbUrl(photo) !== photo ? (
                           <img
                             src={idDocumentThumbUrl(photo)}
                             alt="Guest"
-                            className="h-16 w-16 rounded-md border object-cover"
+                            className="h-16 w-16 rounded-md border border-sky-200 object-cover"
                           />
                         ) : (
-                          <span className="flex h-16 w-16 items-center justify-center rounded-md border bg-slate-50 text-rose-700">
+                          <span className="flex h-16 w-16 items-center justify-center rounded-md border border-sky-200 bg-white text-rose-700">
                             <FileText className="h-6 w-6" />
                           </span>
                         )
@@ -393,13 +487,13 @@ export default function WebsiteBookingRequests() {
                         <img
                           src={photo}
                           alt="Guest"
-                          className="h-16 w-16 rounded-md border object-cover"
+                          className="h-16 w-16 rounded-md border border-sky-200 object-cover"
                         />
                       )}
                     </button>
                   ))
                 ) : (
-                  <span className="text-sm text-gray-400 italic">No documents uploaded</span>
+                  <span className="text-sm font-medium italic text-rose-600">No documents uploaded</span>
                 )}
               </div>
             </div>

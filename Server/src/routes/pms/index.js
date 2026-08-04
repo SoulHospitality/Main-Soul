@@ -1538,6 +1538,12 @@ router.post(
       entityId: reservation.id,
       details: { unit_id: b.unit_id, check_in: b.check_in, check_out: b.check_out, payment_method: paymentMethod },
     });
+    try {
+      const { notifyManualReservationCreated } = require('../../services/pmsNotifications');
+      await notifyManualReservationCreated(reservation, req.user);
+    } catch (_) {
+      /* non-blocking */
+    }
     res.status(201).json(reservation);
   } catch (e) {
     next(e);
@@ -1785,6 +1791,13 @@ router.post(
     if (rows[0].booking_id) {
       const { cancelWebsiteBooking } = require('../../services/bookingWorkflow');
       await cancelWebsiteBooking(rows[0].booking_id, reason || 'cancel_request');
+    }
+
+    try {
+      const { notifyCancelRequest } = require('../../services/pmsNotifications');
+      await notifyCancelRequest(rows[0], req.user, reason);
+    } catch (_) {
+      /* non-blocking */
     }
 
     res.json(rows[0]);
@@ -2131,6 +2144,17 @@ router.post(
         );
       }
       await syncReservationPaymentStatus(b.reservation_id);
+      if (!autoApprove) {
+        try {
+          const { rows: resRows } = await query(`SELECT * FROM reservations WHERE id = $1`, [
+            b.reservation_id,
+          ]);
+          const { notifyPaymentRecorded } = require('../../services/pmsNotifications');
+          await notifyPaymentRecorded(rows[0], resRows[0], req.user);
+        } catch (_) {
+          /* non-blocking */
+        }
+      }
     }
 
     res.status(201).json(rows[0]);
@@ -3149,12 +3173,25 @@ router.post('/owner-units', requireRoles('admin'), async (req, res, next) => {
 
 router.get('/notifications', async (req, res, next) => {
   try {
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 15));
     const { rows } = await query(
-      `SELECT * FROM notifications WHERE user_id = $1 OR user_id IS NULL
-       ORDER BY created_at DESC LIMIT 50`,
+      `SELECT * FROM notifications
+       WHERE user_id = $1 OR user_id IS NULL
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      [req.user.id, limit]
+    );
+    const unreadCount = rows.filter((n) => !n.is_read).length;
+    // Also count unread beyond the page so the badge stays accurate
+    const { rows: countRows } = await query(
+      `SELECT COUNT(*)::int AS c FROM notifications
+       WHERE (user_id = $1 OR user_id IS NULL) AND COALESCE(is_read, 0) = 0`,
       [req.user.id]
     );
-    sendList(res, rows);
+    res.json({
+      notifications: rows,
+      unreadCount: countRows[0]?.c ?? unreadCount,
+    });
   } catch (e) {
     next(e);
   }

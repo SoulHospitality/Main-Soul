@@ -4,7 +4,6 @@ const { quoteStay } = require('../services/pricing');
 const { initializePaymobCheckout } = require('../config/paymob');
 const { authGuest } = require('../middleware/auth');
 const { upload, attachCloudinaryUrls } = require('../config/cloudinary');
-const { emitSalesNotification } = require('../config/socket');
 
 const router = express.Router();
 
@@ -19,6 +18,10 @@ router.post('/checkout', authGuest, upload.array('id_photos', 10), attachCloudin
       checkin,
       checkout,
       guests,
+      adults,
+      teens,
+      children,
+      nanny_count,
       guest_name,
       guest_email,
       guest_phone,
@@ -32,11 +35,30 @@ router.post('/checkout', authGuest, upload.array('id_photos', 10), attachCloudin
     const unit = units[0];
     if (!unit) return res.status(404).json({ error: 'Listing not found' });
 
+    // Beach access scales with adults + teens (children). Nanny is excluded.
+    const teenCount = Math.max(0, parseInt(teens ?? children, 10) || 0);
+    const nannyCount = Math.max(0, parseInt(nanny_count, 10) || 0);
+    const adultCount = (() => {
+      const explicit = parseInt(adults, 10);
+      if (Number.isFinite(explicit) && explicit >= 1) return explicit;
+      const guestTotal = parseInt(guests, 10);
+      if (Number.isFinite(guestTotal) && guestTotal >= 1) {
+        return Math.max(1, guestTotal - teenCount - nannyCount);
+      }
+      return 1;
+    })();
+    const guestTotal = Math.max(
+      Number(guests) || 0,
+      adultCount + teenCount + nannyCount
+    );
+
     const quote = await quoteStay({
       wpPostId: unit.wp_post_id,
       checkin,
       checkout,
       unit,
+      adults: adultCount,
+      teens: teenCount,
     });
     if (!quote.available) return res.status(409).json({ error: quote.reason || 'Unavailable' });
 
@@ -68,7 +90,10 @@ router.post('/checkout', authGuest, upload.array('id_photos', 10), attachCloudin
         listing_title: unit.title,
         checkin,
         checkout,
-        guests: Number(guests),
+        guests: guestTotal,
+        adults: adultCount,
+        children: teenCount,
+        nanny_count: nannyCount,
         guest_name,
         guest_email,
         guest_phone,
@@ -110,8 +135,9 @@ router.post('/checkout', authGuest, upload.array('id_photos', 10), attachCloudin
       `INSERT INTO bookings
         (listing_slug, listing_wp_id, listing_title, checkin, checkout, guests, total_egp,
          guest_name, guest_email, guest_phone, status, notes, currency, hold_expires_at,
-         payment_status, payment_method, unit_id, id_photo_urls)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'pending',$11,'EGP',$12,'pending',$13,$14,$15)
+         payment_status, payment_method, unit_id, id_photo_urls,
+         adults, children, nanny_count)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'pending',$11,'EGP',$12,'pending',$13,$14,$15,$16,$17,$18)
        RETURNING *`,
       [
         unit.slug,
@@ -119,7 +145,7 @@ router.post('/checkout', authGuest, upload.array('id_photos', 10), attachCloudin
         unit.title,
         checkin,
         checkout,
-        Number(guests),
+        guestTotal,
         total,
         guest_name,
         guest_email,
@@ -129,6 +155,9 @@ router.post('/checkout', authGuest, upload.array('id_photos', 10), attachCloudin
         payment_method,
         unit.id,
         photoUrls,
+        adultCount,
+        teenCount,
+        nannyCount,
       ]
     );
 
@@ -313,28 +342,4 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-async function notifySales(booking) {
-  const { rows } = await query(
-    `SELECT id FROM staff_users WHERE role IN ('reservations_web','reservations','admin') AND is_active = 1`
-  );
-  for (const u of rows) {
-    await query(
-      `INSERT INTO sales_notifications (user_id, title, message, meta)
-       VALUES ($1,$2,$3,$4)`,
-      [
-        u.id,
-        'New booking request',
-        `${booking.guest_name} — ${booking.listing_title} (awaiting Accept)`,
-        JSON.stringify({ booking_id: booking.id }),
-      ]
-    );
-    emitSalesNotification(u.id, {
-      title: 'New booking request',
-      message: `${booking.guest_name} — ${booking.listing_title}`,
-      bookingId: booking.id,
-    });
-  }
-}
-
 module.exports = router;
-module.exports.notifySales = notifySales;

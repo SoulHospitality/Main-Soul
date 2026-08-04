@@ -18,6 +18,7 @@ function initSocket(server) {
         role === 'reservations_web' ||
         role === 'reservations_manual' ||
         role === 'admin' ||
+        role === 'finance' ||
         role === 'sales' ||
         role === 'Sales')
     ) {
@@ -33,9 +34,11 @@ function getIo() {
 }
 
 function emitSalesNotification(userId, payload) {
-  if (!io) return;
-  io.to(`sales-user:${userId}`).emit('sales:notification', payload);
-  io.to(`sales-user:${userId}`).emit('NEW_NOTIFICATION', payload);
+  if (!io || !userId) return;
+  const room = `sales-user:${userId}`;
+  io.to(room).emit('sales:notification', payload);
+  io.to(room).emit('pms:notification', payload);
+  io.to(room).emit('NEW_NOTIFICATION', payload);
 }
 
 module.exports = { initSocket, getIo, emitSalesNotification };

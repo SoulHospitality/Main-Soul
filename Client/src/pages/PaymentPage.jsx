@@ -117,10 +117,14 @@ export default function PaymentPage() {
       payload.append('slug', unit?.slug || '');
       payload.append('checkin', formState.checkInDate || '');
       payload.append('checkout', formState.checkOutDate || '');
-      payload.append(
-        'guests',
-        String(Number(formState.adults || 0) + Number(formState.children || 0))
-      );
+      const adults = Math.max(1, Number(formState.adults || 1));
+      const children = Math.max(0, Number(formState.children || 0));
+      const nannyCount = Math.max(0, Number(formState.nanny_count || formState.nanny || 0));
+      payload.append('adults', String(adults));
+      payload.append('children', String(children));
+      payload.append('teens', String(children));
+      payload.append('nanny_count', String(nannyCount));
+      payload.append('guests', String(adults + children + nannyCount));
       payload.append('guest_name', formState.fullName || '');
       payload.append('guest_phone', formState.phone || '');
       payload.append('guest_email', formState.email || '');

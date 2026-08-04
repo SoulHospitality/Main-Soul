@@ -855,6 +855,12 @@ router.post(
         evidenceUrl: req.file?.path || req.file?.secure_url || body.evidence_url || null,
         evidenceName: req.file?.originalname || body.evidence_name || null,
       });
+      try {
+        const { notifyWebsiteBookingAccepted } = require('../../services/pmsNotifications');
+        await notifyWebsiteBookingAccepted(booking, req.user);
+      } catch (_) {
+        /* non-blocking */
+      }
       res.json(booking);
     } catch (e) {
       next(e);
@@ -870,6 +876,12 @@ router.post('/website-bookings/:id/reject', requireRoles('reservations_web', 're
     }
     const { rejectWebsiteBooking } = require('../../services/bookingWorkflow');
     const booking = await rejectWebsiteBooking(req.params.id, req.user, reason);
+    try {
+      const { notifyWebsiteBookingRejected } = require('../../services/pmsNotifications');
+      await notifyWebsiteBookingRejected(booking, req.user, reason);
+    } catch (_) {
+      /* non-blocking */
+    }
     res.json(booking);
   } catch (e) {
     next(e);

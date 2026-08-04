@@ -1,44 +1,54 @@
 const cron = require('node-cron');
 const { query } = require('../config/db');
 const { refreshIcalBlocks } = require('../services/ical');
+const { notifyStaff, OPS_ROLES, ADMIN_ROLES } = require('../services/pmsNotifications');
 
 function startPmsReminderJobs() {
-  // 08:00 check-in reminders
+  // 08:00 check-in reminders (deduped per reservation/day)
   cron.schedule('0 8 * * *', async () => {
     try {
       const { rows } = await query(
-        `SELECT r.id, r.guest_name, u.title
+        `SELECT r.id, r.guest_name, u.title, u.unit_number
          FROM reservations r
          JOIN units u ON u.id = r.unit_id
          WHERE r.check_in = CURRENT_DATE AND r.status = 'confirmed'`
       );
       for (const r of rows) {
-        await query(
-          `INSERT INTO notifications (user_id, type, title, message, entity_type, entity_id)
-           SELECT id, 'checkin', 'Check-in today', $1, 'reservation', $2
-           FROM staff_users WHERE role IN ('admin','reservations') AND is_active = 1`,
-          [`${r.guest_name} — ${r.title}`, r.id]
-        );
+        const label = [r.guest_name, r.unit_number || r.title].filter(Boolean).join(' — ');
+        await notifyStaff({
+          roles: OPS_ROLES,
+          type: 'checkin_reminder',
+          title: 'Check-in today',
+          message: label,
+          entity_type: 'reservation',
+          entity_id: r.id,
+          dedupeSameDay: true,
+        });
       }
     } catch (err) {
       console.error('[cron checkin]', err.message);
     }
   });
 
-  // 09:00 payment pending
+  // 09:00 payment pending (admin only, deduped)
   cron.schedule('0 9 * * *', async () => {
     try {
       const { rows } = await query(
         `SELECT id, guest_name FROM reservations
-         WHERE payment_status = 'pending' AND status = 'confirmed' AND check_in >= CURRENT_DATE`
+         WHERE payment_status IN ('pending', 'partial')
+           AND status = 'confirmed'
+           AND check_in >= CURRENT_DATE`
       );
       for (const r of rows) {
-        await query(
-          `INSERT INTO notifications (user_id, type, title, message, entity_type, entity_id)
-           SELECT id, 'payment', 'Payment pending', $1, 'reservation', $2
-           FROM staff_users WHERE role IN ('admin') AND is_active = 1`,
-          [`${r.guest_name} still pending payment`, r.id]
-        );
+        await notifyStaff({
+          roles: ADMIN_ROLES,
+          type: 'payment_pending',
+          title: 'Payment pending',
+          message: `${r.guest_name} still has an unpaid balance`,
+          entity_type: 'reservation',
+          entity_id: r.id,
+          dedupeSameDay: true,
+        });
       }
     } catch (err) {
       console.error('[cron payment]', err.message);

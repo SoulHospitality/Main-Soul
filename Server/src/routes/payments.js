@@ -40,12 +40,22 @@ router.post('/paymob-webhook', async (req, res, next) => {
 
     const photoUrls = Array.isArray(payload.photo_urls) ? payload.photo_urls.filter(Boolean) : [];
 
+    const adultCount = Math.max(
+      1,
+      parseInt(payload.adults, 10) || parseInt(payload.guests, 10) || 1
+    );
+    const childCount = Math.max(0, parseInt(payload.children ?? payload.teens, 10) || 0);
+    const nannyCount = Math.max(0, parseInt(payload.nanny_count, 10) || 0);
+    const guestTotal =
+      Math.max(Number(payload.guests) || 0, adultCount + childCount + nannyCount) || adultCount;
+
     const { rows: bookings } = await query(
       `INSERT INTO bookings
         (listing_slug, listing_wp_id, listing_title, checkin, checkout, guests, total_egp,
          guest_name, guest_email, guest_phone, status, notes, currency, hold_expires_at,
-         payment_status, payment_method, unit_id, id_photo_urls)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'pending',$11,'EGP',NULL,'paid','paymob_card',$12,$13)
+         payment_status, payment_method, unit_id, id_photo_urls,
+         adults, children, nanny_count)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'pending',$11,'EGP',NULL,'paid','paymob_card',$12,$13,$14,$15,$16)
        RETURNING *`,
       [
         payload.slug,
@@ -53,7 +63,7 @@ router.post('/paymob-webhook', async (req, res, next) => {
         payload.listing_title,
         payload.checkin,
         payload.checkout,
-        payload.guests,
+        guestTotal,
         payload.total_egp,
         payload.guest_name,
         payload.guest_email,
@@ -61,6 +71,9 @@ router.post('/paymob-webhook', async (req, res, next) => {
         payload.notes || null,
         payload.unit_id,
         photoUrls,
+        adultCount,
+        childCount,
+        nannyCount,
       ]
     );
     const booking = bookings[0];
