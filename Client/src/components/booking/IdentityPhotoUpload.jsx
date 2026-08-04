@@ -161,12 +161,7 @@ export default function IdentityPhotoUpload({
         {error && <p className="mt-3 text-xs font-medium text-rose-600">{error}</p>}
       </div>
 
-      <div className="space-y-1 text-sm font-bold leading-5 text-red-600">
-        <p>{t('booking.idMandatory')}</p>
-        <p dir="rtl" lang="ar" className="text-right">
-          {t('booking.idMandatoryAr')}
-        </p>
-      </div>
+      <p className="text-sm font-bold leading-5 text-red-600">{t('booking.idMandatory')}</p>
     </div>
   );
 }
