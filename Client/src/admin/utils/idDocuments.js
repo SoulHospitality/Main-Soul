@@ -20,7 +20,7 @@ export function idDocumentPagePreviewUrl(url, page = 1) {
   const pg = Math.max(1, Number(page) || 1);
   if (/\/image\/upload\//i.test(s)) {
     return s
-      .replace('/image/upload/', `/image/upload/f_jpg,pg_${pg},q_auto,w_1200/`)
+      .replace('/image/upload/', `/image/upload/f_jpg,pg_${pg},q_auto:best,c_limit,w_1600/`)
       .replace(/\.pdf($|\?)/i, '.jpg$1');
   }
 
