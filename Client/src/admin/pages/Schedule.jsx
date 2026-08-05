@@ -177,8 +177,9 @@ function PriceEditorModal({
     return { from: rangeFrom, to: rangeTo };
   };
 
-  const removableBlock = blockSource === 'manual' || blockSource === 'owner';
-  const lockedBlock = blockSource === 'ical' || blockSource === 'reservation';
+  const removableBlock =
+    !!blockSource && blockSource !== 'reservation';
+  const lockedBlock = blockSource === 'reservation';
 
   const handleSave = () => {
     const p = parseFloat(price);
@@ -215,7 +216,11 @@ function PriceEditorModal({
           ? 'Reservation'
           : blockSource === 'manual'
             ? 'Manual block'
-            : null;
+            : blockSource === 'csv_import' || blockSource === 'soul_availability_xlsx'
+              ? 'Imported block'
+              : blockSource
+                ? `${blockSource} block`
+                : null;
 
   return (
     <Modal open={open} onClose={onClose} title="Edit night" size="sm"
@@ -279,7 +284,7 @@ function PriceEditorModal({
             Calendar block
           </div>
           <p className="text-xs text-violet-800">
-            Blocks close the night to guests without creating a reservation. OTA and booked nights cannot be cleared here.
+            Blocks close the night to guests without creating a reservation. Reservation nights stay booked until cancelled.
           </p>
           <div className="flex flex-wrap gap-2">
             <button
@@ -293,14 +298,14 @@ function PriceEditorModal({
             <button
               type="button"
               onClick={handleUnblock}
-              disabled={saving || (!removableBlock && !!blockSource) || lockedBlock}
+              disabled={saving || lockedBlock}
               className="btn-secondary text-rose-700 border-rose-200 hover:bg-rose-50 disabled:opacity-40"
               title={
                 lockedBlock
-                  ? 'OTA / reservation blocks cannot be cleared here'
+                  ? 'Cancel the reservation to free this night'
                   : removableBlock
-                    ? 'Remove manual or owner block for this range'
-                    : 'No removable block on this night — still works for a range with blocks'
+                    ? 'Remove calendar block for this range'
+                    : 'Clear any calendar blocks in the selected range'
               }
             >
               Unblock nights
@@ -308,7 +313,7 @@ function PriceEditorModal({
           </div>
           {lockedBlock && (
             <p className="text-[11px] font-medium text-rose-700">
-              This night is locked by {blockSource === 'ical' ? 'an OTA calendar' : 'a reservation'} and cannot be unblocked here.
+              This night is held by a reservation. Cancel or edit that booking to free it.
             </p>
           )}
         </div>
@@ -860,9 +865,17 @@ export default function Schedule() {
 
   const blockMap = useMemo(() => {
     const m = {};
+    const priority = { reservation: 3, ical: 2, owner: 1, manual: 1 };
     for (const b of calendarBlocks) {
       if (!m[b.unit_id]) m[b.unit_id] = {};
-      m[b.unit_id][String(b.date).split('T')[0]] = b.source;
+      const dateKey = String(b.date).split('T')[0];
+      const prev = m[b.unit_id][dateKey];
+      const prevRank = priority[prev] || 0;
+      const nextRank = priority[b.source] || 0;
+      // Prefer reservation over calendar blocks; otherwise keep last non-empty source.
+      if (!prev || nextRank >= prevRank) {
+        m[b.unit_id][dateKey] = b.source;
+      }
     }
     return m;
   }, [calendarBlocks]);
@@ -930,10 +943,22 @@ export default function Schedule() {
         to_date,
         clear: !!clear,
       }),
-    onSuccess: (_, { clear }) => {
+    onSuccess: (res, { clear }) => {
       qc.invalidateQueries({ queryKey: ['calendar-blocks'] });
       qc.invalidateQueries({ queryKey: ['blocked-dates'] });
-      toast.success(clear ? 'Nights unblocked' : 'Nights blocked');
+      qc.invalidateQueries({ queryKey: ['schedule'] });
+      if (clear) {
+        const still = res?.data?.still_reserved || [];
+        if (still.length) {
+          toast.success(
+            `Unblocked calendar nights. ${still.length} night${still.length === 1 ? '' : 's'} still held by reservation(s).`
+          );
+        } else {
+          toast.success('Nights unblocked');
+        }
+      } else {
+        toast.success('Nights blocked');
+      }
       setPriceModal(false);
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Error updating blocks'),

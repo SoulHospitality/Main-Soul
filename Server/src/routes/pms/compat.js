@@ -780,15 +780,48 @@ router.put('/blocked-dates/:unitId', requireRoles('admin'), async (req, res, nex
     const rangeTo = nights[nights.length - 1];
 
     if (clear) {
-      const { rowCount } = await query(
+      // Admins may clear any calendar block row (manual, owner, imports, etc.)
+      // and the iCal cache for those nights. Active reservations still occupy
+      // the night until cancelled — those are not deleted here.
+      const deletedBlocks = await query(
         `DELETE FROM unit_blocked_dates
          WHERE wp_post_id = $1
            AND date >= $2::date
            AND date <= $3::date
-           AND source IN ('manual', 'owner')`,
+         RETURNING date::text AS date, COALESCE(source, 'manual') AS source`,
         [wp, rangeFrom, rangeTo]
       );
-      return res.json({ ok: true, cleared: rowCount, from_date: rangeFrom, to_date: rangeTo });
+      const deletedIcal = await query(
+        `DELETE FROM unit_ical_blocks
+         WHERE wp_post_id = $1
+           AND date >= $2::date
+           AND date <= $3::date
+         RETURNING date::text AS date`,
+        [wp, rangeFrom, rangeTo]
+      );
+
+      const { rows: stillReserved } = await query(
+        `SELECT DISTINCT d::text AS date
+         FROM reservations r
+         JOIN units u ON u.id = r.unit_id
+         , generate_series(r.check_in, r.check_out - 1, interval '1 day') d
+         WHERE u.wp_post_id = $1
+           AND r.status <> 'cancelled'
+           AND d >= $2::date AND d <= $3::date
+         ORDER BY 1`,
+        [wp, rangeFrom, rangeTo]
+      );
+
+      const cleared = deletedBlocks.rowCount + deletedIcal.rowCount;
+      return res.json({
+        ok: true,
+        cleared,
+        cleared_blocks: deletedBlocks.rowCount,
+        cleared_ical: deletedIcal.rowCount,
+        still_reserved: stillReserved.map((r) => r.date),
+        from_date: rangeFrom,
+        to_date: rangeTo,
+      });
     }
 
     let n = 0;
