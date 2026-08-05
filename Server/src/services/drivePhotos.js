@@ -2,7 +2,16 @@
  * Resolve image URLs from a public Google Drive folder link.
  * Prefer Drive API when GOOGLE_API_KEY / GOOGLE_DRIVE_API_KEY is set;
  * otherwise scrape the public embedded folder view.
+ *
+ * Only real photo files are returned — never videos or video frame/snapshot
+ * thumbnails that Drive serves for video IDs.
  */
+
+const IMAGE_EXT_RE = /\.(jpe?g|png|gif|webp|bmp|heic|avif)$/i;
+const VIDEO_EXT_RE = /\.(mp4|m4v|mov|webm|avi|mkv|mpeg|mpg|wmv|flv|3gp|mts|m2ts)$/i;
+/** Drive/export thumbs like clip.mp4.jpg or video.mov.png */
+const VIDEO_SNAPSHOT_NAME_RE =
+  /\.(mp4|m4v|mov|webm|avi|mkv|mpeg|mpg|wmv|flv|3gp|mts|m2ts)\.(jpe?g|png|gif|webp|bmp)$/i;
 
 function extractFolderId(input) {
   const raw = String(input || '').trim();
@@ -27,16 +36,46 @@ function driveImageUrl(fileId) {
   return `https://lh3.googleusercontent.com/d/${fileId}`;
 }
 
+function isVideoMime(mime) {
+  const m = String(mime || '').toLowerCase();
+  return m.startsWith('video/') || m === 'application/vnd.google-apps.video';
+}
+
 function isImageMime(mime) {
-  return String(mime || '').startsWith('image/');
+  const m = String(mime || '').toLowerCase();
+  if (!m.startsWith('image/')) return false;
+  // SVG / icons aren't unit gallery photos
+  if (m.includes('svg') || m.includes('icon')) return false;
+  return true;
 }
 
 function isImageName(name) {
-  return /\.(jpe?g|png|gif|webp|bmp|heic|avif)$/i.test(String(name || ''));
+  const n = String(name || '').trim();
+  if (!n) return false;
+  if (VIDEO_EXT_RE.test(n) || VIDEO_SNAPSHOT_NAME_RE.test(n)) return false;
+  return IMAGE_EXT_RE.test(n);
+}
+
+function isVideoName(name) {
+  const n = String(name || '').trim();
+  return VIDEO_EXT_RE.test(n) || VIDEO_SNAPSHOT_NAME_RE.test(n);
+}
+
+/** Keep only photo files; drop videos and video snapshot/thumbnail names. */
+function isGalleryPhoto({ mimeType, name } = {}) {
+  if (isVideoMime(mimeType) || isVideoName(name)) return false;
+  if (mimeType) return isImageMime(mimeType);
+  return isImageName(name);
 }
 
 async function listViaApi(folderId, apiKey) {
-  const q = `'${folderId}' in parents and trashed=false`;
+  // Restrict at query time so videos never enter the result set.
+  const q = [
+    `'${folderId}' in parents`,
+    'trashed=false',
+    "mimeType contains 'image/'",
+  ].join(' and ');
+
   const params = new URLSearchParams({
     q,
     fields: 'files(id,name,mimeType)',
@@ -52,8 +91,49 @@ async function listViaApi(folderId, apiKey) {
   }
   const data = await res.json();
   return (data.files || [])
-    .filter((f) => isImageMime(f.mimeType) || isImageName(f.name))
+    .filter((f) => isGalleryPhoto(f))
     .map((f) => ({ id: f.id, name: f.name, url: driveImageUrl(f.id) }));
+}
+
+/**
+ * Parse embedded folder HTML into { id, name } pairs when possible.
+ * Falls back to bare IDs only when a nearby image-looking name is found.
+ */
+function parseEmbeddedEntries(html, folderId) {
+  const byId = new Map();
+
+  // Prefer entries that include a filename near the file id.
+  const namedPatterns = [
+    /\/file\/d\/([a-zA-Z0-9_-]{10,})[^<]{0,200}?>([^<]{1,180})</gi,
+    /data-id=["']([a-zA-Z0-9_-]{10,})["'][^>]{0,120}aria-label=["']([^"']+)["']/gi,
+    /aria-label=["']([^"']+)["'][^>]{0,120}data-id=["']([a-zA-Z0-9_-]{10,})["']/gi,
+    /\\x22([a-zA-Z0-9_-]{10,})\\x22[^\\]{0,80}\\x22([^\\x"]+\.(?:jpe?g|png|gif|webp|bmp|heic|avif|mp4|mov|webm|avi|mkv))\\x22/gi,
+  ];
+
+  for (const re of namedPatterns) {
+    for (const m of html.matchAll(re)) {
+      let id;
+      let name;
+      if (re.source.startsWith('aria-label')) {
+        name = m[1];
+        id = m[2];
+      } else {
+        id = m[1];
+        name = m[2];
+      }
+      if (!id || id === folderId) continue;
+      const cleanName = String(name || '')
+        .replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .trim();
+      if (!byId.has(id) || cleanName) byId.set(id, { id, name: cleanName || id });
+    }
+  }
+
+  // Also collect any remaining ids, but only keep them if we already have a name
+  // from a named pattern — bare video ids must not become gallery photos.
+  return [...byId.values()];
 }
 
 async function listViaEmbeddedView(folderId) {
@@ -71,18 +151,69 @@ async function listViaEmbeddedView(folderId) {
     if (!res.ok) throw new Error(`Drive folder view HTTP ${res.status}`);
     const html = await res.text();
 
-    const ids = new Set();
-    for (const m of html.matchAll(/\/file\/d\/([a-zA-Z0-9_-]{10,})/g)) ids.add(m[1]);
-    for (const m of html.matchAll(/\/d\/([a-zA-Z0-9_-]{10,})/g)) ids.add(m[1]);
-    for (const m of html.matchAll(/data-id=["']([a-zA-Z0-9_-]{10,})["']/g)) ids.add(m[1]);
-    for (const m of html.matchAll(/lh3\.googleusercontent\.com\/d\/([a-zA-Z0-9_-]{10,})/g)) {
-      ids.add(m[1]);
+    const entries = parseEmbeddedEntries(html, folderId);
+    const photos = entries
+      .filter((f) => isGalleryPhoto({ name: f.name }))
+      .map((f) => ({ id: f.id, name: f.name, url: driveImageUrl(f.id) }));
+
+    // If we couldn't associate filenames (sparse HTML), fall back to probing
+    // content-type so video IDs that serve as snapshot thumbs are dropped.
+    if (!photos.length) {
+      const ids = new Set();
+      for (const m of html.matchAll(/\/file\/d\/([a-zA-Z0-9_-]{10,})/g)) ids.add(m[1]);
+      for (const m of html.matchAll(/lh3\.googleusercontent\.com\/d\/([a-zA-Z0-9_-]{10,})/g)) {
+        ids.add(m[1]);
+      }
+      ids.delete(folderId);
+
+      const probed = [];
+      for (const id of ids) {
+        const ok = await looksLikeImageUrl(driveImageUrl(id));
+        if (ok) probed.push({ id, name: id, url: driveImageUrl(id) });
+      }
+      return probed;
     }
 
-    // Drop the folder id itself if it appeared
-    ids.delete(folderId);
+    return photos;
+  } finally {
+    clearTimeout(t);
+  }
+}
 
-    return [...ids].map((id) => ({ id, name: id, url: driveImageUrl(id) }));
+async function looksLikeImageUrl(url) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    let res = await fetch(url, {
+      method: 'HEAD',
+      redirect: 'follow',
+      signal: ctrl.signal,
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (compatible; SoulHospitality/1.0; +https://soulhospitality.co)',
+      },
+    });
+    // Some Drive CDN endpoints reject HEAD — try a tiny ranged GET.
+    if (!res.ok || !res.headers.get('content-type')) {
+      res = await fetch(url, {
+        method: 'GET',
+        redirect: 'follow',
+        signal: ctrl.signal,
+        headers: {
+          Range: 'bytes=0-0',
+          'User-Agent':
+            'Mozilla/5.0 (compatible; SoulHospitality/1.0; +https://soulhospitality.co)',
+        },
+      });
+    }
+    const type = String(res.headers.get('content-type') || '').toLowerCase();
+    if (type.startsWith('video/')) return false;
+    if (type.startsWith('image/')) return true;
+    // Video thumbnails sometimes come back as octet-stream / webp from the
+    // video file id — without an image filename we cannot trust them.
+    return false;
+  } catch {
+    return false;
   } finally {
     clearTimeout(t);
   }
@@ -113,9 +244,12 @@ async function resolveDriveFolderPhotos(folderUrlOrId) {
     files = await listViaEmbeddedView(folderId);
   }
 
+  // Final safety pass
+  files = files.filter((f) => isGalleryPhoto(f));
+
   if (!files.length) {
     const err = new Error(
-      'No images found in that Drive folder. Make sure the folder is shared as “Anyone with the link”, and contains image files.'
+      'No images found in that Drive folder. Make sure the folder is shared as “Anyone with the link”, and contains image files (not videos).'
     );
     err.status = 400;
     throw err;
@@ -132,4 +266,7 @@ module.exports = {
   extractFolderId,
   resolveDriveFolderPhotos,
   driveImageUrl,
+  isGalleryPhoto,
+  isImageMime,
+  isImageName,
 };
