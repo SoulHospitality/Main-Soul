@@ -76,23 +76,70 @@ async function listViaApi(folderId, apiKey) {
     "mimeType contains 'image/'",
   ].join(' and ');
 
-  const params = new URLSearchParams({
-    q,
-    fields: 'files(id,name,mimeType)',
-    pageSize: '100',
-    supportsAllDrives: 'true',
-    includeItemsFromAllDrives: 'true',
-    key: apiKey,
-  });
-  const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`);
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`Drive API ${res.status}: ${text.slice(0, 200)}`);
-  }
-  const data = await res.json();
-  return (data.files || [])
+  const files = [];
+  let pageToken = null;
+  do {
+    const params = new URLSearchParams({
+      q,
+      fields: 'nextPageToken,files(id,name,mimeType)',
+      orderBy: 'name_natural',
+      pageSize: '1000',
+      supportsAllDrives: 'true',
+      includeItemsFromAllDrives: 'true',
+      key: apiKey,
+    });
+    if (pageToken) params.set('pageToken', pageToken);
+
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`);
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`Drive API ${res.status}: ${text.slice(0, 200)}`);
+    }
+    const data = await res.json();
+    files.push(...(data.files || []));
+    pageToken = data.nextPageToken || null;
+  } while (pageToken);
+
+  return files
     .filter((f) => isGalleryPhoto(f))
-    .map((f) => ({ id: f.id, name: f.name, url: driveImageUrl(f.id) }));
+    .map((f) => ({ id: f.id, name: f.name, mimeType: f.mimeType, url: driveImageUrl(f.id) }));
+}
+
+function decodeHtmlText(value) {
+  return String(value || '')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .trim();
+}
+
+/**
+ * Current embeddedfolderview markup: one `flip-entry` block per file, carrying
+ * the file id on the wrapper, the filename in `.flip-entry-title`, and the mime
+ * type in the list icon URL (…/type/image/jpeg).
+ */
+function parseFlipEntries(html, folderId) {
+  const byId = new Map();
+  const chunks = String(html).split(/<div class="flip-entry"/i).slice(1);
+
+  for (const chunk of chunks) {
+    const id =
+      chunk.match(/id="entry-([a-zA-Z0-9_-]{10,})"/i)?.[1] ||
+      chunk.match(/\/file\/d\/([a-zA-Z0-9_-]{10,})/i)?.[1];
+    if (!id || id === folderId) continue;
+
+    const name = decodeHtmlText(
+      chunk.match(/class="flip-entry-title"[^>]*>([^<]{1,200})</i)?.[1]
+    );
+    const mimeType =
+      chunk.match(/\/type\/((?:image|video|audio|text|application)\/[a-z0-9.+-]+)/i)?.[1] || null;
+
+    byId.set(id, { id, name: name || id, mimeType });
+  }
+
+  return [...byId.values()];
 }
 
 /**
@@ -100,6 +147,9 @@ async function listViaApi(folderId, apiKey) {
  * Falls back to bare IDs only when a nearby image-looking name is found.
  */
 function parseEmbeddedEntries(html, folderId) {
+  const flipEntries = parseFlipEntries(html, folderId);
+  if (flipEntries.length) return flipEntries;
+
   const byId = new Map();
 
   // Prefer entries that include a filename near the file id.
@@ -153,8 +203,13 @@ async function listViaEmbeddedView(folderId) {
 
     const entries = parseEmbeddedEntries(html, folderId);
     const photos = entries
-      .filter((f) => isGalleryPhoto({ name: f.name }))
-      .map((f) => ({ id: f.id, name: f.name, url: driveImageUrl(f.id) }));
+      .filter((f) => isGalleryPhoto(f))
+      .map((f) => ({
+        id: f.id,
+        name: f.name,
+        mimeType: f.mimeType || null,
+        url: driveImageUrl(f.id),
+      }));
 
     // If we couldn't associate filenames (sparse HTML), fall back to probing
     // content-type so video IDs that serve as snapshot thumbs are dropped.
@@ -168,8 +223,8 @@ async function listViaEmbeddedView(folderId) {
 
       const probed = [];
       for (const id of ids) {
-        const ok = await looksLikeImageUrl(driveImageUrl(id));
-        if (ok) probed.push({ id, name: id, url: driveImageUrl(id) });
+        const mimeType = await probeImageMime(driveImageUrl(id));
+        if (mimeType) probed.push({ id, name: id, mimeType, url: driveImageUrl(id) });
       }
       return probed;
     }
@@ -180,7 +235,8 @@ async function listViaEmbeddedView(folderId) {
   }
 }
 
-async function looksLikeImageUrl(url) {
+/** @returns {Promise<string|null>} the image mime type, or null when not an image. */
+async function probeImageMime(url) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 6000);
   try {
@@ -206,14 +262,17 @@ async function looksLikeImageUrl(url) {
         },
       });
     }
-    const type = String(res.headers.get('content-type') || '').toLowerCase();
-    if (type.startsWith('video/')) return false;
-    if (type.startsWith('image/')) return true;
+    const type = String(res.headers.get('content-type') || '')
+      .split(';')[0]
+      .trim()
+      .toLowerCase();
+    if (type.startsWith('video/')) return null;
+    if (type.startsWith('image/')) return type;
     // Video thumbnails sometimes come back as octet-stream / webp from the
     // video file id — without an image filename we cannot trust them.
-    return false;
+    return null;
   } catch {
-    return false;
+    return null;
   } finally {
     clearTimeout(t);
   }
