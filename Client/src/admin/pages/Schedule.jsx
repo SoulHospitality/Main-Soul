@@ -793,8 +793,33 @@ export default function Schedule() {
   // ── Compute display dates (1–3 month horizon like soul-website admin calendar)
   const defaultFrom = isoDate(new Date(viewYear, viewMonth, 1));
   const defaultTo   = isoDate(new Date(viewYear, viewMonth + spanMonths, 1)); // exclusive
-  const fromStr     = filterFrom || defaultFrom;
-  const toStr       = filterTo ? addDays(filterTo, 1) : defaultTo;
+
+  // A From/To filter can point outside the month being viewed, so build the
+  // window around whichever bound was given instead of combining a filter date
+  // with the unrelated month default (which could produce zero columns).
+  const { fromStr, toStr } = useMemo(() => {
+    const monthStart = (dateStr) => {
+      const [y, m] = String(dateStr).split('-').map(Number);
+      return isoDate(new Date(y, m - 1, 1));
+    };
+    const monthEnd = (dateStr, months) => {
+      const [y, m] = String(dateStr).split('-').map(Number);
+      return isoDate(new Date(y, m - 1 + months, 1));
+    };
+
+    if (filterFrom && filterTo) {
+      const start = filterFrom <= filterTo ? filterFrom : filterTo;
+      const end   = filterFrom <= filterTo ? filterTo : filterFrom;
+      return { fromStr: start, toStr: addDays(end, 1) };
+    }
+    if (filterFrom) {
+      return { fromStr: filterFrom, toStr: monthEnd(filterFrom, spanMonths) };
+    }
+    if (filterTo) {
+      return { fromStr: monthStart(filterTo), toStr: addDays(filterTo, 1) };
+    }
+    return { fromStr: defaultFrom, toStr: defaultTo };
+  }, [filterFrom, filterTo, defaultFrom, defaultTo, spanMonths]);
 
   const displayDates = useMemo(() => {
     const days = [];
@@ -1142,10 +1167,20 @@ export default function Schedule() {
         if (parseInt(unit.floor) !== parseInt(filterFloor)) return false;
       }
 
-      // ── Price range filter
-      const unitPrice = parseFloat(unit.price_per_night) || 0;
-      if (priceMin !== null && unitPrice < priceMin) return false;
-      if (priceMax !== null && unitPrice > priceMax) return false;
+      // ── Price range filter — match the nightly rates shown in the grid,
+      // falling back to the unit default only when no night is priced.
+      if (priceMin !== null || priceMax !== null) {
+        const nightly = displayDates
+          .map((d) => priceMap[unit.id]?.[isoDate(d)])
+          .filter((p) => p != null && p > 0);
+        const fallbackPrice = parseFloat(unit.price_per_night) || 0;
+        const prices = nightly.length ? nightly : (fallbackPrice > 0 ? [fallbackPrice] : []);
+        if (!prices.length) return false;
+        const lowest = Math.min(...prices);
+        const highest = Math.max(...prices);
+        if (priceMin !== null && highest < priceMin) return false;
+        if (priceMax !== null && lowest > priceMax) return false;
+      }
 
       const ur = allReservations.filter(r => r.unit_id === unit.id && r.status !== 'cancelled');
       const lastD  = displayDates[displayDates.length - 1];
@@ -1153,17 +1188,23 @@ export default function Schedule() {
       if (!lastD || !firstD) return true;
       const last  = isoDate(lastD);
       const first = isoDate(firstD);
+      const unitBlocks = blockMap[unit.id] || {};
+      const blockedNightsInView = Object.keys(unitBlocks).filter(
+        (d) => d >= first && d <= last
+      );
 
       // ── Available-only filter
       if (filterAvailable) {
         const hasOverlap = ur.some(r => normDate(r.check_in) < toStr && normDate(r.check_out) > fromStr);
         if (hasOverlap) return false;
+        if (blockedNightsInView.length > 0) return false;
       }
 
       // ── Color filter
       if (!filterColor) return true;
       if (filterColor === 'hold')              return ur.some(r => (r.is_hold || r.status === 'hold') && normDate(r.check_in) <= last && normDate(r.check_out) > first);
-      if (filterColor === 'blocked')           return ur.some(r => r.is_owner_reservation && !r.is_hold && parseFloat(r.total_amount) === 0 && normDate(r.check_in) <= last && normDate(r.check_out) > first);
+      if (filterColor === 'blocked')           return ur.some(r => r.is_owner_reservation && !r.is_hold && parseFloat(r.total_amount) === 0 && normDate(r.check_in) <= last && normDate(r.check_out) > first)
+                                                 || blockedNightsInView.some((d) => unitBlocks[d] !== 'reservation');
       if (filterColor === 'owner')             return ur.some(r => r.is_owner_reservation && !r.is_hold && normDate(r.check_in) <= last && normDate(r.check_out) > first);
       if (filterColor === 'sales')             return ur.some(r => !r.is_owner_reservation && !r.is_hold && normDate(r.check_in) <= last && normDate(r.check_out) > first);
       if (filterColor === 'checkout_tomorrow') return ur.some(r => !r.is_hold && normDate(r.check_out) === TOMORROW);
@@ -1172,7 +1213,7 @@ export default function Schedule() {
       return true;
     });
     return sortUnits(filtered);
-  }, [data, filterColor, filterUnits, filterFloor, filterPriceMin, filterPriceMax, filterAvailable, allReservations, displayDates, fromStr, toStr, TODAY, TOMORROW]);
+  }, [data, filterColor, filterUnits, filterFloor, filterPriceMin, filterPriceMax, filterAvailable, allReservations, displayDates, priceMap, blockMap, fromStr, toStr, TODAY, TOMORROW]);
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
@@ -1402,9 +1443,16 @@ export default function Schedule() {
                   </div>
                   {(() => {
                     const q = unitPickerSearch.trim().toLowerCase();
-                    const pool = sortUnits((data?.units || []).filter((u) => !filterProject || u.project === filterProject));
+                    const wantProject = filterProject.trim().toLowerCase();
+                    const pool = sortUnits(
+                      (data?.units || []).filter(
+                        (u) =>
+                          !wantProject ||
+                          String(u.project || u.compound || '').trim().toLowerCase() === wantProject
+                      )
+                    );
                     const visible = q
-                      ? pool.filter((u) => u.name.toLowerCase().includes(q) || (u.unit_number || '').toLowerCase().includes(q))
+                      ? pool.filter((u) => String(u.name || '').toLowerCase().includes(q) || String(u.unit_number || '').toLowerCase().includes(q))
                       : pool;
                     if (visible.length === 0) {
                       return <p className="px-3 py-4 text-center text-sm text-soul-muted">No units found</p>;
