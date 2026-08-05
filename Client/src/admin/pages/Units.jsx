@@ -302,7 +302,7 @@ function UnitForm({ form, setForm, listingType = 'rent' }) {
             )}
           </select>
         </div>
-        <div><label className="label">Unit Number *</label><input className="input" value={form.unit_number} onChange={e => setForm(f => ({ ...f, unit_number: e.target.value }))} placeholder="e.g. A101" /></div>
+        <div><label className="label">Unit Number *</label><input className="input" value={form.unit_number} onChange={e => setForm(f => ({ ...f, unit_number: e.target.value.toUpperCase() }))} placeholder="e.g. A101" /></div>
         <div>
           <label className="label">Type *</label>
           <SearchableSelect value={form.type} onChange={v => setForm(f => ({ ...f, type: v }))}

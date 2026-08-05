@@ -111,6 +111,12 @@ function toText(value, fallback = null) {
   return s || fallback;
 }
 
+/** Unit codes are always uppercase on the website (CL10-11B-02, not cl10-11b-02). */
+function normalizeUnitNumber(value, fallback = null) {
+  const text = toText(value, fallback);
+  return text ? text.toUpperCase() : fallback;
+}
+
 function mapUnitRow(u) {
   const details = parseOtherDetails(u.other_details);
   const project = normalizeProjectName(u.project || u.compound);
@@ -119,6 +125,7 @@ function mapUnitRow(u) {
     ...u,
     compound,
     project,
+    unit_number: u.unit_number ? String(u.unit_number).toUpperCase() : u.unit_number,
     name: u.title,
     bedrooms: u.beds,
     bathrooms: u.baths,
@@ -734,7 +741,7 @@ router.post('/units', requireRoles('admin', 'resale', 'reservations_web', 'reser
       destination: area,
     });
     const utilitiesCost = listingType === 'sale' ? null : toNum(b.utilities_cost);
-    const unitNumber = toText(b.unit_number);
+    const unitNumber = normalizeUnitNumber(b.unit_number);
     const view = toText(b.view);
     const floorRaw = b.floor != null && b.floor !== '' ? b.floor : null;
     const description = toText(b.the_property || b.description || b.short_description);
@@ -1044,7 +1051,7 @@ async function updateUnitHandler(req, res, next) {
         toNum(b.commission_tenant_pct),
         toNum(b.utilities_cost),
         opsStatus,
-        b.unit_number !== undefined ? toText(b.unit_number) : null,
+        b.unit_number !== undefined ? normalizeUnitNumber(b.unit_number) : null,
         b.internal_code !== undefined ? toText(b.internal_code) : null,
         b.price_per_night !== undefined || b.price_fallback !== undefined
           ? toNum(b.price_per_night ?? b.price_fallback, { int: true })
