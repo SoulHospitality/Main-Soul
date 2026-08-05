@@ -139,9 +139,7 @@ async function main() {
   const { rows: staff } = await query(
     `SELECT id, full_name FROM staff_users WHERE full_name IS NOT NULL`
   );
-  const staffByName = new Map(
-    staff.map((s) => [normName(s.full_name), s.id])
-  );
+  const { matchSalesLabelToStaff } = require('../src/lib/salesNameMatch');
 
   function resolveSales(label) {
     const raw = String(label || '').trim();
@@ -149,8 +147,12 @@ async function main() {
     if (/^owner$/i.test(raw)) {
       return { isOwner: true, salesPersonId: null, salesLabel: 'Owner' };
     }
-    const id = staffByName.get(normName(raw)) || null;
-    return { isOwner: false, salesPersonId: id, salesLabel: raw };
+    const match = matchSalesLabelToStaff(raw, staff);
+    return {
+      isOwner: false,
+      salesPersonId: match?.staff?.id || null,
+      salesLabel: raw,
+    };
   }
 
   const { rows: adminRows } = await query(

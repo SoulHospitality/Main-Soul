@@ -922,6 +922,9 @@ export default function Reservations() {
     user,
   } = usePermissions();
   const allowPastDates = isReservations || isAdmin;
+  const agentOnly =
+    !isAdmin && (isWebsiteReservations || isManualReservations || isReservations);
+  const pageTitle = agentOnly ? 'My Reservations' : 'Reservations';
   const [searchParams] = useSearchParams();
   const [search, setSearch] = useState(searchParams.get('search') || '');
   const [filterStatus,      setFilterStatus]      = useState('');
@@ -1287,7 +1290,7 @@ export default function Reservations() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="page-header mb-0">
-          <h1 className="page-title">Reservations</h1>
+          <h1 className="page-title">{pageTitle}</h1>
           <p className="page-subtitle">{filteredByUnit.length} reservation{filteredByUnit.length !== 1 ? 's' : ''}{ownerStays.length > 0 && canSeeOwnerStays ? ` · ${ownerStays.length} owner stay${ownerStays.length !== 1 ? 's' : ''}` : ''}</p>
         </div>
         <div className="flex gap-2">

@@ -1,4 +1,5 @@
 const { query } = require('../config/db');
+const { salesLabelBelongsToUser } = require('./salesNameMatch');
 
 const RESERVATIONS_TEAM_ROLES = new Set([
   'reservations',
@@ -81,19 +82,53 @@ async function pickLeastLoadedReservationsAgent() {
   return admins[0]?.id ?? null;
 }
 
-/** SQL fragment restricting reservation rows to the logged-in reservations agent. */
+/**
+ * SQL fragment restricting reservation rows to the logged-in reservations agent.
+ * Matches sales_person_id, created_by, or sales_label text close to the agent's name
+ * (covers Excel imports that only stored the sales name).
+ */
 function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
   if (!isReservationsTeam(user)) {
     return { clause: '', params: [], nextIndex: paramIndex };
   }
 
-  // Own bookings: assigned sales person or creator (covers edge cases)
+  const name = String(user.full_name || '').trim();
+  const params = [user.id];
+  let nextIndex = paramIndex + 1;
+
+  // Own bookings: assigned sales person, creator, or sales_label text match
   let clause = ` AND (
     ${alias}.sales_person_id = $${paramIndex}
-    OR ${alias}.created_by = $${paramIndex}
+    OR ${alias}.created_by = $${paramIndex}`;
+
+  if (name) {
+    const nameParam = nextIndex;
+    params.push(name);
+    nextIndex += 1;
+    // Normalize spaces in SQL; include containment for "Amira Hesham" vs "Amira Hesham X"
+    clause += `
+    OR (
+      ${alias}.sales_label IS NOT NULL
+      AND btrim(${alias}.sales_label) <> ''
+      AND lower(btrim(${alias}.sales_label)) NOT IN ('owner')
+      AND (
+        lower(regexp_replace(btrim(${alias}.sales_label), '\\s+', ' ', 'g'))
+          = lower(regexp_replace(btrim($${nameParam}), '\\s+', ' ', 'g'))
+        OR lower(regexp_replace(btrim(${alias}.sales_label), '\\s+', ' ', 'g'))
+          LIKE lower(regexp_replace(btrim($${nameParam}), '\\s+', ' ', 'g')) || ' %'
+        OR lower(regexp_replace(btrim($${nameParam}), '\\s+', ' ', 'g'))
+          LIKE lower(regexp_replace(btrim(${alias}.sales_label), '\\s+', ' ', 'g')) || ' %'
+        OR (
+          length(btrim($${nameParam})) >= 4
+          AND lower(regexp_replace(btrim(${alias}.sales_label), '\\s+', ' ', 'g'))
+            LIKE '%' || lower(regexp_replace(btrim($${nameParam}), '\\s+', ' ', 'g')) || '%'
+        )
+      )
+    )`;
+  }
+
+  clause += `
   )`;
-  const params = [user.id];
-  const nextIndex = paramIndex + 1;
 
   if (user.role === 'reservations_web') {
     clause += ` AND (${alias}.booking_id IS NOT NULL OR LOWER(COALESCE(${alias}.booking_source, '')) = 'website')`;
@@ -128,7 +163,7 @@ function bookingAssigneeClause(user, alias = 'b', paramIndex = 1) {
 
 async function loadReservationAccess(id) {
   const { rows } = await query(
-    `SELECT id, sales_person_id, created_by, booking_id, booking_source, status
+    `SELECT id, sales_person_id, created_by, booking_id, booking_source, status, sales_label
      FROM reservations WHERE id = $1`,
     [id]
   );
@@ -149,7 +184,8 @@ function assertReservationOwned(user, reservation) {
   const mine =
     reservation &&
     (Number(reservation.sales_person_id) === Number(user.id) ||
-      Number(reservation.created_by) === Number(user.id));
+      Number(reservation.created_by) === Number(user.id) ||
+      salesLabelBelongsToUser(reservation.sales_label, user));
   if (!mine) {
     const err = new Error('You can only access your own reservations');
     err.status = 403;
