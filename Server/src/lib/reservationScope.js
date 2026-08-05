@@ -130,11 +130,10 @@ function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
   clause += `
   )`;
 
-  if (user.role === 'reservations_web') {
-    clause += ` AND (${alias}.booking_id IS NOT NULL OR LOWER(COALESCE(${alias}.booking_source, '')) = 'website')`;
-  } else if (user.role === 'reservations_manual') {
+  if (user.role === 'reservations_manual') {
     clause += ` AND ${alias}.booking_id IS NULL AND LOWER(COALESCE(${alias}.booking_source, '')) <> 'website'`;
   }
+  // reservations_web may own website stays and their own manual creates
 
   return { clause, params, nextIndex };
 }
@@ -188,11 +187,6 @@ function assertReservationOwned(user, reservation) {
       salesLabelBelongsToUser(reservation.sales_label, user));
   if (!mine) {
     const err = new Error('You can only access your own reservations');
-    err.status = 403;
-    throw err;
-  }
-  if (user.role === 'reservations_web' && !isWebsiteOriginReservation(reservation)) {
-    const err = new Error('Website agents can only access website reservations');
     err.status = 403;
     throw err;
   }

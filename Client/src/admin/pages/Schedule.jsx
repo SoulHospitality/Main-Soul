@@ -727,7 +727,7 @@ function BulkPriceModal({ open, onClose, unitCount, onSave, saving }) {
 export default function Schedule() {
   const qc = useQueryClient();
   const { user } = useAuth();
-  const { canEditSchedulePricing, canManageReservations, isManualReservations, isAdmin } = usePermissions();
+  const { canEditSchedulePricing, canManageReservations, isManualReservations, isWebsiteReservations, isAdmin } = usePermissions();
   const TODAY = todayStr();
   const TOMORROW = addDays(TODAY, 1);
   const now = new Date();
@@ -981,7 +981,7 @@ export default function Schedule() {
   const openCreateDrawer = () => {
     setCreateForm({
       ...EMPTY_MANUAL_RESERVATION_FORM,
-      sales_person_id: isManualReservations && !isAdmin && user?.id ? String(user.id) : '',
+      sales_person_id: (isManualReservations || isWebsiteReservations) && !isAdmin && user?.id ? String(user.id) : '',
       payment_method: 'cash',
     });
     setCreateProof(null);
@@ -1907,7 +1907,7 @@ export default function Schedule() {
           users={usersList}
           transferProof={createProof}
           onTransferProofChange={setCreateProof}
-          lockSalesPerson={isManualReservations && !isAdmin}
+          lockSalesPerson={(isManualReservations || isWebsiteReservations) && !isAdmin}
           currentUserName={user?.full_name || user?.username || ''}
           onCancel={() => { setCreateDrawer(false); setCreateProof(null); }}
           onSubmit={handleCreateReservation}

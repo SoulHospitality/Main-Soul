@@ -33,7 +33,6 @@ const {
   loadReservationAccess,
   assertReservationOwned,
   isReservationsAgent,
-  isManualReservationsAgent,
   isAdmin,
 } = require('../../lib/reservationScope');
 const { getMinimumStayNights } = require('../../lib/minStay');
@@ -665,7 +664,7 @@ router.get('/units/projects', async (_req, res, next) => {
   }
 });
 
-router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) => {
+router.post('/units', requireRoles('admin', 'resale', 'reservations_web', 'reservations'), async (req, res, next) => {
   try {
     const b = req.body;
     const title = toText(b.title || b.name);
@@ -680,6 +679,9 @@ router.post('/units', requireRoles('admin', 'resale'), async (req, res, next) =>
     let listingType = String(b.listing_type || 'rent').toLowerCase() === 'sale' ? 'sale' : 'rent';
     if (req.user?.role === 'resale') {
       listingType = 'sale';
+    }
+    if (req.user?.role === 'reservations_web' || req.user?.role === 'reservations') {
+      listingType = 'rent';
     }
     const sizeM2 = toNum(b.size_m2 || b.area_sqft || b.unit_area, { int: true });
     const priceFallback =
@@ -892,6 +894,12 @@ async function updateUnitHandler(req, res, next) {
     if (req.user?.role === 'resale' && existingListingType !== 'sale') {
       return res.status(403).json({ error: 'Resale can only manage for-sale units' });
     }
+    if (
+      (req.user?.role === 'reservations_web' || req.user?.role === 'reservations') &&
+      existingListingType !== 'rent'
+    ) {
+      return res.status(403).json({ error: 'Website reservation agents can only manage rental units' });
+    }
 
     let listingType =
       String(b.listing_type || existingRows[0].listing_type || 'rent').toLowerCase() === 'sale'
@@ -899,6 +907,9 @@ async function updateUnitHandler(req, res, next) {
         : 'rent';
     if (req.user?.role === 'resale') {
       listingType = 'sale';
+    }
+    if (req.user?.role === 'reservations_web' || req.user?.role === 'reservations') {
+      listingType = 'rent';
     }
 
     const propertyType = normalizePropertyType(
@@ -1069,8 +1080,8 @@ async function updateUnitHandler(req, res, next) {
   }
 }
 
-router.patch('/units/:id', requireRoles('admin', 'resale'), updateUnitHandler);
-router.put('/units/:id', requireRoles('admin', 'resale'), updateUnitHandler);
+router.patch('/units/:id', requireRoles('admin', 'resale', 'reservations_web', 'reservations'), updateUnitHandler);
+router.put('/units/:id', requireRoles('admin', 'resale', 'reservations_web', 'reservations'), updateUnitHandler);
 
 router.delete('/units/:id', requireRoles('admin', 'resale'), async (req, res, next) => {
   try {
@@ -1136,7 +1147,7 @@ router.delete('/units/:id', requireRoles('admin', 'resale'), async (req, res, ne
 
 router.post(
   '/units/:id/photos',
-  requireRoles('admin', 'resale'),
+  requireRoles('admin', 'resale', 'reservations_web', 'reservations'),
   upload.array('photos', 20),
   setCloudinaryFolder(FOLDER_UNITS),
   attachCloudinaryUrls,
@@ -1308,7 +1319,7 @@ router.get('/reservations', async (req, res, next) => {
 
 router.post(
   '/reservations',
-  requireRoles('reservations_manual', 'reservations', 'admin'),
+  requireRoles('reservations_manual', 'reservations_web', 'reservations', 'admin'),
   upload.single('transfer_proof'),
   setCloudinaryFolder(FOLDER_PAYMENTS),
   attachCloudinaryUrls,
@@ -1317,10 +1328,10 @@ router.post(
     const b = req.body;
     const { getBlockedDates } = require('../../services/pricing');
     const { paymentStatusFrom } = require('../../lib/syncReservationPayment');
-    const { isAdmin } = require('../../lib/reservationScope');
+    const { isAdmin, isReservationsAgent } = require('../../lib/reservationScope');
 
     const salesPersonId =
-      isManualReservationsAgent(req.user) && !isAdmin(req.user)
+      isReservationsAgent(req.user) && !isAdmin(req.user)
         ? req.user.id
         : (b.sales_person_id || req.user.id);
     const checkIn = new Date(b.check_in);

@@ -26,6 +26,7 @@ const RESERVATIONS_PAGE_ACCESS = new Set([
 const RESERVATIONS_WEB_PAGE_ACCESS = new Set([
   ...RESERVATIONS_PAGE_ACCESS,
   'website_bookings',
+  'units',
 ]);
 
 const RESERVATIONS_PERMISSIONS = [
@@ -43,10 +44,15 @@ const RESERVATIONS_PERMISSIONS = [
   'documents:write',
 ];
 
+const RESERVATIONS_WEB_PERMISSIONS = [
+  ...RESERVATIONS_PERMISSIONS,
+  'units:write',
+];
+
 const PERMISSIONS = {
   admin: ['*'],
-  reservations: RESERVATIONS_PERMISSIONS,
-  reservations_web: RESERVATIONS_PERMISSIONS,
+  reservations: RESERVATIONS_WEB_PERMISSIONS,
+  reservations_web: RESERVATIONS_WEB_PERMISSIONS,
   reservations_manual: RESERVATIONS_PERMISSIONS,
   resale: [
     'units:read',
@@ -121,16 +127,27 @@ export function canAccess(user, page) {
 }
 
 export function canManageUnits(user) {
-  return !!user && (user.role === 'admin' || user.role === 'resale');
+  return (
+    !!user &&
+    (user.role === 'admin' ||
+      user.role === 'resale' ||
+      user.role === 'reservations_web' ||
+      user.role === 'reservations')
+  );
 }
 
 export function canDeleteUnits(user) {
-  return canManageUnits(user);
+  return !!user && (user.role === 'admin' || user.role === 'resale');
 }
 
 /** Create / edit manual reservations */
 export function canManageReservations(user) {
-  return !!user && (user.role === 'admin' || isManualReservationsRole(user));
+  return (
+    !!user &&
+    (user.role === 'admin' ||
+      isManualReservationsRole(user) ||
+      isWebsiteReservationsRole(user))
+  );
 }
 
 /** Accept / reject website booking requests */
