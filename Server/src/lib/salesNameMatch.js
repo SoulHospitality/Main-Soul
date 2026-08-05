@@ -55,7 +55,7 @@ function stringSimilarity(a, b) {
 
 /**
  * Score how well a sales label matches a staff name.
- * Higher is better. Typical good matches are >= 0.72.
+ * Higher is better. Typical good matches are >= DEFAULT_MIN_SCORE.
  */
 function nameMatchScore(salesLabel, staffName) {
   const label = normalizeName(salesLabel);
@@ -97,15 +97,26 @@ function nameMatchScore(salesLabel, staffName) {
 
   let score = Math.max(direct, sortedScore, tokenCoverage * 0.95, contained);
 
-  // Two-part names: don't let a shared first name carry a different last name
-  if (staffTokens.length >= 2 && worstStaffToken < 0.78) {
+  // Shorter label than staff name ("Tarek" vs "Tarek Mostafa"): judge only on
+  // the tokens the label actually provides. Ties between several staff sharing
+  // that token are rejected later as ambiguous.
+  if (labelTokens.length < staffTokens.length) {
+    let labelHits = 0;
+    for (const lt of labelTokens) {
+      let best = 0;
+      for (const st of staffTokens) best = Math.max(best, stringSimilarity(lt, st));
+      if (best >= 0.85) labelHits += 1;
+    }
+    score = Math.max(score, (labelHits / labelTokens.length) * 0.9);
+  } else if (staffTokens.length >= 2 && worstStaffToken < 0.78) {
+    // The label names a different last name → different person
     score = Math.min(score, 0.7);
   }
 
   return score;
 }
 
-const DEFAULT_MIN_SCORE = 0.82;
+const DEFAULT_MIN_SCORE = 0.74;
 
 /**
  * Pick the closest staff user for a sales label.

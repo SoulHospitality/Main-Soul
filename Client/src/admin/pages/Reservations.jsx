@@ -943,7 +943,6 @@ export default function Reservations() {
   const [editId, setEditId] = useState(null);
   const [viewRes, setViewRes] = useState(null);
   const [cancelId, setCancelId] = useState(null);
-  // cancelled reservations are always visible
   // Cancel-request workflow
   const [cancelReqOpen,  setCancelReqOpen]  = useState(false);
   const [cancelReqId,    setCancelReqId]    = useState(null);
