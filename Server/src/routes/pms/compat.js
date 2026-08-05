@@ -756,27 +756,52 @@ router.get('/calendar-blocks', async (req, res, next) => {
 
 router.put('/blocked-dates/:unitId', requireRoles('admin'), async (req, res, next) => {
   try {
+    const { eachDate, ensureWpPostId } = require('../../lib/ownerBlocks');
     const { dates = [], clear = false, from_date, to_date } = req.body;
-    const { rows: u } = await query(`SELECT wp_post_id FROM units WHERE id = $1`, [req.params.unitId]);
-    if (!u[0]?.wp_post_id) return res.status(404).json({ error: 'Unit not found' });
-    if (clear && from_date && to_date) {
-      await query(
-        `DELETE FROM unit_blocked_dates WHERE wp_post_id = $1 AND date >= $2 AND date <= $3`,
-        [u[0].wp_post_id, from_date, to_date]
-      );
-      return res.json({ ok: true, cleared: true });
+    const wp = await ensureWpPostId(req.params.unitId);
+    if (wp == null) return res.status(404).json({ error: 'Unit not found' });
+
+    let nights = Array.isArray(dates) ? dates.filter(Boolean).map((d) => String(d).slice(0, 10)) : [];
+    if (!nights.length && from_date && to_date) {
+      // Inclusive end date: expand [from, to] into night dates (same as pricing batch UI).
+      const endExclusive = new Date(`${String(to_date).slice(0, 10)}T00:00:00`);
+      endExclusive.setDate(endExclusive.getDate() + 1);
+      const y = endExclusive.getFullYear();
+      const m = String(endExclusive.getMonth() + 1).padStart(2, '0');
+      const day = String(endExclusive.getDate()).padStart(2, '0');
+      nights = eachDate(String(from_date).slice(0, 10), `${y}-${m}-${day}`);
     }
+
+    if (!nights.length) {
+      return res.status(400).json({ error: 'Provide dates[] or from_date and to_date' });
+    }
+
+    const rangeFrom = nights[0];
+    const rangeTo = nights[nights.length - 1];
+
+    if (clear) {
+      const { rowCount } = await query(
+        `DELETE FROM unit_blocked_dates
+         WHERE wp_post_id = $1
+           AND date >= $2::date
+           AND date <= $3::date
+           AND source IN ('manual', 'owner')`,
+        [wp, rangeFrom, rangeTo]
+      );
+      return res.json({ ok: true, cleared: rowCount, from_date: rangeFrom, to_date: rangeTo });
+    }
+
     let n = 0;
-    for (const date of dates) {
+    for (const date of nights) {
       await query(
         `INSERT INTO unit_blocked_dates (wp_post_id, date, source, updated_at)
          VALUES ($1,$2,'manual',now())
-         ON CONFLICT (wp_post_id, date) DO UPDATE SET updated_at = now()`,
-        [u[0].wp_post_id, date]
+         ON CONFLICT (wp_post_id, date) DO UPDATE SET source = 'manual', updated_at = now()`,
+        [wp, date]
       );
-      n++;
+      n += 1;
     }
-    res.json({ ok: true, count: n });
+    res.json({ ok: true, count: n, from_date: rangeFrom, to_date: rangeTo });
   } catch (e) {
     next(e);
   }

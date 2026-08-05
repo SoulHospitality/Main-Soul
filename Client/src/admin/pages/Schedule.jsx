@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight, CalendarRange, Edit2, X, DollarSign, Eye, ExternalLink, Clock, Hourglass, Trash2, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CalendarRange, Edit2, X, DollarSign, Eye, ExternalLink, Clock, Hourglass, Trash2, Plus, Ban } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
@@ -143,14 +143,32 @@ const COLOR_FILTERS = [
 const CELL_W = 32;
 
 // ─── Price Editor Modal ──────────────────────────────────────────────────────
-function PriceEditorModal({ open, onClose, unitId, unitName, dateStr, currentPrice, onSave, onClear, saving }) {
+function PriceEditorModal({
+  open,
+  onClose,
+  unitId,
+  unitName,
+  dateStr,
+  currentPrice,
+  blockSource,
+  onSave,
+  onClear,
+  onBlock,
+  onUnblock,
+  saving,
+}) {
   const [price, setPrice] = useState('');
   const [applyTo, setApplyTo] = useState('day');
   const [rangeFrom, setRangeFrom] = useState(dateStr || '');
   const [rangeTo, setRangeTo]   = useState(dateStr || '');
 
   // Reset when opened on new cell
-  useEffect(() => { setPrice(currentPrice ? String(currentPrice) : ''); setApplyTo('day'); setRangeFrom(dateStr); setRangeTo(dateStr); }, [open, dateStr, currentPrice]);
+  useEffect(() => {
+    setPrice(currentPrice ? String(currentPrice) : '');
+    setApplyTo('day');
+    setRangeFrom(dateStr);
+    setRangeTo(dateStr);
+  }, [open, dateStr, currentPrice]);
 
   const getRange = () => {
     if (applyTo === 'day')    return { from: dateStr, to: dateStr };
@@ -158,6 +176,9 @@ function PriceEditorModal({ open, onClose, unitId, unitName, dateStr, currentPri
     if (applyTo === 'month')  return getMonthRange(dateStr);
     return { from: rangeFrom, to: rangeTo };
   };
+
+  const removableBlock = blockSource === 'manual' || blockSource === 'owner';
+  const lockedBlock = blockSource === 'ical' || blockSource === 'reservation';
 
   const handleSave = () => {
     const p = parseFloat(price);
@@ -173,13 +194,36 @@ function PriceEditorModal({ open, onClose, unitId, unitName, dateStr, currentPri
     onClear(unitId, from, to);
   };
 
+  const handleBlock = () => {
+    const { from, to } = getRange();
+    if (!from || !to || from > to) { toast.error('Invalid date range'); return; }
+    onBlock(unitId, from, to);
+  };
+
+  const handleUnblock = () => {
+    const { from, to } = getRange();
+    if (!from || !to || from > to) { toast.error('Invalid date range'); return; }
+    onUnblock(unitId, from, to);
+  };
+
+  const blockLabel =
+    blockSource === 'ical'
+      ? 'OTA (iCal) block'
+      : blockSource === 'owner'
+        ? 'Owner block'
+        : blockSource === 'reservation'
+          ? 'Reservation'
+          : blockSource === 'manual'
+            ? 'Manual block'
+            : null;
+
   return (
-    <Modal open={open} onClose={onClose} title="Set nightly price" size="sm"
+    <Modal open={open} onClose={onClose} title="Edit night" size="sm"
       footer={<>
         <button onClick={onClose} className="btn-secondary">Cancel</button>
         {currentPrice > 0 && (
           <button onClick={handleClear} disabled={saving} className="btn-secondary text-rose-700 border-rose-200 hover:bg-rose-50">
-            Clear night
+            Clear price
           </button>
         )}
         <button onClick={handleSave} disabled={saving} className="btn-primary">
@@ -193,6 +237,7 @@ function PriceEditorModal({ open, onClose, unitId, unitName, dateStr, currentPri
           <p className="mt-0.5 text-xs text-soul-muted">
             {formatDate(dateStr)}
             {currentPrice > 0 ? ` · Current ${currency(currentPrice)}` : ' · Unpriced'}
+            {blockLabel ? ` · ${blockLabel}` : ''}
           </p>
         </div>
 
@@ -227,6 +272,46 @@ function PriceEditorModal({ open, onClose, unitId, unitName, dateStr, currentPri
             {applyTo === 'month' && `All days of ${new Date(dateStr).toLocaleDateString('en-US',{month:'long',year:'numeric'})}`}
           </p>
         )}
+
+        <div className="rounded-2xl border border-violet-200 bg-violet-50/70 p-3 space-y-2">
+          <div className="flex items-center gap-2 text-sm font-semibold text-violet-900">
+            <Ban className="h-3.5 w-3.5" />
+            Calendar block
+          </div>
+          <p className="text-xs text-violet-800">
+            Blocks close the night to guests without creating a reservation. OTA and booked nights cannot be cleared here.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleBlock}
+              disabled={saving || lockedBlock}
+              className="btn-secondary border-violet-300 text-violet-800 hover:bg-violet-100 disabled:opacity-40"
+            >
+              Block nights
+            </button>
+            <button
+              type="button"
+              onClick={handleUnblock}
+              disabled={saving || (!removableBlock && !!blockSource) || lockedBlock}
+              className="btn-secondary text-rose-700 border-rose-200 hover:bg-rose-50 disabled:opacity-40"
+              title={
+                lockedBlock
+                  ? 'OTA / reservation blocks cannot be cleared here'
+                  : removableBlock
+                    ? 'Remove manual or owner block for this range'
+                    : 'No removable block on this night — still works for a range with blocks'
+              }
+            >
+              Unblock nights
+            </button>
+          </div>
+          {lockedBlock && (
+            <p className="text-[11px] font-medium text-rose-700">
+              This night is locked by {blockSource === 'ical' ? 'an OTA calendar' : 'a reservation'} and cannot be unblocked here.
+            </p>
+          )}
+        </div>
 
         <p className="rounded-xl bg-rose-50 px-3 py-2 text-xs text-rose-700">
           Clearing a price marks the night unpriced — guests see it as unavailable.
@@ -813,6 +898,22 @@ export default function Schedule() {
     onError: (e) => toast.error(e.response?.data?.error || 'Error saving price'),
   });
 
+  const blockMutation = useMutation({
+    mutationFn: ({ unit_id, from_date, to_date, clear }) =>
+      api.put(`/blocked-dates/${unit_id}`, {
+        from_date,
+        to_date,
+        clear: !!clear,
+      }),
+    onSuccess: (_, { clear }) => {
+      qc.invalidateQueries({ queryKey: ['calendar-blocks'] });
+      qc.invalidateQueries({ queryKey: ['blocked-dates'] });
+      toast.success(clear ? 'Nights unblocked' : 'Nights blocked');
+      setPriceModal(false);
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Error updating blocks'),
+  });
+
   const editMutation = useMutation({
     mutationFn: () => api.put(`/reservations/${editId}`, editForm),
     onSuccess: () => {
@@ -911,9 +1012,15 @@ export default function Schedule() {
 
   const handlePriceClick = useCallback((unit, dateStr) => {
     if (!canEditSchedulePricing) return;
-    setPriceCell({ unitId: unit.id, unitName: unit.name, dateStr, currentPrice: getUnitDayPrice(unit, dateStr) });
+    setPriceCell({
+      unitId: unit.id,
+      unitName: unit.name,
+      dateStr,
+      currentPrice: getUnitDayPrice(unit, dateStr),
+      blockSource: blockMap[unit.id]?.[dateStr] || null,
+    });
     setPriceModal(true);
-  }, [canEditSchedulePricing, priceMap]);
+  }, [canEditSchedulePricing, priceMap, blockMap]);
 
   const handleResClick = useCallback((res) => {
     // Hold cells → hold detail modal
@@ -1138,7 +1245,7 @@ export default function Schedule() {
         {[
           { swatch: 'bg-emerald-50 border border-emerald-200', label: 'Priced' },
           { swatch: 'bg-rose-50 border border-rose-200', label: 'Unpriced' },
-          { swatch: 'border border-slate-300', label: 'OTA / block', style: { backgroundImage: 'repeating-linear-gradient(135deg, rgba(40,63,94,0.14) 0 4px, transparent 4px 8px)' } },
+          { swatch: 'border border-slate-300', label: 'OTA / admin block', style: { backgroundImage: 'repeating-linear-gradient(135deg, rgba(40,63,94,0.14) 0 4px, transparent 4px 8px)' } },
           { swatch: 'bg-[#2a9d8f]', label: 'Guest stay' },
           { swatch: 'bg-amber-400', label: 'Hold' },
           { swatch: 'bg-violet-500', label: 'Blocked' },
@@ -1521,10 +1628,24 @@ export default function Schedule() {
                             onClick={() => canEditPrice && !isPast && handlePriceClick(unit, cell.date)}
                             title={
                               blockSrc
-                                ? `${blockSrc === 'ical' ? 'OTA (iCal)' : 'Manual'} block · ${formatDate(cell.date)}`
+                                ? `${
+                                    blockSrc === 'ical'
+                                      ? 'OTA (iCal)'
+                                      : blockSrc === 'owner'
+                                        ? 'Owner'
+                                        : blockSrc === 'reservation'
+                                          ? 'Reservation'
+                                          : 'Admin'
+                                  } block · ${formatDate(cell.date)}${
+                                    canEditPrice && !isPast ? ' · Click to manage' : ''
+                                  }`
                                 : isPriced
-                                  ? `${currency(price)} · ${formatDate(cell.date)}`
-                                  : `No price — guests see unavailable · ${formatDate(cell.date)}`
+                                  ? `${currency(price)} · ${formatDate(cell.date)}${
+                                      canEditPrice && !isPast ? ' · Click to price or block' : ''
+                                    }`
+                                  : `No price — guests see unavailable · ${formatDate(cell.date)}${
+                                      canEditPrice && !isPast ? ' · Click to price or block' : ''
+                                    }`
                             }
                           >
                             <div
@@ -1662,7 +1783,7 @@ export default function Schedule() {
       )}
 
       <p className="text-right text-[11px] text-soul-muted">
-        Tap a night to price it · Unpriced nights stay closed to guests · Bars open reservation details
+        Tap a night to price or block it · Unpriced nights stay closed to guests · Bars open reservation details
       </p>
 
       {/* ── Modals */}
@@ -1673,9 +1794,12 @@ export default function Schedule() {
         unitName={priceCell?.unitName}
         dateStr={priceCell?.dateStr}
         currentPrice={priceCell?.currentPrice}
-        saving={priceMutation.isPending}
+        blockSource={priceCell?.blockSource}
+        saving={priceMutation.isPending || blockMutation.isPending}
         onSave={(unitId, from, to, price) => priceMutation.mutate({ unit_id: unitId, from_date: from, to_date: to, price })}
         onClear={(unitId, from, to) => priceMutation.mutate({ unit_id: unitId, from_date: from, to_date: to, clear: true })}
+        onBlock={(unitId, from, to) => blockMutation.mutate({ unit_id: unitId, from_date: from, to_date: to, clear: false })}
+        onUnblock={(unitId, from, to) => blockMutation.mutate({ unit_id: unitId, from_date: from, to_date: to, clear: true })}
       />
 
       <ReservationDetailModal
