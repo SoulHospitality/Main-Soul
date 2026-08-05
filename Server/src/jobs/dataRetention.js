@@ -88,8 +88,10 @@ async function destroyGuestMedia(urls, protectedUrls) {
 }
 
 /**
- * Purge reservations/bookings whose checkout is older than DATA_RETENTION_DAYS,
- * plus related guest Cloudinary media. Never deletes units or unit gallery assets.
+ * Scrub guest media (ID photos, transfer/payment proofs) from reservations and
+ * bookings whose checkout is older than DATA_RETENTION_DAYS. Reservation,
+ * booking, and payment records are kept — they are business history — as are
+ * units and unit gallery assets. Only transient checkout sessions are deleted.
  */
 async function runDataRetentionCleanup() {
   if (!isEnabled()) {
@@ -103,7 +105,11 @@ async function runDataRetentionCleanup() {
   const { rows: reservations } = await query(
     `SELECT id, booking_id, id_photo_urls, transfer_proof_path, check_out
      FROM reservations
-     WHERE check_out < (CURRENT_DATE - $1::int)`,
+     WHERE check_out < (CURRENT_DATE - $1::int)
+       AND (
+         (id_photo_urls IS NOT NULL AND cardinality(id_photo_urls) > 0)
+         OR transfer_proof_path IS NOT NULL
+       )`,
     [days]
   );
 
@@ -113,7 +119,9 @@ async function runDataRetentionCleanup() {
   const { rows: bookings } = await query(
     `SELECT id, id_photo_urls, checkout
      FROM bookings
-     WHERE checkout < (CURRENT_DATE - $1::int)`,
+     WHERE checkout < (CURRENT_DATE - $1::int)
+       AND id_photo_urls IS NOT NULL
+       AND cardinality(id_photo_urls) > 0`,
     [days]
   );
   const bookingIds = [...new Set([...bookings.map((b) => b.id), ...bookingIdsFromReservations])];
@@ -184,63 +192,52 @@ async function runDataRetentionCleanup() {
   }
 
   const client = await pool.connect();
-  let deletedReservations = 0;
-  let deletedBookings = 0;
-  let deletedPayments = 0;
-  let deletedCommissions = 0;
+  let scrubbedReservations = 0;
+  let scrubbedBookings = 0;
+  let scrubbedPayments = 0;
   let deletedSessions = 0;
 
   try {
     await client.query('BEGIN');
 
     if (reservationIds.length) {
-      const c = await client.query(
-        `DELETE FROM commissions WHERE reservation_id = ANY($1::int[])`,
+      const r = await client.query(
+        `UPDATE reservations
+         SET id_photo_urls = '{}'::text[],
+             transfer_proof_path = NULL,
+             transfer_proof_name = NULL
+         WHERE id = ANY($1::int[])`,
         [reservationIds]
       );
-      deletedCommissions = c.rowCount || 0;
+      scrubbedReservations = r.rowCount || 0;
+    }
 
-      await client.query(
-        `UPDATE petty_cash SET linked_reservation_id = NULL
-         WHERE linked_reservation_id = ANY($1::int[])`,
-        [reservationIds]
-      );
-
-      // Housekeeping / soul_points use ON DELETE SET NULL where applicable
+    if (reservationIds.length || bookingIds.length) {
       const p = await client.query(
-        `DELETE FROM payments
-         WHERE reservation_id = ANY($1::int[])
-            OR (booking_id IS NOT NULL AND booking_id = ANY($2::uuid[]))`,
+        `UPDATE payments
+         SET document_path = NULL
+         WHERE document_path IS NOT NULL
+           AND (
+             reservation_id = ANY($1::int[])
+             OR (booking_id IS NOT NULL AND booking_id = ANY($2::uuid[]))
+           )`,
         [reservationIds, bookingIds.length ? bookingIds : []]
       );
-      deletedPayments = p.rowCount || 0;
-
-      const r = await client.query(`DELETE FROM reservations WHERE id = ANY($1::int[])`, [
-        reservationIds,
-      ]);
-      deletedReservations = r.rowCount || 0;
-    } else if (bookingIds.length) {
-      const p = await client.query(
-        `DELETE FROM payments WHERE booking_id = ANY($1::uuid[])`,
-        [bookingIds]
-      );
-      deletedPayments = p.rowCount || 0;
+      scrubbedPayments = p.rowCount || 0;
     }
 
     if (bookingIds.length) {
-      await client.query(
-        `UPDATE inquiries SET booking_id = NULL WHERE booking_id = ANY($1::uuid[])`,
+      const b = await client.query(
+        `UPDATE bookings SET id_photo_urls = '{}'::text[] WHERE id = ANY($1::uuid[])`,
         [bookingIds]
       );
+      scrubbedBookings = b.rowCount || 0;
 
       const s = await client.query(
         `DELETE FROM card_checkout_sessions WHERE booking_id = ANY($1::uuid[])`,
         [bookingIds]
       );
       deletedSessions += s.rowCount || 0;
-
-      const b = await client.query(`DELETE FROM bookings WHERE id = ANY($1::uuid[])`, [bookingIds]);
-      deletedBookings = b.rowCount || 0;
     }
 
     if (staleSessions.length) {
@@ -263,18 +260,17 @@ async function runDataRetentionCleanup() {
   const summary = {
     dryRun: false,
     days,
-    deletedReservations,
-    deletedBookings,
-    deletedPayments,
-    deletedCommissions,
+    scrubbedReservations,
+    scrubbedBookings,
+    scrubbedPayments,
     deletedSessions,
     media: mediaResult,
     protectedUnitUrls: protectedUrls.size,
   };
 
   if (
-    deletedReservations ||
-    deletedBookings ||
+    scrubbedReservations ||
+    scrubbedBookings ||
     deletedSessions ||
     mediaResult.destroyed
   ) {
@@ -308,7 +304,7 @@ function startDataRetentionJob() {
   if (timer.unref) timer.unref();
 
   console.log(
-    `[data-retention] scheduled every ${interval}ms (days=${retentionDays()}, dryRun=${isDryRun()})`
+    `[data-retention] media scrub scheduled every ${interval}ms (days=${retentionDays()}, dryRun=${isDryRun()})`
   );
   return timer;
 }
