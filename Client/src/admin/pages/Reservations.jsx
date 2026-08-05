@@ -1241,8 +1241,8 @@ export default function Reservations() {
   const isBlocked      = r => r.is_owner_reservation && (parseFloat(r.total_amount) || 0) === 0;
   const filteredByUnit = allFiltered.filter(r => !isBlocked(r));
   const ownerStays     = allFiltered.filter(r =>  isBlocked(r));
-  const { sorted, sortKey, sortDir, handleSort } = useSortableTable(filteredByUnit, 'check_in', 'desc');
-  const { sorted: ownerSorted, sortKey: ownerSortKey, sortDir: ownerSortDir, handleSort: ownerHandleSort } = useSortableTable(ownerStays, 'check_in', 'desc');
+  const { sorted, sortKey, sortDir, handleSort } = useSortableTable(filteredByUnit, 'created_at', 'desc');
+  const { sorted: ownerSorted, sortKey: ownerSortKey, sortDir: ownerSortDir, handleSort: ownerHandleSort } = useSortableTable(ownerStays, 'created_at', 'desc');
 
   const exportExcel = () => {
     const rows = filteredByUnit.map((r) => {

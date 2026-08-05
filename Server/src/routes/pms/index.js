@@ -1295,7 +1295,7 @@ router.get('/reservations', async (req, res, next) => {
        LEFT JOIN staff_users creator ON creator.id = r.created_by
        LEFT JOIN staff_users su ON su.id = r.sales_person_id
        WHERE 1=1${scope.clause}
-       ORDER BY r.check_in DESC NULLS LAST, r.created_at DESC
+       ORDER BY r.created_at DESC NULLS LAST, r.id DESC
        LIMIT 5000`,
       scope.params
     );
