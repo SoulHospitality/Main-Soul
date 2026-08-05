@@ -1343,7 +1343,8 @@ export default function Schedule() {
       </div>
 
       {/* ── Filters */}
-      <div className="overflow-hidden rounded-2xl border border-soul-line bg-white shadow-sm">
+      {/* Own stacking context above the grid so the unit dropdown is not clipped or painted under it */}
+      <div className="relative z-40 rounded-2xl border border-soul-line bg-white shadow-sm">
         <button
           type="button"
           className="flex w-full items-center justify-between px-4 py-3 text-left lg:cursor-default"
@@ -1424,7 +1425,7 @@ export default function Schedule() {
                 <ChevronRight className={`h-3.5 w-3.5 text-soul-muted transition ${unitPickerOpen ? 'rotate-90' : ''}`} />
               </button>
               {unitPickerOpen && (
-                <div className="absolute left-0 top-full z-50 mt-1 max-h-64 w-56 overflow-y-auto rounded-2xl border border-soul-line bg-white shadow-xl">
+                <div className="absolute left-0 top-full z-50 mt-1 max-h-64 w-56 overflow-y-auto overscroll-contain rounded-2xl border border-soul-line bg-white shadow-xl">
                   <div className="flex items-center justify-between gap-2 border-b border-soul-line px-3 py-2">
                     <input
                       autoFocus
@@ -1527,7 +1528,7 @@ export default function Schedule() {
       {/* ── Calendar grid */}
       {isLoading ? <LoadingSpinner /> : (
         <div
-          className="overflow-auto rounded-2xl border border-soul-line bg-white shadow-sm"
+          className="relative z-0 overflow-auto rounded-2xl border border-soul-line bg-white shadow-sm"
           style={{ maxHeight: '75vh' }}
         >
           <table
