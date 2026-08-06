@@ -10,7 +10,7 @@ import BookingDrawer from '../booking/BookingDrawer';
 
 /**
  * SoulHospitality-style sticky reservation card.
- * Shows the unit display price (same as listing cards); schedule rates belong in BookingDrawer.
+ * Shows today's calendar rate when available (same as listing cards).
  */
 export default function ListingBookingCard({
   unit,
@@ -25,7 +25,22 @@ export default function ListingBookingCard({
   const money = (n) => formatPrice(n, { perNight: false }) || '—';
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const pricePerNight = getDisplayPriceEgp(unit);
+  const todayKey = useMemo(() => {
+    try {
+      return new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Africa/Cairo',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date());
+    } catch {
+      return new Date().toISOString().slice(0, 10);
+    }
+  }, []);
+
+  const todayFromCalendar = Number(dailyPrices?.[todayKey] || 0);
+  const pricePerNight =
+    todayFromCalendar > 0 ? todayFromCalendar : getDisplayPriceEgp(unit);
 
   const cleaning = housekeepingFeeForUnit(unit);
   const minNights = getMinimumStayNights(unit);

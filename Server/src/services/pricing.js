@@ -50,6 +50,16 @@ function localIso(d) {
   return `${y}-${m}-${day}`;
 }
 
+/** Calendar "today" in Africa/Cairo (guest business timezone). */
+function todayIsoBusiness(now = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Cairo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+}
+
 function eachNight(checkin, checkout) {
   const start = toIsoDate(checkin);
   const nights = nightsBetween(checkin, checkout);
@@ -273,6 +283,7 @@ async function getBlockedDates(wpPostId, from, to, { includeUnpriced = true } = 
 module.exports = {
   nightsBetween,
   toIsoDate,
+  todayIsoBusiness,
   priceForNight,
   getDailyPriceMap,
   quoteStay,

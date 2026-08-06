@@ -1,11 +1,12 @@
 /**
- * Guest-facing display price (EGP), set on the unit form.
- * Schedule / daily prices are only used inside the booking drawer quote.
+ * Guest-facing display price (EGP).
+ * Prefer today's calendar rate (`from_price` / marked-up `price_fallback` from the API).
+ * Falls back to the unit form nightly if today has no schedule price.
  */
 export function getDisplayPriceEgp(unitOrListing) {
   const amount = Number(
-    unitOrListing?.price_fallback ??
-      unitOrListing?.from_price ??
+    unitOrListing?.from_price ??
+      unitOrListing?.price_fallback ??
       unitOrListing?.price_per_night ??
       0
   );

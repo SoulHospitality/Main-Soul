@@ -1,6 +1,6 @@
 const express = require('express');
 const { query } = require('../config/db');
-const { quoteStay, getBlockedDates } = require('../services/pricing');
+const { quoteStay, getBlockedDates, todayIsoBusiness } = require('../services/pricing');
 
 const router = express.Router();
 
@@ -76,13 +76,51 @@ async function projectFacilitiesMap(projectNames) {
   return map;
 }
 
-function attachFacilities(row, facilitiesByProject) {
+/** Map wp_post_id → raw nightly price for Africa/Cairo "today". */
+async function loadTodayPriceMap(wpPostIds) {
+  const today = todayIsoBusiness();
+  const ids = [
+    ...new Set(
+      (wpPostIds || [])
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id) && id > 0)
+    ),
+  ];
+  if (!ids.length) return { today, map: new Map() };
+    const { rows } = await query(
+    `SELECT wp_post_id, price
+     FROM unit_daily_prices
+     WHERE date = $1::date AND wp_post_id = ANY($2::bigint[])`,
+    [today, ids]
+  );
+  const map = new Map();
+  for (const r of rows) {
+    const price = Number(r.price);
+    if (price > 0) map.set(Number(r.wp_post_id), price);
+  }
+  return { today, map };
+}
+
+function attachFacilities(row, facilitiesByProject, todayPriceByWp = null, priceAsOf = null) {
   const out = toPublicUnit(row);
   const key = String(row.compound || row.project || '').trim().toLowerCase();
   const fromProject = key ? facilitiesByProject.get(key) || [] : [];
   const fromUnit = facilitiesFromOtherDetails(row);
   // Prefer project-level facilities; fall back to legacy unit facilities (published units).
   out.facilities = fromProject.length ? fromProject : fromUnit;
+
+  // Guest cards/detail: show today's calendar rate when available (rent only).
+  const listingType = String(row.listing_type || 'rent').toLowerCase();
+  if (listingType !== 'sale' && todayPriceByWp && row.wp_post_id != null) {
+    const rawToday = todayPriceByWp.get(Number(row.wp_post_id));
+    if (rawToday > 0) {
+      const { applyGuestTenantMarkup } = require('../lib/commission');
+      const marked = applyGuestTenantMarkup(rawToday, row);
+      out.price_fallback = marked;
+      out.from_price = marked;
+      if (priceAsOf) out.price_as_of = priceAsOf;
+    }
+  }
   return out;
 }
 
@@ -168,6 +206,7 @@ router.get('/', async (req, res, next) => {
              END AS photo_urls,
              u.wp_post_id, u.featured, u.price_currency, u.property_type, u.price_fallback,
              u.size_m2, u.listing_type, u.created_at,
+             u.commission_mode, u.commission_tenant_pct,
              COALESCE(u.average_rating, 0) AS average_rating,
              COALESCE(u.review_count, 0) AS review_count
       FROM units u
@@ -181,8 +220,9 @@ router.get('/', async (req, res, next) => {
       params.slice(0, -2)
     );
     const facilitiesByProject = await projectFacilitiesMap(rows.map((r) => r.compound || r.project));
+    const { today, map: todayPriceByWp } = await loadTodayPriceMap(rows.map((r) => r.wp_post_id));
     res.json({
-      items: rows.map((r) => attachFacilities(r, facilitiesByProject)),
+      items: rows.map((r) => attachFacilities(r, facilitiesByProject, todayPriceByWp, today)),
       total: countRes.rows[0].c,
     });
   } catch (err) {
@@ -215,7 +255,8 @@ router.get('/:idOrSlug', async (req, res, next) => {
     const facilitiesByProject = await projectFacilitiesMap([
       rows[0].compound || rows[0].project,
     ]);
-    res.json(attachFacilities(rows[0], facilitiesByProject));
+    const { today, map: todayPriceByWp } = await loadTodayPriceMap([rows[0].wp_post_id]);
+    res.json(attachFacilities(rows[0], facilitiesByProject, todayPriceByWp, today));
   } catch (err) {
     next(err);
   }
