@@ -9,6 +9,7 @@ import LoadingSpinner from './ui/LoadingSpinner';
 import Modal from './ui/Modal';
 import { idDocumentThumbUrl, isPdfUrl } from '../utils/idDocuments';
 import { currency, formatDate, PAYMENT_METHOD_LABELS } from '../utils/formatters';
+import { usePermissions } from '../hooks/usePermissions';
 
 function toIdPhotos(booking) {
   if (Array.isArray(booking?.id_photo_urls)) {
@@ -96,6 +97,7 @@ function resolveAmountPaid(booking, paymentMode, customAmount, total, halfAmount
 
 export default function WebsiteBookingRequests() {
   const qc = useQueryClient();
+  const { isAdmin } = usePermissions();
   const [previewPhotos, setPreviewPhotos] = useState([]);
   const [previewPhotoIndex, setPreviewPhotoIndex] = useState(0);
   const [acceptBooking, setAcceptBooking] = useState(null);
@@ -245,6 +247,7 @@ export default function WebsiteBookingRequests() {
                 <th className="py-2 pr-3">Guests</th>
                 <th className="py-2 pr-3">Duration</th>
                 <th className="py-2 pr-3">Unit</th>
+                {isAdmin ? <th className="py-2 pr-3">Assigned agent</th> : null}
                 <th className="py-2 pr-3">Payment details</th>
                 <th className="py-2 pr-3">Payment method</th>
                 <th className="py-2 pr-3">Guest documents</th>
@@ -302,6 +305,22 @@ export default function WebsiteBookingRequests() {
                         {b.unit_title || b.listing_title || ''}
                       </div>
                     </td>
+                    {isAdmin ? (
+                      <td className="py-3 pr-3 min-w-[9rem]">
+                        {b.assigned_agent_name ? (
+                          <div className="rounded-lg border border-violet-200 bg-violet-50/70 px-2.5 py-2">
+                            <div className="text-[10px] font-semibold uppercase tracking-wide text-violet-700">
+                              Agent
+                            </div>
+                            <div className="text-sm font-semibold text-violet-950 leading-snug">
+                              {b.assigned_agent_name}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-xs italic text-gray-400">Unassigned</span>
+                        )}
+                      </td>
+                    ) : null}
                     <td className="py-3 pr-3 min-w-[11rem]">
                       <div className="rounded-lg border border-gray-200 bg-white px-2.5 py-2 space-y-1 text-xs">
                         {pay.subtotal != null && (
@@ -493,6 +512,14 @@ export default function WebsiteBookingRequests() {
                   {acceptBooking.unit_title || acceptBooking.listing_title || ''}
                 </div>
               </div>
+              {isAdmin ? (
+                <div>
+                  <div className="text-xs uppercase text-gray-500">Assigned agent</div>
+                  <div className="font-medium text-violet-900">
+                    {acceptBooking.assigned_agent_name || 'Unassigned'}
+                  </div>
+                </div>
+              ) : null}
               <div>
                 <div className="text-xs uppercase text-gray-500">Guests</div>
                 <div className="font-medium">{partyLabel(acceptBooking)}</div>

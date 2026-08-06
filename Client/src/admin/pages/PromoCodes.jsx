@@ -7,6 +7,7 @@ import Modal from '../components/ui/Modal';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
+import WebsitePopupSection from '../components/WebsitePopupSection';
 import { currency, formatDate, formatDateTime } from '../utils/formatters';
 
 const EMPTY_FORM = {
@@ -254,7 +255,7 @@ export default function PromoCodes() {
         <div className="page-header mb-0">
           <h1 className="page-title">Promo codes</h1>
           <p className="page-subtitle">
-            Create discount codes for website checkout. Each guest can use a code once when that rule is on.
+            Discount codes for checkout, plus the single website entry popup.
           </p>
         </div>
         <button type="button" onClick={openCreate} className="btn-primary">
@@ -262,6 +263,13 @@ export default function PromoCodes() {
         </button>
       </div>
 
+      <WebsitePopupSection />
+
+      <div>
+        <h2 className="text-lg font-semibold text-gray-900 mb-1">Discount codes</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Create codes for website checkout. Each guest can use a code once when that rule is on.
+        </p>
       {isLoading ? (
         <LoadingSpinner />
       ) : promos.length === 0 ? (
@@ -356,7 +364,7 @@ export default function PromoCodes() {
           </div>
         </div>
       )}
-
+      </div>
       <Modal
         open={modal === 'form'}
         onClose={() => {

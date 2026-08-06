@@ -5,6 +5,7 @@ import { CurrencyProvider } from './context/CurrencyContext';
 import { LocaleProvider } from './context/LocaleContext';
 import RouteFallback from './components/RouteFallback';
 import WhatsAppFAB from './components/layout/WhatsAppFAB';
+import WebsiteEntryPopup from './components/WebsiteEntryPopup';
 
 const HomePage = lazy(() => import('./pages/HomePage'));
 const SearchPage = lazy(() => import('./pages/SearchPage'));
@@ -74,6 +75,7 @@ export default function App() {
               </Routes>
             </Suspense>
             <WhatsAppFAB />
+            <WebsiteEntryPopup />
           </CurrencyProvider>
         </LocaleProvider>
       </BrowserRouter>

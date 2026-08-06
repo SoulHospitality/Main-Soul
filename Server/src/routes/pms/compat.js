@@ -49,10 +49,14 @@ router.get('/id-documents/view', async (req, res, next) => {
       });
     }
 
-    const contentType = upstream.headers.get('content-type') || 'application/pdf';
+    const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
     const buf = Buffer.from(await upstream.arrayBuffer());
+    const isPdf = /pdf/i.test(contentType) || /\.pdf($|\?)/i.test(raw);
     res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Disposition', 'inline; filename="id-document.pdf"');
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${isPdf ? 'id-document.pdf' : 'id-document.jpg'}"`
+    );
     res.setHeader('Cache-Control', 'private, max-age=120');
     res.send(buf);
   } catch (e) {

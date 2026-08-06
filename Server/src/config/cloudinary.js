@@ -14,6 +14,8 @@ const FOLDER_ID_DOCS = 'soul-hospitality/id-docs';
 const FOLDER_UNITS = 'soul-hospitality/units';
 /** Payment / transfer evidence tied to reservations. */
 const FOLDER_PAYMENTS = 'soul-hospitality/payments';
+/** Website entry popup creative — not purged by retention. */
+const FOLDER_SITE = 'soul-hospitality/site';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -210,4 +212,5 @@ module.exports = {
   FOLDER_ID_DOCS,
   FOLDER_UNITS,
   FOLDER_PAYMENTS,
+  FOLDER_SITE,
 };

@@ -51,6 +51,7 @@ router.use(housekeepingOps);
 router.use(ownerPortal);
 router.use(roadmapScaffold);
 router.use(require('./promoCodesAdmin'));
+router.use(require('./sitePopupAdmin'));
 
 function sendList(res, rows) {
   res.json(rows);

@@ -1,33 +1,35 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight, Download, ExternalLink, FileText, X } from 'lucide-react';
 import api from '../api/axios';
 import { idDocumentPagePreviewUrl, isPdfUrl } from '../utils/idDocuments';
 
 /**
  * Centered document viewer for guest ID / passport images and PDFs.
- * One contained panel — not a floating image with loose chrome.
+ * Portaled to body above Accept/Reject modals. Media is fetched through the
+ * authenticated PMS proxy as a blob so auth cookies/headers apply (direct
+ * <img src="/api/..."> would 401 without the bearer token).
  */
 export default function IdDocumentPreviewModal({
   urls = [],
   index = 0,
   onClose,
   onIndexChange,
-  zClass = 'z-[80]',
+  zClass = 'z-[220]',
 }) {
-  const [pdfBlobUrl, setPdfBlobUrl] = useState('');
-  const [pdfError, setPdfError] = useState('');
-  const [pdfLoading, setPdfLoading] = useState(false);
+  const [objectUrl, setObjectUrl] = useState('');
+  const [loadError, setLoadError] = useState('');
+  const [loading, setLoading] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
+  const [fallbackSrc, setFallbackSrc] = useState('');
+  const imgRef = useRef(null);
 
   const list = (urls || []).filter(Boolean);
   const safeIndex = Math.min(Math.max(0, index), Math.max(0, list.length - 1));
   const current = list[safeIndex] || '';
   const pdf = isPdfUrl(current);
   const pagePreview = pdf ? idDocumentPagePreviewUrl(current, 1) : null;
-
-  useEffect(() => {
-    setImgLoaded(false);
-  }, [current]);
+  const displaySrc = objectUrl || fallbackSrc || (!pdf ? current : pagePreview) || '';
 
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -39,30 +41,60 @@ export default function IdDocumentPreviewModal({
 
   useEffect(() => {
     let cancelled = false;
-    let objectUrl = '';
+    let created = '';
 
-    async function loadPdf() {
-      setPdfBlobUrl('');
-      setPdfError('');
-      if (!pdf || !current) return;
+    async function loadDocument() {
+      setObjectUrl('');
+      setFallbackSrc('');
+      setLoadError('');
+      setImgLoaded(false);
+      if (!current) return;
 
-      setPdfLoading(true);
+      setLoading(true);
       try {
         const res = await api.get('/id-documents/view', {
           params: { url: current },
           responseType: 'blob',
         });
         if (cancelled) return;
-        const type = res.data?.type || 'application/pdf';
-        if (type.includes('text/html')) {
-          setPdfError('PDF unavailable — showing page preview when possible.');
+
+        const type = String(res.data?.type || res.headers?.['content-type'] || '').toLowerCase();
+        if (type.includes('application/json') || type.includes('text/html') || type.includes('text/plain')) {
+          // Proxy returned an error payload as blob — try direct / Cloudinary page preview.
+          if (pdf && pagePreview) {
+            setFallbackSrc(pagePreview);
+          } else if (!pdf) {
+            setFallbackSrc(current);
+          } else {
+            let message = 'Could not load this document.';
+            try {
+              const text = await res.data.text();
+              const parsed = JSON.parse(text);
+              if (parsed?.error) message = parsed.error;
+            } catch {
+              /* keep default */
+            }
+            setLoadError(message);
+          }
           return;
         }
-        objectUrl = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
-        setPdfBlobUrl(objectUrl);
+
+        const blobType =
+          type ||
+          (pdf ? 'application/pdf' : 'image/jpeg');
+        created = URL.createObjectURL(new Blob([res.data], { type: blobType }));
+        setObjectUrl(created);
       } catch (e) {
-        if (!cancelled) {
-          let message = 'Could not open this PDF.';
+        if (cancelled) return;
+        // Fall back to direct Cloudinary URL / PDF page transform.
+        if (pdf && pagePreview) {
+          setFallbackSrc(pagePreview);
+          setLoadError('');
+        } else if (!pdf) {
+          setFallbackSrc(current);
+          setLoadError('');
+        } else {
+          let message = 'Could not open this document.';
           const data = e.response?.data;
           if (data instanceof Blob) {
             try {
@@ -75,19 +107,27 @@ export default function IdDocumentPreviewModal({
           } else if (data?.error) {
             message = data.error;
           }
-          setPdfError(message);
+          setLoadError(message);
         }
       } finally {
-        if (!cancelled) setPdfLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
 
-    loadPdf();
+    loadDocument();
     return () => {
       cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      if (created) URL.revokeObjectURL(created);
     };
-  }, [current, pdf]);
+  }, [current, pdf, pagePreview]);
+
+  useEffect(() => {
+    const el = imgRef.current;
+    if (!el || pdf || !displaySrc) return;
+    if (el.complete && el.naturalWidth > 0) {
+      setImgLoaded(true);
+    }
+  }, [displaySrc, pdf, safeIndex]);
 
   useEffect(() => {
     if (!list.length) return undefined;
@@ -109,8 +149,9 @@ export default function IdDocumentPreviewModal({
   const goPrev = () => onIndexChange?.((safeIndex - 1 + list.length) % list.length);
   const goNext = () => onIndexChange?.((safeIndex + 1) % list.length);
   const title = pdf ? 'ID / Passport document' : 'ID / Passport photo';
+  const openHref = objectUrl || current;
 
-  return (
+  const node = (
     <div
       className={`fixed inset-0 ${zClass} flex items-center justify-center bg-slate-950/70 p-4 sm:p-6`}
       onClick={onClose}
@@ -122,7 +163,6 @@ export default function IdDocumentPreviewModal({
         className="relative flex w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Panel header */}
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-slate-900">{title}</p>
@@ -135,9 +175,9 @@ export default function IdDocumentPreviewModal({
             )}
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            {(pdf ? pdfBlobUrl : current) ? (
+            {openHref ? (
               <a
-                href={pdf ? pdfBlobUrl || current : current}
+                href={openHref}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-200/70 hover:text-slate-900"
@@ -146,9 +186,9 @@ export default function IdDocumentPreviewModal({
                 Open
               </a>
             ) : null}
-            {pdf && pdfBlobUrl ? (
+            {pdf && objectUrl ? (
               <a
-                href={pdfBlobUrl}
+                href={objectUrl}
                 download="id-document.pdf"
                 className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-200/70 hover:text-slate-900"
               >
@@ -167,7 +207,6 @@ export default function IdDocumentPreviewModal({
           </div>
         </div>
 
-        {/* Document stage — height follows content, capped so it never dwarfs the viewport */}
         <div className="relative bg-slate-100">
           {list.length > 1 ? (
             <>
@@ -190,58 +229,85 @@ export default function IdDocumentPreviewModal({
             </>
           ) : null}
 
-          <div className="flex items-center justify-center p-4 sm:p-5">
-            {pdf ? (
-              pdfBlobUrl ? (
-                <iframe
-                  title="ID PDF preview"
-                  src={`${pdfBlobUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`}
-                  className="h-[min(70vh,640px)] w-full rounded-lg border border-slate-200 bg-white"
-                />
-              ) : pagePreview ? (
-                <div className="relative flex items-center justify-center">
-                  {(pdfLoading || !imgLoaded) && (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="h-7 w-7 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700" />
-                    </div>
-                  )}
-                  <img
-                    src={pagePreview}
-                    alt="ID PDF page preview"
-                    onLoad={() => setImgLoaded(true)}
-                    className={`max-h-[min(70vh,640px)] w-auto max-w-full object-contain ${
-                      imgLoaded ? 'opacity-100' : 'opacity-0'
-                    } transition-opacity duration-150`}
-                  />
-                  {pdfError ? (
-                    <p className="absolute bottom-2 left-1/2 w-[min(90%,22rem)] -translate-x-1/2 rounded-md bg-amber-50 px-2.5 py-1 text-center text-[11px] text-amber-800 ring-1 ring-amber-200">
-                      {pdfError}
-                    </p>
-                  ) : null}
-                </div>
-              ) : (
-                <div className="flex flex-col items-center gap-2 px-6 py-16 text-center">
-                  <FileText className="h-9 w-9 text-slate-400" />
-                  <p className="text-sm text-slate-600">
-                    {pdfLoading ? 'Loading PDF…' : pdfError || 'Unable to preview this PDF.'}
-                  </p>
-                </div>
-              )
-            ) : (
-              <div className="relative flex items-center justify-center">
-                {!imgLoaded && (
-                  <div className="flex h-40 w-40 items-center justify-center">
+          <div className="flex min-h-[240px] items-center justify-center p-4 sm:p-5">
+            {loading && !displaySrc ? (
+              <div className="flex flex-col items-center gap-2 py-16">
+                <div className="h-7 w-7 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700" />
+                <p className="text-xs text-slate-500">Loading document…</p>
+              </div>
+            ) : pdf && objectUrl && !fallbackSrc ? (
+              <iframe
+                title="ID PDF preview"
+                src={`${objectUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`}
+                className="h-[min(70vh,640px)] w-full rounded-lg border border-slate-200 bg-white"
+              />
+            ) : displaySrc && !pdf ? (
+              <div className="relative flex min-h-[200px] w-full items-center justify-center">
+                {(loading || !imgLoaded) && !loadError && (
+                  <div className="absolute inset-0 flex items-center justify-center">
                     <div className="h-7 w-7 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700" />
                   </div>
                 )}
                 <img
-                  src={current}
+                  ref={imgRef}
+                  key={displaySrc}
+                  src={displaySrc}
                   alt="ID preview"
                   onLoad={() => setImgLoaded(true)}
+                  onError={() => {
+                    if (displaySrc !== current) {
+                      setFallbackSrc(current);
+                      setObjectUrl('');
+                      setImgLoaded(false);
+                      return;
+                    }
+                    setLoadError('Could not display this photo. Try Open in a new tab.');
+                    setImgLoaded(true);
+                  }}
                   className={`max-h-[min(70vh,640px)] w-auto max-w-full object-contain ${
-                    imgLoaded ? 'opacity-100' : 'hidden'
-                  }`}
+                    imgLoaded ? 'opacity-100' : 'opacity-0'
+                  } transition-opacity duration-150`}
                 />
+                {loadError ? (
+                  <p className="absolute bottom-3 left-1/2 w-[min(90%,22rem)] -translate-x-1/2 rounded-md bg-amber-50 px-2.5 py-1 text-center text-[11px] text-amber-800 ring-1 ring-amber-200">
+                    {loadError}
+                  </p>
+                ) : null}
+              </div>
+            ) : displaySrc && pdf ? (
+              <div className="relative flex items-center justify-center">
+                {(loading || !imgLoaded) && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="h-7 w-7 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700" />
+                  </div>
+                )}
+                <img
+                  ref={imgRef}
+                  key={displaySrc}
+                  src={displaySrc}
+                  alt="ID PDF page preview"
+                  onLoad={() => setImgLoaded(true)}
+                  onError={() => {
+                    setLoadError(loadError || 'PDF preview failed. Try Open or Save.');
+                    setImgLoaded(true);
+                  }}
+                  className={`max-h-[min(70vh,640px)] w-auto max-w-full object-contain ${
+                    imgLoaded ? 'opacity-100' : 'opacity-0'
+                  } transition-opacity duration-150`}
+                />
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-2 px-6 py-16 text-center">
+                <FileText className="h-9 w-9 text-slate-400" />
+                <p className="text-sm text-slate-600">{loadError || 'Unable to preview this document.'}</p>
+                <a
+                  href={current}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-semibold text-sky-700 hover:underline"
+                >
+                  Open original file
+                </a>
               </div>
             )}
           </div>
@@ -249,4 +315,7 @@ export default function IdDocumentPreviewModal({
       </div>
     </div>
   );
+
+  if (typeof document === 'undefined') return null;
+  return createPortal(node, document.body);
 }
