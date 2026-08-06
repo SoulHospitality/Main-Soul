@@ -906,7 +906,7 @@ router.get('/website-bookings', async (req, res, next) => {
       for (const u of units) unitById.set(u.id, u);
     }
 
-    const { quoteStay } = require('../../services/pricing');
+    const { quoteStay, toIsoDate } = require('../../services/pricing');
     const enriched = [];
     for (const row of rows) {
       const total = Number(row.total_egp) || 0;
@@ -931,20 +931,27 @@ router.get('/website-bookings', async (req, res, next) => {
 
       const unit = unitById.get(row.unit_id);
       const wp = unit?.wp_post_id || row.listing_wp_id;
-      if (unit && wp && row.checkin && row.checkout) {
+      const checkinIso = toIsoDate(row.checkin);
+      const checkoutIso = toIsoDate(row.checkout);
+      if (unit && wp && checkinIso && checkoutIso) {
         try {
           const quote = await quoteStay({
             wpPostId: wp,
-            checkin: String(row.checkin).slice(0, 10),
-            checkout: String(row.checkout).slice(0, 10),
+            checkin: checkinIso,
+            checkout: checkoutIso,
             unit,
             adults: Number(row.adults) > 0 ? Number(row.adults) : Number(row.guests) || 1,
             teens: Number(row.children) || 0,
             skipBlockCheck: true,
           });
-          if (quote?.available) {
+          if (quote?.available && Number(quote.nights) > 0 && Number(quote.subtotal) > 0) {
             const quoteTotal = Number(quote.total_egp) || total;
-            const paid = prepaid ? quoteTotal : amountPaid;
+            // Prefer stored booking total when quote drifted (prices changed after request).
+            const displayTotal =
+              total > 0 && Math.abs(quoteTotal - total) > Math.max(50, total * 0.15)
+                ? total
+                : quoteTotal;
+            const paid = prepaid ? displayTotal : amountPaid;
             breakdown = {
               nights: quote.nights,
               subtotal: quote.subtotal,
@@ -954,9 +961,9 @@ router.get('/website-bookings', async (req, res, next) => {
               service_fee_percent: quote.service_fee_percent,
               security_deposit: quote.security_deposit_egp,
               fee_lines: quote.lines || [],
-              total_egp: quoteTotal,
+              total_egp: displayTotal,
               amount_paid: paid,
-              amount_due: Math.max(0, Math.round((quoteTotal - paid) * 100) / 100),
+              amount_due: Math.max(0, Math.round((displayTotal - paid) * 100) / 100),
               payment_status: row.payment_status || (prepaid ? 'paid' : 'pending'),
             };
           }

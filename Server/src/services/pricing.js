@@ -6,9 +6,34 @@ function roundMoney(n) {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 }
 
+/**
+ * Normalize pg Date / ISO / date-like values to YYYY-MM-DD.
+ * `String(date).slice(0, 10)` breaks on Date objects ("Wed Aug 0…").
+ * pg `date` → UTC midnight; timestamptz local midnights use local calendar day.
+ */
+function toIsoDate(value) {
+  if (value == null || value === '') return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const iso = value.toISOString();
+    if (/T00:00:00(\.\d+)?Z$/.test(iso)) return iso.slice(0, 10);
+    const y = value.getFullYear();
+    const m = String(value.getMonth() + 1).padStart(2, '0');
+    const d = String(value.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  const s = String(value).trim();
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (m) return m[1];
+  return null;
+}
+
 function nightsBetween(checkin, checkout) {
-  const a = new Date(`${checkin}T00:00:00`);
-  const b = new Date(`${checkout}T00:00:00`);
+  const aIso = toIsoDate(checkin);
+  const bIso = toIsoDate(checkout);
+  if (!aIso || !bIso) return NaN;
+  const a = new Date(`${aIso}T00:00:00`);
+  const b = new Date(`${bIso}T00:00:00`);
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return NaN;
   return Math.max(0, Math.round((b - a) / 86400000));
 }
 
@@ -26,9 +51,11 @@ function localIso(d) {
 }
 
 function eachNight(checkin, checkout) {
+  const start = toIsoDate(checkin);
   const nights = nightsBetween(checkin, checkout);
   const out = [];
-  for (let i = 0; i < nights; i++) out.push(addDaysIso(checkin, i));
+  if (!start || !Number.isFinite(nights) || nights <= 0) return out;
+  for (let i = 0; i < nights; i++) out.push(addDaysIso(start, i));
   return out;
 }
 
@@ -99,8 +126,16 @@ async function quoteStay({
   teens = 0,
   skipBlockCheck = false,
 }) {
-  const nights = nightsBetween(checkin, checkout);
-  if (nights <= 0) throw Object.assign(new Error('Invalid date range'), { status: 400 });
+  const checkinIso = toIsoDate(checkin);
+  const checkoutIso = toIsoDate(checkout);
+  if (!checkinIso || !checkoutIso) {
+    return { available: false, reason: 'Invalid date range', nights: 0 };
+  }
+
+  const nights = nightsBetween(checkinIso, checkoutIso);
+  if (!Number.isFinite(nights) || nights <= 0) {
+    return { available: false, reason: 'Invalid date range', nights: 0 };
+  }
 
   const minNights = getMinimumStayNights(unit);
   if (nights < minNights) {
@@ -108,9 +143,9 @@ async function quoteStay({
   }
 
   if (!skipBlockCheck) {
-    const blocked = await getBlockedDates(wpPostId, checkin, checkout, { includeUnpriced: false });
+    const blocked = await getBlockedDates(wpPostId, checkinIso, checkoutIso, { includeUnpriced: false });
     const blockedSet = new Set(blocked.map((b) => b.date));
-    for (const dateStr of eachNight(checkin, checkout)) {
+    for (const dateStr of eachNight(checkinIso, checkoutIso)) {
       if (blockedSet.has(dateStr)) {
         return { available: false, reason: `Date ${dateStr} is unavailable`, nights };
       }
@@ -123,12 +158,15 @@ async function quoteStay({
   const { applyGuestTenantMarkup, guestTenantMarkupPct } = require('../lib/commission');
   const tenantMarkupPct = guestTenantMarkupPct(unit);
 
-  for (const dateStr of eachNight(checkin, checkout)) {
+  for (const dateStr of eachNight(checkinIso, checkoutIso)) {
     const row = await priceForNight(wpPostId, dateStr);
     if (!row) {
       return { available: false, reason: `No price for ${dateStr}`, nights };
     }
     const basePrice = Number(row.price);
+    if (!(basePrice > 0)) {
+      return { available: false, reason: `No price for ${dateStr}`, nights };
+    }
     const guestPrice = applyGuestTenantMarkup(basePrice, unit);
     baseSubtotal += basePrice;
     subtotal += guestPrice;
@@ -234,6 +272,7 @@ async function getBlockedDates(wpPostId, from, to, { includeUnpriced = true } = 
 
 module.exports = {
   nightsBetween,
+  toIsoDate,
   priceForNight,
   getDailyPriceMap,
   quoteStay,

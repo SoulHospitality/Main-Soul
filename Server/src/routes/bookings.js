@@ -277,8 +277,12 @@ router.post('/:id/housekeeping-request', authGuest, async (req, res, next) => {
       return res.status(400).json({ error: 'This reservation has no unit assigned' });
     }
 
-    const checkin = String(booking.checkin).slice(0, 10);
-    const checkout = String(booking.checkout).slice(0, 10);
+    const { toIsoDate } = require('../services/pricing');
+    const checkin = toIsoDate(booking.checkin);
+    const checkout = toIsoDate(booking.checkout);
+    if (!checkin || !checkout) {
+      return res.status(400).json({ error: 'Reservation dates are invalid' });
+    }
     const today = new Date();
     const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     if (todayIso < checkin || todayIso >= checkout) {
