@@ -883,7 +883,7 @@ function mapWebsiteBookingDecision(row) {
       decision_label: 'Accepted',
       decision_reason: null,
       decided_by_name: accepted?.accepted_by_name || row.assigned_agent_name || null,
-      decided_at: accepted?.accepted_at || row.updated_at || row.created_at || null,
+      decided_at: accepted?.accepted_at || row.created_at || null,
     };
   }
   if (status === 'cancelled' && (rejected || row.cancellation_reason)) {
@@ -896,7 +896,7 @@ function mapWebsiteBookingDecision(row) {
         row.cancellation_reason ||
         null,
       decided_by_name: rejected?.rejected_by_name || null,
-      decided_at: rejected?.rejected_at || row.updated_at || row.created_at || null,
+      decided_at: rejected?.rejected_at || row.created_at || null,
     };
   }
   return {
@@ -904,7 +904,7 @@ function mapWebsiteBookingDecision(row) {
     decision_label: status || 'Unknown',
     decision_reason: row.cancellation_reason || null,
     decided_by_name: null,
-    decided_at: row.updated_at || row.created_at || null,
+    decided_at: row.created_at || null,
   };
 }
 
@@ -965,7 +965,7 @@ router.get('/website-bookings', async (req, res, next) => {
        LEFT JOIN units u ON u.id = b.unit_id
        LEFT JOIN staff_users su ON su.id = b.assigned_sales_id
        WHERE ${where}${scope.clause}
-       ORDER BY COALESCE(b.updated_at, b.created_at) DESC
+       ORDER BY b.created_at DESC
        LIMIT ${limit}`,
       params
     );
