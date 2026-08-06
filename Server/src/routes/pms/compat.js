@@ -3,7 +3,7 @@ const { query } = require('../../config/db');
 const { authStaff, requireRoles } = require('../../middleware/auth');
 const { syncUnitListingStatus } = require('../../lib/unitListingStatus');
 const { FINANCIAL_EPOCH, clampFromDate } = require('../../lib/financialEpoch');
-const { bookingAssigneeClause, loadReservationAccess, assertReservationOwned, assertBookingAssigned } = require('../../lib/reservationScope');
+const { bookingAssigneeClause, loadReservationAccess, assertReservationOwned, assertBookingAssigned, isAdmin } = require('../../lib/reservationScope');
 const {
   upload,
   attachCloudinaryUrls,
@@ -844,17 +844,91 @@ router.put('/blocked-dates/:unitId', requireRoles('admin'), async (req, res, nex
   }
 });
 
+/** Parse accept/reject metadata stored as JSON lines in bookings.notes */
+function parseBookingDecisionMeta(notes) {
+  const text = String(notes || '');
+  let accepted = null;
+  let rejected = null;
+  const chunks = text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+  // Also try the whole notes blob once (legacy single JSON object)
+  const candidates = [...chunks].reverse();
+  if (text.trim().startsWith('{')) candidates.push(text.trim());
+
+  for (const chunk of candidates) {
+    try {
+      const meta = JSON.parse(chunk);
+      if (!meta || typeof meta !== 'object') continue;
+      if (meta.reject_reason || meta.rejected_by || meta.rejected_by_name) {
+        if (!rejected) rejected = meta;
+      }
+      if (meta.accepted_by || meta.accepted_by_name || meta.accepted_at) {
+        if (!accepted) accepted = meta;
+      }
+    } catch {
+      /* plain-text notes */
+    }
+  }
+  return { accepted, rejected };
+}
+
+function mapWebsiteBookingDecision(row) {
+  const { accepted, rejected } = parseBookingDecisionMeta(row.notes);
+  const status = String(row.status || '').toLowerCase();
+  if (status === 'confirmed') {
+    return {
+      decision: 'accepted',
+      decision_label: 'Accepted',
+      decision_reason: null,
+      decided_by_name: accepted?.accepted_by_name || row.assigned_agent_name || null,
+      decided_at: accepted?.accepted_at || row.updated_at || row.created_at || null,
+    };
+  }
+  if (status === 'cancelled' && (rejected || row.cancellation_reason)) {
+    const isReject = !!(rejected?.reject_reason || rejected?.rejected_by || rejected?.rejected_by_name);
+    return {
+      decision: isReject ? 'rejected' : 'cancelled',
+      decision_label: isReject ? 'Rejected' : 'Cancelled',
+      decision_reason:
+        rejected?.reject_reason ||
+        row.cancellation_reason ||
+        null,
+      decided_by_name: rejected?.rejected_by_name || null,
+      decided_at: rejected?.rejected_at || row.updated_at || row.created_at || null,
+    };
+  }
+  return {
+    decision: status || 'unknown',
+    decision_label: status || 'Unknown',
+    decision_reason: row.cancellation_reason || null,
+    decided_by_name: null,
+    decided_at: row.updated_at || row.created_at || null,
+  };
+}
+
 router.get('/website-bookings', async (req, res, next) => {
   try {
     const status = req.query.status;
     const params = [];
     let where = 'TRUE';
-    if (status) {
+    const historyMode = String(status || '').toLowerCase() === 'history';
+
+    if (historyMode) {
+      if (!isAdmin(req.user)) {
+        return res.status(403).json({ error: 'Only admins can view website booking history' });
+      }
+      // Accepted = confirmed; rejected staff decisions live as cancelled with reject meta.
+      where = `b.status IN ('confirmed', 'cancelled')`;
+    } else if (status) {
       params.push(status);
       where = `b.status = $${params.length}`;
     }
+
     const scope = bookingAssigneeClause(req.user, 'b', params.length + 1);
     params.push(...scope.params);
+    const limit = historyMode ? 300 : 200;
     const { rows } = await query(
       `SELECT b.*,
               u.title AS unit_title,
@@ -891,10 +965,27 @@ router.get('/website-bookings', async (req, res, next) => {
        LEFT JOIN units u ON u.id = b.unit_id
        LEFT JOIN staff_users su ON su.id = b.assigned_sales_id
        WHERE ${where}${scope.clause}
-       ORDER BY b.created_at DESC
-       LIMIT 200`,
+       ORDER BY COALESCE(b.updated_at, b.created_at) DESC
+       LIMIT ${limit}`,
       params
     );
+
+    if (historyMode) {
+      const history = rows
+        .map((row) => {
+          const decision = mapWebsiteBookingDecision(row);
+          // History UI focuses on accepted + rejected (skip plain hold/expiry cancels without reject meta)
+          if (decision.decision !== 'accepted' && decision.decision !== 'rejected') return null;
+          return {
+            ...row,
+            ...decision,
+            amount_paid: Number(row.amount_paid) || 0,
+            amount_due: Math.max(0, Math.round(((Number(row.total_egp) || 0) - (Number(row.amount_paid) || 0)) * 100) / 100),
+          };
+        })
+        .filter(Boolean);
+      return res.json(history);
+    }
 
     const unitIds = [...new Set(rows.map((r) => r.unit_id).filter(Boolean))];
     const unitById = new Map();
@@ -946,7 +1037,6 @@ router.get('/website-bookings', async (req, res, next) => {
           });
           if (quote?.available && Number(quote.nights) > 0 && Number(quote.subtotal) > 0) {
             const quoteTotal = Number(quote.total_egp) || total;
-            // Prefer stored booking total when quote drifted (prices changed after request).
             const displayTotal =
               total > 0 && Math.abs(quoteTotal - total) > Math.max(50, total * 0.15)
                 ? total
