@@ -2,6 +2,13 @@ const express = require('express');
 const { query } = require('../config/db');
 const { authStaff, requireRoles } = require('../middleware/auth');
 const { normalizeProjectName } = require('../lib/projectNames');
+const {
+  upload,
+  attachCloudinaryUrls,
+  setCloudinaryFolder,
+  destroyCloudinaryUrl,
+  FOLDER_PROJECTS,
+} = require('../config/cloudinary');
 
 const router = express.Router();
 
@@ -12,6 +19,23 @@ function normalizeText(value) {
 function normalizeFacilities(value) {
   if (!Array.isArray(value)) return [];
   return [...new Set(value.map((v) => String(v || '').trim()).filter(Boolean))];
+}
+
+function parseFacilitiesBody(raw) {
+  if (Array.isArray(raw)) return normalizeFacilities(raw);
+  if (typeof raw === 'string' && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return normalizeFacilities(parsed);
+    } catch {
+      return normalizeFacilities(raw.split(','));
+    }
+  }
+  return [];
+}
+
+function uploadedImageUrl(req) {
+  return req.file?.secure_url || req.file?.path || null;
 }
 
 function buildCatalog(rows) {
@@ -88,86 +112,123 @@ router.get('/catalog', async (_req, res, next) => {
 });
 
 /** POST /api/projects — create destination/project mapping (staff) */
-router.post('/', authStaff, requireRoles('admin', 'resale'), async (req, res, next) => {
-  try {
-    const destination = normalizeText(req.body?.destination || req.body?.city);
-    const name = normalizeProjectName(
-      normalizeText(req.body?.name || req.body?.projectName || req.body?.project)
-    );
-    if (!destination || !name) {
-      return res.status(400).json({ error: 'destination and name are required' });
+router.post(
+  '/',
+  authStaff,
+  requireRoles('admin', 'resale'),
+  setCloudinaryFolder(FOLDER_PROJECTS),
+  upload.single('image'),
+  attachCloudinaryUrls,
+  async (req, res, next) => {
+    try {
+      const destination = normalizeText(req.body?.destination || req.body?.city);
+      const name = normalizeProjectName(
+        normalizeText(req.body?.name || req.body?.projectName || req.body?.project)
+      );
+      if (!destination || !name) {
+        return res.status(400).json({ error: 'destination and name are required' });
+      }
+
+      const normalizedDestination = destination.toLowerCase();
+      const normalizedName = name.toLowerCase();
+      const facilities = parseFacilitiesBody(req.body?.facilities);
+      const imageUrl = uploadedImageUrl(req) || normalizeText(req.body?.image_url) || null;
+
+      const existing = await query(
+        `SELECT id FROM location_projects
+         WHERE normalized_destination = $1 AND normalized_name = $2`,
+        [normalizedDestination, normalizedName]
+      );
+      if (existing.rows[0]) {
+        return res.status(409).json({ error: 'This destination/project mapping already exists' });
+      }
+
+      await query(
+        `INSERT INTO location_projects
+           (destination, name, normalized_destination, normalized_name, image_url, sort_order, facilities)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          destination,
+          name,
+          normalizedDestination,
+          normalizedName,
+          imageUrl,
+          Number(req.body?.sort_order) || 0,
+          facilities,
+        ]
+      );
+
+      res.status(201).json(catalogResponse(await loadCatalogRows()));
+    } catch (err) {
+      next(err);
     }
-
-    const normalizedDestination = destination.toLowerCase();
-    const normalizedName = name.toLowerCase();
-    const facilities = normalizeFacilities(req.body?.facilities);
-
-    const existing = await query(
-      `SELECT id FROM location_projects
-       WHERE normalized_destination = $1 AND normalized_name = $2`,
-      [normalizedDestination, normalizedName]
-    );
-    if (existing.rows[0]) {
-      return res.status(409).json({ error: 'This destination/project mapping already exists' });
-    }
-
-    await query(
-      `INSERT INTO location_projects
-         (destination, name, normalized_destination, normalized_name, image_url, sort_order, facilities)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [
-        destination,
-        name,
-        normalizedDestination,
-        normalizedName,
-        req.body?.image_url || null,
-        Number(req.body?.sort_order) || 0,
-        facilities,
-      ]
-    );
-
-    res.status(201).json(catalogResponse(await loadCatalogRows()));
-  } catch (err) {
-    next(err);
   }
-});
+);
 
 /** PUT /api/projects/:id — update project (facilities, image, name) */
-router.put('/:id', authStaff, requireRoles('admin', 'resale'), async (req, res, next) => {
-  try {
-    const id = req.params.id;
-    const facilities =
-      req.body?.facilities !== undefined ? normalizeFacilities(req.body.facilities) : null;
-    const imageUrl = req.body?.image_url !== undefined ? req.body.image_url || null : undefined;
-    const name = req.body?.name
-      ? normalizeProjectName(normalizeText(req.body.name))
-      : null;
+router.put(
+  '/:id',
+  authStaff,
+  requireRoles('admin', 'resale'),
+  setCloudinaryFolder(FOLDER_PROJECTS),
+  upload.single('image'),
+  attachCloudinaryUrls,
+  async (req, res, next) => {
+    try {
+      const id = req.params.id;
+      const { rows: existing } = await query(`SELECT * FROM location_projects WHERE id = $1`, [id]);
+      if (!existing[0]) return res.status(404).json({ error: 'Project not found' });
 
-    const { rows: existing } = await query(`SELECT id FROM location_projects WHERE id = $1`, [id]);
-    if (!existing[0]) return res.status(404).json({ error: 'Project not found' });
+      const facilities =
+        req.body?.facilities !== undefined ? parseFacilitiesBody(req.body.facilities) : null;
+      const name = req.body?.name
+        ? normalizeProjectName(normalizeText(req.body.name))
+        : null;
 
-    await query(
-      `UPDATE location_projects SET
-         name = COALESCE($2, name),
-         normalized_name = COALESCE(lower($2), normalized_name),
-         image_url = CASE WHEN $3::boolean THEN $4 ELSE image_url END,
-         facilities = COALESCE($5, facilities),
-         updated_at = now()
-       WHERE id = $1`,
-      [
-        id,
-        name,
-        imageUrl !== undefined,
-        imageUrl ?? null,
-        facilities,
-      ]
-    );
+      const uploaded = uploadedImageUrl(req);
+      let imageUrl = existing[0].image_url;
+      let imageChanged = false;
+      if (uploaded) {
+        imageUrl = uploaded;
+        imageChanged = true;
+      } else if (req.body?.image_url !== undefined) {
+        imageUrl = normalizeText(req.body.image_url) || null;
+        imageChanged = imageUrl !== existing[0].image_url;
+      } else if (req.body?.clear_image === '1' || req.body?.clear_image === true) {
+        imageUrl = null;
+        imageChanged = true;
+      }
 
-    res.json(catalogResponse(await loadCatalogRows()));
-  } catch (err) {
-    next(err);
+      await query(
+        `UPDATE location_projects SET
+           name = COALESCE($2, name),
+           normalized_name = COALESCE(lower($2), normalized_name),
+           image_url = CASE WHEN $3::boolean THEN $4 ELSE image_url END,
+           facilities = COALESCE($5, facilities),
+           updated_at = now()
+         WHERE id = $1`,
+        [id, name, imageChanged, imageUrl, facilities]
+      );
+
+      if (
+        imageChanged &&
+        existing[0].image_url &&
+        existing[0].image_url !== imageUrl &&
+        String(existing[0].image_url).includes('res.cloudinary.com')
+      ) {
+        try {
+          await destroyCloudinaryUrl(existing[0].image_url, { allowFolders: [FOLDER_PROJECTS] });
+        } catch (_) {
+          /* non-blocking */
+        }
+      }
+
+      res.json(catalogResponse(await loadCatalogRows()));
+    } catch (err) {
+      next(err);
+    }
   }
-});
+);
 
 /** DELETE /api/projects/destination/:destination — remove all projects under a destination */
 router.delete(
@@ -184,12 +245,22 @@ router.delete(
       const del = await query(
         `DELETE FROM location_projects
          WHERE normalized_destination = lower($1)
-         RETURNING id, destination, name`,
+         RETURNING id, destination, name, image_url`,
         [destination]
       );
 
       if (!del.rows.length) {
         return res.status(404).json({ error: 'Destination not found' });
+      }
+
+      for (const row of del.rows) {
+        if (row.image_url && String(row.image_url).includes('res.cloudinary.com')) {
+          try {
+            await destroyCloudinaryUrl(row.image_url, { allowFolders: [FOLDER_PROJECTS] });
+          } catch (_) {
+            /* non-blocking */
+          }
+        }
       }
 
       const unitsRes = await query(
@@ -216,7 +287,17 @@ router.delete(
 /** DELETE /api/projects/:id — remove one project mapping */
 router.delete('/:id', authStaff, requireRoles('admin', 'resale'), async (req, res, next) => {
   try {
-    await query(`DELETE FROM location_projects WHERE id = $1`, [req.params.id]);
+    const { rows } = await query(
+      `DELETE FROM location_projects WHERE id = $1 RETURNING image_url`,
+      [req.params.id]
+    );
+    if (rows[0]?.image_url && String(rows[0].image_url).includes('res.cloudinary.com')) {
+      try {
+        await destroyCloudinaryUrl(rows[0].image_url, { allowFolders: [FOLDER_PROJECTS] });
+      } catch (_) {
+        /* non-blocking */
+      }
+    }
     res.json(catalogResponse(await loadCatalogRows()));
   } catch (err) {
     next(err);

@@ -16,6 +16,8 @@ const FOLDER_UNITS = 'soul-hospitality/units';
 const FOLDER_PAYMENTS = 'soul-hospitality/payments';
 /** Website entry popup creative — not purged by retention. */
 const FOLDER_SITE = 'soul-hospitality/site';
+/** Homepage destination / project slide images. */
+const FOLDER_PROJECTS = 'soul-hospitality/projects';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -213,4 +215,5 @@ module.exports = {
   FOLDER_UNITS,
   FOLDER_PAYMENTS,
   FOLDER_SITE,
+  FOLDER_PROJECTS,
 };

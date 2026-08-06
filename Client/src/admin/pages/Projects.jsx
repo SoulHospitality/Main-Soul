@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { MapPin, Plus, Trash2 } from 'lucide-react';
+import { ImagePlus, MapPin, Plus, Trash2, Upload } from 'lucide-react';
 
 import { PROJECT_CATALOG_KEY } from '../../hooks/useProjectCatalog';
 import TagSelect from '../components/ui/TagSelect';
@@ -9,10 +9,11 @@ import { FACILITY_SUGGESTIONS } from '../utils/facilitySuggestions';
 
 async function catalogFetch(path, options = {}) {
   const token = localStorage.getItem('pms_token');
+  const isForm = typeof FormData !== 'undefined' && options.body instanceof FormData;
   const res = await fetch(`/api${path}`, {
     ...options,
     headers: {
-      'Content-Type': 'application/json',
+      ...(isForm ? {} : { 'Content-Type': 'application/json' }),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(options.headers || {}),
     },
@@ -24,6 +25,9 @@ async function catalogFetch(path, options = {}) {
 
 export default function Projects() {
   const qc = useQueryClient();
+  const createFileRef = useRef(null);
+  const editFileRef = useRef(null);
+
   const { data: catalog, isLoading: loadingCatalog, refetch } = useQuery({
     queryKey: PROJECT_CATALOG_KEY,
     queryFn: () => catalogFetch('/projects/catalog'),
@@ -37,8 +41,12 @@ export default function Projects() {
   const [destinationInput, setDestinationInput] = useState('');
   const [projectNameInput, setProjectNameInput] = useState('');
   const [createFacilities, setCreateFacilities] = useState([]);
+  const [createImageFile, setCreateImageFile] = useState(null);
+  const [createImagePreview, setCreateImagePreview] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [editFacilities, setEditFacilities] = useState([]);
+  const [editImageFile, setEditImageFile] = useState(null);
+  const [editImagePreview, setEditImagePreview] = useState('');
 
   useEffect(() => {
     if (!selectedDestination && destinations[0]) {
@@ -50,22 +58,33 @@ export default function Projects() {
     }
   }, [destinations, selectedDestination]);
 
+  useEffect(() => {
+    return () => {
+      if (createImagePreview) URL.revokeObjectURL(createImagePreview);
+      if (editImagePreview) URL.revokeObjectURL(editImagePreview);
+    };
+  }, [createImagePreview, editImagePreview]);
+
   const selectedProjects = useMemo(() => {
     if (!selectedDestination) return [];
     return projectsByDestination[selectedDestination] || [];
   }, [projectsByDestination, selectedDestination]);
 
   const createMutation = useMutation({
-    mutationFn: ({ destination, name, facilities }) =>
-      catalogFetch('/projects', {
-        method: 'POST',
-        body: JSON.stringify({ destination, name, facilities }),
-      }),
+    mutationFn: ({ destination, name, facilities, imageFile }) => {
+      const fd = new FormData();
+      fd.append('destination', destination);
+      fd.append('name', name);
+      fd.append('facilities', JSON.stringify(facilities || []));
+      if (imageFile) fd.append('image', imageFile);
+      return catalogFetch('/projects', { method: 'POST', body: fd });
+    },
     onSuccess: () => {
-      toast.success('Project mapping added');
+      toast.success('Project added — slide photo will show on the homepage');
       setProjectNameInput('');
       setDestinationInput('');
       setCreateFacilities([]);
+      clearCreateImage();
       refetch();
       qc.invalidateQueries({ queryKey: PROJECT_CATALOG_KEY });
     },
@@ -73,15 +92,17 @@ export default function Projects() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, facilities }) =>
-      catalogFetch(`/projects/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify({ facilities }),
-      }),
+    mutationFn: ({ id, facilities, imageFile }) => {
+      const fd = new FormData();
+      fd.append('facilities', JSON.stringify(facilities || []));
+      if (imageFile) fd.append('image', imageFile);
+      return catalogFetch(`/projects/${id}`, { method: 'PUT', body: fd });
+    },
     onSuccess: () => {
-      toast.success('Project facilities saved');
+      toast.success('Project saved');
       setEditingId(null);
       setEditFacilities([]);
+      clearEditImage();
       refetch();
       qc.invalidateQueries({ queryKey: PROJECT_CATALOG_KEY });
     },
@@ -117,6 +138,42 @@ export default function Projects() {
     onError: (err) => toast.error(err.message),
   });
 
+  function clearCreateImage() {
+    if (createImagePreview) URL.revokeObjectURL(createImagePreview);
+    setCreateImageFile(null);
+    setCreateImagePreview('');
+    if (createFileRef.current) createFileRef.current.value = '';
+  }
+
+  function clearEditImage() {
+    if (editImagePreview) URL.revokeObjectURL(editImagePreview);
+    setEditImageFile(null);
+    setEditImagePreview('');
+    if (editFileRef.current) editFileRef.current.value = '';
+  }
+
+  function onPickCreateImage(file) {
+    if (!file) return;
+    if (!String(file.type || '').startsWith('image/')) {
+      toast.error('Please upload an image file');
+      return;
+    }
+    if (createImagePreview) URL.revokeObjectURL(createImagePreview);
+    setCreateImageFile(file);
+    setCreateImagePreview(URL.createObjectURL(file));
+  }
+
+  function onPickEditImage(file) {
+    if (!file) return;
+    if (!String(file.type || '').startsWith('image/')) {
+      toast.error('Please upload an image file');
+      return;
+    }
+    if (editImagePreview) URL.revokeObjectURL(editImagePreview);
+    setEditImageFile(file);
+    setEditImagePreview(URL.createObjectURL(file));
+  }
+
   function handleCreate(e) {
     e.preventDefault();
     const destination = String(destinationInput || selectedDestination || '').trim();
@@ -125,7 +182,16 @@ export default function Projects() {
       toast.error('Both destination and project name are required');
       return;
     }
-    createMutation.mutate({ destination, name, facilities: createFacilities });
+    if (!createImageFile) {
+      toast.error('Add a homepage slide photo for this project');
+      return;
+    }
+    createMutation.mutate({
+      destination,
+      name,
+      facilities: createFacilities,
+      imageFile: createImageFile,
+    });
     setSelectedDestination(destination);
   }
 
@@ -138,9 +204,10 @@ export default function Projects() {
     deleteDestinationMutation.mutate(destination);
   }
 
-  function startEditFacilities(row) {
+  function startEdit(row) {
     setEditingId(row.id);
     setEditFacilities(Array.isArray(row.facilities) ? row.facilities : []);
+    clearEditImage();
   }
 
   const selectedItems = items.filter((i) => i.destination === selectedDestination);
@@ -150,7 +217,8 @@ export default function Projects() {
       <div className="page-header">
         <h1 className="page-title">Destinations & Projects</h1>
         <p className="page-subtitle">
-          Manage destination → project mappings and shared compound facilities. Facilities apply to all units in that project.
+          Manage destination → project mappings, homepage slide photos, and shared compound
+          facilities.
         </p>
       </div>
 
@@ -168,7 +236,9 @@ export default function Projects() {
             >
               <option value="">Select destination…</option>
               {destinations.map((d) => (
-                <option key={d} value={d}>{d}</option>
+                <option key={d} value={d}>
+                  {d}
+                </option>
               ))}
             </select>
           </div>
@@ -191,6 +261,46 @@ export default function Projects() {
               required
             />
           </div>
+          <div className="md:col-span-2">
+            <label className="label">Homepage slide photo *</label>
+            <div
+              className="mt-1 flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-soul-line bg-slate-50 px-4 py-8 text-center cursor-pointer hover:border-[var(--pms-accent,#283f5e)] hover:bg-slate-100/80"
+              onClick={() => createFileRef.current?.click()}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                onPickCreateImage(e.dataTransfer.files?.[0]);
+              }}
+            >
+              {createImagePreview ? (
+                <img
+                  src={createImagePreview}
+                  alt="Slide preview"
+                  className="max-h-40 w-full rounded-xl object-cover"
+                />
+              ) : (
+                <ImagePlus className="h-8 w-8 text-slate-400" />
+              )}
+              <div>
+                <p className="text-sm font-semibold text-slate-800">
+                  {createImageFile ? 'Replace photo' : 'Upload slide photo'}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Shown in the “Find your Soul” carousel on the main page. JPG, PNG, or WebP.
+                </p>
+              </div>
+              <button type="button" className="btn-secondary text-xs">
+                <Upload className="h-3.5 w-3.5" /> Choose file
+              </button>
+            </div>
+            <input
+              ref={createFileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => onPickCreateImage(e.target.files?.[0])}
+            />
+          </div>
           <TagSelect
             label="Facilities (shared by all units in this project)"
             placeholder="Select or type facilities…"
@@ -206,7 +316,9 @@ export default function Projects() {
 
       <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
         <div className="card p-4 space-y-1">
-          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">Destinations</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">
+            Destinations
+          </p>
           {loadingCatalog ? (
             <p className="text-sm text-gray-400">Loading…</p>
           ) : destinations.length === 0 ? (
@@ -279,21 +391,40 @@ export default function Projects() {
               {selectedItems.map((row) => {
                 const facilities = Array.isArray(row.facilities) ? row.facilities : [];
                 const isEditing = editingId === row.id;
+                const preview = isEditing && editImagePreview ? editImagePreview : row.image_url;
                 return (
                   <div key={row.id} className="rounded-xl border border-gray-100 p-4 space-y-3">
                     <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p className="font-semibold text-gray-900">{row.name}</p>
-                        <p className="text-xs text-gray-400">{row.destination}</p>
+                      <div className="flex gap-3 min-w-0">
+                        <div className="h-16 w-24 shrink-0 overflow-hidden rounded-lg bg-slate-100">
+                          {preview ? (
+                            <img
+                              src={preview}
+                              alt={row.name}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-full items-center justify-center text-slate-300">
+                              <ImagePlus className="h-5 w-5" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-semibold text-gray-900">{row.name}</p>
+                          <p className="text-xs text-gray-400">{row.destination}</p>
+                          {!row.image_url && !editImagePreview ? (
+                            <p className="mt-1 text-xs text-amber-700">No homepage slide photo yet</p>
+                          ) : null}
+                        </div>
                       </div>
                       <div className="flex gap-2">
                         {!isEditing ? (
                           <button
                             type="button"
                             className="btn-secondary btn-sm"
-                            onClick={() => startEditFacilities(row)}
+                            onClick={() => startEdit(row)}
                           >
-                            Edit facilities
+                            Edit
                           </button>
                         ) : (
                           <>
@@ -302,7 +433,11 @@ export default function Projects() {
                               className="btn-primary btn-sm"
                               disabled={updateMutation.isPending}
                               onClick={() =>
-                                updateMutation.mutate({ id: row.id, facilities: editFacilities })
+                                updateMutation.mutate({
+                                  id: row.id,
+                                  facilities: editFacilities,
+                                  imageFile: editImageFile,
+                                })
                               }
                             >
                               Save
@@ -313,6 +448,7 @@ export default function Projects() {
                               onClick={() => {
                                 setEditingId(null);
                                 setEditFacilities([]);
+                                clearEditImage();
                               }}
                             >
                               Cancel
@@ -334,13 +470,36 @@ export default function Projects() {
                     </div>
 
                     {isEditing ? (
-                      <TagSelect
-                        label="Facilities"
-                        placeholder="Select or type facilities…"
-                        suggestions={FACILITY_SUGGESTIONS}
-                        selectedTags={editFacilities}
-                        onTagsChange={setEditFacilities}
-                      />
+                      <div className="space-y-3">
+                        <div>
+                          <label className="label">Homepage slide photo</label>
+                          <div
+                            className="mt-1 flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-soul-line bg-slate-50 px-3 py-5 text-center cursor-pointer hover:bg-slate-100/80"
+                            onClick={() => editFileRef.current?.click()}
+                          >
+                            <p className="text-xs text-slate-600">
+                              {editImageFile ? 'New photo selected' : 'Click to replace photo'}
+                            </p>
+                            <button type="button" className="btn-secondary text-xs">
+                              <Upload className="h-3.5 w-3.5" /> Choose file
+                            </button>
+                          </div>
+                          <input
+                            ref={editFileRef}
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => onPickEditImage(e.target.files?.[0])}
+                          />
+                        </div>
+                        <TagSelect
+                          label="Facilities"
+                          placeholder="Select or type facilities…"
+                          suggestions={FACILITY_SUGGESTIONS}
+                          selectedTags={editFacilities}
+                          onTagsChange={setEditFacilities}
+                        />
+                      </div>
                     ) : facilities.length ? (
                       <div className="flex flex-wrap gap-1.5">
                         {facilities.map((f) => (
