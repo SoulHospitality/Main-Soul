@@ -90,8 +90,8 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
   }
 
   const assignee =
+    (isWebsiteReservationsAgent(staffUser) || isAdmin(staffUser) ? staffUser?.id : null) ||
     booking.assigned_sales_id ||
-    (isWebsiteReservationsAgent(staffUser) || isAdmin(staffUser) ? staffUser.id : null) ||
     (await pickLeastLoadedReservationsAgent());
 
   const depositNote = alreadyPaid
@@ -103,7 +103,7 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
        status = 'confirmed',
        hold_expires_at = NULL,
        payment_status = $4,
-       assigned_sales_id = COALESCE(assigned_sales_id, $3),
+       assigned_sales_id = $3,
        notes = CASE
          WHEN $2::text IS NULL AND $5::text IS NULL THEN notes
          ELSE COALESCE(notes || E'\n', '')

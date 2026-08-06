@@ -891,7 +891,85 @@ router.get('/website-bookings', async (req, res, next) => {
        LIMIT 200`,
       params
     );
-    res.json(rows);
+
+    const unitIds = [...new Set(rows.map((r) => r.unit_id).filter(Boolean))];
+    const unitById = new Map();
+    if (unitIds.length) {
+      const { rows: units } = await query(
+        `SELECT * FROM units WHERE id = ANY($1::uuid[])`,
+        [unitIds]
+      );
+      for (const u of units) unitById.set(u.id, u);
+    }
+
+    const { quoteStay } = require('../../services/pricing');
+    const enriched = [];
+    for (const row of rows) {
+      const total = Number(row.total_egp) || 0;
+      const prepaid =
+        String(row.payment_status || '').toLowerCase() === 'paid' ||
+        /paymob|card/i.test(String(row.payment_method || ''));
+      const amountPaid = prepaid ? total : Number(row.amount_paid) || 0;
+
+      let breakdown = {
+        nights: null,
+        subtotal: null,
+        housekeeping_fees: null,
+        beach_access_fees: null,
+        service_fees: null,
+        security_deposit: null,
+        fee_lines: [],
+        total_egp: total,
+        amount_paid: amountPaid,
+        amount_due: Math.max(0, Math.round((total - amountPaid) * 100) / 100),
+        payment_status: row.payment_status || (prepaid ? 'paid' : 'pending'),
+      };
+
+      const unit = unitById.get(row.unit_id);
+      const wp = unit?.wp_post_id || row.listing_wp_id;
+      if (unit && wp && row.checkin && row.checkout) {
+        try {
+          const quote = await quoteStay({
+            wpPostId: wp,
+            checkin: String(row.checkin).slice(0, 10),
+            checkout: String(row.checkout).slice(0, 10),
+            unit,
+            adults: Number(row.adults) > 0 ? Number(row.adults) : Number(row.guests) || 1,
+            teens: Number(row.children) || 0,
+            skipBlockCheck: true,
+          });
+          if (quote?.available) {
+            const quoteTotal = Number(quote.total_egp) || total;
+            const paid = prepaid ? quoteTotal : amountPaid;
+            breakdown = {
+              nights: quote.nights,
+              subtotal: quote.subtotal,
+              housekeeping_fees: quote.cleaning_fee_egp,
+              beach_access_fees: quote.access_fee_egp,
+              service_fees: quote.service_fee_egp,
+              service_fee_percent: quote.service_fee_percent,
+              security_deposit: quote.security_deposit_egp,
+              fee_lines: quote.lines || [],
+              total_egp: quoteTotal,
+              amount_paid: paid,
+              amount_due: Math.max(0, Math.round((quoteTotal - paid) * 100) / 100),
+              payment_status: row.payment_status || (prepaid ? 'paid' : 'pending'),
+            };
+          }
+        } catch (_) {
+          /* keep totals-only fallback */
+        }
+      }
+
+      enriched.push({
+        ...row,
+        amount_paid: breakdown.amount_paid,
+        amount_due: breakdown.amount_due,
+        payment_breakdown: breakdown,
+      });
+    }
+
+    res.json(enriched);
   } catch (e) {
     next(e);
   }

@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Building2, CalendarDays,
   BadgeDollarSign, Receipt, FileBarChart2, Users, UserCircle,
   LogOut, Building, CalendarRange, Wallet,
-  TrendingUp, Sparkles, Briefcase, Globe,
+  TrendingUp, Sparkles, Briefcase, Globe, Tag,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -29,6 +29,7 @@ const NAV_ITEMS = [
   { path: '/admin/owner-settlements', label: 'Owner Settlements', icon: FileBarChart2, page: 'owner_settlements' },
   { path: '/admin/owner-statement',  label: 'Owner Statement',   icon: FileBarChart2, page: 'owner_settlements' },
   { path: '/admin/users',            label: 'User Management',    icon: Users,              page: 'users' },
+  { path: '/admin/promo-codes',      label: 'Promo Codes',        icon: Tag,                page: 'promo_codes' },
 ];
 
 export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile }) {

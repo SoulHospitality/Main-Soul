@@ -26,6 +26,29 @@ function partyCount(booking) {
   return booking?.guests != null ? booking.guests : '—';
 }
 
+function partyLabel(booking) {
+  const adults = Number(booking?.adults);
+  const children = Number(booking?.children);
+  const nanny = Number(booking?.nanny_count);
+  const parts = [];
+  if (Number.isFinite(adults) && adults > 0) {
+    parts.push(`${adults} adult${adults === 1 ? '' : 's'}`);
+  }
+  if (Number.isFinite(children) && children > 0) {
+    parts.push(`${children} child${children === 1 ? '' : 'ren'}`);
+  }
+  if (Number.isFinite(nanny) && nanny > 0) {
+    parts.push(`${nanny} nanny`);
+  }
+  if (parts.length) return parts.join(' · ');
+  if (booking?.guests != null) return `${booking.guests} guest${Number(booking.guests) === 1 ? '' : 's'}`;
+  return '—';
+}
+
+function paymentBreakdown(booking) {
+  return booking?.payment_breakdown || {};
+}
+
 function paymentMethodLabel(method) {
   const key = String(method || '').toLowerCase();
   if (PAYMENT_METHOD_LABELS[key]) return PAYMENT_METHOD_LABELS[key];
@@ -210,8 +233,8 @@ export default function WebsiteBookingRequests() {
         <div>
           <h2 className="font-semibold text-gray-900">Website requests awaiting confirmation</h2>
           <p className="text-xs text-gray-500">
-            Review guest name, guests, duration, ID photos, and total. For InstaPay/Cash, collect at least 50%
-            with evidence before accepting.
+            Review guest contact, party size, stay dates, ID photos, and full payment breakdown. For
+            InstaPay/Cash, collect at least 50% with evidence before accepting.
           </p>
         </div>
         <div className="overflow-x-auto">
@@ -222,7 +245,7 @@ export default function WebsiteBookingRequests() {
                 <th className="py-2 pr-3">Guests</th>
                 <th className="py-2 pr-3">Duration</th>
                 <th className="py-2 pr-3">Unit</th>
-                <th className="py-2 pr-3">Total</th>
+                <th className="py-2 pr-3">Payment details</th>
                 <th className="py-2 pr-3">Payment method</th>
                 <th className="py-2 pr-3">Guest documents</th>
                 <th className="py-2">Actions</th>
@@ -233,6 +256,10 @@ export default function WebsiteBookingRequests() {
                 const idPhotos = toIdPhotos(b);
                 const nights = nightsBetween(b.checkin, b.checkout);
                 const methodLabel = paymentMethodLabel(b.payment_method);
+                const pay = paymentBreakdown(b);
+                const total = Number(pay.total_egp ?? b.total_egp) || 0;
+                const paid = Number(pay.amount_paid ?? b.amount_paid) || 0;
+                const due = Number(pay.amount_due ?? Math.max(0, total - paid)) || 0;
                 return (
                   <tr key={b.id} className="border-t border-amber-100/80 align-top">
                     <td className="py-3 pr-3 min-w-[14rem]">
@@ -257,10 +284,9 @@ export default function WebsiteBookingRequests() {
                         </div>
                       </div>
                     </td>
-                    <td className="py-3 pr-3 whitespace-nowrap">
-                      <span className="inline-flex min-w-[2rem] items-center justify-center rounded-md bg-white border border-gray-200 px-2 py-1 text-sm font-semibold text-gray-900">
-                        {partyCount(b)}
-                      </span>
+                    <td className="py-3 pr-3 min-w-[8rem]">
+                      <div className="font-semibold text-gray-900">{partyLabel(b)}</div>
+                      <div className="text-[11px] text-gray-500 mt-0.5">{partyCount(b)} total</div>
                     </td>
                     <td className="py-3 pr-3 whitespace-nowrap">
                       <div className="font-medium text-gray-900">
@@ -276,8 +302,47 @@ export default function WebsiteBookingRequests() {
                         {b.unit_title || b.listing_title || ''}
                       </div>
                     </td>
-                    <td className="py-3 pr-3">
-                      <div className="text-base font-bold text-soul-blue tabular-nums">{currency(b.total_egp)}</div>
+                    <td className="py-3 pr-3 min-w-[11rem]">
+                      <div className="rounded-lg border border-gray-200 bg-white px-2.5 py-2 space-y-1 text-xs">
+                        {pay.subtotal != null && (
+                          <div className="flex justify-between gap-3">
+                            <span className="text-gray-500">Stay</span>
+                            <span className="font-medium tabular-nums">{currency(pay.subtotal)}</span>
+                          </div>
+                        )}
+                        {Number(pay.housekeeping_fees) > 0 && (
+                          <div className="flex justify-between gap-3">
+                            <span className="text-gray-500">Housekeeping</span>
+                            <span className="font-medium tabular-nums">{currency(pay.housekeeping_fees)}</span>
+                          </div>
+                        )}
+                        {Number(pay.beach_access_fees) > 0 && (
+                          <div className="flex justify-between gap-3">
+                            <span className="text-gray-500">Beach access</span>
+                            <span className="font-medium tabular-nums">{currency(pay.beach_access_fees)}</span>
+                          </div>
+                        )}
+                        {Number(pay.service_fees) > 0 && (
+                          <div className="flex justify-between gap-3">
+                            <span className="text-gray-500">
+                              Service{pay.service_fee_percent ? ` (${pay.service_fee_percent}%)` : ''}
+                            </span>
+                            <span className="font-medium tabular-nums">{currency(pay.service_fees)}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between gap-3 border-t border-gray-100 pt-1">
+                          <span className="font-semibold text-gray-800">Total</span>
+                          <span className="font-bold text-soul-blue tabular-nums">{currency(total)}</span>
+                        </div>
+                        <div className="flex justify-between gap-3">
+                          <span className="text-gray-500">Paid</span>
+                          <span className="font-medium tabular-nums text-emerald-700">{currency(paid)}</span>
+                        </div>
+                        <div className="flex justify-between gap-3">
+                          <span className="text-gray-500">Due</span>
+                          <span className="font-semibold tabular-nums text-amber-800">{currency(due)}</span>
+                        </div>
+                      </div>
                     </td>
                     <td className="py-3 pr-3 min-w-[9rem]">
                       <div className="space-y-1.5">
@@ -430,7 +495,8 @@ export default function WebsiteBookingRequests() {
               </div>
               <div>
                 <div className="text-xs uppercase text-gray-500">Guests</div>
-                <div className="font-medium">{partyCount(acceptBooking)}</div>
+                <div className="font-medium">{partyLabel(acceptBooking)}</div>
+                <div className="text-xs text-gray-500">{partyCount(acceptBooking)} total</div>
               </div>
               <div>
                 <div className="text-xs uppercase text-gray-500">Duration</div>
@@ -442,9 +508,62 @@ export default function WebsiteBookingRequests() {
                   {formatDate(acceptBooking.checkin)} → {formatDate(acceptBooking.checkout)}
                 </div>
               </div>
-              <div>
-                <div className="text-xs uppercase text-gray-500">Total</div>
-                <div className="font-semibold text-lg text-gray-900">{currency(acceptTotal)}</div>
+              <div className="sm:col-span-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 space-y-1.5 text-sm">
+                <div className="text-xs uppercase text-gray-500 mb-1">Payment details</div>
+                {(() => {
+                  const pay = paymentBreakdown(acceptBooking);
+                  const total = Number(pay.total_egp ?? acceptTotal) || 0;
+                  const paid = Number(pay.amount_paid ?? acceptBooking.amount_paid) || 0;
+                  const due = Number(pay.amount_due ?? Math.max(0, total - paid)) || 0;
+                  return (
+                    <>
+                      {pay.subtotal != null && (
+                        <div className="flex justify-between gap-3">
+                          <span className="text-gray-500">Stay subtotal</span>
+                          <span className="font-medium tabular-nums">{currency(pay.subtotal)}</span>
+                        </div>
+                      )}
+                      {Number(pay.housekeeping_fees) > 0 && (
+                        <div className="flex justify-between gap-3">
+                          <span className="text-gray-500">Housekeeping</span>
+                          <span className="font-medium tabular-nums">{currency(pay.housekeeping_fees)}</span>
+                        </div>
+                      )}
+                      {Number(pay.beach_access_fees) > 0 && (
+                        <div className="flex justify-between gap-3">
+                          <span className="text-gray-500">Beach access</span>
+                          <span className="font-medium tabular-nums">{currency(pay.beach_access_fees)}</span>
+                        </div>
+                      )}
+                      {Number(pay.service_fees) > 0 && (
+                        <div className="flex justify-between gap-3">
+                          <span className="text-gray-500">
+                            Service fees{pay.service_fee_percent ? ` + taxes (${pay.service_fee_percent}%)` : ''}
+                          </span>
+                          <span className="font-medium tabular-nums">{currency(pay.service_fees)}</span>
+                        </div>
+                      )}
+                      {Number(pay.security_deposit) > 0 && (
+                        <div className="flex justify-between gap-3">
+                          <span className="text-gray-500">Security deposit (held)</span>
+                          <span className="font-medium tabular-nums">{currency(pay.security_deposit)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between gap-3 border-t border-gray-200 pt-1.5">
+                        <span className="font-semibold text-gray-800">Total</span>
+                        <span className="font-bold text-lg text-gray-900 tabular-nums">{currency(total)}</span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="text-gray-500">Already paid</span>
+                        <span className="font-medium text-emerald-700 tabular-nums">{currency(paid)}</span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="text-gray-500">Remaining</span>
+                        <span className="font-semibold text-amber-800 tabular-nums">{currency(due)}</span>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
               <div>
                 <div className="text-xs uppercase text-gray-500">Payment method</div>

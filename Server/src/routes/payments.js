@@ -78,6 +78,22 @@ router.post('/paymob-webhook', async (req, res, next) => {
     );
     const booking = bookings[0];
 
+    if (payload.promo_code) {
+      try {
+        const { redeemPromo } = require('../lib/promoCodes');
+        await redeemPromo({
+          code: payload.promo_code,
+          email: payload.guest_email,
+          phone: payload.guest_phone,
+          guestId: payload.user_id,
+          bookingId: booking.id,
+          amountBeforeDiscount: payload.amount_before_promo || payload.total_egp,
+        });
+      } catch (promoErr) {
+        console.warn('[payments] promo redeem failed', promoErr.message);
+      }
+    }
+
     await query(
       `INSERT INTO payments
         (booking_id, amount, payment_date, payment_method, status, transaction_reference, paid_at, is_approved)

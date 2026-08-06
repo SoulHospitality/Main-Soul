@@ -18,13 +18,13 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-export async function validatePromoCode({ code, amount }) {
-  const { data } = await api.post('/promo-codes/validate', { code, amount });
+export async function validatePromoCode({ code, amount, email, phone }) {
+  const { data } = await api.post('/promo-codes/validate', { code, amount, email, phone });
   if (!data?.valid) throw new Error(data?.error || 'Invalid promo code');
   return {
     code: data.code,
     percentage: Number(data.discount_percent || 0),
-    discountAmount: Number(data.discount_amount || 0),
+    discountAmount: Number(data.discount_amount || data.discount_amount_applied || 0),
     discountedTotal: data.discounted_total,
   };
 }

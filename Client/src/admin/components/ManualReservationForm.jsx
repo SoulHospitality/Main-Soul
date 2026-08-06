@@ -73,6 +73,7 @@ export default function ManualReservationForm({
   onTransferProofChange,
   lockSalesPerson = false,
   currentUserName = '',
+  showCommission = false,
   onCancel,
   onSubmit,
   submitting = false,
@@ -410,7 +411,7 @@ export default function ManualReservationForm({
           <hr className="border-[#e6ebf2]" />
 
           <div className="-mb-2 text-[11.5px] font-bold uppercase tracking-wider text-[#5b6b80]">
-            Payment & commission
+            {showCommission ? 'Payment & commission' : 'Payment'}
           </div>
 
           {!form.is_owner_reservation && (
@@ -504,7 +505,7 @@ export default function ManualReservationForm({
             </p>
           )}
 
-          {selectedUnit && (
+          {showCommission && selectedUnit && (
             <div className="rounded-[10px] border border-[#dbe7f8] bg-[#eef4ff] p-3">
               <div className="flex items-start justify-between gap-3">
                 <div>

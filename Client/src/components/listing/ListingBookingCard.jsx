@@ -4,7 +4,7 @@ import { useCurrency } from '../../context/CurrencyContext';
 import { useLocale } from '../../context/LocaleContext';
 import { housekeepingFeeForUnit } from '../../utils/housekeeping';
 import { isFreeBeachProject, resolveBeachAccessRates } from '../../utils/beachAccess';
-import { brand, whatsappHref } from '../../theme/brand';
+import { brand, whatsappHref, listingWhatsAppMessage } from '../../theme/brand';
 import { getDisplayPriceEgp } from '../../utils/displayPrice';
 import BookingDrawer from '../booking/BookingDrawer';
 
@@ -60,9 +60,7 @@ export default function ListingBookingCard({
     return base;
   }, [unit?.slug]);
 
-  const inquiryHref = whatsappHref(
-    `${listingUrl}\nعندي استفسار بخصوص الوحده دي`
-  );
+  const inquiryHref = whatsappHref(listingWhatsAppMessage(listingUrl));
 
   return (
     <>

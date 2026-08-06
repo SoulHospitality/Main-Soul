@@ -1,24 +1,27 @@
 import { useLocation } from 'react-router-dom';
-import { whatsappHref } from '../../theme/brand';
+import { whatsappHref, listingWhatsAppMessage } from '../../theme/brand';
 import { useLocale } from '../../context/LocaleContext';
 
 /**
  * Floating WhatsApp button (soul-website style): green circle, fixed end/bottom.
  * Hidden on admin / sales portals.
+ * On listing pages, prefill includes the unit link.
  */
-export default function WhatsAppFAB({ message = '' }) {
+export default function WhatsAppFAB({ message }) {
   const { pathname } = useLocation();
   const { t } = useLocale();
 
-  if (
-    pathname.startsWith('/admin') ||
-    pathname.startsWith('/sales') ||
-    pathname.startsWith('/listings/')
-  ) {
+  if (pathname.startsWith('/admin') || pathname.startsWith('/sales')) {
     return null;
   }
 
-  const href = whatsappHref(message);
+  const text =
+    message !== undefined
+      ? message
+      : pathname.startsWith('/listings/')
+        ? listingWhatsAppMessage(pathname)
+        : undefined;
+  const href = whatsappHref(text);
   const label = t('fab.whatsapp');
 
   return (

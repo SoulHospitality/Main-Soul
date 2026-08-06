@@ -50,6 +50,7 @@ router.use(compat);
 router.use(housekeepingOps);
 router.use(ownerPortal);
 router.use(roadmapScaffold);
+router.use(require('./promoCodesAdmin'));
 
 function sendList(res, rows) {
   res.json(rows);

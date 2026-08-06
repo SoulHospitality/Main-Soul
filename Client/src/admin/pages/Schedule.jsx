@@ -1935,6 +1935,7 @@ export default function Schedule() {
           onTransferProofChange={setCreateProof}
           lockSalesPerson={(isManualReservations || isWebsiteReservations) && !isAdmin}
           currentUserName={user?.full_name || user?.username || ''}
+          showCommission={isAdmin}
           onCancel={() => { setCreateDrawer(false); setCreateProof(null); }}
           onSubmit={handleCreateReservation}
           submitting={createReservationMutation.isPending}

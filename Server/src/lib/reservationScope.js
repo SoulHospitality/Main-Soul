@@ -139,7 +139,8 @@ function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
 }
 
 /** SQL fragment restricting website booking rows for agents.
- * Pending/held unassigned bookings are a shared pool; confirmed ones are assignee-only.
+ * Pending/held requests are a shared pool for all website agents (assignment is for
+ * load-balancing / notifications only). Confirmed bookings stay assignee-only.
  */
 function bookingAssigneeClause(user, alias = 'b', paramIndex = 1) {
   if (user?.role === 'reservations_manual') {
@@ -152,8 +153,8 @@ function bookingAssigneeClause(user, alias = 'b', paramIndex = 1) {
   const statusCol = alias ? `${alias}.status` : 'status';
   return {
     clause: ` AND (
-      ${col} = $${paramIndex}
-      OR (${col} IS NULL AND ${statusCol} IN ('pending', 'held'))
+      ${statusCol} IN ('pending', 'held')
+      OR ${col} = $${paramIndex}
     )`,
     params: [user.id],
     nextIndex: paramIndex + 1,
@@ -209,11 +210,8 @@ function assertBookingAssigned(user, booking) {
     err.status = 404;
     throw err;
   }
-  // Shared pending pool — any website agent may accept/reject unassigned requests
-  if (
-    !booking.assigned_sales_id &&
-    ['pending', 'held'].includes(String(booking.status || '').toLowerCase())
-  ) {
+  // Shared pending pool — any website agent may accept/reject while still pending/held
+  if (['pending', 'held'].includes(String(booking.status || '').toLowerCase())) {
     return;
   }
   if (Number(booking.assigned_sales_id) !== Number(user.id)) {

@@ -28,3 +28,23 @@ export function whatsappHref(text) {
   if (!message) return base;
   return `${base}?text=${encodeURIComponent(message)}`;
 }
+
+/** Prefill WhatsApp with the unit listing URL when the guest is on a listing page. */
+export function listingWhatsAppMessage(pathnameOrUrl) {
+  const raw = String(pathnameOrUrl || '').trim();
+  if (!raw) return 'Hi Soul — I have a question';
+
+  let listingUrl = raw;
+  if (raw.startsWith('/')) {
+    const base = String(brand.domain || '').replace(/\/$/, '');
+    listingUrl = `${base}${raw}`;
+  } else if (!/^https?:\/\//i.test(raw) && typeof window !== 'undefined') {
+    listingUrl = `${window.location.origin}${raw.startsWith('/') ? raw : `/${raw}`}`;
+  }
+
+  if (!/\/listings\//i.test(listingUrl)) {
+    return 'Hi Soul — I have a question';
+  }
+
+  return `${listingUrl}\nعندي استفسار بخصوص الوحده دي`;
+}

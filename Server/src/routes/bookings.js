@@ -63,21 +63,22 @@ router.post('/checkout', authGuest, upload.array('id_photos', 10), attachCloudin
     if (!quote.available) return res.status(409).json({ error: quote.reason || 'Unavailable' });
 
     let total = quote.total_egp;
+    let promoApplied = null;
     if (promo_code) {
-      const { rows: promos } = await query(
-        `SELECT * FROM promo_codes WHERE upper(code) = upper($1) AND active = true
-         AND (expires_at IS NULL OR expires_at > now())`,
-        [promo_code]
-      );
-      const promo = promos[0];
-      if (promo) {
-        if (promo.discount_percent) total = Math.round(total * (1 - Number(promo.discount_percent) / 100));
-        if (promo.discount_amount) total = Math.max(0, total - Number(promo.discount_amount));
+      const { validatePromo } = require('../lib/promoCodes');
+      try {
+        promoApplied = await validatePromo({
+          code: promo_code,
+          amount: quote.total_egp,
+          email: guest_email || req.guest?.email,
+          phone: guest_phone,
+          guestId: req.guest?.id,
+        });
+        total = promoApplied.discounted_total;
+      } catch (promoErr) {
+        return res.status(promoErr.status || 400).json({ error: promoErr.message });
       }
     }
-
-    const holdMinutes = Number(process.env.BOOKING_HOLD_MINUTES || 30);
-    const holdExpires = new Date(Date.now() + holdMinutes * 60 * 1000);
 
     const photoUrls = (req.files || []).map((f) => f.path || f.secure_url).filter(Boolean);
 
@@ -101,6 +102,8 @@ router.post('/checkout', authGuest, upload.array('id_photos', 10), attachCloudin
         notes,
         photo_urls: photoUrls,
         user_id: req.guest?.id || null,
+        promo_code: promoApplied?.code || null,
+        amount_before_promo: quote.total_egp,
       };
 
       const paymob = await initializePaymobCheckout({
@@ -130,14 +133,15 @@ router.post('/checkout', authGuest, upload.array('id_photos', 10), attachCloudin
       });
     }
 
-    // cash / instapay — pending hold awaiting staff Accept
+    // Cash / InstaPay requests wait for staff Accept — do not auto-expire them.
+    // Short holds are only for temporary inventory locks (status = held).
     const { rows } = await query(
       `INSERT INTO bookings
         (listing_slug, listing_wp_id, listing_title, checkin, checkout, guests, total_egp,
          guest_name, guest_email, guest_phone, status, notes, currency, hold_expires_at,
          payment_status, payment_method, unit_id, id_photo_urls,
          adults, children, nanny_count)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'pending',$11,'EGP',$12,'pending',$13,$14,$15,$16,$17,$18)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'pending',$11,'EGP',NULL,'pending',$12,$13,$14,$15,$16,$17)
        RETURNING *`,
       [
         unit.slug,
@@ -151,7 +155,6 @@ router.post('/checkout', authGuest, upload.array('id_photos', 10), attachCloudin
         guest_email,
         guest_phone,
         notes,
-        holdExpires,
         payment_method,
         unit.id,
         photoUrls,
@@ -162,6 +165,25 @@ router.post('/checkout', authGuest, upload.array('id_photos', 10), attachCloudin
     );
 
     const booking = rows[0];
+    if (promoApplied?.code) {
+      try {
+        const { redeemPromo } = require('../lib/promoCodes');
+        await redeemPromo({
+          code: promoApplied.code,
+          email: guest_email || req.guest?.email,
+          phone: guest_phone,
+          guestId: req.guest?.id,
+          bookingId: booking.id,
+          amountBeforeDiscount: quote.total_egp,
+        });
+      } catch (promoErr) {
+        await query(`UPDATE bookings SET status = 'cancelled', cancellation_reason = $2 WHERE id = $1`, [
+          booking.id,
+          promoErr.message || 'Promo code rejected',
+        ]);
+        return res.status(promoErr.status || 400).json({ error: promoErr.message });
+      }
+    }
     try {
       const { assignSalesOnCreate } = require('../services/bookingWorkflow');
       await assignSalesOnCreate(booking.id);

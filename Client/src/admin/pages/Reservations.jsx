@@ -492,6 +492,7 @@ function ReservationDetail({
   onRemoveIdDoc,
   uploadingDocs,
   onPreviewDocs,
+  showCommission = false,
 }) {
   if (!reservation) return null;
   const downPmt   = parseFloat(reservation.down_payment) || 0;
@@ -631,7 +632,7 @@ function ReservationDetail({
             <span className="text-orange-600">{currency(fin.utilitiesDeduction)} (deducted from revenue)</span>
           </div>
         )}
-        {fin.tenantDeduction > 0 && (
+        {showCommission && fin.tenantDeduction > 0 && (
           <div className="flex justify-between">
             <span className="text-gray-500">Tenant Commission</span>
             <span className="text-orange-600">− {currency(fin.tenantDeduction)}</span>
@@ -643,17 +644,19 @@ function ReservationDetail({
             <span className="text-purple-600">− {currency(fin.brokerDeduction)}</span>
           </div>
         )}
-        {fin.companyCommission > 0 && (
+        {showCommission && fin.companyCommission > 0 && (
           <div className="flex justify-between">
             <span className="text-gray-500">Company Commission <span className="text-xs text-gray-400">({appliedPctLabel(fin, reservation)})</span></span>
             <span className="text-red-600">− {currency(fin.companyCommission)}</span>
           </div>
         )}
-        <div className="flex justify-between border-t border-gray-200 pt-1.5">
-          <span className="text-gray-500 font-medium">Owner Net</span>
-          <span className="font-semibold text-primary-700">{currency(fin.ownerNet)}</span>
-        </div>
-        <div className="flex justify-between border-t border-gray-200 pt-1.5">
+        {showCommission && (
+          <div className="flex justify-between border-t border-gray-200 pt-1.5">
+            <span className="text-gray-500 font-medium">Owner Net</span>
+            <span className="font-semibold text-primary-700">{currency(fin.ownerNet)}</span>
+          </div>
+        )}
+        <div className={`flex justify-between ${showCommission ? '' : 'border-t border-gray-200 pt-1.5'}`}>
           <span className="text-gray-500">Amount Paid</span>
           <span className="font-semibold text-green-600">{currency(reservation.amount_paid)}</span>
         </div>
@@ -1230,6 +1233,7 @@ export default function Reservations() {
   // Split: blocked nights (owner stay, total = 0) vs everything else (including owner reservations with amount)
   const allFiltered = reservations.filter(r => {
     if (filterProject && r.project !== filterProject) return false;
+    if (filterUnit && String(r.unit_id) !== String(filterUnit)) return false;
     if (filterUnitNumber && !String(r.unit_number || '').toLowerCase().includes(filterUnitNumber.toLowerCase())) return false;
     if (filterStatus && r.status !== filterStatus) return false;
     if (filterPayment) {
@@ -1654,6 +1658,7 @@ export default function Reservations() {
           onTransferProofChange={setTransferProof}
           lockSalesPerson={(isManualReservations || isWebsiteReservations) && !isAdmin}
           currentUserName={user?.full_name || user?.username || ''}
+          showCommission={isAdmin}
           onCancel={() => { setModal(null); setTransferProof(null); }}
           onSubmit={handleSave}
           submitting={saveMutation.isPending}
@@ -1688,6 +1693,7 @@ export default function Reservations() {
           canApprove={canApprove}
           onApprovePayment={(pmtId) => approveMutation.mutate(pmtId)}
           canWrite={canWrite}
+          showCommission={isAdmin}
           uploadingDocs={uploadIdDocsMutation.isPending}
           onUploadIdDocs={(files) => uploadIdDocsMutation.mutate(files)}
           onRemoveIdDoc={(url) => removeIdDocMutation.mutate(url)}

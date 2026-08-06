@@ -198,7 +198,12 @@ export default function BookingDrawer({
     setPromo((p) => ({ ...p, loading: true }));
     setMessage('');
     try {
-      const result = await validatePromoCode({ code, amount: gross });
+      const result = await validatePromoCode({
+        code,
+        amount: gross,
+        email: formState.email,
+        phone: formState.phone,
+      });
       setPromo({
         code: result.code,
         percentage: result.percentage,

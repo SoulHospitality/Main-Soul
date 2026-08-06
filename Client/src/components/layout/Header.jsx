@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { ChevronDown, Globe, Menu, User, X, Heart } from 'lucide-react';
-import { brand, whatsappHref } from '../../theme/brand';
+import { brand, whatsappHref, listingWhatsAppMessage } from '../../theme/brand';
 import { useCurrency } from '../../context/CurrencyContext';
 import { useAuth } from '../../context/AuthContext';
 import { useLocale } from '../../context/LocaleContext';
@@ -335,7 +335,7 @@ function MobileDrawer({ onClose, currency, setCurrency, user, pathname }) {
         </nav>
         <div className="p-5 border-t border-soul-line">
           <a
-            href={whatsappHref()}
+            href={whatsappHref(listingWhatsAppMessage(pathname))}
             target="_blank"
             rel="noreferrer"
             className="btn-pill block text-center bg-soul-blue text-white py-3 font-semibold"

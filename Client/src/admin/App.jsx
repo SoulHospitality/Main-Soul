@@ -33,6 +33,7 @@ const AcquisitionPipeline = lazy(() => import('./pages/AcquisitionPipeline'));
 const ResaleSales = lazy(() => import('./pages/ResaleSales'));
 const OwnerDateBlocks = lazy(() => import('./pages/OwnerDateBlocks'));
 const OwnerSettlementsAdmin = lazy(() => import('./pages/OwnerSettlementsAdmin'));
+const PromoCodes = lazy(() => import('./pages/PromoCodes'));
 
 function PageFallback() {
   return (
@@ -98,6 +99,7 @@ function AppRoutes() {
       <Route path="petty-cash" element={<ProtectedRoute page="petty_cash"><PettyCash /></ProtectedRoute>} />
       <Route path="housekeeping" element={<ProtectedRoute page="housekeeping"><Housekeeping /></ProtectedRoute>} />
       <Route path="users" element={<ProtectedRoute page="users"><Users /></ProtectedRoute>} />
+      <Route path="promo-codes" element={<ProtectedRoute page="promo_codes"><PromoCodes /></ProtectedRoute>} />
       <Route path="acquisition" element={<ProtectedRoute page="acquisition"><AcquisitionPipeline /></ProtectedRoute>} />
       <Route path="sales" element={<ProtectedRoute page="sales"><ResaleSales /></ProtectedRoute>} />
       <Route path="owner" element={<ProtectedRoute page="owner"><OwnerDashboard /></ProtectedRoute>} />
