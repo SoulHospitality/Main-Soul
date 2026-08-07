@@ -190,10 +190,11 @@ function assertCanAssignRole(actorRole, targetRole) {
     'reservations',
     'resale',
     'hr',
+    'owner',
   ];
   if (!allowed.includes(targetRole)) {
     const err = new Error(
-      'Invalid role. Use admin, reservations_web, reservations_manual, resale, or hr.'
+      'Invalid role. Use admin, reservations_web, reservations_manual, resale, hr, or owner.'
     );
     err.status = 400;
     throw err;
@@ -250,10 +251,20 @@ router.post('/users', requireRoles('admin', 'hr'), async (req, res, next) => {
   try {
     const b = req.body || {};
     const full_name = String(b.full_name || b.name || '').trim();
-    const email = String(b.email || '').trim().toLowerCase();
+    let email = String(b.email || '').trim().toLowerCase();
     const role = String(b.role || '').trim();
-    const baseSalary = parseFloat(b.base_salary);
-    if (!full_name || !email || !role) {
+    const isOwner = role === 'owner';
+    const baseSalaryRaw = b.base_salary;
+    const baseSalary =
+      baseSalaryRaw == null || baseSalaryRaw === ''
+        ? isOwner
+          ? 0
+          : NaN
+        : parseFloat(baseSalaryRaw);
+    if (!full_name || !role) {
+      return res.status(400).json({ error: 'Name and role are required' });
+    }
+    if (!email && !isOwner) {
       return res.status(400).json({ error: 'Name, email, and role are required' });
     }
     if (Number.isNaN(baseSalary) || baseSalary < 0) {
@@ -268,7 +279,18 @@ router.post('/users', requireRoles('admin', 'hr'), async (req, res, next) => {
     }
 
     const staff_code = await generateUniqueStaffCode(role);
-    const username = String(b.username || staff_code).trim().toLowerCase();
+    let username = String(b.username || b.phone || staff_code).trim();
+    if (isOwner) {
+      const { normalizeOwnerPhone } = require('../../lib/ownerPhone');
+      const phone = normalizeOwnerPhone(username) || normalizeOwnerPhone(b.phone);
+      if (!phone) {
+        return res.status(400).json({ error: 'Owners require a valid phone number as username' });
+      }
+      username = phone;
+      if (!email) email = `owner.${phone}@soul.owners.local`;
+    } else {
+      username = username.toLowerCase();
+    }
     const tempPassword = TEMP_PASSWORD;
     const hash = await bcrypt.hash(tempPassword, 10);
 
