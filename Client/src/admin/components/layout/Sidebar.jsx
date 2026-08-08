@@ -41,11 +41,12 @@ function PendingCountBadge({ count, compact = false }) {
   const label = count > 99 ? '99+' : String(count);
   return (
     <span
-      className={`inline-flex items-center justify-center rounded-full bg-[#25D366] text-white font-bold shadow-sm ${
+      className={`inline-flex items-center justify-center rounded-full text-white font-bold shadow-sm ${
         compact
           ? 'absolute -top-1.5 -right-1.5 min-w-[1.1rem] h-[1.1rem] px-0.5 text-[9px] leading-none'
           : 'min-w-[1.35rem] h-[1.35rem] px-1.5 text-[11px] leading-none ml-auto'
       }`}
+      style={{ background: 'var(--pms-accent, #F28C28)' }}
       aria-label={`${count} pending website booking${count === 1 ? '' : 's'}`}
     >
       {label}
