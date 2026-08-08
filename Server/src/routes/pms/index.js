@@ -49,6 +49,7 @@ router.use(requirePasswordChanged);
 router.use(compat);
 router.use(require('./reportsAnalytics'));
 router.use(housekeepingOps);
+router.use(require('./opsCheckins'));
 router.use(ownerPortal);
 router.use(roadmapScaffold);
 router.use(require('./promoCodesAdmin'));
@@ -229,22 +230,32 @@ function assertCanAssignRole(actorRole, targetRole) {
     'reservations_web',
     'reservations_manual',
     'reservations',
+    'operations',
+    'housekeeping',
     'resale',
     'hr',
     'owner',
   ];
   if (!allowed.includes(targetRole)) {
     const err = new Error(
-      'Invalid role. Use admin, reservations_web, reservations_manual, resale, hr, or owner.'
+      'Invalid role. Use admin, reservations_web, reservations_manual, operations, housekeeping, resale, hr, or owner.'
     );
     err.status = 400;
     throw err;
   }
   if (
     actorRole === 'hr' &&
-    !['reservations_web', 'reservations_manual', 'reservations', 'resale', 'hr'].includes(targetRole)
+    ![
+      'reservations_web',
+      'reservations_manual',
+      'reservations',
+      'operations',
+      'housekeeping',
+      'resale',
+      'hr',
+    ].includes(targetRole)
   ) {
-    const err = new Error('HR can only create reservation, resale, or HR users');
+    const err = new Error('HR can only create reservation, operations, housekeeping, resale, or HR users');
     err.status = 403;
     throw err;
   }

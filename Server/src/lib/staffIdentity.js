@@ -8,6 +8,8 @@ const ROLE_PREFIX = {
   reservations: 'R',
   reservations_web: 'W',
   reservations_manual: 'M',
+  operations: 'P',
+  housekeeping: 'K',
   resale: 'S',
   hr: 'H',
   owner: 'O',

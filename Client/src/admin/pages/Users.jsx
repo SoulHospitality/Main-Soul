@@ -260,8 +260,8 @@ export default function Users() {
   };
 
   const filterRoleOptions = isAdmin
-    ? ['admin', 'reservations_web', 'reservations_manual', 'reservations', 'resale', 'hr']
-    : ['reservations_web', 'reservations_manual', 'reservations', 'resale', 'hr'];
+    ? ['admin', 'reservations_web', 'reservations_manual', 'reservations', 'operations', 'housekeeping', 'resale', 'hr']
+    : ['reservations_web', 'reservations_manual', 'reservations', 'operations', 'housekeeping', 'resale', 'hr'];
 
   return (
     <div className="space-y-6">
@@ -463,7 +463,7 @@ export default function Users() {
           isEdit={modal === 'edit'}
           roleOptions={
             modal === 'edit' && isAdmin
-              ? ['admin', 'reservations_web', 'reservations_manual', 'reservations', 'resale', 'hr']
+              ? ['admin', 'reservations_web', 'reservations_manual', 'reservations', 'operations', 'housekeeping', 'resale', 'hr']
               : roleOptions
           }
           isAdmin={isAdmin}

@@ -6,6 +6,10 @@ export function defaultAdminPage(role) {
     case 'reservations_web':
     case 'reservations_manual':
       return `${A}/reservations`;
+    case 'operations':
+      return `${A}/ops/checkins-today`;
+    case 'housekeeping':
+      return `${A}/housekeeping/today`;
     case 'resale':
       return `${A}/units-for-sale`;
     case 'hr':
