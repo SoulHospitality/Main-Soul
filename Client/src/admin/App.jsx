@@ -12,6 +12,7 @@ const Units = lazy(() => import('./pages/Units'));
 const UnitsForSale = lazy(() => import('./pages/UnitsForSale'));
 const Reservations = lazy(() => import('./pages/Reservations'));
 const WebsiteBookings = lazy(() => import('./pages/WebsiteBookings'));
+const WebsiteBookingHistoryPage = lazy(() => import('./pages/WebsiteBookingHistoryPage'));
 const Finance = lazy(() => import('./pages/Finance'));
 const Profit = lazy(() => import('./pages/Profit'));
 const Commissions = lazy(() => import('./pages/Commissions'));
@@ -86,6 +87,7 @@ function AppRoutes() {
       <Route path="projects" element={<ProtectedRoute page="projects"><Projects /></ProtectedRoute>} />
       <Route path="reservations" element={<ProtectedRoute page="reservations"><Reservations /></ProtectedRoute>} />
       <Route path="website-bookings" element={<ProtectedRoute page="website_bookings"><WebsiteBookings /></ProtectedRoute>} />
+      <Route path="website-bookings/history" element={<ProtectedRoute page="website_bookings"><WebsiteBookingHistoryPage /></ProtectedRoute>} />
       <Route path="schedule" element={<ProtectedRoute page="schedule"><Schedule /></ProtectedRoute>} />
       <Route path="utilities" element={<Navigate to="/admin/expenses?category=utilities_cost" replace />} />
       <Route path="finance" element={<ProtectedRoute page="finance"><Finance /></ProtectedRoute>} />

@@ -8,7 +8,7 @@ import Badge from './ui/Badge';
 import LoadingSpinner from './ui/LoadingSpinner';
 import Modal from './ui/Modal';
 import { idDocumentThumbUrl, isPdfUrl } from '../utils/idDocuments';
-import { currency, formatDate, formatDateTime, PAYMENT_METHOD_LABELS } from '../utils/formatters';
+import { currency, formatDate, PAYMENT_METHOD_LABELS } from '../utils/formatters';
 import { usePermissions } from '../hooks/usePermissions';
 
 function toIdPhotos(booking) {
@@ -112,14 +112,6 @@ export default function WebsiteBookingRequests() {
     queryFn: () =>
       api.get('/website-bookings', { params: { status: 'pending' } }).then((r) => r.data),
     refetchInterval: 30000,
-  });
-
-  const { data: history = [], isLoading: historyLoading } = useQuery({
-    queryKey: ['website-bookings-history'],
-    queryFn: () =>
-      api.get('/website-bookings', { params: { status: 'history' } }).then((r) => r.data),
-    enabled: isAdmin,
-    refetchInterval: 60000,
   });
 
   const acceptTotal = Number(acceptBooking?.total_egp) || 0;
@@ -232,98 +224,10 @@ export default function WebsiteBookingRequests() {
 
   if (isLoading) return <LoadingSpinner />;
 
-  const historySection =
-    isAdmin ? (
-      <div className="card p-4 space-y-3">
-        <div>
-          <h2 className="font-semibold text-gray-900">Previous decisions</h2>
-          <p className="text-xs text-gray-500">
-            Accepted and rejected website booking requests (admins only), including rejection reasons.
-          </p>
-        </div>
-        {historyLoading ? (
-          <LoadingSpinner />
-        ) : !history.length ? (
-          <p className="text-sm text-gray-500 py-4 text-center">No accepted or rejected requests yet.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-left text-xs uppercase tracking-wide text-gray-500">
-                <tr>
-                  <th className="py-2 pr-3">Guest</th>
-                  <th className="py-2 pr-3">Unit</th>
-                  <th className="py-2 pr-3">Stay</th>
-                  <th className="py-2 pr-3">Total</th>
-                  <th className="py-2 pr-3">Status</th>
-                  <th className="py-2 pr-3">Reason</th>
-                  <th className="py-2 pr-3">Decided by</th>
-                  <th className="py-2">When</th>
-                </tr>
-              </thead>
-              <tbody>
-                {history.map((b) => {
-                  const rejected = b.decision === 'rejected';
-                  return (
-                    <tr key={b.id} className="border-t border-gray-100 align-top">
-                      <td className="py-3 pr-3 min-w-[10rem]">
-                        <div className="font-medium text-gray-900">{b.guest_name || '—'}</div>
-                        <div className="text-xs text-gray-500">{b.guest_phone || b.guest_email || ''}</div>
-                      </td>
-                      <td className="py-3 pr-3">
-                        <div className="font-medium">{b.unit_number || '—'}</div>
-                        <div className="text-xs text-gray-500 truncate max-w-[10rem]">
-                          {b.unit_title || b.listing_title || ''}
-                        </div>
-                      </td>
-                      <td className="py-3 pr-3 whitespace-nowrap text-xs">
-                        {formatDate(b.checkin)} → {formatDate(b.checkout)}
-                      </td>
-                      <td className="py-3 pr-3 whitespace-nowrap tabular-nums font-medium">
-                        {currency(b.total_egp)}
-                      </td>
-                      <td className="py-3 pr-3">
-                        <span
-                          className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                            rejected
-                              ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                              : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                          }`}
-                        >
-                          {b.decision_label || (rejected ? 'Rejected' : 'Accepted')}
-                        </span>
-                      </td>
-                      <td className="py-3 pr-3 max-w-[16rem]">
-                        {rejected ? (
-                          <p className="text-sm text-rose-800 whitespace-pre-wrap">
-                            {b.decision_reason || '—'}
-                          </p>
-                        ) : (
-                          <span className="text-xs text-gray-400">—</span>
-                        )}
-                      </td>
-                      <td className="py-3 pr-3 text-sm">
-                        {b.decided_by_name || b.assigned_agent_name || '—'}
-                      </td>
-                      <td className="py-3 whitespace-nowrap text-xs text-gray-500">
-                        {b.decided_at ? formatDateTime(b.decided_at) : '—'}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    ) : null;
-
   if (!bookings.length) {
     return (
-      <div className="space-y-6">
-        <div className="card p-8 text-center text-sm text-gray-500">
-          No pending website booking requests.
-        </div>
-        {historySection}
+      <div className="card p-8 text-center text-sm text-gray-500">
+        No pending website booking requests.
       </div>
     );
   }
@@ -887,8 +791,6 @@ export default function WebsiteBookingRequests() {
           onIndexChange={setPreviewPhotoIndex}
         />
       )}
-
-      {historySection}
     </div>
   );
 }

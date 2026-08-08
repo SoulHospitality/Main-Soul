@@ -877,15 +877,15 @@ function parseBookingDecisionMeta(notes) {
 function mapWebsiteBookingDecision(row) {
   const { accepted, rejected } = parseBookingDecisionMeta(row.notes);
   const status = String(row.status || '').toLowerCase();
-  if (status === 'confirmed') {
-    return {
-      decision: 'accepted',
-      decision_label: 'Accepted',
-      decision_reason: null,
-      decided_by_name: accepted?.accepted_by_name || row.assigned_agent_name || null,
-      decided_at: accepted?.accepted_at || row.created_at || null,
-    };
-  }
+  const total = Number(row.total_egp) || 0;
+  const amountPaid = Number(row.amount_paid) || 0;
+  const method = String(row.payment_method || '').toLowerCase();
+  const paymentStatus = String(row.payment_status || '').toLowerCase();
+  const prepaid =
+    paymentStatus === 'paid' || method.includes('paymob') || method.includes('card');
+  const amountDue = Math.max(0, Math.round((total - amountPaid) * 100) / 100);
+  const fullyPaid = prepaid || paymentStatus === 'paid' || amountDue <= 0.009;
+
   if (status === 'cancelled' && (rejected || row.cancellation_reason)) {
     const isReject = !!(rejected?.reject_reason || rejected?.rejected_by || rejected?.rejected_by_name);
     return {
@@ -897,14 +897,42 @@ function mapWebsiteBookingDecision(row) {
         null,
       decided_by_name: rejected?.rejected_by_name || null,
       decided_at: rejected?.rejected_at || row.created_at || null,
+      amount_paid: amountPaid,
+      amount_due: amountDue,
     };
   }
+
+  if (status === 'confirmed') {
+    if (fullyPaid) {
+      return {
+        decision: 'accepted',
+        decision_label: 'Accepted',
+        decision_reason: null,
+        decided_by_name: accepted?.accepted_by_name || row.assigned_agent_name || null,
+        decided_at: accepted?.accepted_at || row.created_at || null,
+        amount_paid: prepaid ? total : amountPaid,
+        amount_due: 0,
+      };
+    }
+    return {
+      decision: 'pending',
+      decision_label: 'Pending',
+      decision_reason: null,
+      decided_by_name: accepted?.accepted_by_name || row.assigned_agent_name || null,
+      decided_at: accepted?.accepted_at || row.created_at || null,
+      amount_paid: amountPaid,
+      amount_due: amountDue,
+    };
+  }
+
   return {
     decision: status || 'unknown',
     decision_label: status || 'Unknown',
     decision_reason: row.cancellation_reason || null,
     decided_by_name: null,
     decided_at: row.created_at || null,
+    amount_paid: amountPaid,
+    amount_due: amountDue,
   };
 }
 
@@ -916,10 +944,7 @@ router.get('/website-bookings', async (req, res, next) => {
     const historyMode = String(status || '').toLowerCase() === 'history';
 
     if (historyMode) {
-      if (!isAdmin(req.user)) {
-        return res.status(403).json({ error: 'Only admins can view website booking history' });
-      }
-      // Accepted = confirmed; rejected staff decisions live as cancelled with reject meta.
+      // Accepted / pending (partial payment) / rejected website decisions.
       where = `b.status IN ('confirmed', 'cancelled')`;
     } else if (status) {
       params.push(status);
@@ -974,13 +999,24 @@ router.get('/website-bookings', async (req, res, next) => {
       const history = rows
         .map((row) => {
           const decision = mapWebsiteBookingDecision(row);
-          // History UI focuses on accepted + rejected (skip plain hold/expiry cancels without reject meta)
-          if (decision.decision !== 'accepted' && decision.decision !== 'rejected') return null;
+          // History: accepted (fully paid), pending (accepted, balance due), rejected
+          if (
+            decision.decision !== 'accepted' &&
+            decision.decision !== 'pending' &&
+            decision.decision !== 'rejected'
+          ) {
+            return null;
+          }
           return {
             ...row,
             ...decision,
-            amount_paid: Number(row.amount_paid) || 0,
-            amount_due: Math.max(0, Math.round(((Number(row.total_egp) || 0) - (Number(row.amount_paid) || 0)) * 100) / 100),
+            amount_paid: decision.amount_paid ?? (Number(row.amount_paid) || 0),
+            amount_due:
+              decision.amount_due ??
+              Math.max(
+                0,
+                Math.round(((Number(row.total_egp) || 0) - (Number(row.amount_paid) || 0)) * 100) / 100
+              ),
           };
         })
         .filter(Boolean);
