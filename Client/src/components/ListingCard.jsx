@@ -13,14 +13,14 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
   const { has, toggle, remove } = useWishlist();
   const removeFromWishlist = onRemove || remove;
   const isSale = String(listing.listing_type || 'rent').toLowerCase() === 'sale';
-  const photos = (listing.photo_urls?.length
-    ? listing.photo_urls
-    : listing.cover_url
-      ? [listing.cover_url]
-      : [])
-    .filter(Boolean)
-    .slice(0, 6)
-    .map((url) => optimizeImageUrl(url, { width: 720 }));
+  const photos = (() => {
+    const list = [];
+    if (listing.cover_url) list.push(listing.cover_url);
+    for (const url of listing.photo_urls || []) {
+      if (url && !list.includes(url)) list.push(url);
+    }
+    return list.slice(0, 6).map((url) => optimizeImageUrl(url, { width: 720 }));
+  })();
 
   const [index, setIndex] = useState(0);
   const wpId = getListingWpId(listing);
