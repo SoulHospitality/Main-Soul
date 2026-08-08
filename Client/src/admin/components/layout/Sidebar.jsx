@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Building2, CalendarDays,
   BadgeDollarSign, Receipt, FileBarChart2, Users, UserCircle,
   LogOut, Building, CalendarRange, Wallet,
-  TrendingUp, Sparkles, Briefcase, Globe, Tag, History, UserPlus,
+  TrendingUp, Sparkles, Briefcase, Globe, Tag, UserPlus,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -20,7 +20,6 @@ const NAV_ITEMS = [
   { path: '/admin/reservations',     label: 'Reservations',       icon: CalendarDays,       page: 'reservations', agentLabel: 'My Reservations' },
   { path: '/admin/website-bookings/unassigned', label: 'Website Unassigned', icon: UserPlus, page: 'website_bookings', badge: 'website_unassigned' },
   { path: '/admin/website-bookings', label: 'Website Requests',   icon: Globe,              page: 'website_bookings', badge: 'website_pending', end: true },
-  { path: '/admin/website-bookings/history', label: 'Website History', icon: History,      page: 'website_bookings' },
   { path: '/admin/schedule',         label: 'Schedule',           icon: CalendarRange,      page: 'schedule' },
   { path: '/admin/finance',          label: 'Finance',            icon: BadgeDollarSign,    page: 'finance' },
   { path: '/admin/profit',           label: 'Profit',             icon: TrendingUp,         page: 'profit' },
