@@ -24,7 +24,16 @@ async function ensurePreArrivalTasks() {
 
   let created = 0;
   for (const row of rows) {
-    const dueAt = new Date(`${String(row.check_in).slice(0, 10)}T12:00:00.000Z`);
+    const checkInStr = String(row.check_in || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(checkInStr)) {
+      console.warn('[housekeeping] skip task — bad check_in', row.reservation_id, row.check_in);
+      continue;
+    }
+    const dueAt = new Date(`${checkInStr}T12:00:00.000Z`);
+    if (Number.isNaN(dueAt.getTime())) {
+      console.warn('[housekeeping] skip task — invalid due_at', row.reservation_id, checkInStr);
+      continue;
+    }
     dueAt.setUTCHours(dueAt.getUTCHours() - 24);
     await query(
       `INSERT INTO housekeeping_tasks (
