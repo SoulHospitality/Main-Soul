@@ -71,7 +71,10 @@ export default function Header({ onToggleSidebar, sidebarWidth = 256 }) {
       query: { userId: String(user.id), role: user.role || '' },
       transports: ['websocket', 'polling'],
     });
-    const refresh = () => qc.invalidateQueries({ queryKey: ['notifications'] });
+    const refresh = () => {
+      qc.invalidateQueries({ queryKey: ['notifications'] });
+      qc.invalidateQueries({ queryKey: ['website-bookings-pending'] });
+    };
     socket.on('pms:notification', refresh);
     socket.on('sales:notification', refresh);
     return () => {
