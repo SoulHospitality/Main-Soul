@@ -41,10 +41,12 @@ export default function Projects() {
   const [destinationInput, setDestinationInput] = useState('');
   const [projectNameInput, setProjectNameInput] = useState('');
   const [createFacilities, setCreateFacilities] = useState([]);
+  const [createMinNights, setCreateMinNights] = useState(4);
   const [createImageFile, setCreateImageFile] = useState(null);
   const [createImagePreview, setCreateImagePreview] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [editFacilities, setEditFacilities] = useState([]);
+  const [editMinNights, setEditMinNights] = useState(4);
   const [editImageFile, setEditImageFile] = useState(null);
   const [editImagePreview, setEditImagePreview] = useState('');
 
@@ -71,11 +73,12 @@ export default function Projects() {
   }, [projectsByDestination, selectedDestination]);
 
   const createMutation = useMutation({
-    mutationFn: ({ destination, name, facilities, imageFile }) => {
+    mutationFn: ({ destination, name, facilities, minNights, imageFile }) => {
       const fd = new FormData();
       fd.append('destination', destination);
       fd.append('name', name);
       fd.append('facilities', JSON.stringify(facilities || []));
+      fd.append('min_nights', String(minNights));
       if (imageFile) fd.append('image', imageFile);
       return catalogFetch('/projects', { method: 'POST', body: fd });
     },
@@ -84,6 +87,7 @@ export default function Projects() {
       setProjectNameInput('');
       setDestinationInput('');
       setCreateFacilities([]);
+      setCreateMinNights(4);
       clearCreateImage();
       refetch();
       qc.invalidateQueries({ queryKey: PROJECT_CATALOG_KEY });
@@ -92,9 +96,10 @@ export default function Projects() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, facilities, imageFile }) => {
+    mutationFn: ({ id, facilities, minNights, imageFile }) => {
       const fd = new FormData();
       fd.append('facilities', JSON.stringify(facilities || []));
+      fd.append('min_nights', String(minNights));
       if (imageFile) fd.append('image', imageFile);
       return catalogFetch(`/projects/${id}`, { method: 'PUT', body: fd });
     },
@@ -102,6 +107,7 @@ export default function Projects() {
       toast.success('Project saved');
       setEditingId(null);
       setEditFacilities([]);
+      setEditMinNights(4);
       clearEditImage();
       refetch();
       qc.invalidateQueries({ queryKey: PROJECT_CATALOG_KEY });
@@ -186,10 +192,12 @@ export default function Projects() {
       toast.error('Add a homepage slide photo for this project');
       return;
     }
+    const minNights = Math.max(1, parseInt(createMinNights, 10) || 4);
     createMutation.mutate({
       destination,
       name,
       facilities: createFacilities,
+      minNights,
       imageFile: createImageFile,
     });
     setSelectedDestination(destination);
@@ -207,6 +215,7 @@ export default function Projects() {
   function startEdit(row) {
     setEditingId(row.id);
     setEditFacilities(Array.isArray(row.facilities) ? row.facilities : []);
+    setEditMinNights(Math.max(1, Number(row.min_nights) || 4));
     clearEditImage();
   }
 
@@ -217,8 +226,8 @@ export default function Projects() {
       <div className="page-header">
         <h1 className="page-title">Destinations & Projects</h1>
         <p className="page-subtitle">
-          Manage destination → project mappings, homepage slide photos, and shared compound
-          facilities.
+          Manage destination → project mappings, minimum stays, homepage slide photos, and shared
+          compound facilities.
         </p>
       </div>
 
@@ -260,6 +269,21 @@ export default function Projects() {
               placeholder="e.g. Marassi"
               required
             />
+          </div>
+          <div>
+            <label className="label">Min stay (nights) *</label>
+            <input
+              type="number"
+              min={1}
+              step={1}
+              className="input"
+              value={createMinNights}
+              onChange={(e) => setCreateMinNights(e.target.value)}
+              required
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Applied on guest booking calendars and manual reservations for units in this project.
+            </p>
           </div>
           <div className="md:col-span-2">
             <label className="label">Homepage slide photo *</label>
@@ -412,6 +436,9 @@ export default function Projects() {
                         <div className="min-w-0">
                           <p className="font-semibold text-gray-900">{row.name}</p>
                           <p className="text-xs text-gray-400">{row.destination}</p>
+                          <p className="mt-1 text-xs font-medium text-gray-600">
+                            Min stay: {Number(row.min_nights) || 4} nights
+                          </p>
                           {!row.image_url && !editImagePreview ? (
                             <p className="mt-1 text-xs text-amber-700">No homepage slide photo yet</p>
                           ) : null}
@@ -436,6 +463,7 @@ export default function Projects() {
                                 updateMutation.mutate({
                                   id: row.id,
                                   facilities: editFacilities,
+                                  minNights: Math.max(1, parseInt(editMinNights, 10) || 4),
                                   imageFile: editImageFile,
                                 })
                               }
@@ -448,6 +476,7 @@ export default function Projects() {
                               onClick={() => {
                                 setEditingId(null);
                                 setEditFacilities([]);
+                                setEditMinNights(4);
                                 clearEditImage();
                               }}
                             >
@@ -471,6 +500,18 @@ export default function Projects() {
 
                     {isEditing ? (
                       <div className="space-y-3">
+                        <div>
+                          <label className="label">Min stay (nights) *</label>
+                          <input
+                            type="number"
+                            min={1}
+                            step={1}
+                            className="input max-w-[10rem]"
+                            value={editMinNights}
+                            onChange={(e) => setEditMinNights(e.target.value)}
+                            required
+                          />
+                        </div>
                         <div>
                           <label className="label">Homepage slide photo</label>
                           <div

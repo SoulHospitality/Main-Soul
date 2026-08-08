@@ -35,7 +35,7 @@ const {
   isReservationsAgent,
   isAdmin,
 } = require('../../lib/reservationScope');
-const { getMinimumStayNights } = require('../../lib/minStay');
+const { getMinimumStayNights, lookupProjectMinNights } = require('../../lib/minStay');
 const { beachAccessPersistValues } = require('../../lib/beachAccess');
 const { normalizeProjectName } = require('../../lib/projectNames');
 const { guestsFromBedrooms } = require('../../lib/guestCapacity');
@@ -758,11 +758,9 @@ router.post('/units', requireRoles('admin', 'resale', 'reservations_web', 'reser
       coverUrl = photoUrls[0] || null;
     }
 
-    const minNights = getMinimumStayNights({
+    const minNights = await lookupProjectMinNights({
       project: toText(b.project || b.projectName || b.compound, compound),
       compound,
-      area,
-      destination: area,
     });
     const utilitiesCost = listingType === 'sale' ? null : toNum(b.utilities_cost);
     const unitNumber = normalizeUnitNumber(b.unit_number);
@@ -958,11 +956,9 @@ async function updateUnitHandler(req, res, next) {
         existingRows[0].project
     );
     const nextArea = toText(b.area || b.destination) || existingRows[0].area;
-    const minNights = getMinimumStayNights({
+    const minNights = await lookupProjectMinNights({
       project: nextProject,
       compound: nextCompound,
-      area: nextArea,
-      destination: nextArea,
     });
 
     const beachOverride = beachAccessPersistValues(
@@ -1381,7 +1377,9 @@ router.post(
     let unitGuestsCap = 0;
     if (b.unit_id) {
       const { rows: units } = await query(
-        `SELECT utilities_cost, property_type, wp_post_id, guests, has_nanny_room FROM units WHERE id = $1`,
+        `SELECT utilities_cost, property_type, wp_post_id, guests, has_nanny_room,
+                min_nights, project, compound, area
+         FROM units WHERE id = $1`,
         [b.unit_id]
       );
       const { housekeepingFeeForUnit } = require('../../lib/housekeeping');
@@ -1390,6 +1388,12 @@ router.post(
         : housekeepingFeeForUnit(units[0]);
       wpPostId = units[0]?.wp_post_id || null;
       unitGuestsCap = Number(units[0]?.guests) || 0;
+      const minStay = getMinimumStayNights(units[0] || {});
+      if (nights < minStay) {
+        return res.status(400).json({
+          error: `Minimum stay is ${minStay} night${minStay === 1 ? '' : 's'} for this project`,
+        });
+      }
       if (!utilitiesAmount) {
         const costPerNight = utilitiesOverride != null && !Number.isNaN(utilitiesOverride)
           ? utilitiesOverride

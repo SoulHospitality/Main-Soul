@@ -7,6 +7,7 @@ import ListingDatePicker, {
   localDateToIso,
 } from '../../components/listing/ListingDatePicker';
 import { housekeepingFeeForUnit } from '../../utils/housekeeping';
+import { getMinimumStayNights } from '../../utils/bookingRules';
 import SearchableSelect from './ui/SearchableSelect';
 import {
   BOOKING_SOURCES,
@@ -80,6 +81,7 @@ export default function ManualReservationForm({
 }) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const selectedUnit = units.find((unit) => String(unit.id) === String(form.unit_id));
+  const minNights = getMinimumStayNights(selectedUnit);
 
   const from = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const to = useMemo(() => {
@@ -224,8 +226,11 @@ export default function ManualReservationForm({
                     }))
                   }
                   blockedDates={blockedDates}
-                  minNights={1}
+                  minNights={minNights}
                 />
+                <p className="mt-2 text-xs text-[#5b6b80]">
+                  Minimum stay for this project: {minNights} night{minNights === 1 ? '' : 's'}
+                </p>
                 {availabilityLoading && (
                   <p className="mt-2 text-xs text-[#5b6b80]">Loading availability…</p>
                 )}

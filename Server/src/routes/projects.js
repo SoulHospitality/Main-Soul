@@ -3,6 +3,11 @@ const { query } = require('../config/db');
 const { authStaff, requireRoles } = require('../middleware/auth');
 const { normalizeProjectName } = require('../lib/projectNames');
 const {
+  parseMinNightsValue,
+  DEFAULT_MIN_STAY_NIGHTS,
+  syncUnitsMinNightsForProject,
+} = require('../lib/minStay');
+const {
   upload,
   attachCloudinaryUrls,
   setCloudinaryFolder,
@@ -67,7 +72,9 @@ function buildCatalog(rows) {
 
 async function loadCatalogRows() {
   const { rows } = await query(
-    `SELECT id, destination, name, image_url, sort_order, COALESCE(facilities, '{}'::text[]) AS facilities
+    `SELECT id, destination, name, image_url, sort_order,
+            COALESCE(facilities, '{}'::text[]) AS facilities,
+            COALESCE(min_nights, ${DEFAULT_MIN_STAY_NIGHTS}) AS min_nights
      FROM location_projects
      ORDER BY sort_order ASC, destination ASC, name ASC`
   );
@@ -133,6 +140,10 @@ router.post(
       const normalizedName = name.toLowerCase();
       const facilities = parseFacilitiesBody(req.body?.facilities);
       const imageUrl = uploadedImageUrl(req) || normalizeText(req.body?.image_url) || null;
+      const minNights = parseMinNightsValue(
+        req.body?.min_nights ?? req.body?.minNights,
+        DEFAULT_MIN_STAY_NIGHTS
+      );
 
       const existing = await query(
         `SELECT id FROM location_projects
@@ -145,8 +156,8 @@ router.post(
 
       await query(
         `INSERT INTO location_projects
-           (destination, name, normalized_destination, normalized_name, image_url, sort_order, facilities)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+           (destination, name, normalized_destination, normalized_name, image_url, sort_order, facilities, min_nights)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
         [
           destination,
           name,
@@ -155,8 +166,11 @@ router.post(
           imageUrl,
           Number(req.body?.sort_order) || 0,
           facilities,
+          minNights,
         ]
       );
+
+      await syncUnitsMinNightsForProject({ name, minNights });
 
       res.status(201).json(catalogResponse(await loadCatalogRows()));
     } catch (err) {
@@ -184,6 +198,11 @@ router.put(
       const name = req.body?.name
         ? normalizeProjectName(normalizeText(req.body.name))
         : null;
+      const minNightsRaw = req.body?.min_nights ?? req.body?.minNights;
+      const minNights =
+        minNightsRaw !== undefined && minNightsRaw !== null && minNightsRaw !== ''
+          ? parseMinNightsValue(minNightsRaw, existing[0].min_nights || DEFAULT_MIN_STAY_NIGHTS)
+          : null;
 
       const uploaded = uploadedImageUrl(req);
       let imageUrl = existing[0].image_url;
@@ -205,9 +224,10 @@ router.put(
            normalized_name = COALESCE(lower($2), normalized_name),
            image_url = CASE WHEN $3::boolean THEN $4 ELSE image_url END,
            facilities = COALESCE($5, facilities),
+           min_nights = COALESCE($6, min_nights),
            updated_at = now()
          WHERE id = $1`,
-        [id, name, imageChanged, imageUrl, facilities]
+        [id, name, imageChanged, imageUrl, facilities, minNights]
       );
 
       if (
@@ -221,6 +241,16 @@ router.put(
         } catch (_) {
           /* non-blocking */
         }
+      }
+
+      const nextName = name || existing[0].name;
+      const nextMin = minNights != null ? minNights : Number(existing[0].min_nights) || DEFAULT_MIN_STAY_NIGHTS;
+      if (minNights != null || (name && name !== existing[0].name)) {
+        await syncUnitsMinNightsForProject({
+          name: nextName,
+          previousName: existing[0].name,
+          minNights: nextMin,
+        });
       }
 
       res.json(catalogResponse(await loadCatalogRows()));

@@ -1,7 +1,7 @@
 const { query } = require('../config/db');
 const { guestsFromBedrooms } = require('./guestCapacity');
 const { normalizeProjectName } = require('./projectNames');
-const { getMinimumStayNights } = require('./minStay');
+const { lookupProjectMinNights } = require('./minStay');
 
 function slugify(s) {
   return String(s)
@@ -25,11 +25,9 @@ async function createDraftUnitFromLead(lead, { actorId } = {}) {
     lead.expected_price != null && Number(lead.expected_price) > 0
       ? Number(lead.expected_price)
       : null;
-  const minNights = getMinimumStayNights({
+  const minNights = await lookupProjectMinNights({
     project: compound,
     compound,
-    area,
-    destination: area,
   });
 
   let slug = slugify(title) || `lead-${lead.id}`;
