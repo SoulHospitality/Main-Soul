@@ -31,6 +31,30 @@ function extractFolderId(input) {
   return null;
 }
 
+/** Extract a Drive *file* id (not a folder). */
+function extractFileId(input) {
+  const raw = String(input || '').trim();
+  if (!raw) return null;
+  if (/\/folders\//i.test(raw) || /folderview/i.test(raw) || /embeddedfolderview/i.test(raw)) {
+    return null;
+  }
+
+  const patterns = [
+    /drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/i,
+    /drive\.google\.com\/open\?[^#]*[?&]?id=([a-zA-Z0-9_-]+)/i,
+    /drive\.google\.com\/uc\?[^#]*[?&]?id=([a-zA-Z0-9_-]+)/i,
+    /docs\.google\.com\/uc\?[^#]*[?&]?id=([a-zA-Z0-9_-]+)/i,
+    /lh3\.googleusercontent\.com\/d\/([a-zA-Z0-9_-]+)/i,
+  ];
+  for (const re of patterns) {
+    const m = raw.match(re);
+    if (m?.[1]) return m[1];
+  }
+
+  if (/^[a-zA-Z0-9_-]{20,}$/.test(raw) && !raw.includes('/')) return raw;
+  return null;
+}
+
 function driveImageUrl(fileId) {
   // Stable direct-ish view URL for <img src>
   return `https://lh3.googleusercontent.com/d/${fileId}`;
@@ -321,9 +345,68 @@ async function resolveDriveFolderPhotos(folderUrlOrId) {
   };
 }
 
+/**
+ * Resolve a single public Google Drive *file* link into an image URL for cover photos.
+ * @param {string} fileUrlOrId
+ * @returns {Promise<{ fileId: string, url: string, name: string|null, mimeType: string|null }>}
+ */
+async function resolveDriveFileImage(fileUrlOrId) {
+  const fileId = extractFileId(fileUrlOrId);
+  if (!fileId) {
+    const err = new Error(
+      'Invalid Google Drive file URL. Paste a link to an image file (…/file/d/…), not a folder.'
+    );
+    err.status = 400;
+    throw err;
+  }
+
+  const url = driveImageUrl(fileId);
+  const apiKey = process.env.GOOGLE_DRIVE_API_KEY || process.env.GOOGLE_API_KEY;
+  let name = null;
+  let mimeType = null;
+
+  if (apiKey) {
+    try {
+      const params = new URLSearchParams({
+        fields: 'id,name,mimeType',
+        supportsAllDrives: 'true',
+        key: apiKey,
+      });
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?${params}`);
+      if (res.ok) {
+        const data = await res.json();
+        name = data.name || null;
+        mimeType = data.mimeType || null;
+        if (!isGalleryPhoto({ mimeType, name })) {
+          const err = new Error('That Drive file is not an image. Use a JPG, PNG, WebP, or similar photo.');
+          err.status = 400;
+          throw err;
+        }
+        return { fileId, url, name, mimeType };
+      }
+    } catch (err) {
+      if (err.status === 400) throw err;
+      console.warn('[drive] file metadata failed, probing image URL:', err.message);
+    }
+  }
+
+  const probed = await probeImageMime(url);
+  if (!probed) {
+    const err = new Error(
+      'Could not load that Drive file as an image. Make sure it is shared as “Anyone with the link” and is a photo file.'
+    );
+    err.status = 400;
+    throw err;
+  }
+
+  return { fileId, url, name, mimeType: probed };
+}
+
 module.exports = {
   extractFolderId,
+  extractFileId,
   resolveDriveFolderPhotos,
+  resolveDriveFileImage,
   driveImageUrl,
   isGalleryPhoto,
   isImageMime,

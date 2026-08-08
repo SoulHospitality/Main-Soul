@@ -124,6 +124,8 @@ const EMPTY_FORM = {
   commission_tenant_pct: 0,
   photo_urls: [],
   photos_folder_url: '',
+  cover_drive_url: '',
+  cover_url: '',
   price_per_night: '',
   utilities_cost: '',
   ops_status: 'available',
@@ -472,6 +474,45 @@ function UnitForm({ form, setForm, listingType = 'rent' }) {
             <input type="url" className="input" value={form.location_link} onChange={e => setForm(f => ({ ...f, location_link: e.target.value }))} placeholder="https://maps.google.com/…" />
           </div>
           <div className="sm:col-span-2">
+            <label className="label">Cover photo (Google Drive file)</label>
+            <input
+              type="url"
+              className="input"
+              value={form.cover_drive_url || ''}
+              onChange={(e) => setForm((f) => ({ ...f, cover_drive_url: e.target.value }))}
+              placeholder="https://drive.google.com/file/d/…"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Paste a link to a single image file (not a folder). Must be shared as “Anyone with the link”.
+              This is the main photo shown on listing cards and at the top of the unit page.
+            </p>
+            {(form.cover_url || form.cover_drive_url) && (
+              <div className="mt-3 flex items-start gap-3">
+                {form.cover_url ? (
+                  <a
+                    href={form.cover_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block h-20 w-28 overflow-hidden rounded-lg border border-gray-200 bg-slate-50"
+                  >
+                    <img
+                      src={form.cover_url}
+                      alt="Cover preview"
+                      className="h-full w-full object-cover"
+                    />
+                  </a>
+                ) : (
+                  <div className="flex h-20 w-28 items-center justify-center rounded-lg border border-dashed border-gray-200 bg-slate-50 text-[11px] text-gray-400 text-center px-2">
+                    Preview after save
+                  </div>
+                )}
+                <p className="text-xs text-emerald-700 pt-1">
+                  {form.cover_url ? 'Current cover photo' : 'Cover will apply when you save'}
+                </p>
+              </div>
+            )}
+          </div>
+          <div className="sm:col-span-2">
             <label className="label">Google Drive folder (photos)</label>
             <input
               type="url"
@@ -482,6 +523,7 @@ function UnitForm({ form, setForm, listingType = 'rent' }) {
             />
             <p className="text-xs text-gray-400 mt-1">
               Folder must be shared as “Anyone with the link”. On save we load all images inside into the listing gallery.
+              If no cover file is set, the first folder image is used as the cover.
             </p>
             {!!form.photo_urls?.length && (
               <p className="text-xs text-emerald-700 mt-1">{form.photo_urls.length} photo{form.photo_urls.length === 1 ? '' : 's'} currently linked</p>
@@ -639,6 +681,8 @@ export default function Units({ listingType = 'rent' }) {
       amenities: toTagList(u.amenities),
       location_link: u.location_link || u.source_url || '',
       photos_folder_url: u.photos_folder_url || '',
+      cover_drive_url: u.cover_drive_url || '',
+      cover_url: u.cover_url || '',
       photo_urls: Array.isArray(u.photo_urls) ? u.photo_urls : [],
       price_per_night: u.price_per_night ?? u.price_fallback ?? '',
       utilities_cost: u.utilities_cost ?? '',
@@ -709,6 +753,7 @@ export default function Units({ listingType = 'rent' }) {
       description: form.description,
       amenities: form.amenities,
       photos_folder_url: form.photos_folder_url || '',
+      cover_drive_url: form.cover_drive_url || '',
       unit_area: isSale ? form.unit_area : null,
       size_m2: isSale ? form.unit_area : form.unit_area || null,
       access_fee_per_adult_egp: isSale ? null : beachPrice,

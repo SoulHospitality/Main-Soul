@@ -80,12 +80,16 @@ function parseFacilities(otherDetails) {
   return Array.isArray(parsed.facilities) ? parsed.facilities : [];
 }
 
-function buildOtherDetails({ facilities, photos_folder_url, existing } = {}) {
+function buildOtherDetails({ facilities, photos_folder_url, cover_drive_url, existing } = {}) {
   const base = parseOtherDetails(existing);
   if (facilities != null) base.facilities = Array.isArray(facilities) ? facilities : [];
   if (photos_folder_url !== undefined) {
     if (photos_folder_url) base.photos_folder_url = String(photos_folder_url).trim();
     else delete base.photos_folder_url;
+  }
+  if (cover_drive_url !== undefined) {
+    if (cover_drive_url) base.cover_drive_url = String(cover_drive_url).trim();
+    else delete base.cover_drive_url;
   }
   return JSON.stringify(base);
 }
@@ -136,6 +140,7 @@ function mapUnitRow(u) {
     price_per_night: u.price_fallback,
     photos_link: details.photos_folder_url || u.cover_url,
     photos_folder_url: details.photos_folder_url || '',
+    cover_drive_url: details.cover_drive_url || '',
     destination: u.area,
     location_link: u.source_url,
     facilities: Array.isArray(details.facilities) ? details.facilities : [],
@@ -167,6 +172,41 @@ async function resolvePhotosFromBody(b) {
   if (!folderUrl) return { folderUrl: null, urls: null };
   const resolved = await resolveDriveFolderPhotos(folderUrl);
   return { folderUrl: String(folderUrl).trim(), urls: resolved.urls };
+}
+
+/**
+ * Resolve an explicit cover from a Drive *file* link (preferred) or a raw cover_url.
+ * Returns null when nothing explicit was provided.
+ */
+async function resolveExplicitCoverUrl(b) {
+  const { resolveDriveFileImage } = require('../../services/drivePhotos');
+  const driveLink = String(b.cover_drive_url || b.cover_file_url || '').trim();
+  if (driveLink) {
+    const resolved = await resolveDriveFileImage(driveLink);
+    return { url: resolved.url, driveLink };
+  }
+
+  const raw = String(b.cover_url || '').trim();
+  if (!raw) return null;
+
+  if (
+    /drive\.google\.com|docs\.google\.com/i.test(raw) &&
+    !/\/folders\//i.test(raw) &&
+    !/folderview|embeddedfolderview/i.test(raw)
+  ) {
+    const resolved = await resolveDriveFileImage(raw);
+    return { url: resolved.url, driveLink: raw };
+  }
+
+  if (/^https?:\/\//i.test(raw)) return { url: raw, driveLink: null };
+  return null;
+}
+
+function ensureCoverInGallery(coverUrl, photoUrls) {
+  const urls = Array.isArray(photoUrls) ? [...photoUrls] : [];
+  if (!coverUrl) return urls;
+  if (urls.includes(coverUrl)) return urls;
+  return [coverUrl, ...urls];
 }
 
 // ── Users (Admin + HR staff management) ─────────────────────
@@ -749,14 +789,22 @@ router.post('/units', requireRoles('admin', 'resale', 'reservations_web', 'reser
       beachDays = beachOverride.days;
     }
     let photoUrls = Array.isArray(b.photo_urls) ? b.photo_urls : [];
-    let coverUrl = b.cover_url || photoUrls[0] || null;
+    let coverUrl = null;
+    let coverDriveLink = null;
+    const explicitCover = await resolveExplicitCoverUrl(b);
+    if (explicitCover) {
+      coverUrl = explicitCover.url;
+      coverDriveLink = explicitCover.driveLink;
+    }
     let folderUrl = b.photos_folder_url || b.drive_folder_url || b.photos_link || null;
     if (folderUrl) {
       const resolved = await resolvePhotosFromBody(b);
       folderUrl = resolved.folderUrl;
       photoUrls = resolved.urls || [];
-      coverUrl = photoUrls[0] || null;
+      if (!coverUrl) coverUrl = photoUrls[0] || null;
     }
+    photoUrls = ensureCoverInGallery(coverUrl, photoUrls);
+    if (!coverUrl && photoUrls.length) coverUrl = photoUrls[0];
 
     const minNights = await lookupProjectMinNights({
       project: toText(b.project || b.projectName || b.compound, compound),
@@ -836,7 +884,11 @@ router.post('/units', requireRoles('admin', 'resale', 'reservations_web', 'reser
         coverUrl,
         photoUrls,
         amenities,
-        buildOtherDetails({ facilities, photos_folder_url: folderUrl }),
+        buildOtherDetails({
+          facilities,
+          photos_folder_url: folderUrl,
+          cover_drive_url: coverDriveLink || String(b.cover_drive_url || b.cover_file_url || '').trim() || undefined,
+        }),
         toText(b.short_description),
         description,
         toText(b.owner_name),
@@ -971,7 +1023,21 @@ async function updateUnitHandler(req, res, next) {
       beachDays = beachOverride.days;
     }
     let photoUrls = b.photo_urls ?? null;
-    let coverUrl = b.cover_url ?? null;
+    let coverUrl = null;
+    let coverDriveLink;
+    const coverLinkProvided =
+      b.cover_drive_url !== undefined ||
+      b.cover_file_url !== undefined ||
+      b.cover_url !== undefined;
+    if (coverLinkProvided) {
+      const explicitCover = await resolveExplicitCoverUrl(b);
+      if (explicitCover) {
+        coverUrl = explicitCover.url;
+        coverDriveLink = explicitCover.driveLink;
+      } else {
+        coverDriveLink = '';
+      }
+    }
     let folderUrl;
     if (b.photos_folder_url !== undefined || b.drive_folder_url !== undefined || b.photos_link !== undefined) {
       folderUrl = b.photos_folder_url || b.drive_folder_url || b.photos_link || '';
@@ -979,15 +1045,29 @@ async function updateUnitHandler(req, res, next) {
         const resolved = await resolvePhotosFromBody({ photos_folder_url: folderUrl });
         folderUrl = resolved.folderUrl;
         photoUrls = resolved.urls;
-        coverUrl = photoUrls?.[0] || null;
+        if (!coverUrl) {
+          const existingCover = existingRows[0]?.cover_url || null;
+          coverUrl =
+            (existingCover && Array.isArray(photoUrls) && photoUrls.includes(existingCover)
+              ? existingCover
+              : null) ||
+            photoUrls?.[0] ||
+            null;
+        }
       } else {
         folderUrl = '';
       }
+    }
+    if (coverUrl && Array.isArray(photoUrls)) {
+      photoUrls = ensureCoverInGallery(coverUrl, photoUrls);
+    } else if (coverUrl && photoUrls == null && !folderUrl) {
+      // Cover-only update: keep existing gallery, just change cover
     }
 
     const otherDetails = buildOtherDetails({
       facilities: facilities == null ? undefined : facilities,
       photos_folder_url: folderUrl,
+      cover_drive_url: coverDriveLink,
       existing: existingRows[0].other_details,
     });
 
