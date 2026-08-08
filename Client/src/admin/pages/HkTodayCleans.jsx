@@ -8,9 +8,12 @@ import { formatDate } from '../utils/formatters';
 export default function HkTodayCleans() {
   const qc = useQueryClient();
 
-  const { data: rows = [], isLoading, refetch } = useQuery({
+  const { data: rows = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ['hk-today-cleans'],
-    queryFn: () => api.get('/housekeeping/today-cleans').then((r) => r.data),
+    queryFn: async () => {
+      const r = await api.get('/housekeeping/today-cleans');
+      return Array.isArray(r.data) ? r.data : [];
+    },
     refetchInterval: 20000,
   });
 
@@ -41,7 +44,11 @@ export default function HkTodayCleans() {
         </button>
       </div>
 
-      {!rows.length ? (
+      {isError ? (
+        <div className="card p-10 text-center text-sm text-red-600">
+          Could not load cleans: {error?.response?.data?.error || error?.message || 'Request failed'}
+        </div>
+      ) : !rows.length ? (
         <div className="card p-10 text-center text-sm text-gray-500">
           No check-in cleans for today.
         </div>

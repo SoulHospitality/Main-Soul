@@ -9,9 +9,22 @@ const DEFAULT_CHECKLIST = [
   { key: 'amenities', label: 'Amenities restocked', done: false },
 ];
 
+function checkInDateStr(value) {
+  if (!value) return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+  const raw = String(value).trim();
+  const iso = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (iso) return iso[1];
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
+  return null;
+}
+
 async function ensurePreArrivalTasks() {
   const { rows } = await query(
-    `SELECT r.id AS reservation_id, r.unit_id, r.check_in
+    `SELECT r.id AS reservation_id, r.unit_id, r.check_in::date::text AS check_in
      FROM reservations r
      WHERE r.status IN ('confirmed', 'pending', 'checked_in')
        AND r.check_in::date BETWEEN CURRENT_DATE AND (CURRENT_DATE + INTERVAL '1 day')::date
@@ -24,8 +37,8 @@ async function ensurePreArrivalTasks() {
 
   let created = 0;
   for (const row of rows) {
-    const checkInStr = String(row.check_in || '').slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(checkInStr)) {
+    const checkInStr = checkInDateStr(row.check_in);
+    if (!checkInStr) {
       console.warn('[housekeeping] skip task — bad check_in', row.reservation_id, row.check_in);
       continue;
     }

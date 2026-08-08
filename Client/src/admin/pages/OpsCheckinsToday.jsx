@@ -12,9 +12,12 @@ export default function OpsCheckinsToday() {
   const [amountDrafts, setAmountDrafts] = useState({});
   const [methodDrafts, setMethodDrafts] = useState({});
 
-  const { data: rows = [], isLoading, refetch } = useQuery({
+  const { data: rows = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ['ops-checkins-today'],
-    queryFn: () => api.get('/ops/checkins-today').then((r) => r.data),
+    queryFn: async () => {
+      const r = await api.get('/ops/checkins-today');
+      return Array.isArray(r.data) ? r.data : [];
+    },
     refetchInterval: 20000,
   });
 
@@ -54,7 +57,11 @@ export default function OpsCheckinsToday() {
         </button>
       </div>
 
-      {!rows.length ? (
+      {isError ? (
+        <div className="card p-10 text-center text-sm text-red-600">
+          Could not load check-ins: {error?.response?.data?.error || error?.message || 'Request failed'}
+        </div>
+      ) : !rows.length ? (
         <div className="card p-10 text-center text-sm text-gray-500">No check-ins scheduled for today.</div>
       ) : (
         <div className="card overflow-x-auto">

@@ -11,7 +11,9 @@ const { calcReservationFinancials, round2 } = require('../../lib/commission');
 
 const router = express.Router();
 
-router.use(requireRoles('admin'));
+// Per-route admin gate only — do NOT use router.use(requireRoles(...)) here.
+// This module is mounted at /api/pms without a path prefix; a router-level role
+// middleware would 403 every PMS request for non-admin roles (ops, HK, agents).
 
 function dateFilters(req, { alias = 'r', checkInCol = 'check_in', checkOutCol = 'check_out' } = {}) {
   const from = clampFromDate(req.query.from_date);
@@ -45,7 +47,7 @@ function channelLabel(key) {
 }
 
 /** GET /reports/revenue */
-router.get('/reports/revenue', async (req, res, next) => {
+router.get('/reports/revenue', requireRoles('admin'), async (req, res, next) => {
   try {
     const { sql: dateSql, params, from } = dateFilters(req);
     const project = String(req.query.project || '').trim();
@@ -128,7 +130,7 @@ router.get('/reports/revenue', async (req, res, next) => {
 });
 
 /** GET /reports/by-employee */
-router.get('/reports/by-employee', async (req, res, next) => {
+router.get('/reports/by-employee', requireRoles('admin'), async (req, res, next) => {
   try {
     const { sql: dateSql, params } = dateFilters(req);
     const { rows } = await query(
@@ -163,7 +165,7 @@ router.get('/reports/by-employee', async (req, res, next) => {
 });
 
 /** GET /reports/by-unit */
-router.get('/reports/by-unit', async (req, res, next) => {
+router.get('/reports/by-unit', requireRoles('admin'), async (req, res, next) => {
   try {
     const { sql: dateSql, params } = dateFilters(req);
     const { rows } = await query(
@@ -237,7 +239,7 @@ router.get('/reports/by-unit', async (req, res, next) => {
 });
 
 /** GET /reports/daily-reservations — pivot by creation date × project */
-router.get('/reports/daily-reservations', async (req, res, next) => {
+router.get('/reports/daily-reservations', requireRoles('admin'), async (req, res, next) => {
   try {
     const from = clampFromDate(req.query.from_date);
     const params = [from];
@@ -291,7 +293,7 @@ router.get('/reports/daily-reservations', async (req, res, next) => {
 });
 
 /** GET /reports/export/reservations/excel */
-router.get('/reports/export/reservations/excel', async (req, res, next) => {
+router.get('/reports/export/reservations/excel', requireRoles('admin'), async (req, res, next) => {
   try {
     const { sql: dateSql, params } = dateFilters(req);
     const { rows } = await query(

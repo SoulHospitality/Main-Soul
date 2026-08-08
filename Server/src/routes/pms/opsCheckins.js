@@ -95,7 +95,11 @@ function mapCheckin(row) {
 
 router.get('/ops/checkins-today', requireRoles(...OPS_ROLES), async (req, res, next) => {
   try {
-    await ensurePreArrivalTasks();
+    try {
+      await ensurePreArrivalTasks();
+    } catch (err) {
+      console.error('[ops/checkins-today] ensurePreArrivalTasks', err.message);
+    }
     const { rows } = await query(
       `SELECT r.*,
               COALESCE(u.title, u.unit_number, 'Unit') AS unit_title,
@@ -265,7 +269,11 @@ router.post(
 
 router.get('/housekeeping/today-cleans', requireRoles(...HK_READ_ROLES), async (req, res, next) => {
   try {
-    await ensurePreArrivalTasks();
+    try {
+      await ensurePreArrivalTasks();
+    } catch (err) {
+      console.error('[housekeeping/today-cleans] ensurePreArrivalTasks', err.message);
+    }
 
     // Ensure every today check-in has a pre-arrival task (job covers today+tomorrow; double-check).
     const { rows: missing } = await query(
