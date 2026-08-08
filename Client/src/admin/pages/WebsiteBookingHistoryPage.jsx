@@ -5,9 +5,9 @@ export default function WebsiteBookingHistoryPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Website Bookings</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Website History</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Past website bookings — fully paid, partially paid, and rejected.
+          Accepted, pending balance, and rejected website bookings.
         </p>
       </div>
       <WebsiteBookingsNav />

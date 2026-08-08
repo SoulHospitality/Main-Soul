@@ -139,8 +139,8 @@ function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
 }
 
 /** SQL fragment restricting website booking rows for agents.
- * Pending/held requests are a shared pool for all website agents (assignment is for
- * load-balancing / notifications only). Confirmed bookings stay assignee-only.
+ * Agents only see bookings assigned to them (requests + history).
+ * Unassigned pool is listed separately via status=unassigned.
  */
 function bookingAssigneeClause(user, alias = 'b', paramIndex = 1) {
   if (user?.role === 'reservations_manual') {
@@ -150,12 +150,8 @@ function bookingAssigneeClause(user, alias = 'b', paramIndex = 1) {
     return { clause: '', params: [], nextIndex: paramIndex };
   }
   const col = alias ? `${alias}.assigned_sales_id` : 'assigned_sales_id';
-  const statusCol = alias ? `${alias}.status` : 'status';
   return {
-    clause: ` AND (
-      ${statusCol} IN ('pending', 'held')
-      OR ${col} = $${paramIndex}
-    )`,
+    clause: ` AND ${col} = $${paramIndex}`,
     params: [user.id],
     nextIndex: paramIndex + 1,
   };
@@ -210,9 +206,10 @@ function assertBookingAssigned(user, booking) {
     err.status = 404;
     throw err;
   }
-  // Shared pending pool — any website agent may accept/reject while still pending/held
-  if (['pending', 'held'].includes(String(booking.status || '').toLowerCase())) {
-    return;
+  if (!booking.assigned_sales_id) {
+    const err = new Error('Assign this request to yourself before accepting or rejecting');
+    err.status = 403;
+    throw err;
   }
   if (Number(booking.assigned_sales_id) !== Number(user.id)) {
     const err = new Error('This website booking is not assigned to you');

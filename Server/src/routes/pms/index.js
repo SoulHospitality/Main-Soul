@@ -47,6 +47,7 @@ const router = express.Router();
 router.use(authStaff);
 router.use(requirePasswordChanged);
 router.use(compat);
+router.use(require('./reportsAnalytics'));
 router.use(housekeepingOps);
 router.use(ownerPortal);
 router.use(roadmapScaffold);

@@ -134,6 +134,7 @@ export default function WebsiteBookingRequests() {
       toast.success('Booking accepted');
       closeAcceptModal();
       qc.invalidateQueries({ queryKey: ['website-bookings-pending'] });
+      qc.invalidateQueries({ queryKey: ['website-bookings-unassigned'] });
       qc.invalidateQueries({ queryKey: ['website-bookings-history'] });
       qc.invalidateQueries({ queryKey: ['reservations'] });
     },
@@ -147,6 +148,7 @@ export default function WebsiteBookingRequests() {
       toast.success('Booking rejected');
       closeRejectModal();
       qc.invalidateQueries({ queryKey: ['website-bookings-pending'] });
+      qc.invalidateQueries({ queryKey: ['website-bookings-unassigned'] });
       qc.invalidateQueries({ queryKey: ['website-bookings-history'] });
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Reject failed'),
@@ -227,7 +229,7 @@ export default function WebsiteBookingRequests() {
   if (!bookings.length) {
     return (
       <div className="card p-8 text-center text-sm text-gray-500">
-        No pending website booking requests.
+        No assigned website requests yet. Claim one from the Unassigned tab.
       </div>
     );
   }
@@ -236,7 +238,7 @@ export default function WebsiteBookingRequests() {
     <div className="space-y-6">
       <div className="card p-4 space-y-3 border-amber-200 bg-amber-50/40">
         <div>
-          <h2 className="font-semibold text-gray-900">Website requests awaiting confirmation</h2>
+          <h2 className="font-semibold text-gray-900">Assigned requests awaiting confirmation</h2>
           <p className="text-xs text-gray-500">
             Review guest contact, party size, stay dates, ID photos, and full payment breakdown. For
             InstaPay/Cash, collect at least 50% with evidence before accepting.

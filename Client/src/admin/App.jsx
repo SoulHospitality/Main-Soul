@@ -12,6 +12,7 @@ const Units = lazy(() => import('./pages/Units'));
 const UnitsForSale = lazy(() => import('./pages/UnitsForSale'));
 const Reservations = lazy(() => import('./pages/Reservations'));
 const WebsiteBookings = lazy(() => import('./pages/WebsiteBookings'));
+const WebsiteBookingUnassignedPage = lazy(() => import('./pages/WebsiteBookingUnassignedPage'));
 const WebsiteBookingHistoryPage = lazy(() => import('./pages/WebsiteBookingHistoryPage'));
 const Finance = lazy(() => import('./pages/Finance'));
 const Profit = lazy(() => import('./pages/Profit'));
@@ -35,6 +36,7 @@ const ResaleSales = lazy(() => import('./pages/ResaleSales'));
 const OwnerDateBlocks = lazy(() => import('./pages/OwnerDateBlocks'));
 const OwnerSettlementsAdmin = lazy(() => import('./pages/OwnerSettlementsAdmin'));
 const PromoCodes = lazy(() => import('./pages/PromoCodes'));
+const Reports = lazy(() => import('./pages/Reports'));
 
 function PageFallback() {
   return (
@@ -87,11 +89,13 @@ function AppRoutes() {
       <Route path="projects" element={<ProtectedRoute page="projects"><Projects /></ProtectedRoute>} />
       <Route path="reservations" element={<ProtectedRoute page="reservations"><Reservations /></ProtectedRoute>} />
       <Route path="website-bookings" element={<ProtectedRoute page="website_bookings"><WebsiteBookings /></ProtectedRoute>} />
+      <Route path="website-bookings/unassigned" element={<ProtectedRoute page="website_bookings"><WebsiteBookingUnassignedPage /></ProtectedRoute>} />
       <Route path="website-bookings/history" element={<ProtectedRoute page="website_bookings"><WebsiteBookingHistoryPage /></ProtectedRoute>} />
       <Route path="schedule" element={<ProtectedRoute page="schedule"><Schedule /></ProtectedRoute>} />
       <Route path="utilities" element={<Navigate to="/admin/expenses?category=utilities_cost" replace />} />
       <Route path="finance" element={<ProtectedRoute page="finance"><Finance /></ProtectedRoute>} />
       <Route path="profit" element={<ProtectedRoute page="profit"><Profit /></ProtectedRoute>} />
+      <Route path="reports" element={<ProtectedRoute page="reports"><Reports /></ProtectedRoute>} />
       <Route path="commissions" element={<ProtectedRoute page="commissions"><Commissions /></ProtectedRoute>} />
       <Route path="expenses" element={<ProtectedRoute page="expenses"><Expenses /></ProtectedRoute>} />
       <Route path="marketing" element={<Navigate to="/admin/expenses?category=marketing" replace />} />

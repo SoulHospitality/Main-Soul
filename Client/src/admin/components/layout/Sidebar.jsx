@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Building2, CalendarDays,
   BadgeDollarSign, Receipt, FileBarChart2, Users, UserCircle,
   LogOut, Building, CalendarRange, Wallet,
-  TrendingUp, Sparkles, Briefcase, Globe, Tag, History,
+  TrendingUp, Sparkles, Briefcase, Globe, Tag, History, UserPlus,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -18,11 +18,13 @@ const NAV_ITEMS = [
   { path: '/admin/units-for-sale',   label: 'Units for Sale',     icon: Building2,          page: 'units_sale', resaleLabel: 'Units' },
   { path: '/admin/projects',         label: 'Destinations',       icon: Building,           page: 'projects' },
   { path: '/admin/reservations',     label: 'Reservations',       icon: CalendarDays,       page: 'reservations', agentLabel: 'My Reservations' },
+  { path: '/admin/website-bookings/unassigned', label: 'Website Unassigned', icon: UserPlus, page: 'website_bookings', badge: 'website_unassigned' },
   { path: '/admin/website-bookings', label: 'Website Requests',   icon: Globe,              page: 'website_bookings', badge: 'website_pending', end: true },
   { path: '/admin/website-bookings/history', label: 'Website History', icon: History,      page: 'website_bookings' },
   { path: '/admin/schedule',         label: 'Schedule',           icon: CalendarRange,      page: 'schedule' },
   { path: '/admin/finance',          label: 'Finance',            icon: BadgeDollarSign,    page: 'finance' },
   { path: '/admin/profit',           label: 'Profit',             icon: TrendingUp,         page: 'profit' },
+  { path: '/admin/reports',          label: 'Reports',            icon: FileBarChart2,      page: 'reports' },
   { path: '/admin/commissions',      label: 'Commissions',        icon: BadgeDollarSign,    page: 'commissions', agentLabel: 'My Profit' },
   { path: '/admin/housekeeping',     label: 'Housekeeping',       icon: Sparkles,           page: 'housekeeping' },
   { path: '/admin/petty-cash',       label: 'Petty Cash',         icon: Wallet,             page: 'petty_cash' },
@@ -66,7 +68,15 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
     enabled: showWebsitePending,
     refetchInterval: 30000,
   });
+  const { data: unassignedBookings = [] } = useQuery({
+    queryKey: ['website-bookings-unassigned'],
+    queryFn: () =>
+      api.get('/website-bookings', { params: { status: 'unassigned' } }).then((r) => r.data),
+    enabled: showWebsitePending,
+    refetchInterval: 30000,
+  });
   const pendingWebsiteCount = Array.isArray(pendingBookings) ? pendingBookings.length : 0;
+  const unassignedWebsiteCount = Array.isArray(unassignedBookings) ? unassignedBookings.length : 0;
 
   const handleLogout = () => { logout(); navigate('/sign-in'); };
 
@@ -122,7 +132,12 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
                     user?.role === 'reservations')
                 ? item.agentLabel
                 : item.label;
-          const pendingCount = item.badge === 'website_pending' ? pendingWebsiteCount : 0;
+          const pendingCount =
+            item.badge === 'website_pending'
+              ? pendingWebsiteCount
+              : item.badge === 'website_unassigned'
+                ? unassignedWebsiteCount
+                : 0;
           return (
           <NavLink
             key={item.path}

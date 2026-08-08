@@ -23,12 +23,13 @@ const NOTIFICATION_ICONS = {
 };
 
 function notificationHref(n) {
+  if (n.type === 'new_booking') return '/admin/website-bookings/unassigned';
   if (n.entity_type === 'booking') return '/admin/website-bookings';
   if (n.entity_type === 'reservation' && n.entity_id) {
     return `/admin/reservations?view=${n.entity_id}`;
   }
-  if (n.type === 'new_booking' || n.type === 'booking_accepted' || n.type === 'booking_rejected') {
-    return '/admin/website-bookings';
+  if (n.type === 'booking_accepted' || n.type === 'booking_rejected') {
+    return '/admin/website-bookings/history';
   }
   return '/admin/reservations';
 }
@@ -74,6 +75,8 @@ export default function Header({ onToggleSidebar, sidebarWidth = 256 }) {
     const refresh = () => {
       qc.invalidateQueries({ queryKey: ['notifications'] });
       qc.invalidateQueries({ queryKey: ['website-bookings-pending'] });
+      qc.invalidateQueries({ queryKey: ['website-bookings-unassigned'] });
+      qc.invalidateQueries({ queryKey: ['website-bookings-history'] });
     };
     socket.on('pms:notification', refresh);
     socket.on('sales:notification', refresh);

@@ -941,17 +941,26 @@ router.get('/website-bookings', async (req, res, next) => {
     const status = req.query.status;
     const params = [];
     let where = 'TRUE';
-    const historyMode = String(status || '').toLowerCase() === 'history';
+    const statusKey = String(status || '').toLowerCase();
+    const historyMode = statusKey === 'history';
+    const unassignedMode = statusKey === 'unassigned';
 
     if (historyMode) {
       // Accepted / pending (partial payment) / rejected website decisions.
       where = `b.status IN ('confirmed', 'cancelled')`;
+    } else if (unassignedMode) {
+      // Shared claim pool — pending/held with no assignee.
+      where = `b.status IN ('pending', 'held') AND b.assigned_sales_id IS NULL`;
     } else if (status) {
       params.push(status);
-      where = `b.status = $${params.length}`;
+      // Assigned requests only (unassigned live on the Unassigned page).
+      where = `b.status = $${params.length} AND b.assigned_sales_id IS NOT NULL`;
     }
 
-    const scope = bookingAssigneeClause(req.user, 'b', params.length + 1);
+    // Unassigned pool is visible to the whole website team / admin (no assignee filter).
+    const scope = unassignedMode
+      ? { clause: '', params: [], nextIndex: params.length + 1 }
+      : bookingAssigneeClause(req.user, 'b', params.length + 1);
     params.push(...scope.params);
     const limit = historyMode ? 300 : 200;
     const { rows } = await query(
@@ -1161,6 +1170,35 @@ router.post('/website-bookings/:id/reject', requireRoles('reservations_web', 're
   }
 });
 
+/** Agent self-claim, or admin assign to any website reservations agent. */
+router.post(
+  '/website-bookings/:id/assign',
+  requireRoles('reservations_web', 'reservations', 'admin'),
+  async (req, res, next) => {
+    try {
+      const { assignWebsiteBooking } = require('../../services/bookingWorkflow');
+      const body = req.body || {};
+      const booking = await assignWebsiteBooking(req.params.id, req.user, {
+        assignedSalesId: body.assigned_sales_id ?? body.assignedSalesId ?? null,
+      });
+      const { rows } = await query(
+        `SELECT b.*,
+                u.title AS unit_title,
+                u.unit_number,
+                su.full_name AS assigned_agent_name
+         FROM bookings b
+         LEFT JOIN units u ON u.id = b.unit_id
+         LEFT JOIN staff_users su ON su.id = b.assigned_sales_id
+         WHERE b.id = $1`,
+        [booking.id]
+      );
+      res.json(rows[0] || booking);
+    } catch (e) {
+      next(e);
+    }
+  }
+);
+
 router.get('/owner-units/my-units', requireRoles('admin'), async (req, res, next) => {
   try {
     const { rows } = await query(
@@ -1365,10 +1403,6 @@ router.get('/housekeeping', async (req, res, next) => {
     next(e);
   }
 });
-router.get('/reports/revenue', async (_req, res) => res.json([]));
-router.get('/reports/by-employee', async (_req, res) => res.json([]));
-router.get('/reports/by-unit', async (_req, res) => res.json([]));
-router.get('/reports/daily-reservations', async (_req, res) => res.json([]));
 router.get('/reservations/blocked-dates', async (req, res, next) => {
   try {
     const unitId = req.query.unit_id;

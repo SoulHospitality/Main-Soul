@@ -7,7 +7,7 @@ export default function WebsiteBookings() {
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Website Bookings</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Review and accept or reject new guest requests from the website.
+          Accept or reject website requests assigned to you. Claim new ones from Unassigned.
         </p>
       </div>
       <WebsiteBookingsNav />

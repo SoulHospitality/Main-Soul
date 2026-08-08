@@ -90,9 +90,15 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
   }
 
   const assignee =
-    (isWebsiteReservationsAgent(staffUser) || isAdmin(staffUser) ? staffUser?.id : null) ||
     booking.assigned_sales_id ||
+    (isWebsiteReservationsAgent(staffUser) || isAdmin(staffUser) ? staffUser?.id : null) ||
     (await pickLeastLoadedReservationsAgent());
+
+  if (!assignee) {
+    const err = new Error('Assign this request to a website agent before accepting');
+    err.status = 400;
+    throw err;
+  }
 
   const depositNote = alreadyPaid
     ? null
@@ -413,25 +419,86 @@ async function rejectWebsiteBooking(bookingId, staffUser, reason = '') {
   return updated;
 }
 
+/** Leave bookings unassigned; notify the whole website reservations team. */
 async function assignSalesOnCreate(bookingId) {
   const { rows: bookingRows } = await query(`SELECT * FROM bookings WHERE id = $1`, [bookingId]);
   const booking = bookingRows[0];
   if (!booking) return null;
 
-  const assignee = await pickLeastLoadedReservationsAgent();
-  if (assignee) {
-    await query(`UPDATE bookings SET assigned_sales_id = $1 WHERE id = $2`, [assignee, bookingId]);
-    booking.assigned_sales_id = assignee;
-  }
-
   try {
     const { notifyNewWebsiteBooking } = require('./pmsNotifications');
-    await notifyNewWebsiteBooking(booking, { assigneeId: assignee });
+    await notifyNewWebsiteBooking(booking, { assigneeId: null });
   } catch (err) {
     console.error('[assignSalesOnCreate] notify failed', err.message);
   }
 
-  return assignee;
+  return null;
+}
+
+/**
+ * Claim (agent → self) or admin-assign a pending website booking.
+ * @param {string} bookingId
+ * @param {object} staffUser
+ * @param {{ assignedSalesId?: number|null }} [options]
+ */
+async function assignWebsiteBooking(bookingId, staffUser, options = {}) {
+  const { rows } = await query(`SELECT * FROM bookings WHERE id = $1`, [bookingId]);
+  const booking = rows[0];
+  if (!booking) {
+    const err = new Error('Booking not found');
+    err.status = 404;
+    throw err;
+  }
+  if (!['pending', 'held'].includes(String(booking.status || '').toLowerCase())) {
+    const err = new Error(`Cannot assign booking in status ${booking.status}`);
+    err.status = 409;
+    throw err;
+  }
+
+  let targetId = null;
+  if (isAdmin(staffUser)) {
+    const raw = options.assignedSalesId ?? options.assigned_sales_id;
+    targetId = raw != null && raw !== '' ? Number(raw) : null;
+    if (!targetId || !Number.isFinite(targetId)) {
+      const err = new Error('Select a website reservations agent to assign');
+      err.status = 400;
+      throw err;
+    }
+    const { rows: agents } = await query(
+      `SELECT id FROM staff_users
+       WHERE id = $1 AND is_active = 1 AND role IN ('reservations_web', 'reservations')`,
+      [targetId]
+    );
+    if (!agents[0]) {
+      const err = new Error('Assignee must be an active website reservations agent');
+      err.status = 400;
+      throw err;
+    }
+  } else if (isWebsiteReservationsAgent(staffUser)) {
+    if (
+      booking.assigned_sales_id &&
+      Number(booking.assigned_sales_id) !== Number(staffUser.id)
+    ) {
+      const err = new Error('This request is already assigned to another agent');
+      err.status = 409;
+      throw err;
+    }
+    targetId = Number(staffUser.id);
+  } else {
+    const err = new Error('Only website reservation agents or admins can assign requests');
+    err.status = 403;
+    throw err;
+  }
+
+  const { rows: updated } = await query(
+    `UPDATE bookings
+     SET assigned_sales_id = $2
+     WHERE id = $1
+     RETURNING *`,
+    [bookingId, targetId]
+  );
+
+  return updated[0] || null;
 }
 
 module.exports = {
@@ -440,4 +507,5 @@ module.exports = {
   cancelWebsiteBooking,
   pickSalesAssignee,
   assignSalesOnCreate,
+  assignWebsiteBooking,
 };
