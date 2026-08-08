@@ -3,10 +3,15 @@ import { Check, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
+import { useAuth } from '../context/AuthContext';
 import { formatDate } from '../utils/formatters';
 
 export default function HkTodayCleans() {
+  const { user } = useAuth();
   const qc = useQueryClient();
+  const canAssign =
+    user?.role === 'admin' || user?.role === 'housekeeping_supervisor';
+  const isAgent = user?.role === 'housekeeping';
 
   const { data: rows = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ['hk-today-cleans'],
@@ -15,6 +20,15 @@ export default function HkTodayCleans() {
       return Array.isArray(r.data) ? r.data : [];
     },
     refetchInterval: 20000,
+  });
+
+  const { data: agents = [] } = useQuery({
+    queryKey: ['hk-agents'],
+    queryFn: async () => {
+      const r = await api.get('/housekeeping/agents');
+      return Array.isArray(r.data) ? r.data : [];
+    },
+    enabled: canAssign,
   });
 
   const cleanMutation = useMutation({
@@ -28,6 +42,16 @@ export default function HkTodayCleans() {
     onError: (e) => toast.error(e.response?.data?.error || 'Could not mark cleaned'),
   });
 
+  const assignMutation = useMutation({
+    mutationFn: ({ taskId, staff_id }) =>
+      api.post(`/housekeeping/today-cleans/${taskId}/assign`, { staff_id: staff_id || null }),
+    onSuccess: () => {
+      toast.success('Assignment updated');
+      qc.invalidateQueries({ queryKey: ['hk-today-cleans'] });
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Assign failed'),
+  });
+
   if (isLoading) return <LoadingSpinner />;
 
   return (
@@ -36,7 +60,11 @@ export default function HkTodayCleans() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Today&apos;s cleans</h1>
           <p className="mt-1 text-sm text-gray-500">
-            Units with check-in today. Mark cleaned when ready for Operations handover.
+            {canAssign
+              ? 'Assign each clean to a housekeeping agent, then track when units are ready.'
+              : isAgent
+                ? 'Your assigned cleans — mark cleaned when the unit is ready for Operations.'
+                : 'Units with check-in today. Mark cleaned when ready for Operations handover.'}
           </p>
         </div>
         <button type="button" className="btn-secondary text-sm" onClick={() => refetch()}>
@@ -50,7 +78,9 @@ export default function HkTodayCleans() {
         </div>
       ) : !rows.length ? (
         <div className="card p-10 text-center text-sm text-gray-500">
-          No check-in cleans for today.
+          {isAgent
+            ? 'No cleans assigned to you yet. Ask your Housekeeping Supervisor to assign units.'
+            : 'No check-in cleans for today.'}
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -88,7 +118,35 @@ export default function HkTodayCleans() {
                   Check-in {formatDate(r.check_in)}
                   {r.guest_phone ? ` · ${r.guest_phone}` : ''}
                 </div>
+                {!canAssign && r.assignee_name ? (
+                  <div className="text-[11px] text-sky-800">Assigned: {r.assignee_name}</div>
+                ) : null}
               </div>
+
+              {canAssign && r.task_id ? (
+                <div className="mt-3">
+                  <label className="text-[10px] uppercase text-gray-500">Assign agent</label>
+                  <select
+                    className="input text-sm py-1.5 mt-1"
+                    value={r.assigned_to || ''}
+                    disabled={assignMutation.isPending}
+                    onChange={(e) =>
+                      assignMutation.mutate({
+                        taskId: r.task_id,
+                        staff_id: e.target.value ? Number(e.target.value) : null,
+                      })
+                    }
+                  >
+                    <option value="">Unassigned</option>
+                    {agents.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.full_name || a.username}
+                        {a.staff_code ? ` (${a.staff_code})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
 
               <div className="mt-4">
                 {r.cleaned ? (

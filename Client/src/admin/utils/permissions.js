@@ -4,7 +4,9 @@ export const ROLES = {
   RESERVATIONS_WEB: 'reservations_web',
   RESERVATIONS_MANUAL: 'reservations_manual',
   OPERATIONS: 'operations',
+  OPERATIONS_SUPERVISOR: 'operations_supervisor',
   HOUSEKEEPING: 'housekeeping',
+  HOUSEKEEPING_SUPERVISOR: 'housekeeping_supervisor',
   RESALE: 'resale',
   HR: 'hr',
   OWNER: 'owner',
@@ -80,9 +82,25 @@ const PERMISSIONS = {
     'notifications:read',
     'profile:read',
   ],
+  operations_supervisor: [
+    'ops_checkins:read',
+    'ops_checkins:write',
+    'ops_checkins:assign',
+    'notifications:read',
+    'profile:read',
+  ],
   housekeeping: [
     'hk_today:read',
     'hk_today:write',
+    'housekeeping:read',
+    'housekeeping:write',
+    'notifications:read',
+    'profile:read',
+  ],
+  housekeeping_supervisor: [
+    'hk_today:read',
+    'hk_today:write',
+    'hk_today:assign',
     'housekeeping:read',
     'housekeeping:write',
     'notifications:read',
@@ -103,7 +121,9 @@ const PAGE_ACCESS = {
   reservations_web: RESERVATIONS_WEB_PAGE_ACCESS,
   reservations_manual: RESERVATIONS_PAGE_ACCESS,
   operations: new Set(['ops_checkins', 'profile']),
+  operations_supervisor: new Set(['ops_checkins', 'profile']),
   housekeeping: new Set(['hk_today', 'housekeeping', 'profile']),
+  housekeeping_supervisor: new Set(['hk_today', 'housekeeping', 'profile']),
   resale: new Set(['units_sale', 'acquisition', 'sales', 'profile']),
   hr: new Set(['users', 'profile']),
   owner: new Set([
@@ -200,7 +220,12 @@ export function isOwnerRole(user) {
 
 export function creatableRoles(actorRole) {
   const reservationRoles = ['reservations_web', 'reservations_manual'];
-  const fieldRoles = ['operations', 'housekeeping'];
+  const fieldRoles = [
+    'operations_supervisor',
+    'operations',
+    'housekeeping_supervisor',
+    'housekeeping',
+  ];
   if (actorRole === 'admin') {
     return ['admin', ...reservationRoles, ...fieldRoles, 'resale', 'hr', 'owner'];
   }
@@ -214,7 +239,9 @@ export const ROLE_LABELS = {
   reservations_web: 'Website Reservations',
   reservations_manual: 'Manual Reservations',
   operations: 'Operations',
+  operations_supervisor: 'Operations Supervisor',
   housekeeping: 'Housekeeping',
+  housekeeping_supervisor: 'Housekeeping Supervisor',
   resale: 'Resale',
   hr: 'HR',
   owner: 'Owner',
@@ -226,7 +253,9 @@ export const ROLE_COLORS = {
   reservations_web: 'badge-soul-orange',
   reservations_manual: 'badge-soul-orange',
   operations: 'badge-soul-teal',
+  operations_supervisor: 'badge-soul-teal',
   housekeeping: 'badge-soul-slate',
+  housekeeping_supervisor: 'badge-soul-slate',
   resale: 'badge-soul-teal',
   hr: 'badge-soul-slate',
   owner: 'badge-soul-teal',
@@ -238,7 +267,9 @@ export const PMS_LABELS = {
   reservations_web: 'Website Reservations PMS',
   reservations_manual: 'Manual Reservations PMS',
   operations: 'Operations PMS',
+  operations_supervisor: 'Operations Supervisor PMS',
   housekeeping: 'Housekeeping PMS',
+  housekeeping_supervisor: 'Housekeeping Supervisor PMS',
   resale: 'Resale PMS',
   hr: 'HR PMS',
   owner: 'Owner Portal',

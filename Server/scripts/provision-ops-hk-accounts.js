@@ -1,5 +1,5 @@
 /**
- * Provision mock Operations + Housekeeping staff accounts for local/demo use.
+ * Provision Ops/HK supervisor + agent demo accounts.
  *
  * Usage: node scripts/provision-ops-hk-accounts.js
  */
@@ -10,18 +10,28 @@ const { TEMP_PASSWORD, generateUniqueStaffCode } = require('../src/lib/staffIden
 
 const ACCOUNTS = [
   {
+    role: 'operations_supervisor',
+    username: 'ops.supervisor',
+    email: 'ops.supervisor@soulhospitality.co',
+    full_name: 'Operations Supervisor',
+  },
+  {
     role: 'operations',
     username: 'ops.demo',
     email: 'ops.demo@soulhospitality.co',
     full_name: 'Operations Demo',
-    phone: '01000000001',
+  },
+  {
+    role: 'housekeeping_supervisor',
+    username: 'hk.supervisor',
+    email: 'hk.supervisor@soulhospitality.co',
+    full_name: 'Housekeeping Supervisor',
   },
   {
     role: 'housekeeping',
     username: 'hk.demo',
     email: 'hk.demo@soulhospitality.co',
     full_name: 'Housekeeping Demo',
-    phone: '01000000002',
   },
 ];
 
@@ -84,9 +94,9 @@ async function main() {
     );
   }
   console.log('');
-  console.log('Sign in at /sign-in with:');
+  console.log('Sign in at /sign-in with password', TEMP_PASSWORD);
   for (const r of results) {
-    console.log(`  ${r.role}: username=${r.username}  password=${TEMP_PASSWORD}`);
+    console.log(`  ${r.role}: ${r.username}`);
   }
   process.exit(0);
 }

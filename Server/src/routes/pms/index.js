@@ -231,14 +231,16 @@ function assertCanAssignRole(actorRole, targetRole) {
     'reservations_manual',
     'reservations',
     'operations',
+    'operations_supervisor',
     'housekeeping',
+    'housekeeping_supervisor',
     'resale',
     'hr',
     'owner',
   ];
   if (!allowed.includes(targetRole)) {
     const err = new Error(
-      'Invalid role. Use admin, reservations_web, reservations_manual, operations, housekeeping, resale, hr, or owner.'
+      'Invalid role. Use admin, reservations_web, reservations_manual, operations, operations_supervisor, housekeeping, housekeeping_supervisor, resale, hr, or owner.'
     );
     err.status = 400;
     throw err;
@@ -250,12 +252,16 @@ function assertCanAssignRole(actorRole, targetRole) {
       'reservations_manual',
       'reservations',
       'operations',
+      'operations_supervisor',
       'housekeeping',
+      'housekeeping_supervisor',
       'resale',
       'hr',
     ].includes(targetRole)
   ) {
-    const err = new Error('HR can only create reservation, operations, housekeeping, resale, or HR users');
+    const err = new Error(
+      'HR can only create reservation, operations, housekeeping, resale, or HR users'
+    );
     err.status = 403;
     throw err;
   }
