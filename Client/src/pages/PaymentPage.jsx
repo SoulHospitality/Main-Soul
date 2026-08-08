@@ -4,6 +4,7 @@ import { ArrowLeft, Banknote, Building2, Calendar, CreditCard, ShieldCheck, Wall
 import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
 import CheckoutAuthGate from '../components/booking/CheckoutAuthGate';
+import BookingRequestSuccess from '../components/booking/BookingRequestSuccess';
 import { createBookingCheckout } from '../api/http';
 import { useAuth } from '../context/AuthContext';
 import { useLocale } from '../context/LocaleContext';
@@ -55,22 +56,13 @@ export default function PaymentPage() {
     return (
       <div>
         <Header />
-        <main className="flex min-h-[70vh] flex-col items-center justify-center px-4 text-center">
-          <div className="max-w-xl rounded-3xl border border-soul-line bg-white p-8 shadow-xl">
-            <h2 className="font-display text-2xl font-semibold text-soul-blue">{t('payment.submitted')}</h2>
-            <p className="mt-3 text-sm text-soul-muted">{successCard.description}</p>
-            <p className="mt-2 text-sm text-soul-muted">
-              {t('payment.pendingNote')}
-            </p>
-            <button
-              type="button"
-              onClick={() => navigate('/search')}
-              className="mt-6 rounded-full bg-soul-blue px-6 py-3 text-sm font-semibold uppercase tracking-[0.16em] text-white hover:bg-soul-blue-dark"
-            >
-              {t('payment.backToStays')}
-            </button>
-          </div>
-        </main>
+        <BookingRequestSuccess
+          title={t('payment.submitted')}
+          description={successCard.description}
+          note={t('payment.pendingNote')}
+          primaryLabel={t('payment.backToStays')}
+          onPrimary={() => navigate('/search')}
+        />
         <Footer />
       </div>
     );
