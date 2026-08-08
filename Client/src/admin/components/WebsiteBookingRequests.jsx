@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, FileText, Maximize2, Upload, X } from 'lucide-react';
+import { Check, FileText, Maximize2, Upload, UserPlus, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import IdDocumentPreviewModal from './IdDocumentPreviewModal';
@@ -10,6 +10,10 @@ import Modal from './ui/Modal';
 import { idDocumentThumbUrl, isPdfUrl } from '../utils/idDocuments';
 import { currency, formatDate, PAYMENT_METHOD_LABELS } from '../utils/formatters';
 import { usePermissions } from '../hooks/usePermissions';
+
+function isWebsiteAgent(user) {
+  return user?.role === 'reservations_web' || user?.role === 'reservations';
+}
 
 function toIdPhotos(booking) {
   if (Array.isArray(booking?.id_photo_urls)) {
@@ -106,6 +110,7 @@ export default function WebsiteBookingRequests() {
   const [evidenceFile, setEvidenceFile] = useState(null);
   const [rejectBooking, setRejectBooking] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [reassignPicks, setReassignPicks] = useState({});
 
   const { data: bookings = [], isLoading } = useQuery({
     queryKey: ['website-bookings-pending'],
@@ -113,6 +118,17 @@ export default function WebsiteBookingRequests() {
       api.get('/website-bookings', { params: { status: 'pending' } }).then((r) => r.data),
     refetchInterval: 30000,
   });
+
+  const { data: salesUsers = [] } = useQuery({
+    queryKey: ['users-sales'],
+    queryFn: () => api.get('/users/sales').then((r) => r.data),
+    enabled: isAdmin,
+  });
+
+  const webAgents = useMemo(
+    () => (Array.isArray(salesUsers) ? salesUsers.filter(isWebsiteAgent) : []),
+    [salesUsers]
+  );
 
   const acceptTotal = Number(acceptBooking?.total_egp) || 0;
   const halfAmount = Math.round(acceptTotal * 0.5 * 100) / 100;
@@ -153,6 +169,31 @@ export default function WebsiteBookingRequests() {
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Reject failed'),
   });
+
+  const reassignMutation = useMutation({
+    mutationFn: ({ id, assigned_sales_id }) =>
+      api.post(`/website-bookings/${id}/assign`, { assigned_sales_id }),
+    onSuccess: () => {
+      toast.success('Assignment updated');
+      qc.invalidateQueries({ queryKey: ['website-bookings-pending'] });
+      qc.invalidateQueries({ queryKey: ['website-bookings-unassigned'] });
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Reassign failed'),
+  });
+
+  const submitReassign = (booking) => {
+    const pick = reassignPicks[booking.id];
+    const agentId = Number(pick != null && pick !== '' ? pick : booking.assigned_sales_id);
+    if (!agentId) {
+      toast.error('Select a website agent');
+      return;
+    }
+    if (Number(booking.assigned_sales_id) === agentId) {
+      toast.error('Already assigned to this agent');
+      return;
+    }
+    reassignMutation.mutate({ id: booking.id, assigned_sales_id: agentId });
+  };
 
   const openPreview = (photos, startUrl) => {
     const list = photos.filter(Boolean);
@@ -242,6 +283,7 @@ export default function WebsiteBookingRequests() {
           <p className="text-xs text-gray-500">
             Review guest contact, party size, stay dates, ID photos, and full payment breakdown. For
             InstaPay/Cash, collect at least 50% with evidence before accepting.
+            {isAdmin ? ' Admins can reassign any request to another website agent.' : ''}
           </p>
         </div>
         <div className="overflow-x-auto">
@@ -311,19 +353,40 @@ export default function WebsiteBookingRequests() {
                       </div>
                     </td>
                     {isAdmin ? (
-                      <td className="py-3 pr-3 min-w-[9rem]">
-                        {b.assigned_agent_name ? (
-                          <div className="rounded-lg border border-violet-200 bg-violet-50/70 px-2.5 py-2">
-                            <div className="text-[10px] font-semibold uppercase tracking-wide text-violet-700">
-                              Agent
-                            </div>
-                            <div className="text-sm font-semibold text-violet-950 leading-snug">
-                              {b.assigned_agent_name}
-                            </div>
+                      <td className="py-3 pr-3 min-w-[12rem]">
+                        <div className="rounded-lg border border-violet-200 bg-violet-50/70 px-2.5 py-2 space-y-2">
+                          <div className="text-[10px] font-semibold uppercase tracking-wide text-violet-700">
+                            Assigned agent
                           </div>
-                        ) : (
-                          <span className="text-xs italic text-gray-400">Unassigned</span>
-                        )}
+                          <select
+                            className="input text-xs py-1.5 w-full"
+                            value={
+                              reassignPicks[b.id] != null
+                                ? reassignPicks[b.id]
+                                : b.assigned_sales_id
+                                  ? String(b.assigned_sales_id)
+                                  : ''
+                            }
+                            onChange={(e) =>
+                              setReassignPicks((prev) => ({ ...prev, [b.id]: e.target.value }))
+                            }
+                          >
+                            <option value="">Select agent…</option>
+                            {webAgents.map((a) => (
+                              <option key={a.id} value={a.id}>
+                                {a.full_name || a.username}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            className="btn-secondary text-xs w-full justify-center"
+                            disabled={reassignMutation.isPending}
+                            onClick={() => submitReassign(b)}
+                          >
+                            <UserPlus className="w-3.5 h-3.5" /> Change
+                          </button>
+                        </div>
                       </td>
                     ) : null}
                     <td className="py-3 pr-3 min-w-[11rem]">
