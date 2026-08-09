@@ -1,5 +1,6 @@
 const { query } = require('../config/db');
 const { sendBookingAcceptedEmail } = require('./guestEmails');
+const { sendBookingAcceptedWhatsApp } = require('./guestWhatsApp');
 const {
   pickLeastLoadedReservationsAgent,
   assertBookingAssigned,
@@ -319,6 +320,12 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
     await sendBookingAcceptedEmail(updated[0]);
   } catch (emailErr) {
     console.error('[email] Acceptance email failed:', emailErr.message);
+  }
+
+  try {
+    await sendBookingAcceptedWhatsApp(updated[0]);
+  } catch (waErr) {
+    console.error('[whatsapp] Acceptance message failed:', waErr.message);
   }
 
   try {

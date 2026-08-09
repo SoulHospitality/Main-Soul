@@ -2,6 +2,7 @@ const cron = require('node-cron');
 const { query } = require('../config/db');
 const { refreshIcalBlocks } = require('../services/ical');
 const { notifyStaff, OPS_ROLES, ADMIN_ROLES } = require('../services/pmsNotifications');
+const { runCheckoutFeedbackWhatsApp } = require('./whatsappCheckoutFeedback');
 
 function startPmsReminderJobs() {
   // 08:00 check-in reminders (deduped per reservation/day)
@@ -52,6 +53,18 @@ function startPmsReminderJobs() {
       }
     } catch (err) {
       console.error('[cron payment]', err.message);
+    }
+  });
+
+  // 10:00 Cairo-ish server cron: post-checkout WhatsApp feedback (deduped in log table)
+  cron.schedule('0 10 * * *', async () => {
+    try {
+      const result = await runCheckoutFeedbackWhatsApp();
+      if (result.sent || result.failed) {
+        console.log('[cron whatsapp checkout]', result);
+      }
+    } catch (err) {
+      console.error('[cron whatsapp checkout]', err.message);
     }
   });
 
