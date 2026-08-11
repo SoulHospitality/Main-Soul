@@ -83,6 +83,7 @@ export default function OpsCheckinsToday() {
   const [collectingId, setCollectingId] = useState(null);
   const [amountDrafts, setAmountDrafts] = useState({});
   const [methodDrafts, setMethodDrafts] = useState({});
+  const [commentDrafts, setCommentDrafts] = useState({});
   const canAssign =
     user?.role === 'admin' || user?.role === 'operations_supervisor';
   const isAgent = user?.role === 'operations';
@@ -116,8 +117,19 @@ export default function OpsCheckinsToday() {
     onError: (e) => toast.error(e.response?.data?.error || 'Collect failed'),
   });
 
+  const commentMutation = useMutation({
+    mutationFn: ({ id, comment }) =>
+      api.post(`/ops/checkins-today/${id}/comment`, { comment }),
+    onSuccess: () => {
+      toast.success('Comment saved');
+      qc.invalidateQueries({ queryKey: ['ops-checkins-today'] });
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Could not save comment'),
+  });
+
   const handoverMutation = useMutation({
-    mutationFn: (id) => api.post(`/ops/checkins-today/${id}/handover`),
+    mutationFn: ({ id, comment }) =>
+      api.post(`/ops/checkins-today/${id}/handover`, comment ? { comment } : {}),
     onSuccess: () => {
       toast.success('Unit handed to guest');
       qc.invalidateQueries({ queryKey: ['ops-checkins-today'] });
@@ -146,11 +158,16 @@ export default function OpsCheckinsToday() {
             {canAssign
               ? 'Assign each arrival to an operations agent, then track collect and handover.'
               : isAgent
-                ? 'Your assigned arrivals — review the stay breakdown, collect remaining balance, and hand over once cleaned.'
+                ? 'Your assigned arrivals — collect remaining balance, add a check-in comment, then hand over once cleaned.'
                 : 'Collect remaining balance and hand the unit over once housekeeping has cleaned it.'}
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {canAssign ? (
+            <Link to="/admin/ops/checkin-comments" className="btn-secondary text-sm">
+              Review comments
+            </Link>
+          ) : null}
           <Link to="/admin/ops/checkins-history" className="btn-secondary text-sm">
             <History className="w-4 h-4" /> History
           </Link>
@@ -181,6 +198,7 @@ export default function OpsCheckinsToday() {
                 <th className="py-3 px-4">Housekeeping</th>
                 {canAssign ? <th className="py-3 px-4">Assign agent</th> : null}
                 <th className="py-3 px-4">Money collected</th>
+                {isAgent ? <th className="py-3 px-4">Check-in comment</th> : null}
                 <th className="py-3 px-4">Handover</th>
               </tr>
             </thead>
@@ -316,6 +334,48 @@ export default function OpsCheckinsToday() {
                         </div>
                       )}
                     </td>
+                    {isAgent ? (
+                      <td className="py-4 px-4 min-w-[16rem]">
+                        {r.ops_handed_over ? (
+                          <div className="text-xs text-gray-700 whitespace-pre-wrap">
+                            {r.ops_handover_comment || '—'}
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <textarea
+                              className="input text-sm min-h-[4.5rem] resize-y"
+                              placeholder="Comment before handover (required)"
+                              value={
+                                commentDrafts[r.id] != null
+                                  ? commentDrafts[r.id]
+                                  : r.ops_handover_comment || ''
+                              }
+                              onChange={(e) =>
+                                setCommentDrafts((prev) => ({ ...prev, [r.id]: e.target.value }))
+                              }
+                            />
+                            <button
+                              type="button"
+                              className="btn-secondary text-xs w-full justify-center"
+                              disabled={commentMutation.isPending}
+                              onClick={() => {
+                                const comment =
+                                  commentDrafts[r.id] != null
+                                    ? commentDrafts[r.id]
+                                    : r.ops_handover_comment || '';
+                                if (!String(comment).trim()) {
+                                  toast.error('Write a comment first');
+                                  return;
+                                }
+                                commentMutation.mutate({ id: r.id, comment: String(comment).trim() });
+                              }}
+                            >
+                              Save comment
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    ) : null}
                     <td className="py-4 px-4 min-w-[9rem]">
                       {r.ops_handed_over ? (
                         <span className="inline-flex items-center gap-1.5 text-soul-blue text-xs font-semibold">
@@ -331,9 +391,24 @@ export default function OpsCheckinsToday() {
                               ? 'Collect money first'
                               : !r.hk_cleaned
                                 ? 'Waiting for housekeeping'
-                                : 'Give unit to guest'
+                                : isAgent
+                                  ? 'Add a comment, then give unit to guest'
+                                  : 'Give unit to guest'
                           }
-                          onClick={() => handoverMutation.mutate(r.id)}
+                          onClick={() => {
+                            const comment =
+                              commentDrafts[r.id] != null
+                                ? String(commentDrafts[r.id]).trim()
+                                : String(r.ops_handover_comment || '').trim();
+                            if (isAgent && !comment) {
+                              toast.error('Add a check-in comment before handover');
+                              return;
+                            }
+                            handoverMutation.mutate({
+                              id: r.id,
+                              comment: isAgent ? comment : undefined,
+                            });
+                          }}
                         >
                           Give to guest
                         </button>

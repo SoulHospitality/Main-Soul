@@ -10,7 +10,7 @@ import {
   BadgeDollarSign, Receipt, FileBarChart2, Users, UserCircle,
   LogOut, Building, CalendarRange, Wallet,
   TrendingUp, Sparkles, Briefcase, Globe, Tag, UserPlus, KeyRound, SprayCan,
-  History,
+  History, MessageSquareText,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -24,6 +24,7 @@ const NAV_ITEMS = [
   { path: '/admin/schedule',         label: 'Schedule',           icon: CalendarRange,      page: 'schedule' },
   { path: '/admin/ops/checkins-today', label: 'Checkins for today', icon: KeyRound,        page: 'ops_checkins' },
   { path: '/admin/ops/checkins-history', label: 'Checkins history', icon: History,         page: 'ops_checkins' },
+  { path: '/admin/ops/checkin-comments', label: 'Check-in comments', icon: MessageSquareText, page: 'ops_comments' },
   { path: '/admin/housekeeping/today', label: "Today's cleans",   icon: SprayCan,           page: 'hk_today' },
   { path: '/admin/housekeeping/history', label: 'Cleans history', icon: History,            page: 'hk_today' },
   { path: '/admin/finance',          label: 'Finance',            icon: BadgeDollarSign,    page: 'finance' },

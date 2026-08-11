@@ -202,6 +202,11 @@ function mapCheckin(row) {
     ops_assignee_code: row.ops_assignee_code || null,
     ops_money_collected_by_name: row.ops_money_collected_by_name || null,
     ops_handed_over_by_name: row.ops_handed_over_by_name || null,
+    ops_handover_comment: row.ops_handover_comment || null,
+    ops_handover_comment_at: row.ops_handover_comment_at || null,
+    ops_handover_comment_by: row.ops_handover_comment_by || null,
+    ops_comment_reviewed: Number(row.ops_comment_reviewed) === 1,
+    ops_comment_reviewed_at: row.ops_comment_reviewed_at || null,
     hk_task_id: row.hk_task_id || null,
     hk_task_status: row.hk_task_status || null,
     hk_cleaned: hkCleaned,
@@ -462,6 +467,55 @@ router.post(
 );
 
 router.post(
+  '/ops/checkins-today/:reservationId/comment',
+  requireRoles(OPS_AGENT),
+  async (req, res, next) => {
+    try {
+      const reservationId = Number(req.params.reservationId);
+      const row = await fetchCheckinRow(reservationId);
+      if (!row) return res.status(404).json({ error: 'Reservation not found' });
+      const denied = assertOpsCanAct(req, row);
+      if (denied) return res.status(403).json({ error: denied });
+      if (Number(row.ops_handed_over) === 1) {
+        return res.status(409).json({ error: 'Check-in already handed over' });
+      }
+
+      const comment = String(req.body?.comment || '').trim();
+      if (!comment) return res.status(400).json({ error: 'Comment is required' });
+      if (comment.length > 4000) {
+        return res.status(400).json({ error: 'Comment is too long (max 4000 characters)' });
+      }
+
+      await query(
+        `UPDATE reservations SET
+           ops_handover_comment = $2,
+           ops_handover_comment_at = now(),
+           ops_handover_comment_by = $3,
+           ops_comment_reviewed = 0,
+           ops_comment_reviewed_at = NULL,
+           ops_comment_reviewed_by = NULL,
+           updated_at = now()
+         WHERE id = $1`,
+        [reservationId, comment, req.user.id]
+      );
+
+      await logAudit({
+        userId: req.user.id,
+        action: 'OPS_CHECKIN_COMMENT',
+        entityType: 'reservation',
+        entityId: reservationId,
+        details: { comment_length: comment.length },
+      });
+
+      const updated = await fetchCheckinRow(reservationId);
+      res.json(mapCheckin(updated));
+    } catch (e) {
+      next(e);
+    }
+  }
+);
+
+router.post(
   '/ops/checkins-today/:reservationId/handover',
   requireRoles(...OPS_ROLES),
   async (req, res, next) => {
@@ -481,16 +535,41 @@ router.post(
         return res.status(400).json({ error: 'Housekeeping must mark the unit cleaned first' });
       }
 
+      // Operations agents must leave a comment before handing over to the guest.
+      let comment = String(req.body?.comment || row.ops_handover_comment || '').trim();
+      if (req.user.role === OPS_AGENT) {
+        if (!comment) {
+          return res.status(400).json({
+            error: 'Add a check-in comment before handing the unit to the guest',
+          });
+        }
+        if (comment.length > 4000) {
+          return res.status(400).json({ error: 'Comment is too long (max 4000 characters)' });
+        }
+      }
+
       await query(
         `UPDATE reservations SET
            ops_handed_over = 1,
            ops_handed_over_at = now(),
            ops_handed_over_by = $2,
            ops_money_collected = 1,
+           ops_handover_comment = CASE
+             WHEN $3::text IS NULL OR btrim($3::text) = '' THEN ops_handover_comment
+             ELSE $3::text
+           END,
+           ops_handover_comment_at = CASE
+             WHEN $3::text IS NULL OR btrim($3::text) = '' THEN ops_handover_comment_at
+             ELSE now()
+           END,
+           ops_handover_comment_by = CASE
+             WHEN $3::text IS NULL OR btrim($3::text) = '' THEN ops_handover_comment_by
+             ELSE $2
+           END,
            status = 'checked_in',
            updated_at = now()
          WHERE id = $1`,
-        [reservationId, req.user.id]
+        [reservationId, req.user.id, comment || null]
       );
 
       await query(
@@ -503,11 +582,128 @@ router.post(
         action: 'OPS_HANDOVER_CHECKIN',
         entityType: 'reservation',
         entityId: reservationId,
-        details: { unit_id: row.unit_id },
+        details: { unit_id: row.unit_id, has_comment: !!comment },
       });
 
       const updated = await fetchCheckinRow(reservationId);
       res.json(mapCheckin(updated));
+    } catch (e) {
+      next(e);
+    }
+  }
+);
+
+router.get('/ops/checkin-comments', requireRoles(...OPS_SUPER_ROLES), async (req, res, next) => {
+  try {
+    const { from, to } = parseHistoryRange(req.query);
+    const status = String(req.query.status || 'all').toLowerCase();
+    const params = [from, to];
+    let reviewedFilter = '';
+    if (status === 'pending') {
+      reviewedFilter = ' AND COALESCE(r.ops_comment_reviewed, 0) = 0';
+    } else if (status === 'reviewed') {
+      reviewedFilter = ' AND COALESCE(r.ops_comment_reviewed, 0) = 1';
+    }
+
+    const { rows } = await query(
+      `SELECT r.id,
+              r.guest_name,
+              r.guest_phone,
+              r.check_in,
+              r.check_out,
+              r.ops_handed_over,
+              r.ops_handed_over_at,
+              r.ops_handover_comment,
+              r.ops_handover_comment_at,
+              r.ops_comment_reviewed,
+              r.ops_comment_reviewed_at,
+              u.unit_number,
+              COALESCE(u.title, u.unit_number, 'Unit') AS unit_title,
+              COALESCE(u.project, u.compound) AS project,
+              agent.full_name AS comment_by_name,
+              agent.staff_code AS comment_by_code,
+              assignee.full_name AS ops_assignee_name,
+              reviewer.full_name AS reviewed_by_name
+       FROM reservations r
+       JOIN units u ON u.id = r.unit_id
+       LEFT JOIN staff_users agent ON agent.id = r.ops_handover_comment_by
+       LEFT JOIN staff_users assignee ON assignee.id = r.ops_assigned_to
+       LEFT JOIN staff_users reviewer ON reviewer.id = r.ops_comment_reviewed_by
+       WHERE r.ops_handover_comment IS NOT NULL
+         AND btrim(r.ops_handover_comment) <> ''
+         AND COALESCE(r.ops_handover_comment_at, r.check_in)::date >= $1::date
+         AND COALESCE(r.ops_handover_comment_at, r.check_in)::date <= $2::date
+         ${reviewedFilter}
+       ORDER BY
+         COALESCE(r.ops_comment_reviewed, 0) ASC,
+         r.ops_handover_comment_at DESC NULLS LAST
+       LIMIT 500`,
+      params
+    );
+
+    res.json({
+      from,
+      to,
+      status,
+      items: rows.map((r) => ({
+        id: r.id,
+        guest_name: r.guest_name,
+        guest_phone: r.guest_phone,
+        check_in: r.check_in,
+        check_out: r.check_out,
+        unit_number: r.unit_number,
+        unit_title: r.unit_title,
+        project: r.project,
+        ops_handed_over: Number(r.ops_handed_over) === 1,
+        ops_handed_over_at: r.ops_handed_over_at,
+        comment: r.ops_handover_comment,
+        comment_at: r.ops_handover_comment_at,
+        comment_by_name: r.comment_by_name || null,
+        comment_by_code: r.comment_by_code || null,
+        ops_assignee_name: r.ops_assignee_name || null,
+        reviewed: Number(r.ops_comment_reviewed) === 1,
+        reviewed_at: r.ops_comment_reviewed_at || null,
+        reviewed_by_name: r.reviewed_by_name || null,
+      })),
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post(
+  '/ops/checkin-comments/:reservationId/reviewed',
+  requireRoles(...OPS_SUPER_ROLES),
+  async (req, res, next) => {
+    try {
+      const reservationId = Number(req.params.reservationId);
+      const reviewed = req.body?.reviewed === false || req.body?.reviewed === 0 ? 0 : 1;
+      const { rows } = await query(
+        `UPDATE reservations SET
+           ops_comment_reviewed = $2,
+           ops_comment_reviewed_at = CASE WHEN $2 = 1 THEN now() ELSE NULL END,
+           ops_comment_reviewed_by = CASE WHEN $2 = 1 THEN $3 ELSE NULL END,
+           updated_at = now()
+         WHERE id = $1
+           AND ops_handover_comment IS NOT NULL
+           AND btrim(ops_handover_comment) <> ''
+         RETURNING id, ops_comment_reviewed, ops_comment_reviewed_at`,
+        [reservationId, reviewed, req.user.id]
+      );
+      if (!rows[0]) return res.status(404).json({ error: 'Comment not found' });
+
+      await logAudit({
+        userId: req.user.id,
+        action: reviewed ? 'OPS_COMMENT_REVIEWED' : 'OPS_COMMENT_UNREVIEWED',
+        entityType: 'reservation',
+        entityId: reservationId,
+      });
+
+      res.json({
+        id: rows[0].id,
+        reviewed: Number(rows[0].ops_comment_reviewed) === 1,
+        reviewed_at: rows[0].ops_comment_reviewed_at,
+      });
     } catch (e) {
       next(e);
     }
