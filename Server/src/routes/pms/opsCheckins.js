@@ -57,11 +57,22 @@ function paymentBreakdown(row) {
   const insurance = Number(row.insurance) || 0;
   const utilities = Number(row.utilities_amount) || 0;
   const downPayment = Number(row.down_payment) || 0;
-  const adults = Number(row.adults) || 0;
-  const children = Number(row.children) || 0;
-  const nannyCount = Number(row.nanny_count) || 0;
+  const adults = Math.max(0, Number(row.adults) || 0);
+  const children = Math.max(0, Number(row.children) || 0);
+  const nannyCount = Math.max(0, Number(row.nanny_count) || 0);
 
-  let beachAccessFees = 0;
+  // Prefer the real beach amount stored on the reservation (import / manual).
+  let beachAccessFees = Number(row.beach_access_fees);
+  if (!Number.isFinite(beachAccessFees) || beachAccessFees < 0) beachAccessFees = 0;
+
+  if (beachAccessFees <= 0 && row.notes) {
+    const m = String(row.notes).match(/Beach pass:\s*([0-9][0-9,]*(?:\.[0-9]+)?)/i);
+    if (m) {
+      const parsed = Number(String(m[1]).replace(/,/g, ''));
+      if (Number.isFinite(parsed) && parsed > 0) beachAccessFees = parsed;
+    }
+  }
+
   let serviceFees = 0;
   let serviceFeePercent = 0;
   let securityDeposit = 0;
@@ -80,11 +91,14 @@ function paymentBreakdown(row) {
       {
         nights,
         subtotal: accommodation > 0 ? accommodation : Number(row.total_amount) || 0,
-        adults: adults > 0 ? adults : 1,
+        // Do not invent a guest — only use recorded party size for recomputes.
+        adults,
         teens: children,
       }
     );
-    beachAccessFees = Number(fees.access_fee_egp) || 0;
+    if (beachAccessFees <= 0) {
+      beachAccessFees = Number(fees.access_fee_egp) || 0;
+    }
     serviceFees = Number(fees.service_fee_egp) || 0;
     serviceFeePercent = Number(fees.service_fee_percent) || 0;
     securityDeposit = Number(fees.security_deposit_egp) || 0;
@@ -108,6 +122,7 @@ function paymentBreakdown(row) {
     adults,
     children,
     nanny_count: nannyCount,
+    guests_total: adults + children + nannyCount,
     security_deposit: securityDeposit,
   };
 }

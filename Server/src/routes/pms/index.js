@@ -1591,6 +1591,11 @@ router.post(
       status = 'pending';
     }
 
+    const beachAccessFees =
+      b.beach_access_fees !== undefined && b.beach_access_fees !== ''
+        ? parseFloat(b.beach_access_fees) || 0
+        : null;
+
     const { rows } = await query(
       `INSERT INTO reservations (
          unit_id, guest_name, guest_email, guest_phone, guest_nationality,
@@ -1601,10 +1606,11 @@ router.post(
          broker_name, broker_amount_per_night, broker_total,
          owner_collected_type, owner_collected_amount,
          payment_method, transfer_proof_path, transfer_proof_name,
-         hold_expires_at, adults, children, nanny_count, sales_label
+         hold_expires_at, adults, children, nanny_count, sales_label,
+         beach_access_fees
        ) VALUES (
          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,COALESCE($14,0),$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,
-         $25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37
+         $25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38
        )
        RETURNING *`,
       [
@@ -1645,6 +1651,7 @@ router.post(
         party.children,
         party.nanny_count,
         b.sales_label || b.sales_owner || null,
+        beachAccessFees != null ? beachAccessFees : 0,
       ]
     );
 

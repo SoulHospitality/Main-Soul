@@ -22,6 +22,7 @@ function MoneyLine({ label, value, emphasize = false }) {
 function PaymentDetails({ row }) {
   const b = row.payment_breakdown || {};
   const remaining = Number(row.remaining_amount) || 0;
+  const guestsTotal = Number(b.guests_total) || (Number(b.adults) || 0) + (Number(b.children) || 0) + (Number(b.nanny_count) || 0);
   const party = [
     b.adults > 0 ? `${b.adults} adult${b.adults === 1 ? '' : 's'}` : null,
     b.children > 0 ? `${b.children} child${b.children === 1 ? '' : 'ren'}` : null,
@@ -38,7 +39,14 @@ function PaymentDetails({ row }) {
           {b.price_per_night > 0 ? ` · ${currency(b.price_per_night)}/night` : ''}
         </div>
       )}
-      {party ? <div className="text-gray-500">{party}</div> : null}
+      {party ? (
+        <div className="text-gray-500">{party}</div>
+      ) : (
+        <div className="text-amber-700">Guests not recorded</div>
+      )}
+      {guestsTotal > 0 && (
+        <div className="text-gray-400">{guestsTotal} guest{guestsTotal === 1 ? '' : 's'} total</div>
+      )}
       <MoneyLine label="Accommodation" value={b.accommodation_amount} />
       <MoneyLine label="Housekeeping" value={b.housekeeping_fees} />
       <MoneyLine label="Beach access" value={b.beach_access_fees} />
