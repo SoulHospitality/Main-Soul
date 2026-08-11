@@ -92,12 +92,9 @@ async function getDailyPriceMap(wpPostId, from, to) {
 
 function computeFees(unit, { nights, subtotal, adults = 1, teens = 0 }) {
   const { housekeepingFeeForUnit } = require('../lib/housekeeping');
-  const { resolveBeachAccessRates } = require('../lib/beachAccess');
+  const { computeBeachAccessFee } = require('../lib/beachAccess');
   const cleaning = housekeepingFeeForUnit(unit);
-  const beach = resolveBeachAccessRates(unit, nights);
-  const accessAdult = Number(beach.adult || 0) * Math.max(0, Number(adults) || 0);
-  const accessTeen = Number(beach.extra || 0) * Math.max(0, Number(teens) || 0);
-  const access = accessAdult + accessTeen;
+  const { fee: access, beach } = computeBeachAccessFee(unit, { nights, adults, teens });
   // Guest checkout: flat 15% service fees + taxes on accommodation subtotal.
   const servicePct = 15;
   const service = Math.round(Number(subtotal || 0) * (servicePct / 100));

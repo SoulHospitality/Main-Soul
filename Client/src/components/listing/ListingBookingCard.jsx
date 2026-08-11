@@ -3,7 +3,7 @@ import { getMinimumStayNights, isGaiaUnit } from '../../utils/bookingRules';
 import { useCurrency } from '../../context/CurrencyContext';
 import { useLocale } from '../../context/LocaleContext';
 import { housekeepingFeeForUnit } from '../../utils/housekeeping';
-import { isFreeBeachProject, resolveBeachAccessRates } from '../../utils/beachAccess';
+import { isFreeBeachProject, isHaciendaWestUnit, resolveBeachAccessRates } from '../../utils/beachAccess';
 import { brand, whatsappHref, listingWhatsAppMessage } from '../../theme/brand';
 import { getDisplayPriceEgp } from '../../utils/displayPrice';
 import BookingDrawer from '../booking/BookingDrawer';
@@ -56,6 +56,9 @@ export default function ListingBookingCard({
   const beachSummary = (() => {
     if (isFreeBeachProject(unit) || beach.mode === 'free') {
       return t('listing.beachFree');
+    }
+    if (isHaciendaWestUnit(unit) || beach.mode === 'hacienda_flat') {
+      return t('listing.beachFlatStay', { amount: money(beach.flat || beach.adult) });
     }
     if (isGaiaUnit(unit) || beach.mode === 'gaia') {
       return t('listing.gaiaBeachSummary');

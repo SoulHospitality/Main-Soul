@@ -226,6 +226,7 @@
     "housekeepingShort": "Housekeeping {{amount}}",
     "beachAccess": "Beach Access: {{summary}}",
     "beachFree": "Free",
+    "beachFlatStay": "{{amount}} flat per stay (not per guest)",
     "comingSoon": "Coming soon",
     "reserve": "Reserve",
     "haveInquiry": "Have an Inquiry?",

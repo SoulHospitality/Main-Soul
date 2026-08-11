@@ -226,6 +226,7 @@
     "housekeepingShort": "تدبير منزلي {{amount}}",
     "beachAccess": "دخول الشاطئ: {{summary}}",
     "beachFree": "مجاني",
+    "beachFlatStay": "{{amount}} مبلغ ثابت للإقامة (وليس لكل ضيف)",
     "comingSoon": "قريباً",
     "reserve": "احجز",
     "haveInquiry": "لديك استفسار؟",

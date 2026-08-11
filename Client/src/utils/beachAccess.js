@@ -1,6 +1,7 @@
 import { isGaiaUnit } from './bookingRules';
 
 const GALALA_BEACH = { adult: 750, extra: 1000, days: 7 };
+const HACIENDA_WEST_BEACH = { studio: 10000, other: 12000 };
 
 function projectText(unit = {}) {
   return [
@@ -20,39 +21,78 @@ export function isIlMonteGalalaUnit(unit = {}) {
   return /(?:il\s*)?monte\s*galala|ilmonte\s*galala/.test(s);
 }
 
+export function isHaciendaWestUnit(unit = {}) {
+  const s = projectText(unit);
+  if (!s) return false;
+  return /hacienda\s*west/.test(s);
+}
+
+/** Studio by type name, or 0 / empty bedrooms. */
+export function isStudioUnit(unit = {}) {
+  const type = String(unit.property_type || unit.type || '').trim().toLowerCase();
+  if (type.includes('studio')) return true;
+  const beds = Number(unit.beds ?? unit.bedrooms);
+  if (Number.isFinite(beds) && beds <= 0) return true;
+  return false;
+}
+
 export function isFreeBeachProject(unit = {}) {
   const s = projectText(unit);
   if (!s) return false;
-  if (/hacienda\s*west/.test(s)) return true;
+  // D-Bay only — Hacienda West has flat paid beach access
   if (/\bd[-\s]?bay\b/.test(s)) return true;
   return false;
+}
+
+export function haciendaWestFlatFee(unit = {}) {
+  return isStudioUnit(unit) ? HACIENDA_WEST_BEACH.studio : HACIENDA_WEST_BEACH.other;
 }
 
 export function beachAccessRequiresManualEntry(unit = {}) {
   if (String(unit?.listing_type || 'rent').toLowerCase() === 'sale') return false;
   if (isGaiaUnit(unit)) return false;
   if (isIlMonteGalalaUnit(unit)) return false;
+  if (isHaciendaWestUnit(unit)) return false;
   if (isFreeBeachProject(unit)) return false;
   return true;
 }
 
 /**
- * @returns {{ adult: number, extra: number, days: number, mode: 'gaia'|'galala'|'free'|'manual' }}
+ * @returns {{
+ *   adult: number,
+ *   extra: number,
+ *   days: number,
+ *   mode: 'gaia'|'galala'|'free'|'hacienda_flat'|'manual',
+ *   billing?: 'per_guest'|'flat',
+ *   flat?: number
+ * }}
  */
 export function resolveBeachAccessRates(unit = {}, nights = 0) {
   if (isFreeBeachProject(unit)) {
-    return { adult: 0, extra: 0, days: 7, mode: 'free' };
+    return { adult: 0, extra: 0, days: 7, mode: 'free', billing: 'flat', flat: 0 };
+  }
+
+  if (isHaciendaWestUnit(unit)) {
+    const flat = haciendaWestFlatFee(unit);
+    return {
+      adult: flat,
+      extra: 0,
+      days: 7,
+      mode: 'hacienda_flat',
+      billing: 'flat',
+      flat,
+    };
   }
 
   if (isGaiaUnit(unit)) {
     const n = Math.max(0, Number(nights) || 0);
-    if (n <= 3) return { adult: 1900, extra: 2500, days: 3, mode: 'gaia' };
-    if (n === 4) return { adult: 2500, extra: 3100, days: 4, mode: 'gaia' };
-    return { adult: 3500, extra: 4100, days: 7, mode: 'gaia' };
+    if (n <= 3) return { adult: 1900, extra: 2500, days: 3, mode: 'gaia', billing: 'per_guest' };
+    if (n === 4) return { adult: 2500, extra: 3100, days: 4, mode: 'gaia', billing: 'per_guest' };
+    return { adult: 3500, extra: 4100, days: 7, mode: 'gaia', billing: 'per_guest' };
   }
 
   if (isIlMonteGalalaUnit(unit)) {
-    return { ...GALALA_BEACH, mode: 'galala' };
+    return { ...GALALA_BEACH, mode: 'galala', billing: 'per_guest' };
   }
 
   const adult = Number(unit.access_fee_per_adult_egp ?? unit.beach_access_price ?? 0);
@@ -63,6 +103,7 @@ export function resolveBeachAccessRates(unit = {}, nights = 0) {
     extra: Number.isFinite(extra) ? extra : 0,
     days,
     mode: 'manual',
+    billing: 'per_guest',
   };
 }
 
@@ -78,10 +119,18 @@ export function beachAccessFormDefaults(projectName) {
       beach_access_days: GALALA_BEACH.days,
     };
   }
+  if (isHaciendaWestUnit(unit)) {
+    // Flat amount depends on unit type; persist on save. Defaults show non-studio rate.
+    return {
+      beach_access_price: HACIENDA_WEST_BEACH.other,
+      beach_access_extra_guest: 0,
+      beach_access_days: 7,
+    };
+  }
   if (isFreeBeachProject(unit)) {
     return { beach_access_price: 0, beach_access_extra_guest: 0, beach_access_days: 7 };
   }
   return null;
 }
 
-export { GALALA_BEACH };
+export { GALALA_BEACH, HACIENDA_WEST_BEACH };

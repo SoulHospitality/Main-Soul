@@ -21,7 +21,9 @@ import {
   beachAccessFormDefaults,
   beachAccessRequiresManualEntry,
   isFreeBeachProject,
+  isHaciendaWestUnit,
   isIlMonteGalalaUnit,
+  HACIENDA_WEST_BEACH,
 } from '../../utils/beachAccess';
 import { isGaiaUnit } from '../../utils/bookingRules';
 import TagSelect from '../components/ui/TagSelect';
@@ -250,6 +252,7 @@ function UnitForm({ form, setForm, listingType = 'rent' }) {
   const showBeachFields = !isSale && beachAccessRequiresManualEntry(projectCtx);
   const gaiaProject = !isSale && isGaiaUnit(projectCtx);
   const galalaProject = !isSale && isIlMonteGalalaUnit(projectCtx);
+  const haciendaWest = !isSale && isHaciendaWestUnit(projectCtx);
   const freeBeach = !isSale && isFreeBeachProject(projectCtx);
 
   function applyProjectChange(project) {
@@ -443,9 +446,16 @@ function UnitForm({ form, setForm, listingType = 'rent' }) {
                 <strong>IL Monte Galala beach access</strong> is automatic:
                 750 EGP per guest / 7 days · Extra person 1,000 EGP.
               </div>
+            ) : haciendaWest ? (
+              <div className="sm:col-span-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2.5 text-sm text-amber-950">
+                <strong>Hacienda West beach access</strong> is automatic (flat per stay, not per person):
+                Studio → {HACIENDA_WEST_BEACH.studio.toLocaleString('en-US')} EGP ·
+                Anything else → {HACIENDA_WEST_BEACH.other.toLocaleString('en-US')} EGP.
+                Guest count / capacity does not change the fee.
+              </div>
             ) : freeBeach ? (
               <div className="sm:col-span-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-900">
-                <strong>Free beach access</strong> for this project (Hacienda West / D-Bay). No beach fees are charged.
+                <strong>Free beach access</strong> for this project (D-Bay). No beach fees are charged.
               </div>
             ) : null}
           </>
@@ -562,7 +572,7 @@ function UnitForm({ form, setForm, listingType = 'rent' }) {
               Auto — published when every field is filled, otherwise draft
             </div>
             <p className="text-xs text-gray-400 mt-1">
-              Status is set automatically. Missing required fields keeps the unit as draft and hidden from guests. GAIA, IL Monte Galala, and free-beach projects do not need beach access fields.
+              Status is set automatically. Missing required fields keeps the unit as draft and hidden from guests. GAIA, IL Monte Galala, Hacienda West, and free-beach projects do not need beach access fields.
             </p>
           </div>
         </div>

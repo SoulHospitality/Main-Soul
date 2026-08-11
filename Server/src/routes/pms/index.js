@@ -799,7 +799,14 @@ router.post('/units', requireRoles('admin', 'resale', 'reservations_web', 'reser
 
     const beachOverride = beachAccessPersistValues(
       { listing_type: listingType },
-      { project: toText(b.project || b.projectName || b.compound, compound), compound, area }
+      {
+        project: toText(b.project || b.projectName || b.compound, compound),
+        compound,
+        area,
+        property_type: propertyType,
+        type: propertyType,
+        beds,
+      }
     );
     if (beachOverride) {
       beachPrice = beachOverride.adult;
@@ -1031,9 +1038,20 @@ async function updateUnitHandler(req, res, next) {
       compound: nextCompound,
     });
 
+    const nextBeds =
+      b.beds !== undefined || b.bedrooms !== undefined
+        ? toNum(b.beds ?? b.bedrooms, { int: true })
+        : existingRows[0].beds;
     const beachOverride = beachAccessPersistValues(
       { listing_type: listingType },
-      { project: nextProject, compound: nextCompound, area: nextArea }
+      {
+        project: nextProject,
+        compound: nextCompound,
+        area: nextArea,
+        property_type: propertyType,
+        type: propertyType,
+        beds: nextBeds,
+      }
     );
     if (beachOverride) {
       beachPrice = beachOverride.adult;
