@@ -14,7 +14,7 @@ import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
 import SortTh from '../components/ui/SortTh';
-import { currency, formatDate } from '../utils/formatters';
+import { currency, formatDate, unitDisplay, unitSelectLabel } from '../utils/formatters';
 import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
 import * as XLSX from 'xlsx';
 import SearchableSelect from '../components/ui/SearchableSelect';
@@ -160,7 +160,7 @@ export default function CashFlow() {
       Date:           normDate(t.date),
       Type:           t.flow_type === 'inflow' ? 'Inflow' : 'Outflow',
       Source:         t.source,
-      Unit:           t.unit_name || '—',
+      Unit:           unitDisplay(t, '—'),
       Project:        t.project   || '—',
       Guest:          t.guest_name || '—',
       Description:    t.description || '—',
@@ -258,7 +258,7 @@ export default function CashFlow() {
           <label className="label text-xs">Unit</label>
           <SearchableSelect className="w-48" value={unitId} onChange={setUnitId}
             placeholder="All Units"
-            options={[{ value: '', label: 'All Units' }, ...units.map(u => ({ value: String(u.id), label: `${u.name} — ${u.project}` }))]}
+            options={[{ value: '', label: 'All Units' }, ...units.map(u => ({ value: String(u.id), label: unitSelectLabel(u) }))]}
           />
         </div>
         <div>
@@ -452,7 +452,7 @@ export default function CashFlow() {
                             </span>
                           </td>
                           <td>
-                            <div className="text-gray-800 font-medium">{t.unit_name || '—'}</div>
+                            <div className="text-gray-800 font-medium">{unitDisplay(t)}</div>
                             {t.project && <div className="text-xs text-gray-400">{t.project}</div>}
                           </td>
                           <td>

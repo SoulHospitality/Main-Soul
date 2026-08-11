@@ -27,7 +27,7 @@ import toast from 'react-hot-toast';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import SearchableSelect from '../components/ui/SearchableSelect';
-import { currency } from '../utils/formatters';
+import { currency, unitDisplay } from '../utils/formatters';
 import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
 
 const COLORS = ['#283f5e', '#134e5e', '#F28C28', '#10b981', '#8b5cf6', '#ef4444'];
@@ -714,7 +714,7 @@ export default function Reports() {
                 {units.map((u, idx) => (
                   <tr key={u.unit_id}>
                     <td className="text-gray-400">{idx + 1}</td>
-                    <td className="font-medium text-gray-900">{u.unit_name}</td>
+                    <td className="font-medium text-gray-900">{unitDisplay(u)}</td>
                     <td className="text-gray-500">{u.project || '—'}</td>
                     <td className="text-center text-gray-600">{u.reservation_count}</td>
                     <td className="text-center text-sky-700">{u.website_count || 0}</td>

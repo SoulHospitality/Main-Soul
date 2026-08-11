@@ -10,7 +10,7 @@ import ConfirmDialog from '../components/ui/ConfirmDialog';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
 import SortTh from '../components/ui/SortTh';
-import { currency, formatDate } from '../utils/formatters';
+import { currency, formatDate, unitDisplay, unitSelectLabel } from '../utils/formatters';
 import { usePermissions } from '../hooks/usePermissions';
 import SearchableSelect from '../components/ui/SearchableSelect';
 
@@ -209,7 +209,7 @@ function EntryForm({ form, setForm, units, owners = [], ownerUnits = [] }) {
               { value: '', label: 'Select unit…' },
               ...unitOptions.map((u) => ({
                 value: String(u.id),
-                label: `${u.name || u.title || u.unit_number} — ${u.project || u.compound || '—'}`,
+                label: unitSelectLabel(u),
               })),
             ]}
           />
@@ -602,7 +602,7 @@ export default function PettyCash() {
           <label className="label text-xs">Unit</label>
           <SearchableSelect className="w-52" value={filterUnit} onChange={setFilterUnit}
             placeholder="All Units"
-            options={[{ value: '', label: 'All Units' }, ...units.map(u => ({ value: String(u.id), label: `${u.name} — ${u.project}` }))]}
+            options={[{ value: '', label: 'All Units' }, ...units.map((u) => ({ value: String(u.id), label: unitSelectLabel(u) }))]}
           />
         </div>
         <div>
@@ -687,9 +687,11 @@ export default function PettyCash() {
                     </td>
 
                     <td>
-                      {entry.unit_name ? (
+                      {unitDisplay(entry) !== '—' ? (
                         <>
-                          <div className="font-medium text-gray-900">{entry.unit_name}</div>
+                          <div className="font-medium text-gray-900">
+                            {unitDisplay(entry)}
+                          </div>
                           {entry.project && <div className="text-xs text-gray-400">{entry.project}</div>}
                         </>
                       ) : (
@@ -858,7 +860,10 @@ export default function PettyCash() {
               <label className="label">Reservation *</label>
               <SearchableSelect value={payReservationId} onChange={setPayReservationId}
                 placeholder="Select reservation…"
-                options={[{ value: '', label: 'Select reservation…' }, ...reservationsList.map(r => ({ value: String(r.id), label: `${r.guest_name} — ${r.unit_name || ''} (${String(r.check_in).split('T')[0]})` }))]}
+                options={[{ value: '', label: 'Select reservation…' }, ...reservationsList.map((r) => ({
+                  value: String(r.id),
+                  label: `${r.guest_name} — ${unitDisplay(r, '')} (${String(r.check_in).split('T')[0]})`,
+                }))]}
               />
             </div>
             <div>

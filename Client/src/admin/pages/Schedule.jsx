@@ -6,7 +6,7 @@ import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import Modal from '../components/ui/Modal';
 import Badge from '../components/ui/Badge';
-import { currency, formatDate, nightsText, BOOKING_SOURCES } from '../utils/formatters';
+import { currency, formatDate, nightsText, BOOKING_SOURCES, unitDisplay, unitSelectLabel } from '../utils/formatters';
 import { usePermissions } from '../hooks/usePermissions';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import AdminReservationDrawer from '../components/AdminReservationDrawer';
@@ -358,11 +358,7 @@ function ReservationDetailModal({ open, onClose, reservationId }) {
             <Info label="Tenant"     value={res.guest_name} bold />
             <Info
               label="Unit"
-              value={
-                res.unit_number
-                  ? `${res.unit_number}${res.unit_name || res.unit_title ? ` — ${res.unit_name || res.unit_title}` : ''}`
-                  : res.unit_name
-              }
+              value={unitDisplay(res)}
             />
             <Info label="Phone"      value={res.guest_phone} />
             <Info label="Email"      value={res.guest_email} />
@@ -447,7 +443,7 @@ function EditReservationModal({ open, onClose, editId, editForm, setEditForm, un
             <label className="label">Unit *</label>
             <SearchableSelect value={editForm.unit_id} onChange={v => setEditForm(f => ({ ...f, unit_id: v }))}
               placeholder="Select…"
-              options={[{ value: '', label: 'Select…' }, ...unitsList.map(u => ({ value: String(u.id), label: `${u.unit_number || u.name} (${u.project})` }))]}
+              options={[{ value: '', label: 'Select…' }, ...unitsList.map(u => ({ value: String(u.id), label: unitSelectLabel(u) }))]}
             />
           </div>
           <div><label className="label">Tenant Name *</label><input className="input" value={editForm.guest_name} onChange={e => setEditForm(f => ({ ...f, guest_name: e.target.value }))} /></div>
@@ -541,7 +537,7 @@ function HoldModal({ open, onClose, prefillUnit, prefillCheckIn, prefillCheckOut
         <div>
           <label className="label">Unit *</label>
           <SearchableSelect value={unitId} onChange={setUnitId} placeholder="Select unit…"
-            options={[{ value:'', label:'Select…' }, ...unitsList.map(u => ({ value: String(u.id), label: u.name }))]}
+            options={[{ value:'', label:'Select…' }, ...unitsList.map(u => ({ value: String(u.id), label: unitSelectLabel(u, { withProject: false }) }))]}
           />
         </div>
 
@@ -634,7 +630,7 @@ function HoldDetailModal({ open, onClose, holdId, onConfirm, onDelete, deleting 
           </div>
 
           <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-            <div className="flex gap-2"><span className="text-gray-400 w-20">Unit:</span><span className="font-medium">{hold.unit_name}</span></div>
+            <div className="flex gap-2"><span className="text-gray-400 w-20">Unit:</span><span className="font-medium">{unitDisplay(hold)}</span></div>
             <div className="flex gap-2"><span className="text-gray-400 w-20">Guest:</span><span>{hold.guest_name}</span></div>
             <div className="flex gap-2"><span className="text-gray-400 w-20">Check-in:</span><span>{formatDate(hold.check_in)}</span></div>
             <div className="flex gap-2"><span className="text-gray-400 w-20">Check-out:</span><span>{formatDate(hold.check_out)}</span></div>
@@ -1481,7 +1477,7 @@ export default function Schedule() {
                       )
                     );
                     const visible = q
-                      ? pool.filter((u) => String(u.name || '').toLowerCase().includes(q) || String(u.unit_number || '').toLowerCase().includes(q))
+                      ? pool.filter((u) => String(unitSelectLabel(u, { withProject: false }) || '').toLowerCase().includes(q) || String(u.name || '').toLowerCase().includes(q) || String(u.unit_number || '').toLowerCase().includes(q))
                       : pool;
                     if (visible.length === 0) {
                       return <p className="px-3 py-4 text-center text-sm text-soul-muted">No units found</p>;
@@ -1508,9 +1504,11 @@ export default function Schedule() {
                             className="h-4 w-4 flex-shrink-0 rounded border-soul-line accent-[var(--pms-accent,#283f5e)]"
                           />
                           <div className="min-w-0">
-                            <div className="truncate text-sm font-medium text-soul-blue">{u.name}</div>
+                            <div className="truncate text-sm font-medium text-soul-blue">{unitDisplay(u)}</div>
                             <div className="text-xs text-soul-muted">
-                              {u.unit_number} · {u.project}
+                              {[u.project, u.name && u.unit_number && u.name !== u.unit_number ? u.name : null]
+                                .filter(Boolean)
+                                .join(' · ') || '—'}
                             </div>
                           </div>
                         </label>
@@ -1627,15 +1625,15 @@ export default function Schedule() {
                       )}
                       <div className="flex items-start gap-1.5">
                         <div className="mt-0.5 hidden h-6 w-6 flex-shrink-0 items-center justify-center rounded-lg bg-[var(--pms-accent-soft,rgba(40,63,94,0.1))] text-[9px] font-bold text-soul-blue lg:flex">
-                          {(unit.unit_number || unit.name || '?').toString().slice(0, 2).toUpperCase()}
+                          {unitDisplay(unit, '?').toString().slice(0, 2).toUpperCase()}
                         </div>
                         <div className="min-w-0">
                           <div className="truncate text-[11px] font-semibold leading-tight text-soul-blue lg:text-xs">
-                            {unit.unit_number || unit.name}
+                            {unitDisplay(unit)}
                           </div>
                           <div className="mt-0.5 hidden items-center gap-1 text-[9px] text-soul-muted lg:flex">
                             <span>
-                              {unit.name && unit.unit_number ? `${unit.name} · ` : ''}
+                              {(unit.name || unit.title) && unit.unit_number ? `${unit.name || unit.title} · ` : ''}
                               {unit.project}
                               {unit.bedrooms > 0 ? ` · ${unit.bedrooms}BR` : ' · Studio'}
                             </span>
@@ -1653,7 +1651,7 @@ export default function Schedule() {
                             )}
                           </div>
                           <div className="truncate text-[10px] text-soul-muted lg:hidden">
-                            {unit.name && unit.unit_number ? unit.name : unit.project}
+                            {unit.project || unit.name || unit.title || '—'}
                           </div>
                           {(unit.view || (unit.floor !== null && unit.floor !== undefined)) && (
                             <div className="mt-0.5 hidden truncate text-[10px] text-slate-400 lg:block">

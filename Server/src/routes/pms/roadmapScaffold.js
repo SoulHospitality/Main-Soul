@@ -522,7 +522,7 @@ router.get('/maintenance-tickets', async (req, res, next) => {
       where += ` AND mt.status = $${params.length}`;
     }
     const { rows } = await query(
-      `SELECT mt.*, COALESCE(u.title, u.unit_number) AS unit_name, u.unit_number
+      `SELECT mt.*, COALESCE(u.unit_number, u.title) AS unit_name, u.unit_number
        FROM maintenance_tickets mt
        JOIN units u ON u.id = mt.unit_id
        WHERE ${where}

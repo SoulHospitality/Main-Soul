@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
-import { currency, formatDate } from '../utils/formatters';
+import { currency, formatDate, unitDisplay } from '../utils/formatters';
 import Badge from '../components/ui/Badge';
 
 export default function OwnerReservations() {
@@ -45,7 +45,7 @@ export default function OwnerReservations() {
                   return (
                     <tr key={r.id || r.booking_ref}>
                       <td className="px-4 py-3 font-medium text-gray-900">
-                        {r.unit_name || r.unit_number || '—'}
+                        {unitDisplay(r)}
                       </td>
                       <td className="px-4 py-3 text-gray-700">
                         {formatDate(r.check_in)} → {formatDate(r.check_out)}

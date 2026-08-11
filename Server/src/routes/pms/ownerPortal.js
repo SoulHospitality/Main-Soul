@@ -230,7 +230,7 @@ router.get('/owner/dashboard', requireRoles('owner', 'admin'), async (req, res, 
 
     const { rows: expenseRows } = await query(
       `SELECT e.id, e.description, e.amount, e.paid_by, e.expense_date, e.notes, e.owner_id,
-              COALESCE(u.title, u.unit_number) AS unit_name
+              COALESCE(u.unit_number, u.title) AS unit_name
        FROM expenses e
        LEFT JOIN units u ON u.id = e.unit_id
        WHERE e.paid_by = 'owner'
@@ -338,7 +338,7 @@ router.get('/owner/reservations', requireRoles('owner', 'admin'), async (req, re
         owner_collected_amount: r.owner_collected_amount != null ? Number(r.owner_collected_amount) : null,
         broker_name: r.broker_name || null,
         broker_total: r.broker_total != null ? Number(r.broker_total) : null,
-        unit_name: r.unit_name || r.unit_number,
+        unit_name: r.unit_number || r.unit_name,
         unit_number: r.unit_number,
         gross: fin.showMoney ? fin.gross : null,
         commission: fin.showMoney ? fin.commission : null,
@@ -383,7 +383,7 @@ router.get('/owner/reservations', requireRoles('owner', 'admin'), async (req, re
         nights,
         status: ownerStatus,
         payment_status: b.payment_status,
-        unit_name: b.unit_name || b.unit_number,
+        unit_name: b.unit_number || b.unit_name,
         unit_number: b.unit_number,
         gross: fin.showMoney ? fin.gross : null,
         commission: fin.showMoney ? fin.commission : null,
@@ -412,13 +412,13 @@ router.get('/owner/units', requireRoles('owner', 'admin'), async (req, res, next
        FROM owner_units ou
        JOIN units u ON u.id = ou.unit_id
        WHERE ou.owner_id = $1
-       ORDER BY u.title`,
+       ORDER BY u.unit_number NULLS LAST, u.title`,
       [ownerId]
     );
     res.json(
       rows.map((u) => ({
         ...u,
-        name: u.title || u.unit_number,
+        name: u.unit_number || u.title,
         project: u.project || u.compound,
       }))
     );

@@ -9,7 +9,7 @@ import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
 import SortTh from '../components/ui/SortTh';
-import { currency, formatDate } from '../utils/formatters';
+import { currency, formatDate, unitDisplay } from '../utils/formatters';
 import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
 import * as XLSX from 'xlsx';
 
@@ -70,7 +70,7 @@ export default function Commissions() {
     if (!rows.length) return;
     const ws = XLSX.utils.json_to_sheet(
       rows.map((r) => ({
-        Unit: r.unit_name,
+        Unit: unitDisplay(r, ''),
         Project: r.project,
         Guest: r.guest_name,
         Agent: r.sales_person_name || '',
@@ -533,7 +533,7 @@ export default function Commissions() {
               {sorted.map((r) => (
                 <tr key={r.id}>
                   <td>
-                    <div className="font-medium text-gray-900">{r.unit_name}</div>
+                    <div className="font-medium text-gray-900">{unitDisplay(r)}</div>
                     {r.project && <div className="text-xs text-gray-400">{r.project}</div>}
                   </td>
                   <td className="text-gray-800">{r.guest_name}</td>

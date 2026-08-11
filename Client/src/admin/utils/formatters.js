@@ -55,3 +55,29 @@ export function normalizePropertyType(type) {
   const known = UNIT_TYPES.find((t) => t.toLowerCase() === raw.toLowerCase());
   return known || raw;
 }
+
+/** Unit code for admin UI — prefer unit number over listing title. */
+export function unitCode(u) {
+  if (!u) return '';
+  return (
+    u.unit_number ||
+    u.unitNumber ||
+    u.unit_name ||
+    u.unit_title ||
+    u.internal_code ||
+    ''
+  );
+}
+
+/** Label for unit dropdowns / filters: "CL4-CH16-02 — Fouka Bay". */
+export function unitSelectLabel(u, { withProject = true } = {}) {
+  const code = unitCode(u) || u?.name || u?.title || 'Unit';
+  if (!withProject) return String(code);
+  const project = u?.project || u?.compound || '';
+  return project ? `${code} — ${project}` : String(code);
+}
+
+/** Display unit identity in tables / detail rows. */
+export function unitDisplay(row, fallback = '—') {
+  return unitCode(row) || row?.name || row?.title || fallback;
+}

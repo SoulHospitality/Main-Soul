@@ -17,7 +17,7 @@ import ConfirmDialog from '../components/ui/ConfirmDialog';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
 import SortTh from '../components/ui/SortTh';
-import { currency, formatDate } from '../utils/formatters';
+import { currency, formatDate, unitDisplay, unitSelectLabel } from '../utils/formatters';
 import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
 import * as XLSX from 'xlsx';
 import { usePermissions } from '../hooks/usePermissions';
@@ -136,7 +136,7 @@ function EntryForm({ form, setForm, units, reservations }) {
         <label className="label">Unit <span className="text-gray-400 font-normal">(optional)</span></label>
         <SearchableSelect value={form.unit_id} onChange={v => setForm(f => ({ ...f, unit_id: v }))}
           placeholder="No unit"
-          options={[{ value: '', label: 'No unit' }, ...units.map(u => ({ value: String(u.id), label: `${u.name} — ${u.project}` }))]}
+          options={[{ value: '', label: 'No unit' }, ...units.map(u => ({ value: String(u.id), label: unitSelectLabel(u) }))]}
         />
       </div>
 
@@ -289,7 +289,7 @@ export default function Treasury() {
         Type:           e.type === 'in' ? 'IN' : 'OUT',
         Category:       e.category,
         Description:    e.description || '',
-        Unit:           e.unit_name   || '',
+        Unit:           unitDisplay(e, ''),
         Method:         METHOD_LABELS[e.payment_method] || e.payment_method || '',
         'Amount In':    e.type === 'in'  ? e.amount : '',
         'Amount Out':   e.type === 'out' ? e.amount : '',
@@ -398,7 +398,7 @@ export default function Treasury() {
               <label className="label text-xs">Unit</label>
               <SearchableSelect className="w-44" value={unitFilter} onChange={setUnitFilter}
                 placeholder="All Units"
-                options={[{ value: '', label: 'All Units' }, ...units.map(u => ({ value: String(u.id), label: u.name }))]}
+                options={[{ value: '', label: 'All Units' }, ...units.map(u => ({ value: String(u.id), label: unitSelectLabel(u, { withProject: false }) }))]}
               />
             </div>
             <div>
@@ -505,7 +505,7 @@ export default function Treasury() {
 
                       {/* Unit */}
                       <td className="px-3 py-2 text-gray-500 whitespace-nowrap text-xs">
-                        {entry.unit_name || <span className="text-gray-300">—</span>}
+                        {unitDisplay(entry) !== '—' ? unitDisplay(entry) : <span className="text-gray-300">—</span>}
                       </td>
 
                       {/* Method */}

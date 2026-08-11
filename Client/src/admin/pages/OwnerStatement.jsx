@@ -5,7 +5,7 @@ import { toast } from 'react-hot-toast';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
-import { currency, formatDate } from '../utils/formatters';
+import { currency, formatDate, unitSelectLabel } from '../utils/formatters';
 import { useAuth } from '../context/AuthContext';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import { isOwnerRole as checkOwner } from '../utils/permissions';
@@ -154,7 +154,7 @@ export default function OwnerStatement() {
             <SearchableSelect value={unitId} onChange={v => { setUnitId(v); setGenerated(false); }}
               placeholder={unitsLoading ? 'Loading units…' : 'Select unit…'}
               disabled={unitsLoading}
-              options={[{ value: '', label: unitsLoading ? 'Loading units…' : 'Select unit…' }, ...units.map(u => ({ value: String(u.id), label: `${u.name || u.title || u.unit_number || 'Unit'} — ${u.project || u.compound || '—'}` }))]}
+              options={[{ value: '', label: unitsLoading ? 'Loading units…' : 'Select unit…' }, ...units.map(u => ({ value: String(u.id), label: unitSelectLabel(u) }))]}
             />
           </div>
           <div>

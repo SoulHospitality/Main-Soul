@@ -12,7 +12,7 @@ import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
 import SearchFilter from '../components/ui/SearchFilter';
 import SortTh from '../components/ui/SortTh';
-import { currency, UNIT_TYPES, normalizePropertyType } from '../utils/formatters';
+import { currency, UNIT_TYPES, normalizePropertyType, unitDisplay } from '../utils/formatters';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import { useProjectCatalog } from '../../hooks/useProjectCatalog';
 import { AREAS, COMPOUNDS } from '../../data/compounds';
@@ -833,7 +833,7 @@ export default function Units({ listingType = 'rent' }) {
               <div className="flex items-start justify-between mb-3">
                 <div>
                   <p className="text-lg font-bold tracking-tight text-gray-900">
-                    {u.unit_number || '—'}
+                    {unitDisplay(u, '—')}
                   </p>
                   {(u.name || u.title) && (
                     <p className="mt-0.5 text-xs font-normal text-gray-400 truncate max-w-[16rem]">
@@ -907,8 +907,8 @@ export default function Units({ listingType = 'rent' }) {
               <tbody>
                 {sorted.map(u => (
                   <tr key={u.id}>
-                    <td className="font-semibold text-gray-800 whitespace-nowrap">{u.unit_number || '—'}</td>
-                    <td className="font-medium">{u.name || u.title}</td>
+                    <td className="font-semibold text-gray-800 whitespace-nowrap">{unitDisplay(u, '—')}</td>
+                    <td className="text-gray-500">{u.name || u.title || '—'}</td>
                     <td>{u.project}</td>
                     <td>{u.type || u.property_type}</td>
                     <td>{u.bedrooms ?? u.beds}B/{u.bathrooms ?? u.baths}Ba</td>

@@ -18,7 +18,7 @@ import { idDocumentThumbUrl, isPdfUrl } from '../utils/idDocuments';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import SortTh from '../components/ui/SortTh';
 import BookingCalendar from '../components/ui/BookingCalendar';
-import { currency, formatDate, formatDateTime, nightsText, BOOKING_SOURCES, PAYMENT_METHODS, PAYMENT_METHOD_LABELS, MANUAL_PAYMENT_METHODS } from '../utils/formatters';
+import { currency, formatDate, formatDateTime, nightsText, BOOKING_SOURCES, PAYMENT_METHODS, PAYMENT_METHOD_LABELS, MANUAL_PAYMENT_METHODS, unitDisplay, unitSelectLabel } from '../utils/formatters';
 import { calcReservationFinancials, commissionModeLabel, appliedPctLabel } from '../utils/commission';
 import { housekeepingFeeForUnit } from '../../utils/housekeeping';
 import AdminReservationDrawer from '../components/AdminReservationDrawer';
@@ -100,7 +100,7 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
           <SearchableSelect
             value={form.unit_id} onChange={v => setForm(f => ({ ...f, unit_id: v, price_per_night: '' }))}
             placeholder="Select unit…"
-            options={[{ value: '', label: 'Select unit…' }, ...units.map(u => ({ value: String(u.id), label: `${u.unit_number} — ${u.name} (${u.project})` }))]}
+            options={[{ value: '', label: 'Select unit…' }, ...units.map(u => ({ value: String(u.id), label: unitSelectLabel(u) }))]}
           />
         </div>
         <div>
@@ -530,11 +530,7 @@ function ReservationDetail({
         <div className="space-y-2">
           <InfoRow
             label="Unit"
-            value={
-              reservation.unit_number
-                ? `${reservation.unit_number} — ${reservation.unit_name || reservation.unit_title || ''}`
-                : reservation.unit_name
-            }
+            value={unitDisplay(reservation)}
           />
           <InfoRow label="Tenant" value={reservation.guest_name} />
           <InfoRow label="Mobile" value={reservation.guest_phone} />
@@ -1367,7 +1363,7 @@ export default function Reservations() {
         />
         <SearchableSelect className="w-44" value={filterUnit} onChange={setFilterUnit}
           placeholder="All Units"
-          options={[{ value: '', label: 'All Units' }, ...units.filter(u => !filterProject || u.project === filterProject).map(u => ({ value: String(u.id), label: `${u.unit_number} — ${u.project}` }))]}
+          options={[{ value: '', label: 'All Units' }, ...units.filter(u => !filterProject || u.project === filterProject).map(u => ({ value: String(u.id), label: unitSelectLabel(u) }))]}
         />
         <div className="relative">
           <input
@@ -1628,7 +1624,7 @@ export default function Reservations() {
               value={blockForm.unit_id}
               onChange={v => setBlockForm(f => ({ ...f, unit_id: v }))}
               placeholder="Select unit…"
-              options={[{ value: '', label: 'Select unit…' }, ...units.map(u => ({ value: String(u.id), label: `${u.unit_number} — ${u.name} (${u.project})` }))]}
+              options={[{ value: '', label: 'Select unit…' }, ...units.map(u => ({ value: String(u.id), label: unitSelectLabel(u) }))]}
             />
           </div>
           <div>
@@ -1769,7 +1765,7 @@ export default function Reservations() {
               <div>
                 <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold mb-1">Reservation</p>
                 <p className="font-medium text-gray-900">{approveCancelReview.guest_name}</p>
-                <p className="text-sm text-gray-500">{approveCancelReview.unit_name} · {formatDate(approveCancelReview.check_in)} → {formatDate(approveCancelReview.check_out)}</p>
+                <p className="text-sm text-gray-500">{unitDisplay(approveCancelReview)} · {formatDate(approveCancelReview.check_in)} → {formatDate(approveCancelReview.check_out)}</p>
               </div>
               <div>
                 <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold mb-1">Cancel Reason</p>

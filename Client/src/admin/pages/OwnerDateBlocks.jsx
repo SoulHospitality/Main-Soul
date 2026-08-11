@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import SearchableSelect from '../components/ui/SearchableSelect';
-import { currency } from '../utils/formatters';
+import { currency, unitSelectLabel } from '../utils/formatters';
 
 const localISO = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -75,7 +75,7 @@ export default function OwnerDateBlocks() {
     () =>
       units.map((u) => ({
         value: String(u.id),
-        label: `${u.title || u.unit_number} — ${u.project || u.compound || ''}`,
+        label: unitSelectLabel(u),
       })),
     [units]
   );

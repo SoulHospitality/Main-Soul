@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Building2, Briefcase, ExternalLink } from 'lucide-react';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
-import { currency } from '../utils/formatters';
+import { currency, unitDisplay } from '../utils/formatters';
 
 /**
  * Resale Sales overview — for-sale inventory and recent owner contact requests.
@@ -82,9 +82,9 @@ export default function ResaleSales() {
             {units.slice(0, 12).map((u) => (
               <div key={u.id} className="flex items-start justify-between gap-3 px-4 py-3">
                 <div className="min-w-0">
-                  <p className="truncate font-medium text-gray-900">{u.name || u.title}</p>
+                  <p className="truncate font-medium text-gray-900">{unitDisplay(u)}</p>
                   <p className="text-xs text-gray-500">
-                    {[u.project || u.compound, u.unit_number].filter(Boolean).join(' · ') || '—'}
+                    {[u.project || u.compound, (u.name || u.title) && u.unit_number ? u.name || u.title : null].filter(Boolean).join(' · ') || '—'}
                   </p>
                   <p className="mt-1 text-xs text-gray-400">
                     {u.status}

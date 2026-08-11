@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
-import { currency, formatDate } from '../utils/formatters';
+import { currency, formatDate, unitDisplay } from '../utils/formatters';
 
 export default function OwnerStatementPage() {
   const [from, setFrom] = useState('');
@@ -64,7 +64,7 @@ export default function OwnerStatementPage() {
             {(data?.lines || []).map((l) => (
               <tr key={l.reservation_id}>
                 <td className="px-4 py-3 font-mono text-xs">{l.booking_ref}</td>
-                <td className="px-4 py-3">{l.unit_name}</td>
+                <td className="px-4 py-3">{unitDisplay(l)}</td>
                 <td className="px-4 py-3">{formatDate(l.check_in)}</td>
                 <td className="px-4 py-3 text-right">{currency(l.net)}</td>
               </tr>

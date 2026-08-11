@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Building2, CalendarDays, DollarSign, Wallet, Receipt } from 'lucide-react';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
-import { currency, formatDate } from '../utils/formatters';
+import { currency, formatDate, unitDisplay } from '../utils/formatters';
 
 function Card({ icon: Icon, title, value, sub, tone }) {
   const valueCls =
@@ -126,7 +126,7 @@ export default function OwnerDashboard() {
                 {expenses.map((e) => (
                   <tr key={e.id}>
                     <td className="px-5 py-3 whitespace-nowrap">{formatDate(e.expense_date)}</td>
-                    <td className="px-5 py-3">{e.unit_name || '—'}</td>
+                    <td className="px-5 py-3">{unitDisplay(e)}</td>
                     <td className="px-5 py-3">{e.description}</td>
                     <td className="px-5 py-3 text-right font-semibold text-rose-700 tabular-nums">
                       − {currency(e.amount)}
@@ -147,7 +147,7 @@ export default function OwnerDashboard() {
           <ul className="divide-y divide-gray-100">
             {data.units.map((u) => (
               <li key={u.id} className="px-5 py-3 flex justify-between text-sm">
-                <span className="font-medium text-gray-800">{u.title || u.unit_number}</span>
+                <span className="font-medium text-gray-800">{unitDisplay(u)}</span>
                 <span className="text-gray-500">
                   {u.project || u.compound || '—'} · {u.ops_status || u.status}
                 </span>

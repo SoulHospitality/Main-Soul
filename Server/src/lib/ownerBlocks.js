@@ -106,7 +106,7 @@ async function previewOwnerBlockImpact(unitId, fromDate, toDate) {
 
   return {
     unit_id: unitId,
-    unit_name: unit.title,
+    unit_name: unit.unit_number || unit.title,
     from_date: fromDate,
     to_date: toDate,
     nights: nights.length,

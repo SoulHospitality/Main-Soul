@@ -99,18 +99,18 @@ router.get('/users/owners/:id/units', requireRoles('admin'), async (req, res, ne
   try {
     const { rows } = await query(
       `SELECT u.id, u.title, u.unit_number, u.project, u.compound,
-              COALESCE(u.title, u.unit_number) AS name,
+              COALESCE(u.unit_number, u.title) AS name,
               COALESCE(u.project, u.compound) AS project_label
        FROM owner_units ou
        JOIN units u ON u.id = ou.unit_id
        WHERE ou.owner_id = $1
-       ORDER BY u.title NULLS LAST, u.unit_number`,
+       ORDER BY u.unit_number NULLS LAST, u.title`,
       [req.params.id]
     );
     res.json(
       rows.map((u) => ({
         ...u,
-        name: u.name || u.title || u.unit_number,
+        name: u.unit_number || u.name || u.title,
         project: u.project || u.compound || u.project_label,
       }))
     );
@@ -176,7 +176,7 @@ router.get(
          r.total_amount, r.price_per_night, r.utilities_amount, r.housekeeping_fees,
          r.is_owner_reservation, r.broker_total, r.broker_amount_per_night, r.broker_name,
          r.booking_id, r.booking_source, r.sales_person_id,
-         COALESCE(u.title, u.unit_number, 'Unit') AS unit_name,
+         COALESCE(u.unit_number, u.title, 'Unit') AS unit_name,
          COALESCE(u.project, u.compound, 'Unassigned') AS project,
          u.commission_mode,
          u.company_commission_pct,
@@ -1302,7 +1302,7 @@ router.get('/utilities', async (req, res, next) => {
       `SELECT
          r.id,
          u.id AS unit_id,
-         COALESCE(u.title, u.unit_number, 'Unit') AS unit_name,
+         COALESCE(u.unit_number, u.title, 'Unit') AS unit_name,
          COALESCE(u.project, u.compound) AS project,
          COALESCE(u.utilities_cost, 0) AS utilities_cost,
          r.guest_name,
@@ -1374,7 +1374,7 @@ router.get('/housekeeping', async (req, res, next) => {
          r.payment_status,
          r.housekeeping_fees,
          u.id AS unit_id,
-         COALESCE(u.title, u.unit_number, 'Unit') AS unit_name,
+         COALESCE(u.unit_number, u.title, 'Unit') AS unit_name,
          COALESCE(u.project, u.compound) AS project
        FROM reservations r
        JOIN units u ON u.id = r.unit_id

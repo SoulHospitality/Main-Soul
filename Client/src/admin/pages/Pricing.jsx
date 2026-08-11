@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import SearchableSelect from '../components/ui/SearchableSelect';
+import { unitSelectLabel } from '../utils/formatters';
 
 const localISO = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -115,7 +116,7 @@ export default function Pricing() {
                   { value: '', label: 'Select unit…' },
                   ...units.map((u) => ({
                     value: String(u.id),
-                    label: `${u.unit_number || u.slug || ''} — ${u.name || u.title}`,
+                    label: unitSelectLabel(u),
                   })),
                 ]}
               />

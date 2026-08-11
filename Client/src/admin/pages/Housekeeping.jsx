@@ -9,6 +9,7 @@ import { usePermissions } from '../hooks/usePermissions';
 import { useSortableTable } from '../hooks/useSortableTable';
 import SortTh from '../components/ui/SortTh';
 import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
+import { unitDisplay, unitSelectLabel } from '../utils/formatters';
 
 const fmt = (n) =>
   Number(n || 0).toLocaleString('en-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -134,7 +135,7 @@ function TasksTab() {
             <div key={t.id} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 space-y-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="font-semibold text-gray-900">{t.unit_name}</p>
+                  <p className="font-semibold text-gray-900">{unitDisplay(t)}</p>
                   <p className="text-xs text-gray-500">
                     Unit ID: {t.unit_number || t.unit_uuid || '—'}
                     {t.project ? ` · ${t.project}` : ''}
@@ -252,7 +253,7 @@ function FeesTab() {
     return all.filter(
       (r) =>
         (r.guest_name || '').toLowerCase().includes(q) ||
-        (r.unit_name || '').toLowerCase().includes(q)
+        unitDisplay(r, '').toLowerCase().includes(q)
     );
   }, [data, search]);
 
@@ -277,7 +278,7 @@ function FeesTab() {
   function handleExport() {
     const exportRows = rows.map((r) => ({
       'Reservation ID': r.id,
-      Unit: r.unit_name,
+      Unit: unitDisplay(r, ''),
       Project: r.project || '',
       Guest: r.guest_name,
       'Check-in': normDate(r.check_in),
@@ -368,7 +369,7 @@ function FeesTab() {
               placeholder="All Units"
               options={[
                 { value: '', label: 'All Units' },
-                ...units.map((u) => ({ value: String(u.id), label: u.name || u.title })),
+                ...units.map((u) => ({ value: String(u.id), label: unitSelectLabel(u, { withProject: false }) })),
               ]}
             />
           </div>
@@ -428,7 +429,7 @@ function FeesTab() {
                 {sorted.map((r, idx) => (
                   <tr key={r.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                     <td className="px-4 py-3 text-gray-400 text-xs">{r.id}</td>
-                    <td className="px-4 py-3 font-medium text-gray-800">{r.unit_name}</td>
+                    <td className="px-4 py-3 font-medium text-gray-800">{unitDisplay(r)}</td>
                     <td className="px-4 py-3 text-gray-700">{r.guest_name}</td>
                     <td className="px-4 py-3 text-gray-600">{normDate(r.check_in)}</td>
                     <td className="px-4 py-3">

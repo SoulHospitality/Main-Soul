@@ -60,7 +60,7 @@ router.get('/reports/revenue', requireRoles('admin'), async (req, res, next) => 
 
     const { rows } = await query(
       `SELECT r.*,
-              COALESCE(u.title, u.unit_number, 'Unit') AS unit_name,
+              COALESCE(u.unit_number, u.title, 'Unit') AS unit_name,
               COALESCE(u.project, u.compound) AS project,
               u.unit_number,
               u.commission_mode, u.company_commission_pct,
@@ -174,7 +174,7 @@ router.get('/reports/by-unit', requireRoles('admin'), async (req, res, next) => 
          r.price_per_night, r.is_owner_reservation, r.booking_id, r.booking_source,
          r.broker_total, r.broker_amount_per_night, r.housekeeping_fees,
          u.id AS unit_id,
-         COALESCE(u.title, u.unit_number, 'Unit') AS unit_name,
+         COALESCE(u.unit_number, u.title, 'Unit') AS unit_name,
          COALESCE(u.project, u.compound) AS project,
          u.commission_mode,
          u.company_commission_pct,
@@ -310,7 +310,7 @@ router.get('/reports/export/reservations/excel', requireRoles('admin'), async (r
               r.booking_id,
               r.status,
               r.is_owner_reservation,
-              COALESCE(u.title, u.unit_number) AS unit,
+              COALESCE(u.unit_number, u.title) AS unit,
               COALESCE(u.project, u.compound) AS project,
               su.full_name AS sales_person
        FROM reservations r

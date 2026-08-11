@@ -1400,7 +1400,7 @@ router.get('/reservations', async (req, res, next) => {
     const { rows } = await query(
       `SELECT r.*,
               u.title AS unit_title,
-              COALESCE(u.title, u.unit_number, 'Unit') AS unit_name,
+              COALESCE(u.unit_number, u.title, 'Unit') AS unit_name,
               u.slug AS unit_slug,
               u.unit_number,
               u.compound AS project,
@@ -2157,7 +2157,7 @@ router.get('/reservations/:id', async (req, res, next) => {
 
     const { rows } = await query(
       `SELECT r.*,
-              COALESCE(u.title, u.unit_number, 'Unit') AS unit_name,
+              COALESCE(u.unit_number, u.title, 'Unit') AS unit_name,
               u.title AS unit_title,
               u.slug AS unit_slug,
               u.unit_number,
@@ -2429,7 +2429,7 @@ router.get('/expenses', async (req, res, next) => {
     }
     const { rows } = await query(
       `SELECT e.*,
-              COALESCE(u.title, u.unit_number) AS unit_name,
+              COALESCE(u.unit_number, u.title) AS unit_name,
               COALESCE(u.project, u.compound) AS project
        FROM expenses e
        LEFT JOIN units u ON u.id = e.unit_id
@@ -2559,7 +2559,7 @@ router.get('/dashboard/stats', async (req, res, next) => {
       ),
       query(
         `SELECT r.id, r.guest_name,
-                COALESCE(u.title, u.unit_number, 'Unit') AS unit_name,
+                COALESCE(u.unit_number, u.title, 'Unit') AS unit_name,
                 u.unit_number,
                 COALESCE(u.project, u.compound, 'Unassigned') AS project
          FROM reservations r
@@ -2572,7 +2572,7 @@ router.get('/dashboard/stats', async (req, res, next) => {
       ),
       query(
         `SELECT r.id, r.guest_name,
-                COALESCE(u.title, u.unit_number, 'Unit') AS unit_name,
+                COALESCE(u.unit_number, u.title, 'Unit') AS unit_name,
                 u.unit_number,
                 COALESCE(u.project, u.compound, 'Unassigned') AS project
          FROM reservations r
@@ -2613,7 +2613,7 @@ router.get('/dashboard/stats', async (req, res, next) => {
       query(
         `SELECT r.id, r.guest_name, r.check_in, r.check_out,
                 r.total_amount, r.payment_status, r.status,
-                COALESCE(u.title, u.unit_number, 'Unit') AS unit_name
+                COALESCE(u.unit_number, u.title, 'Unit') AS unit_name
          FROM reservations r
          LEFT JOIN units u ON u.id = r.unit_id
          WHERE r.status <> 'cancelled'
@@ -2675,7 +2675,7 @@ router.get('/dashboard/stats', async (req, res, next) => {
         ),
         query(
           `SELECT r.id, r.guest_name,
-                  COALESCE(u.title, u.unit_number, 'Unit') AS unit_name,
+                  COALESCE(u.unit_number, u.title, 'Unit') AS unit_name,
                   u.unit_number,
                   COALESCE(u.project, u.compound, 'Unassigned') AS project,
                   u.ops_status,
@@ -2884,7 +2884,8 @@ router.get('/petty-cash', requireRoles('admin'), async (req, res, next) => {
     const params = [from];
     let sql = `
       SELECT pc.*,
-             COALESCE(u.title, u.unit_number) AS unit_name,
+             COALESCE(u.unit_number, u.title) AS unit_name,
+             u.unit_number,
              COALESCE(u.project, u.compound) AS project,
              ow.full_name AS owner_name,
              pc.entry_type AS type,

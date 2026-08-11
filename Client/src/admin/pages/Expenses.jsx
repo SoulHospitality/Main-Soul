@@ -13,7 +13,7 @@ import EmptyState from '../components/ui/EmptyState';
 import SearchFilter from '../components/ui/SearchFilter';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import SortTh from '../components/ui/SortTh';
-import { currency, formatDate } from '../utils/formatters';
+import { currency, formatDate, unitDisplay, unitSelectLabel } from '../utils/formatters';
 import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
 import * as XLSX from 'xlsx';
 
@@ -92,7 +92,7 @@ function ExpenseForm({ form, setForm, units }) {
                 { value: '', label: 'Select unit…' },
                 ...units.map((u) => ({
                   value: String(u.id),
-                  label: `${u.name} (${u.project})`,
+                  label: unitSelectLabel(u),
                 })),
               ]}
             />
@@ -221,7 +221,7 @@ export default function Expenses() {
     (e) =>
       !search ||
       e.description?.toLowerCase().includes(search.toLowerCase()) ||
-      e.unit_name?.toLowerCase().includes(search.toLowerCase()) ||
+      unitDisplay(e, '').toLowerCase().includes(search.toLowerCase()) ||
       (CATEGORY_META[e.category] || e.category || '')
         .toLowerCase()
         .includes(search.toLowerCase())
@@ -312,7 +312,7 @@ export default function Expenses() {
       filtered.map((e) => ({
         Date: e.expense_date ? String(e.expense_date).split('T')[0] : '',
         Category: CATEGORY_META[e.category] || e.category || 'Other',
-        Unit: e.unit_name || '',
+        Unit: unitDisplay(e, ''),
         Project: e.project || '',
         Description: e.description,
         'Paid By': e.paid_by,
@@ -400,7 +400,7 @@ export default function Expenses() {
           placeholder="All Units"
           options={[
             { value: '', label: 'All Units' },
-            ...units.map((u) => ({ value: String(u.id), label: u.name })),
+            ...units.map((u) => ({ value: String(u.id), label: unitSelectLabel(u, { withProject: false }) })),
           ]}
         />
         <SearchableSelect
@@ -485,9 +485,9 @@ export default function Expenses() {
                         </span>
                       </td>
                       <td>
-                        {e.unit_name ? (
+                        {unitDisplay(e) !== '—' ? (
                           <>
-                            <div className="font-medium">{e.unit_name}</div>
+                            <div className="font-medium">{unitDisplay(e)}</div>
                             <div className="text-xs text-gray-400">{e.project}</div>
                           </>
                         ) : (

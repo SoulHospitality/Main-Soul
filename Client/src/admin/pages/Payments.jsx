@@ -9,7 +9,7 @@ import EmptyState from '../components/ui/EmptyState';
 import SearchFilter from '../components/ui/SearchFilter';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import SortTh from '../components/ui/SortTh';
-import { currency, formatDate, PAYMENT_METHODS, PAYMENT_METHOD_LABELS } from '../utils/formatters';
+import { currency, formatDate, PAYMENT_METHODS, PAYMENT_METHOD_LABELS, unitDisplay } from '../utils/formatters';
 import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
 import * as XLSX from 'xlsx';
 
@@ -32,7 +32,8 @@ export default function Payments() {
   const filtered = payments.filter(p =>
     !search ||
     p.guest_name?.toLowerCase().includes(search.toLowerCase()) ||
-    p.unit_name?.toLowerCase().includes(search.toLowerCase())
+    p.unit_name?.toLowerCase().includes(search.toLowerCase()) ||
+    p.unit_number?.toLowerCase().includes(search.toLowerCase())
   );
 
   const { sorted, sortKey, sortDir, handleSort } = useSortableTable(filtered, 'payment_date', 'desc');
@@ -49,7 +50,7 @@ export default function Payments() {
     const ws = XLSX.utils.json_to_sheet(filtered.map(p => ({
       'Date':      p.payment_date,
       'Guest':     p.guest_name,
-      'Unit':      p.unit_name,
+      'Unit':      unitDisplay(p, ''),
       'Method':    PAYMENT_METHOD_LABELS[p.payment_method],
       'Amount':    p.cancel_note ? 0 : p.amount,
       'Status':    p.cancel_note === 'refunded' ? 'Refunded' : p.cancel_note === 'not_refundable' ? 'Not Refundable' : 'Active',
@@ -138,7 +139,7 @@ export default function Payments() {
                       <td className={`text-xs ${strike || 'text-gray-400'}`}>#{p.id}</td>
                       <td className={strike}>{formatDate(p.payment_date)}</td>
                       <td className={`font-medium ${strike}`}>{p.guest_name}</td>
-                      <td className={strike}>{p.unit_name}</td>
+                      <td className={strike}>{unitDisplay(p)}</td>
                       <td>
                         <span className={`badge-blue ${(isRefunded || isNotRefundable) ? 'opacity-50' : ''}`}>
                           {PAYMENT_METHOD_LABELS[p.payment_method]}

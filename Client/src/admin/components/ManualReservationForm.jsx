@@ -13,6 +13,7 @@ import {
   BOOKING_SOURCES,
   MANUAL_PAYMENT_METHODS,
   PAYMENT_METHOD_LABELS,
+  unitSelectLabel,
 } from '../utils/formatters';
 import {
   appliedPctLabel,
@@ -202,7 +203,7 @@ export default function ManualReservationForm({
                 { value: '', label: 'Select a unit…' },
                 ...units.map((unit) => ({
                   value: String(unit.id),
-                  label: `${unit.unit_number || 'Unit'} — ${unit.name} (${unit.project})`,
+                  label: unitSelectLabel(unit),
                 })),
               ]}
             />

@@ -21,7 +21,7 @@ router.get('/housekeeping-tasks', async (req, res, next) => {
     }
     const { rows } = await query(
       `SELECT t.*,
-              COALESCE(u.title, u.unit_number, 'Unit') AS unit_name,
+              COALESCE(u.unit_number, u.title, 'Unit') AS unit_name,
               u.unit_number,
               u.id AS unit_uuid,
               COALESCE(u.project, u.compound) AS project,

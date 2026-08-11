@@ -13,7 +13,7 @@ import { useAuth } from '../context/AuthContext';
 import { usePermissions } from '../hooks/usePermissions';
 import Badge from '../components/ui/Badge';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
-import { currency, formatDate } from '../utils/formatters';
+import { currency, formatDate, unitDisplay } from '../utils/formatters';
 import { getRoleTheme } from '../utils/roleTheme';
 import { PMS_LABELS } from '../utils/permissions';
 
@@ -74,8 +74,10 @@ function TodayCard({ icon: Icon, iconBg, iconColor, title, count, rows, emptyTex
                 <p className="text-xs text-gray-500">{r.project || ''}</p>
               </div>
               <div className="text-right flex-shrink-0 ml-3">
-                <p className="text-sm font-semibold text-gray-700">{r.unit_name}</p>
-                {r.unit_number && <p className="text-xs text-gray-400">#{r.unit_number}</p>}
+                <p className="text-sm font-semibold text-gray-700">{unitDisplay(r)}</p>
+                {r.unit_number && (r.unit_name || r.unit_title) && (
+                  <p className="text-xs text-gray-400">{r.unit_name || r.unit_title}</p>
+                )}
               </div>
             </div>
           ))}
@@ -377,7 +379,7 @@ export default function Dashboard() {
                   <tr key={r.id}>
                     <td className="text-gray-400">#{r.id}</td>
                     <td className="font-medium">{r.guest_name}</td>
-                    <td>{r.unit_name}</td>
+                    <td>{unitDisplay(r)}</td>
                     <td>{formatDate(r.check_in)}</td>
                     <td>{formatDate(r.check_out)}</td>
                     {canSeeFinance && <td>{currency(r.total_amount)}</td>}
