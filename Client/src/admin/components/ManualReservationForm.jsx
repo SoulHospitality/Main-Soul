@@ -8,6 +8,12 @@ import ListingDatePicker, {
 } from '../../components/listing/ListingDatePicker';
 import { housekeepingFeeForUnit } from '../../utils/housekeeping';
 import { getMinimumStayNights } from '../../utils/bookingRules';
+import {
+  computeBeachAccessFee,
+  getGuestLoad,
+  isFreeBeachProject,
+  isHaciendaWestUnit,
+} from '../../utils/beachAccess';
 import SearchableSelect from './ui/SearchableSelect';
 import {
   BOOKING_SOURCES,
@@ -53,6 +59,7 @@ export const EMPTY_MANUAL_RESERVATION_FORM = {
   owner_collected_type: '',
   owner_collected_amount: '',
   utilities_cost_override: '',
+  beach_access_fees: '',
   broker_name: '',
   broker_amount_per_night: '',
   payment_method: 'cash',
@@ -118,6 +125,27 @@ export default function ManualReservationForm({
   }, [form.check_in, form.check_out]);
 
   const housekeeping = selectedUnit ? housekeepingFeeForUnit(selectedUnit) : 0;
+  const adultsCount = Math.max(0, parseInt(form.adults, 10) || 0);
+  const childrenCount = Math.max(0, parseInt(form.children, 10) || 0);
+  const capacity = Number(selectedUnit?.guests || selectedUnit?.capacity) || 0;
+  const guestLoad = getGuestLoad(adultsCount, childrenCount);
+  const overCapacity = capacity > 0 && guestLoad > capacity;
+  const beachFeeInfo = useMemo(() => {
+    if (!selectedUnit || form.is_owner_reservation) {
+      return { fee: 0, beach: null };
+    }
+    return computeBeachAccessFee(selectedUnit, {
+      nights,
+      adults: adultsCount,
+      teens: childrenCount,
+    });
+  }, [selectedUnit, form.is_owner_reservation, nights, adultsCount, childrenCount]);
+  const beachAccessFees = Number(beachFeeInfo.fee) || 0;
+  const beachIsFlat =
+    beachFeeInfo.beach?.billing === 'flat' ||
+    beachFeeInfo.beach?.mode === 'hacienda_flat' ||
+    isHaciendaWestUnit(selectedUnit || {}) ||
+    isFreeBeachProject(selectedUnit || {});
   const total = Number(form.total_amount) || 0;
   const downPayment = Number(form.down_payment) || 0;
   const insurance = Number(form.insurance) || 0;
@@ -148,6 +176,15 @@ export default function ManualReservationForm({
       Number(cur.housekeeping_fees) === fee ? cur : { ...cur, housekeeping_fees: String(fee) }
     );
   }, [selectedUnit?.id, setForm]);
+
+  useEffect(() => {
+    const next = form.is_owner_reservation ? 0 : beachAccessFees;
+    setForm((cur) =>
+      Number(cur.beach_access_fees) === next
+        ? cur
+        : { ...cur, beach_access_fees: String(next) }
+    );
+  }, [beachAccessFees, form.is_owner_reservation, setForm]);
 
   function setPricePerNight(value) {
     const rate = Number(value);
@@ -354,10 +391,51 @@ export default function ManualReservationForm({
             </div>
           </div>
           {selectedUnit?.guests != null && (
-            <p className="text-xs text-[#8b97aa]">
-              Capacity {selectedUnit.guests}
-              {selectedUnit.has_nanny_room ? ' (includes nanny room)' : ''}. Nanny is excluded from beach access.
-            </p>
+            <div
+              className={`rounded-[10px] border px-3 py-2.5 text-xs ${
+                overCapacity
+                  ? 'border-amber-200 bg-amber-50 text-amber-900'
+                  : 'border-[#e6ebf2] bg-[#f6f8fb] text-[#5b6b80]'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-semibold">Guest load</span>
+                <span className="font-semibold tabular-nums">
+                  {guestLoad} / {capacity}
+                </span>
+              </div>
+              <p className="mt-1.5 leading-5">
+                Adults count as 1, children as 0.5
+                {selectedUnit.has_nanny_room ? ' · capacity includes nanny room' : ''}.
+                Nanny is excluded from beach access.
+              </p>
+              {overCapacity && (
+                <p className="mt-1.5 font-semibold">
+                  Over capacity — still allowed. Extra guests are charged the higher beach-access /
+                  extra-guest rate
+                  {beachFeeInfo.beach?.extra > 0
+                    ? ` (${money(beachFeeInfo.beach.extra)} per child / extra guest)`
+                    : ''}
+                  .
+                </p>
+              )}
+            </div>
+          )}
+
+          {selectedUnit && !form.is_owner_reservation && beachAccessFees > 0 && (
+            <div className="rounded-[10px] border border-[#e6ebf2] bg-white px-3 py-2.5 text-xs text-[#5b6b80]">
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-semibold text-[#0f1c2e]">Beach access</span>
+                <strong className="tabular-nums text-[#0f1c2e]">{money(beachAccessFees)}</strong>
+              </div>
+              <p className="mt-1.5 leading-5">
+                {beachIsFlat
+                  ? 'Flat stay fee (not per person).'
+                  : `Adults × ${money(beachFeeInfo.beach?.adult || 0)} + children × ${money(
+                      beachFeeInfo.beach?.extra || 0
+                    )} (nanny excluded).`}
+              </p>
+            </div>
           )}
 
           <hr className="border-[#e6ebf2]" />
@@ -655,6 +733,15 @@ export default function ManualReservationForm({
               <span className="text-[#5b6b80]">Housekeeping</span>
               <strong className="text-[#0f1c2e]">{money(housekeeping)}</strong>
             </div>
+            {beachAccessFees > 0 && (
+              <div className="flex justify-between py-1">
+                <span className="text-[#5b6b80]">
+                  Beach access
+                  {!beachIsFlat && childrenCount > 0 ? ' (incl. extra guests)' : ''}
+                </span>
+                <strong className="text-[#0f1c2e]">{money(beachAccessFees)}</strong>
+              </div>
+            )}
             {downPayment > 0 && (
               <div className="flex justify-between py-1">
                 <span className="text-[#5b6b80]">Down payment</span>

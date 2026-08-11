@@ -133,4 +133,21 @@ export function beachAccessFormDefaults(projectName) {
   return null;
 }
 
+/** Adults = 1, children = 0.5 — same load rules as guest booking drawer. */
+export function getGuestLoad(adults, children) {
+  return Number(adults || 0) + Number(children || 0) * 0.5;
+}
+
+/** Total beach access fee for a stay (flat vs per-guest; nanny excluded). */
+export function computeBeachAccessFee(unit = {}, { nights = 0, adults = 1, teens = 0 } = {}) {
+  const beach = resolveBeachAccessRates(unit, nights);
+  if (beach.billing === 'flat' || beach.mode === 'hacienda_flat' || beach.mode === 'free') {
+    const fee = Number(beach.flat != null ? beach.flat : beach.adult) || 0;
+    return { fee, beach };
+  }
+  const accessAdult = Number(beach.adult || 0) * Math.max(0, Number(adults) || 0);
+  const accessTeen = Number(beach.extra || 0) * Math.max(0, Number(teens) || 0);
+  return { fee: accessAdult + accessTeen, beach };
+}
+
 export { GALALA_BEACH, HACIENDA_WEST_BEACH };

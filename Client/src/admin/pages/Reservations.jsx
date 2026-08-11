@@ -33,6 +33,7 @@ export const EMPTY_FORM = {
   owner_collected_type: '',   // '' | 'partial' | 'full'
   owner_collected_amount: '',
   utilities_cost_override: '',
+  beach_access_fees: '',
   broker_name: '',
   broker_amount_per_night: '',
   payment_method: 'cash',
@@ -1161,6 +1162,7 @@ export default function Reservations() {
       owner_collected_type:   r.owner_collected_type   || '',
       owner_collected_amount: r.owner_collected_amount || '',
       utilities_cost_override: r.utilities_cost_override != null ? String(r.utilities_cost_override) : '',
+      beach_access_fees: r.beach_access_fees != null ? String(r.beach_access_fees) : '',
       broker_name: r.broker_name || '',
       broker_amount_per_night: r.broker_amount_per_night != null ? String(r.broker_amount_per_night) : '',
     });
@@ -1178,8 +1180,6 @@ export default function Reservations() {
     const nannyCount = Math.max(0, parseInt(form.nanny_count, 10) || 0);
     if (!form.is_owner_reservation && adults < 1)
       return toast.error('At least 1 adult is required');
-    if (selectedUnit?.guests != null && adults + children + nannyCount > Number(selectedUnit.guests))
-      return toast.error(`Party exceeds unit capacity (${selectedUnit.guests})`);
     const payload = {
       ...form,
       adults,
@@ -1188,6 +1188,11 @@ export default function Reservations() {
       housekeeping_fees: selectedUnit
         ? housekeepingFeeForUnit(selectedUnit)
         : form.housekeeping_fees,
+      beach_access_fees: form.is_owner_reservation
+        ? 0
+        : form.beach_access_fees !== '' && form.beach_access_fees != null
+          ? Number(form.beach_access_fees)
+          : undefined,
     };
     if (!editId && transferProof) {
       const fd = new FormData();

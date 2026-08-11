@@ -1020,11 +1020,25 @@ export default function Schedule() {
       return toast.error('Unit and dates are required');
     }
     const selectedUnit = unitsList.find((u) => String(u.id) === String(createForm.unit_id));
+    const adults = Math.max(0, parseInt(createForm.adults, 10) || 0);
+    const children = Math.max(0, parseInt(createForm.children, 10) || 0);
+    const nannyCount = Math.max(0, parseInt(createForm.nanny_count, 10) || 0);
+    if (!createForm.is_owner_reservation && adults < 1) {
+      return toast.error('At least 1 adult is required');
+    }
     const payload = {
       ...createForm,
+      adults,
+      children,
+      nanny_count: nannyCount,
       housekeeping_fees: selectedUnit
         ? housekeepingFeeForUnit(selectedUnit)
         : createForm.housekeeping_fees,
+      beach_access_fees: createForm.is_owner_reservation
+        ? 0
+        : createForm.beach_access_fees !== '' && createForm.beach_access_fees != null
+          ? Number(createForm.beach_access_fees)
+          : undefined,
     };
     if (createProof) {
       const fd = new FormData();

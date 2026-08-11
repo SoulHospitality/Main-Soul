@@ -1497,21 +1497,23 @@ router.post(
     let utilitiesAmount = parseFloat(b.utilities_amount) || 0;
     let housekeepingFees = 0;
     let wpPostId = null;
-    let unitGuestsCap = 0;
+    let unitRow = null;
     if (b.unit_id) {
       const { rows: units } = await query(
         `SELECT utilities_cost, property_type, wp_post_id, guests, has_nanny_room,
-                min_nights, project, compound, area
+                min_nights, project, compound, area, beds,
+                access_fee_per_adult_egp, access_fee_per_teen_egp, access_card_count_included,
+                cleaning_fee_egp, security_deposit_egp
          FROM units WHERE id = $1`,
         [b.unit_id]
       );
+      unitRow = units[0] || null;
       const { housekeepingFeeForUnit } = require('../../lib/housekeeping');
       housekeepingFees = b.housekeeping_fees != null && b.housekeeping_fees !== ''
-        ? parseFloat(b.housekeeping_fees) || housekeepingFeeForUnit(units[0])
-        : housekeepingFeeForUnit(units[0]);
-      wpPostId = units[0]?.wp_post_id || null;
-      unitGuestsCap = Number(units[0]?.guests) || 0;
-      const minStay = getMinimumStayNights(units[0] || {});
+        ? parseFloat(b.housekeeping_fees) || housekeepingFeeForUnit(unitRow)
+        : housekeepingFeeForUnit(unitRow);
+      wpPostId = unitRow?.wp_post_id || null;
+      const minStay = getMinimumStayNights(unitRow || {});
       if (nights < minStay) {
         return res.status(400).json({
           error: `Minimum stay is ${minStay} night${minStay === 1 ? '' : 's'} for this project`,
@@ -1520,7 +1522,7 @@ router.post(
       if (!utilitiesAmount) {
         const costPerNight = utilitiesOverride != null && !Number.isNaN(utilitiesOverride)
           ? utilitiesOverride
-          : parseFloat(units[0]?.utilities_cost) || 0;
+          : parseFloat(unitRow?.utilities_cost) || 0;
         if (costPerNight > 0 && !truthyFlag(b.is_owner_reservation)) {
           utilitiesAmount = costPerNight * nights;
         }
@@ -1533,11 +1535,23 @@ router.post(
       if (party.adults < 1) {
         return res.status(400).json({ error: 'At least one adult is required' });
       }
-      const partyTotal = party.adults + party.children + party.nanny_count;
-      if (unitGuestsCap > 0 && partyTotal > unitGuestsCap) {
-        return res.status(400).json({
-          error: `Party size (${partyTotal}) exceeds unit capacity (${unitGuestsCap})`,
-        });
+      // Over capacity is allowed — beach access uses the higher extra-guest rate for children.
+    }
+
+    let beachAccessFees =
+      b.beach_access_fees !== undefined && b.beach_access_fees !== ''
+        ? parseFloat(b.beach_access_fees) || 0
+        : null;
+    if (beachAccessFees == null) {
+      if (isOwnerResEarly || truthyFlag(b.is_hold) || !unitRow) {
+        beachAccessFees = 0;
+      } else {
+        const { computeBeachAccessFee } = require('../../lib/beachAccess');
+        beachAccessFees = computeBeachAccessFee(unitRow, {
+          nights,
+          adults: party.adults,
+          teens: party.children,
+        }).fee;
       }
     }
 
@@ -1602,17 +1616,14 @@ router.post(
     const proofPath = req.file?.path || req.file?.secure_url || b.transfer_proof_path || null;
     const proofName = req.file?.originalname || b.transfer_proof_name || null;
 
+    const beachAccessFeesFinal = Number(beachAccessFees) || 0;
+
     let holdExpiresAt = null;
     if (isHold) {
       const hours = Math.max(1, parseInt(b.hold_hours, 10) || 24);
       holdExpiresAt = new Date(Date.now() + hours * 3600000);
       status = 'pending';
     }
-
-    const beachAccessFees =
-      b.beach_access_fees !== undefined && b.beach_access_fees !== ''
-        ? parseFloat(b.beach_access_fees) || 0
-        : null;
 
     const { rows } = await query(
       `INSERT INTO reservations (
@@ -1669,7 +1680,7 @@ router.post(
         party.children,
         party.nanny_count,
         b.sales_label || b.sales_owner || null,
-        beachAccessFees != null ? beachAccessFees : 0,
+        beachAccessFeesFinal,
       ]
     );
 
