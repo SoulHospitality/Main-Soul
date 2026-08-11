@@ -1444,7 +1444,14 @@ router.get('/reservations', async (req, res, next) => {
 
 router.post(
   '/reservations',
-  requireRoles('reservations_manual', 'reservations_web', 'reservations', 'admin'),
+  requireRoles(
+    'reservations_manual',
+    'reservations_web',
+    'reservations',
+    'operations',
+    'operations_supervisor',
+    'admin'
+  ),
   upload.single('transfer_proof'),
   setCloudinaryFolder(FOLDER_PAYMENTS),
   attachCloudinaryUrls,
@@ -1700,7 +1707,14 @@ function truthyFlag(v) {
 
 router.patch(
   '/reservations/:id',
-  requireRoles('reservations_manual', 'reservations_web', 'reservations', 'admin'),
+  requireRoles(
+    'reservations_manual',
+    'reservations_web',
+    'reservations',
+    'operations',
+    'operations_supervisor',
+    'admin'
+  ),
   async (req, res, next) => {
 
   try {
@@ -1809,7 +1823,14 @@ router.patch(
 /** Upload guest ID / passport documents onto a reservation (fresh uploads only). */
 router.post(
   '/reservations/:id/id-documents',
-  requireRoles('reservations_manual', 'reservations_web', 'reservations', 'admin'),
+  requireRoles(
+    'reservations_manual',
+    'reservations_web',
+    'reservations',
+    'operations',
+    'operations_supervisor',
+    'admin'
+  ),
   upload.array('id_photos', 10),
   setCloudinaryFolder(FOLDER_ID_DOCS),
   attachCloudinaryUrls,
@@ -1844,7 +1865,14 @@ router.post(
 /** Remove one guest ID document URL from a reservation. */
 router.delete(
   '/reservations/:id/id-documents',
-  requireRoles('reservations_manual', 'reservations_web', 'reservations', 'admin'),
+  requireRoles(
+    'reservations_manual',
+    'reservations_web',
+    'reservations',
+    'operations',
+    'operations_supervisor',
+    'admin'
+  ),
   async (req, res, next) => {
     try {
       const existing = await loadReservationAccess(req.params.id);
@@ -1871,7 +1899,14 @@ router.delete(
 
 router.delete(
   '/reservations/:id',
-  requireRoles('reservations_manual', 'reservations_web', 'reservations', 'admin'),
+  requireRoles(
+    'reservations_manual',
+    'reservations_web',
+    'reservations',
+    'operations',
+    'operations_supervisor',
+    'admin'
+  ),
   async (req, res, next) => {
 
   try {
@@ -1909,7 +1944,14 @@ router.delete(
 
 router.post(
   '/reservations/:id/cancel-request',
-  requireRoles('reservations_manual', 'reservations_web', 'reservations', 'admin'),
+  requireRoles(
+    'reservations_manual',
+    'reservations_web',
+    'reservations',
+    'operations',
+    'operations_supervisor',
+    'admin'
+  ),
   async (req, res, next) => {
 
   try {

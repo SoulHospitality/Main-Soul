@@ -79,6 +79,10 @@ const PERMISSIONS = {
   operations: [
     'ops_checkins:read',
     'ops_checkins:write',
+    'units:read',
+    'reservations:read',
+    'reservations:write',
+    'schedule:read',
     'notifications:read',
     'profile:read',
   ],
@@ -86,6 +90,10 @@ const PERMISSIONS = {
     'ops_checkins:read',
     'ops_checkins:write',
     'ops_checkins:assign',
+    'units:read',
+    'reservations:read',
+    'reservations:write',
+    'schedule:read',
     'notifications:read',
     'profile:read',
   ],
@@ -120,8 +128,8 @@ const PAGE_ACCESS = {
   reservations: RESERVATIONS_WEB_PAGE_ACCESS,
   reservations_web: RESERVATIONS_WEB_PAGE_ACCESS,
   reservations_manual: RESERVATIONS_PAGE_ACCESS,
-  operations: new Set(['ops_checkins', 'profile']),
-  operations_supervisor: new Set(['ops_checkins', 'profile']),
+  operations: new Set(['ops_checkins', 'reservations', 'schedule', 'profile']),
+  operations_supervisor: new Set(['ops_checkins', 'reservations', 'schedule', 'profile']),
   housekeeping: new Set(['hk_today', 'housekeeping', 'profile']),
   housekeeping_supervisor: new Set(['hk_today', 'housekeeping', 'profile']),
   resale: new Set(['units_sale', 'acquisition', 'sales', 'profile']),
@@ -178,13 +186,18 @@ export function canDeleteUnits(user) {
   return !!user && (user.role === 'admin' || user.role === 'resale');
 }
 
+function isOperationsRole(user) {
+  return !!user && (user.role === 'operations' || user.role === 'operations_supervisor');
+}
+
 /** Create / edit manual reservations */
 export function canManageReservations(user) {
   return (
     !!user &&
     (user.role === 'admin' ||
       isManualReservationsRole(user) ||
-      isWebsiteReservationsRole(user))
+      isWebsiteReservationsRole(user) ||
+      isOperationsRole(user))
   );
 }
 

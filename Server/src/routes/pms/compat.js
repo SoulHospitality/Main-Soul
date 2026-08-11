@@ -1513,7 +1513,17 @@ router.put('/tasks/:id', async (req, res, next) => {
   }
 });
 
-router.put('/reservations/:id', requireRoles('reservations_manual', 'reservations_web', 'reservations', 'admin'), async (req, res, next) => {
+router.put(
+  '/reservations/:id',
+  requireRoles(
+    'reservations_manual',
+    'reservations_web',
+    'reservations',
+    'operations',
+    'operations_supervisor',
+    'admin'
+  ),
+  async (req, res, next) => {
   // Delegate to the richer PATCH handler on the main router by forwarding body
   try {
     const existing = await loadReservationAccess(req.params.id);
