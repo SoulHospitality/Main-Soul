@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, KeyRound, Sparkles } from 'lucide-react';
+import { CheckCircle2, History, KeyRound, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { Link } from 'react-router-dom';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import { useAuth } from '../context/AuthContext';
@@ -149,9 +150,14 @@ export default function OpsCheckinsToday() {
                 : 'Collect remaining balance and hand the unit over once housekeeping has cleaned it.'}
           </p>
         </div>
-        <button type="button" className="btn-secondary text-sm" onClick={() => refetch()}>
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <Link to="/admin/ops/checkins-history" className="btn-secondary text-sm">
+            <History className="w-4 h-4" /> History
+          </Link>
+          <button type="button" className="btn-secondary text-sm" onClick={() => refetch()}>
+            Refresh
+          </button>
+        </div>
       </div>
 
       {isError ? (

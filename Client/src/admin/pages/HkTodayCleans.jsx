@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Sparkles } from 'lucide-react';
+import { Check, History, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { Link } from 'react-router-dom';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import { useAuth } from '../context/AuthContext';
@@ -67,9 +68,14 @@ export default function HkTodayCleans() {
                 : 'Units with check-in today. Mark cleaned when ready for Operations handover.'}
           </p>
         </div>
-        <button type="button" className="btn-secondary text-sm" onClick={() => refetch()}>
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <Link to="/admin/housekeeping/history" className="btn-secondary text-sm">
+            <History className="w-4 h-4" /> History
+          </Link>
+          <button type="button" className="btn-secondary text-sm" onClick={() => refetch()}>
+            Refresh
+          </button>
+        </div>
       </div>
 
       {isError ? (

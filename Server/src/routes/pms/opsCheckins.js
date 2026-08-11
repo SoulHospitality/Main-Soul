@@ -145,10 +145,14 @@ const CHECKIN_SELECT = `
           t.assigned_to AS hk_assigned_to,
           ops_agent.id AS ops_assignee_id,
           ops_agent.full_name AS ops_assignee_name,
-          ops_agent.staff_code AS ops_assignee_code
+          ops_agent.staff_code AS ops_assignee_code,
+          money_by.full_name AS ops_money_collected_by_name,
+          hand_by.full_name AS ops_handed_over_by_name
    FROM reservations r
    JOIN units u ON u.id = r.unit_id
    LEFT JOIN staff_users ops_agent ON ops_agent.id = r.ops_assigned_to
+   LEFT JOIN staff_users money_by ON money_by.id = r.ops_money_collected_by
+   LEFT JOIN staff_users hand_by ON hand_by.id = r.ops_handed_over_by
    LEFT JOIN LATERAL (
      SELECT ht.id, ht.status, ht.source, ht.assigned_to
      FROM housekeeping_tasks ht
@@ -196,6 +200,8 @@ function mapCheckin(row) {
     ops_assigned_at: row.ops_assigned_at || null,
     ops_assignee_name: row.ops_assignee_name || null,
     ops_assignee_code: row.ops_assignee_code || null,
+    ops_money_collected_by_name: row.ops_money_collected_by_name || null,
+    ops_handed_over_by_name: row.ops_handed_over_by_name || null,
     hk_task_id: row.hk_task_id || null,
     hk_task_status: row.hk_task_status || null,
     hk_cleaned: hkCleaned,
@@ -277,6 +283,49 @@ router.get('/ops/checkins-today', requireRoles(...OPS_ROLES), async (req, res, n
       params
     );
     res.json(rows.map(mapCheckin));
+  } catch (e) {
+    next(e);
+  }
+});
+
+function parseHistoryRange(query) {
+  const today = new Date();
+  const toDefault = today.toISOString().slice(0, 10);
+  const fromDefaultDate = new Date(today);
+  fromDefaultDate.setUTCDate(fromDefaultDate.getUTCDate() - 30);
+  const fromDefault = fromDefaultDate.toISOString().slice(0, 10);
+  const from = String(query.from || query.from_date || fromDefault).slice(0, 10);
+  const to = String(query.to || query.to_date || toDefault).slice(0, 10);
+  return { from, to };
+}
+
+router.get('/ops/checkins-history', requireRoles(...OPS_ROLES), async (req, res, next) => {
+  try {
+    const { from, to } = parseHistoryRange(req.query);
+    const params = [from, to];
+    let scope = '';
+    if (req.user.role === OPS_AGENT) {
+      params.push(req.user.id);
+      scope = ` AND r.ops_assigned_to = $${params.length}`;
+    }
+
+    const { rows } = await query(
+      `${CHECKIN_SELECT}
+       WHERE r.check_in::date >= $1::date
+         AND r.check_in::date <= $2::date
+         AND r.check_in::date < ${todayCairoSql()}
+         AND r.status IS DISTINCT FROM 'cancelled'
+         AND (
+           COALESCE(r.ops_handed_over, 0) = 1
+           OR COALESCE(r.ops_money_collected, 0) = 1
+           OR r.ops_assigned_to IS NOT NULL
+         )
+         ${scope}
+       ORDER BY r.check_in DESC, u.unit_number ASC NULLS LAST
+       LIMIT 500`,
+      params
+    );
+    res.json({ from, to, items: rows.map(mapCheckin) });
   } catch (e) {
     next(e);
   }
@@ -558,6 +607,83 @@ router.get('/housekeeping/today-cleans', requireRoles(...HK_READ_ROLES), async (
         assignee_code: r.assignee_code || null,
       }))
     );
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/housekeeping/cleans-history', requireRoles(...HK_READ_ROLES), async (req, res, next) => {
+  try {
+    const { from, to } = parseHistoryRange(req.query);
+    const params = [from, to];
+    let scope = '';
+    if (req.user.role === HK_AGENT) {
+      params.push(req.user.id);
+      scope = ` AND t.assigned_to = $${params.length}`;
+    }
+
+    const { rows } = await query(
+      `SELECT r.id AS reservation_id,
+              r.guest_name,
+              r.guest_phone,
+              r.check_in,
+              r.check_out,
+              r.status AS reservation_status,
+              u.id AS unit_id,
+              u.unit_number,
+              COALESCE(u.title, u.unit_number, 'Unit') AS unit_title,
+              COALESCE(u.project, u.compound) AS project,
+              t.id AS task_id,
+              t.status AS task_status,
+              t.assigned_to,
+              t.assigned_at,
+              t.submitted_at,
+              t.ready_at,
+              hk_agent.full_name AS assignee_name,
+              hk_agent.staff_code AS assignee_code
+       FROM housekeeping_tasks t
+       JOIN reservations r ON r.id = t.reservation_id
+       JOIN units u ON u.id = COALESCE(t.unit_id, r.unit_id)
+       LEFT JOIN staff_users hk_agent ON hk_agent.id = t.assigned_to
+       WHERE COALESCE(t.source, 'pre_arrival') = 'pre_arrival'
+         AND r.check_in::date >= $1::date
+         AND r.check_in::date <= $2::date
+         AND r.check_in::date < ${todayCairoSql()}
+         AND r.status IS DISTINCT FROM 'cancelled'
+         AND (
+           t.status = 'ready'
+           OR t.assigned_to IS NOT NULL
+           OR t.submitted_at IS NOT NULL
+         )
+         ${scope}
+       ORDER BY r.check_in DESC, u.unit_number ASC NULLS LAST
+       LIMIT 500`,
+      params
+    );
+
+    res.json({
+      from,
+      to,
+      items: rows.map((r) => ({
+        reservation_id: r.reservation_id,
+        guest_name: r.guest_name,
+        guest_phone: r.guest_phone,
+        check_in: r.check_in,
+        check_out: r.check_out,
+        unit_id: r.unit_id,
+        unit_number: r.unit_number,
+        unit_title: r.unit_title,
+        project: r.project,
+        task_id: r.task_id,
+        task_status: r.task_status || 'pending',
+        cleaned: isHkCleaned(r.task_status),
+        assigned_to: r.assigned_to || null,
+        assigned_at: r.assigned_at || null,
+        submitted_at: r.submitted_at || r.ready_at || null,
+        assignee_name: r.assignee_name || null,
+        assignee_code: r.assignee_code || null,
+      })),
+    });
   } catch (e) {
     next(e);
   }
