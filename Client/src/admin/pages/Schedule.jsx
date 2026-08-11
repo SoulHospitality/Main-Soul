@@ -59,7 +59,7 @@ const normDate = d => String(d).split('T')[0];
 // check-in and check-out each get their own cell; middle nights are colSpanned
 function buildRow(unitId, dates, reservations) {
   const unitRes = reservations
-    .filter(r => r.unit_id === unitId && r.status !== 'cancelled')
+    .filter(r => r.unit_id === unitId)
     .map(r => ({ ...r, check_in: normDate(r.check_in), check_out: normDate(r.check_out) }));
 
   const cells = [];
@@ -108,12 +108,14 @@ function buildRow(unitId, dates, reservations) {
   return cells;
 }
 
-// Color rules: hold > urgency > blocked > owner > sales > past
+// Color rules: cancelled > hold > urgency > blocked > owner > sales > past
 function resColors(res, today) {
   const tomorrow = addDays(today, 1);
   const co = normDate(res.check_out);
   const ci = normDate(res.check_in);
   const isBlocked = res.is_owner_reservation && parseFloat(res.total_amount) === 0;
+  if (res.status === 'cancelled')
+    return { bg: 'bg-red-600', text: 'text-white', hover: 'hover:brightness-95', ring: 'ring-red-300/50', strike: true };
   if (res.is_hold || res.status === 'hold')
     return { bg: 'bg-amber-400', text: 'text-amber-950', hover: 'hover:brightness-95', ring: 'ring-amber-300/60' };
   if (co < today)
@@ -1207,7 +1209,7 @@ export default function Schedule() {
         if (priceMax !== null && lowest > priceMax) return false;
       }
 
-      const ur = allReservations.filter(r => r.unit_id === unit.id && r.status !== 'cancelled');
+      const ur = allReservations.filter(r => r.unit_id === unit.id);
       const lastD  = displayDates[displayDates.length - 1];
       const firstD = displayDates[0];
       if (!lastD || !firstD) return true;
@@ -1313,6 +1315,7 @@ export default function Schedule() {
           { swatch: 'bg-rose-50 border border-rose-200', label: 'Unpriced' },
           { swatch: 'border border-slate-300', label: 'OTA / admin block', style: { backgroundImage: 'repeating-linear-gradient(135deg, rgba(40,63,94,0.14) 0 4px, transparent 4px 8px)' } },
           { swatch: 'bg-[#2a9d8f]', label: 'Guest stay' },
+          { swatch: 'bg-red-600', label: 'Cancelled' },
           { swatch: 'bg-amber-400', label: 'Hold' },
           { swatch: 'bg-violet-500', label: 'Blocked' },
           { swatch: 'bg-sky-500', label: 'Owner' },
@@ -1755,8 +1758,8 @@ export default function Schedule() {
                         );
                       }
 
-                      const { bg, text, hover, ring } = resColors(cell.res, TODAY);
-                      const tipText = `${cell.res.guest_name}\n${formatDate(normDate(cell.res.check_in))} → ${formatDate(normDate(cell.res.check_out))}\n${nightsText(cell.res.nights)} · ${currency(cell.res.total_amount)}`;
+                      const { bg, text, hover, ring, strike } = resColors(cell.res, TODAY);
+                      const tipText = `${cell.res.status === 'cancelled' ? 'CANCELLED · ' : ''}${cell.res.guest_name}\n${formatDate(normDate(cell.res.check_in))} → ${formatDate(normDate(cell.res.check_out))}\n${nightsText(cell.res.nights)} · ${currency(cell.res.total_amount)}`;
 
                       if (cell.type === 'checkin') {
                         return (

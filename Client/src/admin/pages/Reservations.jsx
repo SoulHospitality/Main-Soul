@@ -1242,9 +1242,15 @@ export default function Reservations() {
     }
     return true;
   });
-  const isBlocked      = r => r.is_owner_reservation && (parseFloat(r.total_amount) || 0) === 0;
+  // Cancelled (incl. blank unit) stay in the main list in red — not buried in owner blocks.
+  const isBlocked = (r) =>
+    r.status !== 'cancelled' &&
+    !!r.is_owner_reservation &&
+    (parseFloat(r.total_amount) || 0) === 0;
   const filteredByUnit = allFiltered.filter(r => !isBlocked(r));
   const ownerStays     = allFiltered.filter(r =>  isBlocked(r));
+  const totalVisible   = allFiltered.length;
+  const cancelledCount = allFiltered.filter((r) => r.status === 'cancelled').length;
   const { sorted, sortKey, sortDir, handleSort } = useSortableTable(filteredByUnit, 'created_at', 'desc');
   const { sorted: ownerSorted, sortKey: ownerSortKey, sortDir: ownerSortDir, handleSort: ownerHandleSort } = useSortableTable(ownerStays, 'created_at', 'desc');
 
@@ -1294,7 +1300,13 @@ export default function Reservations() {
       <div className="flex items-center justify-between">
         <div className="page-header mb-0">
           <h1 className="page-title">{pageTitle}</h1>
-          <p className="page-subtitle">{filteredByUnit.length} reservation{filteredByUnit.length !== 1 ? 's' : ''}{ownerStays.length > 0 && canSeeOwnerStays ? ` · ${ownerStays.length} owner stay${ownerStays.length !== 1 ? 's' : ''}` : ''}</p>
+          <p className="page-subtitle">
+            {totalVisible} reservation{totalVisible !== 1 ? 's' : ''}
+            {cancelledCount > 0 ? ` · ${cancelledCount} cancelled` : ''}
+            {ownerStays.length > 0 && canSeeOwnerStays
+              ? ` · ${ownerStays.length} owner stay${ownerStays.length !== 1 ? 's' : ''}`
+              : ''}
+          </p>
         </div>
         <div className="flex gap-2">
           {(isAdmin) && <button onClick={exportExcel} className="btn-secondary"><Download className="w-4 h-4" />Export Excel</button>}
@@ -1315,7 +1327,7 @@ export default function Reservations() {
             className="rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm hover:border-[#283f5e]/30"
           >
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Total</p>
-            <p className="mt-2 text-3xl font-bold text-[#283f5e]">{filteredByUnit.length}</p>
+            <p className="mt-2 text-3xl font-bold text-[#283f5e]">{totalVisible}</p>
           </button>
           <button
             type="button"
@@ -1438,7 +1450,7 @@ export default function Reservations() {
                     (r.is_owner_reservation ? 'Owner' : r.sales_person_name || r.sales_label || '—');
                   const idPhotos = Array.isArray(r.id_photo_urls) ? r.id_photo_urls.filter(Boolean) : [];
                   return (
-                    <tr key={r.id}>
+                    <tr key={r.id} className={r.status === 'cancelled' ? 'bg-red-100/90 text-red-950' : undefined}>
                       <td className="whitespace-nowrap">{formatDate(r.check_in)}</td>
                       <td className="whitespace-nowrap">{formatDate(r.check_out)}</td>
                       <td className="whitespace-nowrap font-medium text-gray-800">{r.unit_number || '—'}</td>
@@ -1552,7 +1564,7 @@ export default function Reservations() {
                     const total = parseFloat(r.total_amount) || 0;
                     const isBlocked = total === 0;
                     return (
-                      <tr key={r.id} className={r.status === 'cancelled' ? 'opacity-60 bg-red-50' : 'bg-purple-50/30'}>
+                      <tr key={r.id} className={r.status === 'cancelled' ? 'bg-red-100/90 text-red-950' : 'bg-purple-50/30'}>
                         <td className="whitespace-nowrap">{formatDate(r.check_in)}</td>
                         <td className="whitespace-nowrap">{formatDate(r.check_out)}</td>
                         <td>

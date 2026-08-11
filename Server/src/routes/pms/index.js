@@ -1408,7 +1408,7 @@ router.get('/reservations', async (req, res, next) => {
               su.full_name AS sales_person_name,
               COALESCE(r.id_photo_urls, '{}'::text[]) AS id_photo_urls
        FROM reservations r
-       JOIN units u ON u.id = r.unit_id
+       LEFT JOIN units u ON u.id = r.unit_id
        LEFT JOIN bookings b ON b.id = r.booking_id
        LEFT JOIN staff_users creator ON creator.id = r.created_by
        LEFT JOIN staff_users su ON su.id = r.sales_person_id
@@ -2038,10 +2038,9 @@ router.get('/reservations/schedule', async (req, res, next) => {
               u.title AS unit_title,
               'pms' AS source
        FROM reservations r
-       JOIN units u ON u.id = r.unit_id
+       LEFT JOIN units u ON u.id = r.unit_id
        LEFT JOIN staff_users sp ON sp.id = r.sales_person_id
-       WHERE r.status NOT IN ('cancelled')
-         AND r.check_in < $1::date
+       WHERE r.check_in < $1::date
          AND r.check_out > $2::date
          AND r.unit_id = ANY($3::uuid[])${scope.clause}
        ORDER BY r.check_in`,
