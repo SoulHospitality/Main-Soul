@@ -146,7 +146,7 @@ router.get('/payments/all', requireRoles('admin'), async (req, res, next) => {
 
 router.get(
   '/commissions/breakdown',
-  requireRoles('admin', 'reservations', 'reservations_web', 'reservations_manual'),
+  requireRoles('admin', 'reservations', 'reservations_web'),
   async (req, res, next) => {
   try {
     const from_date = clampFromDate(req.query.from_date);

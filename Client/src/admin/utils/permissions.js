@@ -27,6 +27,13 @@ const RESERVATIONS_PAGE_ACCESS = new Set([
   'profile',
 ]);
 
+/** Manual agents: own reservations only — no housekeeping or profit pages */
+const RESERVATIONS_MANUAL_PAGE_ACCESS = new Set([
+  'reservations',
+  'schedule',
+  'profile',
+]);
+
 const RESERVATIONS_WEB_PAGE_ACCESS = new Set([
   ...RESERVATIONS_PAGE_ACCESS,
   'website_bookings',
@@ -48,6 +55,18 @@ const RESERVATIONS_PERMISSIONS = [
   'documents:write',
 ];
 
+const RESERVATIONS_MANUAL_PERMISSIONS = [
+  'units:read',
+  'reservations:read',
+  'reservations:write',
+  'reservations:confirm',
+  'reservations:delete',
+  'schedule:read',
+  'notifications:read',
+  'documents:read',
+  'documents:write',
+];
+
 const RESERVATIONS_WEB_PERMISSIONS = [
   ...RESERVATIONS_PERMISSIONS,
   'units:write',
@@ -57,7 +76,7 @@ const PERMISSIONS = {
   admin: ['*'],
   reservations: RESERVATIONS_WEB_PERMISSIONS,
   reservations_web: RESERVATIONS_WEB_PERMISSIONS,
-  reservations_manual: RESERVATIONS_PERMISSIONS,
+  reservations_manual: RESERVATIONS_MANUAL_PERMISSIONS,
   resale: [
     'units:read',
     'units:write',
@@ -128,7 +147,7 @@ const PAGE_ACCESS = {
   admin: true,
   reservations: RESERVATIONS_WEB_PAGE_ACCESS,
   reservations_web: RESERVATIONS_WEB_PAGE_ACCESS,
-  reservations_manual: RESERVATIONS_PAGE_ACCESS,
+  reservations_manual: RESERVATIONS_MANUAL_PAGE_ACCESS,
   operations: new Set(['operations', 'ops_checkins', 'reservations', 'schedule', 'profile']),
   operations_supervisor: new Set(['operations', 'ops_checkins', 'ops_comments', 'reservations', 'schedule', 'profile']),
   housekeeping: new Set(['housekeeping', 'hk_today', 'profile']),

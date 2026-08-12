@@ -47,7 +47,7 @@ router.get('/housekeeping-tasks', async (req, res, next) => {
   }
 });
 
-router.post('/housekeeping-tasks', requireRoles('admin', 'reservations', 'reservations_manual', 'reservations_web'), async (req, res, next) => {
+router.post('/housekeeping-tasks', requireRoles('admin', 'reservations', 'reservations_web'), async (req, res, next) => {
   try {
     const b = req.body;
     if (!b.unit_id) return res.status(400).json({ error: 'unit_id required' });
@@ -148,7 +148,7 @@ router.post('/housekeeping-tasks/:id/submit', async (req, res, next) => {
   }
 });
 
-router.post('/housekeeping-tasks/:id/inspect', requireRoles('admin', 'reservations', 'reservations_manual', 'reservations_web'), async (req, res, next) => {
+router.post('/housekeeping-tasks/:id/inspect', requireRoles('admin', 'reservations', 'reservations_web'), async (req, res, next) => {
   try {
     const result = String(req.body.result || '').toLowerCase();
     if (!['pass', 'fail'].includes(result)) {
@@ -202,7 +202,7 @@ router.post('/housekeeping-tasks/:id/inspect', requireRoles('admin', 'reservatio
 });
 
 // ── Outsider housekeeping service orders (revenue) ─────────
-router.get('/housekeeping-service-orders', requireRoles('admin', 'reservations', 'reservations_manual', 'reservations_web'), async (req, res, next) => {
+router.get('/housekeeping-service-orders', requireRoles('admin', 'reservations', 'reservations_web'), async (req, res, next) => {
   try {
     const { FINANCIAL_EPOCH, clampFromDate } = require('../../lib/financialEpoch');
     const from = clampFromDate(req.query.from_date || FINANCIAL_EPOCH);
@@ -232,7 +232,7 @@ router.get('/housekeeping-service-orders', requireRoles('admin', 'reservations',
   }
 });
 
-router.post('/housekeeping-service-orders', requireRoles('admin', 'reservations', 'reservations_manual', 'reservations_web'), async (req, res, next) => {
+router.post('/housekeeping-service-orders', requireRoles('admin', 'reservations', 'reservations_web'), async (req, res, next) => {
   try {
     const b = req.body || {};
     const clientName = String(b.client_name || '').trim();
@@ -283,7 +283,7 @@ router.post('/housekeeping-service-orders', requireRoles('admin', 'reservations'
   }
 });
 
-router.patch('/housekeeping-service-orders/:id', requireRoles('admin', 'reservations', 'reservations_manual', 'reservations_web'), async (req, res, next) => {
+router.patch('/housekeeping-service-orders/:id', requireRoles('admin', 'reservations', 'reservations_web'), async (req, res, next) => {
   try {
     const b = req.body || {};
     const { rows } = await query(

@@ -105,7 +105,9 @@ function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
     const nameParam = nextIndex;
     params.push(name);
     nextIndex += 1;
-    // Normalize spaces in SQL; include containment for "Amira Hesham" vs "Amira Hesham X"
+    // Normalize spaces in SQL.
+    // Covers Excel imports: "Amira" → "Amira Hesham", "Nabarawy" → "Abdullah Nabarawy",
+    // "Aml" → "Aml Nasser".
     clause += `
     OR (
       ${alias}.sales_label IS NOT NULL
@@ -119,9 +121,17 @@ function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
         OR lower(regexp_replace(btrim($${nameParam}), '\\s+', ' ', 'g'))
           LIKE lower(regexp_replace(btrim(${alias}.sales_label), '\\s+', ' ', 'g')) || ' %'
         OR (
-          length(btrim($${nameParam})) >= 4
-          AND lower(regexp_replace(btrim(${alias}.sales_label), '\\s+', ' ', 'g'))
-            LIKE '%' || lower(regexp_replace(btrim($${nameParam}), '\\s+', ' ', 'g')) || '%'
+          length(btrim(${alias}.sales_label)) >= 3
+          AND (
+            lower(regexp_replace(btrim($${nameParam}), '\\s+', ' ', 'g'))
+              LIKE '% ' || lower(regexp_replace(btrim(${alias}.sales_label), '\\s+', ' ', 'g'))
+            OR lower(regexp_replace(btrim($${nameParam}), '\\s+', ' ', 'g'))
+              LIKE '% ' || lower(regexp_replace(btrim(${alias}.sales_label), '\\s+', ' ', 'g')) || ' %'
+            OR lower(regexp_replace(btrim(${alias}.sales_label), '\\s+', ' ', 'g'))
+              LIKE '% ' || lower(regexp_replace(btrim($${nameParam}), '\\s+', ' ', 'g'))
+            OR lower(regexp_replace(btrim(${alias}.sales_label), '\\s+', ' ', 'g'))
+              LIKE '% ' || lower(regexp_replace(btrim($${nameParam}), '\\s+', ' ', 'g')) || ' %'
+          )
         )
       )
     )`;

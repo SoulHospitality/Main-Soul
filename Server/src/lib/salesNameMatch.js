@@ -97,17 +97,23 @@ function nameMatchScore(salesLabel, staffName) {
 
   let score = Math.max(direct, sortedScore, tokenCoverage * 0.95, contained);
 
-  // Shorter label than staff name ("Tarek" vs "Tarek Mostafa"): judge only on
-  // the tokens the label actually provides. Ties between several staff sharing
-  // that token are rejected later as ambiguous.
+  // Shorter label than staff name ("Amira"/"Nabarawy"/"Aml" vs full staff name):
+  // score from the tokens the label actually provides.
   if (labelTokens.length < staffTokens.length) {
     let labelHits = 0;
+    let bestAny = 0;
     for (const lt of labelTokens) {
       let best = 0;
       for (const st of staffTokens) best = Math.max(best, stringSimilarity(lt, st));
-      if (best >= 0.85) labelHits += 1;
+      bestAny = Math.max(bestAny, best);
+      if (best >= 0.82) labelHits += 1;
     }
-    score = Math.max(score, (labelHits / labelTokens.length) * 0.9);
+    // Single distinctive token (surname / short first name) that clearly hits
+    if (labelTokens.length === 1 && bestAny >= 0.9) {
+      score = Math.max(score, 0.88);
+    } else {
+      score = Math.max(score, (labelHits / labelTokens.length) * 0.9);
+    }
   } else if (staffTokens.length >= 2 && worstStaffToken < 0.78) {
     // The label names a different last name → different person
     score = Math.min(score, 0.7);
