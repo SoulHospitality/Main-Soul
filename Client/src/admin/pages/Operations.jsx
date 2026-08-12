@@ -1,0 +1,75 @@
+import { useSearchParams } from 'react-router-dom';
+import { KeyRound, History, MessageSquareText } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { canAccess } from '../utils/permissions';
+import { CheckinsTodaySection } from './OpsCheckinsToday';
+import { CheckinsHistorySection } from './OpsCheckinsHistory';
+import { CheckinCommentsSection } from './OpsCheckinComments';
+
+const TABS = [
+  { id: 'today', label: "Today's check-ins", icon: KeyRound, page: 'ops_checkins' },
+  { id: 'history', label: 'Check-ins history', icon: History, page: 'ops_checkins' },
+  { id: 'comments', label: 'Check-in comments', icon: MessageSquareText, page: 'ops_comments' },
+];
+
+const TAB_ALIASES = {
+  today: 'today',
+  'checkins-today': 'today',
+  history: 'history',
+  'checkins-history': 'history',
+  comments: 'comments',
+  'checkin-comments': 'comments',
+};
+
+export default function Operations() {
+  const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawTab = searchParams.get('tab') || 'today';
+  const activeTab = TAB_ALIASES[rawTab] || 'today';
+
+  const visibleTabs = TABS.filter((tab) => canAccess(user, tab.page));
+  const resolvedTab = visibleTabs.some((t) => t.id === activeTab)
+    ? activeTab
+    : visibleTabs[0]?.id || 'today';
+
+  function setTab(id) {
+    setSearchParams({ tab: id }, { replace: true });
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="page-header mb-0">
+        <h1 className="page-title">Operations</h1>
+        <p className="page-subtitle">
+          Check-ins for today, history, and agent comments before guest handover
+        </p>
+      </div>
+
+      <div className="flex flex-wrap gap-1 p-1 bg-gray-100 rounded-xl">
+        {visibleTabs.map((tab) => {
+          const Icon = tab.icon;
+          const active = resolvedTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setTab(tab.id)}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                active
+                  ? 'bg-white text-soul-blue shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-white/60'
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {resolvedTab === 'today' ? <CheckinsTodaySection embedded /> : null}
+      {resolvedTab === 'history' ? <CheckinsHistorySection embedded /> : null}
+      {resolvedTab === 'comments' ? <CheckinCommentsSection embedded /> : null}
+    </div>
+  );
+}

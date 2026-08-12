@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, MessageSquareText, KeyRound } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
@@ -15,7 +14,7 @@ function defaultRange() {
   return { from: iso(from), to: iso(to) };
 }
 
-export default function OpsCheckinComments() {
+export function CheckinCommentsSection({ embedded = false }) {
   const qc = useQueryClient();
   const defaults = useMemo(() => defaultRange(), []);
   const [from, setFrom] = useState(defaults.from);
@@ -46,26 +45,26 @@ export default function OpsCheckinComments() {
   if (isLoading) return <LoadingSpinner />;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <MessageSquareText className="w-6 h-6 text-soul-blue" />
-            Check-in comments
-          </h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Review comments left by operations agents before handing units to guests.
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <Link to="/admin/ops/checkins-today" className="btn-secondary text-sm">
-            <KeyRound className="w-4 h-4" /> Today
-          </Link>
+    <div className={embedded ? 'space-y-4' : 'space-y-6'}>
+      {!embedded ? (
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Check-in comments</h1>
+            <p className="mt-1 text-sm text-gray-500">
+              Review comments left by operations agents before handing units to guests.
+            </p>
+          </div>
           <button type="button" className="btn-secondary text-sm" onClick={() => refetch()} disabled={isFetching}>
             Refresh
           </button>
         </div>
-      </div>
+      ) : (
+        <div className="flex items-center justify-end">
+          <button type="button" className="btn-secondary text-sm" onClick={() => refetch()} disabled={isFetching}>
+            Refresh
+          </button>
+        </div>
+      )}
 
       <div className="card p-4 flex flex-wrap items-end gap-3">
         <div>
@@ -157,4 +156,8 @@ export default function OpsCheckinComments() {
       )}
     </div>
   );
+}
+
+export default function OpsCheckinComments() {
+  return <CheckinCommentsSection />;
 }

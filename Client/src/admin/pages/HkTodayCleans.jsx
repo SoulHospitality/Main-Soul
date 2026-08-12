@@ -1,13 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, History, Sparkles } from 'lucide-react';
+import { Check, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { Link } from 'react-router-dom';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import { useAuth } from '../context/AuthContext';
 import { formatDate } from '../utils/formatters';
 
-export default function HkTodayCleans() {
+export function TodayCleansSection({ embedded = false }) {
   const { user } = useAuth();
   const qc = useQueryClient();
   const canAssign =
@@ -56,27 +55,30 @@ export default function HkTodayCleans() {
   if (isLoading) return <LoadingSpinner />;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Today&apos;s cleans</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            {canAssign
-              ? 'Assign each clean to a housekeeping agent, then track when units are ready.'
-              : isAgent
-                ? 'Your assigned cleans — mark cleaned when the unit is ready for Operations.'
-                : 'Units with check-in today. Mark cleaned when ready for Operations handover.'}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link to="/admin/housekeeping/history" className="btn-secondary text-sm">
-            <History className="w-4 h-4" /> History
-          </Link>
+    <div className={embedded ? 'space-y-4' : 'space-y-6'}>
+      {!embedded ? (
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Today&apos;s cleans</h1>
+            <p className="mt-1 text-sm text-gray-500">
+              {canAssign
+                ? 'Assign each clean to a housekeeping agent, then track when units are ready.'
+                : isAgent
+                  ? 'Your assigned cleans — mark cleaned when the unit is ready for Operations.'
+                  : 'Units with check-in today. Mark cleaned when ready for Operations handover.'}
+            </p>
+          </div>
           <button type="button" className="btn-secondary text-sm" onClick={() => refetch()}>
             Refresh
           </button>
         </div>
-      </div>
+      ) : (
+        <div className="flex items-center justify-end">
+          <button type="button" className="btn-secondary text-sm" onClick={() => refetch()}>
+            Refresh
+          </button>
+        </div>
+      )}
 
       {isError ? (
         <div className="card p-10 text-center text-sm text-red-600">
@@ -176,4 +178,8 @@ export default function HkTodayCleans() {
       )}
     </div>
   );
+}
+
+export default function HkTodayCleans() {
+  return <TodayCleansSection />;
 }

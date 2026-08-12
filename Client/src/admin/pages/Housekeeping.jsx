@@ -1,15 +1,20 @@
 import { useState, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
-import { Home, DollarSign, ClipboardList, Download, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Home, DollarSign, ClipboardList, Download, Sparkles, CheckCircle2, SprayCan, History } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import { usePermissions } from '../hooks/usePermissions';
+import { useAuth } from '../context/AuthContext';
+import { canAccess } from '../utils/permissions';
 import { useSortableTable } from '../hooks/useSortableTable';
 import SortTh from '../components/ui/SortTh';
 import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
 import { unitDisplay, unitSelectLabel } from '../utils/formatters';
+import { TodayCleansSection } from './HkTodayCleans';
+import { CleansHistorySection } from './HkCleansHistory';
 
 const fmt = (n) =>
   Number(n || 0).toLocaleString('en-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -730,54 +735,68 @@ function ServicesTab() {
 }
 
 export default function Housekeeping() {
-  const [tab, setTab] = useState('tasks');
+  const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawTab = searchParams.get('tab') || 'today';
+  const tabAliases = {
+    today: 'today',
+    history: 'history',
+    tasks: 'tasks',
+    fees: 'fees',
+    services: 'services',
+  };
+  const activeTab = tabAliases[rawTab] || 'today';
+
+  const tabs = [
+    { id: 'today', label: "Today's cleans", icon: SprayCan, page: 'hk_today' },
+    { id: 'history', label: 'Cleans history', icon: History, page: 'hk_today' },
+    { id: 'tasks', label: 'Tasks', icon: Sparkles, page: 'housekeeping' },
+    { id: 'fees', label: 'Fees', icon: DollarSign, page: 'housekeeping' },
+    { id: 'services', label: 'Service requests', icon: ClipboardList, page: 'housekeeping' },
+  ].filter((t) => canAccess(user, t.page));
+
+  const resolvedTab = tabs.some((t) => t.id === activeTab) ? activeTab : tabs[0]?.id || 'today';
+
+  function setTab(id) {
+    setSearchParams({ tab: id }, { replace: true });
+  }
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800">Housekeeping &amp; Ops</h1>
-          <p className="text-gray-500 text-sm mt-0.5">
-            Task readiness workflow, fee ledger and outside service requests
-          </p>
-        </div>
-        <div className="flex rounded-lg border border-gray-200 overflow-hidden">
-          <button
-            type="button"
-            onClick={() => setTab('tasks')}
-            className={`px-4 py-2 text-sm font-medium flex items-center gap-2 ${
-              tab === 'tasks' ? 'bg-soul-blue text-white' : 'bg-white text-gray-600'
-            }`}
-          >
-            <Sparkles className="w-4 h-4" /> Tasks
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab('fees')}
-            className={`px-4 py-2 text-sm font-medium flex items-center gap-2 ${
-              tab === 'fees' ? 'bg-soul-blue text-white' : 'bg-white text-gray-600'
-            }`}
-          >
-            <DollarSign className="w-4 h-4" /> Fees
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab('services')}
-            className={`px-4 py-2 text-sm font-medium flex items-center gap-2 ${
-              tab === 'services' ? 'bg-soul-blue text-white' : 'bg-white text-gray-600'
-            }`}
-          >
-            <ClipboardList className="w-4 h-4" /> Service requests
-          </button>
-        </div>
+      <div className="page-header mb-0">
+        <h1 className="page-title">Housekeeping</h1>
+        <p className="page-subtitle">
+          Today&apos;s cleans, history, readiness tasks, fees, and service requests
+        </p>
       </div>
-      {tab === 'tasks' ? (
-        <TasksTab />
-      ) : tab === 'fees' ? (
-        <FeesTab />
-      ) : (
-        <ServicesTab />
-      )}
+
+      <div className="flex flex-wrap gap-1 p-1 bg-gray-100 rounded-xl">
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          const active = resolvedTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setTab(tab.id)}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                active
+                  ? 'bg-white text-soul-blue shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-white/60'
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {resolvedTab === 'today' ? <TodayCleansSection embedded /> : null}
+      {resolvedTab === 'history' ? <CleansHistorySection embedded /> : null}
+      {resolvedTab === 'tasks' ? <TasksTab /> : null}
+      {resolvedTab === 'fees' ? <FeesTab /> : null}
+      {resolvedTab === 'services' ? <ServicesTab /> : null}
     </div>
   );
 }

@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, History, KeyRound, Sparkles } from 'lucide-react';
+import { CheckCircle2, KeyRound, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { Link } from 'react-router-dom';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import { useAuth } from '../context/AuthContext';
@@ -77,7 +76,7 @@ function PaymentDetails({ row }) {
   );
 }
 
-export default function OpsCheckinsToday() {
+export function CheckinsTodaySection({ embedded = false }) {
   const { user } = useAuth();
   const qc = useQueryClient();
   const [collectingId, setCollectingId] = useState(null);
@@ -150,32 +149,32 @@ export default function OpsCheckinsToday() {
   if (isLoading) return <LoadingSpinner />;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Checkins for today</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            {canAssign
-              ? 'Assign each arrival to an operations agent, then track collect and handover.'
-              : isAgent
-                ? 'Your assigned arrivals — collect remaining balance, add a check-in comment, then hand over once cleaned.'
-                : 'Collect remaining balance and hand the unit over once housekeeping has cleaned it.'}
-          </p>
+    <div className={embedded ? 'space-y-4' : 'space-y-6'}>
+      {!embedded ? (
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Checkins for today</h1>
+            <p className="mt-1 text-sm text-gray-500">
+              {canAssign
+                ? 'Assign each arrival to an operations agent, then track collect and handover.'
+                : isAgent
+                  ? 'Your assigned arrivals — collect remaining balance, add a check-in comment, then hand over once cleaned.'
+                  : 'Collect remaining balance and hand the unit over once housekeeping has cleaned it.'}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button type="button" className="btn-secondary text-sm" onClick={() => refetch()}>
+              Refresh
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          {canAssign ? (
-            <Link to="/admin/ops/checkin-comments" className="btn-secondary text-sm">
-              Review comments
-            </Link>
-          ) : null}
-          <Link to="/admin/ops/checkins-history" className="btn-secondary text-sm">
-            <History className="w-4 h-4" /> History
-          </Link>
+      ) : (
+        <div className="flex items-center justify-end">
           <button type="button" className="btn-secondary text-sm" onClick={() => refetch()}>
             Refresh
           </button>
         </div>
-      </div>
+      )}
 
       {isError ? (
         <div className="card p-10 text-center text-sm text-red-600">
@@ -423,4 +422,8 @@ export default function OpsCheckinsToday() {
       )}
     </div>
   );
+}
+
+export default function OpsCheckinsToday() {
+  return <CheckinsTodaySection />;
 }

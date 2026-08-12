@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { CheckCircle2, History, KeyRound, Sparkles } from 'lucide-react';
+import { CheckCircle2, Sparkles } from 'lucide-react';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import { useAuth } from '../context/AuthContext';
@@ -15,7 +14,7 @@ function defaultRange() {
   return { from: iso(from), to: iso(to) };
 }
 
-export default function OpsCheckinsHistory() {
+export function CheckinsHistorySection({ embedded = false }) {
   const { user } = useAuth();
   const isAgent = user?.role === 'operations';
   const defaults = useMemo(() => defaultRange(), []);
@@ -35,28 +34,28 @@ export default function OpsCheckinsHistory() {
   if (isLoading) return <LoadingSpinner />;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <History className="w-6 h-6 text-soul-blue" />
-            Check-ins history
-          </h1>
-          <p className="mt-1 text-sm text-gray-500">
-            {isAgent
-              ? 'Past arrivals assigned to you — collect and handover record.'
-              : 'Past check-ins with money collected, handover, or agent assignment.'}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <Link to="/admin/ops/checkins-today" className="btn-secondary text-sm">
-            <KeyRound className="w-4 h-4" /> Today
-          </Link>
+    <div className={embedded ? 'space-y-4' : 'space-y-6'}>
+      {!embedded ? (
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Check-ins history</h1>
+            <p className="mt-1 text-sm text-gray-500">
+              {isAgent
+                ? 'Past arrivals assigned to you — collect and handover record.'
+                : 'Past check-ins with money collected, handover, or agent assignment.'}
+            </p>
+          </div>
           <button type="button" className="btn-secondary text-sm" onClick={() => refetch()} disabled={isFetching}>
             Refresh
           </button>
         </div>
-      </div>
+      ) : (
+        <div className="flex items-center justify-end">
+          <button type="button" className="btn-secondary text-sm" onClick={() => refetch()} disabled={isFetching}>
+            Refresh
+          </button>
+        </div>
+      )}
 
       <div className="card p-4 flex flex-wrap items-end gap-3">
         <div>
@@ -153,4 +152,8 @@ export default function OpsCheckinsHistory() {
       )}
     </div>
   );
+}
+
+export default function OpsCheckinsHistory() {
+  return <CheckinsHistorySection />;
 }

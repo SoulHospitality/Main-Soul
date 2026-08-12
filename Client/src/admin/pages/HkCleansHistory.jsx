@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { History, Sparkles, SprayCan } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import { useAuth } from '../context/AuthContext';
@@ -15,7 +14,7 @@ function defaultRange() {
   return { from: iso(from), to: iso(to) };
 }
 
-export default function HkCleansHistory() {
+export function CleansHistorySection({ embedded = false }) {
   const { user } = useAuth();
   const isAgent = user?.role === 'housekeeping';
   const defaults = useMemo(() => defaultRange(), []);
@@ -35,28 +34,28 @@ export default function HkCleansHistory() {
   if (isLoading) return <LoadingSpinner />;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <History className="w-6 h-6 text-soul-blue" />
-            Cleans history
-          </h1>
-          <p className="mt-1 text-sm text-gray-500">
-            {isAgent
-              ? 'Past cleans assigned to you — when units were marked ready.'
-              : 'Past pre-arrival cleans by check-in date.'}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <Link to="/admin/housekeeping/today" className="btn-secondary text-sm">
-            <SprayCan className="w-4 h-4" /> Today
-          </Link>
+    <div className={embedded ? 'space-y-4' : 'space-y-6'}>
+      {!embedded ? (
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Cleans history</h1>
+            <p className="mt-1 text-sm text-gray-500">
+              {isAgent
+                ? 'Past cleans assigned to you — when units were marked ready.'
+                : 'Past pre-arrival cleans by check-in date.'}
+            </p>
+          </div>
           <button type="button" className="btn-secondary text-sm" onClick={() => refetch()} disabled={isFetching}>
             Refresh
           </button>
         </div>
-      </div>
+      ) : (
+        <div className="flex items-center justify-end">
+          <button type="button" className="btn-secondary text-sm" onClick={() => refetch()} disabled={isFetching}>
+            Refresh
+          </button>
+        </div>
+      )}
 
       <div className="card p-4 flex flex-wrap items-end gap-3">
         <div>
@@ -130,4 +129,8 @@ export default function HkCleansHistory() {
       )}
     </div>
   );
+}
+
+export default function HkCleansHistory() {
+  return <CleansHistorySection />;
 }
