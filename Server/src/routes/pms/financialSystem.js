@@ -24,7 +24,7 @@ const {
 
 const router = express.Router();
 
-const MANUAL_ENTRY_TYPES = new Set(['revenue', 'expense', 'miscellaneous']);
+const MANUAL_ENTRY_TYPES = new Set(['revenue', 'expense']);
 
 function dateRange(req) {
   const from = clampFromDate(req.query.from_date);
@@ -718,7 +718,7 @@ router.post('/financial-system/manual-entries', requireRoles('admin'), async (re
   try {
     const entryType = String(req.body.entry_type || '').toLowerCase();
     if (!MANUAL_ENTRY_TYPES.has(entryType)) {
-      return res.status(400).json({ error: 'entry_type must be revenue, expense, or miscellaneous' });
+      return res.status(400).json({ error: 'entry_type must be revenue or expense' });
     }
 
     const amount = parseFloat(req.body.amount);
@@ -736,20 +736,15 @@ router.post('/financial-system/manual-entries', requireRoles('admin'), async (re
       return res.status(400).json({ error: `entry_date cannot be before ${FINANCIAL_EPOCH}` });
     }
 
-    let miscFlow = null;
-    if (entryType === 'miscellaneous') {
-      miscFlow = String(req.body.misc_flow || 'in').toLowerCase() === 'out' ? 'out' : 'in';
-    }
-
     const unitId = req.body.unit_id || null;
     const notes = req.body.notes ? String(req.body.notes).trim() : null;
 
     const { rows } = await query(
       `INSERT INTO financial_manual_entries
          (entry_type, misc_flow, description, amount, entry_date, notes, unit_id, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       VALUES ($1, NULL, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [entryType, miscFlow, description, amount, entryDate, notes, unitId, req.user.id]
+      [entryType, description, amount, entryDate, notes, unitId, req.user.id]
     );
 
     res.status(201).json(rows[0]);

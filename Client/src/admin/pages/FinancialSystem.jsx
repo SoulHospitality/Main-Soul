@@ -37,7 +37,6 @@ const TABS = [
 const ENTRY_TYPE_LABELS = {
   revenue: 'Custom revenue',
   expense: 'Custom expense',
-  miscellaneous: 'Miscellaneous',
 };
 
 function KpiCard({ label, amount, sub, tone = 'slate' }) {
@@ -168,13 +167,10 @@ function OverviewTab({ fromDate, toDate, rangeParams }) {
         </div>
       </div>
 
-      {(data?.manual?.revenue > 0 ||
-        data?.manual?.expense > 0 ||
-        data?.manual?.misc_in > 0 ||
-        data?.manual?.misc_out > 0) && (
+      {(data?.manual?.revenue > 0 || data?.manual?.expense > 0) && (
         <div>
           <h3 className="text-sm font-semibold text-gray-700 mb-3">Manual adjustments</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="card p-4 border-l-4 border-emerald-400">
               <p className="text-xs uppercase tracking-wider text-gray-500">Custom revenue</p>
               <p className="text-xl font-bold mt-1 tabular-nums text-emerald-800">
@@ -185,18 +181,6 @@ function OverviewTab({ fromDate, toDate, rangeParams }) {
               <p className="text-xs uppercase tracking-wider text-gray-500">Custom expense</p>
               <p className="text-xl font-bold mt-1 tabular-nums text-rose-800">
                 {currency(data.manual.expense)}
-              </p>
-            </div>
-            <div className="card p-4 border-l-4 border-sky-400">
-              <p className="text-xs uppercase tracking-wider text-gray-500">Miscellaneous in</p>
-              <p className="text-xl font-bold mt-1 tabular-nums text-sky-800">
-                {currency(data.manual.misc_in)}
-              </p>
-            </div>
-            <div className="card p-4 border-l-4 border-orange-400">
-              <p className="text-xs uppercase tracking-wider text-gray-500">Miscellaneous out</p>
-              <p className="text-xl font-bold mt-1 tabular-nums text-orange-800">
-                {currency(data.manual.misc_out)}
               </p>
             </div>
           </div>
@@ -647,7 +631,6 @@ function ManualEntriesTab({ fromDate, toDate, rangeParams }) {
   const [deleteId, setDeleteId] = useState(null);
   const [form, setForm] = useState({
     entry_type: 'revenue',
-    misc_flow: 'in',
     description: '',
     amount: '',
     entry_date: new Date().toISOString().slice(0, 10),
@@ -676,7 +659,6 @@ function ManualEntriesTab({ fromDate, toDate, rangeParams }) {
       setShowForm(false);
       setForm({
         entry_type: 'revenue',
-        misc_flow: 'in',
         description: '',
         amount: '',
         entry_date: new Date().toISOString().slice(0, 10),
@@ -712,7 +694,6 @@ function ManualEntriesTab({ fromDate, toDate, rangeParams }) {
     }
     createEntry.mutate({
       entry_type: form.entry_type,
-      misc_flow: form.entry_type === 'miscellaneous' ? form.misc_flow : undefined,
       description: form.description.trim(),
       amount,
       entry_date: form.entry_date,
@@ -730,7 +711,7 @@ function ManualEntriesTab({ fromDate, toDate, rangeParams }) {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="font-semibold text-gray-900">Manual revenue, expense & miscellaneous</h3>
+          <h3 className="font-semibold text-gray-900">Manual revenue & expense</h3>
           <p className="text-xs text-gray-500 mt-1">
             One-off lines that are not tied to a booking — posted to the ledger automatically
           </p>
@@ -741,13 +722,10 @@ function ManualEntriesTab({ fromDate, toDate, rangeParams }) {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 gap-3">
         {[
           ['Custom revenue', totals.revenue, 'text-emerald-700'],
           ['Custom expense', totals.expense, 'text-rose-700'],
-          ['Misc in', totals.misc_in, 'text-sky-700'],
-          ['Misc out', totals.misc_out, 'text-orange-700'],
-          ['Misc net', totals.misc_net, 'text-gray-800'],
         ].map(([label, value, tone]) => (
           <div key={label} className="rounded-xl border border-gray-100 bg-white px-4 py-3">
             <p className="text-[11px] uppercase tracking-wider text-gray-400">{label}</p>
@@ -786,16 +764,10 @@ function ManualEntriesTab({ fromDate, toDate, rangeParams }) {
                         className={`text-xs px-2 py-0.5 rounded-full ${
                           row.entry_type === 'revenue'
                             ? 'bg-emerald-100 text-emerald-800'
-                            : row.entry_type === 'expense'
-                              ? 'bg-rose-100 text-rose-800'
-                              : row.misc_flow === 'out'
-                                ? 'bg-orange-100 text-orange-800'
-                                : 'bg-sky-100 text-sky-800'
+                            : 'bg-rose-100 text-rose-800'
                         }`}
                       >
-                        {row.entry_type === 'miscellaneous'
-                          ? `Misc ${row.misc_flow === 'out' ? 'out' : 'in'}`
-                          : ENTRY_TYPE_LABELS[row.entry_type] || row.entry_type}
+                        {ENTRY_TYPE_LABELS[row.entry_type] || row.entry_type}
                       </span>
                     </td>
                     <td>
@@ -847,35 +819,20 @@ function ManualEntriesTab({ fromDate, toDate, rangeParams }) {
         }
       >
         <form id="manual-entry-form" className="space-y-5" onSubmit={handleSubmit}>
-          <div className="space-y-1.5">
-            <label className="label">Type</label>
-            <select
-              className="input w-full"
-              value={form.entry_type}
-              onChange={(e) => setForm((f) => ({ ...f, entry_type: e.target.value }))}
-            >
-              <option value="revenue">Custom revenue</option>
-              <option value="expense">Custom expense</option>
-              <option value="miscellaneous">Miscellaneous</option>
-            </select>
-          </div>
-
-          {form.entry_type === 'miscellaneous' ? (
             <div className="space-y-1.5">
-              <label className="label">Flow</label>
+              <label className="label">Type</label>
               <select
                 className="input w-full"
-                value={form.misc_flow}
-                onChange={(e) => setForm((f) => ({ ...f, misc_flow: e.target.value }))}
+                value={form.entry_type}
+                onChange={(e) => setForm((f) => ({ ...f, entry_type: e.target.value }))}
               >
-                <option value="in">Money in</option>
-                <option value="out">Money out</option>
+                <option value="revenue">Custom revenue</option>
+                <option value="expense">Custom expense</option>
               </select>
             </div>
-          ) : null}
 
-          <div className="space-y-1.5">
-            <label className="label">Description</label>
+            <div className="space-y-1.5">
+              <label className="label">Description</label>
             <input
               className="input w-full"
               value={form.description}
