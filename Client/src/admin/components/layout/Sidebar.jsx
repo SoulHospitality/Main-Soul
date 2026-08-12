@@ -19,7 +19,7 @@ const NAV_ITEMS = [
   { path: '/admin/units-for-sale',   label: 'Units for Sale',     icon: Building2,          page: 'units_sale', resaleLabel: 'Units' },
   { path: '/admin/projects',         label: 'Destinations',       icon: Building,           page: 'projects' },
   { path: '/admin/reservations',     label: 'Reservations',       icon: CalendarDays,       page: 'reservations', agentLabel: 'My Reservations' },
-  { path: '/admin/website-bookings', label: 'Website Requests',   icon: Globe,              page: 'website_bookings', badge: 'website_pending', end: true },
+      { path: '/admin/website-bookings', label: 'Website Requests',   icon: Globe,              page: 'website_bookings', badge: 'website_pending' },
   { path: '/admin/schedule',         label: 'Schedule',           icon: CalendarRange,      page: 'schedule' },
   { path: '/admin/operations', label: 'Operations', icon: KeyRound, page: 'operations' },
   { path: '/admin/housekeeping', label: 'Housekeeping', icon: Sparkles, page: 'housekeeping' },
@@ -63,7 +63,16 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
     enabled: showWebsitePending,
     refetchInterval: 30000,
   });
+  const { data: unassignedBookings = [] } = useQuery({
+    queryKey: ['website-bookings-unassigned'],
+    queryFn: () =>
+      api.get('/website-bookings', { params: { status: 'unassigned' } }).then((r) => r.data),
+    enabled: showWebsitePending,
+    refetchInterval: 30000,
+  });
   const pendingWebsiteCount = Array.isArray(pendingBookings) ? pendingBookings.length : 0;
+  const unassignedWebsiteCount = Array.isArray(unassignedBookings) ? unassignedBookings.length : 0;
+  const websiteNeedsReviewCount = pendingWebsiteCount + unassignedWebsiteCount;
 
   const handleLogout = () => {
     logout();
@@ -122,7 +131,7 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
                     user?.role === 'reservations')
                 ? item.agentLabel
                 : item.label;
-          const pendingCount = item.badge === 'website_pending' ? pendingWebsiteCount : 0;
+          const pendingCount = item.badge === 'website_pending' ? websiteNeedsReviewCount : 0;
           return (
             <NavLink
               key={item.path}
