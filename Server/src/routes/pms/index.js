@@ -48,6 +48,7 @@ router.use(authStaff);
 router.use(requirePasswordChanged);
 router.use(compat);
 router.use(require('./reportsAnalytics'));
+router.use(require('./financialSystem'));
 router.use(housekeepingOps);
 router.use(require('./opsCheckins'));
 router.use(ownerPortal);
@@ -2935,7 +2936,7 @@ router.get('/petty-cash', requireRoles('admin'), async (req, res, next) => {
       params.push(paidBy);
       sql += ` AND pc.paid_by = $${params.length}`;
     }
-    sql += ' ORDER BY pc.entry_date DESC, pc.created_at DESC LIMIT 200';
+    sql += ' ORDER BY pc.entry_date DESC, pc.created_at DESC LIMIT 5000';
     const { rows } = await query(sql, params);
     sendList(
       res,

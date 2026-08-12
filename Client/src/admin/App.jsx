@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Layout from './components/layout/Layout';
 import OwnerLayout from './components/layout/OwnerLayout';
@@ -14,14 +14,11 @@ const Reservations = lazy(() => import('./pages/Reservations'));
 const WebsiteBookings = lazy(() => import('./pages/WebsiteBookings'));
 const WebsiteBookingUnassignedPage = lazy(() => import('./pages/WebsiteBookingUnassignedPage'));
 const WebsiteBookingHistoryPage = lazy(() => import('./pages/WebsiteBookingHistoryPage'));
-const Finance = lazy(() => import('./pages/Finance'));
-const Profit = lazy(() => import('./pages/Profit'));
+const FinancialSystem = lazy(() => import('./pages/FinancialSystem'));
 const Commissions = lazy(() => import('./pages/Commissions'));
-const Expenses = lazy(() => import('./pages/Expenses'));
 const Users = lazy(() => import('./pages/Users'));
 const Profile = lazy(() => import('./pages/Profile'));
 const Schedule = lazy(() => import('./pages/Schedule'));
-const PettyCash = lazy(() => import('./pages/PettyCash'));
 const Housekeeping = lazy(() => import('./pages/Housekeeping'));
 const OpsCheckinsToday = lazy(() => import('./pages/OpsCheckinsToday'));
 const OpsCheckinsHistory = lazy(() => import('./pages/OpsCheckinsHistory'));
@@ -39,9 +36,7 @@ const OwnerPayoutsPage = lazy(() =>
 const AcquisitionPipeline = lazy(() => import('./pages/AcquisitionPipeline'));
 const ResaleSales = lazy(() => import('./pages/ResaleSales'));
 const OwnerDateBlocks = lazy(() => import('./pages/OwnerDateBlocks'));
-const OwnerSettlementsAdmin = lazy(() => import('./pages/OwnerSettlementsAdmin'));
 const PromoCodes = lazy(() => import('./pages/PromoCodes'));
-const Reports = lazy(() => import('./pages/Reports'));
 
 function PageFallback() {
   return (
@@ -76,6 +71,14 @@ function RoleRedirect() {
   return <Navigate to={defaultAdminPage(user.role)} replace />;
 }
 
+/** Preserve query string when redirecting legacy finance URLs */
+function LegacyFinanceRedirect({ tab }) {
+  const location = useLocation();
+  const qs = location.search || (tab ? `?tab=${tab}` : '');
+  const suffix = qs.includes('tab=') ? qs : tab ? `?tab=${tab}${location.search ? `&${location.search.slice(1)}` : ''}` : location.search;
+  return <Navigate to={`/admin/financial-system${suffix}`} replace />;
+}
+
 function AppRoutes() {
   return (
     <Routes>
@@ -97,17 +100,29 @@ function AppRoutes() {
       <Route path="website-bookings/unassigned" element={<ProtectedRoute page="website_bookings"><WebsiteBookingUnassignedPage /></ProtectedRoute>} />
       <Route path="website-bookings/history" element={<ProtectedRoute page="website_bookings"><WebsiteBookingHistoryPage /></ProtectedRoute>} />
       <Route path="schedule" element={<ProtectedRoute page="schedule"><Schedule /></ProtectedRoute>} />
-      <Route path="utilities" element={<Navigate to="/admin/expenses?category=utilities_cost" replace />} />
-      <Route path="finance" element={<ProtectedRoute page="finance"><Finance /></ProtectedRoute>} />
-      <Route path="profit" element={<ProtectedRoute page="profit"><Profit /></ProtectedRoute>} />
-      <Route path="reports" element={<ProtectedRoute page="reports"><Reports /></ProtectedRoute>} />
+
+      {/* Unified financial system */}
+      <Route path="financial-system" element={<ProtectedRoute page="financial_system"><FinancialSystem /></ProtectedRoute>} />
+
+      {/* Legacy finance routes → unified workspace */}
+      <Route path="finance" element={<LegacyFinanceRedirect tab="overview" />} />
+      <Route path="profit" element={<LegacyFinanceRedirect tab="overview" />} />
+      <Route path="reports" element={<LegacyFinanceRedirect tab="overview" />} />
+      <Route path="expenses" element={<LegacyFinanceRedirect tab="ledger" />} />
+      <Route path="petty-cash" element={<LegacyFinanceRedirect tab="ledger" />} />
+      <Route path="owner-settlements" element={<LegacyFinanceRedirect tab="owners" />} />
+      <Route path="owner-statement" element={<LegacyFinanceRedirect tab="owners" />} />
+      <Route path="utilities" element={<LegacyFinanceRedirect tab="ledger" />} />
+      <Route path="marketing" element={<LegacyFinanceRedirect tab="ledger" />} />
+      <Route path="salaries" element={<LegacyFinanceRedirect tab="ledger" />} />
+      <Route path="invoices" element={<LegacyFinanceRedirect tab="overview" />} />
+      <Route path="payouts" element={<LegacyFinanceRedirect tab="owners" />} />
+      <Route path="billing" element={<LegacyFinanceRedirect tab="overview" />} />
+      <Route path="transactions" element={<LegacyFinanceRedirect tab="ledger" />} />
+      <Route path="treasury" element={<LegacyFinanceRedirect tab="ledger" />} />
+      <Route path="cashflow" element={<LegacyFinanceRedirect tab="ledger" />} />
+
       <Route path="commissions" element={<ProtectedRoute page="commissions"><Commissions /></ProtectedRoute>} />
-      <Route path="expenses" element={<ProtectedRoute page="expenses"><Expenses /></ProtectedRoute>} />
-      <Route path="marketing" element={<Navigate to="/admin/expenses?category=marketing" replace />} />
-      <Route path="salaries" element={<Navigate to="/admin/expenses?category=salary" replace />} />
-      <Route path="owner-settlements" element={<ProtectedRoute page="owner_settlements"><OwnerSettlementsAdmin /></ProtectedRoute>} />
-      <Route path="owner-statement" element={<ProtectedRoute page="owner_settlements"><OwnerStatement /></ProtectedRoute>} />
-      <Route path="petty-cash" element={<ProtectedRoute page="petty_cash"><PettyCash /></ProtectedRoute>} />
       <Route path="housekeeping" element={<ProtectedRoute page="housekeeping"><Housekeeping /></ProtectedRoute>} />
       <Route path="housekeeping/today" element={<ProtectedRoute page="hk_today"><HkTodayCleans /></ProtectedRoute>} />
       <Route path="housekeeping/history" element={<ProtectedRoute page="hk_today"><HkCleansHistory /></ProtectedRoute>} />

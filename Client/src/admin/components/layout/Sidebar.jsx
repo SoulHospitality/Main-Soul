@@ -7,10 +7,10 @@ import { getRoleTheme } from '../../utils/roleTheme';
 import api from '../../api/axios';
 import {
   LayoutDashboard, Building2, CalendarDays,
-  BadgeDollarSign, Receipt, FileBarChart2, Users, UserCircle,
-  LogOut, Building, CalendarRange, Wallet,
-  TrendingUp, Sparkles, Briefcase, Globe, Tag, UserPlus, KeyRound, SprayCan,
-  History, MessageSquareText,
+  BadgeDollarSign, Users, UserCircle,
+  LogOut, Building, CalendarRange,
+  Sparkles, Briefcase, Globe, Tag, UserPlus, KeyRound, SprayCan,
+  History, MessageSquareText, Landmark, TrendingUp,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -27,17 +27,11 @@ const NAV_ITEMS = [
   { path: '/admin/ops/checkin-comments', label: 'Check-in comments', icon: MessageSquareText, page: 'ops_comments' },
   { path: '/admin/housekeeping/today', label: "Today's cleans",   icon: SprayCan,           page: 'hk_today' },
   { path: '/admin/housekeeping/history', label: 'Cleans history', icon: History,            page: 'hk_today' },
-  { path: '/admin/finance',          label: 'Finance',            icon: BadgeDollarSign,    page: 'finance' },
-  { path: '/admin/profit',           label: 'Profit',             icon: TrendingUp,         page: 'profit' },
-  { path: '/admin/reports',          label: 'Reports',            icon: FileBarChart2,      page: 'reports' },
+  { path: '/admin/financial-system', label: 'Financial System',   icon: Landmark,           page: 'financial_system' },
   { path: '/admin/commissions',      label: 'Commissions',        icon: BadgeDollarSign,    page: 'commissions', agentLabel: 'My Profit' },
   { path: '/admin/housekeeping',     label: 'Housekeeping',       icon: Sparkles,           page: 'housekeeping' },
-  { path: '/admin/petty-cash',       label: 'Petty Cash',         icon: Wallet,             page: 'petty_cash' },
-  { path: '/admin/expenses',         label: 'Expenses',           icon: Receipt,            page: 'expenses' },
   { path: '/admin/acquisition',      label: 'Owner leads',        icon: Briefcase,          page: 'acquisition', resaleLabel: 'Owners requests' },
   { path: '/admin/sales',            label: 'Sales',              icon: TrendingUp,         page: 'sales' },
-  { path: '/admin/owner-settlements', label: 'Owner Settlements', icon: FileBarChart2, page: 'owner_settlements' },
-  { path: '/admin/owner-statement',  label: 'Owner Statement',   icon: FileBarChart2, page: 'owner_settlements' },
   { path: '/admin/users',            label: 'User Management',    icon: Users,              page: 'users' },
   { path: '/admin/promo-codes',      label: 'Promo Codes',        icon: Tag,                page: 'promo_codes' },
 ];
@@ -84,7 +78,10 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
   const pendingWebsiteCount = Array.isArray(pendingBookings) ? pendingBookings.length : 0;
   const unassignedWebsiteCount = Array.isArray(unassignedBookings) ? unassignedBookings.length : 0;
 
-  const handleLogout = () => { logout(); navigate('/sign-in'); };
+  const handleLogout = () => {
+    logout();
+    navigate('/sign-in');
+  };
 
   const showLabels = isMobile || !collapsed;
   const sidebarW = isMobile ? 288 : collapsed ? 64 : 256;
@@ -145,23 +142,23 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
                 ? unassignedWebsiteCount
                 : 0;
           return (
-          <NavLink
-            key={item.path}
-            to={item.path}
-            end={Boolean(item.end)}
-            onClick={handleNavClick}
-            className={({ isActive }) =>
-              `sidebar-link ${isActive ? 'sidebar-link-active' : 'sidebar-link-inactive'} ${!showLabels ? 'justify-center px-2' : ''}`
-            }
-            title={!showLabels ? (pendingCount ? `${label} (${pendingCount} pending)` : label) : undefined}
-          >
-            <span className="relative flex-shrink-0">
-              <item.icon className="w-5 h-5" strokeWidth={1.75} />
-              {!showLabels ? <PendingCountBadge count={pendingCount} compact /> : null}
-            </span>
-            {showLabels && <span className="truncate">{label}</span>}
-            {showLabels ? <PendingCountBadge count={pendingCount} /> : null}
-          </NavLink>
+            <NavLink
+              key={item.path}
+              to={item.path}
+              end={Boolean(item.end)}
+              onClick={handleNavClick}
+              className={({ isActive }) =>
+                `sidebar-link ${isActive ? 'sidebar-link-active' : 'sidebar-link-inactive'} ${!showLabels ? 'justify-center px-2' : ''}`
+              }
+              title={!showLabels ? (pendingCount ? `${label} (${pendingCount} pending)` : label) : undefined}
+            >
+              <span className="relative flex-shrink-0">
+                <item.icon className="w-5 h-5" strokeWidth={1.75} />
+                {!showLabels ? <PendingCountBadge count={pendingCount} compact /> : null}
+              </span>
+              {showLabels && <span className="truncate">{label}</span>}
+              {showLabels ? <PendingCountBadge count={pendingCount} /> : null}
+            </NavLink>
           );
         })}
       </nav>

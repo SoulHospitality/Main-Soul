@@ -225,6 +225,11 @@ export function canAccessFinance(user) {
   return !!user && user.role === 'admin';
 }
 
+/** Admin unified financial system workspace */
+export function canAccessFinancialSystem(user) {
+  return !!user && user.role === 'admin';
+}
+
 export function canManageUsers(user) {
   return !!user && (user.role === 'admin' || user.role === 'hr');
 }
