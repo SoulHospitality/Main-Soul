@@ -116,7 +116,7 @@ function AppRoutes() {
       <Route path="profit" element={<LegacyFinanceRedirect tab="overview" />} />
       <Route path="reports" element={<LegacyFinanceRedirect tab="overview" />} />
       <Route path="expenses" element={<LegacyFinanceRedirect tab="manual" />} />
-      <Route path="petty-cash" element={<LegacyFinanceRedirect tab="ledger" />} />
+      <Route path="petty-cash" element={<LegacyFinanceRedirect tab="petty-cash" />} />
       <Route path="owner-settlements" element={<LegacyFinanceRedirect tab="owners" />} />
       <Route path="owner-statement" element={<LegacyFinanceRedirect tab="owners" />} />
       <Route path="utilities" element={<LegacyFinanceRedirect tab="ledger" />} />

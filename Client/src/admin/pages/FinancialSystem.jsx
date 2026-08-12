@@ -13,6 +13,7 @@ import {
   PenLine,
   Plus,
   Trash2,
+  Wallet,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
@@ -24,12 +25,14 @@ import { currency, formatDate } from '../utils/formatters';
 import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
 import { accountsByGroup } from '../../lib/finance/chartOfAccounts';
 import { VAT_OUTPUT_PCT, WHT_STANDARD_PCT, WHT_REDUCED_PCT } from '../../lib/finance/taxEngine';
+import { PettyCashSection } from './PettyCash';
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'splits', label: 'Booking splits', icon: SplitSquareHorizontal },
   { id: 'owners', label: 'Owner payouts', icon: FileText },
   { id: 'manual', label: 'Manual entries', icon: PenLine },
+  { id: 'petty-cash', label: 'Petty cash', icon: Wallet },
   { id: 'ledger', label: 'Accounts', icon: BookOpen },
   { id: 'tax', label: 'Tax', icon: Scale },
 ];
@@ -1009,7 +1012,8 @@ const TAB_ALIASES = {
   accounts: 'ledger',
   manual: 'manual',
   expenses: 'manual',
-  'petty-cash': 'ledger',
+  'petty-cash': 'petty-cash',
+  petty: 'petty-cash',
   tax: 'tax',
   reports: 'overview',
 };
@@ -1087,6 +1091,7 @@ export default function FinancialSystem() {
       {activeTab === 'manual' && (
         <ManualEntriesTab fromDate={fromDate} toDate={toDate} rangeParams={rangeParams} />
       )}
+      {activeTab === 'petty-cash' && <PettyCashSection embedded />}
       {activeTab === 'ledger' && <LedgerTab rangeParams={rangeParams} />}
       {activeTab === 'tax' && <TaxTab rangeParams={rangeParams} />}
     </div>
