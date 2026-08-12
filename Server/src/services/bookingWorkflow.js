@@ -253,6 +253,17 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
         ]
       );
       reservationId = inserted[0]?.id || null;
+      if (reservationId) {
+        try {
+          const { rows: full } = await query(`SELECT * FROM reservations WHERE id = $1`, [
+            reservationId,
+          ]);
+          const { syncBlocksForReservation } = require('../lib/reservationBlocks');
+          await syncBlocksForReservation(full[0]);
+        } catch (err) {
+          console.warn('[bookingWorkflow] block sync failed', err.message);
+        }
+      }
     } else {
       reservationId = existing.rows[0].id;
       await query(
@@ -268,6 +279,15 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
          WHERE booking_id = $1`,
         [bookingId, assignee, amountPaid, paymentStatus, evidenceUrl, evidenceName]
       );
+      try {
+        const { rows: full } = await query(`SELECT * FROM reservations WHERE id = $1`, [
+          reservationId,
+        ]);
+        const { syncBlocksForReservation } = require('../lib/reservationBlocks');
+        await syncBlocksForReservation(full[0]);
+      } catch (err) {
+        console.warn('[bookingWorkflow] block sync failed', err.message);
+      }
     }
   }
 
@@ -417,6 +437,17 @@ async function rejectWebsiteBooking(bookingId, staffUser, reason = '') {
      WHERE booking_id = $1`,
     [bookingId, `[rejected] ${reasonText}`]
   );
+
+  try {
+    const { rows: cancelled } = await query(
+      `SELECT * FROM reservations WHERE booking_id = $1`,
+      [bookingId]
+    );
+    const { syncBlocksForReservation } = require('../lib/reservationBlocks');
+    for (const r of cancelled) await syncBlocksForReservation(r);
+  } catch (err) {
+    console.warn('[bookingWorkflow] block release on reject failed', err.message);
+  }
 
   return updated;
 }

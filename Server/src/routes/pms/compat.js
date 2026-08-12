@@ -1660,6 +1660,12 @@ router.put(
           : null,
       ]
     );
+    try {
+      const { resyncReservationBlocks } = require('../../lib/reservationBlocks');
+      await resyncReservationBlocks(existing, rows[0]);
+    } catch (err) {
+      console.warn('[reservations] block resync failed', err.message);
+    }
     res.json(rows[0]);
   } catch (e) {
     next(e);

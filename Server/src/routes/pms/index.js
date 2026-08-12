@@ -1713,6 +1713,13 @@ router.post(
       }
     }
 
+    try {
+      const { syncBlocksForReservation } = require('../../lib/reservationBlocks');
+      await syncBlocksForReservation(reservation);
+    } catch (err) {
+      console.warn('[reservations] block sync failed', err.message);
+    }
+
     await logAudit({
       userId: req.user.id,
       action: 'CREATE_RESERVATION',
@@ -1843,6 +1850,12 @@ router.patch(
         req.params.id,
       ]
     );
+    try {
+      const { resyncReservationBlocks } = require('../../lib/reservationBlocks');
+      await resyncReservationBlocks(existing, rows[0]);
+    } catch (err) {
+      console.warn('[reservations] block resync failed', err.message);
+    }
     res.json(rows[0]);
   } catch (e) {
     next(e);
@@ -1957,6 +1970,15 @@ router.delete(
     );
     const { rows } = await query(`DELETE FROM reservations WHERE id = $1 RETURNING *`, [id]);
 
+    try {
+      const { resyncReservationBlocks } = require('../../lib/reservationBlocks');
+      if (rows[0]) {
+        await resyncReservationBlocks(rows[0], { ...rows[0], status: 'cancelled' });
+      }
+    } catch (err) {
+      console.warn('[reservations] block release on delete failed', err.message);
+    }
+
     
     if (bookingId) {
       const { cancelWebsiteBooking } = require('../../services/bookingWorkflow');
@@ -2017,6 +2039,13 @@ router.post(
       );
     } catch (_) {}
 
+    try {
+      const { syncBlocksForReservation } = require('../../lib/reservationBlocks');
+      await syncBlocksForReservation(rows[0]);
+    } catch (err) {
+      console.warn('[reservations] block release on cancel failed', err.message);
+    }
+
     if (rows[0].booking_id) {
       const { cancelWebsiteBooking } = require('../../services/bookingWorkflow');
       await cancelWebsiteBooking(rows[0].booking_id, reason || 'cancel_request');
@@ -2055,6 +2084,13 @@ router.post('/reservations/:id/reject-cancel', requireRoles('admin'), async (req
          WHERE id = $1 AND status = 'cancelled'`,
         [rows[0].booking_id]
       );
+    }
+
+    try {
+      const { syncBlocksForReservation } = require('../../lib/reservationBlocks');
+      await syncBlocksForReservation(rows[0]);
+    } catch (err) {
+      console.warn('[reservations] block sync on reject-cancel failed', err.message);
     }
 
     res.json(rows[0]);
