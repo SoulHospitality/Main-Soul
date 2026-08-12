@@ -24,6 +24,8 @@ const {
 
 const router = express.Router();
 
+const MANUAL_ENTRY_TYPES = new Set(['revenue', 'expense', 'miscellaneous']);
+
 function dateRange(req) {
   const from = clampFromDate(req.query.from_date);
   const to = req.query.to_date || null;
@@ -84,6 +86,95 @@ function journalLine(account, debit, credit, memo) {
     debit,
     credit,
     memo,
+  };
+}
+
+async function loadManualEntries(from, to) {
+  const params = [from];
+  let where = 'm.entry_date >= $1::date';
+  if (to) {
+    params.push(to);
+    where += ` AND m.entry_date <= $${params.length}::date`;
+  }
+  try {
+    const { rows } = await query(
+      `SELECT m.*,
+              COALESCE(u.unit_number, u.title) AS unit_name,
+              su.full_name AS created_by_name
+       FROM financial_manual_entries m
+       LEFT JOIN units u ON u.id = m.unit_id
+       LEFT JOIN staff_users su ON su.id = m.created_by
+       WHERE ${where}
+       ORDER BY m.entry_date DESC, m.created_at DESC`,
+      params
+    );
+    return rows;
+  } catch (e) {
+    if (e.code === '42P01') return [];
+    throw e;
+  }
+}
+
+function summarizeManualEntries(entries) {
+  let revenue = 0;
+  let expense = 0;
+  let miscIn = 0;
+  let miscOut = 0;
+  for (const e of entries) {
+    const amt = parseFloat(e.amount) || 0;
+    if (e.entry_type === 'revenue') revenue += amt;
+    else if (e.entry_type === 'expense') expense += amt;
+    else if (e.misc_flow === 'out') miscOut += amt;
+    else miscIn += amt;
+  }
+  return {
+    revenue: round2(revenue),
+    expense: round2(expense),
+    misc_in: round2(miscIn),
+    misc_out: round2(miscOut),
+    misc_net: round2(miscIn - miscOut),
+  };
+}
+
+function manualJournalEntry(row) {
+  const amt = parseFloat(row.amount) || 0;
+  const ref = `MAN-${row.id}`;
+  let lines = [];
+  let type = 'manual';
+
+  if (row.entry_type === 'revenue') {
+    lines = [
+      journalLine('101000', amt, 0, 'Manual revenue received'),
+      journalLine('409000', 0, amt, row.description),
+    ];
+    type = 'manual_revenue';
+  } else if (row.entry_type === 'expense') {
+    lines = [
+      journalLine('503000', amt, 0, row.description),
+      journalLine('201000', 0, amt, 'Manual expense paid'),
+    ];
+    type = 'manual_expense';
+  } else if (row.misc_flow === 'out') {
+    lines = [
+      journalLine('503000', amt, 0, row.description),
+      journalLine('101000', 0, amt, 'Miscellaneous expense'),
+    ];
+    type = 'miscellaneous';
+  } else {
+    lines = [
+      journalLine('101000', amt, 0, 'Miscellaneous income'),
+      journalLine('409000', 0, amt, row.description),
+    ];
+    type = 'miscellaneous';
+  }
+
+  return {
+    id: ref,
+    date: row.entry_date,
+    type,
+    reference: ref,
+    description: row.description,
+    lines,
   };
 }
 
@@ -208,6 +299,9 @@ router.get('/financial-system/overview', requireRoles('admin'), async (req, res,
       /* table optional */
     }
 
+    const manualEntries = await loadManualEntries(from, to);
+    const manualTotals = summarizeManualEntries(manualEntries);
+
     res.json({
       from_date: from,
       to_date: to,
@@ -246,7 +340,13 @@ router.get('/financial-system/overview', requireRoles('admin'), async (req, res,
         expenses_payable: round2(expensesPayable),
         petty_cash_out: round2(pettyCash),
         pending_owner_payouts: round2(pendingPayouts),
+        manual_revenue: manualTotals.revenue,
+        manual_expense: manualTotals.expense,
+        manual_misc_in: manualTotals.misc_in,
+        manual_misc_out: manualTotals.misc_out,
+        manual_misc_net: manualTotals.misc_net,
       },
+      manual: manualTotals,
     });
   } catch (e) {
     next(e);
@@ -444,6 +544,11 @@ router.get('/financial-system/ledger', requireRoles('admin'), async (req, res, n
       });
     }
 
+    const manualEntries = await loadManualEntries(from, to);
+    for (const m of manualEntries) {
+      journal.push(manualJournalEntry(m));
+    }
+
     journal.sort((a, b) => String(b.date).localeCompare(String(a.date)));
 
     const balances = {};
@@ -528,6 +633,7 @@ router.get('/financial-system/tax', requireRoles('admin'), async (req, res, next
 /** GET /financial-system/export */
 router.get('/financial-system/export', requireRoles('admin'), async (req, res, next) => {
   try {
+    const { from, to } = dateRange(req);
     const rows = await loadReservations(req);
     const sheetRows = rows.map((r) => {
       const fin = calcReservationFinancials(r, r);
@@ -547,9 +653,29 @@ router.get('/financial-system/export', requireRoles('admin'), async (req, res, n
       };
     });
 
-    const ws = XLSX.utils.json_to_sheet(sheetRows);
+    const manualEntries = await loadManualEntries(from, to);
+    const manualRows = manualEntries.map((m) => ({
+      ID: m.id,
+      Date: m.entry_date,
+      Type: m.entry_type,
+      Flow: m.misc_flow || '',
+      Description: m.description,
+      Amount: m.amount,
+      Unit: m.unit_name || '',
+      Notes: m.notes || '',
+    }));
+
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Financial System');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheetRows), 'Bookings');
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(
+        manualRows.length
+          ? manualRows
+          : [{ Date: '', Type: '', Description: '', Amount: '', Notes: 'No manual entries' }]
+      ),
+      'Manual entries'
+    );
     const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
     res.setHeader(
       'Content-Type',
@@ -571,6 +697,76 @@ router.get('/financial-system/units', requireRoles('admin'), async (_req, res, n
        FROM units ORDER BY project, unit_name`
     );
     res.json(rows);
+  } catch (e) {
+    next(e);
+  }
+});
+
+/** GET /financial-system/manual-entries */
+router.get('/financial-system/manual-entries', requireRoles('admin'), async (req, res, next) => {
+  try {
+    const { from, to } = dateRange(req);
+    const entries = await loadManualEntries(from, to);
+    res.json({ entries, totals: summarizeManualEntries(entries), from_date: from, to_date: to });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/** POST /financial-system/manual-entries */
+router.post('/financial-system/manual-entries', requireRoles('admin'), async (req, res, next) => {
+  try {
+    const entryType = String(req.body.entry_type || '').toLowerCase();
+    if (!MANUAL_ENTRY_TYPES.has(entryType)) {
+      return res.status(400).json({ error: 'entry_type must be revenue, expense, or miscellaneous' });
+    }
+
+    const amount = parseFloat(req.body.amount);
+    if (!(amount > 0)) {
+      return res.status(400).json({ error: 'amount must be greater than zero' });
+    }
+
+    const description = String(req.body.description || '').trim();
+    if (!description) {
+      return res.status(400).json({ error: 'description is required' });
+    }
+
+    const entryDate = req.body.entry_date || new Date().toISOString().slice(0, 10);
+    if (String(entryDate) < FINANCIAL_EPOCH) {
+      return res.status(400).json({ error: `entry_date cannot be before ${FINANCIAL_EPOCH}` });
+    }
+
+    let miscFlow = null;
+    if (entryType === 'miscellaneous') {
+      miscFlow = String(req.body.misc_flow || 'in').toLowerCase() === 'out' ? 'out' : 'in';
+    }
+
+    const unitId = req.body.unit_id || null;
+    const notes = req.body.notes ? String(req.body.notes).trim() : null;
+
+    const { rows } = await query(
+      `INSERT INTO financial_manual_entries
+         (entry_type, misc_flow, description, amount, entry_date, notes, unit_id, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING *`,
+      [entryType, miscFlow, description, amount, entryDate, notes, unitId, req.user.id]
+    );
+
+    res.status(201).json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+/** DELETE /financial-system/manual-entries/:id */
+router.delete('/financial-system/manual-entries/:id', requireRoles('admin'), async (req, res, next) => {
+  try {
+    const { rows } = await query(
+      `DELETE FROM financial_manual_entries WHERE id = $1 RETURNING id`,
+      [req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Entry not found' });
+    res.json({ ok: true, id: rows[0].id });
   } catch (e) {
     next(e);
   }

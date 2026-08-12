@@ -10,11 +10,15 @@ import {
   Scale,
   Download,
   CheckCircle2,
+  PenLine,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import SearchableSelect from '../components/ui/SearchableSelect';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { currency, formatDate } from '../utils/formatters';
 import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
 import { accountsByGroup } from '../../lib/finance/chartOfAccounts';
@@ -24,9 +28,16 @@ const TABS = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'splits', label: 'Booking splits', icon: SplitSquareHorizontal },
   { id: 'owners', label: 'Owner payouts', icon: FileText },
+  { id: 'manual', label: 'Manual entries', icon: PenLine },
   { id: 'ledger', label: 'Accounts', icon: BookOpen },
   { id: 'tax', label: 'Tax', icon: Scale },
 ];
+
+const ENTRY_TYPE_LABELS = {
+  revenue: 'Custom revenue',
+  expense: 'Custom expense',
+  miscellaneous: 'Miscellaneous',
+};
 
 function KpiCard({ label, amount, sub, tone = 'slate' }) {
   const tones = {
@@ -155,6 +166,41 @@ function OverviewTab({ fromDate, toDate, rangeParams }) {
           </div>
         </div>
       </div>
+
+      {(data?.manual?.revenue > 0 ||
+        data?.manual?.expense > 0 ||
+        data?.manual?.misc_in > 0 ||
+        data?.manual?.misc_out > 0) && (
+        <div>
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Manual adjustments</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+            <div className="card p-4 border-l-4 border-emerald-400">
+              <p className="text-xs uppercase tracking-wider text-gray-500">Custom revenue</p>
+              <p className="text-xl font-bold mt-1 tabular-nums text-emerald-800">
+                {currency(data.manual.revenue)}
+              </p>
+            </div>
+            <div className="card p-4 border-l-4 border-rose-400">
+              <p className="text-xs uppercase tracking-wider text-gray-500">Custom expense</p>
+              <p className="text-xl font-bold mt-1 tabular-nums text-rose-800">
+                {currency(data.manual.expense)}
+              </p>
+            </div>
+            <div className="card p-4 border-l-4 border-sky-400">
+              <p className="text-xs uppercase tracking-wider text-gray-500">Miscellaneous in</p>
+              <p className="text-xl font-bold mt-1 tabular-nums text-sky-800">
+                {currency(data.manual.misc_in)}
+              </p>
+            </div>
+            <div className="card p-4 border-l-4 border-orange-400">
+              <p className="text-xs uppercase tracking-wider text-gray-500">Miscellaneous out</p>
+              <p className="text-xl font-bold mt-1 tabular-nums text-orange-800">
+                {currency(data.manual.misc_out)}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -552,7 +598,7 @@ function LedgerTab({ rangeParams }) {
       <div className="card p-0 overflow-hidden">
         <div className="px-6 py-4 border-b">
           <h3 className="font-semibold">Transaction log</h3>
-          <p className="text-xs text-gray-500">Bookings and expenses posted automatically</p>
+          <p className="text-xs text-gray-500">Bookings, expenses, and manual entries</p>
         </div>
         <div className="divide-y max-h-[520px] overflow-y-auto">
           {journal.length === 0 ? (
@@ -590,6 +636,324 @@ function LedgerTab({ rangeParams }) {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function ManualEntriesTab({ fromDate, toDate, rangeParams }) {
+  const qc = useQueryClient();
+  const [showForm, setShowForm] = useState(false);
+  const [deleteId, setDeleteId] = useState(null);
+  const [form, setForm] = useState({
+    entry_type: 'revenue',
+    misc_flow: 'in',
+    description: '',
+    amount: '',
+    entry_date: new Date().toISOString().slice(0, 10),
+    notes: '',
+    unit_id: '',
+  });
+
+  const { data: units = [] } = useQuery({
+    queryKey: ['financial-system-units'],
+    queryFn: () => api.get('/financial-system/units').then((r) => r.data),
+  });
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['financial-system-manual', fromDate, toDate],
+    queryFn: () =>
+      api.get('/financial-system/manual-entries', { params: rangeParams }).then((r) => r.data),
+  });
+
+  const createEntry = useMutation({
+    mutationFn: (payload) => api.post('/financial-system/manual-entries', payload),
+    onSuccess: () => {
+      toast.success('Entry added');
+      qc.invalidateQueries({ queryKey: ['financial-system-manual'] });
+      qc.invalidateQueries({ queryKey: ['financial-system-overview'] });
+      qc.invalidateQueries({ queryKey: ['financial-system-ledger'] });
+      setShowForm(false);
+      setForm({
+        entry_type: 'revenue',
+        misc_flow: 'in',
+        description: '',
+        amount: '',
+        entry_date: new Date().toISOString().slice(0, 10),
+        notes: '',
+        unit_id: '',
+      });
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed to save entry'),
+  });
+
+  const removeEntry = useMutation({
+    mutationFn: (id) => api.delete(`/financial-system/manual-entries/${id}`),
+    onSuccess: () => {
+      toast.success('Entry removed');
+      qc.invalidateQueries({ queryKey: ['financial-system-manual'] });
+      qc.invalidateQueries({ queryKey: ['financial-system-overview'] });
+      qc.invalidateQueries({ queryKey: ['financial-system-ledger'] });
+      setDeleteId(null);
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed to delete'),
+  });
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    const amount = parseFloat(form.amount);
+    if (!(amount > 0)) {
+      toast.error('Enter a valid amount');
+      return;
+    }
+    if (!form.description.trim()) {
+      toast.error('Description is required');
+      return;
+    }
+    createEntry.mutate({
+      entry_type: form.entry_type,
+      misc_flow: form.entry_type === 'miscellaneous' ? form.misc_flow : undefined,
+      description: form.description.trim(),
+      amount,
+      entry_date: form.entry_date,
+      notes: form.notes.trim() || undefined,
+      unit_id: form.unit_id || undefined,
+    });
+  }
+
+  if (isLoading) return <LoadingSpinner />;
+
+  const entries = data?.entries || [];
+  const totals = data?.totals || {};
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="font-semibold text-gray-900">Manual revenue, expense & miscellaneous</h3>
+          <p className="text-xs text-gray-500 mt-1">
+            One-off lines that are not tied to a booking — posted to the ledger automatically
+          </p>
+        </div>
+        <button type="button" className="btn-primary text-sm" onClick={() => setShowForm(true)}>
+          <Plus className="w-4 h-4" />
+          Add entry
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        {[
+          ['Custom revenue', totals.revenue, 'text-emerald-700'],
+          ['Custom expense', totals.expense, 'text-rose-700'],
+          ['Misc in', totals.misc_in, 'text-sky-700'],
+          ['Misc out', totals.misc_out, 'text-orange-700'],
+          ['Misc net', totals.misc_net, 'text-gray-800'],
+        ].map(([label, value, tone]) => (
+          <div key={label} className="rounded-xl border border-gray-100 bg-white px-4 py-3">
+            <p className="text-[11px] uppercase tracking-wider text-gray-400">{label}</p>
+            <p className={`text-sm font-bold tabular-nums mt-0.5 ${tone}`}>{currency(value || 0)}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="card p-0 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="table text-sm">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Type</th>
+                <th>Description</th>
+                <th>Unit</th>
+                <th className="text-right">Amount</th>
+                <th>Added by</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {entries.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="text-center text-gray-400 py-8">
+                    No manual entries in this period
+                  </td>
+                </tr>
+              ) : (
+                entries.map((row) => (
+                  <tr key={row.id}>
+                    <td className="whitespace-nowrap">{formatDate(row.entry_date)}</td>
+                    <td>
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded-full ${
+                          row.entry_type === 'revenue'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : row.entry_type === 'expense'
+                              ? 'bg-rose-100 text-rose-800'
+                              : row.misc_flow === 'out'
+                                ? 'bg-orange-100 text-orange-800'
+                                : 'bg-sky-100 text-sky-800'
+                        }`}
+                      >
+                        {row.entry_type === 'miscellaneous'
+                          ? `Misc ${row.misc_flow === 'out' ? 'out' : 'in'}`
+                          : ENTRY_TYPE_LABELS[row.entry_type] || row.entry_type}
+                      </span>
+                    </td>
+                    <td>
+                      <div className="font-medium text-gray-900">{row.description}</div>
+                      {row.notes ? (
+                        <div className="text-xs text-gray-500 mt-0.5">{row.notes}</div>
+                      ) : null}
+                    </td>
+                    <td className="text-xs text-gray-500">{row.unit_name || '—'}</td>
+                    <td className="text-right tabular-nums font-semibold">{currency(row.amount)}</td>
+                    <td className="text-xs text-gray-500">{row.created_by_name || '—'}</td>
+                    <td className="text-right">
+                      <button
+                        type="button"
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-50"
+                        onClick={() => setDeleteId(row.id)}
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {showForm ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+          <form
+            className="card w-full max-w-lg p-6 space-y-4 shadow-xl"
+            onSubmit={handleSubmit}
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900">Add manual entry</h3>
+              <button
+                type="button"
+                className="text-gray-400 hover:text-gray-600"
+                onClick={() => setShowForm(false)}
+              >
+                ×
+              </button>
+            </div>
+
+            <div>
+              <label className="label">Type</label>
+              <select
+                className="input w-full"
+                value={form.entry_type}
+                onChange={(e) => setForm((f) => ({ ...f, entry_type: e.target.value }))}
+              >
+                <option value="revenue">Custom revenue</option>
+                <option value="expense">Custom expense</option>
+                <option value="miscellaneous">Miscellaneous</option>
+              </select>
+            </div>
+
+            {form.entry_type === 'miscellaneous' ? (
+              <div>
+                <label className="label">Flow</label>
+                <select
+                  className="input w-full"
+                  value={form.misc_flow}
+                  onChange={(e) => setForm((f) => ({ ...f, misc_flow: e.target.value }))}
+                >
+                  <option value="in">Money in</option>
+                  <option value="out">Money out</option>
+                </select>
+              </div>
+            ) : null}
+
+            <div>
+              <label className="label">Description</label>
+              <input
+                className="input w-full"
+                value={form.description}
+                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                placeholder="What is this for?"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">Amount (EGP)</label>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  className="input w-full"
+                  value={form.amount}
+                  onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+                  required
+                />
+              </div>
+              <div>
+                <label className="label">Date</label>
+                <input
+                  type="date"
+                  className="input w-full"
+                  min={FINANCIAL_EPOCH}
+                  value={form.entry_date}
+                  onChange={(e) => setForm((f) => ({ ...f, entry_date: e.target.value }))}
+                  required
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="label">Unit (optional)</label>
+              <SearchableSelect
+                className="w-full"
+                value={form.unit_id}
+                onChange={(v) => setForm((f) => ({ ...f, unit_id: v }))}
+                placeholder="Not linked to a unit"
+                options={[
+                  { value: '', label: 'Not linked to a unit' },
+                  ...units.map((u) => ({
+                    value: String(u.id),
+                    label: `${u.project ? `${u.project} — ` : ''}${u.unit_name}`,
+                  })),
+                ]}
+              />
+            </div>
+
+            <div>
+              <label className="label">Notes (optional)</label>
+              <textarea
+                className="input w-full min-h-[72px]"
+                value={form.notes}
+                onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+                placeholder="Internal notes"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>
+                Cancel
+              </button>
+              <button type="submit" className="btn-primary" disabled={createEntry.isPending}>
+                {createEntry.isPending ? 'Saving…' : 'Save entry'}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
+      <ConfirmDialog
+        open={!!deleteId}
+        onClose={() => setDeleteId(null)}
+        title="Delete manual entry?"
+        message="This removes the line from the ledger for this period."
+        confirmText="Delete"
+        danger
+        onConfirm={() => removeEntry.mutate(deleteId)}
+        loading={removeEntry.isPending}
+      />
     </div>
   );
 }
@@ -689,7 +1053,8 @@ const TAB_ALIASES = {
   statement: 'owners',
   ledger: 'ledger',
   accounts: 'ledger',
-  expenses: 'ledger',
+  manual: 'manual',
+  expenses: 'manual',
   'petty-cash': 'ledger',
   tax: 'tax',
   reports: 'overview',
@@ -764,6 +1129,9 @@ export default function FinancialSystem() {
           toDate={toDate}
           rangeParams={rangeParams}
         />
+      )}
+      {activeTab === 'manual' && (
+        <ManualEntriesTab fromDate={fromDate} toDate={toDate} rangeParams={rangeParams} />
       )}
       {activeTab === 'ledger' && <LedgerTab rangeParams={rangeParams} />}
       {activeTab === 'tax' && <TaxTab rangeParams={rangeParams} />}
