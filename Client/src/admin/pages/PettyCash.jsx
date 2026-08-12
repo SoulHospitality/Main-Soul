@@ -822,7 +822,7 @@ export function PettyCashSection({ embedded = false }) {
           form={form}
           setForm={setForm}
           units={units}
-          owners={owners}
+          owners={owners.filter((o) => o.is_active == null || Number(o.is_active) === 1)}
           ownerUnits={ownerUnits}
         />
       </Modal>

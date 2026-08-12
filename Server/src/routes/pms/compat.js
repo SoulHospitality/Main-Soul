@@ -77,15 +77,15 @@ router.get('/users/sales', async (_req, res, next) => {
 });
 
 
-router.get('/users/owners', requireRoles('admin'), async (_req, res, next) => {
+router.get('/users/owners', requireRoles('admin', 'hr'), async (_req, res, next) => {
   try {
     const { rows } = await query(
-      `SELECT s.id, s.full_name, s.email, s.username,
+      `SELECT s.id, s.full_name, s.email, s.username, s.is_active,
               COUNT(ou.unit_id)::int AS unit_count
        FROM staff_users s
        LEFT JOIN owner_units ou ON ou.owner_id = s.id
-       WHERE s.role = 'owner' AND COALESCE(s.is_active, 1) = 1
-       GROUP BY s.id, s.full_name, s.email, s.username
+       WHERE s.role = 'owner'
+       GROUP BY s.id, s.full_name, s.email, s.username, s.is_active
        ORDER BY s.full_name`
     );
     res.json(rows);

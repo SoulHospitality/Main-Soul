@@ -1,6 +1,18 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Edit2, Trash2, Key, Users as UsersIcon, CheckCircle, XCircle, Check, X } from 'lucide-react';
+import {
+  Plus,
+  Edit2,
+  Trash2,
+  Key,
+  Users as UsersIcon,
+  UserCircle,
+  CheckCircle,
+  XCircle,
+  Check,
+  X,
+} from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import { usePermissions } from '../hooks/usePermissions';
@@ -17,11 +29,16 @@ import { getRoleTheme } from '../utils/roleTheme';
 import { currency, formatDate } from '../utils/formatters';
 import { TEMP_STAFF_PASSWORD } from '../utils/passwordRules';
 
+const TABS = [
+  { id: 'staff', label: 'Staff', icon: UsersIcon },
+  { id: 'owners', label: 'Owners', icon: UserCircle },
+];
+
 function avatarStyle(role) {
   return { background: getRoleTheme(role).avatarBg };
 }
 
-const EMPTY_FORM = {
+const EMPTY_STAFF_FORM = {
   full_name: '',
   email: '',
   role: 'reservations_manual',
@@ -30,11 +47,18 @@ const EMPTY_FORM = {
   sales_commission_pct: '',
 };
 
+const EMPTY_OWNER_FORM = {
+  full_name: '',
+  phone: '',
+  email: '',
+  is_active: 1,
+};
+
 function isReservationAgentRole(role) {
   return ['reservations_web', 'reservations_manual', 'reservations'].includes(role);
 }
 
-function UserForm({ form, setForm, isEdit, roleOptions, isAdmin }) {
+function StaffForm({ form, setForm, isEdit, roleOptions, isAdmin }) {
   const showCommission = isReservationAgentRole(form.role);
   return (
     <div className="space-y-4">
@@ -131,14 +155,87 @@ function UserForm({ form, setForm, isEdit, roleOptions, isAdmin }) {
   );
 }
 
+function OwnerForm({ form, setForm, isEdit }) {
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-slate-500">
+        {isEdit
+          ? 'Update owner profile details. Phone/login cannot be changed here.'
+          : `Creates an owner portal login. Phone is the username. Temporary password ${TEMP_STAFF_PASSWORD} — owner must change it on first login.`}
+      </p>
+      <div className="form-grid">
+        <div>
+          <label className="label">Full Name *</label>
+          <input
+            className="input"
+            value={form.full_name}
+            onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))}
+            placeholder="Owner name"
+          />
+        </div>
+        <div>
+          <label className="label">Phone {isEdit ? '' : '*'}</label>
+          <input
+            className="input"
+            value={form.phone}
+            onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+            placeholder="01xxxxxxxxx"
+            disabled={isEdit}
+          />
+          {isEdit ? (
+            <p className="mt-1 text-[11px] text-slate-400">Login username (read-only)</p>
+          ) : (
+            <p className="mt-1 text-[11px] text-slate-400">Used as the owner portal username</p>
+          )}
+        </div>
+        <div>
+          <label className="label">Email</label>
+          <input
+            type="email"
+            className="input"
+            value={form.email}
+            onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+            placeholder="Optional — auto-generated if blank"
+          />
+        </div>
+        {isEdit && (
+          <div>
+            <label className="label">Status</label>
+            <SearchableSelect
+              value={String(form.is_active)}
+              onChange={(v) => setForm((f) => ({ ...f, is_active: parseInt(v, 10) }))}
+              options={[
+                { value: '1', label: 'Active' },
+                { value: '0', label: 'Inactive' },
+              ]}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Users() {
   const qc = useQueryClient();
   const { isAdmin, role } = usePermissions();
-  const roleOptions = creatableRoles(role);
+  const staffRoleOptions = creatableRoles(role).filter((r) => r !== 'owner');
+  const canCreateOwners = isAdmin;
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawTab = searchParams.get('tab') || 'staff';
+  const activeTab = rawTab === 'owners' ? 'owners' : 'staff';
+  const isOwnersTab = activeTab === 'owners';
+
+  function setTab(id) {
+    setSearchParams({ tab: id }, { replace: true });
+  }
+
   const [search, setSearch] = useState('');
   const [filterRole, setFilterRole] = useState('');
   const [modal, setModal] = useState(null);
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [staffForm, setStaffForm] = useState(EMPTY_STAFF_FORM);
+  const [ownerForm, setOwnerForm] = useState(EMPTY_OWNER_FORM);
   const [editId, setEditId] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
   const [createdInfo, setCreatedInfo] = useState(null);
@@ -148,7 +245,21 @@ export default function Users() {
     queryFn: () => api.get('/users').then((r) => r.data),
   });
 
-  const filtered = users.filter(
+  const { data: ownerStats = [] } = useQuery({
+    queryKey: ['users-owners'],
+    queryFn: () => api.get('/users/owners').then((r) => r.data),
+    enabled: isOwnersTab,
+  });
+
+  const unitCountById = Object.fromEntries(
+    (Array.isArray(ownerStats) ? ownerStats : []).map((o) => [o.id, o.unit_count])
+  );
+
+  const scopedUsers = users.filter((u) =>
+    isOwnersTab ? u.role === 'owner' : u.role !== 'owner'
+  );
+
+  const filtered = scopedUsers.filter(
     (u) =>
       (!search ||
         u.full_name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -158,9 +269,13 @@ export default function Users() {
       (!filterRole || u.role === filterRole)
   );
 
-  const { sorted, sortKey, sortDir, handleSort } = useSortableTable(filtered, 'full_name', 'asc');
+  const { sorted, sortKey, sortDir, handleSort } = useSortableTable(
+    filtered,
+    'full_name',
+    'asc'
+  );
 
-  const saveMutation = useMutation({
+  const saveStaffMutation = useMutation({
     mutationFn: (d) => (editId ? api.put(`/users/${editId}`, d) : api.post('/users', d)),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['users'] });
@@ -176,11 +291,29 @@ export default function Users() {
     onError: (e) => toast.error(e.response?.data?.error || 'Error saving'),
   });
 
+  const saveOwnerMutation = useMutation({
+    mutationFn: (d) => (editId ? api.put(`/users/${editId}`, d) : api.post('/users', d)),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['users'] });
+      qc.invalidateQueries({ queryKey: ['users-owners'] });
+      if (!editId && res?.data) {
+        setCreatedInfo(res.data);
+        setModal('created');
+        toast.success('Owner account created');
+      } else {
+        toast.success(editId ? 'Owner updated' : 'Owner created');
+        setModal(null);
+      }
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Error saving'),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: (id) => api.delete(`/users/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['users'] });
-      toast.success('User deleted');
+      qc.invalidateQueries({ queryKey: ['users-owners'] });
+      toast.success(isOwnersTab ? 'Owner deleted' : 'User deleted');
       setDeleteId(null);
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Error'),
@@ -213,55 +346,124 @@ export default function Users() {
   });
 
   const openAdd = () => {
-    setForm({ ...EMPTY_FORM, role: roleOptions[0] || 'reservations_manual' });
     setEditId(null);
-    setModal('add');
+    if (isOwnersTab) {
+      setOwnerForm({ ...EMPTY_OWNER_FORM });
+      setModal('add-owner');
+    } else {
+      setStaffForm({ ...EMPTY_STAFF_FORM, role: staffRoleOptions[0] || 'reservations_manual' });
+      setModal('add-staff');
+    }
   };
 
   const openEdit = (u) => {
-    setForm({
-      full_name: u.full_name || '',
-      email: u.email || '',
-      role: u.role,
-      base_salary: u.base_salary ?? '',
-      is_active: u.is_active,
-      sales_commission_pct:
-        u.sales_commission_pct != null && u.sales_commission_pct !== ''
-          ? String(u.sales_commission_pct)
-          : '',
-    });
     setEditId(u.id);
-    setModal('edit');
+    if (u.role === 'owner') {
+      setOwnerForm({
+        full_name: u.full_name || '',
+        phone: u.username || '',
+        email: u.email?.includes('@soul.owners.local') ? '' : u.email || '',
+        is_active: u.is_active,
+      });
+      setModal('edit-owner');
+    } else {
+      setStaffForm({
+        full_name: u.full_name || '',
+        email: u.email || '',
+        role: u.role,
+        base_salary: u.base_salary ?? '',
+        is_active: u.is_active,
+        sales_commission_pct:
+          u.sales_commission_pct != null && u.sales_commission_pct !== ''
+            ? String(u.sales_commission_pct)
+            : '',
+      });
+      setModal('edit-staff');
+    }
   };
 
-  const handleSave = () => {
-    if (!form.full_name?.trim() || !form.email?.trim() || form.base_salary === '') {
+  const handleSaveStaff = () => {
+    if (!staffForm.full_name?.trim() || !staffForm.email?.trim() || staffForm.base_salary === '') {
       toast.error('Name, email, and base salary are required');
       return;
     }
-    if (isReservationAgentRole(form.role)) {
-      if (form.sales_commission_pct === '' || form.sales_commission_pct == null) {
+    if (isReservationAgentRole(staffForm.role)) {
+      if (staffForm.sales_commission_pct === '' || staffForm.sales_commission_pct == null) {
         toast.error('Commission % is required for reservation agents');
         return;
       }
-      const pct = Number(form.sales_commission_pct);
+      const pct = Number(staffForm.sales_commission_pct);
       if (Number.isNaN(pct) || pct < 0 || pct > 100) {
         toast.error('Commission % must be between 0 and 100');
         return;
       }
     }
-    saveMutation.mutate({
-      ...form,
-      base_salary: Number(form.base_salary),
-      sales_commission_pct: isReservationAgentRole(form.role)
-        ? Number(form.sales_commission_pct)
-        : Number(form.sales_commission_pct) || 0,
+    saveStaffMutation.mutate({
+      ...staffForm,
+      base_salary: Number(staffForm.base_salary),
+      sales_commission_pct: isReservationAgentRole(staffForm.role)
+        ? Number(staffForm.sales_commission_pct)
+        : Number(staffForm.sales_commission_pct) || 0,
     });
   };
 
+  const handleSaveOwner = () => {
+    if (!ownerForm.full_name?.trim()) {
+      toast.error('Name is required');
+      return;
+    }
+    if (!editId && !ownerForm.phone?.trim()) {
+      toast.error('Phone is required for new owners');
+      return;
+    }
+    if (editId) {
+      saveOwnerMutation.mutate({
+        full_name: ownerForm.full_name.trim(),
+        email: ownerForm.email?.trim() || undefined,
+        is_active: ownerForm.is_active,
+        role: 'owner',
+        base_salary: 0,
+      });
+    } else {
+      saveOwnerMutation.mutate({
+        full_name: ownerForm.full_name.trim(),
+        phone: ownerForm.phone.trim(),
+        username: ownerForm.phone.trim(),
+        email: ownerForm.email?.trim() || '',
+        role: 'owner',
+        base_salary: 0,
+      });
+    }
+  };
+
   const filterRoleOptions = isAdmin
-    ? ['admin', 'reservations_web', 'reservations_manual', 'reservations', 'operations_supervisor', 'operations', 'housekeeping_supervisor', 'housekeeping', 'resale', 'hr']
-    : ['reservations_web', 'reservations_manual', 'reservations', 'operations_supervisor', 'operations', 'housekeeping_supervisor', 'housekeeping', 'resale', 'hr'];
+    ? [
+        'admin',
+        'reservations_web',
+        'reservations_manual',
+        'reservations',
+        'operations_supervisor',
+        'operations',
+        'housekeeping_supervisor',
+        'housekeeping',
+        'resale',
+        'hr',
+      ]
+    : [
+        'reservations_web',
+        'reservations_manual',
+        'reservations',
+        'operations_supervisor',
+        'operations',
+        'housekeeping_supervisor',
+        'housekeeping',
+        'resale',
+        'hr',
+      ];
+
+  const showAddButton = isOwnersTab ? canCreateOwners : staffRoleOptions.length > 0;
+  const saving =
+    saveStaffMutation.isPending || saveOwnerMutation.isPending;
 
   return (
     <div className="space-y-6">
@@ -269,41 +471,188 @@ export default function Users() {
         <div className="page-header mb-0">
           <h1 className="page-title">User Management</h1>
           <p className="page-subtitle">
-            {isAdmin ? 'Admin & HR staff accounts' : 'Create Reservations, Resale, and HR users'}
+            {isOwnersTab
+              ? 'Owner portal accounts'
+              : isAdmin
+                ? 'Admin & HR staff accounts'
+                : 'Create Reservations, Resale, and HR users'}
             {' · '}
-            {filtered.length} user{filtered.length !== 1 ? 's' : ''}
+            {filtered.length} {isOwnersTab ? 'owner' : 'user'}
+            {filtered.length !== 1 ? 's' : ''}
           </p>
         </div>
-        <button onClick={openAdd} className="btn-primary">
-          <Plus className="w-4 h-4" /> Add User
-        </button>
+        {showAddButton && (
+          <button onClick={openAdd} className="btn-primary">
+            <Plus className="w-4 h-4" /> {isOwnersTab ? 'Add Owner' : 'Add User'}
+          </button>
+        )}
       </div>
 
-      <SearchFilter value={search} onChange={setSearch} placeholder="Search name, email, staff ID...">
-        <SearchableSelect
-          className="w-52"
-          value={filterRole}
-          onChange={setFilterRole}
-          placeholder="All Roles"
-          options={[
-            { value: '', label: 'All Roles' },
-            ...filterRoleOptions.map((r) => ({ value: r, label: ROLE_LABELS[r] })),
-          ]}
-        />
+      <div className="flex flex-wrap gap-1 p-1 bg-gray-100 rounded-xl w-fit">
+        {TABS.map((tab) => {
+          const Icon = tab.icon;
+          const active = activeTab === tab.id;
+          const count = users.filter((u) =>
+            tab.id === 'owners' ? u.role === 'owner' : u.role !== 'owner'
+          ).length;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setTab(tab.id)}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                active
+                  ? 'bg-white text-soul-blue shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-white/60'
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              <span>{tab.label}</span>
+              <span
+                className={`text-[11px] tabular-nums px-1.5 py-0.5 rounded-md ${
+                  active ? 'bg-soul-blue/10 text-soul-blue' : 'bg-gray-200/80 text-gray-500'
+                }`}
+              >
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <SearchFilter
+        value={search}
+        onChange={setSearch}
+        placeholder={
+          isOwnersTab
+            ? 'Search name, phone, email...'
+            : 'Search name, email, staff ID...'
+        }
+      >
+        {!isOwnersTab && (
+          <SearchableSelect
+            className="w-52"
+            value={filterRole}
+            onChange={setFilterRole}
+            placeholder="All Roles"
+            options={[
+              { value: '', label: 'All Roles' },
+              ...filterRoleOptions.map((r) => ({ value: r, label: ROLE_LABELS[r] })),
+            ]}
+          />
+        )}
       </SearchFilter>
 
       {isLoading ? (
         <LoadingSpinner />
       ) : filtered.length === 0 ? (
         <EmptyState
-          icon={UsersIcon}
-          title="No users found"
+          icon={isOwnersTab ? UserCircle : UsersIcon}
+          title={isOwnersTab ? 'No owners found' : 'No users found'}
           action={
-            <button onClick={openAdd} className="btn-primary">
-              <Plus className="w-4 h-4" /> Add User
-            </button>
+            showAddButton ? (
+              <button onClick={openAdd} className="btn-primary">
+                <Plus className="w-4 h-4" /> {isOwnersTab ? 'Add Owner' : 'Add User'}
+              </button>
+            ) : null
           }
         />
+      ) : isOwnersTab ? (
+        <div className="card p-0">
+          <div className="table-wrapper">
+            <table className="table text-sm">
+              <thead>
+                <tr>
+                  <SortTh col="full_name" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>
+                    Owner
+                  </SortTh>
+                  <SortTh col="username" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>
+                    Phone
+                  </SortTh>
+                  <SortTh col="email" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>
+                    Email
+                  </SortTh>
+                  <th>Units</th>
+                  <SortTh col="is_active" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>
+                    Status
+                  </SortTh>
+                  <SortTh col="created_at" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>
+                    Created
+                  </SortTh>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((u) => (
+                  <tr key={u.id}>
+                    <td>
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+                          style={avatarStyle('owner')}
+                        >
+                          {u.full_name?.charAt(0)?.toUpperCase()}
+                        </div>
+                        <div>
+                          <div className="font-medium">{u.full_name}</div>
+                          {u.is_first_login ? (
+                            <div className="text-[10px] text-amber-600 font-medium">
+                              Must change password
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="font-mono text-xs font-semibold">{u.username || '—'}</td>
+                    <td className="text-xs text-gray-500">
+                      {u.email?.includes('@soul.owners.local') ? '—' : u.email || '—'}
+                    </td>
+                    <td className="tabular-nums">
+                      {unitCountById[u.id] != null ? unitCountById[u.id] : '—'}
+                    </td>
+                    <td>
+                      {u.is_active ? (
+                        <span className="flex items-center gap-1 text-green-600 text-xs">
+                          <CheckCircle className="w-3.5 h-3.5" /> Active
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-red-500 text-xs">
+                          <XCircle className="w-3.5 h-3.5" /> Inactive
+                        </span>
+                      )}
+                    </td>
+                    <td className="text-xs text-gray-400">{formatDate(u.created_at)}</td>
+                    <td>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => openEdit(u)}
+                          className="p-1.5 rounded text-gray-400 hover:text-primary-600 hover:bg-primary-50"
+                          title="Edit"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => resetPwMutation.mutate(u.id)}
+                          className="p-1.5 rounded text-gray-400 hover:text-yellow-600 hover:bg-yellow-50"
+                          title="Reset to temporary password"
+                        >
+                          <Key className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setDeleteId(u.id)}
+                          className="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       ) : (
         <div className="card p-0">
           <div className="table-wrapper">
@@ -354,7 +703,9 @@ export default function Users() {
                           <div className="font-medium">{u.full_name}</div>
                           {u.email && <div className="text-xs text-gray-400">{u.email}</div>}
                           {u.is_first_login ? (
-                            <div className="text-[10px] text-amber-600 font-medium">Must change password</div>
+                            <div className="text-[10px] text-amber-600 font-medium">
+                              Must change password
+                            </div>
                           ) : null}
                         </div>
                       </div>
@@ -442,31 +793,65 @@ export default function Users() {
       )}
 
       <Modal
-        open={modal === 'add' || modal === 'edit'}
+        open={modal === 'add-staff' || modal === 'edit-staff'}
         onClose={() => setModal(null)}
-        title={modal === 'edit' ? 'Edit User' : 'New Staff User'}
+        title={modal === 'edit-staff' ? 'Edit User' : 'New Staff User'}
         size="lg"
         footer={
           <>
             <button onClick={() => setModal(null)} className="btn-secondary">
               Cancel
             </button>
-            <button onClick={handleSave} disabled={saveMutation.isPending} className="btn-primary">
-              {saveMutation.isPending ? 'Saving...' : modal === 'edit' ? 'Save Changes' : 'Create User'}
+            <button onClick={handleSaveStaff} disabled={saving} className="btn-primary">
+              {saving ? 'Saving...' : modal === 'edit-staff' ? 'Save Changes' : 'Create User'}
             </button>
           </>
         }
       >
-        <UserForm
-          form={form}
-          setForm={setForm}
-          isEdit={modal === 'edit'}
+        <StaffForm
+          form={staffForm}
+          setForm={setStaffForm}
+          isEdit={modal === 'edit-staff'}
           roleOptions={
-            modal === 'edit' && isAdmin
-              ? ['admin', 'reservations_web', 'reservations_manual', 'reservations', 'operations_supervisor', 'operations', 'housekeeping_supervisor', 'housekeeping', 'resale', 'hr']
-              : roleOptions
+            modal === 'edit-staff' && isAdmin
+              ? [
+                  'admin',
+                  'reservations_web',
+                  'reservations_manual',
+                  'reservations',
+                  'operations_supervisor',
+                  'operations',
+                  'housekeeping_supervisor',
+                  'housekeeping',
+                  'resale',
+                  'hr',
+                ]
+              : staffRoleOptions
           }
           isAdmin={isAdmin}
+        />
+      </Modal>
+
+      <Modal
+        open={modal === 'add-owner' || modal === 'edit-owner'}
+        onClose={() => setModal(null)}
+        title={modal === 'edit-owner' ? 'Edit Owner' : 'New Owner'}
+        size="lg"
+        footer={
+          <>
+            <button onClick={() => setModal(null)} className="btn-secondary">
+              Cancel
+            </button>
+            <button onClick={handleSaveOwner} disabled={saving} className="btn-primary">
+              {saving ? 'Saving...' : modal === 'edit-owner' ? 'Save Changes' : 'Create Owner'}
+            </button>
+          </>
+        }
+      >
+        <OwnerForm
+          form={ownerForm}
+          setForm={setOwnerForm}
+          isEdit={modal === 'edit-owner'}
         />
       </Modal>
 
@@ -476,7 +861,7 @@ export default function Users() {
           setModal(null);
           setCreatedInfo(null);
         }}
-        title="Staff account created"
+        title={createdInfo?.role === 'owner' ? 'Owner account created' : 'Staff account created'}
         size="sm"
         footer={
           <button
@@ -495,16 +880,27 @@ export default function Users() {
             <p>
               <span className="text-slate-500">Name:</span> {createdInfo.full_name}
             </p>
-            <p>
-              <span className="text-slate-500">Staff ID:</span>{' '}
-              <span className="font-mono font-semibold">{createdInfo.staff_code || createdInfo.staffId}</span>
-            </p>
+            {createdInfo.role === 'owner' ? (
+              <p>
+                <span className="text-slate-500">Phone / username:</span>{' '}
+                <span className="font-mono font-semibold">{createdInfo.username}</span>
+              </p>
+            ) : (
+              <p>
+                <span className="text-slate-500">Staff ID:</span>{' '}
+                <span className="font-mono font-semibold">
+                  {createdInfo.staff_code || createdInfo.staffId}
+                </span>
+              </p>
+            )}
             <p>
               <span className="text-slate-500">Email:</span> {createdInfo.email}
             </p>
             <p>
               <span className="text-slate-500">Temporary password:</span>{' '}
-              <span className="font-mono font-semibold">{createdInfo.temporaryPassword || TEMP_STAFF_PASSWORD}</span>
+              <span className="font-mono font-semibold">
+                {createdInfo.temporaryPassword || TEMP_STAFF_PASSWORD}
+              </span>
             </p>
             <p className="text-xs text-amber-700 mt-2">
               Share these credentials securely. The user must change the password on first login.
@@ -518,7 +914,7 @@ export default function Users() {
         onClose={() => setDeleteId(null)}
         onConfirm={() => deleteMutation.mutate(deleteId)}
         loading={deleteMutation.isPending}
-        title="Delete User"
+        title={isOwnersTab ? 'Delete Owner' : 'Delete User'}
         message="This permanently deletes the account from the system. This cannot be undone."
         confirmText="Delete"
         danger
