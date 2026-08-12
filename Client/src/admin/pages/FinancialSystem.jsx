@@ -19,6 +19,7 @@ import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
+import Modal from '../components/ui/Modal';
 import { currency, formatDate } from '../utils/formatters';
 import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
 import { accountsByGroup } from '../../lib/finance/chartOfAccounts';
@@ -824,125 +825,121 @@ function ManualEntriesTab({ fromDate, toDate, rangeParams }) {
         </div>
       </div>
 
-      {showForm ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
-          <form
-            className="card w-full max-w-lg p-6 space-y-4 shadow-xl"
-            onSubmit={handleSubmit}
-          >
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-gray-900">Add manual entry</h3>
-              <button
-                type="button"
-                className="text-gray-400 hover:text-gray-600"
-                onClick={() => setShowForm(false)}
-              >
-                ×
-              </button>
-            </div>
+      <Modal
+        open={showForm}
+        onClose={() => setShowForm(false)}
+        title="Add entry"
+        size="md"
+        footer={
+          <>
+            <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="manual-entry-form"
+              className="btn-primary"
+              disabled={createEntry.isPending}
+            >
+              {createEntry.isPending ? 'Saving…' : 'Save entry'}
+            </button>
+          </>
+        }
+      >
+        <form id="manual-entry-form" className="space-y-5" onSubmit={handleSubmit}>
+          <div className="space-y-1.5">
+            <label className="label">Type</label>
+            <select
+              className="input w-full"
+              value={form.entry_type}
+              onChange={(e) => setForm((f) => ({ ...f, entry_type: e.target.value }))}
+            >
+              <option value="revenue">Custom revenue</option>
+              <option value="expense">Custom expense</option>
+              <option value="miscellaneous">Miscellaneous</option>
+            </select>
+          </div>
 
-            <div>
-              <label className="label">Type</label>
+          {form.entry_type === 'miscellaneous' ? (
+            <div className="space-y-1.5">
+              <label className="label">Flow</label>
               <select
                 className="input w-full"
-                value={form.entry_type}
-                onChange={(e) => setForm((f) => ({ ...f, entry_type: e.target.value }))}
+                value={form.misc_flow}
+                onChange={(e) => setForm((f) => ({ ...f, misc_flow: e.target.value }))}
               >
-                <option value="revenue">Custom revenue</option>
-                <option value="expense">Custom expense</option>
-                <option value="miscellaneous">Miscellaneous</option>
+                <option value="in">Money in</option>
+                <option value="out">Money out</option>
               </select>
             </div>
+          ) : null}
 
-            {form.entry_type === 'miscellaneous' ? (
-              <div>
-                <label className="label">Flow</label>
-                <select
-                  className="input w-full"
-                  value={form.misc_flow}
-                  onChange={(e) => setForm((f) => ({ ...f, misc_flow: e.target.value }))}
-                >
-                  <option value="in">Money in</option>
-                  <option value="out">Money out</option>
-                </select>
-              </div>
-            ) : null}
+          <div className="space-y-1.5">
+            <label className="label">Description</label>
+            <input
+              className="input w-full"
+              value={form.description}
+              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+              placeholder="What is this for?"
+              required
+            />
+          </div>
 
-            <div>
-              <label className="label">Description</label>
-              <input
-                className="input w-full"
-                value={form.description}
-                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                placeholder="What is this for?"
-                required
-              />
-            </div>
+          <div className="space-y-1.5">
+            <label className="label">Amount (EGP)</label>
+            <input
+              type="number"
+              min="0.01"
+              step="0.01"
+              className="input w-full"
+              value={form.amount}
+              onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+              placeholder="0.00"
+              required
+            />
+          </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="label">Amount (EGP)</label>
-                <input
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  className="input w-full"
-                  value={form.amount}
-                  onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
-                  required
-                />
-              </div>
-              <div>
-                <label className="label">Date</label>
-                <input
-                  type="date"
-                  className="input w-full"
-                  min={FINANCIAL_EPOCH}
-                  value={form.entry_date}
-                  onChange={(e) => setForm((f) => ({ ...f, entry_date: e.target.value }))}
-                  required
-                />
-              </div>
-            </div>
+          <div className="space-y-1.5">
+            <label className="label">Date</label>
+            <input
+              type="date"
+              className="input w-full"
+              min={FINANCIAL_EPOCH}
+              value={form.entry_date}
+              onChange={(e) => setForm((f) => ({ ...f, entry_date: e.target.value }))}
+              required
+            />
+          </div>
 
-            <div>
-              <label className="label">Unit (optional)</label>
-              <SearchableSelect
-                className="w-full"
-                value={form.unit_id}
-                onChange={(v) => setForm((f) => ({ ...f, unit_id: v }))}
-                placeholder="Not linked to a unit"
-                options={[
-                  { value: '', label: 'Not linked to a unit' },
-                  ...units.map((u) => ({
-                    value: String(u.id),
-                    label: `${u.project ? `${u.project} — ` : ''}${u.unit_name}`,
-                  })),
-                ]}
-              />
-            </div>
+          <div className="space-y-1.5">
+            <label className="label">Unit (optional)</label>
+            <SearchableSelect
+              className="w-full"
+              value={form.unit_id}
+              onChange={(v) => setForm((f) => ({ ...f, unit_id: v }))}
+              placeholder="Not linked to a unit"
+              options={[
+                { value: '', label: 'Not linked to a unit' },
+                ...units.map((u) => ({
+                  value: String(u.id),
+                  label: `${u.project ? `${u.project} — ` : ''}${u.unit_name}`,
+                })),
+              ]}
+            />
+          </div>
 
-            <div>
-              <label className="label">Notes (optional)</label>
-              <textarea
-                className="input w-full min-h-[72px]"
-                value={form.notes}
-                onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-                placeholder="Internal notes"
-              />
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2">
-              <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>
-                Cancel
-              </button>
-              <button type="submit" className="btn-primary" disabled={createEntry.isPending}>
-                {createEntry.isPending ? 'Saving…' : 'Save entry'}
-              </button>
-            </div>
-          </form>
-        </div>
-      ) : null}
+          <div className="space-y-1.5">
+            <label className="label">Notes (optional)</label>
+            <textarea
+              className="input w-full min-h-[88px] resize-y"
+              value={form.notes}
+              onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+              placeholder="Internal notes"
+              rows={3}
+            />
+          </div>
+        </form>
+      </Modal>
 
       <ConfirmDialog
         open={!!deleteId}
