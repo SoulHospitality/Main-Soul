@@ -8,10 +8,7 @@ import { brand, whatsappHref, listingWhatsAppMessage } from '../../theme/brand';
 import { getDisplayPriceEgp } from '../../utils/displayPrice';
 import BookingDrawer from '../booking/BookingDrawer';
 
-/**
- * SoulHospitality-style sticky reservation card.
- * Shows today's calendar rate when available (same as listing cards).
- */
+
 export default function ListingBookingCard({
   unit,
   blockedDates = [],

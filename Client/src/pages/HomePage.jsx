@@ -70,7 +70,7 @@ export default function HomePage() {
     <div className={`bg-white ${entered ? 'soul-fade-in' : 'opacity-0'}`}>
       <Header overHero />
 
-      {/* Hero */}
+      
       <section className="relative isolate flex min-h-[100svh] flex-col justify-center overflow-x-clip overflow-y-visible">
         <div className={`pointer-events-none absolute inset-0 overflow-hidden ${entered ? 'soul-fade-in' : 'opacity-0'}`}>
           {HERO_IMAGES.map((src, i) => (
@@ -129,7 +129,7 @@ export default function HomePage() {
         <CompoundGrid />
       </div>
 
-      {/* Featured listings */}
+      
       <section className="mx-auto max-w-soul px-5 sm:px-8 py-4 md:py-8 pb-16 md:pb-20">
         <div className="flex items-end justify-between gap-4 mb-8">
           <div>

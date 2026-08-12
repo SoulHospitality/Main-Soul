@@ -11,7 +11,7 @@ function isReservationsTeam(user) {
   return RESERVATIONS_TEAM_ROLES.has(user?.role);
 }
 
-/** Any reservations-team member (legacy helper name kept for callers). */
+
 function isReservationsAgent(user) {
   return isReservationsTeam(user);
 }
@@ -42,10 +42,7 @@ function assertNotAdminReservationHandler(user, action = 'manage reservations') 
   }
 }
 
-/**
- * Pick the active website-reservations agent with the fewest open assignments.
- * Pool: reservations_web (+ legacy reservations dual-role accounts).
- */
+
 async function pickLeastLoadedReservationsAgent() {
   const { rows } = await query(
     `SELECT s.id
@@ -72,7 +69,7 @@ async function pickLeastLoadedReservationsAgent() {
   );
   if (rows[0]?.id) return rows[0].id;
 
-  // Fallback so website bookings are never orphaned with no assignee
+  
   const { rows: admins } = await query(
     `SELECT id FROM staff_users
      WHERE is_active = 1 AND role = 'admin'
@@ -82,11 +79,7 @@ async function pickLeastLoadedReservationsAgent() {
   return admins[0]?.id ?? null;
 }
 
-/**
- * SQL fragment restricting reservation rows to the logged-in reservations agent.
- * Matches sales_person_id, created_by, or sales_label text close to the agent's name
- * (covers Excel imports that only stored the sales name).
- */
+
 function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
   if (!isReservationsTeam(user)) {
     return { clause: '', params: [], nextIndex: paramIndex };
@@ -96,7 +89,7 @@ function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
   const params = [user.id];
   let nextIndex = paramIndex + 1;
 
-  // Own bookings: assigned sales person, creator, or sales_label text match
+  
   let clause = ` AND (
     ${alias}.sales_person_id = $${paramIndex}
     OR ${alias}.created_by = $${paramIndex}`;
@@ -105,9 +98,9 @@ function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
     const nameParam = nextIndex;
     params.push(name);
     nextIndex += 1;
-    // Normalize spaces in SQL.
-    // Covers Excel imports: "Amira" → "Amira Hesham", "Nabarawy" → "Abdullah Nabarawy",
-    // "Aml" → "Aml Nasser".
+    
+    
+    
     clause += `
     OR (
       ${alias}.sales_label IS NOT NULL
@@ -143,15 +136,12 @@ function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
   if (user.role === 'reservations_manual') {
     clause += ` AND ${alias}.booking_id IS NULL AND LOWER(COALESCE(${alias}.booking_source, '')) <> 'website'`;
   }
-  // reservations_web may own website stays and their own manual creates
+  
 
   return { clause, params, nextIndex };
 }
 
-/** SQL fragment restricting website booking rows for agents.
- * Agents only see bookings assigned to them (requests + history).
- * Unassigned pool is listed separately via status=unassigned.
- */
+
 function bookingAssigneeClause(user, alias = 'b', paramIndex = 1) {
   if (user?.role === 'reservations_manual') {
     return { clause: ' AND FALSE', params: [], nextIndex: paramIndex };

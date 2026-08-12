@@ -14,17 +14,17 @@ export const formatDateTime = (dateStr) => {
 export const nightsText = (n) => `${n} night${n !== 1 ? 's' : ''}`;
 
 export const STATUS_CONFIG = {
-  // Reservation / owner portal status
+  
   confirmed:   { label: 'Confirmed',   className: 'badge-blue'   },
   pending:     { label: 'Pending',     className: 'badge-yellow' },
   rejected:    { label: 'Rejected',    className: 'badge-red'    },
   checked_in:  { label: 'Checked In',  className: 'badge-green'  },
   checked_out: { label: 'Checked Out', className: 'badge-gray'   },
   cancelled:   { label: 'Cancelled',   className: 'badge-red'    },
-  // Payment status
+  
   partial:     { label: 'Partial',     className: 'badge-orange' },
   paid:        { label: 'Paid',        className: 'badge-green'  },
-  // Unit status
+  
   available:   { label: 'Available',   className: 'badge-green'  },
   occupied:    { label: 'Occupied',    className: 'badge-blue'   },
   maintenance: { label: 'Maintenance', className: 'badge-yellow' },
@@ -46,7 +46,7 @@ export const PAYMENT_METHOD_LABELS = {
 };
 export const UNIT_TYPES = ['Apartment', 'Studio', 'Villa', 'Penthouse', 'Chalet', 'Hotel Room'];
 
-/** Townhouse / town home → Villa; otherwise keep known casing. */
+
 export function normalizePropertyType(type) {
   const raw = String(type || '').trim();
   if (!raw) return raw;
@@ -56,7 +56,7 @@ export function normalizePropertyType(type) {
   return known || raw;
 }
 
-/** Unit code for admin UI — prefer unit number over listing title. */
+
 export function unitCode(u) {
   if (!u) return '';
   return (
@@ -69,7 +69,7 @@ export function unitCode(u) {
   );
 }
 
-/** Label for unit dropdowns / filters: "CL4-CH16-02 — Fouka Bay". */
+
 export function unitSelectLabel(u, { withProject = true } = {}) {
   const code = unitCode(u) || u?.name || u?.title || 'Unit';
   if (!withProject) return String(code);
@@ -77,7 +77,7 @@ export function unitSelectLabel(u, { withProject = true } = {}) {
   return project ? `${code} — ${project}` : String(code);
 }
 
-/** Display unit identity in tables / detail rows. */
+
 export function unitDisplay(row, fallback = '—') {
   return unitCode(row) || row?.name || row?.title || fallback;
 }

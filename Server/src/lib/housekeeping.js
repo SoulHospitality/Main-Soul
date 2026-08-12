@@ -1,7 +1,4 @@
-/**
- * Fixed housekeeping fees (Soul Hospitality policy).
- * Villa → 2500 EGP; all other property types → 1500 EGP.
- */
+
 
 const HOUSEKEEPING_DEFAULT = 1500;
 const HOUSEKEEPING_VILLA = 2500;

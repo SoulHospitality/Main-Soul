@@ -101,10 +101,10 @@ async function createReviewHandler(req, res, next) {
   }
 }
 
-/** POST /api/reviews/unit/:unitId — create visible review (auth required) */
+
 router.post('/unit/:unitId', authGuest, createReviewHandler);
 
-/** POST /api/reviews — body includes unitId */
+
 router.post('/', authGuest, createReviewHandler);
 
 module.exports = { router, mapReview, syncUnitRating };

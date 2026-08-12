@@ -66,7 +66,7 @@ function RoleRedirect() {
   return <Navigate to={defaultAdminPage(user.role)} replace />;
 }
 
-/** Preserve query string when redirecting legacy finance URLs */
+
 function LegacyFinanceRedirect({ tab }) {
   const location = useLocation();
   const qs = location.search || (tab ? `?tab=${tab}` : '');
@@ -108,10 +108,10 @@ function AppRoutes() {
       <Route path="website-bookings/history" element={<ProtectedRoute page="website_bookings"><WebsiteBookingHistoryPage /></ProtectedRoute>} />
       <Route path="schedule" element={<ProtectedRoute page="schedule"><Schedule /></ProtectedRoute>} />
 
-      {/* Unified financial system */}
+      
       <Route path="financial-system" element={<ProtectedRoute page="financial_system"><FinancialSystem /></ProtectedRoute>} />
 
-      {/* Legacy finance routes → unified workspace */}
+      
       <Route path="finance" element={<LegacyFinanceRedirect tab="overview" />} />
       <Route path="profit" element={<LegacyFinanceRedirect tab="overview" />} />
       <Route path="reports" element={<LegacyFinanceRedirect tab="overview" />} />
@@ -133,7 +133,7 @@ function AppRoutes() {
       <Route path="operations" element={<ProtectedRoute page="operations"><Operations /></ProtectedRoute>} />
       <Route path="housekeeping" element={<ProtectedRoute page="housekeeping"><Housekeeping /></ProtectedRoute>} />
 
-      {/* Legacy ops / housekeeping routes */}
+      
       <Route path="housekeeping/today" element={<LegacyHousekeepingRedirect tab="today" />} />
       <Route path="housekeeping/history" element={<LegacyHousekeepingRedirect tab="history" />} />
       <Route path="ops/checkins-today" element={<LegacyOpsRedirect tab="today" />} />

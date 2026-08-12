@@ -8,15 +8,15 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-/** Guest ID / passport uploads — safe to purge with old bookings. */
+
 const FOLDER_ID_DOCS = 'soul-hospitality/id-docs';
-/** Unit listing gallery — never purged by retention job. */
+
 const FOLDER_UNITS = 'soul-hospitality/units';
-/** Payment / transfer evidence tied to reservations. */
+
 const FOLDER_PAYMENTS = 'soul-hospitality/payments';
-/** Website entry popup creative — not purged by retention. */
+
 const FOLDER_SITE = 'soul-hospitality/site';
-/** Homepage destination / project slide images. */
+
 const FOLDER_PROJECTS = 'soul-hospitality/projects';
 
 const upload = multer({
@@ -38,10 +38,7 @@ function safeBaseName(filename = 'upload') {
   );
 }
 
-/**
- * Images use auto; PDFs are uploaded as image assets so Cloudinary can deliver
- * page previews (JPG) and inline PDF URLs under /image/upload/.
- */
+
 function uploadBufferToCloudinary(buffer, filename = 'upload', mimetype = '', opts = {}) {
   const pdf = isPdfUpload(filename, mimetype);
   const folder = opts.folder || FOLDER_ID_DOCS;
@@ -69,7 +66,7 @@ function setCloudinaryFolder(folder) {
   };
 }
 
-/** Express middleware: after multer, push files to Cloudinary and set path/secure_url */
+
 async function attachCloudinaryUrls(req, _res, next) {
   try {
     const files = [];
@@ -99,10 +96,7 @@ async function attachCloudinaryUrls(req, _res, next) {
   }
 }
 
-/**
- * Parse a Cloudinary delivery URL into { resourceType, publicId }.
- * Returns null if not a Cloudinary URL for this account.
- */
+
 function parseCloudinaryDeliveryUrl(url) {
   const raw = String(url || '').trim();
   if (!raw) return null;
@@ -116,7 +110,7 @@ function parseCloudinaryDeliveryUrl(url) {
   const cloud = process.env.CLOUDINARY_CLOUD_NAME;
   if (cloud && !raw.includes(`/${cloud}/`)) return null;
 
-  // /<resource_type>/upload/[transformations/][v123/]public_id[.ext]
+  
   const match = parsed.pathname.match(
     /\/(image|raw|video|auto)\/upload\/(.*)$/i
   );
@@ -124,7 +118,7 @@ function parseCloudinaryDeliveryUrl(url) {
 
   const resourceType = match[1].toLowerCase() === 'auto' ? 'image' : match[1].toLowerCase();
   let rest = match[2];
-  // Strip transformation segments (contain , or start with known prefixes) until version or public id
+  
   const parts = rest.split('/');
   let i = 0;
   while (i < parts.length) {
@@ -133,7 +127,7 @@ function parseCloudinaryDeliveryUrl(url) {
       i += 1;
       break;
     }
-    // transformation chunk e.g. f_jpg,pg_1,q_auto,w_1200
+    
     if (p.includes(',') || /^(f_|q_|w_|c_|h_|dpr_|pg_)/.test(p)) {
       i += 1;
       continue;
@@ -147,10 +141,7 @@ function parseCloudinaryDeliveryUrl(url) {
   return { resourceType, publicId, url: raw };
 }
 
-/**
- * Destroy a guest-doc Cloudinary asset. Refuses unit-gallery folders.
- * @returns {{ deleted: boolean, reason?: string }}
- */
+
 async function destroyCloudinaryUrl(url, { allowFolders = [FOLDER_ID_DOCS, FOLDER_PAYMENTS] } = {}) {
   const info = parseCloudinaryDeliveryUrl(url);
   if (!info) return { deleted: false, reason: 'not_cloudinary' };
@@ -165,7 +156,7 @@ async function destroyCloudinaryUrl(url, { allowFolders = [FOLDER_ID_DOCS, FOLDE
   if (!allowed) {
     return { deleted: false, reason: 'protected_folder' };
   }
-  // Hard block unit gallery folder even if somehow listed
+  
   if (
     info.publicId.startsWith(`${FOLDER_UNITS}/`) ||
     idNoExt.startsWith(`${FOLDER_UNITS}/`)
@@ -186,7 +177,7 @@ async function destroyCloudinaryUrl(url, { allowFolders = [FOLDER_ID_DOCS, FOLDE
         return { deleted: result.result === 'ok', reason: result.result };
       }
     } catch (err) {
-      // try next id / type
+      
       try {
         const result = await cloudinary.uploader.destroy(publicId, {
           resource_type: 'raw',
@@ -195,9 +186,7 @@ async function destroyCloudinaryUrl(url, { allowFolders = [FOLDER_ID_DOCS, FOLDE
         if (result?.result === 'ok' || result?.result === 'not found') {
           return { deleted: result.result === 'ok', reason: result.result };
         }
-      } catch (_) {
-        /* continue */
-      }
+      } catch (_) {}
     }
   }
   return { deleted: false, reason: 'destroy_failed' };

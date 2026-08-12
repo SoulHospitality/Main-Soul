@@ -11,7 +11,7 @@ import SearchableSelect from '../components/ui/SearchableSelect';
 import { isOwnerRole as checkOwner } from '../utils/permissions';
 import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
 
-// ─── Internal-only commission mode badge ─────────────────────────────────────
+
 function ModeBadge({ mode }) {
   const cfg = {
     A: { label: 'Fixed %',  cls: 'bg-blue-100 text-blue-700' },
@@ -25,7 +25,7 @@ function ModeBadge({ mode }) {
   );
 }
 
-// ─── Summary row ─────────────────────────────────────────────────────────────
+
 function SummaryRow({ label, value, sub, negative, bold, separator, green, large }) {
   return (
     <div className={`flex justify-between items-center gap-8 py-1.5 text-sm
@@ -46,7 +46,7 @@ function SummaryRow({ label, value, sub, negative, bold, separator, green, large
   );
 }
 
-// ─── Paid-by badge ────────────────────────────────────────────────────────────
+
 function PaidByBadge({ paidBy }) {
   return paidBy === 'owner'
     ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">Owner</span>
@@ -63,7 +63,7 @@ export default function OwnerStatement() {
   const [toDate,    setToDate]    = useState('');
   const [generated, setGenerated] = useState(false);
 
-  // ── Units list: owner sees only their own, staff see all ──────────────────
+  
   const { data: units = [], isLoading: unitsLoading } = useQuery({
     queryKey: ['owner-statement-units', isOwnerRole],
     queryFn: () => isOwnerRole
@@ -71,7 +71,7 @@ export default function OwnerStatement() {
       : api.get('/units').then(r => r.data),
   });
 
-  // ── Statement data ────────────────────────────────────────────────────────
+  
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['owner-statement', unitId, fromDate, toDate],
     queryFn: () =>
@@ -126,7 +126,7 @@ export default function OwnerStatement() {
   const mode = s?.commissionMode || 'A';
   const commissionPct = s?.companyCommissionPct || 0;
 
-  // Expense breakdowns
+  
   const allExpenses    = data?.expenses || [];
   const ownerExpenses  = allExpenses.filter(e => e.paid_by === 'owner');
   const companyExpenses = allExpenses.filter(e => e.paid_by === 'company');
@@ -142,7 +142,7 @@ export default function OwnerStatement() {
         </p>
       </div>
 
-      {/* ── Filters ── */}
+      
       <div className="card">
         <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
           <Building2 className="w-4 h-4 text-primary-600" />
@@ -192,7 +192,7 @@ export default function OwnerStatement() {
       {data && generated && (
         <div className="space-y-5" id="statement-print">
 
-          {/* ── Header card ── */}
+          
           <div className="card bg-gradient-to-r from-primary-900 to-primary-700 text-white">
             <div className="flex items-start justify-between flex-wrap gap-4">
               <div>
@@ -232,9 +232,7 @@ export default function OwnerStatement() {
             </div>
           </div>
 
-          {/* ══════════════════════════════════════════════
-              TABLE 1 — Reservations
-          ══════════════════════════════════════════════ */}
+          
           <div className="card">
             <h3 className="font-semibold text-gray-900 mb-4">
               Reservations
@@ -274,17 +272,17 @@ export default function OwnerStatement() {
                           <td className="whitespace-nowrap">{formatDate(r.check_out)}</td>
                           <td className="text-center">{r.nights}</td>
 
-                          {/* Price/night after utilities + broker + tenant deductions, before company commission */}
+                          
                           <td className="text-right tabular-nums">
                             {currency(pricePerNight)}
                           </td>
 
-                          {/* Subtotal = price/night × nights */}
+                          
                           <td className="text-right tabular-nums text-gray-700">
                             {currency(subtotal)}
                           </td>
 
-                          {/* Company commission */}
+                          
                           <td className="text-right tabular-nums">
                             {commission > 0 ? (
                               <span className="text-red-500">
@@ -298,12 +296,12 @@ export default function OwnerStatement() {
                             )}
                           </td>
 
-                          {/* Owner net */}
+                          
                           <td className="text-right tabular-nums font-bold text-primary-700">
                             {currency(ownerNet)}
                           </td>
 
-                          {/* Reservation type */}
+                          
                           <td>
                             {r.is_owner_reservation
                               ? <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">Owner</span>
@@ -323,7 +321,7 @@ export default function OwnerStatement() {
               </p>
             )}
 
-            {/* Revenue mini-summary */}
+            
             {data.reservations?.length > 0 && (
               <div className="mt-6 ml-auto max-w-sm border border-gray-100 rounded-xl overflow-hidden">
                 <div className="bg-gray-50 px-5 py-4 space-y-1">
@@ -353,9 +351,7 @@ export default function OwnerStatement() {
             )}
           </div>
 
-          {/* ══════════════════════════════════════════════
-              TABLE 2 — Expenses (ALL: owner + company)
-          ══════════════════════════════════════════════ */}
+          
           {allExpenses.length > 0 && (
             <div className="card">
               <div className="flex items-center justify-between mb-4">
@@ -365,7 +361,7 @@ export default function OwnerStatement() {
                     ({allExpenses.length} item{allExpenses.length !== 1 ? 's' : ''})
                   </span>
                 </h3>
-                {/* Expense totals legend */}
+                
                 <div className="flex items-center gap-4 text-xs text-gray-500">
                   {ownerExpenses.length > 0 && (
                     <span>
@@ -422,7 +418,7 @@ export default function OwnerStatement() {
             </div>
           )}
 
-          {/* Empty expenses state */}
+          
           {allExpenses.length === 0 && (
             <div className="card">
               <h3 className="font-semibold text-gray-900 mb-3">Expenses</h3>
@@ -430,21 +426,19 @@ export default function OwnerStatement() {
             </div>
           )}
 
-          {/* ══════════════════════════════════════════════
-              FINAL SUMMARY
-          ══════════════════════════════════════════════ */}
+          
           <div className="card bg-gray-50 border-2 border-primary-200">
             <h3 className="font-semibold text-gray-900 mb-5">Final Summary</h3>
 
             <div className="max-w-sm ml-auto space-y-0.5">
-              {/* Total Revenue */}
+              
               <SummaryRow
                 label="Total Revenue"
                 sub="(after deductions)"
                 value={currency(s?.totalSubtotal)}
               />
 
-              {/* Company Commission */}
+              
               {(s?.totalCompanyCommission || 0) > 0 && (
                 <SummaryRow
                   label="Company Commission"
@@ -454,7 +448,7 @@ export default function OwnerStatement() {
                 />
               )}
 
-              {/* Owner Net from reservations */}
+              
               <SummaryRow
                 label="Owner Net Revenue"
                 value={currency(s?.totalOwnerNet)}
@@ -462,7 +456,7 @@ export default function OwnerStatement() {
                 separator
               />
 
-              {/* Owner Expenses */}
+              
               {ownerExpTotal > 0 && (
                 <SummaryRow
                   label="Owner Expenses"
@@ -471,7 +465,7 @@ export default function OwnerStatement() {
                 />
               )}
 
-              {/* Final amount due */}
+              
               <div className="bg-white rounded-xl px-5 py-4 mt-3 border border-primary-100">
                 <SummaryRow
                   label="Final Amount Due to Owner"
@@ -483,7 +477,7 @@ export default function OwnerStatement() {
                 />
               </div>
 
-              {/* Internal deduction breakdown — staff only */}
+              
               {isStaffRole && (
                 <details className="mt-5">
                   <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600

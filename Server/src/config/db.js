@@ -1,5 +1,5 @@
-require('dotenv').config({ path: require('path').join(__dirname, '../../.env') }); // Server/.env
-require('dotenv').config({ path: require('path').join(__dirname, '../../../.env') }); // workspace root fallback
+require('dotenv').config({ path: require('path').join(__dirname, '../../.env') }); 
+require('dotenv').config({ path: require('path').join(__dirname, '../../../.env') }); 
 const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
@@ -51,8 +51,8 @@ async function runMigrations() {
           '[db] Hint: your DATABASE_URL may point at the old PMS schema. Migration 000 archives legacy tables, then 001 creates the unified schema. Restart the server after pulling the latest migrations.'
         );
       }
-      // Do not abort boot — keep serving so a bad data migration cannot block deploys.
-      // Failed files are not recorded and will retry on the next restart.
+      
+      
       console.error(`[db] Continuing boot without ${file}; will retry next restart`);
     } finally {
       client.release();

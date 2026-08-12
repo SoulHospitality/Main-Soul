@@ -1,8 +1,6 @@
 import { Check, Smile } from 'lucide-react';
 
-/**
- * Cheerful post-checkout confirmation — SVG check + smile (no emojis).
- */
+
 export default function BookingRequestSuccess({
   title,
   description,

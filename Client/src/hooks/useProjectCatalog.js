@@ -5,7 +5,7 @@ import { COMPOUNDS, AREAS } from '../data/compounds';
 
 export const PROJECT_CATALOG_KEY = ['guest-projects-catalog'];
 
-/** Offline / first-load error fallback only. */
+
 const FALLBACK_CATALOG = {
   destinations: AREAS,
   projectsByDestination: COMPOUNDS.reduce((acc, c) => {
@@ -35,10 +35,7 @@ async function fetchProjectCatalog() {
   };
 }
 
-/**
- * Destination / project catalog from `/api/projects/catalog`.
- * Successful API responses (including empty) are the source of truth site-wide.
- */
+
 export function useProjectCatalog() {
   const { data, isLoading, error, refetch, isError, isSuccess } = useQuery({
     queryKey: PROJECT_CATALOG_KEY,

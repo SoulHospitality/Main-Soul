@@ -1,4 +1,4 @@
-/** Visual identity for each PMS role — aligned with guest Soul brand. */
+
 
 export const ROLE_THEMES = {
   admin: {

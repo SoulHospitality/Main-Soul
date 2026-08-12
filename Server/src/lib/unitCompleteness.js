@@ -1,8 +1,4 @@
-/**
- * Guest-listing completeness: incomplete units stay draft and never appear to guests.
- * Sale units skip rental-only fields (beach, nightly price, utilities) and require area (size_m2).
- * GAIA / free-beach projects skip manual beach fields.
- */
+
 
 const { isGaiaUnit } = require('./minStay');
 const { isFreeBeachProject, beachAccessRequiresManualEntry } = require('./beachAccess');
@@ -11,7 +7,7 @@ function hasText(v) {
   return String(v || '').trim().length > 0;
 }
 
-/** null / undefined / '' = missing; 0 is allowed (e.g. free beach access). */
+
 function hasNumberSet(v) {
   if (v === undefined || v === null || v === '') return false;
   return Number.isFinite(Number(v));
@@ -48,11 +44,7 @@ function isSaleUnit(unit) {
   return String(unit?.listing_type || 'rent').toLowerCase() === 'sale';
 }
 
-/**
- * @param {object} unit - unit row or merged create/update fields
- * @param {{ hasPrice?: boolean }} opts
- * @returns {{ complete: boolean, missing: string[] }}
- */
+
 function assessUnitCompleteness(unit, { hasPrice = false } = {}) {
   const missing = [];
   const sale = isSaleUnit(unit);
@@ -92,11 +84,7 @@ function assessUnitCompleteness(unit, { hasPrice = false } = {}) {
   return { complete: missing.length === 0, missing };
 }
 
-/**
- * Resolve guest listing status automatically from completeness.
- * Only draft | published are used — incomplete → draft, complete → published.
- * Legacy archived/cancelled/delisted requests are ignored and recomputed.
- */
+
 function resolveListingStatus({
   unit,
   hasPrice = false,

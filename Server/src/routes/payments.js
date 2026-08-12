@@ -108,13 +108,11 @@ router.post('/paymob-webhook', async (req, res, next) => {
       [booking.id, session.id]
     );
 
-    // Paid stays pending until staff Accept (SoulHospitality-style)
+    
     try {
       const { assignSalesOnCreate } = require('../services/bookingWorkflow');
       await assignSalesOnCreate(booking.id);
-    } catch (_) {
-      /* optional */
-    }
+    } catch (_) {}
 
     res.json({ ok: true, booking_id: booking.id });
   } catch (err) {
@@ -123,7 +121,7 @@ router.post('/paymob-webhook', async (req, res, next) => {
 });
 
 router.get('/paymob-callback', async (req, res) => {
-  // Browser return URL — webhook is source of truth
+  
   const success = req.query.success === 'true';
   const frontend = process.env.FRONTEND_URL || 'http://localhost:5173';
   res.redirect(`${frontend}/checkout/payment/callback?status=${success ? 'success' : 'failed'}`);

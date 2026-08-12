@@ -40,7 +40,7 @@ function requireRoles(...roles) {
   };
 }
 
-/** Block staff APIs until first-login password change (except change-password). */
+
 function requirePasswordChanged(req, res, next) {
   if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
   const path = String(req.path || req.originalUrl || '');
@@ -59,18 +59,16 @@ async function authGuest(req, res, next) {
     const token = header.startsWith('Bearer ') ? header.slice(7) : null;
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
 
-    // Prefer app-issued guest JWT (DATABASE_URL-only mode)
+    
     try {
       const payload = jwt.verify(token, process.env.JWT_SECRET);
       if (payload.kind === 'guest') {
         req.guest = { id: payload.sub, email: payload.email };
         return next();
       }
-    } catch {
-      /* try Supabase below if configured */
-    }
+    } catch {}
 
-    // Optional: validate Supabase Auth JWT when keys are present
+    
     const supabase = getServiceClient();
     if (
       supabase &&

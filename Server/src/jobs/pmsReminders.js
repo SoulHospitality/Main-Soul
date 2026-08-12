@@ -5,7 +5,7 @@ const { notifyStaff, OPS_ROLES, ADMIN_ROLES } = require('../services/pmsNotifica
 const { runCheckoutFeedbackWhatsApp } = require('./whatsappCheckoutFeedback');
 
 function startPmsReminderJobs() {
-  // 08:00 check-in reminders (deduped per reservation/day)
+  
   cron.schedule('0 8 * * *', async () => {
     try {
       const { rows } = await query(
@@ -31,7 +31,7 @@ function startPmsReminderJobs() {
     }
   });
 
-  // 09:00 payment pending (admin only, deduped)
+  
   cron.schedule('0 9 * * *', async () => {
     try {
       const { rows } = await query(
@@ -56,7 +56,7 @@ function startPmsReminderJobs() {
     }
   });
 
-  // 10:00 Cairo-ish server cron: post-checkout WhatsApp feedback (deduped in log table)
+  
   cron.schedule('0 10 * * *', async () => {
     try {
       const result = await runCheckoutFeedbackWhatsApp();
@@ -68,7 +68,7 @@ function startPmsReminderJobs() {
     }
   });
 
-  // Nightly iCal refresh 03:00
+  
   cron.schedule('0 3 * * *', async () => {
     try {
       const result = await refreshIcalBlocks();

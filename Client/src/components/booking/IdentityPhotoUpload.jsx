@@ -27,9 +27,7 @@ function isPdfFile(file) {
   return type === 'application/pdf' || name.endsWith('.pdf');
 }
 
-/**
- * Drag-and-drop upload for National ID / Passport photos or PDFs.
- */
+
 export default function IdentityPhotoUpload({
   files = [],
   onChange,

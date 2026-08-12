@@ -17,7 +17,7 @@ import { currency, formatDate, unitDisplay } from '../utils/formatters';
 import { getRoleTheme } from '../utils/roleTheme';
 import { PMS_LABELS } from '../utils/permissions';
 
-// ── helpers ──────────────────────────────────────────────────────────────────
+
 const PROJECT_COLORS = ['#283f5e', '#134e5e', '#F28C28', '#2a9d8f', '#6b8cae', '#16233a', '#e8913a'];
 
 function pctColor(pct) {
@@ -31,7 +31,7 @@ function pctBg(pct) {
   return 'bg-red-500';
 }
 
-// ── small stat card ───────────────────────────────────────────────────────────
+
 function StatCard({ icon: Icon, iconBg, iconColor, title, value, sub }) {
   return (
     <div className="card p-5 flex items-center gap-4">
@@ -47,7 +47,7 @@ function StatCard({ icon: Icon, iconBg, iconColor, title, value, sub }) {
   );
 }
 
-// ── today list card (check-ins / check-outs) ─────────────────────────────────
+
 function TodayCard({ icon: Icon, iconBg, iconColor, title, count, rows, emptyText, rowColor }) {
   return (
     <div className="card p-5">
@@ -87,7 +87,7 @@ function TodayCard({ icon: Icon, iconBg, iconColor, title, count, rows, emptyTex
   );
 }
 
-// ── main ──────────────────────────────────────────────────────────────────────
+
 export default function Dashboard() {
   const { user } = useAuth();
   const theme = getRoleTheme(user?.role);
@@ -122,7 +122,7 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
 
-      {/* ── Header ── */}
+      
       <div className="page-header">
         <p className="soul-eyebrow mb-2" style={{ color: 'var(--pms-accent-text)' }}>
           {theme.eyebrow} · {PMS_LABELS[user?.role]}
@@ -134,7 +134,7 @@ export default function Dashboard() {
         </p>
       </div>
 
-      {/* ── Top stat cards ── */}
+      
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <StatCard
           icon={Building2}   iconBg="bg-soul-blue-50"    iconColor="text-soul-blue"
@@ -192,7 +192,7 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* ── Finance cards (non op-manager) ── */}
+      
       {canSeeFinance && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <StatCard
@@ -216,7 +216,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── Per-project stats table ── */}
+      
       {projectStats.length > 0 && (
         <div className="card p-0 overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
@@ -268,7 +268,7 @@ export default function Dashboard() {
                   </tr>
                 ))}
               </tbody>
-              {/* Totals row */}
+              
               {projectStats.length > 1 && (
                 <tfoot>
                   <tr className="bg-gray-100 border-t-2 border-gray-200">
@@ -305,7 +305,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── Today: check-ins + check-outs ── */}
+      
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <TodayCard
           icon={LogIn}   iconBg="bg-teal-100"   iconColor="text-teal-600"
@@ -325,7 +325,7 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* ── Revenue chart (non op-manager) ── */}
+      
       {canSeeFinance && revenueChart.length > 0 && (
         <div className="card">
           <div className="card-header">
@@ -351,7 +351,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── Recent reservations ── */}
+      
       <div className="card">
         <div className="card-header">
           <h3 className="font-semibold text-gray-900">Recent Reservations</h3>

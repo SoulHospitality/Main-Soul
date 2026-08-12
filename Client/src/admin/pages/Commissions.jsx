@@ -272,7 +272,7 @@ export default function Commissions() {
         )}
       </div>
 
-      {/* Channel split: all / manual / website (admin only) */}
+      
       {!agentOnly && (
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="card border border-slate-200 bg-slate-50/80 p-5">

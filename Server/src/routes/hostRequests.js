@@ -44,7 +44,7 @@ function clean(v, max = 200) {
   return s.slice(0, max);
 }
 
-/** POST /api/host-requests — public Become a Host form */
+
 router.post('/', submitLimiter, async (req, res, next) => {
   try {
     const fullName = clean(req.body?.full_name || req.body?.fullName, 120);
@@ -147,7 +147,7 @@ router.post('/', submitLimiter, async (req, res, next) => {
 
     res.status(201).json({ ok: true, id: lead.id });
   } catch (err) {
-    // Columns may not exist yet if migration 029 not applied — surface clear error
+    
     if (String(err.message || '').includes('furnishing_status')) {
       return res.status(503).json({
         error: 'Host requests are temporarily unavailable. Please try again shortly.',

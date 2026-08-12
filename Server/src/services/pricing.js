@@ -6,11 +6,7 @@ function roundMoney(n) {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 }
 
-/**
- * Normalize pg Date / ISO / date-like values to YYYY-MM-DD.
- * `String(date).slice(0, 10)` breaks on Date objects ("Wed Aug 0…").
- * pg `date` → UTC midnight; timestamptz local midnights use local calendar day.
- */
+
 function toIsoDate(value) {
   if (value == null || value === '') return null;
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
@@ -50,7 +46,7 @@ function localIso(d) {
   return `${y}-${m}-${day}`;
 }
 
-/** Calendar "today" in Africa/Cairo (guest business timezone). */
+
 function todayIsoBusiness(now = new Date()) {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Africa/Cairo',
@@ -95,7 +91,7 @@ function computeFees(unit, { nights, subtotal, adults = 1, teens = 0 }) {
   const { computeBeachAccessFee } = require('../lib/beachAccess');
   const cleaning = housekeepingFeeForUnit(unit);
   const { fee: access, beach } = computeBeachAccessFee(unit, { nights, adults, teens });
-  // Guest checkout: flat 15% service fees + taxes on accommodation subtotal.
+  
   const servicePct = 15;
   const service = Math.round(Number(subtotal || 0) * (servicePct / 100));
   const deposit = Number(unit?.security_deposit_egp || 0);
@@ -121,9 +117,7 @@ function computeFees(unit, { nights, subtotal, adults = 1, teens = 0 }) {
   };
 }
 
-/**
- * Quote a stay. Missing daily price ⇒ unavailable (soul-website parity).
- */
+
 async function quoteStay({
   wpPostId,
   checkin,
@@ -206,12 +200,7 @@ async function isDateBlocked(wpPostId, dateStr) {
   return blocked.some((b) => b.date === dateStr);
 }
 
-/**
- * Blocked nights for guest calendar / quote.
- * Sources: manual blocks, live OTA iCal, pending/confirmed bookings,
- * active PMS reservations, unpriced nights.
- * `unit_ical_blocks` is NOT used for guest truth (admin cache only).
- */
+
 async function getBlockedDates(wpPostId, from, to, { includeUnpriced = true } = {}) {
   const byDate = new Map();
 
@@ -238,7 +227,7 @@ async function getBlockedDates(wpPostId, from, to, { includeUnpriced = true } = 
   );
   for (const r of bookings) push(r.date, 'booking');
 
-  // PMS reservations (admin/owner stays) so delete frees the guest calendar
+  
   const { rows: reservations } = await query(
     `SELECT d::text AS date FROM reservations r
        JOIN units u ON u.id = r.unit_id
@@ -255,7 +244,7 @@ async function getBlockedDates(wpPostId, from, to, { includeUnpriced = true } = 
     for (const date of live) push(date, 'ical');
   } catch (err) {
     console.warn('[pricing] live iCal failed', wpPostId, err.message);
-    // Fallback to cache if live fetch fails
+    
     const { rows: cached } = await query(
       `SELECT date::text AS date FROM unit_ical_blocks
        WHERE wp_post_id = $1 AND date >= $2 AND date < $3`,

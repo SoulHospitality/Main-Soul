@@ -23,7 +23,7 @@ export function defaultAdminPage(role) {
   }
 }
 
-/** Unified guest+staff sign-in (no separate admin login page). */
+
 export const ADMIN_LOGIN = '/sign-in';
 export const ADMIN_CHANGE_PASSWORD = `${A}/change-password`;
 export const ADMIN_OWNER_STATEMENT = `${A}/financial-system?tab=owners`;

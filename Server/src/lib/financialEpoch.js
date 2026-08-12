@@ -1,7 +1,4 @@
-/**
- * Company books start here — revenue, payments, expenses, and related totals
- * ignore anything before this date.
- */
+
 const FINANCIAL_EPOCH =
   process.env.FINANCIAL_EPOCH || '2026-04-01';
 
@@ -11,7 +8,7 @@ function maxDate(a, b) {
   return String(a) >= String(b) ? a : b;
 }
 
-/** Floor a requested from-date at the financial epoch. */
+
 function clampFromDate(fromDate) {
   return maxDate(fromDate || null, FINANCIAL_EPOCH);
 }

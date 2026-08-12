@@ -27,11 +27,7 @@ const RENTAL_TYPE_KEYS = {
 const inputCls =
   'w-full rounded-xl border border-soul-line bg-white px-3.5 py-2.5 text-sm text-soul-blue outline-none focus:border-soul-blue focus:ring-2 focus:ring-soul-blue/10 disabled:cursor-not-allowed disabled:opacity-55';
 
-/**
- * Vertical floating filter panel for the properties list (desktop sticky).
- * Same fields power the mobile full-screen sheet via `variant="sheet"`.
- * Filter changes apply live — no search button required on desktop.
- */
+
 export default function PropertyFiltersSidebar({
   values,
   onApply,
@@ -77,7 +73,7 @@ export default function PropertyFiltersSidebar({
     values.checkout,
     values.guests,
     values.beds,
-    // Serialize so checkbox sync is stable across identical selections
+    
     Array.isArray(values.types) ? values.types.join(',') : '',
     values.priceMin,
     values.priceMax,
@@ -126,7 +122,7 @@ export default function PropertyFiltersSidebar({
 
   function setDestinationLive(value) {
     setDestination(value);
-    // Destination change clears project; chips handle project picks
+    
     liveApply({ destination: value, project: '' });
   }
 

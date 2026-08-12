@@ -33,9 +33,7 @@ export default function SignInPage() {
           navigate(defaultAdminPage(staff.role), { replace: true });
         }
       }
-    } catch {
-      /* ignore */
-    }
+    } catch {}
   }, [user, navigate, nextPath, staffOnly]);
 
   return (

@@ -1,6 +1,4 @@
-/**
- * Soul points: 1 EGP reservation total → 1 Soul Point.
- */
+
 const { pool } = require('../config/db');
 
 async function awardPointsForBooking(booking, { reason = 'reservation' } = {}) {

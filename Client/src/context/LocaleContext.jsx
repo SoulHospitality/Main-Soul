@@ -55,9 +55,7 @@ export function LocaleProvider({ children }) {
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, locale);
-    } catch {
-      /* ignore */
-    }
+    } catch {}
   }, [locale]);
 
   const effectiveLocale = isStaffPath(pathname) ? 'en' : locale;
@@ -112,7 +110,7 @@ export function useLocale() {
   return ctx;
 }
 
-/** Convenience: returns t() only */
+
 export function useT() {
   return useLocale().t;
 }

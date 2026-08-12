@@ -2,11 +2,7 @@ import { useLocation } from 'react-router-dom';
 import { whatsappHref, listingWhatsAppMessage } from '../../theme/brand';
 import { useLocale } from '../../context/LocaleContext';
 
-/**
- * Floating WhatsApp button (soul-website style): green circle, fixed end/bottom.
- * Hidden on admin / sales portals.
- * On listing pages, prefill includes the unit link.
- */
+
 export default function WhatsAppFAB({ message }) {
   const { pathname } = useLocation();
   const { t } = useLocale();

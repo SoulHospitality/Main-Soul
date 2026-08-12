@@ -29,7 +29,7 @@ export default function AboutPage() {
     <div className="bg-white">
       <Header overHero />
 
-      {/* Hero — full-bleed, brand first */}
+      
       <section className="relative isolate min-h-[72svh] overflow-hidden md:min-h-[78svh]">
         <img
           src="/soul-brand/coast-hero-2.jpg"
@@ -67,7 +67,7 @@ export default function AboutPage() {
         </div>
       </section>
 
-      {/* Our Story */}
+      
       <section className="mx-auto max-w-soul px-5 py-16 sm:px-8 md:py-20">
         <p className="soul-eyebrow text-soul-muted mb-2">{t('about.storyEyebrow')}</p>
         <h2 className="font-display text-3xl text-soul-blue md:text-4xl">
@@ -83,7 +83,7 @@ export default function AboutPage() {
         </div>
       </section>
 
-      {/* Our Values */}
+      
       <section className="border-t border-soul-line bg-soul-ivory/60 py-16 md:py-20">
         <div className="mx-auto max-w-soul px-5 sm:px-8">
           <p className="soul-eyebrow text-soul-muted mb-2">{t('about.valuesEyebrow')}</p>

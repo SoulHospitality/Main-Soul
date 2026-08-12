@@ -58,7 +58,7 @@ const BEACH_ACCESS_PERIODS = [
   { value: 14, label: 'Every 14 days' },
 ];
 
-/** In-unit amenity suggestions for new units (existing published amenities are unchanged). */
+
 const AMENITY_SUGGESTIONS = [
   'Wi-Fi',
   'Bed Lines',
@@ -142,7 +142,7 @@ const EMPTY_FORM = {
   unit_area: '',
 };
 
-/** Capacity: studio → 2; else 2 × bedrooms (+1 if nanny room). */
+
 function guestsFromBedrooms(bedrooms, hasNannyRoom = false) {
   const n = Number(bedrooms);
   if (!Number.isFinite(n) || n <= 0) return 2;

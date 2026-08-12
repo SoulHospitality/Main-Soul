@@ -44,10 +44,7 @@ const buildCalendarDays = (monthDate) => {
   });
 };
 
-/**
- * Capsule-style From / To range calendar (shared look with homepage search).
- * variant: "default" | "hero" (frosted glass for homepage capsule)
- */
+
 export default function DateRangePicker({
   checkin = '',
   checkout = '',

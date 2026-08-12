@@ -1,7 +1,4 @@
-/**
- * Canonical project / compound display names.
- * Gaia / gaia / gAiA → GAIA
- */
+
 function normalizeProjectName(name) {
   const raw = String(name || '').trim();
   if (!raw) return raw;

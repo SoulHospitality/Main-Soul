@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../api/axios';
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+
 const isoStr = (d) => {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -22,14 +22,14 @@ function nightsBetween(a, b) {
 }
 
 function normaliseDate(d) {
-  // Handles "2026-04-02", "2026-04-02T00:00:00.000Z", "2026-04-02 00:00:00+00"
+  
   return String(d).replace('T', ' ').split(' ')[0];
 }
 
-// Add one day purely using strings — avoids all timezone/DST issues
+
 function addOneDayStr(dateStr) {
   const [y, m, d] = dateStr.split('-').map(Number);
-  const next = new Date(y, m - 1, d + 1); // LOCAL midnight — no UTC shift
+  const next = new Date(y, m - 1, d + 1); 
   return isoStr(next);
 }
 
@@ -48,10 +48,10 @@ function formatNights(checkIn, checkOut) {
   return { nights: n, label: `${fmt(ci)} → ${fmt(co)}` };
 }
 
-// ─── Single month grid ────────────────────────────────────────────────────────
+
 function MonthGrid({ year, month, checkIn, checkOut, hovering, blockedSet, checkoutOnlySet, onDayClick, onDayHover, today, allowPastDates }) {
   const total = daysInMonth(year, month);
-  const firstDow = new Date(year, month, 1).getDay(); // 0=Sun
+  const firstDow = new Date(year, month, 1).getDay(); 
   const header = new Date(year, month).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
   const cells = [];
@@ -62,24 +62,24 @@ function MonthGrid({ year, month, checkIn, checkOut, hovering, blockedSet, check
     <div className="min-w-0">
       <p className="text-center text-sm font-semibold text-gray-900 mb-3">{header}</p>
 
-      {/* Day-of-week row */}
+      
       <div className="grid grid-cols-7 mb-1">
         {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(h => (
           <div key={h} className="text-center text-xs font-medium text-gray-400 py-1">{h}</div>
         ))}
       </div>
 
-      {/* Day cells */}
+      
       <div className="grid grid-cols-7">
         {cells.map((date, idx) => {
           if (!date) return <div key={`e-${idx}`} className="h-10" />;
 
           const ds = isoStr(date);
           const isPast       = ds < today;
-          // Interior night: truly unavailable (someone sleeping there)
+          
           const isBlocked    = blockedSet.has(ds) && !checkoutOnlySet.has(ds);
-          // Turnover day: both check-in and check-out of existing reservations
-          // → free to use as check-in OR check-out of new reservations
+          
+          
           const isCoOnly     = checkoutOnlySet.has(ds) && !blockedSet.has(ds);
           const isDisabled   = (isPast && !allowPastDates) || isBlocked;
           const isToday      = ds === today;
@@ -89,15 +89,15 @@ function MonthGrid({ year, month, checkIn, checkOut, hovering, blockedSet, check
           const hasRange     = !!(checkIn && checkOut);
           const inRange      = hasRange && ds > checkIn && ds < checkOut;
 
-          // Hover preview (check-in selected, hovering possible checkout)
+          
           const hoverEnd     = hovering && hovering > checkIn ? hovering : null;
           const inHover      = !hasRange && checkIn && hoverEnd && ds > checkIn && ds <= hoverEnd;
           const isHoverEnd   = !hasRange && ds === hovering && hovering > checkIn;
 
-          // ── Range band background (behind the circle) ──────────────────────
-          // Uses two absolute divs: one for left half, one for right half of band
-          let bandLeft  = false;  // colour left  half of this cell
-          let bandRight = false;  // colour right half
+          
+          
+          let bandLeft  = false;  
+          let bandRight = false;  
 
           if (hasRange) {
             if (isCheckIn)  bandRight = true;
@@ -109,21 +109,21 @@ function MonthGrid({ year, month, checkIn, checkOut, hovering, blockedSet, check
             if (inHover && !isHoverEnd) { bandLeft = true; bandRight = true; }
           }
 
-          // ── Circle style ───────────────────────────────────────────────────
+          
           let circleClass = 'relative z-10 w-9 h-9 flex items-center justify-center rounded-full text-sm font-medium transition-colors ';
           if (isCheckIn || isCheckOut || isHoverEnd) {
             circleClass += 'bg-gray-900 text-white ';
           } else if (isDisabled) {
             circleClass += 'text-gray-300 cursor-not-allowed line-through ';
           } else if (isCoOnly) {
-            // Turnover day (check-in or check-out of existing reservation)
-            // → available for adjacent reservations to share this date
+            
+            
             circleClass += 'text-emerald-700 font-semibold cursor-pointer hover:bg-emerald-50 ring-1 ring-emerald-300 ';
           } else {
             circleClass += 'text-gray-700 cursor-pointer hover:bg-gray-100 ';
           }
 
-          // Today ring (unless selected)
+          
           if (isToday && !isCheckIn && !isCheckOut) circleClass += 'ring-1 ring-gray-400 ';
 
           return (
@@ -138,16 +138,16 @@ function MonthGrid({ year, month, checkIn, checkOut, hovering, blockedSet, check
                 undefined
               }
             >
-              {/* Left-half band */}
+              
               {bandLeft && (
                 <div className={`absolute inset-y-1 left-0 w-1/2 ${(inHover && !isHoverEnd) || (!hasRange && inHover) ? 'bg-blue-50' : 'bg-blue-100'}`} />
               )}
-              {/* Right-half band */}
+              
               {bandRight && (
                 <div className={`absolute inset-y-1 right-0 w-1/2 ${inHover || !hasRange ? 'bg-blue-50' : 'bg-blue-100'}`} />
               )}
 
-              {/* Day circle */}
+              
               <div className={circleClass}>
                 {date.getDate()}
               </div>
@@ -159,7 +159,7 @@ function MonthGrid({ year, month, checkIn, checkOut, hovering, blockedSet, check
   );
 }
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+
 export default function BookingCalendar({ checkIn, checkOut, onChange, unitId, excludeId, allowPastDates = false }) {
   const today = isoStr(new Date());
 
@@ -169,12 +169,12 @@ export default function BookingCalendar({ checkIn, checkOut, onChange, unitId, e
 
   const [hovering, setHovering] = useState(null);
 
-  // Right month = left + 1
+  
   const rightRaw   = new Date(leftYear, leftMonth + 1);
   const rightYear  = rightRaw.getFullYear();
   const rightMonth = rightRaw.getMonth();
 
-  // ── Fetch reserved ranges for this unit ─────────────────────────────────────
+  
   const { data: reservedRanges = [], isLoading: loadingDates } = useQuery({
     queryKey: ['blocked-dates', unitId, excludeId],
     queryFn: () => api.get('/reservations/blocked-dates', {
@@ -184,70 +184,70 @@ export default function BookingCalendar({ checkIn, checkOut, onChange, unitId, e
     staleTime: 30000,
   });
 
-  // ── Build blocked & turnover sets ───────────────────────────────────────────
-  // Rule: only the INTERIOR nights of a reservation are truly blocked.
-  // Both check_in AND check_out are "turnover days" — they can be shared with
-  // adjacent reservations (same-day turnover in either direction).
+  
+  
+  
+  
   const { blockedSet, checkoutOnlySet } = useMemo(() => {
     const blocked = new Set();
-    const turnover = new Set(); // both check-in and check-out days of existing reservations
+    const turnover = new Set(); 
     reservedRanges.forEach(r => {
-      // Guest-parity single nights (iCal / manual / booking / unpriced)
+      
       if (r._guest_block || r.date) {
         blocked.add(normaliseDate(r.date || r.check_in));
         return;
       }
       const ci = normaliseDate(r.check_in);
       const co = normaliseDate(r.check_out);
-      // Interior nights only: from day AFTER check_in up to (not including) check_out
+      
       let cur = addOneDayStr(ci);
       while (cur < co) {
         blocked.add(cur);
         cur = addOneDayStr(cur);
       }
-      // Both boundaries are free for adjacent reservations
-      turnover.add(ci); // existing check-in → new reservation can check-OUT here
-      turnover.add(co); // existing check-out → new reservation can check-IN  here
+      
+      turnover.add(ci); 
+      turnover.add(co); 
     });
     return { blockedSet: blocked, checkoutOnlySet: turnover };
   }, [reservedRanges]);
 
-  // ── Check if a proposed range includes any blocked interior nights ──────────
+  
   const rangeHasConflict = useCallback((from, to) => {
     let cur = addOneDayStr(from);
     while (cur < to) {
-      // An interior night is blocked if it's in blockedSet AND not just a turnover day
+      
       if (blockedSet.has(cur) && !checkoutOnlySet.has(cur)) return true;
       cur = addOneDayStr(cur);
     }
     return false;
   }, [blockedSet, checkoutOnlySet]);
 
-  // ── Day click handler ────────────────────────────────────────────────────────
+  
   const handleDayClick = useCallback((ds) => {
-    // Fully blocked interior nights
+    
     if (blockedSet.has(ds) && !checkoutOnlySet.has(ds)) {
       toast.error('This date is unavailable');
       return;
     }
 
     if (!checkIn || (checkIn && checkOut)) {
-      // Start a fresh selection — turnover days are valid check-in candidates
+      
       onChange(ds, '');
       setHovering(null);
       return;
     }
 
-    // Have check-in, now picking check-out
+    
     if (ds <= checkIn) {
-      // Clicked before or on check-in → restart selection
+      
       if (blockedSet.has(ds) && !checkoutOnlySet.has(ds)) return;
       onChange(ds, '');
       setHovering(null);
       return;
     }
 
-    // Validate no blocked interior nights inside range
+    
     if (rangeHasConflict(checkIn, ds)) {
       toast.error('Your selection includes unavailable dates — please choose different dates');
       return;
@@ -257,7 +257,7 @@ export default function BookingCalendar({ checkIn, checkOut, onChange, unitId, e
     setHovering(null);
   }, [checkIn, checkOut, onChange, blockedSet, checkoutOnlySet, rangeHasConflict]);
 
-  // ── Navigation ───────────────────────────────────────────────────────────────
+  
   const goPrev = () => {
     if (leftMonth === 0) { setLeftYear(y => y - 1); setLeftMonth(11); }
     else setLeftMonth(m => m - 1);
@@ -269,7 +269,7 @@ export default function BookingCalendar({ checkIn, checkOut, onChange, unitId, e
 
   const nightsInfo = formatNights(checkIn, checkOut);
 
-  // Shared props for both month grids
+  
   const gridProps = {
     checkIn, checkOut, hovering,
     blockedSet, checkoutOnlySet,
@@ -291,7 +291,7 @@ export default function BookingCalendar({ checkIn, checkOut, onChange, unitId, e
   return (
     <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white shadow-sm">
 
-      {/* ── Header: nights summary + pills ──────────────────────────────────── */}
+      
       <div className="px-6 pt-5 pb-4 border-b border-gray-100">
         {nightsInfo ? (
           <div className="mb-4">
@@ -306,9 +306,9 @@ export default function BookingCalendar({ checkIn, checkOut, onChange, unitId, e
           <p className="text-sm text-gray-500 mb-4 font-medium">Select a check-in date</p>
         )}
 
-        {/* Check-in / Check-out pills */}
+        
         <div className="flex gap-3">
-          {/* Check-in pill */}
+          
           <div className={`flex-1 border rounded-xl px-4 py-2.5 transition-all
             ${!checkIn ? 'border-gray-900 ring-1 ring-gray-900 bg-white' :
               (!checkOut ? 'border-gray-300' : 'border-gray-200')} `}>
@@ -327,7 +327,7 @@ export default function BookingCalendar({ checkIn, checkOut, onChange, unitId, e
             </div>
           </div>
 
-          {/* Check-out pill */}
+          
           <div className={`flex-1 border rounded-xl px-4 py-2.5 transition-all
             ${checkIn && !checkOut ? 'border-gray-900 ring-1 ring-gray-900 bg-white' :
               checkOut ? 'border-gray-200' : 'border-gray-200'}`}>
@@ -348,7 +348,7 @@ export default function BookingCalendar({ checkIn, checkOut, onChange, unitId, e
         </div>
       </div>
 
-      {/* ── Month navigation ─────────────────────────────────────────────────── */}
+      
       <div className="px-6 pt-4">
         <div className="flex items-center justify-between mb-2">
           <button
@@ -358,7 +358,7 @@ export default function BookingCalendar({ checkIn, checkOut, onChange, unitId, e
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
-          <div className="flex-1" /> {/* spacer — labels are inside each month */}
+          <div className="flex-1" /> 
           <button
             type="button"
             onClick={goNext}
@@ -368,7 +368,7 @@ export default function BookingCalendar({ checkIn, checkOut, onChange, unitId, e
           </button>
         </div>
 
-        {/* ── Two month grids ──────────────────────────────────────────────── */}
+        
         <div
           className="grid gap-8 pb-5"
           style={{ gridTemplateColumns: '1fr 1fr' }}
@@ -379,7 +379,7 @@ export default function BookingCalendar({ checkIn, checkOut, onChange, unitId, e
         </div>
       </div>
 
-      {/* ── Legend ───────────────────────────────────────────────────────────── */}
+      
       <div className="px-6 py-3 border-t border-gray-100 bg-gray-50 flex items-center gap-5 text-xs text-gray-500 flex-wrap">
         <span className="flex items-center gap-1.5">
           <span className="w-5 h-5 rounded-full bg-gray-900 inline-flex items-center justify-center text-white text-[10px] font-bold">1</span>

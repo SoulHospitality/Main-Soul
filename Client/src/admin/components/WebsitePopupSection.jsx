@@ -6,9 +6,7 @@ import api from '../api/axios';
 import ConfirmDialog from './ui/ConfirmDialog';
 import LoadingSpinner from './ui/LoadingSpinner';
 
-/**
- * Singleton website entry popup — image stored on Cloudinary via PUT /pms/site-popup.
- */
+
 export default function WebsitePopupSection() {
   const qc = useQueryClient();
   const fileRef = useRef(null);

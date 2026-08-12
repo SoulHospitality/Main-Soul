@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-/**
- * Adults / children / infants popover (soul-website GuestSelector parity).
- */
+
 export default function ListingGuestSelector({ value, onChange, onClose, anchorRef, max = 8 }) {
   const popRef = useRef(null);
   const [pos, setPos] = useState(null);

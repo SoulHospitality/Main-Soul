@@ -30,7 +30,7 @@ api.interceptors.request.use((config) => {
 
 api.interceptors.response.use(
   (res) => {
-    // /staff/auth/me returns { user }; normalize for AuthContext
+    
     if (res.config.url?.includes('/staff/auth/me') && res.data?.user) {
       res.data = res.data.user;
     }

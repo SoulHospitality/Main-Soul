@@ -1,6 +1,4 @@
-/**
- * Daily guest WhatsApp: checkout / post-stay feedback request.
- */
+
 const { query } = require('../config/db');
 const { sendCheckoutFeedbackWhatsApp } = require('../services/guestWhatsApp');
 const { whatsappConfigured } = require('../services/whatsapp');
@@ -10,7 +8,7 @@ async function runCheckoutFeedbackWhatsApp() {
     return { sent: 0, skipped: 'not_configured' };
   }
 
-  // Guests who checked out yesterday (Cairo) — one feedback ask per reservation.
+  
   const { rows } = await query(
     `SELECT r.id,
             r.guest_name,

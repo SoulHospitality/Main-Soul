@@ -1,7 +1,7 @@
-/** Canonical property types for listings / host requests. */
+
 const UNIT_TYPES = ['Apartment', 'Studio', 'Villa', 'Penthouse', 'Chalet', 'Hotel Room'];
 
-/** Townhouse / town home → Villa. */
+
 function normalizePropertyType(type) {
   const raw = String(type || '').trim();
   if (!raw) return raw;

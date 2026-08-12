@@ -18,11 +18,7 @@ function compactPrice(amount) {
   return String(amount);
 }
 
-/**
- * Dual-month "Select dates" calendar (soul-website parity).
- * Shows PMS nightly prices under each available day.
- * `inline` — render in-place (e.g. BookingDrawer) instead of a portal popover.
- */
+
 export default function ListingDatePicker({
   value,
   onChange,

@@ -20,7 +20,7 @@ export const brand = {
   copyright: '© 2026 Soul Hospitality. All rights reserved.',
 };
 
-/** Empty string = plain wa.me link (no prefilled text). Undefined = default greeting. */
+
 export function whatsappHref(text) {
   const n = brand.whatsapp.replace(/\D/g, '');
   const base = `https://wa.me/${n}`;
@@ -29,7 +29,7 @@ export function whatsappHref(text) {
   return `${base}?text=${encodeURIComponent(message)}`;
 }
 
-/** Prefill WhatsApp with the unit listing URL when the guest is on a listing page. */
+
 export function listingWhatsAppMessage(pathnameOrUrl) {
   const raw = String(pathnameOrUrl || '').trim();
   if (!raw) return 'Hi Soul — I have a question';

@@ -1,4 +1,4 @@
-/** True when a stored ID document URL is a PDF (Cloudinary raw or .pdf). */
+
 export function isPdfUrl(url) {
   const s = String(url || '');
   if (!s) return false;
@@ -8,10 +8,7 @@ export function isPdfUrl(url) {
   return false;
 }
 
-/**
- * Cloudinary can deliver PDF page 1 as a JPG even when direct PDF delivery is blocked.
- * Returns null when the URL cannot be transformed (e.g. raw uploads).
- */
+
 export function idDocumentPagePreviewUrl(url, page = 1) {
   const s = String(url || '');
   if (!s || !isPdfUrl(s)) return null;
@@ -24,14 +21,14 @@ export function idDocumentPagePreviewUrl(url, page = 1) {
       .replace(/\.pdf($|\?)/i, '.jpg$1');
   }
 
-  // Fallback: swap extension only
+  
   if (/\.pdf($|\?)/i.test(s)) {
     return s.replace(/\.pdf($|\?)/i, '.jpg$1');
   }
   return null;
 }
 
-/** Thumbnail URL for list cells — page preview for PDFs, original for images. */
+
 export function idDocumentThumbUrl(url) {
   if (!isPdfUrl(url)) return url;
   return idDocumentPagePreviewUrl(url, 1) || url;

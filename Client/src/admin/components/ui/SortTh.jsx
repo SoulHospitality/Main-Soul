@@ -1,13 +1,6 @@
 import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 
-/**
- * Sortable <th> — drop-in replacement for any plain <th>.
- *
- * Usage:
- *   <SortTh col="amount" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="text-right">
- *     Amount
- *   </SortTh>
- */
+
 export default function SortTh({ col, sortKey, sortDir, onSort, children, className = '' }) {
   const active = sortKey === col;
   return (

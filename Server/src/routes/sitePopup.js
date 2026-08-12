@@ -3,7 +3,7 @@ const { query } = require('../config/db');
 
 const router = express.Router();
 
-/** Public: active website entry popup (at most one). */
+
 router.get('/', async (_req, res, next) => {
   try {
     const { rows } = await query(

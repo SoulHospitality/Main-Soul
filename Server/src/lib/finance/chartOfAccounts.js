@@ -1,7 +1,4 @@
-/**
- * Soul Hospitality — Chart of Accounts (28 accounts).
- * Single source of truth for account codes, names, and groupings.
- */
+
 
 const ACCOUNT_GROUPS = {
   assets: 'Assets',
@@ -12,7 +9,7 @@ const ACCOUNT_GROUPS = {
 };
 
 const CHART_OF_ACCOUNTS = [
-  // ── 1xxx Assets ──
+  
   { code: '101000', name: 'Bank - EGP Main Operating Account', group: 'assets', type: 'asset' },
   { code: '102000', name: 'Bank - USD Foreign Currency Account', group: 'assets', type: 'asset' },
   { code: '103000', name: 'Cash - Operations & Field Petty Cash', group: 'assets', type: 'asset' },
@@ -22,24 +19,24 @@ const CHART_OF_ACCOUNTS = [
   { code: '150000', name: 'Fixed Assets - Linens, Towels & Guest Equipment', group: 'assets', type: 'asset' },
   { code: '151000', name: 'Fixed Assets - Smart Locks & Field Tech Hardware', group: 'assets', type: 'asset' },
   { code: '159000', name: 'Accumulated Depreciation - Operating Assets', group: 'assets', type: 'asset' },
-  // ── 2xxx Liabilities ──
+  
   { code: '201000', name: 'Vendor Accounts Payable', group: 'liabilities', type: 'liability' },
   { code: '202000', name: 'Owner Accounts Payable (Funds Held in Trust)', group: 'liabilities', type: 'liability' },
   { code: '203000', name: 'Guest Advance Deposits (Unearned Revenue)', group: 'liabilities', type: 'liability' },
   { code: '204000', name: 'Security Deposits Payable (Guest Escrow Holdings)', group: 'liabilities', type: 'liability' },
   { code: '205000', name: 'Tax / VAT Payable (14% Egyptian VAT)', group: 'liabilities', type: 'liability' },
   { code: '206000', name: 'Withholding Tax Payable (WHT - Egyptian Tax Authority)', group: 'liabilities', type: 'liability' },
-  // ── 3xxx Equity ──
+  
   { code: '301000', name: 'Share Capital', group: 'equity', type: 'equity' },
   { code: '302000', name: 'Retained Earnings', group: 'equity', type: 'equity' },
   { code: '303000', name: 'Current Year Profit / Loss', group: 'equity', type: 'equity' },
-  // ── 4xxx Revenue ──
+  
   { code: '401000', name: 'Management Fee / Commission Revenue (Agent Split)', group: 'revenue', type: 'revenue' },
   { code: '402000', name: 'Cleaning & Turnover Fee Revenue', group: 'revenue', type: 'revenue' },
   { code: '403000', name: 'Maintenance Markup & Service Fee Revenue', group: 'revenue', type: 'revenue' },
   { code: '404000', name: 'Direct Rental Revenue (Owned / Master-Leased)', group: 'revenue', type: 'revenue' },
   { code: '409000', name: 'Miscellaneous Guest Revenue (Early Check-in, Extra Amenities)', group: 'revenue', type: 'revenue' },
-  // ── 5xxx COGS & Expenses ──
+  
   { code: '501000', name: 'Housekeeping & Laundry Direct Costs', group: 'expenses', type: 'expense' },
   { code: '502000', name: 'Guest Welcome Amenities & Refreshments', group: 'expenses', type: 'expense' },
   { code: '503000', name: 'Direct Villa Repairs & Maintenance (Soul Cost)', group: 'expenses', type: 'expense' },
@@ -69,7 +66,7 @@ function accountsByGroup() {
   return map;
 }
 
-/** Map expense category → GL account code */
+
 const EXPENSE_CATEGORY_TO_ACCOUNT = {
   housekeeping_cost: '501000',
   utilities_cost: '509000',

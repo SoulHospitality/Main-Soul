@@ -1,9 +1,6 @@
 import { useState, useMemo } from 'react';
 
-/**
- * Shared client-side sort hook.
- * Returns { sorted, sortKey, sortDir, handleSort }
- */
+
 export function useSortableTable(data = [], defaultKey = '', defaultDir = 'desc') {
   const [sortKey, setSortKey] = useState(defaultKey);
   const [sortDir, setSortDir] = useState(defaultDir);
@@ -15,7 +12,7 @@ export function useSortableTable(data = [], defaultKey = '', defaultDir = 'desc'
       const bv = b[sortKey];
       if (av == null) return 1;
       if (bv == null) return -1;
-      // Detect ISO date strings like "2026-07-15" or "2026-07-15T00:00:00.000Z"
+      
       const isDateStr = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v);
       const an = parseFloat(av);
       const bn = parseFloat(bv);

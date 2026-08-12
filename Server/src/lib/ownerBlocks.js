@@ -29,9 +29,7 @@ async function ensureWpPostId(unitId) {
   return next;
 }
 
-/**
- * Financial impact of owner blocking [from, to) nights.
- */
+
 async function previewOwnerBlockImpact(unitId, fromDate, toDate) {
   const { rows: units } = await query(`SELECT * FROM units WHERE id = $1`, [unitId]);
   const unit = units[0];
@@ -52,7 +50,7 @@ async function previewOwnerBlockImpact(unitId, fromDate, toDate) {
     };
   }
 
-  // Conflicts: existing reservations or non-owner blocks overlapping
+  
   const { rows: conflicts } = await query(
     `SELECT id, check_in::text AS check_in, check_out::text AS check_out, status,
             CASE WHEN is_owner_reservation = 1 THEN 'owner_stay' ELSE 'guest_booking' END AS kind

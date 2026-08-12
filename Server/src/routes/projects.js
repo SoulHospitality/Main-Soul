@@ -91,7 +91,7 @@ function catalogResponse(rows) {
   };
 }
 
-/** GET /api/projects — distinct destination names (SoulHospitality-compatible) */
+
 router.get('/', async (_req, res, next) => {
   try {
     const { rows } = await query(
@@ -108,7 +108,7 @@ router.get('/', async (_req, res, next) => {
   }
 });
 
-/** GET /api/projects/catalog — destinations + projectsByDestination */
+
 router.get('/catalog', async (_req, res, next) => {
   try {
     const rows = await loadCatalogRows();
@@ -118,7 +118,7 @@ router.get('/catalog', async (_req, res, next) => {
   }
 });
 
-/** POST /api/projects — create destination/project mapping (staff) */
+
 router.post(
   '/',
   authStaff,
@@ -179,7 +179,7 @@ router.post(
   }
 );
 
-/** PUT /api/projects/:id — update project (facilities, image, name) */
+
 router.put(
   '/:id',
   authStaff,
@@ -238,9 +238,7 @@ router.put(
       ) {
         try {
           await destroyCloudinaryUrl(existing[0].image_url, { allowFolders: [FOLDER_PROJECTS] });
-        } catch (_) {
-          /* non-blocking */
-        }
+        } catch (_) {}
       }
 
       const nextName = name || existing[0].name;
@@ -260,7 +258,7 @@ router.put(
   }
 );
 
-/** DELETE /api/projects/destination/:destination — remove all projects under a destination */
+
 router.delete(
   '/destination/:destination',
   authStaff,
@@ -288,7 +286,7 @@ router.delete(
           try {
             await destroyCloudinaryUrl(row.image_url, { allowFolders: [FOLDER_PROJECTS] });
           } catch (_) {
-            /* non-blocking */
+            
           }
         }
       }
@@ -314,7 +312,7 @@ router.delete(
   }
 );
 
-/** DELETE /api/projects/:id — remove one project mapping */
+
 router.delete('/:id', authStaff, requireRoles('admin', 'resale'), async (req, res, next) => {
   try {
     const { rows } = await query(
@@ -324,9 +322,7 @@ router.delete('/:id', authStaff, requireRoles('admin', 'resale'), async (req, re
     if (rows[0]?.image_url && String(rows[0].image_url).includes('res.cloudinary.com')) {
       try {
         await destroyCloudinaryUrl(rows[0].image_url, { allowFolders: [FOLDER_PROJECTS] });
-      } catch (_) {
-        /* non-blocking */
-      }
+      } catch (_) {}
     }
     res.json(catalogResponse(await loadCatalogRows()));
   } catch (err) {

@@ -4,12 +4,7 @@ import { ChevronLeft, ChevronRight, Download, ExternalLink, FileText, X } from '
 import api from '../api/axios';
 import { idDocumentPagePreviewUrl, isPdfUrl } from '../utils/idDocuments';
 
-/**
- * Centered document viewer for guest ID / passport images and PDFs.
- * Portaled to body above Accept/Reject modals. Media is fetched through the
- * authenticated PMS proxy as a blob so auth cookies/headers apply (direct
- * <img src="/api/..."> would 401 without the bearer token).
- */
+
 export default function IdDocumentPreviewModal({
   urls = [],
   index = 0,
@@ -60,7 +55,7 @@ export default function IdDocumentPreviewModal({
 
         const type = String(res.data?.type || res.headers?.['content-type'] || '').toLowerCase();
         if (type.includes('application/json') || type.includes('text/html') || type.includes('text/plain')) {
-          // Proxy returned an error payload as blob — try direct / Cloudinary page preview.
+          
           if (pdf && pagePreview) {
             setFallbackSrc(pagePreview);
           } else if (!pdf) {
@@ -72,7 +67,7 @@ export default function IdDocumentPreviewModal({
               const parsed = JSON.parse(text);
               if (parsed?.error) message = parsed.error;
             } catch {
-              /* keep default */
+              
             }
             setLoadError(message);
           }
@@ -86,7 +81,7 @@ export default function IdDocumentPreviewModal({
         setObjectUrl(created);
       } catch (e) {
         if (cancelled) return;
-        // Fall back to direct Cloudinary URL / PDF page transform.
+        
         if (pdf && pagePreview) {
           setFallbackSrc(pagePreview);
           setLoadError('');
@@ -102,7 +97,7 @@ export default function IdDocumentPreviewModal({
               const parsed = JSON.parse(text);
               if (parsed?.error) message = parsed.error;
             } catch {
-              /* keep default */
+              
             }
           } else if (data?.error) {
             message = data.error;

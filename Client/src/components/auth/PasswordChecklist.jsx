@@ -6,7 +6,7 @@ const RULE_KEYS = [
   { key: 'lowercase', i18nKey: 'common.passwordLowercase' },
 ];
 
-/** Live checklist matching SoulHospitality change/reset password UX */
+
 export default function PasswordChecklist({ checks, className = '' }) {
   const { t } = useLocale();
   return (

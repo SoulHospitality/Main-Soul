@@ -11,9 +11,7 @@ function slugify(s) {
     .slice(0, 80);
 }
 
-/**
- * Create a draft unit from an acquisition lead and link lead.unit_id.
- */
+
 async function createDraftUnitFromLead(lead, { actorId } = {}) {
   const title = lead.title || `Lead ${lead.id}`;
   const compound = normalizeProjectName(lead.project || title);

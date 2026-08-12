@@ -62,7 +62,7 @@ function EntryForm({ form, setForm, units, owners = [], ownerUnits = [] }) {
   return (
     <div className="space-y-4">
 
-      {/* ── In / Out toggle ── */}
+      
       <div className="grid grid-cols-2 gap-2">
         <button
           type="button"
@@ -88,7 +88,7 @@ function EntryForm({ form, setForm, units, owners = [], ownerUnits = [] }) {
         </button>
       </div>
 
-      {/* ── Advance toggle (only for Cash In) ── */}
+      
       {isIn && (
         <div className="grid grid-cols-2 gap-2">
           <button
@@ -116,7 +116,7 @@ function EntryForm({ form, setForm, units, owners = [], ownerUnits = [] }) {
         </div>
       )}
 
-      {/* ── Category ── */}
+      
       <div>
         <label className="label">Category *</label>
         <SearchableSelect value={form.category}
@@ -126,7 +126,7 @@ function EntryForm({ form, setForm, units, owners = [], ownerUnits = [] }) {
         />
       </div>
 
-      {/* ── Cost On ── */}
+      
       {!isIn && (
         <div>
           <label className="label">Cost On *</label>
@@ -156,7 +156,7 @@ function EntryForm({ form, setForm, units, owners = [], ownerUnits = [] }) {
         </div>
       )}
 
-      {/* ── Owner picker (owner-paid only) ── */}
+      
       {costOnOwner && (
         <div>
           <label className="label">Which owner pays? *</label>
@@ -175,7 +175,7 @@ function EntryForm({ form, setForm, units, owners = [], ownerUnits = [] }) {
         </div>
       )}
 
-      {/* ── General expense checkbox (Out only, not owner) ── */}
+      
       {!isIn && !costOnOwner && (
         <div className="flex items-center gap-2">
           <input
@@ -191,7 +191,7 @@ function EntryForm({ form, setForm, units, owners = [], ownerUnits = [] }) {
         </div>
       )}
 
-      {/* ── Unit ── */}
+      
       {(!isIn ? (costOnOwner || !form.is_general) : true) && (
         <div>
           <label className="label">
@@ -216,7 +216,7 @@ function EntryForm({ form, setForm, units, owners = [], ownerUnits = [] }) {
         </div>
       )}
 
-      {/* ── Reservation period ── */}
+      
       {needsDates && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 space-y-2">
           <p className="text-xs font-semibold text-blue-800 mb-1">Reservation Period *</p>
@@ -235,7 +235,7 @@ function EntryForm({ form, setForm, units, owners = [], ownerUnits = [] }) {
         </div>
       )}
 
-      {/* ── Custom description for Others ── */}
+      
       {form.category === 'Others' && (
         <div>
           <label className="label">Description *</label>
@@ -245,7 +245,7 @@ function EntryForm({ form, setForm, units, owners = [], ownerUnits = [] }) {
         </div>
       )}
 
-      {/* ── Amount / Date ── */}
+      
       <div className="form-grid">
         <div>
           <label className="label">Amount (EGP) *</label>
@@ -306,7 +306,7 @@ export function PettyCashSection({ embedded = false }) {
   const [payReservationId, setPayReservationId] = useState('');
   const [payMethod,        setPayMethod]        = useState('cash');
 
-  // ── Queries ────────────────────────────────────────────────────────────────
+  
   const { data: entries = [], isLoading } = useQuery({
     queryKey: ['petty-cash', location, filterUnit, filterPaidBy],
     queryFn:  () => api.get('/petty-cash', {
@@ -344,7 +344,7 @@ export function PettyCashSection({ embedded = false }) {
     enabled: !!payTarget,
   });
 
-  // ── Mutations ──────────────────────────────────────────────────────────────
+  
   const saveMutation = useMutation({
     mutationFn: (d) => editId
       ? api.patch(`/petty-cash/${editId}`, d)
@@ -395,7 +395,7 @@ export function PettyCashSection({ embedded = false }) {
     onError: (e) => toast.error(e.response?.data?.error || 'Failed to link payment'),
   });
 
-  // ── Handlers ───────────────────────────────────────────────────────────────
+  
   const openAdd = (defaultType = 'out') => {
     setForm({ ...EMPTY_FORM, type: defaultType });
     setEditId(null);
@@ -491,7 +491,7 @@ export function PettyCashSection({ embedded = false }) {
     payMutation.mutate({ id: payTarget.id, reservation_id: payReservationId, payment_method: payMethod });
   };
 
-  // ── Computed totals ────────────────────────────────────────────────────────
+  
   const openingBalance = parseFloat(settings?.opening_balance ?? 0);
   const activeEntries  = entries.filter(e => e.status !== 'moved');
   const totalIn        = activeEntries.filter(e => e.type === 'in').reduce((s, e) => s + parseFloat(e.amount), 0);
@@ -508,7 +508,7 @@ export function PettyCashSection({ embedded = false }) {
     return { ...e, _runningBalance: isMoved ? null : running };
   });
 
-  // Modal title
+  
   const modalTitle = editId
     ? 'Edit Entry'
     : form.type === 'in'
@@ -518,7 +518,7 @@ export function PettyCashSection({ embedded = false }) {
   return (
     <div className="space-y-6">
 
-      {/* ── Location Tabs ──────────────────────────────────────────────────── */}
+      
       {availableTabs.length > 1 && (
         <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
           {availableTabs.map(tab => (
@@ -537,7 +537,7 @@ export function PettyCashSection({ embedded = false }) {
         </div>
       )}
 
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className={embedded ? '' : 'page-header mb-0'}>
           {embedded ? (
@@ -563,7 +563,7 @@ export function PettyCashSection({ embedded = false }) {
         )}
       </div>
 
-      {/* ── Summary Cards ───────────────────────────────────────────────────── */}
+      
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="card py-4 text-center relative">
           <p className="text-xs text-gray-400 mb-1">Opening Balance</p>
@@ -607,7 +607,7 @@ export function PettyCashSection({ embedded = false }) {
         </div>
       </div>
 
-      {/* ── Filters ─────────────────────────────────────────────────────────── */}
+      
       <div className="card p-3 flex flex-wrap items-end gap-3">
         <div>
           <label className="label text-xs">Unit</label>
@@ -639,7 +639,7 @@ export function PettyCashSection({ embedded = false }) {
         </span>
       </div>
 
-      {/* ── Table ───────────────────────────────────────────────────────────── */}
+      
       {isLoading ? (
         <LoadingSpinner />
       ) : entries.length === 0 ? (
@@ -678,7 +678,7 @@ export function PettyCashSection({ embedded = false }) {
                   <tr key={entry.id} className={isMoved ? 'bg-gray-50 opacity-70' : isCashIn ? 'bg-emerald-50/40' : ''}>
                     <td className="text-gray-400 text-xs">{i + 1}</td>
 
-                    {/* Type badge */}
+                    
                     <td>
                       {isCashIn ? (
                         entry.is_advance ? (
@@ -741,7 +741,7 @@ export function PettyCashSection({ embedded = false }) {
                       {formatDate(entry.expense_date)}
                     </td>
 
-                    {/* Running Balance */}
+                    
                     <td className="text-right tabular-nums">
                       {isMoved ? (
                         <span className="text-gray-300 text-xs">—</span>
@@ -752,7 +752,7 @@ export function PettyCashSection({ embedded = false }) {
                       )}
                     </td>
 
-                    {/* Actions */}
+                    
                     <td>
                       {isMoved ? (
                         <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${movedColors}`}>
@@ -802,7 +802,7 @@ export function PettyCashSection({ embedded = false }) {
         </div>
       )}
 
-      {/* ── Add / Edit Entry Modal ───────────────────────────────────────────── */}
+      
       <Modal
         open={modal}
         onClose={() => { setModal(false); setEditId(null); }}
@@ -827,7 +827,7 @@ export function PettyCashSection({ embedded = false }) {
         />
       </Modal>
 
-      {/* ── Move to Expenses Confirm ─────────────────────────────────────────── */}
+      
       <ConfirmDialog
         open={!!moveTarget}
         onClose={() => setMoveTarget(null)}
@@ -843,7 +843,7 @@ export function PettyCashSection({ embedded = false }) {
         danger={false}
       />
 
-      {/* ── Link to Payment Modal ────────────────────────────────────────────── */}
+      
       <Modal
         open={!!payTarget}
         onClose={() => { setPayTarget(null); setPayReservationId(''); setPayMethod('cash'); }}

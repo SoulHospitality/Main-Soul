@@ -1,8 +1,4 @@
-/**
- * Admin analytics reports — revenue, by employee/unit, daily pivot, Excel export.
- * Behavior matches PMS-master reports routes, adapted for Main Soul schema
- * (units.title/unit_number, staff_users, FINANCIAL_EPOCH).
- */
+
 const express = require('express');
 const XLSX = require('xlsx');
 const { query } = require('../../config/db');
@@ -12,9 +8,9 @@ const { calcReservationFinancials, round2 } = require('../../lib/commission');
 
 const router = express.Router();
 
-// Per-route admin gate only — do NOT use router.use(requireRoles(...)) here.
-// This module is mounted at /api/pms without a path prefix; a router-level role
-// middleware would 403 every PMS request for non-admin roles (ops, HK, agents).
+
+
+
 
 function dateFilters(req, { alias = 'r', checkInCol = 'check_in', checkOutCol = 'check_out' } = {}) {
   const from = clampFromDate(req.query.from_date);
@@ -32,7 +28,7 @@ function dateFilters(req, { alias = 'r', checkInCol = 'check_in', checkOutCol = 
   return { sql, params, from, to };
 }
 
-/** GET /reports/revenue */
+
 router.get('/reports/revenue', requireRoles('admin'), async (req, res, next) => {
   try {
     const { sql: dateSql, params, from } = dateFilters(req);
@@ -82,7 +78,7 @@ router.get('/reports/revenue', requireRoles('admin'), async (req, res, next) => 
   }
 });
 
-/** GET /reports/by-employee */
+
 router.get('/reports/by-employee', requireRoles('admin'), async (req, res, next) => {
   try {
     const { sql: dateSql, params } = dateFilters(req);
@@ -109,7 +105,7 @@ router.get('/reports/by-employee', requireRoles('admin'), async (req, res, next)
   }
 });
 
-/** GET /reports/by-unit */
+
 router.get('/reports/by-unit', requireRoles('admin'), async (req, res, next) => {
   try {
     const { sql: dateSql, params } = dateFilters(req);
@@ -181,11 +177,7 @@ router.get('/reports/by-unit', requireRoles('admin'), async (req, res, next) => 
   }
 });
 
-/**
- * GET /reports/daily-reservations
- * Pivot by creation date × project (Cairo). Not filtered by stay-date UI filters
- * (same as PMS-master). Floored at FINANCIAL_EPOCH only.
- */
+
 router.get('/reports/daily-reservations', requireRoles('admin'), async (req, res, next) => {
   try {
     const { rows } = await query(
@@ -225,7 +217,7 @@ router.get('/reports/daily-reservations', requireRoles('admin'), async (req, res
   }
 });
 
-/** GET /reports/export/reservations/excel */
+
 router.get('/reports/export/reservations/excel', requireRoles('admin'), async (req, res, next) => {
   try {
     const { sql: dateSql, params } = dateFilters(req);

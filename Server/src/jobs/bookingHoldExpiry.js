@@ -1,9 +1,6 @@
 const { query } = require('../config/db');
 
-/**
- * Auto-cancel only temporary inventory holds (`held`), never staff-queue
- * website requests (`pending` awaiting Accept/Reject).
- */
+
 function startBookingHoldExpiryJob() {
   const interval = Number(process.env.BOOKING_HOLD_SWEEP_INTERVAL_MS || 60000);
   const timer = setInterval(async () => {

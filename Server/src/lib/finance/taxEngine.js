@@ -1,6 +1,4 @@
-/**
- * Egyptian tax engine — VAT (14%) and WHT (1% / 3%) calculations.
- */
+
 
 const VAT_OUTPUT_PCT = 14;
 const WHT_STANDARD_PCT = 3;
@@ -10,7 +8,7 @@ function round2(n) {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 }
 
-/** Output VAT on Soul commission / management fees (taxable service revenue). */
+
 function outputVatOnCommission(commissionBase) {
   const base = Math.max(0, Number(commissionBase) || 0);
   return {
@@ -21,7 +19,7 @@ function outputVatOnCommission(commissionBase) {
   };
 }
 
-/** WHT withheld on vendor bills (default 3%; 1% for qualifying small vendors). */
+
 function withholdingTax(vendorBillAmount, { ratePct = WHT_STANDARD_PCT } = {}) {
   const base = Math.max(0, Number(vendorBillAmount) || 0);
   const rate = ratePct === WHT_REDUCED_PCT ? WHT_REDUCED_PCT : WHT_STANDARD_PCT;
@@ -33,11 +31,7 @@ function withholdingTax(vendorBillAmount, { ratePct = WHT_STANDARD_PCT } = {}) {
   };
 }
 
-/**
- * Booking split for trust accounting display.
- * @param {object} fin — calcReservationFinancials output
- * @param {object} reservation — raw reservation row
- */
+
 function bookingSplit(fin, reservation) {
   const gross = fin.grossAmount || 0;
   const cleaning = fin.housekeepingFees || 0;
@@ -66,7 +60,7 @@ function bookingSplit(fin, reservation) {
   };
 }
 
-/** Monthly tax liability rollup */
+
 function monthlyTaxLiability({ commissionTotal, vendorBills = [], monthLabel }) {
   const vat = outputVatOnCommission(commissionTotal);
   const whtLines = vendorBills.map((bill) => ({

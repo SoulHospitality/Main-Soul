@@ -1,4 +1,4 @@
-/** Fixed housekeeping: villa 2500 EGP, everything else 1500 EGP. */
+
 export const HOUSEKEEPING_DEFAULT = 1500;
 export const HOUSEKEEPING_VILLA = 2500;
 

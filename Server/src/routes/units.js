@@ -4,7 +4,7 @@ const { quoteStay, getBlockedDates, todayIsoBusiness } = require('../services/pr
 
 const router = express.Router();
 
-/** Fields guests must never see (ops / owner / unit codes). */
+
 const GUEST_UNIT_OMIT = new Set([
   'unit_number',
   'internal_code',
@@ -40,7 +40,7 @@ function toPublicUnit(row) {
     if (GUEST_UNIT_OMIT.has(k)) continue;
     out[k] = v;
   }
-  // Fold tenant commission into the displayed nightly rate (no separate fee label).
+  
   if (out.price_fallback != null && Number(out.price_fallback) > 0) {
     out.price_fallback = applyGuestTenantMarkup(out.price_fallback, row);
   }
@@ -54,9 +54,7 @@ function facilitiesFromOtherDetails(row) {
     if (Array.isArray(details?.facilities)) {
       return details.facilities.map((f) => String(f || '').trim()).filter(Boolean);
     }
-  } catch {
-    /* ignore */
-  }
+  } catch {}
   return [];
 }
 
@@ -76,7 +74,7 @@ async function projectFacilitiesMap(projectNames) {
   return map;
 }
 
-/** Map wp_post_id → raw nightly price for Africa/Cairo "today". */
+
 async function loadTodayPriceMap(wpPostIds) {
   const today = todayIsoBusiness();
   const ids = [
@@ -106,10 +104,10 @@ function attachFacilities(row, facilitiesByProject, todayPriceByWp = null, price
   const key = String(row.compound || row.project || '').trim().toLowerCase();
   const fromProject = key ? facilitiesByProject.get(key) || [] : [];
   const fromUnit = facilitiesFromOtherDetails(row);
-  // Prefer project-level facilities; fall back to legacy unit facilities (published units).
+  
   out.facilities = fromProject.length ? fromProject : fromUnit;
 
-  // Guest cards/detail: show today's calendar rate when available (rent only).
+  
   const listingType = String(row.listing_type || 'rent').toLowerCase();
   if (listingType !== 'sale' && todayPriceByWp && row.wp_post_id != null) {
     const rawToday = todayPriceByWp.get(Number(row.wp_post_id));
@@ -150,7 +148,7 @@ router.get('/', async (req, res, next) => {
     const params = [status, listingType];
     let i = 3;
 
-    // SoulHospitality aliases: destination → area, project/projectName → compound
+    
     const compoundFilter = compound || projectName || project;
     const areaFilter = area || destination;
 
@@ -182,7 +180,7 @@ router.get('/', async (req, res, next) => {
       .split(',')
       .map((t) => t.trim())
       .filter(Boolean);
-    // Villa filter also matches legacy Townhouse labels until fully migrated.
+    
     if (typeList.some((t) => t.toLowerCase() === 'villa')) {
       typeList = [...new Set([...typeList, 'Townhouse', 'Town House', 'Townhome'])];
     }
@@ -196,7 +194,7 @@ router.get('/', async (req, res, next) => {
     }
 
     params.push(Number(limit), Number(offset));
-    // Card/list projection: skip heavy detail fields and cap gallery to 5 photos.
+    
     const sql = `
       SELECT u.id, u.slug, u.title, u.status, u.compound, u.area, u.city, u.beds, u.baths, u.guests,
              u.cover_url,

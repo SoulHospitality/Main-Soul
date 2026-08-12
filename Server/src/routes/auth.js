@@ -69,7 +69,7 @@ function publicUser(row) {
   };
 }
 
-/** DATABASE_URL-only guest sign-up */
+
 async function localSignUp({ email, password, full_name, phone }) {
   if (!email || !password) {
     const err = new Error('Email and password are required');
@@ -258,8 +258,8 @@ router.post('/refresh', async (req, res, next) => {
 });
 
 router.post('/forgot-password', async (req, res, next) => {
-  // Never reveal whether a *guest* email exists.
-  // Non-owner staff emails are directed to ask Admin (explicit product rule).
+  
+  
   try {
     const email = String(req.body?.email || '').trim().toLowerCase();
     if (!email) return res.json({ ok: true });

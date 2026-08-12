@@ -10,10 +10,7 @@ const isAfterDay = (a, b) => {
   return sa > sb;
 };
 
-/**
- * SoulHospitality-style vertical search capsule for the homepage hero.
- * Project + dates + guests → /search.
- */
+
 export default function HeroSearch() {
   const navigate = useNavigate();
   const { t } = useLocale();
@@ -77,7 +74,7 @@ export default function HeroSearch() {
       onSubmit={handleSubmit}
       className="relative z-[60] flex w-full flex-col gap-4 overflow-visible rounded-[1.6rem] border border-white/25 bg-white/10 p-4 shadow-[0_24px_70px_rgba(0,0,0,0.18)] backdrop-blur-xl sm:gap-5 sm:rounded-[2rem] sm:p-6 lg:p-8"
     >
-      {/* Project */}
+      
       <div className="relative">
         <button
           type="button"
@@ -142,7 +139,7 @@ export default function HeroSearch() {
         ) : null}
       </div>
 
-      {/* Arrive / Depart — single range control */}
+      
       <DateRangePicker
         variant="hero"
         checkin={criteria.checkin}
@@ -158,7 +155,7 @@ export default function HeroSearch() {
         }}
       />
 
-      {/* Guests */}
+      
       <div className="relative">
         <button
           type="button"

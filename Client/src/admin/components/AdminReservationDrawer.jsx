@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
-/** Tall modal-card shell for creating manual reservations. */
+
 export default function AdminReservationDrawer({
   open,
   onClose,

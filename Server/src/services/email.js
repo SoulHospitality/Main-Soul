@@ -15,10 +15,7 @@ function defaultFrom() {
   );
 }
 
-/**
- * Send transactional email via Resend (preferred) or SMTP.
- * Set RESEND_API_KEY in Server/.env — never hardcode the key.
- */
+
 async function sendEmail({ to, subject, html, text }) {
   const resend = getResendClient();
 

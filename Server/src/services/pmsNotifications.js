@@ -1,9 +1,9 @@
 const { query } = require('../config/db');
 const { emitSalesNotification } = require('../config/socket');
 
-/** Website booking queue + oversight */
+
 const WEB_TEAM_ROLES = ['admin', 'reservations_web', 'reservations'];
-/** All reservation ops + admin */
+
 const OPS_ROLES = ['admin', 'reservations_web', 'reservations_manual', 'reservations'];
 const ADMIN_ROLES = ['admin'];
 const FINANCE_ROLES = ['admin', 'finance'];
@@ -36,10 +36,7 @@ async function resolveUserIds({ roles, userIds, excludeUserIds = [] } = {}) {
   return [...ids];
 }
 
-/**
- * Insert PMS bell notifications and push a socket ping so open admin sessions refresh.
- * Skip self-notify via excludeUserIds. Optional same-day dedupe for cron-style events.
- */
+
 async function notifyStaff({
   roles,
   userIds,
@@ -154,7 +151,7 @@ async function notifyWebsiteBookingRejected(booking, actor, reason) {
 async function notifyManualReservationCreated(reservation, actor) {
   if (!reservation?.id) return [];
   if (reservation.is_owner_reservation && !(Number(reservation.total_amount) > 0)) {
-    return []; // owner night blocks — skip noise
+    return []; 
   }
   const guest = reservation.guest_name || 'Guest';
   const actorName = actor?.full_name || actor?.username || 'Staff';
@@ -187,7 +184,7 @@ async function notifyCancelRequest(reservation, actor, reason) {
 
 async function notifyPaymentRecorded(payment, reservation, actor) {
   if (!payment?.id || !reservation?.id) return [];
-  // Admin/finance already auto-approve — notify other admins only when agent records a payment
+  
   if (['admin', 'finance'].includes(actor?.role)) return [];
   const amount = Number(payment.amount) || 0;
   const guest = reservation.guest_name || 'Guest';

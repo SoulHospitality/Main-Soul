@@ -1,10 +1,7 @@
 const { query } = require('../config/db');
 const { syncUnitListingStatus } = require('./unitListingStatus');
 
-/**
- * Recompute draft/published for every unit from completeness rules.
- * Runs on boot so legacy archived/cancelled/delisted rows are normalized.
- */
+
 async function syncAllUnitListingStatusesOnBoot() {
   const { rows } = await query(
     `SELECT id, status FROM units ORDER BY created_at`

@@ -1,7 +1,4 @@
-/**
- * Resize/optimize remote images when the CDN supports it (Cloudinary).
- * Local / relative paths are returned unchanged.
- */
+
 export function optimizeImageUrl(url, { width = 800, quality = 'auto' } = {}) {
   if (!url || typeof url !== 'string') return url;
   if (url.startsWith('/') || url.startsWith('data:')) return url;
@@ -15,7 +12,7 @@ export function optimizeImageUrl(url, { width = 800, quality = 'auto' } = {}) {
     if (idx === -1) return url;
 
     const after = u.pathname.slice(idx + marker.length);
-    // Already transformed
+    
     if (/^(f_|q_|w_|c_|h_|dpr_)/.test(after) || after.includes('/f_auto') || after.includes(',w_')) {
       return url;
     }

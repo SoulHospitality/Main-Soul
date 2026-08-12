@@ -25,10 +25,7 @@ router.get('/site-popup', requireRoles('admin'), async (_req, res, next) => {
   }
 });
 
-/**
- * Upsert the single website popup image.
- * Replacing uploads deletes the previous Cloudinary asset when possible.
- */
+
 router.put(
   '/site-popup',
   requireRoles('admin'),
@@ -38,7 +35,7 @@ router.put(
   async (req, res, next) => {
     try {
       const existing = await getPopupRow();
-      // New images must come from Cloudinary (multer + attachCloudinaryUrls).
+      
       const uploaded = req.file?.secure_url || req.file?.path || null;
       if (uploaded && !String(uploaded).includes('res.cloudinary.com')) {
         return res.status(500).json({ error: 'Cloudinary upload failed' });
@@ -80,9 +77,7 @@ router.put(
           await destroyCloudinaryUrl(existing.image_url, {
             allowFolders: [FOLDER_SITE],
           });
-        } catch (_) {
-          /* non-blocking */
-        }
+        } catch (_) {}
       }
 
       res.json(rows[0]);
@@ -101,9 +96,7 @@ router.delete('/site-popup', requireRoles('admin'), async (req, res, next) => {
     if (existing.image_url) {
       try {
         await destroyCloudinaryUrl(existing.image_url, { allowFolders: [FOLDER_SITE] });
-      } catch (_) {
-        /* non-blocking */
-      }
+      } catch (_) {}
     }
     res.json({ ok: true });
   } catch (e) {

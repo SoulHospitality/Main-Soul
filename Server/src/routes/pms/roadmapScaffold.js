@@ -19,7 +19,7 @@ function normalizeLeadStatus(value, fallback = 'pending') {
   return fallback;
 }
 
-// ── Acquisition pipeline ────────────────────────────────────
+
 router.get('/acquisition-leads', requireRoles('admin', 'resale'), async (_req, res, next) => {
   try {
     const { rows } = await query(
@@ -231,7 +231,7 @@ router.post(
           req.user.id,
         ]
       );
-      // Keep lead status as-is; negotiations no longer drive a pipeline.
+      
       await query(
         `UPDATE acquisition_leads SET updated_at = now() WHERE id = $1`,
         [req.params.id]
@@ -319,7 +319,7 @@ router.post(
   }
 );
 
-// ── Pricing recommendations ─────────────────────────────────
+
 router.get('/pricing-recommendations', requireRoles('admin', 'resale'), async (req, res, next) => {
   try {
     const params = [];
@@ -383,7 +383,7 @@ router.post(
       const unitId = req.body.unit_id;
       if (!unitId) return res.status(400).json({ error: 'unit_id required' });
       const row = await buildPricingRecommendation(unitId, { actorId: req.user.id });
-      // Link to lead if provided
+      
       if (req.body.lead_id) {
         await query(
           `UPDATE pricing_recommendations SET lead_id = $1 WHERE id = $2`,
@@ -428,7 +428,7 @@ router.patch(
       );
       if (!existing[0]) return res.status(404).json({ error: 'Not found' });
 
-      // Supersede siblings when accepting
+      
       if (b.status === 'accepted' && existing[0].unit_id) {
         await query(
           `UPDATE pricing_recommendations SET status = 'superseded', updated_at = now()
@@ -512,7 +512,7 @@ router.patch('/units/:unitId/comparable', requireRoles('admin', 'resale'), async
   }
 });
 
-// ── Maintenance tickets ─────────────────────────────────────
+
 router.get('/maintenance-tickets', async (req, res, next) => {
   try {
     const params = [];

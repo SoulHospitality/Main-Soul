@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Search, X } from 'lucide-react';
 
-/**
- * Multi-select tags with typeahead suggestions (admin forms).
- */
+
 export default function TagSelect({ label, placeholder, suggestions = [], selectedTags = [], onTagsChange }) {
   const [input, setInput] = useState('');
   const [isOpen, setIsOpen] = useState(false);

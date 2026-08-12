@@ -3,16 +3,14 @@ import { X } from 'lucide-react';
 import { brand } from '../../theme/brand';
 import { useLocale } from '../../context/LocaleContext';
 
-/**
- * SoulHospitality-style split auth shell, restyled with soul-website palette.
- */
+
 export default function AuthShell({
   children,
   imageSrc,
   eyebrow,
   title,
   imageAlt = 'Soul Hospitality',
-  variant = 'overlay', // 'overlay' | 'badge'
+  variant = 'overlay', 
 }) {
   const { t } = useLocale();
   return (

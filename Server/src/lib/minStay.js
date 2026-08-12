@@ -1,11 +1,11 @@
 const { query } = require('../config/db');
 
 const DEFAULT_MIN_STAY_NIGHTS = 4;
-/** @deprecated Prefer location_projects.min_nights; kept for beach-fee helpers. */
+
 const MIN_STAY_NIGHTS = DEFAULT_MIN_STAY_NIGHTS;
 const GAIA_MIN_STAY_NIGHTS = 3;
 
-/** Project names containing "GAIA" (case-insensitive). Used for beach fee modes, not min stay. */
+
 function isGaiaUnit(unit = {}) {
   const fields = [
     unit.project,
@@ -25,17 +25,12 @@ function parseMinNightsValue(raw, fallback = DEFAULT_MIN_STAY_NIGHTS) {
   return n;
 }
 
-/**
- * Runtime min stay for a unit row.
- * Prefers denormalized units.min_nights (synced from location_projects).
- */
+
 function getMinimumStayNights(unit = {}) {
   return parseMinNightsValue(unit?.min_nights, DEFAULT_MIN_STAY_NIGHTS);
 }
 
-/**
- * Look up catalog min_nights for a project/compound name when writing units.
- */
+
 async function lookupProjectMinNights({ project, compound } = {}) {
   const candidates = [...new Set(
     [project, compound]
@@ -55,9 +50,7 @@ async function lookupProjectMinNights({ project, compound } = {}) {
   return parseMinNightsValue(rows[0]?.min_nights, DEFAULT_MIN_STAY_NIGHTS);
 }
 
-/**
- * When a project min stay changes, push it to all matching units.
- */
+
 async function syncUnitsMinNightsForProject({ name, previousName, minNights } = {}) {
   const nights = parseMinNightsValue(minNights, DEFAULT_MIN_STAY_NIGHTS);
   const names = [...new Set(

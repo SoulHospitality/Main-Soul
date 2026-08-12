@@ -299,7 +299,7 @@ export default function ListingDetailPage() {
       <Header />
       <main id="main">
         <div className="max-w-[1280px] mx-auto px-6">
-          {/* Breadcrumb */}
+          
           <div className="py-4 text-[13px] text-soul-muted">
             <Link to="/" className="hover:text-soul-blue">
               {t('listing.egypt')}
@@ -316,7 +316,7 @@ export default function ListingDetailPage() {
             <span>{unit.title}</span>
           </div>
 
-          {/* Title */}
+          
           <div className="flex justify-between items-end flex-wrap gap-4 mb-5">
             <div>
               {locationParts[0] && (
@@ -340,7 +340,7 @@ export default function ListingDetailPage() {
             </div>
           </div>
 
-          {/* Gallery */}
+          
           {photos.length > 0 ? (
             <div className="relative mb-8">
               <div className="hidden md:grid grid-cols-[2fr_1fr_1fr] grid-rows-[240px_240px] gap-2 rounded-[22px] overflow-hidden">
@@ -397,7 +397,7 @@ export default function ListingDetailPage() {
             </div>
           )}
 
-          {/* Sub-nav */}
+          
           <nav className="hidden md:block sticky top-[69px] z-30 bg-white/95 backdrop-blur-md border-y border-soul-line mb-8">
             <div className="flex gap-7 text-[14px] font-semibold text-soul-muted">
               <a href="#about" className="py-3 hover:text-soul-blue transition-colors">

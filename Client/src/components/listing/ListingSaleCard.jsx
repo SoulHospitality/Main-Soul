@@ -3,9 +3,7 @@ import { useLocale } from '../../context/LocaleContext';
 import { whatsappHref } from '../../theme/brand';
 import { getDisplayPriceEgp } from '../../utils/displayPrice';
 
-/**
- * Sticky inquire card for for-sale listings (no nightly booking).
- */
+
 export default function ListingSaleCard({ unit }) {
   const { t } = useLocale();
   const { formatPrice } = useCurrency();

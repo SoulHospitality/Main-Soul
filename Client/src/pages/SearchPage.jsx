@@ -267,7 +267,7 @@ export default function SearchPage({ listingType = 'rent' }) {
     <div className="min-h-screen bg-[#faf9f7]">
       <Header />
 
-      {/* Mobile sticky summary */}
+      
       <div className="sticky top-[88px] z-30 border-b border-soul-line bg-white/90 px-4 py-3 backdrop-blur-md lg:hidden">
         <MobileSearchPill
           values={filterValues}

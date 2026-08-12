@@ -20,7 +20,7 @@ const { refreshIcalBlocks } = require('./services/ical');
 
 function createApp() {
   const app = express();
-  // Railway / reverse proxies set X-Forwarded-For; required by express-rate-limit
+  
   app.set('trust proxy', 1);
 
   const origins = (process.env.CORS_ORIGIN || process.env.FRONTEND_URL || 'http://localhost:5173')
@@ -32,7 +32,7 @@ function createApp() {
     cors({
       origin: (origin, cb) => {
         if (!origin || origins.includes(origin) || origins.includes('*')) return cb(null, true);
-        return cb(null, true); // permissive in unified local monorepo
+        return cb(null, true); 
       },
       credentials: true,
     })
@@ -66,14 +66,10 @@ function createApp() {
         `SELECT status, COUNT(*)::int AS count FROM units GROUP BY status ORDER BY status`
       );
       unitCounts = rows;
-    } catch {
-      /* ignore */
-    }
+    } catch {}
     try {
       migrations = await require('./config/db').listAppliedMigrations();
-    } catch {
-      /* ignore */
-    }
+    } catch {}
     res.json({
       ok: true,
       service: 'main-soul-backend',
@@ -109,7 +105,7 @@ function createApp() {
   app.use('/api/fx', require('./routes/fx'));
   app.use('/api/reviews', require('./routes/reviews').router);
 
-  // Cron trigger (Vercel-style / manual)
+  
   app.get('/api/cron/refresh-ical-blocks', async (req, res, next) => {
     try {
       const auth = req.headers.authorization || '';

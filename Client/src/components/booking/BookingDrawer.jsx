@@ -9,7 +9,7 @@ import ListingDatePicker, { isoToLocalDate, localDateToIso } from '../listing/Li
 import { getMinimumStayNights } from '../../utils/bookingRules';
 import IdentityPhotoUpload from './IdentityPhotoUpload';
 
-/** Adults = 1, children = 0.5 — same load rules as SoulHospitality. */
+
 function getGuestLoad(adults, children) {
   return Number(adults || 0) + Number(children || 0) * 0.5;
 }
@@ -54,9 +54,7 @@ function IncrementControl({ label, hint, value, onIncrement, onDecrement, min = 
   );
 }
 
-/**
- * SoulHospitality-style reservation drawer → proceeds to /checkout/payment.
- */
+
 export default function BookingDrawer({
   open,
   onClose,

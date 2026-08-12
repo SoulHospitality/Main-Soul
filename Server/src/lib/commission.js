@@ -1,14 +1,4 @@
-/**
- * Company commission = rental (nights accommodation) × %
- *
- * Modes only choose which % applies. Housekeeping, utilities, and guest
- * service fees are NOT included in the commission base.
- *
- *   A — company_commission_pct on all bookings
- *   B — company_commission_pct (owner commission); tenant % is separate revenue
- *   C — company_commission_pct (via us) or company_commission_owner_pct (via owner);
- *       tenant % is separate revenue on sales bookings
- */
+
 
 const DEFAULT_OWNER_COMMISSION_PCT = 20;
 const GUEST_SERVICE_FEE_PCT = 15;
@@ -17,11 +7,7 @@ function round2(n) {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 }
 
-/**
- * Guest-facing markup from tenant commission %.
- * Applied when the unit is mode B, or any mode with a tenant commission %.
- * Folded into nightly rates silently (not shown as a separate fee line).
- */
+
 function guestTenantMarkupPct(unit) {
   const mode = String(unit?.commission_mode || 'A').toUpperCase();
   const tenantPct = parseFloat(unit?.commission_tenant_pct) || 0;
@@ -30,7 +16,7 @@ function guestTenantMarkupPct(unit) {
   return 0;
 }
 
-/** Apply silent tenant markup to a nightly (or accommodation) amount. */
+
 function applyGuestTenantMarkup(amount, unit) {
   const base = Number(amount) || 0;
   const pct = guestTenantMarkupPct(unit);
@@ -45,11 +31,7 @@ function rentalBase(reservation) {
   return round2(parseFloat(reservation.total_amount) || 0);
 }
 
-/**
- * Nights-only accommodation amount for owner portal.
- * Guest totals often include housekeeping, utilities/access, and 15% service+tax —
- * those must not appear in owner Gross.
- */
+
 function ownerAccommodationGross(reservation, unit = {}) {
   const nights = Math.max(parseInt(reservation.nights, 10) || 1, 1);
   const total =
@@ -65,11 +47,11 @@ function ownerAccommodationGross(reservation, unit = {}) {
   const ppn = parseFloat(reservation.price_per_night) || 0;
   const fromPpn = ppn > 0 ? round2(ppn * nights) : 0;
 
-  // Explicit nights-only rate is the source of truth for owner Gross
-  // (guest totals may silently include tenant markup + fees + service).
+  
+  
   if (fromPpn > 0) return fromPpn;
 
-  // Reverse guest quote: total = nights + HK + utilities + 15% service on nights
+  
   const extras = round2(hk + util);
   if (total > extras) {
     return round2((total - extras) / (1 + GUEST_SERVICE_FEE_PCT / 100));
@@ -78,10 +60,7 @@ function ownerAccommodationGross(reservation, unit = {}) {
   return round2(total);
 }
 
-/**
- * Owner-facing money: Gross = nights only, Commission = % of Gross, Net = Gross − Commission.
- * Money is hidden for rejected / cancelled stays.
- */
+
 function ownerPortalFinancials(unit, reservation, { status } = {}) {
   const displayStatus = String(status || reservation?.status || '').toLowerCase();
   const showMoney = displayStatus === 'confirmed' || displayStatus === 'pending';
@@ -133,7 +112,7 @@ function calcReservationFinancials(unit, reservation) {
     };
   }
 
-  // Cancelled stays contribute nothing to revenue / commissions / owner payouts
+  
   if (String(reservation.status || '').toLowerCase() === 'cancelled') {
     return {
       mode: String(unit.commission_mode || 'A').toUpperCase(),
@@ -168,7 +147,7 @@ function calcReservationFinancials(unit, reservation) {
   const ownerResPct = parseFloat(unit.company_commission_owner_pct) || 0;
   const tenantPct = parseFloat(unit.commission_tenant_pct) || 0;
 
-  // Prefer nights-only accommodation so commission never sits on fees
+  
   const base = ownerAccommodationGross(reservation, unit);
   const utilitiesDeduction =
     parseFloat(reservation.utilities_amount) ||
@@ -188,7 +167,7 @@ function calcReservationFinancials(unit, reservation) {
     appliedCommissionPct = companyPct || DEFAULT_OWNER_COMMISSION_PCT;
   }
 
-  // Broker comes off the nights base before tenant % and company commission
+  
   const afterBroker = round2(Math.max(0, base - brokerDeduction));
 
   let tenantDeduction = 0;

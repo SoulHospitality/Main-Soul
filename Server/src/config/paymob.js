@@ -109,10 +109,7 @@ async function initializePaymobCheckout({ amountEgp, merchantOrderId, billing })
   };
 }
 
-/**
- * Verify Paymob HMAC (processed callback / webhook).
- * Concatenate documented fields then HMAC-SHA512 with PAYMOB_HMAC_SECRET.
- */
+
 function verifyPaymobHmac(obj, receivedHmac) {
   const secret = process.env.PAYMOB_HMAC_SECRET;
   if (!secret) return process.env.NODE_ENV !== 'production';

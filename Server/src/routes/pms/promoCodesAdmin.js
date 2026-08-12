@@ -139,7 +139,7 @@ router.put('/promo-codes/:id', requireRoles('admin'), async (req, res, next) => 
           : null;
 
     if (percent && amount) {
-      // Prefer whichever was explicitly set in this request
+      
       if (b.discount_percent !== undefined && b.discount_amount === undefined) amount = null;
       else if (b.discount_amount !== undefined && b.discount_percent === undefined) percent = null;
       else return res.status(400).json({ error: 'Use either percent or fixed amount, not both' });

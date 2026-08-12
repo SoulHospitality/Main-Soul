@@ -1,6 +1,4 @@
-/**
- * Unified Financial System API — trust accounting, GL, tax, owner payouts.
- */
+
 const express = require('express');
 const XLSX = require('xlsx');
 const { query } = require('../../config/db');
@@ -214,7 +212,7 @@ function reservationJournalEntry(r, fin, split) {
   };
 }
 
-/** GET /financial-system/overview */
+
 router.get('/financial-system/overview', requireRoles('admin'), async (req, res, next) => {
   try {
     const { from, to } = dateRange(req);
@@ -295,9 +293,7 @@ router.get('/financial-system/overview', requireRoles('admin'), async (req, res,
          FROM owner_payout_requests WHERE status IN ('requested', 'approved')`
       );
       pendingPayouts = Number(payoutRows[0]?.total) || 0;
-    } catch (_) {
-      /* table optional */
-    }
+    } catch (_) {}
 
     const manualEntries = await loadManualEntries(from, to);
     const manualTotals = summarizeManualEntries(manualEntries);
@@ -353,7 +349,7 @@ router.get('/financial-system/overview', requireRoles('admin'), async (req, res,
   }
 });
 
-/** GET /financial-system/booking-splits */
+
 router.get('/financial-system/booking-splits', requireRoles('admin'), async (req, res, next) => {
   try {
     const rows = await loadReservations(req);
@@ -377,7 +373,7 @@ router.get('/financial-system/booking-splits', requireRoles('admin'), async (req
   }
 });
 
-/** GET /financial-system/owner-statements */
+
 router.get('/financial-system/owner-statements', requireRoles('admin'), async (req, res, next) => {
   try {
     const { from, to, params, resSql } = dateRange(req);
@@ -465,9 +461,7 @@ router.get('/financial-system/owner-statements', requireRoles('admin'), async (r
          ORDER BY p.created_at DESC LIMIT 200`
       );
       payouts = rows;
-    } catch (_) {
-      /* optional */
-    }
+    } catch (_) {}
 
     res.json({ statements, payouts, from_date: from, to_date: to });
   } catch (e) {
@@ -475,7 +469,7 @@ router.get('/financial-system/owner-statements', requireRoles('admin'), async (r
   }
 });
 
-/** POST /financial-system/payouts/:id/settle */
+
 router.post('/financial-system/payouts/:id/settle', requireRoles('admin'), async (req, res, next) => {
   try {
     const id = req.params.id;
@@ -499,7 +493,7 @@ router.post('/financial-system/payouts/:id/settle', requireRoles('admin'), async
   }
 });
 
-/** GET /financial-system/ledger */
+
 router.get('/financial-system/ledger', requireRoles('admin'), async (req, res, next) => {
   try {
     const { from, to } = dateRange(req);
@@ -585,7 +579,7 @@ router.get('/financial-system/ledger', requireRoles('admin'), async (req, res, n
   }
 });
 
-/** GET /financial-system/tax */
+
 router.get('/financial-system/tax', requireRoles('admin'), async (req, res, next) => {
   try {
     const { from, to } = dateRange(req);
@@ -630,7 +624,7 @@ router.get('/financial-system/tax', requireRoles('admin'), async (req, res, next
   }
 });
 
-/** GET /financial-system/export */
+
 router.get('/financial-system/export', requireRoles('admin'), async (req, res, next) => {
   try {
     const { from, to } = dateRange(req);
@@ -688,7 +682,7 @@ router.get('/financial-system/export', requireRoles('admin'), async (req, res, n
   }
 });
 
-/** Units list for owner statement filters */
+
 router.get('/financial-system/units', requireRoles('admin'), async (_req, res, next) => {
   try {
     const { rows } = await query(
@@ -702,7 +696,7 @@ router.get('/financial-system/units', requireRoles('admin'), async (_req, res, n
   }
 });
 
-/** GET /financial-system/manual-entries */
+
 router.get('/financial-system/manual-entries', requireRoles('admin'), async (req, res, next) => {
   try {
     const { from, to } = dateRange(req);
@@ -713,7 +707,7 @@ router.get('/financial-system/manual-entries', requireRoles('admin'), async (req
   }
 });
 
-/** POST /financial-system/manual-entries */
+
 router.post('/financial-system/manual-entries', requireRoles('admin'), async (req, res, next) => {
   try {
     const entryType = String(req.body.entry_type || '').toLowerCase();
@@ -753,7 +747,7 @@ router.post('/financial-system/manual-entries', requireRoles('admin'), async (re
   }
 });
 
-/** DELETE /financial-system/manual-entries/:id */
+
 router.delete('/financial-system/manual-entries/:id', requireRoles('admin'), async (req, res, next) => {
   try {
     const { rows } = await query(

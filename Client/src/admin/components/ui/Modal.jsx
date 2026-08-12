@@ -19,8 +19,8 @@ export default function Modal({ open, onClose, title, children, size = 'md', foo
 
   if (!open) return null;
 
-  // Portal to body so position:fixed is not trapped by ancestor transforms
-  // (e.g. Layout `.soul-fade-up` animation leaves transform: translateY(0)).
+  
+  
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />

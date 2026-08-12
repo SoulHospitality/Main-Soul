@@ -1,6 +1,4 @@
-/**
- * Soul Hospitality — Chart of Accounts (client mirror of server COA).
- */
+
 
 export const ACCOUNT_GROUPS = {
   assets: 'Assets',

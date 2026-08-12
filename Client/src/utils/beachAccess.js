@@ -27,7 +27,7 @@ export function isHaciendaWestUnit(unit = {}) {
   return /hacienda\s*west/.test(s);
 }
 
-/** Studio by type name, or 0 / empty bedrooms. */
+
 export function isStudioUnit(unit = {}) {
   const type = String(unit.property_type || unit.type || '').trim().toLowerCase();
   if (type.includes('studio')) return true;
@@ -39,7 +39,7 @@ export function isStudioUnit(unit = {}) {
 export function isFreeBeachProject(unit = {}) {
   const s = projectText(unit);
   if (!s) return false;
-  // D-Bay only — Hacienda West has flat paid beach access
+  
   if (/\bd[-\s]?bay\b/.test(s)) return true;
   return false;
 }
@@ -57,16 +57,7 @@ export function beachAccessRequiresManualEntry(unit = {}) {
   return true;
 }
 
-/**
- * @returns {{
- *   adult: number,
- *   extra: number,
- *   days: number,
- *   mode: 'gaia'|'galala'|'free'|'hacienda_flat'|'manual',
- *   billing?: 'per_guest'|'flat',
- *   flat?: number
- * }}
- */
+
 export function resolveBeachAccessRates(unit = {}, nights = 0) {
   if (isFreeBeachProject(unit)) {
     return { adult: 0, extra: 0, days: 7, mode: 'free', billing: 'flat', flat: 0 };
@@ -120,7 +111,7 @@ export function beachAccessFormDefaults(projectName) {
     };
   }
   if (isHaciendaWestUnit(unit)) {
-    // Flat amount depends on unit type; persist on save. Defaults show non-studio rate.
+    
     return {
       beach_access_price: HACIENDA_WEST_BEACH.other,
       beach_access_extra_guest: 0,
@@ -133,12 +124,12 @@ export function beachAccessFormDefaults(projectName) {
   return null;
 }
 
-/** Adults = 1, children = 0.5 — same load rules as guest booking drawer. */
+
 export function getGuestLoad(adults, children) {
   return Number(adults || 0) + Number(children || 0) * 0.5;
 }
 
-/** Total beach access fee for a stay (flat vs per-guest; nanny excluded). */
+
 export function computeBeachAccessFee(unit = {}, { nights = 0, adults = 1, teens = 0 } = {}) {
   const beach = resolveBeachAccessRates(unit, nights);
   if (beach.billing === 'flat' || beach.mode === 'hacienda_flat' || beach.mode === 'free') {

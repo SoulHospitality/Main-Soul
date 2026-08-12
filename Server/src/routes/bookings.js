@@ -35,7 +35,7 @@ router.post('/checkout', authGuest, upload.array('id_photos', 10), attachCloudin
     const unit = units[0];
     if (!unit) return res.status(404).json({ error: 'Listing not found' });
 
-    // Beach access scales with adults + teens (children). Nanny is excluded.
+    
     const teenCount = Math.max(0, parseInt(teens ?? children, 10) || 0);
     const nannyCount = Math.max(0, parseInt(nanny_count, 10) || 0);
     const adultCount = (() => {
@@ -133,8 +133,8 @@ router.post('/checkout', authGuest, upload.array('id_photos', 10), attachCloudin
       });
     }
 
-    // Cash / InstaPay requests wait for staff Accept — do not auto-expire them.
-    // Short holds are only for temporary inventory locks (status = held).
+    
+    
     const { rows } = await query(
       `INSERT INTO bookings
         (listing_slug, listing_wp_id, listing_title, checkin, checkout, guests, total_egp,
@@ -187,9 +187,7 @@ router.post('/checkout', authGuest, upload.array('id_photos', 10), attachCloudin
     try {
       const { assignSalesOnCreate } = require('../services/bookingWorkflow');
       await assignSalesOnCreate(booking.id);
-    } catch (_) {
-      /* optional */
-    }
+    } catch (_) {}
 
     res.status(201).json({ mode: 'hold', booking, message: 'Request received — awaiting confirmation' });
   } catch (err) {
@@ -236,7 +234,7 @@ router.get('/mine', authGuest, async (req, res, next) => {
   }
 });
 
-/** Guest mid-stay housekeeping request — appears on PMS Housekeeping tasks */
+
 router.post('/:id/housekeeping-request', authGuest, async (req, res, next) => {
   try {
     const timeLabel = String(req.body?.time || req.body?.requested_time || '').trim();
@@ -316,7 +314,7 @@ router.post('/:id/housekeeping-request', authGuest, async (req, res, next) => {
       });
     }
 
-    // Parse 3:00 AM style into 24h for due_at
+    
     const m = timeLabel.match(/^(\d{1,2}):00\s*(AM|PM)$/i);
     let hour24 = Number(m[1]);
     const meridiem = m[2].toUpperCase();

@@ -22,7 +22,7 @@ async function unitHasPrice(unitId, { priceFallback, wpPostId } = {}) {
   return Boolean(priced[0]);
 }
 
-/** Recompute draft/published from completeness. Returns fresh unit row. */
+
 async function syncUnitListingStatus(unitId) {
   const { rows } = await query(`SELECT * FROM units WHERE id = $1`, [unitId]);
   const unit = rows[0];

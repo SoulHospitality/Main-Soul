@@ -1,10 +1,7 @@
-/**
- * Live USD → EGP rate (how many EGP per 1 USD).
- * Cached in-memory; guest prices convert approximately for display only.
- */
+
 
 const FALLBACK_RATE = Number(process.env.FX_USD_EGP || process.env.VITE_EGP_USD_RATE || 50);
-const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+const CACHE_TTL_MS = 6 * 60 * 60 * 1000; 
 
 let cache = {
   rate: FALLBACK_RATE > 0 ? FALLBACK_RATE : 50,
@@ -25,34 +22,28 @@ async function fetchJson(url, timeoutMs = 8000) {
 }
 
 async function fetchLiveUsdEgp() {
-  // 1) Frankfurter CBE (Central Bank of Egypt) when available
+  
   try {
     const data = await fetchJson('https://api.frankfurter.dev/v2/rate/USD/EGP?providers=CBE');
     const rate = Number(data?.rate ?? data?.rates?.EGP);
     if (rate > 0) return { rate, source: 'frankfurter-cbe' };
-  } catch (_) {
-    /* try next */
-  }
+  } catch (_) {}
 
-  // 2) Open ExchangeRate-API (no key, daily)
+  
   try {
     const data = await fetchJson('https://open.er-api.com/v6/latest/USD');
     const rate = Number(data?.rates?.EGP);
     if (rate > 0) return { rate, source: 'open.er-api.com' };
-  } catch (_) {
-    /* try next */
-  }
+  } catch (_) {}
 
-  // 3) jsDelivr currency-api mirror
+  
   try {
     const data = await fetchJson(
       'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json'
     );
     const rate = Number(data?.usd?.egp);
     if (rate > 0) return { rate, source: 'currency-api' };
-  } catch (_) {
-    /* fallback */
-  }
+  } catch (_) {}
 
   return null;
 }

@@ -1,9 +1,4 @@
-/**
- * Company commission = rental (price/night × nights) × %
- *
- * Modes only choose which % applies. Housekeeping and utilities are NOT
- * included in the commission base — those are tracked on their own pages.
- */
+
 
 function round2(n) {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -16,10 +11,7 @@ function rentalBase(reservation) {
   return round2(parseFloat(reservation.total_amount) || 0);
 }
 
-/**
- * @param {Object} unit
- * @param {Object} reservation
- */
+
 export function calcReservationFinancials(unit, reservation) {
   if (!unit || !reservation) return nullFinancials();
 

@@ -1,6 +1,4 @@
-/**
- * Guest-facing WhatsApp messages (Meta Cloud API templates).
- */
+
 const { query } = require('../config/db');
 const { bookingReference } = require('./guestEmails');
 const { sendWhatsAppTemplate, whatsappConfigured, toWhatsAppRecipient } = require('./whatsapp');

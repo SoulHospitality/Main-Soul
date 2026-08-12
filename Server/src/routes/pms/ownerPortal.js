@@ -12,7 +12,7 @@ async function ownerUnitIds(ownerId) {
   return rows.map((r) => r.unit_id);
 }
 
-/** Staff or owner statement — never includes guest PII on reservation rows shown to owners */
+
 router.get('/reports/owner-statement', async (req, res, next) => {
   try {
     const from = clampFromDate(req.query.from_date);
@@ -78,7 +78,7 @@ router.get('/reports/owner-statement', async (req, res, next) => {
         status: r.status,
         payment_status: r.payment_status,
       };
-      // Strip guest PII for owner role
+      
       if (!isOwner) {
         return {
           ...base,
@@ -109,7 +109,7 @@ router.get('/reports/owner-statement', async (req, res, next) => {
       expParams
     );
 
-    // Only expenses attributed to the owner reduce final due (never company / staff)
+    
     const ownerExpTotal = expenses
       .filter((e) => e.paid_by === 'owner')
       .reduce((s, e) => s + Number(e.amount || 0), 0);
@@ -288,7 +288,7 @@ router.get('/owner/reservations', requireRoles('owner', 'admin'), async (req, re
       [unitIds]
     );
 
-    // Pending website requests for owner units (not yet mirrored as PMS reservations)
+    
     const { rows: pendingBookings } = await query(
       `SELECT b.id, b.checkin AS check_in, b.checkout AS check_out, b.total_egp AS total_amount,
               b.status, b.payment_status, b.created_at, b.cancellation_reason,
@@ -315,7 +315,7 @@ router.get('/owner/reservations', requireRoles('owner', 'admin'), async (req, re
       let ownerStatus = 'confirmed';
       if (raw === 'cancelled') ownerStatus = 'rejected';
       else if (raw === 'pending') ownerStatus = 'pending';
-      else ownerStatus = 'confirmed'; // confirmed / checked_in / checked_out
+      else ownerStatus = 'confirmed'; 
 
       const unit = {
         company_commission_pct: r.company_commission_pct,
@@ -460,7 +460,7 @@ router.post('/owner/payout-requests', requireRoles('owner', 'admin'), async (req
         return res.status(400).json({ error: 'Amount exceeds settlement net' });
       }
     } else {
-      // Without a ready settlement, block payout (roadmap rule)
+      
       const { rows: ready } = await query(
         `SELECT id FROM owner_settlements WHERE owner_id = $1 AND status = 'ready' LIMIT 1`,
         [ownerId]
@@ -489,7 +489,7 @@ router.post('/owner/payout-requests', requireRoles('owner', 'admin'), async (req
   }
 });
 
-// ── Phase 2: owner date blocking + impact ───────────────────
+
 const {
   previewOwnerBlockImpact,
   applyOwnerBlocks,
@@ -604,7 +604,7 @@ router.get('/owner/blocks', requireRoles('owner', 'admin'), async (req, res, nex
   }
 });
 
-// ── Phase 2: settlements + payout review ───────────────────
+
 router.get('/owner/settlements', requireRoles('owner', 'admin'), async (req, res, next) => {
   try {
     const ownerId =
@@ -730,7 +730,7 @@ router.post('/owner/payout-requests/:id/review', requireRoles('admin'), async (r
   }
 });
 
-/** Admin list of all payout requests */
+
 router.get('/owner/payout-requests/all', requireRoles('admin'), async (_req, res, next) => {
   try {
     const { rows } = await query(

@@ -27,7 +27,7 @@ const RESERVATIONS_PAGE_ACCESS = new Set([
   'profile',
 ]);
 
-/** Manual agents: own reservations only — no housekeeping or profit pages */
+
 const RESERVATIONS_MANUAL_PAGE_ACCESS = new Set([
   'reservations',
   'schedule',
@@ -142,7 +142,7 @@ const PERMISSIONS = {
   ],
 };
 
-/** Separate PMS surfaces + full admin + owner portal */
+
 const PAGE_ACCESS = {
   admin: true,
   reservations: RESERVATIONS_WEB_PAGE_ACCESS,
@@ -210,7 +210,7 @@ function isOperationsRole(user) {
   return !!user && (user.role === 'operations' || user.role === 'operations_supervisor');
 }
 
-/** Create / edit manual reservations */
+
 export function canManageReservations(user) {
   return (
     !!user &&
@@ -221,7 +221,7 @@ export function canManageReservations(user) {
   );
 }
 
-/** Accept / reject website booking requests */
+
 export function canHandleWebsiteBookings(user) {
   return !!user && (user.role === 'admin' || isWebsiteReservationsRole(user));
 }
@@ -230,7 +230,7 @@ export function canViewAllReservations(user) {
   return !!user && user.role === 'admin';
 }
 
-/** Agents may open Commissions to see only their own profit */
+
 export function canViewOwnCommissions(user) {
   return !!user && (user.role === 'admin' || isReservationsTeam(user));
 }
@@ -243,7 +243,7 @@ export function canAccessFinance(user) {
   return !!user && user.role === 'admin';
 }
 
-/** Admin unified financial system workspace */
+
 export function canAccessFinancialSystem(user) {
   return !!user && user.role === 'admin';
 }

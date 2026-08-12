@@ -1,8 +1,6 @@
 const { query } = require('../config/db');
 
-/**
- * Best-effort audit insert — never throws to callers.
- */
+
 async function logAudit({ userId, action, entityType, entityId, details } = {}) {
   try {
     if (!action) return;

@@ -1,6 +1,4 @@
-/**
- * Recompute reservations.amount_paid + payment_status from successful payments.
- */
+
 const { query } = require('../config/db');
 
 function paymentStatusFrom(totalAmount, amountPaid) {
@@ -32,7 +30,7 @@ async function syncReservationPaymentStatus(reservationId) {
   );
   const fromPayments = Number(payRows[0]?.paid) || 0;
   const down = Number(reservation.down_payment) || 0;
-  // Successful payments are source of truth; fall back to down_payment if none yet
+  
   const amountPaid = fromPayments > 0 ? fromPayments : down;
   const paymentStatus = paymentStatusFrom(reservation.total_amount, amountPaid);
 

@@ -1,8 +1,4 @@
-/**
- * Meta WhatsApp Cloud API sender.
- * Env: WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID (required to send).
- * See Server/docs/whatsapp-meta-setup.md
- */
+
 
 function whatsappConfigured() {
   return Boolean(
@@ -11,10 +7,7 @@ function whatsappConfigured() {
   );
 }
 
-/**
- * Normalize guest phones to WhatsApp "to" format (digits, country code, no +).
- * Egyptian 01xxxxxxxxx → 201xxxxxxxxx
- */
+
 function toWhatsAppRecipient(raw) {
   let d = String(raw || '').replace(/\D/g, '');
   if (!d) return null;
@@ -24,10 +17,8 @@ function toWhatsAppRecipient(raw) {
     d = `20${d.slice(1)}`;
   } else if (d.length === 10 && d.startsWith('1')) {
     d = `20${d}`;
-  } else if (d.startsWith('20') && d.length >= 12) {
-    /* already international EG */
-  } else if (d.startsWith('0') && d.length > 8) {
-    // Other local formats — strip leading 0; assume EG if looks like mobile
+  } else if (d.startsWith('20') && d.length >= 12) {} else if (d.startsWith('0') && d.length > 8) {
+    
     d = `20${d.slice(1)}`;
   }
 

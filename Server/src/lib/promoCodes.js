@@ -65,10 +65,7 @@ async function guestAlreadyRedeemed(promoId, guestKey) {
   return Boolean(rows[0]);
 }
 
-/**
- * Validate a promo for an optional guest. When once_per_guest and guestKey is
- * known, rejects if already redeemed by that guest.
- */
+
 async function validatePromo({ code, amount, email, phone, guestId } = {}) {
   const promo = await findActivePromo(code);
   if (!promo) {
@@ -96,10 +93,7 @@ async function validatePromo({ code, amount, email, phone, guestId } = {}) {
   };
 }
 
-/**
- * Record a redemption. Safe to call after booking is created.
- * Returns null if no code / no guest identity; throws if already used.
- */
+
 async function redeemPromo({
   code,
   email,

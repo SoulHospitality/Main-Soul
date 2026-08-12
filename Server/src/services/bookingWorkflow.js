@@ -123,7 +123,7 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
     [bookingId, commissionNote, assignee, paymentStatus, depositNote]
   );
 
-  // Mirror into PMS reservations when linked to a unit
+  
   let reservationId = null;
   if (booking.unit_id) {
     const nights = Math.max(
@@ -157,7 +157,7 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
             ? Number(booking.adults)
             : Number(booking.guests) || 1;
           const partyChildren = Number(booking.children) || 0;
-          // Nanny excluded from beach access (teens/extra guest fees)
+          
           const quote = await quoteStay({
             wpPostId: unit.wp_post_id,
             checkin: booking.checkin,
@@ -168,14 +168,12 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
             skipBlockCheck: true,
           });
           if (quote?.available) {
-            // Store nights-only base rate (without guest tenant markup) for owner commission
+            
             pricePerNight = nights > 0 ? Number(quote.base_subtotal || quote.subtotal || 0) / nights : 0;
             housekeepingFees = Number(quote.cleaning_fee_egp) || housekeepingFees;
             stayTotal = Number(quote.total_egp) || stayTotal;
           }
-        } catch (_) {
-          /* fall back below */
-        }
+        } catch (_) {}
       }
 
       if (!(pricePerNight > 0) && stayTotal > 0) {
@@ -192,7 +190,7 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
         pricePerNight = nights > 0 ? nightsGross / nights : 0;
       }
 
-      // Recompute remaining against stayTotal if quote adjusted total
+      
       const paidCap = Math.min(amountPaid, stayTotal);
       const rem = Math.max(0, Math.round((stayTotal - paidCap) * 100) / 100);
       const resPayStatus = rem <= 0.5 ? 'paid' : paidCap > 0 ? 'partial' : 'pending';
@@ -273,7 +271,7 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
     }
   }
 
-  // Record deposit payment row for InstaPay / cash accepts
+  
   if (!alreadyPaid && amountPaid > 0) {
     try {
       const payMethod = method.includes('instapay')
@@ -303,7 +301,7 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
       console.error('[accept] payment insert failed:', payErr.message);
     }
   } else if (alreadyPaid && reservationId) {
-    // Link existing Paymob payment rows to the new PMS reservation
+    
     try {
       await query(
         `UPDATE payments
@@ -344,10 +342,7 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
   };
 }
 
-/**
- * Cancel a guest website booking (any active status).
- * Used when staff delete/cancel a PMS reservation so availability + My Trips stay in sync.
- */
+
 async function cancelWebsiteBooking(bookingId, reason = 'cancelled_by_staff') {
   if (!bookingId) return null;
 
@@ -426,7 +421,7 @@ async function rejectWebsiteBooking(bookingId, staffUser, reason = '') {
   return updated;
 }
 
-/** Leave bookings unassigned; notify the whole website reservations team. */
+
 async function assignSalesOnCreate(bookingId) {
   const { rows: bookingRows } = await query(`SELECT * FROM bookings WHERE id = $1`, [bookingId]);
   const booking = bookingRows[0];
@@ -442,12 +437,7 @@ async function assignSalesOnCreate(bookingId) {
   return null;
 }
 
-/**
- * Claim (agent → self) or admin-assign a pending website booking.
- * @param {string} bookingId
- * @param {object} staffUser
- * @param {{ assignedSalesId?: number|null }} [options]
- */
+
 async function assignWebsiteBooking(bookingId, staffUser, options = {}) {
   const { rows } = await query(`SELECT * FROM bookings WHERE id = $1`, [bookingId]);
   const booking = rows[0];

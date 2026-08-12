@@ -34,7 +34,7 @@ export function CurrencyProvider({ children }) {
           setRateSource(data?.source || 'live');
         }
       } catch {
-        // Keep fallback — display still works offline
+        
       }
     })();
     return () => {

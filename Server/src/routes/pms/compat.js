@@ -11,11 +11,11 @@ const {
   FOLDER_PAYMENTS,
 } = require('../../config/cloudinary');
 
-/** Extra PMS endpoints expected by the legacy admin SPA (stubs + thin adapters). */
+
 const router = express.Router();
 router.use(authStaff);
 
-/** Stream an ID document from Cloudinary so staff can preview PDFs inline. */
+
 router.get('/id-documents/view', async (req, res, next) => {
   try {
     const raw = String(req.query.url || '').trim();
@@ -76,7 +76,7 @@ router.get('/users/sales', async (_req, res, next) => {
   }
 });
 
-/** Active property owners (for attributing owner-paid costs). */
+
 router.get('/users/owners', requireRoles('admin'), async (_req, res, next) => {
   try {
     const { rows } = await query(
@@ -94,7 +94,7 @@ router.get('/users/owners', requireRoles('admin'), async (_req, res, next) => {
   }
 });
 
-/** Units linked to a specific owner. */
+
 router.get('/users/owners/:id/units', requireRoles('admin'), async (req, res, next) => {
   try {
     const { rows } = await query(
@@ -280,12 +280,12 @@ router.get(
         totalCompany: round2(totalCompany),
         regularCommission: round2(regularCommission),
         ownerRevenue: round2(ownerCommission),
-        // Company commission revenue only (HK + utilities tracked on their own pages)
+        
         grandTotal: round2(totalCompany + totalTenant),
         manualAgentCommission: round2(manualAgentCommission),
         websiteAgentCommission: round2(websiteAgentCommission),
         agentCommissions: round2(manualAgentCommission + websiteAgentCommission),
-        // Agent's own commission total (same as agentCommissions when scoped)
+        
         myCommission: round2(manualAgentCommission + websiteAgentCommission),
       },
       model: {
@@ -303,7 +303,7 @@ router.get(
           agent_commission: round2(websiteAgentCommission),
         }),
       },
-      // Kept for older clients
+      
       website: channelBlock(websiteCount, websiteRevenue, websiteProfit, {
         agent_commission: round2(websiteAgentCommission),
       }),
@@ -313,15 +313,7 @@ router.get(
   }
 });
 
-/**
- * Finance / Profit hub — Soul P&L diagram.
- *
- * Revenue = reservation accommodation + housekeeping collected + utilities collected
- * Auto expenses = owner share + salaries + agent % of company commission
- *   (agent % from staff_users.sales_commission_pct on the reservation agent)
- * Manual expenses = actual HK + actual utilities + petty cash
- * Gross profit → tax 14% → net profit
- */
+
 router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => {
   try {
     const from_date = clampFromDate(req.query.from_date);
@@ -391,7 +383,7 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
       }
     }
 
-    // Outsider housekeeping service orders — revenue
+    
     const hkParams = [from_date];
     let hkWhere = `status <> 'cancelled' AND period_start >= $1::date`;
     if (to_date) {
@@ -407,10 +399,10 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
       );
       housekeepingServiceRevenue = Number(hkOrders[0]?.total) || 0;
     } catch (_) {
-      // table may not exist before migration runs
+      
     }
 
-    // Categorized expense ledger (manual actual costs + optional other buckets)
+    
     const expParams = [from_date];
     let expWhere = `expense_date >= $1::date`;
     if (to_date) {
@@ -455,7 +447,7 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
     );
     const pettyCash = Number(pettyRows[0]?.total) || 0;
 
-    // Payroll snapshot: active staff base salaries (after books open) + salary ledger
+    
     let payrollSnapshot = 0;
     const todayIso = new Date().toISOString().slice(0, 10);
     if (todayIso >= FINANCIAL_EPOCH) {
@@ -466,7 +458,7 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
         );
         payrollSnapshot = Number(salaryRows[0]?.total) || 0;
       } catch (_) {
-        // employees table may be absent
+        
       }
     }
     const salaries = round2(salaryLedger + payrollSnapshot);
@@ -495,7 +487,7 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
         if (row.entry_type === 'out') cashOut = Number(row.total) || 0;
       }
     } catch (_) {
-      // optional
+      
     }
 
     const housekeepingRevenue = round2(housekeepingStayFees + housekeepingServiceRevenue);
@@ -526,26 +518,26 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
         commission_base: 'company_commission',
         agent_pct_source: 'staff_sales_commission_pct',
       },
-      // Revenue (3 streams)
+      
       totalRevenue,
       reservationRevenue: round2(reservationRevenue),
       housekeepingRevenue,
       housekeepingStayFees: round2(housekeepingStayFees),
       housekeepingServiceRevenue: round2(housekeepingServiceRevenue),
       utilitiesRevenue,
-      // Company / owner split (reference)
+      
       companyCommission: round2(companyCommission),
       tenantCommission: round2(tenantCommission),
       ownerOwed: round2(ownerOwed),
       websiteCompanyCommission: round2(websiteCompanyCommission),
       manualCompanyCommission: round2(manualCompanyCommission),
-      // Auto commissions (of company commission, per agent %)
+      
       agentCommissions,
       manualAgentCommission: round2(manualAgentCommission),
       websiteAgentCommission: round2(websiteAgentCommission),
       websiteMakerCommission: 0,
       salaryAndCommissions,
-      // Expense buckets
+      
       salaries,
       housekeeping: round2(actualHousekeeping),
       housekeepingCost: round2(actualHousekeeping),
@@ -562,7 +554,7 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
         net: round2(cashIn - cashOut),
       },
       totalExpenses: deductibleExpenses,
-      // Profit views
+      
       grossProfit,
       taxPct: TAX_PCT,
       taxAmount,
@@ -641,7 +633,7 @@ router.post('/daily-prices/batch', requireRoles('admin'), async (req, res, next)
         ]);
         n++;
       }
-      // Incomplete / unpriced units must stay draft (hidden from guests)
+      
       await syncUnitListingStatus(unit_id);
       return res.json({ ok: true, cleared: n });
     }
@@ -767,7 +759,7 @@ router.put('/blocked-dates/:unitId', requireRoles('admin'), async (req, res, nex
 
     let nights = Array.isArray(dates) ? dates.filter(Boolean).map((d) => String(d).slice(0, 10)) : [];
     if (!nights.length && from_date && to_date) {
-      // Inclusive end date: expand [from, to] into night dates (same as pricing batch UI).
+      
       const endExclusive = new Date(`${String(to_date).slice(0, 10)}T00:00:00`);
       endExclusive.setDate(endExclusive.getDate() + 1);
       const y = endExclusive.getFullYear();
@@ -784,9 +776,9 @@ router.put('/blocked-dates/:unitId', requireRoles('admin'), async (req, res, nex
     const rangeTo = nights[nights.length - 1];
 
     if (clear) {
-      // Admins may clear any calendar block row (manual, owner, imports, etc.)
-      // and the iCal cache for those nights. Active reservations still occupy
-      // the night until cancelled — those are not deleted here.
+      
+      
+      
       const deletedBlocks = await query(
         `DELETE FROM unit_blocked_dates
          WHERE wp_post_id = $1
@@ -844,7 +836,7 @@ router.put('/blocked-dates/:unitId', requireRoles('admin'), async (req, res, nex
   }
 });
 
-/** Parse accept/reject metadata stored as JSON lines in bookings.notes */
+
 function parseBookingDecisionMeta(notes) {
   const text = String(notes || '');
   let accepted = null;
@@ -853,7 +845,7 @@ function parseBookingDecisionMeta(notes) {
     .split('\n')
     .map((l) => l.trim())
     .filter(Boolean);
-  // Also try the whole notes blob once (legacy single JSON object)
+  
   const candidates = [...chunks].reverse();
   if (text.trim().startsWith('{')) candidates.push(text.trim());
 
@@ -867,9 +859,7 @@ function parseBookingDecisionMeta(notes) {
       if (meta.accepted_by || meta.accepted_by_name || meta.accepted_at) {
         if (!accepted) accepted = meta;
       }
-    } catch {
-      /* plain-text notes */
-    }
+    } catch {}
   }
   return { accepted, rejected };
 }
@@ -946,18 +936,18 @@ router.get('/website-bookings', async (req, res, next) => {
     const unassignedMode = statusKey === 'unassigned';
 
     if (historyMode) {
-      // Accepted / pending (partial payment) / rejected website decisions.
+      
       where = `b.status IN ('confirmed', 'cancelled')`;
     } else if (unassignedMode) {
-      // Shared claim pool — pending/held with no assignee.
+      
       where = `b.status IN ('pending', 'held') AND b.assigned_sales_id IS NULL`;
     } else if (status) {
       params.push(status);
-      // Assigned requests only (unassigned live on the Unassigned page).
+      
       where = `b.status = $${params.length} AND b.assigned_sales_id IS NOT NULL`;
     }
 
-    // Unassigned pool is visible to the whole website team / admin (no assignee filter).
+    
     const scope = unassignedMode
       ? { clause: '', params: [], nextIndex: params.length + 1 }
       : bookingAssigneeClause(req.user, 'b', params.length + 1);
@@ -1008,7 +998,7 @@ router.get('/website-bookings', async (req, res, next) => {
       const history = rows
         .map((row) => {
           const decision = mapWebsiteBookingDecision(row);
-          // History: accepted (fully paid), pending (accepted, balance due), rejected
+          
           if (
             decision.decision !== 'accepted' &&
             decision.decision !== 'pending' &&
@@ -1102,9 +1092,7 @@ router.get('/website-bookings', async (req, res, next) => {
               payment_status: row.payment_status || (prepaid ? 'paid' : 'pending'),
             };
           }
-        } catch (_) {
-          /* keep totals-only fallback */
-        }
+        } catch (_) {}
       }
 
       enriched.push({
@@ -1140,9 +1128,7 @@ router.post(
       try {
         const { notifyWebsiteBookingAccepted } = require('../../services/pmsNotifications');
         await notifyWebsiteBookingAccepted(booking, req.user);
-      } catch (_) {
-        /* non-blocking */
-      }
+      } catch (_) {}
       res.json(booking);
     } catch (e) {
       next(e);
@@ -1161,16 +1147,14 @@ router.post('/website-bookings/:id/reject', requireRoles('reservations_web', 're
     try {
       const { notifyWebsiteBookingRejected } = require('../../services/pmsNotifications');
       await notifyWebsiteBookingRejected(booking, req.user, reason);
-    } catch (_) {
-      /* non-blocking */
-    }
+    } catch (_) {}
     res.json(booking);
   } catch (e) {
     next(e);
   }
 });
 
-/** Agent self-claim, or admin assign to any website reservations agent. */
+
 router.post(
   '/website-bookings/:id/assign',
   requireRoles('reservations_web', 'reservations', 'admin'),
@@ -1431,7 +1415,7 @@ router.get('/reservations/blocked-dates', async (req, res, next) => {
       params
     );
 
-    // Guest-parity blocked nights (iCal, unit_blocked_dates, bookings, unpriced)
+    
     let guestBlocked = [];
     try {
       const { rows: units } = await query(
@@ -1446,7 +1430,7 @@ router.get('/reservations/blocked-dates', async (req, res, next) => {
         toDate.setMonth(toDate.getMonth() + 8);
         const to = req.query.to || toDate.toISOString().slice(0, 10);
         const blocked = await getBlockedDates(wp, from, to, { includeUnpriced: true });
-        // Reservations already returned above with turnover semantics — only extra sources here
+        
         guestBlocked = blocked
           .filter((b) => b.source !== 'reservation')
           .map((b) => ({
@@ -1524,7 +1508,7 @@ router.put(
     'admin'
   ),
   async (req, res, next) => {
-  // Delegate to the richer PATCH handler on the main router by forwarding body
+  
   try {
     const existing = await loadReservationAccess(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Not found' });
@@ -1532,7 +1516,7 @@ router.put(
 
     const b = req.body;
     const { isAdmin, isReservationsTeam } = require('../../lib/reservationScope');
-    // Agents cannot reassign reservations to someone else
+    
     if (isReservationsTeam(req.user) && !isAdmin(req.user)) {
       b.sales_person_id = req.user.id;
     }
@@ -1683,7 +1667,7 @@ router.put(
 });
 
 router.put('/auth/change-password', async (req, res, next) => {
-  // Legacy path — password change lives on staff auth; accept here for SPA
+  
   try {
     const bcrypt = require('bcryptjs');
     const { passwordPolicyOk, passwordPolicyMessage } = require('../../lib/staffIdentity');

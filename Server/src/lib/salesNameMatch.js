@@ -1,7 +1,4 @@
-/**
- * Fuzzy matching between reservation "Sales / Owner" labels and staff full names.
- * Handles spacing, order, accents-ish ASCII, and small typos (Hesham/Hisham).
- */
+
 
 function normalizeName(value) {
   return String(value || '')
@@ -43,7 +40,7 @@ function levenshtein(a, b) {
   return matrix[s.length][t.length];
 }
 
-/** 0..1 similarity from Levenshtein. */
+
 function stringSimilarity(a, b) {
   const s = normalizeName(a);
   const t = normalizeName(b);
@@ -53,10 +50,7 @@ function stringSimilarity(a, b) {
   return 1 - dist / Math.max(s.length, t.length);
 }
 
-/**
- * Score how well a sales label matches a staff name.
- * Higher is better. Typical good matches are >= DEFAULT_MIN_SCORE.
- */
+
 function nameMatchScore(salesLabel, staffName) {
   const label = normalizeName(salesLabel);
   const staff = normalizeName(staffName);
@@ -69,12 +63,12 @@ function nameMatchScore(salesLabel, staffName) {
   const staffTokens = tokens(staff);
   if (!labelTokens.length || !staffTokens.length) return direct;
 
-  // Token-set compare (order-insensitive): Amira Hesham vs Hesham Amira
+  
   const sortedLabel = [...labelTokens].sort().join(' ');
   const sortedStaff = [...staffTokens].sort().join(' ');
   const sortedScore = stringSimilarity(sortedLabel, sortedStaff);
 
-  // Each staff token must find a close label token (typo-tolerant)
+  
   let tokenHits = 0;
   let worstStaffToken = 1;
   for (const st of staffTokens) {
@@ -87,7 +81,7 @@ function nameMatchScore(salesLabel, staffName) {
   }
   const tokenCoverage = tokenHits / staffTokens.length;
 
-  // Containment: "Amira Hesham Mohamed" label vs staff "Amira Hesham"
+  
   const contained =
     label.includes(staff) || staff.includes(label)
       ? 0.94
@@ -97,8 +91,8 @@ function nameMatchScore(salesLabel, staffName) {
 
   let score = Math.max(direct, sortedScore, tokenCoverage * 0.95, contained);
 
-  // Shorter label than staff name ("Amira"/"Nabarawy"/"Aml" vs full staff name):
-  // score from the tokens the label actually provides.
+  
+  
   if (labelTokens.length < staffTokens.length) {
     let labelHits = 0;
     let bestAny = 0;
@@ -108,14 +102,14 @@ function nameMatchScore(salesLabel, staffName) {
       bestAny = Math.max(bestAny, best);
       if (best >= 0.82) labelHits += 1;
     }
-    // Single distinctive token (surname / short first name) that clearly hits
+    
     if (labelTokens.length === 1 && bestAny >= 0.9) {
       score = Math.max(score, 0.88);
     } else {
       score = Math.max(score, (labelHits / labelTokens.length) * 0.9);
     }
   } else if (staffTokens.length >= 2 && worstStaffToken < 0.78) {
-    // The label names a different last name → different person
+    
     score = Math.min(score, 0.7);
   }
 
@@ -124,10 +118,7 @@ function nameMatchScore(salesLabel, staffName) {
 
 const DEFAULT_MIN_SCORE = 0.74;
 
-/**
- * Pick the closest staff user for a sales label.
- * Returns { staff, score } or null if below threshold / ambiguous.
- */
+
 function matchSalesLabelToStaff(salesLabel, staffList, { minScore = DEFAULT_MIN_SCORE } = {}) {
   const label = String(salesLabel || '').trim();
   if (!label || /^owner$/i.test(label)) return null;
@@ -142,7 +133,7 @@ function matchSalesLabelToStaff(salesLabel, staffList, { minScore = DEFAULT_MIN_
 
   if (!ranked.length) return null;
 
-  // Ambiguous: top two nearly tied → skip rather than mis-assign
+  
   if (ranked.length > 1 && ranked[0].score - ranked[1].score < 0.05 && ranked[1].score >= minScore) {
     return null;
   }
@@ -150,7 +141,7 @@ function matchSalesLabelToStaff(salesLabel, staffList, { minScore = DEFAULT_MIN_
   return ranked[0];
 }
 
-/** True if this reservation sales label belongs to the given staff user. */
+
 function salesLabelBelongsToUser(salesLabel, user, { minScore = DEFAULT_MIN_SCORE } = {}) {
   if (!user?.full_name) return false;
   return nameMatchScore(salesLabel, user.full_name) >= minScore;

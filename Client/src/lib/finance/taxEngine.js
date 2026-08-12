@@ -1,6 +1,4 @@
-/**
- * Egyptian tax engine — client mirror for display / previews.
- */
+
 
 export const VAT_OUTPUT_PCT = 14;
 export const WHT_STANDARD_PCT = 3;

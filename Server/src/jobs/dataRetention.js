@@ -11,7 +11,7 @@ function isDryRun() {
 }
 
 function isEnabled() {
-  // Default on; set DATA_RETENTION_ENABLED=0 to disable
+  
   const raw = process.env.DATA_RETENTION_ENABLED;
   if (raw == null || raw === '') return true;
   return !/^(0|false|no|off)$/i.test(String(raw));
@@ -87,12 +87,7 @@ async function destroyGuestMedia(urls, protectedUrls) {
   return { destroyed, skippedProtected, skippedOther, considered: unique.length };
 }
 
-/**
- * Scrub guest media (ID photos, transfer/payment proofs) from reservations and
- * bookings whose checkout is older than DATA_RETENTION_DAYS. Reservation,
- * booking, and payment records are kept — they are business history — as are
- * units and unit gallery assets. Only transient checkout sessions are deleted.
- */
+
 async function runDataRetentionCleanup() {
   if (!isEnabled()) {
     return { skipped: true, reason: 'disabled' };
@@ -166,7 +161,7 @@ async function runDataRetentionCleanup() {
     }
   }
 
-  // Stale checkout sessions with no booking (or expired), older than retention window
+  
   const { rows: staleSessions } = await query(
     `SELECT id, payload FROM card_checkout_sessions
      WHERE created_at < (now() - ($1::int || ' days')::interval)

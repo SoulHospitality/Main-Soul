@@ -5,9 +5,7 @@ import { useLocale } from '../../context/LocaleContext';
 import PasswordChecklist from '../auth/PasswordChecklist';
 import { getPasswordRuleChecks, passwordPolicyOk } from '../../utils/passwordRules';
 
-/**
- * Inline guest sign-in / sign-up for checkout — keeps router state (incl. File uploads).
- */
+
 export default function CheckoutAuthGate({ prefill = {} }) {
   const { signIn, signUp } = useAuth();
   const { t } = useLocale();

@@ -15,10 +15,7 @@ function shouldShowOnPath(pathname) {
   return true;
 }
 
-/**
- * Single website entry popup — full creative image with close + optional link.
- * Shown once per browser session after dismiss.
- */
+
 export default function WebsiteEntryPopup() {
   const { pathname } = useLocation();
   const [popup, setPopup] = useState(null);
@@ -64,9 +61,7 @@ export default function WebsiteEntryPopup() {
     if (popup) {
       try {
         sessionStorage.setItem(STORAGE_KEY, String(popup.updated_at || popup.image_url));
-      } catch {
-        /* ignore */
-      }
+      } catch {}
     }
     setOpen(false);
   };

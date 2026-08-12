@@ -11,11 +11,7 @@ import { useLocale } from '../context/LocaleContext';
 
 const money = (n) => `EGP ${Number(n || 0).toLocaleString('en-US')}`;
 
-/**
- * SoulHospitality-style payment page — Paymob card / InstaPay / cash.
- * Expects router state from BookingDrawer.
- * Guest auth is required before confirming payment (inline, so checkout state is preserved).
- */
+
 export default function PaymentPage() {
   const { t } = useLocale();
   const location = useLocation();

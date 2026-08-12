@@ -1,7 +1,4 @@
-/**
- * Shared facility suggestions for Destinations → project facilities.
- * Sourced from Hacienda West, GAIA, Fouka Bay, D-Bay, and IL Monte Galala public amenity lists.
- */
+
 export const FACILITY_SUGGESTIONS = [
   'Private sandy beach',
   'Private Mediterranean beach',
@@ -69,7 +66,7 @@ export const FACILITY_SUGGESTIONS = [
   'Nightlife / lounges',
   'Concierge / customer care',
   'Housekeeping services',
-  // IL Monte Galala (Ain Sokhna / Tatweer Misr)
+  
   'Private Red Sea beach (1.3–1.4 km shoreline)',
   'Crystal Lagoons — mountain-top lagoon (Crystal Lagoons®)',
   'Lagoon clubhouse & lagoon shoreline',

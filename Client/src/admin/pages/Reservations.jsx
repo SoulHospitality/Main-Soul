@@ -30,7 +30,7 @@ export const EMPTY_FORM = {
   check_in: '', check_out: '', price_per_night: '', total_amount: '',
   down_payment: '', housekeeping_fees: '', insurance: '',
   booking_source: '', sales_person_id: '', is_owner_reservation: false, notes: '',
-  owner_collected_type: '',   // '' | 'partial' | 'full'
+  owner_collected_type: '',   
   owner_collected_amount: '',
   utilities_cost_override: '',
   beach_access_fees: '',
@@ -47,7 +47,7 @@ function calcNights(checkIn, checkOut) {
 }
 
 export function ReservationForm({ form, setForm, units, users, isNew, transferProof, onTransferProofChange, editId, allowPastDates, lockSalesPerson = false, currentUserName = '' }) {
-  // Auto-fill price_per_night from selected unit
+  
   const selectedUnit = units.find(u => String(u.id) === String(form.unit_id));
 
   useEffect(() => {
@@ -56,7 +56,7 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
     }
   }, [form.unit_id]);
 
-  // Fixed housekeeping by property type (villa 2500, else 1500)
+  
   useEffect(() => {
     if (!selectedUnit) return;
     const fee = housekeepingFeeForUnit(selectedUnit);
@@ -65,7 +65,7 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
 
   const nights = calcNights(form.check_in, form.check_out);
 
-  // Auto-calculate total when nights or price changes
+  
   useEffect(() => {
     if (nights > 0 && form.price_per_night) {
       const total = nights * parseFloat(form.price_per_night);
@@ -81,10 +81,10 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
   const ins     = parseFloat(form.insurance) || 0;
   const ownerCollectedAmt = parseFloat(form.owner_collected_amount) || 0;
 
-  // Amount WE still need to collect from tenant:
+  
   let amountToPay;
   if (form.owner_collected_type === 'full') {
-    // Owner collected everything — we only collect housekeeping + insurance
+    
     amountToPay = hkFees + ins - downPmt;
   } else if (form.owner_collected_type === 'partial') {
     amountToPay = total - ownerCollectedAmt - downPmt;
@@ -94,7 +94,7 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
 
   return (
     <div className="space-y-5">
-      {/* Unit + Guest */}
+      
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label className="label">Unit *</label>
@@ -136,11 +136,11 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
         </div>
       </div>
 
-      {/* Dates */}
+      
       <div>
         <label className="label mb-2">Dates *</label>
         {allowPastDates ? (
-          /* Admin / Finance / Owner Experience: simple date inputs — allow any past date */
+          
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label text-xs text-gray-500">Check-in *</label>
@@ -166,7 +166,7 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
             </p>
           </div>
         ) : (
-          /* All other roles: interactive calendar with availability check */
+          
           <BookingCalendar
             checkIn={form.check_in}
             checkOut={form.check_out}
@@ -179,7 +179,7 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
         <input type="hidden" value={form.check_out} />
       </div>
 
-      {/* Financials */}
+      
       <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 space-y-3">
         <h4 className="text-sm font-semibold text-blue-900">💰 Financial Details</h4>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -222,7 +222,7 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
           </div>
         </div>
 
-        {/* Owner Collected Payment */}
+        
         <div className="border border-amber-200 bg-amber-50 rounded-xl p-3 space-y-3">
           <div className="flex items-center gap-2">
             <input
@@ -243,7 +243,7 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
 
           {form.owner_collected_type && (
             <div className="space-y-3 pl-1">
-              {/* Radio: partial vs full */}
+              
               <div className="flex gap-4">
                 <label className={`flex items-center gap-2 px-3 py-2 rounded-lg border-2 cursor-pointer transition-colors text-sm font-medium
                   ${form.owner_collected_type === 'partial'
@@ -271,7 +271,7 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
                 </label>
               </div>
 
-              {/* Amount field — only for partial */}
+              
               {form.owner_collected_type === 'partial' && (
                 <div className="flex items-center gap-3">
                   <label className="text-sm text-amber-700 font-medium whitespace-nowrap">Amount collected by owner:</label>
@@ -286,7 +286,7 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
                 </div>
               )}
 
-              {/* Summary note */}
+              
               <div className={`text-xs rounded-lg px-3 py-2 font-medium
                 ${form.owner_collected_type === 'full'
                   ? 'bg-green-100 text-green-800'
@@ -301,7 +301,7 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
           )}
         </div>
 
-        {/* Broker */}
+        
         <div className="border border-purple-200 bg-purple-50 rounded-xl p-3 space-y-3">
           <div className="flex items-center gap-2">
             <input
@@ -376,7 +376,7 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
         )}
       </div>
 
-      {/* Owner flag + sales */}
+      
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
           <input type="checkbox" id="is_owner_res" checked={!!form.is_owner_reservation}
@@ -400,7 +400,7 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
 
       <div><label className="label">Notes</label><textarea className="input resize-none" rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
 
-      {/* Payment method — create only: cash / InstaPay */}
+      
       {isNew && !form.is_owner_reservation && (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 space-y-3">
           <h4 className="text-sm font-semibold text-emerald-900">Payment method</h4>
@@ -432,7 +432,7 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
         </div>
       )}
 
-      {/* Transfer proof (new reservations only) */}
+      
       {isNew && (
         <div className="border border-dashed border-gray-300 rounded-lg px-4 py-3">
           <label className="label flex items-center gap-1.5"><Upload className="w-3.5 h-3.5" />Transfer Proof (optional)</label>
@@ -513,7 +513,7 @@ function ReservationDetail({
     amountToPay = total - downPmt;
   }
 
-  // Commission engine — reservation carries unit commission fields from the JOIN
+  
   const fin = calcReservationFinancials(
     {
       commission_mode:             reservation.commission_mode,
@@ -599,9 +599,9 @@ function ReservationDetail({
         </div>
       </div>
 
-      {/* Financial summary */}
+      
       <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-1.5 text-sm">
-        {/* Owner collected block */}
+        
         {reservation.owner_collected_type && (
           <div className={`flex justify-between rounded-lg px-2 py-1 mb-1
             ${reservation.owner_collected_type === 'full' ? 'bg-green-50' : 'bg-amber-50'}`}>
@@ -665,7 +665,7 @@ function ReservationDetail({
         </div>
       )}
 
-      {/* Guest ID documents (fresh uploads only — legacy booking/checkout docs ignored) */}
+      
       <div>
         <div className="flex items-center justify-between mb-2 gap-2">
           <h4 className="font-semibold text-gray-900 text-sm">Guest documents</h4>
@@ -748,7 +748,7 @@ function ReservationDetail({
         </div>
       )}
 
-      {/* Payments */}
+      
       <div>
         <div className="flex items-center justify-between mb-2">
           <h4 className="font-semibold text-gray-900 text-sm">Payments</h4>
@@ -792,7 +792,7 @@ function ReservationDetail({
         ) : <p className="text-gray-400 text-sm">No payments recorded</p>}
       </div>
 
-      {/* Commissions */}
+      
       {reservation.commissions?.length > 0 && (
         <div>
           <h4 className="font-semibold text-gray-900 text-sm mb-2">Commissions</h4>
@@ -810,7 +810,7 @@ function ReservationDetail({
   );
 }
 
-// ─── Permits Tab ─────────────────────────────────────────────────────────────
+
 function calcNetPricePerNight(r) {
   const gross      = parseFloat(r.total_amount)    || 0;
   const utilities  = parseFloat(r.utilities_amount) || 0;
@@ -839,7 +839,7 @@ function DateRangeFilter({ label, from, to, onFromChange, onToChange, onClear })
     return () => document.removeEventListener('mousedown', h);
   }, []);
 
-  // Short date: "Jun 24"
+  
   const fmt = d => {
     if (!d) return '';
     const dt = new Date(d + 'T00:00:00');
@@ -943,15 +943,15 @@ export default function Reservations() {
   const [editId, setEditId] = useState(null);
   const [viewRes, setViewRes] = useState(null);
   const [cancelId, setCancelId] = useState(null);
-  // Cancel-request workflow
+  
   const [cancelReqOpen,  setCancelReqOpen]  = useState(false);
   const [cancelReqId,    setCancelReqId]    = useState(null);
   const [cancelReason,   setCancelReason]   = useState('');
   const [cancelType,     setCancelType]     = useState('non_refundable');
-  // Approve-cancel review modal (Finance/Admin sees reason + type before confirming)
-  const [approveCancelReview, setApproveCancelReview] = useState(null); // full reservation object
-  const [approveCancelType, setApproveCancelType] = useState('non_refundable'); // Finance/Admin override
-  // Refund-done workflow
+  
+  const [approveCancelReview, setApproveCancelReview] = useState(null); 
+  const [approveCancelType, setApproveCancelType] = useState('non_refundable'); 
+  
   const [refundDoneOpen, setRefundDoneOpen] = useState(false);
   const [refundDoneId,   setRefundDoneId]   = useState(null);
   const [refundFile,     setRefundFile]     = useState(null);
@@ -962,7 +962,7 @@ export default function Reservations() {
   const [previewPhotos, setPreviewPhotos] = useState([]);
   const [previewPhotoIndex, setPreviewPhotoIndex] = useState(0);
 
-  // Block nights (owner stay)
+  
   const [blockModal, setBlockModal] = useState(false);
   const [blockForm, setBlockForm] = useState({ unit_id: '', owner_name: '', check_in: '', check_out: '', notes: '' });
 
@@ -1021,7 +1021,7 @@ export default function Reservations() {
     onError: (e) => toast.error(e.response?.data?.error || 'Error deleting'),
   });
 
-  // Submit cancellation request (any staff)
+  
   const cancelRequestMutation = useMutation({
     mutationFn: ({ id, reason, type }) =>
       api.post(`/reservations/${id}/cancel-request`, { reason, cancel_type: type }),
@@ -1033,14 +1033,14 @@ export default function Reservations() {
     onError: (e) => toast.error(e.response?.data?.error || 'Error submitting request'),
   });
 
-  // Approve cancellation (Finance/Admin) — passes override cancel_type in body
+  
   const approveCancelMutation = useMutation({
     mutationFn: ({ id, cancel_type }) => api.delete(`/reservations/${id}`, { data: { cancel_type } }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['reservations'] }); toast.success('Reservation cancelled'); },
     onError: (e) => toast.error(e.response?.data?.error || 'Error cancelling'),
   });
 
-  // Reject cancellation request (Finance/Admin) — keeps reservation active, clears request
+  
   const rejectCancelMutation = useMutation({
     mutationFn: (id) => api.post(`/reservations/${id}/reject-cancel`),
     onSuccess: () => {
@@ -1051,7 +1051,7 @@ export default function Reservations() {
     onError: (e) => toast.error(e.response?.data?.error || 'Error rejecting request'),
   });
 
-  // Mark refund done (Finance/Admin)
+  
   const refundDoneMutation = useMutation({
     mutationFn: ({ id, file }) => {
       const fd = new FormData();
@@ -1231,7 +1231,7 @@ export default function Reservations() {
 
   const canSeeOwnerStays = isAdmin;
 
-  // Split: blocked nights (owner stay, total = 0) vs everything else (including owner reservations with amount)
+  
   const allFiltered = reservations.filter(r => {
     if (filterProject && r.project !== filterProject) return false;
     if (filterUnit && String(r.unit_id) !== String(filterUnit)) return false;
@@ -1243,7 +1243,7 @@ export default function Reservations() {
     }
     return true;
   });
-  // Cancelled (incl. blank unit) stay in the main list in red — not buried in owner blocks.
+  
   const isBlocked = (r) =>
     r.status !== 'cancelled' &&
     !!r.is_owner_reservation &&
@@ -1532,7 +1532,7 @@ export default function Reservations() {
         </div>
       )}
 
-      {/* ── Owner Stays / Blocked Nights Table ──────────────────────────────── */}
+      
       {canSeeOwnerStays && ownerStays.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center gap-3">
@@ -1609,7 +1609,7 @@ export default function Reservations() {
         </div>
       )}
 
-      {/* Block Nights Modal */}
+      
       <Modal open={blockModal} onClose={() => setBlockModal(false)}
         title="Block Nights — Owner Stay" size="sm"
         footer={<>
@@ -1658,7 +1658,7 @@ export default function Reservations() {
         </div>
       </Modal>
 
-      {/* Create drawer (guest-style) */}
+      
       <AdminReservationDrawer
         open={modal === 'drawer'}
         onClose={() => { setModal(null); setTransferProof(null); }}
@@ -1679,7 +1679,7 @@ export default function Reservations() {
         />
       </AdminReservationDrawer>
 
-      {/* Edit Modal */}
+      
       <Modal open={modal === 'form'} onClose={() => { setModal(null); setTransferProof(null); }}
         title="Edit Reservation" size="xl"
         footer={<>
@@ -1696,7 +1696,7 @@ export default function Reservations() {
           currentUserName={user?.full_name || user?.username || ''} />
       </Modal>
 
-      {/* View Modal */}
+      
       <Modal open={!!viewRes} onClose={() => setViewRes(null)} title={`Reservation #${viewRes}`} size="lg"
         footer={<button onClick={() => setViewRes(null)} className="btn-secondary">Close</button>}
       >
@@ -1718,7 +1718,7 @@ export default function Reservations() {
         />
       </Modal>
 
-      {/* Payment Modal */}
+      
       <Modal open={pmtModal} onClose={() => setPmtModal(false)} title="Record Payment" size="md"
         footer={<>
           <button onClick={() => setPmtModal(false)} className="btn-secondary">Cancel</button>
@@ -1743,7 +1743,7 @@ export default function Reservations() {
         />
       )}
 
-      {/* ── Approve Cancel Review Modal (Finance/Admin) ── */}
+      
       <Modal
         open={!!approveCancelReview}
         onClose={() => setApproveCancelReview(null)}
@@ -1784,7 +1784,7 @@ export default function Reservations() {
                     <span className="ml-2 text-amber-600 normal-case font-normal">(changed from requested)</span>
                   )}
                 </p>
-                {/* Editable radio buttons — Finance/Admin can override the requester's choice */}
+                
                 <div className="flex gap-3 mt-1">
                   <label className={`flex items-center gap-2 px-3 py-2 rounded-lg border-2 cursor-pointer transition-colors
                     ${approveCancelType === 'refundable'
@@ -1825,7 +1825,7 @@ export default function Reservations() {
         )}
       </Modal>
 
-      {/* ── Cancel Request Modal ── */}
+      
       <Modal
         open={cancelReqOpen}
         onClose={() => setCancelReqOpen(false)}
@@ -1872,7 +1872,7 @@ export default function Reservations() {
         </div>
       </Modal>
 
-      {/* ── Refund Done Modal ── */}
+      
       <Modal
         open={refundDoneOpen}
         onClose={() => setRefundDoneOpen(false)}

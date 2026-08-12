@@ -40,7 +40,7 @@ router.get('/housekeeping-tasks', async (req, res, next) => {
        LIMIT 200`,
       params
     );
-    // Staff ops see guest name for check-in context; strip in owner portal elsewhere
+    
     res.json(rows);
   } catch (e) {
     next(e);
@@ -201,7 +201,7 @@ router.post('/housekeeping-tasks/:id/inspect', requireRoles('admin', 'reservatio
   }
 });
 
-// ── Outsider housekeeping service orders (revenue) ─────────
+
 router.get('/housekeeping-service-orders', requireRoles('admin', 'reservations', 'reservations_web'), async (req, res, next) => {
   try {
     const { FINANCIAL_EPOCH, clampFromDate } = require('../../lib/financialEpoch');

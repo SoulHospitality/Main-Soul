@@ -1,6 +1,4 @@
-/**
- * Operations check-ins today + Housekeeping today cleans + supervisor assignment.
- */
+
 const express = require('express');
 const { query } = require('../../config/db');
 const { requireRoles } = require('../../middleware/auth');
@@ -61,7 +59,7 @@ function paymentBreakdown(row) {
   const children = Math.max(0, Number(row.children) || 0);
   const nannyCount = Math.max(0, Number(row.nanny_count) || 0);
 
-  // Prefer the real beach amount stored on the reservation (import / manual).
+  
   let beachAccessFees = Number(row.beach_access_fees);
   if (!Number.isFinite(beachAccessFees) || beachAccessFees < 0) beachAccessFees = 0;
 
@@ -91,7 +89,7 @@ function paymentBreakdown(row) {
       {
         nights,
         subtotal: accommodation > 0 ? accommodation : Number(row.total_amount) || 0,
-        // Do not invent a guest — only use recorded party size for recomputes.
+        
         adults,
         teens: children,
       }
@@ -102,9 +100,7 @@ function paymentBreakdown(row) {
     serviceFees = Number(fees.service_fee_egp) || 0;
     serviceFeePercent = Number(fees.service_fee_percent) || 0;
     securityDeposit = Number(fees.security_deposit_egp) || 0;
-  } catch {
-    /* ignore fee compute errors */
-  }
+  } catch {}
 
   return {
     nights,
@@ -535,7 +531,7 @@ router.post(
         return res.status(400).json({ error: 'Housekeeping must mark the unit cleaned first' });
       }
 
-      // Operations agents must leave a comment before handing over to the guest.
+      
       let comment = String(req.body?.comment || row.ops_handover_comment || '').trim();
       if (req.user.role === OPS_AGENT) {
         if (!comment) {

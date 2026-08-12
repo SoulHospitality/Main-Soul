@@ -41,7 +41,7 @@ export function usePermissions() {
     isResale: user?.role === 'resale',
     isHr: user?.role === 'hr',
     isOwner: user?.role === 'owner',
-    // Legacy aliases used in older pages — map to new roles
+    
     isFinance: user?.role === 'admin',
     isOpManager: user?.role === 'admin',
     isSales: isReservations,

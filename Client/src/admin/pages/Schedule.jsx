@@ -16,15 +16,15 @@ import ManualReservationForm, {
 import { housekeepingFeeForUnit } from '../../utils/housekeeping';
 import { useAuth } from '../context/AuthContext';
 
-// ─── helpers ────────────────────────────────────────────────────────────────
-// Always use LOCAL date components — toISOString() converts to UTC which
-// shifts the date backward by the timezone offset (e.g. UTC+2 → -1 day).
+
+
+
 const localISO = (d) =>
   `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
 const todayStr = () => localISO(new Date());
 
-// addDays: parse the input string as LOCAL midnight to avoid UTC shift
+
 const addDays = (d, n) => {
   const [y, m, day] = String(d).split('-').map(Number);
   return localISO(new Date(y, m - 1, day + n));
@@ -52,11 +52,11 @@ function getMonthRange(dateStr) {
   };
 }
 
-// Normalize PostgreSQL timestamps → plain YYYY-MM-DD strings
+
 const normDate = d => String(d).split('T')[0];
 
-// Build cell rows: checkin / mid / checkout / price
-// check-in and check-out each get their own cell; middle nights are colSpanned
+
+
 function buildRow(unitId, dates, reservations) {
   const unitRes = reservations
     .filter(r => r.unit_id === unitId)
@@ -68,17 +68,17 @@ function buildRow(unitId, dates, reservations) {
   while (i < dates.length) {
     const dStr = isoDate(dates[i]);
 
-    // ── Check-in day ──────────────────────────────────────────────────
+    
     const ciRes = unitRes.find(r => r.check_in === dStr);
     if (ciRes) {
       cells.push({ type: 'checkin', res: ciRes, date: dStr, unitId });
       i++;
-      // Collect middle nights (after check-in, strictly before check-out)
+      
       let span = 0;
       const midStart = i < dates.length ? isoDate(dates[i]) : null;
       while (i < dates.length && isoDate(dates[i]) < ciRes.check_out) { span++; i++; }
       if (span > 0) cells.push({ type: 'mid', res: ciRes, span, firstDate: midStart, unitId });
-      // Check-out day (if it falls within the visible range)
+      
       if (i < dates.length && isoDate(dates[i]) === ciRes.check_out) {
         cells.push({ type: 'checkout', res: ciRes, date: ciRes.check_out, unitId });
         i++;
@@ -86,7 +86,7 @@ function buildRow(unitId, dates, reservations) {
       continue;
     }
 
-    // ── Mid of a reservation that started before the visible range ────
+    
     const midRes = unitRes.find(r => r.check_in < dStr && r.check_out > dStr);
     if (midRes) {
       let span = 0;
@@ -100,7 +100,7 @@ function buildRow(unitId, dates, reservations) {
       continue;
     }
 
-    // ── Empty price cell ──────────────────────────────────────────────
+    
     cells.push({ type: 'price', date: dStr, unitId });
     i++;
   }
@@ -108,7 +108,7 @@ function buildRow(unitId, dates, reservations) {
   return cells;
 }
 
-// Color rules: cancelled > hold > urgency > blocked > owner > sales > past
+
 function resColors(res, today) {
   const tomorrow = addDays(today, 1);
   const co = normDate(res.check_out);
@@ -144,7 +144,7 @@ const COLOR_FILTERS = [
 
 const CELL_W = 32;
 
-// ─── Price Editor Modal ──────────────────────────────────────────────────────
+
 function PriceEditorModal({
   open,
   onClose,
@@ -164,7 +164,7 @@ function PriceEditorModal({
   const [rangeFrom, setRangeFrom] = useState(dateStr || '');
   const [rangeTo, setRangeTo]   = useState(dateStr || '');
 
-  // Reset when opened on new cell
+  
   useEffect(() => {
     setPrice(currentPrice ? String(currentPrice) : '');
     setApplyTo('day');
@@ -328,7 +328,7 @@ function PriceEditorModal({
   );
 }
 
-// ─── Reservation Detail Modal ────────────────────────────────────────────────
+
 function ReservationDetailModal({ open, onClose, reservationId }) {
   const { data: res, isLoading } = useQuery({
     queryKey: ['reservation-detail', reservationId],
@@ -346,14 +346,14 @@ function ReservationDetailModal({ open, onClose, reservationId }) {
     >
       {isLoading ? <LoadingSpinner /> : res ? (
         <div className="space-y-4">
-          {/* Status badges */}
+          
           <div className="flex gap-2 flex-wrap">
             <Badge status={res.status} />
             <Badge status={res.payment_status} />
             {res.is_owner_reservation && <span className="badge badge-blue">Owner Reservation</span>}
           </div>
 
-          {/* Guest + unit */}
+          
           <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
             <Info label="Tenant"     value={res.guest_name} bold />
             <Info
@@ -385,7 +385,7 @@ function ReservationDetailModal({ open, onClose, reservationId }) {
             ) : null}
           </div>
 
-          {/* Dates + financials */}
+          
           <div className="bg-gray-50 rounded-xl px-4 py-3 grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
             <Info label="Check-in"   value={formatDate(res.check_in)} />
             <Info label="Check-out"  value={formatDate(res.check_out)} />
@@ -428,7 +428,7 @@ function Info({ label, value, bold }) {
   );
 }
 
-// ─── Edit Reservation Modal (inline form) ────────────────────────────────────
+
 function EditReservationModal({ open, onClose, editId, editForm, setEditForm, unitsList, usersList, onSave, saving }) {
   return (
     <Modal open={open} onClose={onClose} title={`Edit Reservation #${editId}`} size="lg"
@@ -488,14 +488,14 @@ function EditReservationModal({ open, onClose, editId, editForm, setEditForm, un
   );
 }
 
-// ─── Hold Modal (create a hold) ───────────────────────────────────────────────
+
 function HoldModal({ open, onClose, prefillUnit, prefillCheckIn, prefillCheckOut, unitsList, onSave, saving }) {
   const [unitId,     setUnitId]     = useState('');
   const [guestName,  setGuestName]  = useState('');
   const [guestPhone, setGuestPhone] = useState('');
   const [checkIn,    setCheckIn]    = useState('');
   const [checkOut,   setCheckOut]   = useState('');
-  const [preset,     setPreset]     = useState('24'); // hours
+  const [preset,     setPreset]     = useState('24'); 
   const [customH,    setCustomH]    = useState('');
 
   useEffect(() => {
@@ -584,13 +584,13 @@ function HoldModal({ open, onClose, prefillUnit, prefillCheckIn, prefillCheckOut
   );
 }
 
-// ─── Hold Detail Modal ────────────────────────────────────────────────────────
+
 function HoldDetailModal({ open, onClose, holdId, onConfirm, onDelete, deleting }) {
   const { data: hold, isLoading } = useQuery({
     queryKey: ['hold-detail', holdId],
     queryFn: () => api.get(`/reservations/${holdId}`).then(r => r.data),
     enabled: !!holdId && open,
-    refetchInterval: open ? 30000 : false, // refresh every 30s to update countdown
+    refetchInterval: open ? 30000 : false, 
   });
 
   const now = new Date();
@@ -648,7 +648,7 @@ function HoldDetailModal({ open, onClose, holdId, onConfirm, onDelete, deleting 
   );
 }
 
-// ─── Main Schedule ────────────────────────────────────────────────────────────
+
 const EMPTY_EDIT = {
   unit_id: '', guest_name: '', guest_email: '', guest_phone: '', guest_nationality: '',
   adults: '2', children: '0', nanny_count: '0',
@@ -735,23 +735,23 @@ export default function Schedule() {
   const TOMORROW = addDays(TODAY, 1);
   const now = new Date();
 
-  // ── View state
+  
   const [viewYear, setViewYear]   = useState(now.getFullYear());
   const [viewMonth, setViewMonth] = useState(now.getMonth());
   const [spanMonths, setSpanMonths] = useState(2);
 
-  // Manual reservation drawer
+  
   const [createDrawer, setCreateDrawer] = useState(false);
   const [createForm, setCreateForm] = useState({ ...EMPTY_MANUAL_RESERVATION_FORM });
   const [createProof, setCreateProof] = useState(null);
 
-  // ── Filters
+  
   const [filterBedrooms,  setFilterBedrooms]  = useState('');
   const [filterProject,   setFilterProject]   = useState('');
   const [filterFrom,      setFilterFrom]      = useState('');
   const [filterTo,        setFilterTo]        = useState('');
   const [filterColor,     setFilterColor]     = useState('');
-  const [filterUnits,     setFilterUnits]     = useState([]);   // multi-select unit ids
+  const [filterUnits,     setFilterUnits]     = useState([]);   
   const [filterFloor,     setFilterFloor]     = useState('');
   const [filterPriceMin,  setFilterPriceMin]  = useState('');
   const [filterPriceMax,  setFilterPriceMax]  = useState('');
@@ -766,40 +766,40 @@ export default function Schedule() {
     return () => document.removeEventListener('mousedown', handler);
   }, [unitPickerOpen]);
 
-  // ── Price editor state
+  
   const [priceModal,        setPriceModal]        = useState(false);
-  const [priceCell,         setPriceCell]         = useState(null); // { unitId, unitName, dateStr, currentPrice }
+  const [priceCell,         setPriceCell]         = useState(null); 
 
-  // ── Bulk price editor state
+  
   const [bulkMode,          setBulkMode]          = useState(false);
   const [selectedUnitIds,   setSelectedUnitIds]   = useState(new Set());
   const [bulkPriceModal,    setBulkPriceModal]    = useState(false);
 
-  // ── Reservation detail state
+  
   const [detailModal,       setDetailModal]       = useState(false);
   const [detailResId,       setDetailResId]       = useState(null);
 
-  // ── Edit form state
+  
   const [editModal,         setEditModal]         = useState(false);
   const [editId,            setEditId]            = useState(null);
   const [editForm,          setEditForm]          = useState(EMPTY_EDIT);
 
-  // ── Mobile filter panel toggle
+  
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  // ── Hold state
+  
   const [holdModal,         setHoldModal]         = useState(false);
   const [holdPrefill,       setHoldPrefill]       = useState({});
   const [holdDetailModal,   setHoldDetailModal]   = useState(false);
   const [holdDetailId,      setHoldDetailId]      = useState(null);
 
-  // ── Compute display dates (1–3 month horizon like soul-website admin calendar)
+  
   const defaultFrom = isoDate(new Date(viewYear, viewMonth, 1));
-  const defaultTo   = isoDate(new Date(viewYear, viewMonth + spanMonths, 1)); // exclusive
+  const defaultTo   = isoDate(new Date(viewYear, viewMonth + spanMonths, 1)); 
 
-  // A From/To filter can point outside the month being viewed, so build the
-  // window around whichever bound was given instead of combining a filter date
-  // with the unrelated month default (which could produce zero columns).
+  
+  
+  
   const { fromStr, toStr } = useMemo(() => {
     const monthStart = (dateStr) => {
       const [y, m] = String(dateStr).split('-').map(Number);
@@ -843,7 +843,7 @@ export default function Schedule() {
     return `${a} – ${b}`;
   }, [viewYear, viewMonth, spanMonths]);
 
-  // ── Data fetching
+  
   const { data, isLoading } = useQuery({
     queryKey: ['schedule', fromStr, toStr, filterBedrooms, filterProject],
     queryFn: () => api.get('/reservations/schedule', {
@@ -870,7 +870,7 @@ export default function Schedule() {
       const prev = m[b.unit_id][dateKey];
       const prevRank = priority[prev] || 0;
       const nextRank = priority[b.source] || 0;
-      // Prefer reservation over calendar blocks; otherwise keep last non-empty source.
+      
       if (!prev || nextRank >= prevRank) {
         m[b.unit_id][dateKey] = b.source;
       }
@@ -882,7 +882,7 @@ export default function Schedule() {
     const m = {};
     dailyPricesRaw.forEach(dp => {
       if (!m[dp.unit_id]) m[dp.unit_id] = {};
-      // Normalize date: DB may return "2024-01-15T00:00:00.000Z" or plain "2024-01-15"
+      
       const dateKey = String(dp.date).split('T')[0];
       m[dp.unit_id][dateKey] = parseFloat(dp.price);
     });
@@ -891,7 +891,7 @@ export default function Schedule() {
 
   const getUnitDayPrice = (unit, dateStr) => {
     if (priceMap[unit.id]?.[dateStr] != null) return priceMap[unit.id][dateStr];
-    // No fallback to unit default for guest-parity display — empty means unpriced
+    
     return priceMap[unit.id]?.[dateStr] ?? null;
   };
 
@@ -899,7 +899,7 @@ export default function Schedule() {
   const { data: unitsList     = [] } = useQuery({ queryKey: ['units'],    queryFn: () => api.get('/units').then(r => r.data) });
   const { data: usersList     = [] } = useQuery({ queryKey: ['users-sales'], queryFn: () => api.get('/users/sales').then(r => r.data) });
 
-  // ── Mutations
+  
   const priceMutation = useMutation({
     mutationFn: ({ unit_id, from_date, to_date, price, clear }) =>
       api.post('/daily-prices/batch', { unit_id, from_date, to_date, price, clear: !!clear }),
@@ -1064,7 +1064,7 @@ export default function Schedule() {
     onError: (e) => toast.error(e.response?.data?.error || 'Error deleting hold'),
   });
 
-  // ── Handlers
+  
   const goPrevMonth = () => { if (viewMonth === 0) { setViewYear(y=>y-1); setViewMonth(11); } else setViewMonth(m=>m-1); };
   const goNextMonth = () => { if (viewMonth === 11) { setViewYear(y=>y+1); setViewMonth(0);  } else setViewMonth(m=>m+1); };
   const goThisMonth = () => { setViewYear(now.getFullYear()); setViewMonth(now.getMonth()); };
@@ -1085,7 +1085,7 @@ export default function Schedule() {
   }, [canEditSchedulePricing, priceMap, blockMap]);
 
   const handleResClick = useCallback((res) => {
-    // Hold cells → hold detail modal
+    
     if (res.is_hold || res.status === 'hold') {
       setHoldDetailId(res.id);
       setHoldDetailModal(true);
@@ -1110,13 +1110,13 @@ export default function Schedule() {
         price_per_night: res.price_per_night || '',
         booking_source: res.booking_source || '', sales_person_id: res.sales_person_id || '',
         is_owner_reservation: !!res.is_owner_reservation,
-        // When confirming a hold, mark is_hold=false so backend converts it
+        
         is_hold: isHold ? false : undefined,
         status: isHold ? 'confirmed' : res.status,
         notes: res.notes || '',
       });
       setEditId(res.id);
-      setHoldDetailModal(false); // close hold modal if open
+      setHoldDetailModal(false); 
       setEditModal(true);
     } catch { toast.error('Failed to load reservation'); }
   }, []);
@@ -1140,12 +1140,12 @@ export default function Schedule() {
   const canWrite      = canManageReservations;
   const canEditPrice  = canEditSchedulePricing;
 
-  // ── Helper: parse unit_number prefix into sort key
-  // Order: SA(0) → ST3,ST4,ST5...(1,subgroup=num) → CL1,CL2...(2,subgroup=num) → F(3) → other(99)
+  
+  
   const parseUnitCode = (unitNumber = '') => {
     const s = String(unitNumber).trim().toUpperCase();
     if (/^SA/i.test(s)) {
-      // Extract floor from SA-{floor}{section}-... e.g. SA-3A-B01 → floor=3, section=A
+      
       const rest = s.replace(/^SA[-]?/, '');
       const m = rest.match(/^(\d+)([A-Z]?)/);
       return { group: 0, subGroup: 0, floor: m ? parseInt(m[1]) : 0, section: m ? (m[2] || '') : '', raw: s };
@@ -1165,7 +1165,7 @@ export default function Schedule() {
     return { group: 99, subGroup: 0, floor: 0, section: '', raw: s };
   };
 
-  // ── Helper: extract available floors from unit.floor field
+  
   const availableFloors = useMemo(() => {
     const floors = new Set();
     (data?.units || []).forEach(u => {
@@ -1175,37 +1175,37 @@ export default function Schedule() {
     return Array.from(floors).sort((a, b) => a - b);
   }, [data]);
 
-  // ── Sort: SA → ST3,ST4,ST5... → CL1,CL2... → F → other
-  // Within SA: sort by floor (1<2<3...) then section letter (A<B)
-  // Within ST/CL: sort by subGroup number, then alphanumeric by unit_number
+  
+  
+  
   const sortUnits = (units) => [...units].sort((a, b) => {
     const pA = parseUnitCode(a.unit_number);
     const pB = parseUnitCode(b.unit_number);
     if (pA.group    !== pB.group)    return pA.group    - pB.group;
     if (pA.subGroup !== pB.subGroup) return pA.subGroup - pB.subGroup;
-    if (pA.group === 0) { // SA: sort by floor then section
+    if (pA.group === 0) { 
       if (pA.floor   !== pB.floor)   return pA.floor    - pB.floor;
       if (pA.section !== pB.section) return pA.section.localeCompare(pB.section);
     }
     return pA.raw.localeCompare(pB.raw, undefined, { numeric: true });
   });
 
-  // ── Combined unit filters (color + units + floor + price + available) + sort
+  
   const allReservations = data?.reservations || [];
   const filteredUnits = useMemo(() => {
     const priceMin = filterPriceMin !== '' ? parseFloat(filterPriceMin) : null;
     const priceMax = filterPriceMax !== '' ? parseFloat(filterPriceMax) : null;
     const filtered = (data?.units || []).filter(unit => {
-      // ── Multi-unit picker filter
+      
       if (filterUnits.length > 0 && !filterUnits.includes(String(unit.id))) return false;
 
-      // ── Floor filter
+      
       if (filterFloor !== '' && filterFloor !== undefined) {
         if (parseInt(unit.floor) !== parseInt(filterFloor)) return false;
       }
 
-      // ── Price range filter — match the nightly rates shown in the grid,
-      // falling back to the unit default only when no night is priced.
+      
+      
       if (priceMin !== null || priceMax !== null) {
         const nightly = displayDates
           .map((d) => priceMap[unit.id]?.[isoDate(d)])
@@ -1230,14 +1230,14 @@ export default function Schedule() {
         (d) => d >= first && d <= last
       );
 
-      // ── Available-only filter
+      
       if (filterAvailable) {
         const hasOverlap = ur.some(r => normDate(r.check_in) < toStr && normDate(r.check_out) > fromStr);
         if (hasOverlap) return false;
         if (blockedNightsInView.length > 0) return false;
       }
 
-      // ── Color filter
+      
       if (!filterColor) return true;
       if (filterColor === 'hold')              return ur.some(r => (r.is_hold || r.status === 'hold') && normDate(r.check_in) <= last && normDate(r.check_out) > first);
       if (filterColor === 'blocked')           return ur.some(r => r.is_owner_reservation && !r.is_hold && parseFloat(r.total_amount) === 0 && normDate(r.check_in) <= last && normDate(r.check_out) > first)
@@ -1252,10 +1252,10 @@ export default function Schedule() {
     return sortUnits(filtered);
   }, [data, filterColor, filterUnits, filterFloor, filterPriceMin, filterPriceMax, filterAvailable, allReservations, displayDates, priceMap, blockMap, fromStr, toStr, TODAY, TOMORROW]);
 
-  // ─── Render ───────────────────────────────────────────────────────────────
+  
   return (
     <div className="space-y-4">
-      {/* ── Header */}
+      
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="page-header mb-0">
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-soul-muted">Operations</p>
@@ -1318,7 +1318,7 @@ export default function Schedule() {
         </div>
       </div>
 
-      {/* ── Compact legend + bulk */}
+      
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-soul-line bg-white/90 px-4 py-3 shadow-sm">
         {[
           { swatch: 'bg-emerald-50 border border-emerald-200', label: 'Priced' },
@@ -1380,8 +1380,8 @@ export default function Schedule() {
         )}
       </div>
 
-      {/* ── Filters */}
-      {/* Own stacking context above the grid so the unit dropdown is not clipped or painted under it */}
+      
+      
       <div className="relative z-40 rounded-2xl border border-soul-line bg-white shadow-sm">
         <button
           type="button"
@@ -1565,7 +1565,7 @@ export default function Schedule() {
         </div>
       </div>
 
-      {/* ── Calendar grid */}
+      
       {isLoading ? <LoadingSpinner /> : (
         <div
           className="relative z-0 overflow-auto rounded-2xl border border-soul-line bg-white shadow-sm"
@@ -1875,7 +1875,7 @@ export default function Schedule() {
         Tap a night to price or block it · Unpriced nights stay closed to guests · Bars open reservation details
       </p>
 
-      {/* ── Modals */}
+      
       <PriceEditorModal
         open={priceModal}
         onClose={() => setPriceModal(false)}

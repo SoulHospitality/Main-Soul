@@ -106,7 +106,7 @@ function normalizeTagList(value) {
     .filter(Boolean);
 }
 
-/** Empty string / NaN → null; otherwise number (or integer when opts.int). */
+
 function toNum(value, { int = false, fallback = null } = {}) {
   if (value === undefined || value === null || value === '') return fallback;
   const n = Number(value);
@@ -120,7 +120,7 @@ function toText(value, fallback = null) {
   return s || fallback;
 }
 
-/** Unit codes are always uppercase on the website (CL10-11B-02, not cl10-11b-02). */
+
 function normalizeUnitNumber(value, fallback = null) {
   const text = toText(value, fallback);
   return text ? text.toUpperCase() : fallback;
@@ -165,7 +165,7 @@ function parsePartyCounts(b, { isOwner = false } = {}) {
   const children = Math.max(0, parseInt(b.children, 10) || 0);
   const nannyCount = Math.max(0, parseInt(b.nanny_count ?? b.nanny, 10) || 0);
   if (!isOwner && adults < 1 && (children > 0 || nannyCount > 0 || b.guest_name)) {
-    // Non-owner stays need at least one adult when party is provided
+    
   }
   return { adults, children, nanny_count: nannyCount };
 }
@@ -177,10 +177,7 @@ async function resolvePhotosFromBody(b) {
   return { folderUrl: String(folderUrl).trim(), urls: resolved.urls };
 }
 
-/**
- * Resolve an explicit cover from a Drive *file* link (preferred) or a raw cover_url.
- * Returns null when nothing explicit was provided.
- */
+
 async function resolveExplicitCoverUrl(b) {
   const { resolveDriveFileImage } = require('../../services/drivePhotos');
   const driveLink = String(b.cover_drive_url || b.cover_file_url || '').trim();
@@ -212,7 +209,7 @@ function ensureCoverInGallery(coverUrl, photoUrls) {
   return [coverUrl, ...urls];
 }
 
-// ── Users (Admin + HR staff management) ─────────────────────
+
 const STAFF_SELECT = `
   id, username, email, full_name, role, is_active, sales_commission_pct,
   operation_specialist_pct, operation_manager_pct, reservation_manager_pct,
@@ -407,7 +404,7 @@ router.patch('/users/:id', requireRoles('admin', 'hr'), async (req, res, next) =
     let nextCommissionPct = existing.sales_commission_pct;
     if (b.sales_commission_pct != null || isReservationAgentRole(nextRole)) {
       try {
-        // When role is an agent, always validate (use existing value if body omits it)
+        
         const payload =
           b.sales_commission_pct != null && b.sales_commission_pct !== ''
             ? b
@@ -569,7 +566,7 @@ router.delete('/users/:id', requireRoles('admin', 'hr'), async (req, res, next) 
     try {
       await client.query('BEGIN');
 
-      // Drop user-owned rows that should not survive account removal.
+      
       await client.query(`DELETE FROM sales_notifications WHERE user_id = $1`, [targetId]);
       await client.query(`DELETE FROM commissions WHERE user_id = $1`, [targetId]);
       await client.query(`DELETE FROM notifications WHERE user_id = $1`, [targetId]);
@@ -577,7 +574,7 @@ router.delete('/users/:id', requireRoles('admin', 'hr'), async (req, res, next) 
       await client.query(`DELETE FROM owner_payout_requests WHERE owner_id = $1`, [targetId]);
       await client.query(`DELETE FROM owner_settlements WHERE owner_id = $1`, [targetId]);
 
-      // Preserve history by reassigning required FKs to the acting admin/HR.
+      
       await client.query(`UPDATE documents SET created_by = $2 WHERE created_by = $1`, [
         targetId,
         actorId,
@@ -599,7 +596,7 @@ router.delete('/users/:id', requireRoles('admin', 'hr'), async (req, res, next) 
         actorId,
       ]);
 
-      // Clear optional references.
+      
       await client.query(
         `UPDATE acquisition_contracts SET created_by = NULL WHERE created_by = $1`,
         [targetId]
@@ -682,7 +679,7 @@ router.delete('/users/:id', requireRoles('admin', 'hr'), async (req, res, next) 
   }
 });
 
-// ── Units (shared public.units) ─────────────────────────────
+
 router.get('/units', async (req, res, next) => {
   try {
     const { search, status, project, bedrooms, listing_type } = req.query;
@@ -695,7 +692,7 @@ router.get('/units', async (req, res, next) => {
       i++;
     }
     if (status) {
-      // ops_status filter for PMS UI (available/occupied/maintenance) OR listing status
+      
       if (['available', 'occupied', 'maintenance'].includes(status)) {
         where.push(`ops_status = $${i++}`);
         params.push(status);
@@ -713,7 +710,7 @@ router.get('/units', async (req, res, next) => {
       where.push(`beds = $${i++}`);
       params.push(Number(bedrooms));
     }
-    // Resale PMS only manages for-sale inventory.
+    
     const listingType =
       req.user?.role === 'resale'
         ? 'sale'
@@ -783,7 +780,7 @@ router.post('/units', requireRoles('admin', 'resale', 'reservations_web', 'reser
 
     const slug = toText(b.slug) || slugify(title || `unit-${Date.now()}`);
     const amenities = normalizeTagList(b.amenities);
-    // Facilities live on the project (Destinations page), not on units.
+    
     const facilities = undefined;
     let beachPrice =
       listingType === 'sale'
@@ -966,12 +963,12 @@ async function updateUnitHandler(req, res, next) {
   try {
     const b = req.body;
     const amenities = b.amenities == null ? null : normalizeTagList(b.amenities);
-    // Do not overwrite legacy unit facilities from the unit form; manage on Destinations.
+    
     const facilities = undefined;
     const { housekeepingFeeForType } = require('../../lib/housekeeping');
 
-    // Listing status is always draft|published from completeness — ignore client choice
-    // (including legacy archived/cancelled/delisted).
+    
+    
     const listingStatus = null;
     const opsStatus = b.ops_status
       || (['available', 'occupied', 'maintenance'].includes(b.status) ? b.status : null);
@@ -1098,7 +1095,7 @@ async function updateUnitHandler(req, res, next) {
     if (coverUrl && Array.isArray(photoUrls)) {
       photoUrls = ensureCoverInGallery(coverUrl, photoUrls);
     } else if (coverUrl && photoUrls == null && !folderUrl) {
-      // Cover-only update: keep existing gallery, just change cover
+      
     }
 
     const otherDetails = buildOtherDetails({
@@ -1241,7 +1238,7 @@ router.delete('/units/:id', requireRoles('admin', 'resale'), async (req, res, ne
 
     await query('BEGIN');
     try {
-      // Detach / remove dependents that block units FK (reservations.unit_id is NOT NULL)
+      
       const { rows: reservationIds } = await query(
         `SELECT id FROM reservations WHERE unit_id = $1`,
         [unitId]
@@ -1317,7 +1314,7 @@ router.post(
   }
 });
 
-// ── Daily prices → unit_daily_prices ────────────────────────
+
 router.get('/daily-prices/:unitId', async (req, res, next) => {
   try {
     const { rows: u } = await query(`SELECT wp_post_id FROM units WHERE id = $1`, [req.params.unitId]);
@@ -1367,9 +1364,7 @@ router.put('/daily-prices/:unitId', requireRoles('admin'), async (req, res, next
               req.user.id,
             ]
           );
-        } catch (_) {
-          /* table may not exist until migration */
-        }
+        } catch (_) {}
         continue;
       }
       await query(
@@ -1394,9 +1389,7 @@ router.put('/daily-prices/:unitId', requireRoles('admin'), async (req, res, next
             req.user.id,
           ]
         );
-      } catch (_) {
-        /* ignore if migration not applied */
-      }
+      } catch (_) {}
     }
     await syncUnitListingStatus(req.params.unitId);
     await logAudit({
@@ -1412,7 +1405,7 @@ router.put('/daily-prices/:unitId', requireRoles('admin'), async (req, res, next
   }
 });
 
-// ── Reservations ────────────────────────────────────────────
+
 router.get('/reservations', async (req, res, next) => {
   try {
     const scope = reservationScopeClause(req.user, 'r', 1);
@@ -1537,7 +1530,7 @@ router.post(
       if (party.adults < 1) {
         return res.status(400).json({ error: 'At least one adult is required' });
       }
-      // Over capacity is allowed — beach access uses the higher extra-guest rate for children.
+      
     }
 
     let beachAccessFees =
@@ -1557,7 +1550,7 @@ router.post(
       }
     }
 
-    // Conflict check against guest-parity blocked nights
+    
     if (wpPostId) {
       const blocked = await getBlockedDates(wpPostId, b.check_in, b.check_out, {
         includeUnpriced: true,
@@ -1591,7 +1584,7 @@ router.post(
     const allowedMethods = new Set(['cash', 'instapay', 'bank_transfer', 'credit_card', 'online', 'paymob_card']);
     let paymentMethod = String(b.payment_method || '').toLowerCase() || null;
     if (paymentMethod && !allowedMethods.has(paymentMethod)) paymentMethod = null;
-    // Manual guest-style creates: only cash / instapay
+    
     if (paymentMethod && !['cash', 'instapay'].includes(paymentMethod) && !truthyFlag(b.is_owner_reservation) && !truthyFlag(b.is_hold)) {
       paymentMethod = 'cash';
     }
@@ -1600,7 +1593,7 @@ router.post(
     const amountPaid = parseFloat(b.amount_paid) || downPayment || 0;
     const totalAmount = parseFloat(b.total_amount) || 0;
     let paymentStatus = b.payment_status || paymentStatusFrom(totalAmount, amountPaid);
-    // Owner blocks / holds keep their own status rules
+    
     const isHold = truthyFlag(b.is_hold);
     const isOwnerBlock = truthyFlag(b.is_owner_reservation) && totalAmount === 0;
     let status = b.status || (isHold ? 'hold' : 'pending');
@@ -1610,7 +1603,7 @@ router.post(
     } else if (isHold) {
       paymentStatus = 'pending';
     } else {
-      // Manual reservation: pending payment until collected
+      
       paymentStatus = amountPaid > 0 ? paymentStatusFrom(totalAmount, amountPaid) : 'pending';
       if (!b.status) status = 'pending';
     }
@@ -1688,7 +1681,7 @@ router.post(
 
     const reservation = rows[0];
 
-    // Pending payment stub for cash/InstaPay collect amount (manual creates)
+    
     if (
       reservation &&
       !isHold &&
@@ -1730,9 +1723,7 @@ router.post(
     try {
       const { notifyManualReservationCreated } = require('../../services/pmsNotifications');
       await notifyManualReservationCreated(reservation, req.user);
-    } catch (_) {
-      /* non-blocking */
-    }
+    } catch (_) {}
     res.status(201).json(reservation);
   } catch (e) {
     next(e);
@@ -1858,7 +1849,7 @@ router.patch(
   }
 });
 
-/** Upload guest ID / passport documents onto a reservation (fresh uploads only). */
+
 router.post(
   '/reservations/:id/id-documents',
   requireRoles(
@@ -1900,7 +1891,7 @@ router.post(
   }
 );
 
-/** Remove one guest ID document URL from a reservation. */
+
 router.delete(
   '/reservations/:id/id-documents',
   requireRoles(
@@ -1966,7 +1957,7 @@ router.delete(
     );
     const { rows } = await query(`DELETE FROM reservations WHERE id = $1 RETURNING *`, [id]);
 
-    // Free guest calendar / My Trips / public iCal for linked website bookings
+    
     if (bookingId) {
       const { cancelWebsiteBooking } = require('../../services/bookingWorkflow');
       await cancelWebsiteBooking(bookingId, req.body?.cancel_type
@@ -2014,7 +2005,7 @@ router.post(
     );
     if (!rows[0]) return res.status(404).json({ error: 'Not found' });
 
-    // Treat as if the stay never happened for money / ops workload
+    
     await query(`DELETE FROM commissions WHERE reservation_id = $1`, [req.params.id]);
     await query(`DELETE FROM payments WHERE reservation_id = $1`, [req.params.id]);
     try {
@@ -2024,9 +2015,7 @@ router.post(
          WHERE reservation_id = $1 AND status IS DISTINCT FROM 'ready'`,
         [req.params.id]
       );
-    } catch (_) {
-      /* optional */
-    }
+    } catch (_) {}
 
     if (rows[0].booking_id) {
       const { cancelWebsiteBooking } = require('../../services/bookingWorkflow');
@@ -2036,9 +2025,7 @@ router.post(
     try {
       const { notifyCancelRequest } = require('../../services/pmsNotifications');
       await notifyCancelRequest(rows[0], req.user, reason);
-    } catch (_) {
-      /* non-blocking */
-    }
+    } catch (_) {}
 
     res.json(rows[0]);
   } catch (e) {
@@ -2058,7 +2045,7 @@ router.post('/reservations/:id/reject-cancel', requireRoles('admin'), async (req
     );
     if (!rows[0]) return res.status(404).json({ error: 'Not found' });
 
-    // Restore linked website booking so guest calendar / trips stay consistent
+    
     if (rows[0].booking_id) {
       await query(
         `UPDATE bookings SET
@@ -2144,7 +2131,7 @@ router.get('/reservations/schedule', async (req, res, next) => {
       [to, from, unitIds, ...scope.params]
     );
 
-    // Overlay website bookings so reserved nights from the guest site appear too
+    
     const bookingScope = bookingAssigneeClause(req.user, 'b', 4);
     const { rows: webBookings } = await query(
       `SELECT b.id, COALESCE(b.unit_id, u.id) AS unit_id,
@@ -2260,9 +2247,7 @@ router.get('/reservations/:id', async (req, res, next) => {
           rejected_by_name = rej[0]?.full_name || null;
         }
       }
-    } catch (_) {
-      /* notes may be plain text */
-    }
+    } catch (_) {}
 
     const { rows: payments } = await query(
       `SELECT * FROM payments
@@ -2308,7 +2293,7 @@ router.get('/reservations/:id', async (req, res, next) => {
   }
 });
 
-// ── Payments ────────────────────────────────────────────────
+
 router.get('/payments', requireRoles('admin'), async (req, res, next) => {
   try {
     const from = clampFromDate(req.query.from_date);
@@ -2391,9 +2376,7 @@ router.post(
           ]);
           const { notifyPaymentRecorded } = require('../../services/pmsNotifications');
           await notifyPaymentRecorded(rows[0], resRows[0], req.user);
-        } catch (_) {
-          /* non-blocking */
-        }
+        } catch (_) {}
       }
     }
 
@@ -2439,7 +2422,7 @@ async function approvePaymentHandler(req, res, next) {
 router.post('/payments/:id/approve', requireRoles('admin'), approvePaymentHandler);
 router.put('/payments/:id/approve', requireRoles('admin'), approvePaymentHandler);
 
-// ── Expenses / commissions / dashboard snippets ─────────────
+
 const EXPENSE_CATEGORIES = new Set([
   'marketing',
   'salary',
@@ -2686,7 +2669,7 @@ router.get('/dashboard/stats', async (req, res, next) => {
 
     const totalReservations = projectStats.reduce((s, p) => s + p.total_reservations, 0);
 
-    // KPI window: MTD clamped to financial epoch
+    
     const kpiFrom = monthStart;
     const kpiTo = today;
     const totalUnitsCount = Number(totalUnitsRes.rows[0].cnt) || 0;
@@ -2797,7 +2780,7 @@ router.get('/dashboard/stats', async (req, res, next) => {
     let finance = null;
     let monthlyRevenue = [];
     if (role === 'admin') {
-      // Before books open, show zeros for this month
+      
       const booksOpen = today >= FINANCIAL_EPOCH;
       const [monthRevenue, monthPaid, pendingPayments] = await Promise.all([
         booksOpen
@@ -2878,7 +2861,7 @@ router.get('/dashboard/stats', async (req, res, next) => {
   }
 });
 
-// ── HR / tasks / petty cash / cash ledger / audit / owner ──
+
 router.get('/hr/employees', requireRoles('admin', 'hr'), async (_req, res, next) => {
   try {
     const { rows } = await query(`SELECT * FROM employees ORDER BY name`);
@@ -3016,7 +2999,7 @@ router.post('/petty-cash', requireRoles('admin'), async (req, res, next) => {
     let linkedExpenseId = null;
     let status = 'open';
 
-    // Owner-paid outs are charged to the selected owner only (not company / not staff)
+    
     if (entryType === 'out' && paidBy === 'owner' && ownerId && unitId) {
       const exp = await client.query(
         `INSERT INTO expenses (
@@ -3076,9 +3059,7 @@ router.post('/petty-cash', requireRoles('admin'), async (req, res, next) => {
   } catch (e) {
     try {
       await client.query('ROLLBACK');
-    } catch (_) {
-      /* ignore */
-    }
+    } catch (_) {}
     next(e);
   } finally {
     client.release();
@@ -3213,7 +3194,7 @@ router.post('/petty-cash/:id/move', requireRoles('admin'), async (req, res, next
           ]
         );
       } catch (_) {
-        // cash_ledger optional
+        
       }
     }
 
@@ -3223,9 +3204,7 @@ router.post('/petty-cash/:id/move', requireRoles('admin'), async (req, res, next
   } catch (e) {
     try {
       await client.query('ROLLBACK');
-    } catch (_) {
-      /* ignore */
-    }
+    } catch (_) {}
     next(e);
   } finally {
     client.release();
@@ -3293,9 +3272,7 @@ router.post('/petty-cash/:id/pay', requireRoles('admin'), async (req, res, next)
   } catch (e) {
     try {
       await client.query('ROLLBACK');
-    } catch (_) {
-      /* ignore */
-    }
+    } catch (_) {}
     next(e);
   } finally {
     client.release();
@@ -3425,7 +3402,7 @@ router.get('/notifications', async (req, res, next) => {
       [req.user.id, limit]
     );
     const unreadCount = rows.filter((n) => !n.is_read).length;
-    // Also count unread beyond the page so the badge stays accurate
+    
     const { rows: countRows } = await query(
       `SELECT COUNT(*)::int AS c FROM notifications
        WHERE (user_id = $1 OR user_id IS NULL) AND COALESCE(is_read, 0) = 0`,

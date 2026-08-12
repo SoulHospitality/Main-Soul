@@ -1,4 +1,4 @@
-/** Featured North Coast / Red Sea compounds for the homepage. */
+
 export const COMPOUNDS = [
   {
     name: 'Fouka Bay',

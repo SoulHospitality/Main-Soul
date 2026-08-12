@@ -1,11 +1,4 @@
-/**
- * Beach-access rules by project.
- * - GAIA: night-tiered rates at quote time (no manual unit fields)
- * - IL Monte Galala: fixed 750 / 7 days, extra guest 1000
- * - Hacienda West: flat per stay — studio 10,000 / else 12,000 (not per person)
- * - D-Bay: free
- * - Others: stored unit fields
- */
+
 
 const { isGaiaUnit } = require('./minStay');
 
@@ -27,7 +20,7 @@ function projectText(unit = {}) {
 function isIlMonteGalalaUnit(unit = {}) {
   const s = projectText(unit);
   if (!s) return false;
-  // IL Monte Galala / Ilmonte Galala / Monte Galala
+  
   return /(?:il\s*)?monte\s*galala|ilmonte\s*galala/.test(s);
 }
 
@@ -37,7 +30,7 @@ function isHaciendaWestUnit(unit = {}) {
   return /hacienda\s*west/.test(s);
 }
 
-/** Studio by type name, or 0 / empty bedrooms. */
+
 function isStudioUnit(unit = {}) {
   const type = String(unit.property_type || unit.type || '').trim().toLowerCase();
   if (type.includes('studio')) return true;
@@ -49,7 +42,7 @@ function isStudioUnit(unit = {}) {
 function isFreeBeachProject(unit = {}) {
   const s = projectText(unit);
   if (!s) return false;
-  // D-Bay only — Hacienda West has flat paid beach access
+  
   if (/\bd[-\s]?bay\b/.test(s)) return true;
   return false;
 }
@@ -58,7 +51,7 @@ function haciendaWestFlatFee(unit = {}) {
   return isStudioUnit(unit) ? HACIENDA_WEST_BEACH.studio : HACIENDA_WEST_BEACH.other;
 }
 
-/** Beach fields are entered manually only for standard rentals. */
+
 function beachAccessRequiresManualEntry(unit = {}) {
   if (String(unit?.listing_type || 'rent').toLowerCase() === 'sale') return false;
   if (isGaiaUnit(unit)) return false;
@@ -68,16 +61,7 @@ function beachAccessRequiresManualEntry(unit = {}) {
   return true;
 }
 
-/**
- * @returns {{
- *   adult: number,
- *   extra: number,
- *   days: number,
- *   mode: 'gaia'|'galala'|'free'|'hacienda_flat'|'manual',
- *   billing?: 'per_guest'|'flat',
- *   flat?: number
- * }}
- */
+
 function resolveBeachAccessRates(unit = {}, nights = 0) {
   if (isFreeBeachProject(unit)) {
     return { adult: 0, extra: 0, days: 7, mode: 'free', billing: 'flat', flat: 0 };
@@ -103,7 +87,7 @@ function resolveBeachAccessRates(unit = {}, nights = 0) {
     if (n === 4) {
       return { adult: 2500, extra: 3100, days: 4, mode: 'gaia', billing: 'per_guest' };
     }
-    // nights > 4 → 3500 / 7 nights period
+    
     return { adult: 3500, extra: 4100, days: 7, mode: 'gaia', billing: 'per_guest' };
   }
 
@@ -123,7 +107,7 @@ function resolveBeachAccessRates(unit = {}, nights = 0) {
   };
 }
 
-/** Total beach access fee for a stay (respects flat vs per-guest billing). */
+
 function computeBeachAccessFee(unit = {}, { nights = 0, adults = 1, teens = 0 } = {}) {
   const beach = resolveBeachAccessRates(unit, nights);
   if (beach.billing === 'flat' || beach.mode === 'hacienda_flat' || beach.mode === 'free') {
@@ -135,10 +119,7 @@ function computeBeachAccessFee(unit = {}, { nights = 0, adults = 1, teens = 0 } 
   return { fee: accessAdult + accessTeen, beach };
 }
 
-/**
- * Values to persist on create/update for rent units.
- * GAIA → null; Galala → fixed; Hacienda → flat by unit type; free → 0; else passthrough.
- */
+
 function beachAccessPersistValues(unit = {}, incoming = {}) {
   if (String(unit?.listing_type || incoming.listing_type || 'rent').toLowerCase() === 'sale') {
     return { adult: null, extra: null, days: null };
@@ -157,7 +138,7 @@ function beachAccessPersistValues(unit = {}, incoming = {}) {
   if (isFreeBeachProject(ctx)) {
     return { adult: 0, extra: 0, days: 7 };
   }
-  return null; // caller keeps form values
+  return null; 
 }
 
 module.exports = {

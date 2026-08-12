@@ -42,9 +42,7 @@ router.post('/', optionalGuest, async (req, res, next) => {
         total_egp = quote.total_egp;
         price_per_night = Math.round(quote.subtotal / quote.nights);
       }
-    } catch {
-      /* quote optional for inquiry */
-    }
+    } catch {}
 
     if (!nights) {
       const a = new Date(checkin);

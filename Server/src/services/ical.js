@@ -66,7 +66,7 @@ async function getIcalUrl(wpPostId) {
   return rows[0]?.ical_url || null;
 }
 
-/** Live upstream busy dates for guest availability (soul-website parity). */
+
 async function fetchUpstreamBusyDates(wpPostId, from, to) {
   const url = await getIcalUrl(wpPostId);
   if (!url) return [];
@@ -87,10 +87,7 @@ async function pool(items, concurrency, fn) {
   );
 }
 
-/**
- * Refresh admin calendar cache `unit_ical_blocks`.
- * On feed failure: skip unit (do not wipe existing rows).
- */
+
 async function refreshIcalBlocks({ monthsAhead = MONTHS_AHEAD } = {}) {
   const today = new Date();
   const from = localIso(new Date(today.getFullYear(), today.getMonth(), today.getDate()));

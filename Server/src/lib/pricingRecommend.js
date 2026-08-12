@@ -1,10 +1,7 @@
 const { query } = require('../config/db');
 const { round2 } = require('./commission');
 
-/**
- * Rules-based pricing recommendation (Phase 3).
- * Prefers units marked is_comparable; falls back to project/beds peers.
- */
+
 async function buildPricingRecommendation(unitId, { actorId } = {}) {
   const { rows: units } = await query(`SELECT * FROM units WHERE id = $1`, [unitId]);
   const unit = units[0];
@@ -124,9 +121,7 @@ async function buildPricingRecommendation(unitId, { actorId } = {}) {
   return rows[0];
 }
 
-/**
- * Apply accepted recommendation: update unit fallback + seed next N days of daily prices.
- */
+
 async function applyAcceptedRecommendation(rec, { actorId, days = 60 } = {}) {
   if (!rec.unit_id) return null;
   const base = Number(rec.base_price) || 0;
@@ -152,7 +147,7 @@ async function applyAcceptedRecommendation(rec, { actorId, days = 60 } = {}) {
   for (let i = 0; i < days; i++) {
     const d = new Date(start);
     d.setDate(d.getDate() + i);
-    const dow = d.getDay(); // 0 Sun … 6 Sat
+    const dow = d.getDay(); 
     const isWeekend = dow === 5 || dow === 6;
     const month = d.getMonth() + 1;
     const isPeak = month >= 6 && month <= 8;
@@ -192,9 +187,7 @@ async function applyAcceptedRecommendation(rec, { actorId, days = 60 } = {}) {
           actorId || null,
         ]
       );
-    } catch (_) {
-      /* ignore */
-    }
+    } catch (_) {}
     seeded += 1;
   }
 

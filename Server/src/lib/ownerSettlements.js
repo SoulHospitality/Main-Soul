@@ -2,9 +2,7 @@ const { query } = require('../config/db');
 const { calcReservationFinancials, calcStatementFinancials, round2 } = require('./commission');
 const { FINANCIAL_EPOCH, clampFromDate } = require('./financialEpoch');
 
-/**
- * Roll up owner net for a period into a settlement row (or refresh open one).
- */
+
 async function generateOwnerSettlement({ ownerId, periodStart, periodEnd }) {
   const from = clampFromDate(periodStart);
   const to = periodEnd;
@@ -41,7 +39,7 @@ async function generateOwnerSettlement({ ownerId, periodStart, periodEnd }) {
     net += fin.ownerNet;
   }
 
-  // Deduct owner-paid expenses in period (attributed to this owner)
+  
   const { rows: expRows } = await query(
     `SELECT COALESCE(SUM(amount), 0)::float AS total
      FROM expenses
