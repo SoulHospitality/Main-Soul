@@ -568,6 +568,16 @@ router.post(
         [reservationId, req.user.id, comment || null]
       );
 
+      try {
+        const { markReservationFullyCollected } = require('../../lib/settleReservationMoney');
+        await markReservationFullyCollected(reservationId, {
+          reason: 'ops_handover_settled',
+          actorId: req.user.id,
+        });
+      } catch (err) {
+        console.warn('[ops/handover] money settle failed', err.message);
+      }
+
       await query(
         `UPDATE units SET ops_status = 'occupied', updated_at = now() WHERE id = $1`,
         [row.unit_id]
