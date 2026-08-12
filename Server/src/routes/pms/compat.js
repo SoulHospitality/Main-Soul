@@ -870,11 +870,13 @@ function mapWebsiteBookingDecision(row) {
   const total = Number(row.total_egp) || 0;
   const amountPaid = Number(row.amount_paid) || 0;
   const method = String(row.payment_method || '').toLowerCase();
-  const paymentStatus = String(row.payment_status || '').toLowerCase();
-  const prepaid =
-    paymentStatus === 'paid' || method.includes('paymob') || method.includes('card');
+  const paymentStatus = String(
+    row.reservation_payment_status || row.payment_status || ''
+  ).toLowerCase();
+  const prepaid = method.includes('paymob') || method.includes('card');
   const amountDue = Math.max(0, Math.round((total - amountPaid) * 100) / 100);
-  const fullyPaid = prepaid || paymentStatus === 'paid' || amountDue <= 0.009;
+  const fullyPaid =
+    prepaid || paymentStatus === 'paid' || (total > 0 && amountDue <= 0.009);
 
   if (status === 'cancelled' && (rejected || row.cancellation_reason)) {
     const isReject = !!(rejected?.reject_reason || rejected?.rejected_by || rejected?.rejected_by_name);
@@ -959,6 +961,9 @@ router.get('/website-bookings', async (req, res, next) => {
               u.unit_number,
               u.slug AS unit_slug,
               su.full_name AS assigned_agent_name,
+              r.id AS reservation_id,
+              COALESCE(r.amount_paid, 0)::float AS amount_paid,
+              COALESCE(NULLIF(r.payment_status, ''), b.payment_status) AS reservation_payment_status,
               COALESCE(
                 NULLIF(b.id_photo_urls, '{}'),
                 (
@@ -988,6 +993,13 @@ router.get('/website-bookings', async (req, res, next) => {
        FROM bookings b
        LEFT JOIN units u ON u.id = b.unit_id
        LEFT JOIN staff_users su ON su.id = b.assigned_sales_id
+       LEFT JOIN LATERAL (
+         SELECT id, amount_paid, payment_status
+         FROM reservations
+         WHERE booking_id = b.id
+         ORDER BY created_at DESC
+         LIMIT 1
+       ) r ON TRUE
        WHERE ${where}${scope.clause}
        ORDER BY b.created_at DESC
        LIMIT ${limit}`,
@@ -1154,6 +1166,23 @@ router.post('/website-bookings/:id/reject', requireRoles('reservations_web', 're
   }
 });
 
+router.post(
+  '/website-bookings/:id/collected-amount',
+  requireRoles('reservations_web', 'reservations', 'admin'),
+  async (req, res, next) => {
+    try {
+      const body = req.body || {};
+      const { updateWebsiteBookingCollectedAmount } = require('../../services/bookingWorkflow');
+      const booking = await updateWebsiteBookingCollectedAmount(req.params.id, req.user, {
+        amountPaid: body.amount_paid ?? body.amountPaid,
+        paymentMethod: body.payment_method ?? body.paymentMethod ?? null,
+      });
+      res.json(booking);
+    } catch (e) {
+      next(e);
+    }
+  }
+);
 
 router.post(
   '/website-bookings/:id/assign',

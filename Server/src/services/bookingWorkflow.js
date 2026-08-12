@@ -363,6 +363,156 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
 }
 
 
+/**
+ * Website agent: set how much has been collected for an accepted booking.
+ * Updates the linked reservation + booking payment_status; inserts a payment
+ * row when the collected amount increases.
+ */
+async function updateWebsiteBookingCollectedAmount(bookingId, staffUser, options = {}) {
+  const { rows } = await query(`SELECT * FROM bookings WHERE id = $1`, [bookingId]);
+  const booking = rows[0];
+  if (!booking) {
+    const err = new Error('Booking not found');
+    err.status = 404;
+    throw err;
+  }
+  if (String(booking.status || '').toLowerCase() !== 'confirmed') {
+    const err = new Error('Only accepted (confirmed) bookings can update collected money');
+    err.status = 409;
+    throw err;
+  }
+
+  assertBookingAssigned(staffUser, booking);
+
+  const method = String(booking.payment_method || '').toLowerCase();
+  const prepaid =
+    booking.payment_status === 'paid' || method.includes('paymob') || method.includes('card');
+  if (prepaid && /paymob|card/i.test(method)) {
+    const err = new Error('Card/Paymob bookings are already fully paid online');
+    err.status = 400;
+    throw err;
+  }
+
+  const amountPaid = Number(options.amountPaid);
+  if (!Number.isFinite(amountPaid) || amountPaid < 0) {
+    const err = new Error('Enter a valid collected amount');
+    err.status = 400;
+    throw err;
+  }
+
+  const { rows: resRows } = await query(
+    `SELECT * FROM reservations WHERE booking_id = $1 ORDER BY created_at DESC LIMIT 1`,
+    [bookingId]
+  );
+  const reservation = resRows[0];
+  if (!reservation) {
+    const err = new Error('No linked reservation for this booking yet');
+    err.status = 404;
+    throw err;
+  }
+
+  const total =
+    Math.max(0, Number(reservation.total_amount) || 0) || Math.max(0, Number(booking.total_egp) || 0);
+  if (amountPaid > total + 0.5) {
+    const err = new Error('Collected amount cannot exceed the reservation total');
+    err.status = 400;
+    throw err;
+  }
+
+  const currentPaid = Math.max(0, Number(reservation.amount_paid) || 0);
+  const roundedPaid = Math.round(amountPaid * 100) / 100;
+  const delta = Math.round((roundedPaid - currentPaid) * 100) / 100;
+  const remaining = Math.max(0, Math.round((total - roundedPaid) * 100) / 100);
+
+  if (Math.abs(delta) <= 0.009) {
+    return {
+      ...booking,
+      amount_paid: currentPaid,
+      amount_due: remaining,
+      payment_status: reservation.payment_status || booking.payment_status,
+      reservation_id: reservation.id,
+    };
+  }
+
+  const payMethodRaw = String(options.paymentMethod || options.payment_method || 'cash').toLowerCase();
+  const payMethod = payMethodRaw.includes('instapay')
+    ? 'instapay'
+    : payMethodRaw.includes('transfer') || payMethodRaw.includes('bank')
+      ? 'bank_transfer'
+      : 'cash';
+
+  if (delta > 0.009) {
+    await query(
+      `INSERT INTO payments (
+         reservation_id, booking_id, amount, payment_date, payment_method,
+         reference_number, notes, created_by,
+         status, is_approved, approved_by, approved_at, paid_at
+       ) VALUES (
+         $1, $2, $3, CURRENT_DATE, $4,
+         'collected_update', $5, $6,
+         'successful', 1, $6, now(), now()
+       )`,
+      [
+        reservation.id,
+        bookingId,
+        delta,
+        payMethod,
+        `Website agent collected update — set to EGP ${roundedPaid.toLocaleString()} (was ${currentPaid.toLocaleString()}; remaining EGP ${remaining.toLocaleString()})`,
+        staffUser?.id || null,
+      ]
+    );
+  }
+
+  const { syncReservationPaymentStatus, paymentStatusFrom } = require('../lib/syncReservationPayment');
+  let synced = null;
+  if (delta > 0.009) {
+    synced = await syncReservationPaymentStatus(reservation.id);
+  }
+
+  const finalPaid =
+    delta > 0.009
+      ? Math.max(roundedPaid, Number(synced?.amount_paid) || 0)
+      : roundedPaid;
+  const finalStatus = paymentStatusFrom(total, finalPaid);
+
+  const { rows: updatedRes } = await query(
+    `UPDATE reservations
+     SET amount_paid = $2,
+         payment_status = $3,
+         down_payment = CASE
+           WHEN COALESCE(down_payment, 0) < $2 THEN $2
+           ELSE down_payment
+         END,
+         updated_at = now()
+     WHERE id = $1
+     RETURNING *`,
+    [reservation.id, finalPaid, finalStatus]
+  );
+
+  const noteLine = `[collected] paid=${finalPaid} remaining=${Math.max(
+    0,
+    Math.round((total - finalPaid) * 100) / 100
+  )} by=${staffUser?.full_name || staffUser?.username || staffUser?.id || 'agent'} at=${new Date().toISOString()}`;
+
+  const { rows: updatedBooking } = await query(
+    `UPDATE bookings
+     SET payment_status = $2,
+         notes = COALESCE(notes || E'\\n', '') || $3
+     WHERE id = $1
+     RETURNING *`,
+    [bookingId, finalStatus, noteLine]
+  );
+
+  return {
+    ...updatedBooking[0],
+    amount_paid: finalPaid,
+    amount_due: Math.max(0, Math.round((total - finalPaid) * 100) / 100),
+    payment_status: finalStatus,
+    reservation_id: reservation.id,
+    reservation: updatedRes[0] || null,
+  };
+}
+
 async function cancelWebsiteBooking(bookingId, reason = 'cancelled_by_staff') {
   if (!bookingId) return null;
 
@@ -533,6 +683,7 @@ module.exports = {
   acceptWebsiteBooking,
   rejectWebsiteBooking,
   cancelWebsiteBooking,
+  updateWebsiteBookingCollectedAmount,
   pickSalesAssignee,
   assignSalesOnCreate,
   assignWebsiteBooking,
