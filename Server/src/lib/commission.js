@@ -133,6 +133,30 @@ function calcReservationFinancials(unit, reservation) {
     };
   }
 
+  // Cancelled stays contribute nothing to revenue / commissions / owner payouts
+  if (String(reservation.status || '').toLowerCase() === 'cancelled') {
+    return {
+      mode: String(unit.commission_mode || 'A').toUpperCase(),
+      grossAmount: 0,
+      rentalBase: 0,
+      brokerDeduction: 0,
+      tenantDeduction: 0,
+      utilitiesDeduction: 0,
+      housekeepingFees: 0,
+      subtotal: 0,
+      intermediatePricePerNight: 0,
+      companyCommission: 0,
+      ownerNet: 0,
+      adjustedPricePerNight: 0,
+      appliedCommissionPct: 0,
+      isOwner: Boolean(
+        parseInt(reservation.is_owner_reservation, 10) ||
+          reservation.is_owner_reservation === true
+      ),
+      cancelled: true,
+    };
+  }
+
   const mode = String(unit.commission_mode || 'A').toUpperCase();
   const nights = Math.max(parseInt(reservation.nights, 10) || 1, 1);
   const isOwner = Boolean(

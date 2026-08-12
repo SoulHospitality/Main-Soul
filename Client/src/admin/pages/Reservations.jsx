@@ -1450,8 +1450,9 @@ export default function Reservations() {
                     r.sales_owner_label ||
                     (r.is_owner_reservation ? 'Owner' : r.sales_person_name || r.sales_label || '—');
                   const idPhotos = Array.isArray(r.id_photo_urls) ? r.id_photo_urls.filter(Boolean) : [];
+                  const isCancelled = r.status === 'cancelled';
                   return (
-                    <tr key={r.id} className={r.status === 'cancelled' ? 'bg-red-100/90 text-red-950' : undefined}>
+                    <tr key={r.id} className={isCancelled ? 'bg-red-100/90 text-red-950' : undefined}>
                       <td className="whitespace-nowrap">{formatDate(r.check_in)}</td>
                       <td className="whitespace-nowrap">{formatDate(r.check_out)}</td>
                       <td className="whitespace-nowrap font-medium text-gray-800">{r.unit_number || '—'}</td>
@@ -1459,17 +1460,17 @@ export default function Reservations() {
                       <td className="font-medium text-gray-900 whitespace-nowrap">{r.guest_name || '—'}</td>
                       <td className="text-gray-600 whitespace-nowrap">{r.guest_phone || '—'}</td>
                       <td className="text-center whitespace-nowrap">{r.nights ?? '—'}</td>
-                      <td className="text-right whitespace-nowrap">{currency(r.price_per_night)}</td>
-                      <td className="text-right whitespace-nowrap font-medium">{currency(total)}</td>
-                      <td className="text-right whitespace-nowrap">{currency(down)}</td>
-                      <td className={`text-right font-medium whitespace-nowrap ${amtToPay > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                        {currency(amtToPay)}
+                      <td className={`text-right whitespace-nowrap ${isCancelled ? 'line-through opacity-60' : ''}`}>{currency(r.price_per_night)}</td>
+                      <td className={`text-right whitespace-nowrap font-medium ${isCancelled ? 'line-through opacity-60' : ''}`}>{currency(total)}</td>
+                      <td className={`text-right whitespace-nowrap ${isCancelled ? 'line-through opacity-60' : ''}`}>{currency(down)}</td>
+                      <td className={`text-right font-medium whitespace-nowrap ${isCancelled ? 'line-through opacity-60' : amtToPay > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                        {currency(isCancelled ? 0 : amtToPay)}
                       </td>
-                      <td className="text-right whitespace-nowrap">{currency(r.housekeeping_fees)}</td>
-                      <td className="text-right whitespace-nowrap">{currency(r.insurance)}</td>
-                      <td className="text-right whitespace-nowrap">{currency(r.utilities_amount ?? r.utilities)}</td>
-                      <td className="whitespace-nowrap"><Badge status={payLabel === 'unpaid' ? 'pending' : payLabel} />
-                        <div className="text-[10px] text-gray-400 mt-0.5">{payLabel}</div>
+                      <td className={`text-right whitespace-nowrap ${isCancelled ? 'line-through opacity-60' : ''}`}>{currency(r.housekeeping_fees)}</td>
+                      <td className={`text-right whitespace-nowrap ${isCancelled ? 'line-through opacity-60' : ''}`}>{currency(r.insurance)}</td>
+                      <td className={`text-right whitespace-nowrap ${isCancelled ? 'line-through opacity-60' : ''}`}>{currency(r.utilities_amount ?? r.utilities)}</td>
+                      <td className="whitespace-nowrap"><Badge status={isCancelled ? 'cancelled' : payLabel === 'unpaid' ? 'pending' : payLabel} />
+                        <div className="text-[10px] text-gray-400 mt-0.5">{isCancelled ? 'cancelled' : payLabel}</div>
                       </td>
                       <td className="whitespace-nowrap"><Badge status={r.status} /></td>
                       <td className="whitespace-nowrap text-gray-700">{salesLabel}</td>

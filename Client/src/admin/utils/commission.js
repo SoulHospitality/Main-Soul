@@ -23,6 +23,18 @@ function rentalBase(reservation) {
 export function calcReservationFinancials(unit, reservation) {
   if (!unit || !reservation) return nullFinancials();
 
+  if (String(reservation.status || '').toLowerCase() === 'cancelled') {
+    return {
+      ...nullFinancials(),
+      mode: String(unit.commission_mode || 'A').toUpperCase(),
+      isOwner: Boolean(
+        parseInt(reservation.is_owner_reservation, 10) ||
+          reservation.is_owner_reservation === true
+      ),
+      cancelled: true,
+    };
+  }
+
   const mode = String(unit.commission_mode || 'A').toUpperCase();
   const nights = Math.max(parseInt(reservation.nights, 10) || 1, 1);
   const isOwner = Boolean(

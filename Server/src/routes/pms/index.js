@@ -1446,9 +1446,10 @@ router.get('/reservations', async (req, res, next) => {
           r.utilities_amount != null && r.utilities_amount !== ''
             ? parseFloat(r.utilities_amount) || 0
             : 0;
+        const cancelled = String(r.status || '').toLowerCase() === 'cancelled';
         return {
           ...r,
-          amount_to_pay: Math.max(0, Math.round((total - paid) * 100) / 100),
+          amount_to_pay: cancelled ? 0 : Math.max(0, Math.round((total - paid) * 100) / 100),
           utilities,
           sales_owner_label: r.is_owner_reservation
             ? 'Owner'
@@ -2000,6 +2001,8 @@ router.post(
     const { rows } = await query(
       `UPDATE reservations SET
          status = 'cancelled',
+         amount_paid = 0,
+         payment_status = 'pending',
          notes = CASE
            WHEN $1::text IS NULL OR $1 = '' THEN notes
            ELSE COALESCE(notes || E'\n', '') || ('Cancel request: ' || $1)
@@ -2010,6 +2013,20 @@ router.post(
       [reason || null, req.params.id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Not found' });
+
+    // Treat as if the stay never happened for money / ops workload
+    await query(`DELETE FROM commissions WHERE reservation_id = $1`, [req.params.id]);
+    await query(`DELETE FROM payments WHERE reservation_id = $1`, [req.params.id]);
+    try {
+      await query(
+        `UPDATE housekeeping_tasks
+         SET status = 'cancelled', updated_at = now()
+         WHERE reservation_id = $1 AND status IS DISTINCT FROM 'ready'`,
+        [req.params.id]
+      );
+    } catch (_) {
+      /* optional */
+    }
 
     if (rows[0].booking_id) {
       const { cancelWebsiteBooking } = require('../../services/bookingWorkflow');
@@ -2121,7 +2138,8 @@ router.get('/reservations/schedule', async (req, res, next) => {
        LEFT JOIN staff_users sp ON sp.id = r.sales_person_id
        WHERE r.check_in < $1::date
          AND r.check_out > $2::date
-         AND r.unit_id = ANY($3::uuid[])${scope.clause}
+         AND r.unit_id = ANY($3::uuid[])
+         AND r.status IS DISTINCT FROM 'cancelled'${scope.clause}
        ORDER BY r.check_in`,
       [to, from, unitIds, ...scope.params]
     );
@@ -2792,10 +2810,12 @@ router.get('/dashboard/stats', async (req, res, next) => {
           : Promise.resolve({ rows: [{ total: 0 }] }),
         booksOpen
           ? query(
-              `SELECT COALESCE(SUM(amount), 0)::float AS total
-               FROM payments
-               WHERE payment_date >= $1::date
-                 AND status IN ('successful', 'pending')`,
+              `SELECT COALESCE(SUM(p.amount), 0)::float AS total
+               FROM payments p
+               LEFT JOIN reservations r ON r.id = p.reservation_id
+               WHERE p.payment_date >= $1::date
+                 AND p.status IN ('successful', 'pending')
+                 AND (p.reservation_id IS NULL OR r.status IS DISTINCT FROM 'cancelled')`,
               [monthStart]
             )
           : Promise.resolve({ rows: [{ total: 0 }] }),
