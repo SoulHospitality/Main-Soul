@@ -64,7 +64,6 @@ const PERMISSIONS = {
     'units:delete',
     'acquisition:read',
     'acquisition:write',
-    'sales:read',
     'notifications:read',
     'documents:read',
     'documents:write',
@@ -134,7 +133,7 @@ const PAGE_ACCESS = {
   operations_supervisor: new Set(['operations', 'ops_checkins', 'ops_comments', 'reservations', 'schedule', 'profile']),
   housekeeping: new Set(['housekeeping', 'hk_today', 'profile']),
   housekeeping_supervisor: new Set(['housekeeping', 'hk_today', 'profile']),
-  resale: new Set(['units_sale', 'acquisition', 'sales', 'profile']),
+  resale: new Set(['units_sale', 'acquisition', 'profile']),
   hr: new Set(['users', 'profile']),
   owner: new Set([
     'owner',

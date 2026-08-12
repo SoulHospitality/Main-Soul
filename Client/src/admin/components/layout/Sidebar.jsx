@@ -10,7 +10,7 @@ import {
   BadgeDollarSign, Users, UserCircle,
   LogOut, Building, CalendarRange,
   Sparkles, Briefcase, Globe, Tag, KeyRound,
-  Landmark, TrendingUp,
+  Landmark,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -19,15 +19,14 @@ const NAV_ITEMS = [
   { path: '/admin/units-for-sale',   label: 'Units for Sale',     icon: Building2,          page: 'units_sale', resaleLabel: 'Units' },
   { path: '/admin/projects',         label: 'Destinations',       icon: Building,           page: 'projects' },
   { path: '/admin/reservations',     label: 'Reservations',       icon: CalendarDays,       page: 'reservations', agentLabel: 'My Reservations' },
-      { path: '/admin/website-bookings', label: 'Website Requests',   icon: Globe,              page: 'website_bookings', badge: 'website_pending' },
+  { path: '/admin/website-bookings', label: 'Website Requests',   icon: Globe,              page: 'website_bookings', badge: 'website_pending' },
   { path: '/admin/schedule',         label: 'Schedule',           icon: CalendarRange,      page: 'schedule' },
   { path: '/admin/operations', label: 'Operations', icon: KeyRound, page: 'operations' },
   { path: '/admin/housekeeping', label: 'Housekeeping', icon: Sparkles, page: 'housekeeping' },
   { path: '/admin/financial-system', label: 'Financial System', icon: Landmark, page: 'financial_system' },
   { path: '/admin/commissions', label: 'Commissions', icon: BadgeDollarSign, page: 'commissions', agentLabel: 'My Profit' },
   { path: '/admin/acquisition', label: 'Owner leads', icon: Briefcase, page: 'acquisition', resaleLabel: 'Owners requests' },
-  { path: '/admin/sales',            label: 'Sales',              icon: TrendingUp,         page: 'sales' },
-  { path: '/admin/users',            label: 'User Management',    icon: Users,              page: 'users' },
+  { path: '/admin/users', label: 'User Management', icon: Users, page: 'users' },
   { path: '/admin/promo-codes',      label: 'Promo Codes',        icon: Tag,                page: 'promo_codes' },
 ];
 

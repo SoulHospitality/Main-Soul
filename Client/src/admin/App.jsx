@@ -30,7 +30,6 @@ const OwnerPayoutsPage = lazy(() =>
   import('./pages/OwnerPortalPages').then((m) => ({ default: m.OwnerPayoutsPage }))
 );
 const AcquisitionPipeline = lazy(() => import('./pages/AcquisitionPipeline'));
-const ResaleSales = lazy(() => import('./pages/ResaleSales'));
 const OwnerDateBlocks = lazy(() => import('./pages/OwnerDateBlocks'));
 const PromoCodes = lazy(() => import('./pages/PromoCodes'));
 
@@ -143,7 +142,6 @@ function AppRoutes() {
       <Route path="users" element={<ProtectedRoute page="users"><Users /></ProtectedRoute>} />
       <Route path="promo-codes" element={<ProtectedRoute page="promo_codes"><PromoCodes /></ProtectedRoute>} />
       <Route path="acquisition" element={<ProtectedRoute page="acquisition"><AcquisitionPipeline /></ProtectedRoute>} />
-      <Route path="sales" element={<ProtectedRoute page="sales"><ResaleSales /></ProtectedRoute>} />
       <Route path="owner" element={<ProtectedRoute page="owner"><OwnerDashboard /></ProtectedRoute>} />
       <Route path="owner/reservations" element={<ProtectedRoute page="owner_reservations"><OwnerReservations /></ProtectedRoute>} />
       <Route path="owner/statement" element={<ProtectedRoute page="owner_statement"><OwnerStatement /></ProtectedRoute>} />
