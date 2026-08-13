@@ -329,29 +329,27 @@ export default function PaymentPage() {
                 </div>
 
                 {selectedMethod === 'instapay' || selectedMethod === 'cash' ? (
-                  <div className="mt-6 space-y-3">
-                    <p className="text-center text-xl font-extrabold uppercase tracking-wide text-red-600 sm:text-2xl md:text-3xl">
-                      {t('payment.depositRequiredLabel')}
-                    </p>
-                    <div className="rounded-2xl border-2 border-red-500 bg-red-50 p-4 sm:p-5">
-                      <div className="flex gap-3">
-                        <ShieldCheck className="h-6 w-6 flex-shrink-0 text-red-600" />
-                        <div>
-                          <h4 className="text-base font-extrabold text-red-700 sm:text-lg">
-                            {t('payment.depositWarningTitle')}
-                          </h4>
-                          <p className="mt-2 text-sm font-semibold leading-6 text-red-700 sm:text-[15px]">
-                            {t('payment.depositWarningBody', {
-                              method: methodLabel,
-                              amount: money(Math.round((Number(finalTotalAmount) || 0) * 0.5)),
-                            })}
-                          </p>
-                          <p className="mt-2 text-xs leading-5 text-red-600/90">
-                            {selectedMethod === 'cash'
-                              ? t('payment.cashHint')
-                              : t('payment.instapayHint')}
-                          </p>
-                        </div>
+                  <div className="mt-6 rounded-2xl border-2 border-red-500 bg-red-50 p-4 sm:p-5">
+                    <div className="flex gap-3">
+                      <ShieldCheck className="h-6 w-6 flex-shrink-0 text-red-600" />
+                      <div>
+                        <h4 className="text-base font-extrabold text-red-700 sm:text-lg">
+                          {t('payment.depositWarningTitle')}
+                        </h4>
+                        <p className="mt-2 text-sm font-semibold leading-6 text-red-700 sm:text-[15px]">
+                          {t('payment.depositWarningBody', {
+                            method: methodLabel,
+                            amount: money(Math.round((Number(finalTotalAmount) || 0) * 0.5)),
+                          })}
+                        </p>
+                        <p className="mt-2 text-sm font-medium leading-6 text-red-700">
+                          {t('payment.depositContinueNote')}
+                        </p>
+                        <p className="mt-2 text-xs leading-5 text-red-600/90">
+                          {selectedMethod === 'cash'
+                            ? t('payment.cashHint')
+                            : t('payment.instapayHint')}
+                        </p>
                       </div>
                     </div>
                   </div>
