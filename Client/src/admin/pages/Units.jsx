@@ -7,7 +7,6 @@ import { usePermissions } from '../hooks/usePermissions';
 import { useSortableTable } from '../hooks/useSortableTable';
 import Modal from '../components/ui/Modal';
 import Badge from '../components/ui/Badge';
-import ConfirmDialog from '../components/ui/ConfirmDialog';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
 import SearchFilter from '../components/ui/SearchFilter';
@@ -604,6 +603,7 @@ export default function Units({ listingType = 'rent' }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [editId, setEditId] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
+  const [deleteWithReservations, setDeleteWithReservations] = useState(false);
   const [viewMode, setViewMode] = useState('grid');
   const [handoffUnit, setHandoffUnit] = useState(null);
 
@@ -663,10 +663,25 @@ export default function Units({ listingType = 'rent' }) {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id) => api.delete(`/units/${id}`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['units'] }); toast.success('Unit deleted'); setDeleteId(null); },
+    mutationFn: ({ id, delete_reservations }) =>
+      api.delete(`/units/${id}`, { data: { delete_reservations: !!delete_reservations } }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['units'] });
+      toast.success(
+        vars.delete_reservations
+          ? 'Unit and its reservations deleted'
+          : 'Unit deleted'
+      );
+      setDeleteId(null);
+      setDeleteWithReservations(false);
+    },
     onError: (e) => toast.error(e.response?.data?.error || 'Error deleting unit'),
   });
+
+  const openDelete = (unit) => {
+    setDeleteId(unit.id);
+    setDeleteWithReservations(false);
+  };
 
   const openAdd = () => {
     setForm({
@@ -904,7 +919,7 @@ export default function Units({ listingType = 'rent' }) {
                     </a>
                   )}
                   {canWrite && <button onClick={() => openEdit(u)} className="p-1.5 rounded-lg text-gray-400 hover:text-primary-600 hover:bg-primary-50 transition-colors"><Edit2 className="w-4 h-4" /></button>}
-                  {canDeleteUnits && <button onClick={() => setDeleteId(u.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"><Trash2 className="w-4 h-4" /></button>}
+                  {canDeleteUnits && <button onClick={() => openDelete(u)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"><Trash2 className="w-4 h-4" /></button>}
                 </div>
               </div>
             </div>
@@ -968,7 +983,7 @@ export default function Units({ listingType = 'rent' }) {
                           {canWrite && (
                             <button onClick={() => openEdit(u)} className="p-1.5 rounded text-gray-400 hover:text-primary-600 hover:bg-primary-50"><Edit2 className="w-3.5 h-3.5" /></button>
                           )}
-                          {canDeleteUnits && <button onClick={() => setDeleteId(u.id)} className="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50"><Trash2 className="w-3.5 h-3.5" /></button>}
+                          {canDeleteUnits && <button onClick={() => openDelete(u)} className="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50"><Trash2 className="w-3.5 h-3.5" /></button>}
                         </div>
                       </td>
                   </tr>
@@ -1000,9 +1015,84 @@ export default function Units({ listingType = 'rent' }) {
         <UnitForm form={form} setForm={setForm} listingType={listingType} />
       </Modal>
 
-      <ConfirmDialog open={!!deleteId} onClose={() => setDeleteId(null)} onConfirm={() => deleteMutation.mutate(deleteId)}
-        loading={deleteMutation.isPending} title="Delete Unit"
-        message="Permanently delete this unit? Related reservations and unit data will be removed. This cannot be undone." confirmText="Delete" danger />
+      <Modal
+        open={!!deleteId}
+        onClose={() => {
+          if (deleteMutation.isPending) return;
+          setDeleteId(null);
+          setDeleteWithReservations(false);
+        }}
+        title="Delete Unit"
+        size="sm"
+        footer={
+          <>
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={deleteMutation.isPending}
+              onClick={() => {
+                setDeleteId(null);
+                setDeleteWithReservations(false);
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn-danger"
+              disabled={deleteMutation.isPending}
+              onClick={() =>
+                deleteMutation.mutate({
+                  id: deleteId,
+                  delete_reservations: deleteWithReservations,
+                })
+              }
+            >
+              {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-700">
+            Permanently delete this unit? This cannot be undone.
+          </p>
+          <div className="space-y-2">
+            <label className="flex items-start gap-2.5 rounded-xl border border-gray-200 bg-white px-3 py-2.5 cursor-pointer hover:border-soul-blue">
+              <input
+                type="radio"
+                className="mt-1"
+                name="delete_unit_mode"
+                checked={!deleteWithReservations}
+                onChange={() => setDeleteWithReservations(false)}
+              />
+              <span>
+                <span className="block text-sm font-semibold text-gray-900">Unit only</span>
+                <span className="block text-xs text-gray-500 mt-0.5">
+                  Keep all reservations. Delete is blocked if this unit still has any.
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50/50 px-3 py-2.5 cursor-pointer hover:border-red-400">
+              <input
+                type="radio"
+                className="mt-1"
+                name="delete_unit_mode"
+                checked={deleteWithReservations}
+                onChange={() => setDeleteWithReservations(true)}
+              />
+              <span>
+                <span className="block text-sm font-semibold text-red-800">
+                  Unit and all its reservations
+                </span>
+                <span className="block text-xs text-red-700/80 mt-0.5">
+                  Also permanently deletes payments and commissions linked to those stays.
+                </span>
+              </span>
+            </label>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

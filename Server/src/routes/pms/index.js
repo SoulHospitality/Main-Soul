@@ -1227,6 +1227,14 @@ router.put('/units/:id', requireRoles('admin', 'resale', 'reservations_web', 're
 router.delete('/units/:id', requireRoles('admin', 'resale'), async (req, res, next) => {
   try {
     const unitId = req.params.id;
+    const deleteReservations =
+      req.body?.delete_reservations === true ||
+      req.body?.delete_reservations === 1 ||
+      req.body?.delete_reservations === '1' ||
+      req.body?.delete_reservations === 'true' ||
+      req.query?.delete_reservations === '1' ||
+      req.query?.delete_reservations === 'true';
+
     const { rows: existing } = await query(
       `SELECT id, wp_post_id, COALESCE(listing_type, 'rent') AS listing_type FROM units WHERE id = $1`,
       [unitId]
@@ -1236,14 +1244,21 @@ router.delete('/units/:id', requireRoles('admin', 'resale'), async (req, res, ne
       return res.status(403).json({ error: 'Resale can only delete for-sale units' });
     }
 
+    const { rows: reservationIds } = await query(
+      `SELECT id FROM reservations WHERE unit_id = $1`,
+      [unitId]
+    );
+    const resIds = reservationIds.map((r) => r.id);
+
+    if (resIds.length && !deleteReservations) {
+      return res.status(409).json({
+        error: `This unit has ${resIds.length} reservation${resIds.length === 1 ? '' : 's'}. Delete them too, or keep the unit.`,
+        reservation_count: resIds.length,
+      });
+    }
+
     await query('BEGIN');
     try {
-      
-      const { rows: reservationIds } = await query(
-        `SELECT id FROM reservations WHERE unit_id = $1`,
-        [unitId]
-      );
-      const resIds = reservationIds.map((r) => r.id);
       if (resIds.length) {
         await query(
           `UPDATE petty_cash SET linked_reservation_id = NULL
@@ -1252,6 +1267,12 @@ router.delete('/units/:id', requireRoles('admin', 'resale'), async (req, res, ne
         );
         await query(`DELETE FROM commissions WHERE reservation_id = ANY($1::int[])`, [resIds]);
         await query(`DELETE FROM payments WHERE reservation_id = ANY($1::int[])`, [resIds]);
+        try {
+          await query(
+            `DELETE FROM housekeeping_tasks WHERE reservation_id = ANY($1::int[])`,
+            [resIds]
+          );
+        } catch (_) {}
         await query(`DELETE FROM reservations WHERE unit_id = $1`, [unitId]);
       }
 
@@ -1275,8 +1296,9 @@ router.delete('/units/:id', requireRoles('admin', 'resale'), async (req, res, ne
         action: 'DELETE_UNIT',
         entityType: 'unit',
         entityId: unitId,
+        details: { delete_reservations: !!deleteReservations, reservation_count: resIds.length },
       });
-      res.json({ id: rows[0].id, deleted: true });
+      res.json({ id: rows[0].id, deleted: true, reservations_deleted: deleteReservations ? resIds.length : 0 });
     } catch (inner) {
       await query('ROLLBACK');
       throw inner;
