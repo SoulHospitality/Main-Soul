@@ -352,12 +352,12 @@ router.post(
 
       await query(
         `UPDATE reservations SET
-           ops_assigned_to = $2,
+           ops_assigned_to = $2::int,
            ops_assigned_at = CASE WHEN $2::int IS NULL THEN NULL ELSE now() END,
-           ops_assigned_by = CASE WHEN $2::int IS NULL THEN NULL ELSE $3 END,
+           ops_assigned_by = CASE WHEN $2::int IS NULL THEN NULL ELSE $3::int END,
            updated_at = now()
          WHERE id = $1`,
-        [reservationId, staffId || null, req.user.id]
+        [reservationId, staffId || null, Number(req.user.id) || null]
       );
 
       await logAudit({
@@ -916,13 +916,13 @@ router.post(
 
       const { rows } = await query(
         `UPDATE housekeeping_tasks SET
-           assigned_to = $2,
+           assigned_to = $2::int,
            assigned_at = CASE WHEN $2::int IS NULL THEN NULL ELSE now() END,
-           assigned_by = CASE WHEN $2::int IS NULL THEN NULL ELSE $3 END,
+           assigned_by = CASE WHEN $2::int IS NULL THEN NULL ELSE $3::int END,
            updated_at = now()
          WHERE id = $1
          RETURNING *`,
-        [taskId, staffId || null, req.user.id]
+        [taskId, staffId || null, Number(req.user.id) || null]
       );
 
       await logAudit({
