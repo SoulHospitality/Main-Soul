@@ -141,6 +141,7 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
       let pricePerNight = 0;
       let utilitiesAmount = 0;
       let housekeepingFees = 0;
+      let beachAccessFees = 0;
       let stayTotal = Number(booking.total_egp) || 0;
 
       const { rows: units } = await query(`SELECT * FROM units WHERE id = $1`, [booking.unit_id]);
@@ -171,9 +172,25 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
             
             pricePerNight = nights > 0 ? Number(quote.base_subtotal || quote.subtotal || 0) / nights : 0;
             housekeepingFees = Number(quote.cleaning_fee_egp) || housekeepingFees;
+            beachAccessFees = Number(quote.access_fee_egp) || 0;
             stayTotal = Number(quote.total_egp) || stayTotal;
           }
         } catch (_) {}
+
+        if (!(beachAccessFees > 0)) {
+          try {
+            const { computeBeachAccessFee } = require('../lib/beachAccess');
+            const partyAdults = Number(booking.adults) > 0
+              ? Number(booking.adults)
+              : Number(booking.guests) || 1;
+            const partyChildren = Number(booking.children) || 0;
+            beachAccessFees = computeBeachAccessFee(unit, {
+              nights,
+              adults: partyAdults,
+              teens: partyChildren,
+            }).fee;
+          } catch (_) {}
+        }
       }
 
       if (!(pricePerNight > 0) && stayTotal > 0) {
@@ -210,8 +227,8 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
            down_payment, payment_method,
            broker_name, broker_amount_per_night, broker_total,
            owner_collected_type, owner_collected_amount,
-           adults, children, nanny_count
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'Website',$11,'confirmed',$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
+           adults, children, nanny_count, beach_access_fees
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'Website',$11,'confirmed',$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31)
          RETURNING id`,
         [
           booking.unit_id,
@@ -250,6 +267,7 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
           partyAdults,
           partyChildren,
           partyNanny,
+          Number(beachAccessFees) || 0,
         ]
       );
       reservationId = inserted[0]?.id || null;

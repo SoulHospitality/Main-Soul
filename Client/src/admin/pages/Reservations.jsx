@@ -592,6 +592,7 @@ function ReservationDetail({
             bold
           />
           <InfoRow label="Housekeeping" value={currency(reservation.housekeeping_fees)} />
+          <InfoRow label="Beach Pass" value={currency(reservation.beach_access_fees)} />
           <InfoRow label="Insurance" value={currency(reservation.insurance)} />
           <InfoRow label="Utilities" value={currency(reservation.utilities_amount)} />
           <InfoRow label="Payment Status" value={reservation.payment_status} />
@@ -619,6 +620,9 @@ function ReservationDetail({
         </div>
         {reservation.housekeeping_fees > 0 && (
           <div className="flex justify-between"><span className="text-gray-500">Housekeeping</span><span>{currency(reservation.housekeeping_fees)}</span></div>
+        )}
+        {Number(reservation.beach_access_fees) > 0 && (
+          <div className="flex justify-between"><span className="text-gray-500">Beach Pass</span><span>{currency(reservation.beach_access_fees)}</span></div>
         )}
         {reservation.insurance > 0 && (
           <div className="flex justify-between"><span className="text-gray-500">Insurance</span><span>{currency(reservation.insurance)}</span></div>
@@ -1281,6 +1285,7 @@ export default function Reservations() {
         'Down Payment': down,
         'Amt to Pay': amtToPay,
         Housekeeping: parseFloat(r.housekeeping_fees) || 0,
+        'Beach Pass': parseFloat(r.beach_access_fees) || 0,
         Insurance: parseFloat(r.insurance) || 0,
         Utilities: parseFloat(r.utilities_amount ?? r.utilities) || 0,
         'Payment Status': payLabel,
@@ -1424,6 +1429,7 @@ export default function Reservations() {
                   <SortTh col="down_payment" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap text-right">Down Payment</SortTh>
                   <th className="whitespace-nowrap text-right">Amt to Pay</th>
                   <th className="whitespace-nowrap text-right">Housekeeping</th>
+                  <th className="whitespace-nowrap text-right">Beach Pass</th>
                   <th className="whitespace-nowrap text-right">Insurance</th>
                   <th className="whitespace-nowrap text-right">Utilities</th>
                   <SortTh col="payment_status" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Payment Status</SortTh>
@@ -1467,6 +1473,7 @@ export default function Reservations() {
                         {currency(isCancelled ? 0 : amtToPay)}
                       </td>
                       <td className={`text-right whitespace-nowrap ${isCancelled ? 'line-through opacity-60' : ''}`}>{currency(r.housekeeping_fees)}</td>
+                      <td className={`text-right whitespace-nowrap ${isCancelled ? 'line-through opacity-60' : ''}`}>{currency(r.beach_access_fees)}</td>
                       <td className={`text-right whitespace-nowrap ${isCancelled ? 'line-through opacity-60' : ''}`}>{currency(r.insurance)}</td>
                       <td className={`text-right whitespace-nowrap ${isCancelled ? 'line-through opacity-60' : ''}`}>{currency(r.utilities_amount ?? r.utilities)}</td>
                       <td className="whitespace-nowrap"><Badge status={isCancelled ? 'cancelled' : payLabel === 'unpaid' ? 'pending' : payLabel} />

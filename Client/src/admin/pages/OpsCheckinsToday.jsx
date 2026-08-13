@@ -49,7 +49,29 @@ function PaymentDetails({ row }) {
       )}
       <MoneyLine label="Accommodation" value={b.accommodation_amount} />
       <MoneyLine label="Housekeeping" value={b.housekeeping_fees} />
-      <MoneyLine label="Beach access" value={b.beach_access_fees} />
+      {Number(b.beach_access_fees) > 0 ? (
+        <MoneyLine label="Beach access" value={b.beach_access_fees} />
+      ) : b.beach_access_included ? (
+        <div className="flex justify-between gap-3">
+          <span className="text-gray-500">Beach access</span>
+          <span className="font-medium text-emerald-700">Included</span>
+        </div>
+      ) : Number(b.beach_access_per_adult) > 0 ? (
+        <div className="flex justify-between gap-3">
+          <span className="text-gray-500">Beach access</span>
+          <span className="tabular-nums font-medium text-amber-800">
+            {currency(b.beach_access_per_adult)}/adult
+            {Number(b.beach_access_per_teen) > 0
+              ? ` · ${currency(b.beach_access_per_teen)}/child`
+              : ''}
+          </span>
+        </div>
+      ) : (
+        <div className="flex justify-between gap-3">
+          <span className="text-gray-500">Beach access</span>
+          <span className="font-medium text-gray-400">—</span>
+        </div>
+      )}
       <MoneyLine
         label={b.service_fee_percent ? `Service (${b.service_fee_percent}%)` : 'Service fees'}
         value={b.service_fees}

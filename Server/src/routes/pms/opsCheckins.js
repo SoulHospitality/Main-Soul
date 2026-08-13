@@ -55,11 +55,17 @@ function paymentBreakdown(row) {
   const insurance = Number(row.insurance) || 0;
   const utilities = Number(row.utilities_amount) || 0;
   const downPayment = Number(row.down_payment) || 0;
-  const adults = Math.max(0, Number(row.adults) || 0);
-  const children = Math.max(0, Number(row.children) || 0);
-  const nannyCount = Math.max(0, Number(row.nanny_count) || 0);
 
-  
+  let adults = Math.max(0, Number(row.adults) || 0);
+  let children = Math.max(0, Number(row.children) || 0);
+  let nannyCount = Math.max(0, Number(row.nanny_count) || 0);
+  if (adults <= 0 && Number(row.booking_adults) > 0) adults = Number(row.booking_adults);
+  if (children <= 0 && Number(row.booking_children) > 0) children = Number(row.booking_children);
+  if (nannyCount <= 0 && Number(row.booking_nanny) > 0) nannyCount = Number(row.booking_nanny);
+  if (adults <= 0 && Number(row.booking_guests) > 0) {
+    adults = Math.max(1, Number(row.booking_guests) - children - nannyCount);
+  }
+
   let beachAccessFees = Number(row.beach_access_fees);
   if (!Number.isFinite(beachAccessFees) || beachAccessFees < 0) beachAccessFees = 0;
 
@@ -74,28 +80,46 @@ function paymentBreakdown(row) {
   let serviceFees = 0;
   let serviceFeePercent = 0;
   let securityDeposit = 0;
+  let beachAccessPerAdult = 0;
+  let beachAccessPerTeen = 0;
+  let beachAccessMode = null;
+  let beachAccessIncluded = false;
   try {
-    const fees = computeFees(
-      {
-        property_type: row.property_type,
-        cleaning_fee_egp: row.cleaning_fee_egp,
-        access_fee_per_adult_egp: row.access_fee_per_adult_egp,
-        access_fee_per_teen_egp: row.access_fee_per_teen_egp,
-        access_card_count_included: row.access_card_count_included,
-        security_deposit_egp: row.security_deposit_egp,
-        project: row.project,
-        compound: row.compound || row.project,
-      },
-      {
-        nights,
-        subtotal: accommodation > 0 ? accommodation : Number(row.total_amount) || 0,
-        
-        adults,
-        teens: children,
-      }
-    );
+    const unitCtx = {
+      property_type: row.property_type,
+      cleaning_fee_egp: row.cleaning_fee_egp,
+      access_fee_per_adult_egp: row.access_fee_per_adult_egp,
+      access_fee_per_teen_egp: row.access_fee_per_teen_egp,
+      access_card_count_included: row.access_card_count_included,
+      security_deposit_egp: row.security_deposit_egp,
+      project: row.project,
+      compound: row.compound || row.project,
+    };
+    const fees = computeFees(unitCtx, {
+      nights,
+      subtotal: accommodation > 0 ? accommodation : Number(row.total_amount) || 0,
+      adults: adults > 0 ? adults : 0,
+      teens: children,
+    });
     if (beachAccessFees <= 0) {
       beachAccessFees = Number(fees.access_fee_egp) || 0;
+    }
+    
+    if (beachAccessFees <= 0 && adults <= 0 && Number(row.is_owner_reservation) !== 1) {
+      const { resolveBeachAccessRates } = require('../../lib/beachAccess');
+      const rates = resolveBeachAccessRates(unitCtx, nights);
+      beachAccessPerAdult = Number(rates.adult) || 0;
+      beachAccessPerTeen = Number(rates.extra) || 0;
+      beachAccessMode = rates.mode || null;
+      beachAccessIncluded = rates.mode === 'free';
+      if (rates.billing === 'flat' && Number(rates.flat) > 0) {
+        beachAccessFees = Number(rates.flat) || 0;
+      }
+    } else if (fees.beach_access) {
+      beachAccessPerAdult = Number(fees.beach_access.adult) || 0;
+      beachAccessPerTeen = Number(fees.beach_access.extra) || 0;
+      beachAccessMode = fees.beach_access.mode || null;
+      beachAccessIncluded = fees.beach_access.mode === 'free';
     }
     serviceFees = Number(fees.service_fee_egp) || 0;
     serviceFeePercent = Number(fees.service_fee_percent) || 0;
@@ -108,6 +132,10 @@ function paymentBreakdown(row) {
     accommodation_amount: accommodation,
     housekeeping_fees: housekeepingFees,
     beach_access_fees: beachAccessFees,
+    beach_access_per_adult: beachAccessPerAdult,
+    beach_access_per_teen: beachAccessPerTeen,
+    beach_access_mode: beachAccessMode,
+    beach_access_included: beachAccessIncluded,
     service_fees: serviceFees,
     service_fee_percent: serviceFeePercent,
     insurance,
@@ -135,6 +163,10 @@ const CHECKIN_SELECT = `
           u.access_fee_per_teen_egp,
           u.access_card_count_included,
           u.security_deposit_egp,
+          b.adults AS booking_adults,
+          b.children AS booking_children,
+          b.nanny_count AS booking_nanny,
+          b.guests AS booking_guests,
           t.id AS hk_task_id,
           t.status AS hk_task_status,
           COALESCE(t.source, 'pre_arrival') AS hk_task_source,
@@ -146,6 +178,7 @@ const CHECKIN_SELECT = `
           hand_by.full_name AS ops_handed_over_by_name
    FROM reservations r
    JOIN units u ON u.id = r.unit_id
+   LEFT JOIN bookings b ON b.id = r.booking_id
    LEFT JOIN staff_users ops_agent ON ops_agent.id = r.ops_assigned_to
    LEFT JOIN staff_users money_by ON money_by.id = r.ops_money_collected_by
    LEFT JOIN staff_users hand_by ON hand_by.id = r.ops_handed_over_by

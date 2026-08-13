@@ -1638,6 +1638,7 @@ router.put(
          nanny_count = COALESCE($32, nanny_count),
          sales_label = COALESCE($33, sales_label),
          utilities_amount = COALESCE($34, utilities_amount),
+         beach_access_fees = COALESCE($35, beach_access_fees),
          updated_at = now()
        WHERE id = $29 RETURNING *`,
       [
@@ -1686,6 +1687,9 @@ router.put(
           : null,
         b.utilities_amount != null && b.utilities_amount !== ''
           ? parseFloat(b.utilities_amount) || 0
+          : null,
+        b.beach_access_fees != null && b.beach_access_fees !== ''
+          ? parseFloat(b.beach_access_fees) || 0
           : null,
       ]
     );

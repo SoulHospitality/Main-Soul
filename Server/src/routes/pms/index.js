@@ -1811,8 +1811,12 @@ router.patch(
            WHEN $29::int = 1 THEN COALESCE(hold_expires_at, now() + interval '24 hours')
            ELSE hold_expires_at
          END,
+         adults = COALESCE($30, adults),
+         children = COALESCE($31, children),
+         nanny_count = COALESCE($32, nanny_count),
+         beach_access_fees = COALESCE($33, beach_access_fees),
          updated_at = now()
-       WHERE id = $30 RETURNING *`,
+       WHERE id = $34 RETURNING *`,
       [
         b.status ?? null,
         b.payment_status ?? null,
@@ -1847,6 +1851,14 @@ router.patch(
         b.payment_method ?? null,
         b.unit_id ?? null,
         b.is_hold !== undefined ? (truthyFlag(b.is_hold) ? 1 : 0) : null,
+        b.adults != null && b.adults !== '' ? Math.max(0, parseInt(b.adults, 10) || 0) : null,
+        b.children != null && b.children !== '' ? Math.max(0, parseInt(b.children, 10) || 0) : null,
+        b.nanny_count != null && b.nanny_count !== ''
+          ? Math.max(0, parseInt(b.nanny_count, 10) || 0)
+          : null,
+        b.beach_access_fees != null && b.beach_access_fees !== ''
+          ? parseFloat(b.beach_access_fees) || 0
+          : null,
         req.params.id,
       ]
     );
