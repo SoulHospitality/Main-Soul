@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Edit2, Trash2, Building2, BedDouble, Bath, Layers, Eye, ExternalLink, DollarSign } from 'lucide-react';
+import { Plus, Edit2, Trash2, Building2, BedDouble, Bath, Layers, Eye, ExternalLink, DollarSign, Globe } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import { usePermissions } from '../hooks/usePermissions';
@@ -28,6 +28,10 @@ import {
 import { isGaiaUnit } from '../../utils/bookingRules';
 import TagSelect from '../components/ui/TagSelect';
 
+function guestListingPath(unit) {
+  const slug = String(unit?.slug || '').trim();
+  return slug ? `/listings/${encodeURIComponent(slug)}` : null;
+}
 const FALLBACK_PROJECTS_BY_DEST = COMPOUNDS.reduce((acc, c) => {
   if (!acc[c.area]) acc[c.area] = [];
   if (!acc[c.area].includes(c.name)) acc[c.area].push(c.name);
@@ -878,9 +882,21 @@ export default function Units({ listingType = 'rent' }) {
                   )}
                 </div>
               )}
-              <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+              <div className="flex items-center justify-between pt-3 border-t border-gray-100 gap-2">
                 <CommissionBadge unit={u} />
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 flex-wrap justify-end">
+                  {!isSale && guestListingPath(u) ? (
+                    <a
+                      href={guestListingPath(u)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 rounded-lg border border-soul-line bg-white px-2 py-1 text-[11px] font-semibold text-soul-blue hover:border-soul-blue hover:bg-soul-blue-50 transition-colors"
+                      title="Open guest listing page"
+                    >
+                      <Globe className="w-3.5 h-3.5" />
+                      Guest page
+                    </a>
+                  ) : null}
                   {(u.cover_url || u.photo_urls?.[0]) && (
                     <a href={u.cover_url || u.photo_urls[0]} target="_blank" rel="noreferrer"
                       className="p-1.5 rounded-lg text-gray-400 hover:text-primary-600 hover:bg-primary-50 transition-colors" title="View Photos">
@@ -911,7 +927,7 @@ export default function Units({ listingType = 'rent' }) {
                   <SortTh col="owner_name" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>Owner</SortTh>
                   <th>Commission</th><th>Photos</th>
                   <SortTh col="status" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>Status</SortTh>
-                  {canWrite && <th>Actions</th>}
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -935,14 +951,26 @@ export default function Units({ listingType = 'rent' }) {
                         : <span className="text-gray-300 text-xs">—</span>}
                     </td>
                     <td><Badge status={u.status} /></td>
-                    {canWrite && (
-                      <td>
-                        <div className="flex gap-1">
-                          <button onClick={() => openEdit(u)} className="p-1.5 rounded text-gray-400 hover:text-primary-600 hover:bg-primary-50"><Edit2 className="w-3.5 h-3.5" /></button>
+                    <td>
+                        <div className="flex gap-1 items-center">
+                          {!isSale && guestListingPath(u) ? (
+                            <a
+                              href={guestListingPath(u)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 rounded border border-gray-200 px-1.5 py-1 text-[11px] font-semibold text-soul-blue hover:bg-soul-blue-50"
+                              title="Open guest listing page"
+                            >
+                              <Globe className="w-3.5 h-3.5" />
+                              Guest
+                            </a>
+                          ) : null}
+                          {canWrite && (
+                            <button onClick={() => openEdit(u)} className="p-1.5 rounded text-gray-400 hover:text-primary-600 hover:bg-primary-50"><Edit2 className="w-3.5 h-3.5" /></button>
+                          )}
                           {canDeleteUnits && <button onClick={() => setDeleteId(u.id)} className="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50"><Trash2 className="w-3.5 h-3.5" /></button>}
                         </div>
                       </td>
-                    )}
                   </tr>
                 ))}
               </tbody>
