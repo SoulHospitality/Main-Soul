@@ -260,12 +260,12 @@ export default function PaymentPage() {
                   </div>
                 </div>
 
-                <div className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 p-4">
-                  <h3 className="text-sm font-bold text-rose-900">{t('payment.policiesTitle')}</h3>
-                  <ul className="mt-3 space-y-2 text-xs text-rose-700">
+                <div className="mt-5 rounded-2xl border border-soul-line bg-soul-blue-50/40 p-4">
+                  <h3 className="text-sm font-bold text-soul-blue">{t('payment.policiesTitle')}</h3>
+                  <ul className="mt-3 space-y-2 text-xs text-soul-muted">
                     {policies.map((policy) => (
                       <li key={policy} className="flex items-start gap-2">
-                        <span className="mt-1 h-1.5 w-1.5 rounded-full bg-rose-600 flex-none" />
+                        <span className="mt-1 h-1.5 w-1.5 rounded-full bg-soul-blue/40 flex-none" />
                         <span>{policy}</span>
                       </li>
                     ))}
@@ -328,23 +328,46 @@ export default function PaymentPage() {
                   />
                 </div>
 
-                {selectedMethod && (
-                  <div className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 p-4">
-                    <div className="flex gap-3">
-                      <ShieldCheck className="h-5 w-5 text-rose-700 flex-shrink-0" />
-                      <div>
-                        <h4 className="text-sm font-bold text-rose-900">{t('payment.readyVia', { method: methodLabel })}</h4>
-                        <p className="mt-1 text-xs leading-5 text-rose-700">
-                          {selectedMethod === 'cash'
-                            ? t('payment.cashHint')
-                            : selectedMethod === 'instapay'
-                              ? t('payment.instapayHint')
-                              : t('payment.paymobHint')}
-                        </p>
+                {selectedMethod === 'instapay' || selectedMethod === 'cash' ? (
+                  <div className="mt-6 space-y-3">
+                    <p className="text-center text-xl font-extrabold uppercase tracking-wide text-red-600 sm:text-2xl md:text-3xl">
+                      {t('payment.depositRequiredLabel')}
+                    </p>
+                    <div className="rounded-2xl border-2 border-red-500 bg-red-50 p-4 sm:p-5">
+                      <div className="flex gap-3">
+                        <ShieldCheck className="h-6 w-6 flex-shrink-0 text-red-600" />
+                        <div>
+                          <h4 className="text-base font-extrabold text-red-700 sm:text-lg">
+                            {t('payment.depositWarningTitle')}
+                          </h4>
+                          <p className="mt-2 text-sm font-semibold leading-6 text-red-700 sm:text-[15px]">
+                            {t('payment.depositWarningBody', {
+                              method: methodLabel,
+                              amount: money(Math.round((Number(finalTotalAmount) || 0) * 0.5)),
+                            })}
+                          </p>
+                          <p className="mt-2 text-xs leading-5 text-red-600/90">
+                            {selectedMethod === 'cash'
+                              ? t('payment.cashHint')
+                              : t('payment.instapayHint')}
+                          </p>
+                        </div>
                       </div>
                     </div>
                   </div>
-                )}
+                ) : selectedMethod ? (
+                  <div className="mt-6 rounded-2xl border border-soul-line bg-soul-blue-50/50 p-4">
+                    <div className="flex gap-3">
+                      <ShieldCheck className="h-5 w-5 flex-shrink-0 text-soul-blue" />
+                      <div>
+                        <h4 className="text-sm font-bold text-soul-blue">
+                          {t('payment.readyVia', { method: methodLabel })}
+                        </h4>
+                        <p className="mt-1 text-xs leading-5 text-soul-muted">{t('payment.paymobHint')}</p>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
 
                 {message && <p className="mt-4 text-sm text-rose-600">{message}</p>}
 
