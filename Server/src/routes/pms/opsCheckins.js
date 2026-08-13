@@ -80,10 +80,6 @@ function paymentBreakdown(row) {
   let serviceFees = 0;
   let serviceFeePercent = 0;
   let securityDeposit = 0;
-  let beachAccessPerAdult = 0;
-  let beachAccessPerTeen = 0;
-  let beachAccessMode = null;
-  let beachAccessIncluded = false;
   try {
     const unitCtx = {
       property_type: row.property_type,
@@ -101,26 +97,6 @@ function paymentBreakdown(row) {
       adults: adults > 0 ? adults : 0,
       teens: children,
     });
-    if (beachAccessFees <= 0) {
-      beachAccessFees = Number(fees.access_fee_egp) || 0;
-    }
-    
-    if (beachAccessFees <= 0 && adults <= 0 && Number(row.is_owner_reservation) !== 1) {
-      const { resolveBeachAccessRates } = require('../../lib/beachAccess');
-      const rates = resolveBeachAccessRates(unitCtx, nights);
-      beachAccessPerAdult = Number(rates.adult) || 0;
-      beachAccessPerTeen = Number(rates.extra) || 0;
-      beachAccessMode = rates.mode || null;
-      beachAccessIncluded = rates.mode === 'free';
-      if (rates.billing === 'flat' && Number(rates.flat) > 0) {
-        beachAccessFees = Number(rates.flat) || 0;
-      }
-    } else if (fees.beach_access) {
-      beachAccessPerAdult = Number(fees.beach_access.adult) || 0;
-      beachAccessPerTeen = Number(fees.beach_access.extra) || 0;
-      beachAccessMode = fees.beach_access.mode || null;
-      beachAccessIncluded = fees.beach_access.mode === 'free';
-    }
     serviceFees = Number(fees.service_fee_egp) || 0;
     serviceFeePercent = Number(fees.service_fee_percent) || 0;
     securityDeposit = Number(fees.security_deposit_egp) || 0;
@@ -132,10 +108,6 @@ function paymentBreakdown(row) {
     accommodation_amount: accommodation,
     housekeeping_fees: housekeepingFees,
     beach_access_fees: beachAccessFees,
-    beach_access_per_adult: beachAccessPerAdult,
-    beach_access_per_teen: beachAccessPerTeen,
-    beach_access_mode: beachAccessMode,
-    beach_access_included: beachAccessIncluded,
     service_fees: serviceFees,
     service_fee_percent: serviceFeePercent,
     insurance,

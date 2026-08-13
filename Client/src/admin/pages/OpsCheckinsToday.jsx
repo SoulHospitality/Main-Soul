@@ -7,8 +7,8 @@ import LoadingSpinner from '../components/ui/LoadingSpinner';
 import { useAuth } from '../context/AuthContext';
 import { currency } from '../utils/formatters';
 
-function MoneyLine({ label, value, emphasize = false }) {
-  if (value == null || Number(value) === 0) return null;
+function MoneyLine({ label, value, emphasize = false, showZero = false }) {
+  if (value == null || (!showZero && Number(value) === 0)) return null;
   return (
     <div className={`flex justify-between gap-3 ${emphasize ? 'border-t pt-1 font-semibold' : ''}`}>
       <span className={emphasize ? 'text-amber-800' : 'text-gray-500'}>{label}</span>
@@ -22,6 +22,8 @@ function MoneyLine({ label, value, emphasize = false }) {
 function PaymentDetails({ row }) {
   const b = row.payment_breakdown || {};
   const remaining = Number(row.remaining_amount) || 0;
+  const beachAccessTotal = Number(b.beach_access_fees);
+  const beachAccessFees = Number.isFinite(beachAccessTotal) && beachAccessTotal > 0 ? beachAccessTotal : 0;
   const guestsTotal = Number(b.guests_total) || (Number(b.adults) || 0) + (Number(b.children) || 0) + (Number(b.nanny_count) || 0);
   const party = [
     b.adults > 0 ? `${b.adults} adult${b.adults === 1 ? '' : 's'}` : null,
@@ -49,29 +51,7 @@ function PaymentDetails({ row }) {
       )}
       <MoneyLine label="Accommodation" value={b.accommodation_amount} />
       <MoneyLine label="Housekeeping" value={b.housekeeping_fees} />
-      {Number(b.beach_access_fees) > 0 ? (
-        <MoneyLine label="Beach access" value={b.beach_access_fees} />
-      ) : b.beach_access_included ? (
-        <div className="flex justify-between gap-3">
-          <span className="text-gray-500">Beach access</span>
-          <span className="font-medium text-emerald-700">Included</span>
-        </div>
-      ) : Number(b.beach_access_per_adult) > 0 ? (
-        <div className="flex justify-between gap-3">
-          <span className="text-gray-500">Beach access</span>
-          <span className="tabular-nums font-medium text-amber-800">
-            {currency(b.beach_access_per_adult)}/adult
-            {Number(b.beach_access_per_teen) > 0
-              ? ` · ${currency(b.beach_access_per_teen)}/child`
-              : ''}
-          </span>
-        </div>
-      ) : (
-        <div className="flex justify-between gap-3">
-          <span className="text-gray-500">Beach access</span>
-          <span className="font-medium text-gray-400">—</span>
-        </div>
-      )}
+      <MoneyLine label="Beach access" value={beachAccessFees} showZero />
       <MoneyLine
         label={b.service_fee_percent ? `Service (${b.service_fee_percent}%)` : 'Service fees'}
         value={b.service_fees}
