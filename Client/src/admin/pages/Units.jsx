@@ -22,6 +22,7 @@ import {
   isFreeBeachProject,
   isHaciendaWestUnit,
   isIlMonteGalalaUnit,
+  isFoukaBayUnit,
   HACIENDA_WEST_BEACH,
 } from '../../utils/beachAccess';
 import { isGaiaUnit } from '../../utils/bookingRules';
@@ -257,6 +258,7 @@ function UnitForm({ form, setForm, listingType = 'rent' }) {
   const galalaProject = !isSale && isIlMonteGalalaUnit(projectCtx);
   const haciendaWest = !isSale && isHaciendaWestUnit(projectCtx);
   const freeBeach = !isSale && isFreeBeachProject(projectCtx);
+  const foukaBay = !isSale && isFoukaBayUnit(projectCtx);
 
   function applyProjectChange(project) {
     const beachDefaults = beachAccessFormDefaults(project);
@@ -434,10 +436,16 @@ function UnitForm({ form, setForm, listingType = 'rent' }) {
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label className="label">Beach access — extra guest (EGP)</label>
-                  <input type="number" min="0" step="0.01" className="input" value={form.beach_access_extra_guest} onChange={e => setForm(f => ({ ...f, beach_access_extra_guest: e.target.value }))} placeholder="Per extra guest / period" />
-                </div>
+                {foukaBay ? (
+                  <div className="sm:col-span-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-900">
+                    <strong>Fouka Bay:</strong> beach access is free for children — only adults are charged.
+                  </div>
+                ) : (
+                  <div>
+                    <label className="label">Beach access — extra guest (EGP)</label>
+                    <input type="number" min="0" step="0.01" className="input" value={form.beach_access_extra_guest} onChange={e => setForm(f => ({ ...f, beach_access_extra_guest: e.target.value }))} placeholder="Per extra guest / period" />
+                  </div>
+                )}
               </>
             ) : gaiaProject ? (
               <div className="sm:col-span-2 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2.5 text-sm text-sky-900">
@@ -749,9 +757,11 @@ export default function Units({ listingType = 'rent' }) {
         : (form.beach_access_price === '' ? null : form.beach_access_price);
     const beachExtra = isSale
       ? null
-      : beachDefaults
-        ? (beachDefaults.beach_access_extra_guest === '' ? null : beachDefaults.beach_access_extra_guest)
-        : (form.beach_access_extra_guest === '' ? null : form.beach_access_extra_guest);
+      : isFoukaBayUnit({ project: projectName, compound: projectName })
+        ? 0
+        : beachDefaults
+          ? (beachDefaults.beach_access_extra_guest === '' ? null : beachDefaults.beach_access_extra_guest)
+          : (form.beach_access_extra_guest === '' ? null : form.beach_access_extra_guest);
     const beachDays = isSale
       ? null
       : beachDefaults

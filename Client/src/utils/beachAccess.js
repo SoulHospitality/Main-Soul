@@ -21,6 +21,12 @@ export function isIlMonteGalalaUnit(unit = {}) {
   return /(?:il\s*)?monte\s*galala|ilmonte\s*galala/.test(s);
 }
 
+export function isFoukaBayUnit(unit = {}) {
+  const s = projectText(unit);
+  if (!s) return false;
+  return /fouka/.test(s);
+}
+
 export function isHaciendaWestUnit(unit = {}) {
   const s = projectText(unit);
   if (!s) return false;
@@ -87,13 +93,15 @@ export function resolveBeachAccessRates(unit = {}, nights = 0) {
   }
 
   const adult = Number(unit.access_fee_per_adult_egp ?? unit.beach_access_price ?? 0);
-  const extra = Number(unit.access_fee_per_teen_egp ?? unit.beach_access_extra_guest ?? 0);
+  const extra = isFoukaBayUnit(unit)
+    ? 0
+    : Number(unit.access_fee_per_teen_egp ?? unit.beach_access_extra_guest ?? 0);
   const days = Number(unit.access_card_count_included ?? unit.beach_access_days ?? 7) || 7;
   return {
     adult: Number.isFinite(adult) ? adult : 0,
     extra: Number.isFinite(extra) ? extra : 0,
     days,
-    mode: 'manual',
+    mode: isFoukaBayUnit(unit) ? 'fouka' : 'manual',
     billing: 'per_guest',
   };
 }
@@ -120,6 +128,9 @@ export function beachAccessFormDefaults(projectName) {
   }
   if (isFreeBeachProject(unit)) {
     return { beach_access_price: 0, beach_access_extra_guest: 0, beach_access_days: 7 };
+  }
+  if (isFoukaBayUnit(unit)) {
+    return null; 
   }
   return null;
 }
