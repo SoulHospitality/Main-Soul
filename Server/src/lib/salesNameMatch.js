@@ -10,6 +10,26 @@ function normalizeName(value) {
     .trim();
 }
 
+/** Spreadsheet spellings that are the same sales person. */
+const EQUIVALENCE_GROUPS = [
+  ['aml', 'amal', 'aml nasser', 'amal nasser', 'aml naser', 'amal naser'],
+];
+
+function aliasLabelsForName(value) {
+  const n = normalizeName(value);
+  if (!n) return [];
+  for (const group of EQUIVALENCE_GROUPS) {
+    if (group.includes(n)) return [...group];
+  }
+  return [n];
+}
+
+function namesAreAliases(a, b) {
+  const left = new Set(aliasLabelsForName(a));
+  if (!left.size) return false;
+  return aliasLabelsForName(b).some((n) => left.has(n));
+}
+
 function tokens(value) {
   return normalizeName(value)
     .split(' ')
@@ -57,6 +77,7 @@ function nameMatchScore(salesLabel, staffName) {
   if (!label || !staff) return 0;
   if (/^owner\b/.test(label)) return 0;
   if (label === staff) return 1;
+  if (namesAreAliases(label, staff)) return 1;
 
   const direct = stringSimilarity(label, staff);
   const labelTokens = tokens(label);
@@ -149,6 +170,8 @@ function salesLabelBelongsToUser(salesLabel, user, { minScore = DEFAULT_MIN_SCOR
 
 module.exports = {
   normalizeName,
+  aliasLabelsForName,
+  namesAreAliases,
   nameMatchScore,
   matchSalesLabelToStaff,
   salesLabelBelongsToUser,

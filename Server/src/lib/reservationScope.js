@@ -1,5 +1,5 @@
 const { query } = require('../config/db');
-const { salesLabelBelongsToUser } = require('./salesNameMatch');
+const { salesLabelBelongsToUser, aliasLabelsForName } = require('./salesNameMatch');
 
 const RESERVATIONS_TEAM_ROLES = new Set([
   'reservations',
@@ -98,9 +98,18 @@ function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
     const nameParam = nextIndex;
     params.push(name);
     nextIndex += 1;
-    
-    
-    
+
+    const aliases = aliasLabelsForName(name).filter(Boolean);
+    let aliasSql = '';
+    if (aliases.length) {
+      const aliasParam = nextIndex;
+      params.push(aliases);
+      nextIndex += 1;
+      aliasSql = `
+        OR lower(regexp_replace(btrim(${alias}.sales_label), '\\s+', ' ', 'g'))
+          = ANY($${aliasParam}::text[])`;
+    }
+
     clause += `
     OR (
       ${alias}.sales_label IS NOT NULL
@@ -113,6 +122,7 @@ function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
           LIKE lower(regexp_replace(btrim($${nameParam}), '\\s+', ' ', 'g')) || ' %'
         OR lower(regexp_replace(btrim($${nameParam}), '\\s+', ' ', 'g'))
           LIKE lower(regexp_replace(btrim(${alias}.sales_label), '\\s+', ' ', 'g')) || ' %'
+        ${aliasSql}
         OR (
           length(btrim(${alias}.sales_label)) >= 3
           AND (
