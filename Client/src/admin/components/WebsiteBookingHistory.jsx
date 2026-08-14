@@ -137,7 +137,8 @@ export default function WebsiteBookingHistory() {
         <h2 className="font-semibold text-gray-900">Booking history</h2>
         <p className="text-xs text-gray-500">
           Accepted = fully paid. Pending = accepted with remaining balance. Rejected = declined with
-          reason. Use Edit collected to update how much was received.
+          reason. Requested is when the guest submitted; Decided is when the agent accepted, left
+          pending, or rejected. Use Edit collected to update how much was received.
         </p>
       </div>
 
@@ -168,7 +169,8 @@ export default function WebsiteBookingHistory() {
                 <th className="py-2 pr-3">Status</th>
                 <th className="py-2 pr-3">Reason</th>
                 <th className="py-2 pr-3">Decided by</th>
-                <th className="py-2 pr-3">When</th>
+                <th className="py-2 pr-3">Requested</th>
+                <th className="py-2 pr-3">Decided</th>
                 <th className="py-2">Money</th>
               </tr>
             </thead>
@@ -238,8 +240,16 @@ export default function WebsiteBookingHistory() {
                     <td className="py-3 pr-3 text-sm">
                       {b.decided_by_name || b.assigned_agent_name || '—'}
                     </td>
-                    <td className="py-3 pr-3 whitespace-nowrap text-xs text-gray-500">
-                      {b.decided_at ? formatDateTime(b.decided_at) : '—'}
+                    <td className="py-3 pr-3 whitespace-nowrap text-xs text-gray-600">
+                      {formatDateTime(b.requested_at || b.created_at)}
+                    </td>
+                    <td className="py-3 pr-3 whitespace-nowrap text-xs text-gray-600">
+                      <div>{b.decided_at ? formatDateTime(b.decided_at) : '—'}</div>
+                      {b.decided_at ? (
+                        <div className="text-[11px] text-gray-400 capitalize">
+                          {rejected ? 'Rejected' : pending ? 'Accepted (pending)' : 'Accepted'}
+                        </div>
+                      ) : null}
                     </td>
                     <td className="py-3">
                       {editable ? (

@@ -837,29 +837,45 @@ router.put('/blocked-dates/:unitId', requireRoles('admin'), async (req, res, nex
 });
 
 
+function tryParseBookingMetaChunk(chunk) {
+  const text = String(chunk || '').trim();
+  if (!text) return null;
+  try {
+    const meta = JSON.parse(text);
+    if (meta && typeof meta === 'object') return meta;
+  } catch {}
+  // Accept lines like: [commission] {"accepted_at":...}
+  const brace = text.indexOf('{');
+  if (brace >= 0) {
+    try {
+      const meta = JSON.parse(text.slice(brace));
+      if (meta && typeof meta === 'object') return meta;
+    } catch {}
+  }
+  return null;
+}
+
 function parseBookingDecisionMeta(notes) {
   const text = String(notes || '');
   let accepted = null;
   let rejected = null;
   const chunks = text
-    .split('\n')
+    .split(/\r?\n/)
     .map((l) => l.trim())
     .filter(Boolean);
-  
+
   const candidates = [...chunks].reverse();
   if (text.trim().startsWith('{')) candidates.push(text.trim());
 
   for (const chunk of candidates) {
-    try {
-      const meta = JSON.parse(chunk);
-      if (!meta || typeof meta !== 'object') continue;
-      if (meta.reject_reason || meta.rejected_by || meta.rejected_by_name) {
-        if (!rejected) rejected = meta;
-      }
-      if (meta.accepted_by || meta.accepted_by_name || meta.accepted_at) {
-        if (!accepted) accepted = meta;
-      }
-    } catch {}
+    const meta = tryParseBookingMetaChunk(chunk);
+    if (!meta) continue;
+    if (meta.reject_reason || meta.rejected_by || meta.rejected_by_name) {
+      if (!rejected) rejected = meta;
+    }
+    if (meta.accepted_by || meta.accepted_by_name || meta.accepted_at) {
+      if (!accepted) accepted = meta;
+    }
   }
   return { accepted, rejected };
 }
@@ -877,6 +893,7 @@ function mapWebsiteBookingDecision(row) {
   const amountDue = Math.max(0, Math.round((total - amountPaid) * 100) / 100);
   const fullyPaid =
     prepaid || paymentStatus === 'paid' || (total > 0 && amountDue <= 0.009);
+  const requestedAt = row.created_at || null;
 
   if (status === 'cancelled' && (rejected || row.cancellation_reason)) {
     const isReject = !!(rejected?.reject_reason || rejected?.rejected_by || rejected?.rejected_by_name);
@@ -888,7 +905,8 @@ function mapWebsiteBookingDecision(row) {
         row.cancellation_reason ||
         null,
       decided_by_name: rejected?.rejected_by_name || null,
-      decided_at: rejected?.rejected_at || row.created_at || null,
+      requested_at: requestedAt,
+      decided_at: rejected?.rejected_at || null,
       amount_paid: amountPaid,
       amount_due: amountDue,
     };
@@ -901,7 +919,8 @@ function mapWebsiteBookingDecision(row) {
         decision_label: 'Accepted',
         decision_reason: null,
         decided_by_name: accepted?.accepted_by_name || row.assigned_agent_name || null,
-        decided_at: accepted?.accepted_at || row.created_at || null,
+        requested_at: requestedAt,
+        decided_at: accepted?.accepted_at || null,
         amount_paid: prepaid ? total : amountPaid,
         amount_due: 0,
       };
@@ -911,7 +930,8 @@ function mapWebsiteBookingDecision(row) {
       decision_label: 'Pending',
       decision_reason: null,
       decided_by_name: accepted?.accepted_by_name || row.assigned_agent_name || null,
-      decided_at: accepted?.accepted_at || row.created_at || null,
+      requested_at: requestedAt,
+      decided_at: accepted?.accepted_at || null,
       amount_paid: amountPaid,
       amount_due: amountDue,
     };
@@ -922,7 +942,8 @@ function mapWebsiteBookingDecision(row) {
     decision_label: status || 'Unknown',
     decision_reason: row.cancellation_reason || null,
     decided_by_name: null,
-    decided_at: row.created_at || null,
+    requested_at: requestedAt,
+    decided_at: null,
     amount_paid: amountPaid,
     amount_due: amountDue,
   };
