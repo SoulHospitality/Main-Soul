@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { Plus, Edit2, Eye, Ban, CreditCard, CalendarDays, Upload, Download, CheckCircle, AlertCircle, Lock, Trash2, Maximize2, X, FileText } from 'lucide-react';
+import { Plus, Edit2, Eye, Ban, CreditCard, CalendarDays, Upload, Download, CheckCircle, AlertCircle, Lock, Trash2, Maximize2, X, FileText, ArrowRightLeft } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
@@ -23,6 +23,7 @@ import { calcReservationFinancials, commissionModeLabel, appliedPctLabel } from 
 import { housekeepingFeeForUnit } from '../../utils/housekeeping';
 import AdminReservationDrawer from '../components/AdminReservationDrawer';
 import ManualReservationForm from '../components/ManualReservationForm';
+import TransferReservationModal from '../components/TransferReservationModal';
 
 export const EMPTY_FORM = {
   unit_id: '', guest_name: '', guest_email: '', guest_phone: '', guest_nationality: '',
@@ -965,6 +966,7 @@ export default function Reservations() {
   const [transferProof, setTransferProof] = useState(null);
   const [previewPhotos, setPreviewPhotos] = useState([]);
   const [previewPhotoIndex, setPreviewPhotoIndex] = useState(0);
+  const [transferRes, setTransferRes] = useState(null);
 
   
   const [blockModal, setBlockModal] = useState(false);
@@ -1523,6 +1525,11 @@ export default function Reservations() {
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
                           )}
+                          {canWrite && r.status !== 'cancelled' && Number(r.is_owner_reservation) !== 1 && (
+                            <button onClick={() => setTransferRes(r)} className="p-1.5 rounded text-gray-400 hover:text-amber-700 hover:bg-amber-50" title="Move to another unit">
+                              <ArrowRightLeft className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                           {canWrite && (
                             <button onClick={() => setCancelId(r.id)} className="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50" title="Delete reservation">
                               <Trash2 className="w-3.5 h-3.5" />
@@ -1705,7 +1712,23 @@ export default function Reservations() {
 
       
       <Modal open={!!viewRes} onClose={() => setViewRes(null)} title={`Reservation #${viewRes}`} size="lg"
-        footer={<button onClick={() => setViewRes(null)} className="btn-secondary">Close</button>}
+        footer={
+          <div className="flex items-center justify-end gap-2 w-full">
+            {canWrite && viewDetail && viewDetail.status !== 'cancelled' && Number(viewDetail.is_owner_reservation) !== 1 && (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => {
+                  setTransferRes(viewDetail);
+                  setViewRes(null);
+                }}
+              >
+                <ArrowRightLeft className="w-4 h-4" /> Move unit
+              </button>
+            )}
+            <button onClick={() => setViewRes(null)} className="btn-secondary">Close</button>
+          </div>
+        }
       >
         <ReservationDetail
           reservation={viewDetail}
@@ -1905,6 +1928,17 @@ export default function Reservations() {
           </label>
         </div>
       </Modal>
+      <TransferReservationModal
+        open={!!transferRes}
+        reservation={transferRes}
+        units={units}
+        onClose={() => setTransferRes(null)}
+        onTransferred={() => {
+          qc.invalidateQueries({ queryKey: ['reservations'] });
+          qc.invalidateQueries({ queryKey: ['schedule'] });
+          qc.invalidateQueries({ queryKey: ['blocked-dates'] });
+        }}
+      />
     </div>
   );
 }

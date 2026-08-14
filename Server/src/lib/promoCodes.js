@@ -66,7 +66,7 @@ async function guestAlreadyRedeemed(promoId, guestKey) {
 }
 
 
-async function validatePromo({ code, amount, email, phone, guestId } = {}) {
+async function validatePromo({ code, amount, email, phone, guestId, allowRepeat = false } = {}) {
   const promo = await findActivePromo(code);
   if (!promo) {
     const err = new Error('Invalid or expired promo code');
@@ -76,7 +76,7 @@ async function validatePromo({ code, amount, email, phone, guestId } = {}) {
 
   const key = guestKeyFrom({ email, phone, guestId });
   const oncePerGuest = promo.once_per_guest !== false;
-  if (oncePerGuest && key && (await guestAlreadyRedeemed(promo.id, key))) {
+  if (!allowRepeat && oncePerGuest && key && (await guestAlreadyRedeemed(promo.id, key))) {
     const err = new Error('You have already used this promo code');
     err.status = 409;
     throw err;
@@ -102,6 +102,7 @@ async function redeemPromo({
   bookingId,
   amountBeforeDiscount,
   client,
+  allowRepeat = false,
 } = {}) {
   const normalized = normalizeCode(code);
   if (!normalized) return null;
@@ -129,7 +130,7 @@ async function redeemPromo({
     throw err;
   }
 
-  if (promo.once_per_guest !== false) {
+  if (!allowRepeat && promo.once_per_guest !== false) {
     const { rows: existing } = await run(
       `SELECT id FROM promo_code_redemptions
        WHERE promo_code_id = $1 AND guest_key = $2
@@ -144,6 +145,7 @@ async function redeemPromo({
   }
 
   const applied = applyDiscount(promo, amountBeforeDiscount);
+  let reused = false;
   try {
     await run(
       `INSERT INTO promo_code_redemptions
@@ -161,21 +163,28 @@ async function redeemPromo({
     );
   } catch (e) {
     if (e.code === '23505') {
-      const err = new Error('You have already used this promo code');
-      err.status = 409;
-      throw err;
+      if (allowRepeat) {
+        reused = true;
+      } else {
+        const err = new Error('You have already used this promo code');
+        err.status = 409;
+        throw err;
+      }
+    } else {
+      throw e;
     }
-    throw e;
   }
 
-  await run(
-    `UPDATE promo_codes
-     SET used_count = used_count + 1, updated_at = now()
-     WHERE id = $1`,
-    [promo.id]
-  );
+  if (!reused) {
+    await run(
+      `UPDATE promo_codes
+       SET used_count = used_count + 1, updated_at = now()
+       WHERE id = $1`,
+      [promo.id]
+    );
+  }
 
-  return { promo, ...applied, guest_key: key };
+  return { promo, ...applied, guest_key: key, reused };
 }
 
 module.exports = {

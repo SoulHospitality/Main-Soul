@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight, CalendarRange, Edit2, X, DollarSign, Eye, ExternalLink, Clock, Hourglass, Trash2, Plus, Ban } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CalendarRange, Edit2, X, DollarSign, Eye, ExternalLink, Clock, Hourglass, Trash2, Plus, Ban, ArrowRightLeft } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
@@ -13,6 +13,7 @@ import AdminReservationDrawer from '../components/AdminReservationDrawer';
 import ManualReservationForm, {
   EMPTY_MANUAL_RESERVATION_FORM,
 } from '../components/ManualReservationForm';
+import TransferReservationModal from '../components/TransferReservationModal';
 import { housekeepingFeeForUnit } from '../../utils/housekeeping';
 import { useAuth } from '../context/AuthContext';
 
@@ -329,7 +330,7 @@ function PriceEditorModal({
 }
 
 
-function ReservationDetailModal({ open, onClose, reservationId }) {
+function ReservationDetailModal({ open, onClose, reservationId, canWrite, onMoveUnit }) {
   const { data: res, isLoading } = useQuery({
     queryKey: ['reservation-detail', reservationId],
     queryFn: () => api.get(`/reservations/${reservationId}`).then(r => r.data),
@@ -342,7 +343,20 @@ function ReservationDetailModal({ open, onClose, reservationId }) {
 
   return (
     <Modal open={open} onClose={onClose} title={`Reservation #${reservationId}`} size="md"
-      footer={<button onClick={onClose} className="btn-secondary">Close</button>}
+      footer={
+        <div className="flex items-center justify-end gap-2 w-full">
+          {canWrite && res && res.status !== 'cancelled' && Number(res.is_owner_reservation) !== 1 && (
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => onMoveUnit?.(res)}
+            >
+              <ArrowRightLeft className="w-4 h-4" /> Move unit
+            </button>
+          )}
+          <button onClick={onClose} className="btn-secondary">Close</button>
+        </div>
+      }
     >
       {isLoading ? <LoadingSpinner /> : res ? (
         <div className="space-y-4">
@@ -778,6 +792,7 @@ export default function Schedule() {
   
   const [detailModal,       setDetailModal]       = useState(false);
   const [detailResId,       setDetailResId]       = useState(null);
+  const [transferRes,       setTransferRes]       = useState(null);
 
   
   const [editModal,         setEditModal]         = useState(false);
@@ -1895,6 +1910,23 @@ export default function Schedule() {
         open={detailModal}
         onClose={() => setDetailModal(false)}
         reservationId={detailResId}
+        canWrite={canWrite}
+        onMoveUnit={(res) => {
+          setTransferRes(res);
+          setDetailModal(false);
+        }}
+      />
+
+      <TransferReservationModal
+        open={!!transferRes}
+        reservation={transferRes}
+        units={unitsList}
+        onClose={() => setTransferRes(null)}
+        onTransferred={() => {
+          qc.invalidateQueries({ queryKey: ['schedule'] });
+          qc.invalidateQueries({ queryKey: ['reservations'] });
+          qc.invalidateQueries({ queryKey: ['reservation-detail'] });
+        }}
       />
 
       <EditReservationModal

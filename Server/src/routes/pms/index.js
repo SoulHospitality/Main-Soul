@@ -1973,6 +1973,54 @@ router.delete(
   }
 );
 
+router.post(
+  '/reservations/:id/transfer/preview',
+  requireRoles(
+    'reservations_manual',
+    'reservations_web',
+    'reservations',
+    'operations',
+    'operations_supervisor',
+    'admin'
+  ),
+  async (req, res, next) => {
+    try {
+      const existing = await loadReservationAccess(req.params.id);
+      if (!existing) return res.status(404).json({ error: 'Not found' });
+      assertReservationOwned(req.user, existing);
+      const { previewTransfer } = require('../../lib/transferReservation');
+      const preview = await previewTransfer(req.params.id, req.body || {});
+      res.json(preview);
+    } catch (e) {
+      next(e);
+    }
+  }
+);
+
+router.post(
+  '/reservations/:id/transfer',
+  requireRoles(
+    'reservations_manual',
+    'reservations_web',
+    'reservations',
+    'operations',
+    'operations_supervisor',
+    'admin'
+  ),
+  async (req, res, next) => {
+    try {
+      const existing = await loadReservationAccess(req.params.id);
+      if (!existing) return res.status(404).json({ error: 'Not found' });
+      assertReservationOwned(req.user, existing);
+      const { executeTransfer } = require('../../lib/transferReservation');
+      const result = await executeTransfer(req.params.id, req.body || {}, req.user);
+      res.status(201).json(result);
+    } catch (e) {
+      next(e);
+    }
+  }
+);
+
 router.delete(
   '/reservations/:id',
   requireRoles(
