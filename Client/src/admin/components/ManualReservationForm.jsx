@@ -7,7 +7,6 @@ import ListingDatePicker, {
   localDateToIso,
 } from '../../components/listing/ListingDatePicker';
 import { housekeepingFeeForUnit } from '../../utils/housekeeping';
-import { getMinimumStayNights } from '../../utils/bookingRules';
 import {
   computeBeachAccessFee,
   getGuestLoad,
@@ -90,7 +89,8 @@ export default function ManualReservationForm({
 }) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const selectedUnit = units.find((unit) => String(unit.id) === String(form.unit_id));
-  const minNights = getMinimumStayNights(selectedUnit);
+  // Staff / reservation-team bookings: no project minimum stay (guests still have one).
+  const minNights = 1;
 
   const from = useMemo(() => {
     const d = new Date();
@@ -272,10 +272,6 @@ export default function ManualReservationForm({
                   blockedDates={blockedDates}
                   minNights={minNights}
                 />
-                <p className="mt-2 text-xs text-[#5b6b80]">
-                  Minimum stay for this project: {minNights} night{minNights === 1 ? '' : 's'}
-                  {allowPastDates ? ' · Admins can backdate forgotten stays' : ''}
-                </p>
                 {availabilityLoading && (
                   <p className="mt-2 text-xs text-[#5b6b80]">Loading availability…</p>
                 )}

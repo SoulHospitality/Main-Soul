@@ -10,6 +10,7 @@ const {
   setCloudinaryFolder,
   FOLDER_PAYMENTS,
 } = require('../../config/cloudinary');
+const { setOwnerUnits, listLinkableUnits } = require('../../lib/ownerUnits');
 
 
 const router = express.Router();
@@ -94,6 +95,15 @@ router.get('/users/owners', requireRoles('admin', 'hr'), async (_req, res, next)
   }
 });
 
+/** Rent units that are unlinked, or already linked to owner_id (for editing). */
+router.get('/users/owners/linkable-units', requireRoles('admin'), async (req, res, next) => {
+  try {
+    const units = await listLinkableUnits(req.query.owner_id);
+    res.json(units);
+  } catch (e) {
+    next(e);
+  }
+});
 
 router.get('/users/owners/:id/units', requireRoles('admin'), async (req, res, next) => {
   try {
@@ -115,6 +125,17 @@ router.get('/users/owners/:id/units', requireRoles('admin'), async (req, res, ne
       }))
     );
   } catch (e) {
+    next(e);
+  }
+});
+
+/** Replace owner ↔ unit portal links (ignores unit owner_name / owner_phone). */
+router.put('/users/owners/:id/units', requireRoles('admin'), async (req, res, next) => {
+  try {
+    const units = await setOwnerUnits(req.params.id, req.body?.unit_ids);
+    res.json({ ok: true, units, unit_count: units.length });
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
     next(e);
   }
 });

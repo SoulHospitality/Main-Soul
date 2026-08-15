@@ -27,6 +27,7 @@ const {
   syncUnitListingStatus,
 } = require('../../lib/unitListingStatus');
 const { FINANCIAL_EPOCH, clampFromDate } = require('../../lib/financialEpoch');
+const { setOwnerUnits } = require('../../lib/ownerUnits');
 const {
   reservationScopeClause,
   bookingAssigneeClause,
@@ -35,7 +36,7 @@ const {
   isReservationsAgent,
   isAdmin,
 } = require('../../lib/reservationScope');
-const { getMinimumStayNights, lookupProjectMinNights } = require('../../lib/minStay');
+const { lookupProjectMinNights } = require('../../lib/minStay');
 const { beachAccessPersistValues } = require('../../lib/beachAccess');
 const { normalizeProjectName } = require('../../lib/projectNames');
 const { guestsFromBedrooms } = require('../../lib/guestCapacity');
@@ -370,10 +371,22 @@ router.post('/users', requireRoles('admin', 'hr'), async (req, res, next) => {
     );
 
     const user = { ...rows[0], is_first_login: true };
+    let linkedUnits = [];
+    let unitLinkError = null;
+    if (isOwner && Array.isArray(b.unit_ids) && b.unit_ids.length) {
+      try {
+        linkedUnits = await setOwnerUnits(user.id, b.unit_ids);
+      } catch (linkErr) {
+        unitLinkError = linkErr.message || 'Could not link units';
+      }
+    }
     res.status(201).json({
       ...user,
       temporaryPassword: tempPassword,
       staffId: staff_code,
+      unit_count: linkedUnits.length,
+      units: linkedUnits,
+      ...(unitLinkError ? { unitLinkError } : {}),
     });
   } catch (e) {
     if (e.status) return res.status(e.status).json({ error: e.message });
@@ -1530,12 +1543,7 @@ router.post(
         ? parseFloat(b.housekeeping_fees) || housekeepingFeeForUnit(unitRow)
         : housekeepingFeeForUnit(unitRow);
       wpPostId = unitRow?.wp_post_id || null;
-      const minStay = getMinimumStayNights(unitRow || {});
-      if (nights < minStay) {
-        return res.status(400).json({
-          error: `Minimum stay is ${minStay} night${minStay === 1 ? '' : 's'} for this project`,
-        });
-      }
+      // PMS / reservation-team creates are not bound by guest project minimum stay.
       if (!utilitiesAmount) {
         const costPerNight = utilitiesOverride != null && !Number.isNaN(utilitiesOverride)
           ? utilitiesOverride

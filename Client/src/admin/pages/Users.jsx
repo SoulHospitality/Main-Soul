@@ -12,6 +12,7 @@ import {
   XCircle,
   Check,
   X,
+  Link2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
@@ -52,7 +53,195 @@ const EMPTY_OWNER_FORM = {
   phone: '',
   email: '',
   is_active: 1,
+  unit_ids: [],
 };
+
+function OwnerUnitPicker({ selectedIds, onChange, ownerId, enabled }) {
+  const [search, setSearch] = useState('');
+  const { data: units = [], isLoading } = useQuery({
+    queryKey: ['owner-linkable-units', ownerId || 'new'],
+    queryFn: () =>
+      api
+        .get('/users/owners/linkable-units', {
+          params: ownerId ? { owner_id: ownerId } : undefined,
+        })
+        .then((r) => r.data),
+    enabled: Boolean(enabled),
+  });
+
+  const selected = new Set((selectedIds || []).map(Number));
+  const q = search.trim().toLowerCase();
+  const allUnits = Array.isArray(units) ? units : [];
+
+  const matchesSearch = (u) => {
+    if (!q) return true;
+    const hay = [u.name, u.unit_number, u.title, u.project, u.unit_owner_name, u.unit_owner_phone]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    return hay.includes(q);
+  };
+
+  const unitLabel = (u) => u.name || u.unit_number || u.title || `Unit #${u.id}`;
+  const unitMeta = (u) =>
+    [u.project, u.unit_owner_name ? `Listing owner: ${u.unit_owner_name}` : null]
+      .filter(Boolean)
+      .join(' · ') || '—';
+
+  const linkedUnits = allUnits.filter((u) => selected.has(Number(u.id))).filter(matchesSearch);
+  const availableUnits = allUnits
+    .filter((u) => !selected.has(Number(u.id)))
+    .filter(matchesSearch);
+
+  // Keep selected units that might not be in the latest list (edge case) visible for unlink.
+  const linkedIdsInList = new Set(allUnits.map((u) => Number(u.id)));
+  const orphanLinkedIds = [...selected].filter((id) => !linkedIdsInList.has(id));
+
+  const linkUnit = (id) => {
+    const nid = Number(id);
+    if (selected.has(nid)) return;
+    onChange([...(selectedIds || []), nid]);
+  };
+
+  const unlinkUnit = (id) => {
+    const nid = Number(id);
+    onChange((selectedIds || []).filter((x) => Number(x) !== nid));
+  };
+
+  const unlinkAll = () => onChange([]);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <label className="label mb-0">Units for this owner</label>
+        <span className="text-[11px] text-slate-400">
+          {selected.size} linked · check or use Link / Unlink, then save
+        </span>
+      </div>
+      <p className="text-[11px] text-slate-500">
+        Link or unlink any rent unit for portal access. Listing owner name/phone do not need to
+        match. Unlink removes a mistaken assignment.
+      </p>
+      <input
+        className="input"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search unit, project, listing owner…"
+      />
+
+      {isLoading ? (
+        <div className="p-4 text-center text-xs text-slate-400 border border-slate-200 rounded-lg">
+          Loading units…
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-xs font-semibold text-slate-700">
+                Linked ({selected.size})
+              </p>
+              {selected.size > 0 && (
+                <button
+                  type="button"
+                  onClick={unlinkAll}
+                  className="text-[11px] font-medium text-red-600 hover:text-red-700"
+                >
+                  Unlink all
+                </button>
+              )}
+            </div>
+            <div className="max-h-40 overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100 bg-white">
+              {linkedUnits.length === 0 && orphanLinkedIds.length === 0 ? (
+                <div className="p-3 text-center text-xs text-slate-400">
+                  No units linked yet
+                </div>
+              ) : (
+                <>
+                  {linkedUnits.map((u) => {
+                    const id = Number(u.id);
+                    return (
+                      <div
+                        key={id}
+                        className="flex items-center gap-3 px-3 py-2.5 bg-emerald-50/40"
+                      >
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-medium text-slate-800 truncate">
+                            {unitLabel(u)}
+                          </span>
+                          <span className="block text-[11px] text-slate-500 truncate">
+                            {unitMeta(u)}
+                          </span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => unlinkUnit(id)}
+                          className="shrink-0 text-xs font-medium text-red-600 hover:text-red-700 px-2 py-1 rounded hover:bg-red-50"
+                        >
+                          Unlink
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {orphanLinkedIds.map((id) => (
+                    <div key={id} className="flex items-center gap-3 px-3 py-2.5 bg-emerald-50/40">
+                      <span className="min-w-0 flex-1 text-sm font-medium text-slate-800">
+                        Unit #{id}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => unlinkUnit(id)}
+                        className="shrink-0 text-xs font-medium text-red-600 hover:text-red-700 px-2 py-1 rounded hover:bg-red-50"
+                      >
+                        Unlink
+                      </button>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-xs font-semibold text-slate-700 mb-1.5">
+              Available to link ({availableUnits.length}
+              {q ? ' match' : ''})
+            </p>
+            <div className="max-h-44 overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100 bg-white">
+              {availableUnits.length === 0 ? (
+                <div className="p-3 text-center text-xs text-slate-400">
+                  {q ? 'No matching unlinked units' : 'No unlinked units available'}
+                </div>
+              ) : (
+                availableUnits.map((u) => {
+                  const id = Number(u.id);
+                  return (
+                    <div key={id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50">
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-medium text-slate-800 truncate">
+                          {unitLabel(u)}
+                        </span>
+                        <span className="block text-[11px] text-slate-500 truncate">
+                          {unitMeta(u)}
+                        </span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => linkUnit(id)}
+                        className="shrink-0 text-xs font-medium text-emerald-700 hover:text-emerald-800 px-2 py-1 rounded hover:bg-emerald-50"
+                      >
+                        Link
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function isReservationAgentRole(role) {
   return ['reservations_web', 'reservations_manual', 'reservations'].includes(role);
@@ -155,7 +344,7 @@ function StaffForm({ form, setForm, isEdit, roleOptions, isAdmin }) {
   );
 }
 
-function OwnerForm({ form, setForm, isEdit }) {
+function OwnerForm({ form, setForm, isEdit, ownerId, showUnits }) {
   return (
     <div className="space-y-4">
       <p className="text-xs text-slate-500">
@@ -212,6 +401,14 @@ function OwnerForm({ form, setForm, isEdit }) {
           </div>
         )}
       </div>
+      {showUnits ? (
+        <OwnerUnitPicker
+          selectedIds={form.unit_ids || []}
+          onChange={(unit_ids) => setForm((f) => ({ ...f, unit_ids }))}
+          ownerId={ownerId}
+          enabled
+        />
+      ) : null}
     </div>
   );
 }
@@ -292,20 +489,53 @@ export default function Users() {
   });
 
   const saveOwnerMutation = useMutation({
-    mutationFn: (d) => (editId ? api.put(`/users/${editId}`, d) : api.post('/users', d)),
+    mutationFn: async (d) => {
+      const { unit_ids, ...profile } = d;
+      if (editId) {
+        const res = await api.put(`/users/${editId}`, profile);
+        if (Array.isArray(unit_ids)) {
+          await api.put(`/users/owners/${editId}/units`, { unit_ids });
+        }
+        return res;
+      }
+      return api.post('/users', { ...profile, unit_ids });
+    },
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['users'] });
       qc.invalidateQueries({ queryKey: ['users-owners'] });
+      qc.invalidateQueries({ queryKey: ['owner-linkable-units'] });
       if (!editId && res?.data) {
         setCreatedInfo(res.data);
         setModal('created');
-        toast.success('Owner account created');
+        if (res.data.unitLinkError) {
+          toast.error(`Owner created, but units not linked: ${res.data.unitLinkError}`);
+        } else {
+          toast.success(
+            res.data.unit_count
+              ? `Owner created with ${res.data.unit_count} unit(s)`
+              : 'Owner account created'
+          );
+        }
       } else {
         toast.success(editId ? 'Owner updated' : 'Owner created');
         setModal(null);
       }
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Error saving'),
+  });
+
+  const linkUnitsMutation = useMutation({
+    mutationFn: ({ ownerId, unit_ids }) =>
+      api.put(`/users/owners/${ownerId}/units`, { unit_ids }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['users-owners'] });
+      qc.invalidateQueries({ queryKey: ['owner-linkable-units'] });
+      toast.success('Unit links updated');
+      setModal(null);
+      setEditId(null);
+      setOwnerForm({ ...EMPTY_OWNER_FORM });
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Error updating unit links'),
   });
 
   const deleteMutation = useMutation({
@@ -356,14 +586,22 @@ export default function Users() {
     }
   };
 
-  const openEdit = (u) => {
+  const openEdit = async (u) => {
     setEditId(u.id);
     if (u.role === 'owner') {
+      let unit_ids = [];
+      try {
+        const { data } = await api.get(`/users/owners/${u.id}/units`);
+        unit_ids = (Array.isArray(data) ? data : []).map((x) => x.id);
+      } catch {
+        unit_ids = [];
+      }
       setOwnerForm({
         full_name: u.full_name || '',
         phone: u.username || '',
         email: u.email?.includes('@soul.owners.local') ? '' : u.email || '',
         is_active: u.is_active,
+        unit_ids,
       });
       setModal('edit-owner');
     } else {
@@ -380,6 +618,25 @@ export default function Users() {
       });
       setModal('edit-staff');
     }
+  };
+
+  const openLinkUnits = async (u) => {
+    setEditId(u.id);
+    let unit_ids = [];
+    try {
+      const { data } = await api.get(`/users/owners/${u.id}/units`);
+      unit_ids = (Array.isArray(data) ? data : []).map((x) => x.id);
+    } catch {
+      unit_ids = [];
+    }
+    setOwnerForm({
+      full_name: u.full_name || '',
+      phone: u.username || '',
+      email: '',
+      is_active: u.is_active,
+      unit_ids,
+    });
+    setModal('link-units');
   };
 
   const handleSaveStaff = () => {
@@ -423,6 +680,7 @@ export default function Users() {
         is_active: ownerForm.is_active,
         role: 'owner',
         base_salary: 0,
+        unit_ids: ownerForm.unit_ids || [],
       });
     } else {
       saveOwnerMutation.mutate({
@@ -432,8 +690,17 @@ export default function Users() {
         email: ownerForm.email?.trim() || '',
         role: 'owner',
         base_salary: 0,
+        unit_ids: ownerForm.unit_ids || [],
       });
     }
+  };
+
+  const handleSaveLinkUnits = () => {
+    if (!editId) return;
+    linkUnitsMutation.mutate({
+      ownerId: editId,
+      unit_ids: ownerForm.unit_ids || [],
+    });
   };
 
   const filterRoleOptions = isAdmin
@@ -463,7 +730,9 @@ export default function Users() {
 
   const showAddButton = isOwnersTab ? canCreateOwners : staffRoleOptions.length > 0;
   const saving =
-    saveStaffMutation.isPending || saveOwnerMutation.isPending;
+    saveStaffMutation.isPending ||
+    saveOwnerMutation.isPending ||
+    linkUnitsMutation.isPending;
 
   return (
     <div className="space-y-6">
@@ -631,6 +900,15 @@ export default function Users() {
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
+                        {isAdmin && (
+                          <button
+                            onClick={() => openLinkUnits(u)}
+                            className="p-1.5 rounded text-gray-400 hover:text-emerald-600 hover:bg-emerald-50"
+                            title="Link units"
+                          >
+                            <Link2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         <button
                           onClick={() => resetPwMutation.mutate(u.id)}
                           className="p-1.5 rounded text-gray-400 hover:text-yellow-600 hover:bg-yellow-50"
@@ -852,6 +1130,32 @@ export default function Users() {
           form={ownerForm}
           setForm={setOwnerForm}
           isEdit={modal === 'edit-owner'}
+          ownerId={modal === 'edit-owner' ? editId : null}
+          showUnits={isAdmin}
+        />
+      </Modal>
+
+      <Modal
+        open={modal === 'link-units'}
+        onClose={() => setModal(null)}
+        title={`Link units — ${ownerForm.full_name || 'Owner'}`}
+        size="lg"
+        footer={
+          <>
+            <button onClick={() => setModal(null)} className="btn-secondary">
+              Cancel
+            </button>
+            <button onClick={handleSaveLinkUnits} disabled={saving} className="btn-primary">
+              {saving ? 'Saving...' : 'Save links'}
+            </button>
+          </>
+        }
+      >
+        <OwnerUnitPicker
+          selectedIds={ownerForm.unit_ids || []}
+          onChange={(unit_ids) => setOwnerForm((f) => ({ ...f, unit_ids }))}
+          ownerId={editId}
+          enabled={modal === 'link-units'}
         />
       </Modal>
 
@@ -864,15 +1168,35 @@ export default function Users() {
         title={createdInfo?.role === 'owner' ? 'Owner account created' : 'Staff account created'}
         size="sm"
         footer={
-          <button
-            onClick={() => {
-              setModal(null);
-              setCreatedInfo(null);
-            }}
-            className="btn-primary"
-          >
-            Done
-          </button>
+          <>
+            {createdInfo?.role === 'owner' && isAdmin && (
+              <button
+                onClick={() => {
+                  const id = createdInfo.id;
+                  const name = createdInfo.full_name;
+                  setCreatedInfo(null);
+                  openLinkUnits({
+                    id,
+                    full_name: name,
+                    username: createdInfo.username,
+                    is_active: createdInfo.is_active ?? 1,
+                  });
+                }}
+                className="btn-secondary"
+              >
+                Link units
+              </button>
+            )}
+            <button
+              onClick={() => {
+                setModal(null);
+                setCreatedInfo(null);
+              }}
+              className="btn-primary"
+            >
+              Done
+            </button>
+          </>
         }
       >
         {createdInfo && (
@@ -902,6 +1226,16 @@ export default function Users() {
                 {createdInfo.temporaryPassword || TEMP_STAFF_PASSWORD}
               </span>
             </p>
+            {createdInfo.role === 'owner' && (
+              <p className="text-xs text-slate-500">
+                Units linked: {createdInfo.unit_count ?? 0}
+                {createdInfo.unitLinkError
+                  ? ` — ${createdInfo.unitLinkError}`
+                  : createdInfo.unit_count
+                    ? ''
+                    : ' — use Link units to assign portal access'}
+              </p>
+            )}
             <p className="text-xs text-amber-700 mt-2">
               Share these credentials securely. The user must change the password on first login.
             </p>
