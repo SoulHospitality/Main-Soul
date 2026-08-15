@@ -1983,6 +1983,7 @@ export default function Schedule() {
           lockSalesPerson={(isManualReservations || isWebsiteReservations) && !isAdmin}
           currentUserName={user?.full_name || user?.username || ''}
           showCommission={isAdmin}
+          allowPastDates={isAdmin}
           onCancel={() => { setCreateDrawer(false); setCreateProof(null); }}
           onSubmit={handleCreateReservation}
           submitting={createReservationMutation.isPending}

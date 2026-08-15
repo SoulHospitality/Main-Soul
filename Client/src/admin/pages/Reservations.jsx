@@ -926,7 +926,7 @@ export default function Reservations() {
     canAccessFinance,
     user,
   } = usePermissions();
-  const allowPastDates = isReservations || isAdmin;
+  const allowPastDates = isAdmin;
   const agentOnly =
     !isAdmin && (isWebsiteReservations || isManualReservations || isReservations);
   const pageTitle = agentOnly ? 'My Reservations' : 'Reservations';
@@ -1687,6 +1687,7 @@ export default function Reservations() {
           lockSalesPerson={(isManualReservations || isWebsiteReservations) && !isAdmin}
           currentUserName={user?.full_name || user?.username || ''}
           showCommission={isAdmin}
+          allowPastDates={isAdmin}
           onCancel={() => { setModal(null); setTransferProof(null); }}
           onSubmit={handleSave}
           submitting={saveMutation.isPending}

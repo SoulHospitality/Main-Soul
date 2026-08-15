@@ -83,6 +83,7 @@ export default function ManualReservationForm({
   lockSalesPerson = false,
   currentUserName = '',
   showCommission = false,
+  allowPastDates = false,
   onCancel,
   onSubmit,
   submitting = false,
@@ -91,7 +92,11 @@ export default function ManualReservationForm({
   const selectedUnit = units.find((unit) => String(unit.id) === String(form.unit_id));
   const minNights = getMinimumStayNights(selectedUnit);
 
-  const from = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const from = useMemo(() => {
+    const d = new Date();
+    if (allowPastDates) d.setMonth(d.getMonth() - 18);
+    return d.toISOString().slice(0, 10);
+  }, [allowPastDates]);
   const to = useMemo(() => {
     const d = new Date();
     d.setMonth(d.getMonth() + 12);
@@ -252,6 +257,7 @@ export default function ManualReservationForm({
               <>
                 <ListingDatePicker
                   inline
+                  allowPastDates={allowPastDates}
                   value={{
                     start: isoToLocalDate(form.check_in),
                     end: isoToLocalDate(form.check_out),
@@ -268,6 +274,7 @@ export default function ManualReservationForm({
                 />
                 <p className="mt-2 text-xs text-[#5b6b80]">
                   Minimum stay for this project: {minNights} night{minNights === 1 ? '' : 's'}
+                  {allowPastDates ? ' · Admins can backdate forgotten stays' : ''}
                 </p>
                 {availabilityLoading && (
                   <p className="mt-2 text-xs text-[#5b6b80]">Loading availability…</p>

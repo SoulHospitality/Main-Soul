@@ -28,6 +28,7 @@ export default function ListingDatePicker({
   dailyPrices = {},
   minNights = 1,
   inline = false,
+  allowPastDates = false,
 }) {
   const { t, localeTag } = useLocale();
   const [view, setView] = useState(() => {
@@ -99,7 +100,7 @@ export default function ListingDatePicker({
   function pick(d) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    if (d < today) return;
+    if (!allowPastDates && d < today) return;
 
     const isBlockedNight = blockedSet.has(dateToIso(d));
     const choosingCheckout = !!value.start && !value.end && d > value.start;
@@ -165,7 +166,16 @@ export default function ListingDatePicker({
       </div>
 
       <div className={`grid gap-6 ${inline ? 'grid-cols-1 sm:grid-cols-2 sm:gap-6' : 'grid-cols-1 md:grid-cols-2 gap-8'}`}>
-        <Month month={view} value={value} onPick={pick} blockedSet={blockedSet} dailyPrices={dailyPrices} minNights={minNights} localeTag={localeTag} />
+        <Month
+          month={view}
+          value={value}
+          onPick={pick}
+          blockedSet={blockedSet}
+          dailyPrices={dailyPrices}
+          minNights={minNights}
+          localeTag={localeTag}
+          allowPastDates={allowPastDates}
+        />
         <Month
           month={new Date(view.getFullYear(), view.getMonth() + 1, 1)}
           value={value}
@@ -174,8 +184,15 @@ export default function ListingDatePicker({
           dailyPrices={dailyPrices}
           minNights={minNights}
           localeTag={localeTag}
+          allowPastDates={allowPastDates}
         />
       </div>
+
+      {allowPastDates && (
+        <div className="mt-2 rounded-[12px] border border-amber-200 bg-amber-50 px-3 py-2 text-[11.5px] text-amber-800">
+          Past dates are allowed — verify there are no conflicts before saving.
+        </div>
+      )}
 
       {blockedSet.size > 0 && (
         <div className="mt-3 flex items-center gap-2 text-[11.5px] text-soul-muted">
@@ -226,7 +243,7 @@ export default function ListingDatePicker({
   );
 }
 
-function Month({ month, value, onPick, blockedSet, dailyPrices, minNights, localeTag }) {
+function Month({ month, value, onPick, blockedSet, dailyPrices, minNights, localeTag, allowPastDates = false }) {
   const y = month.getFullYear();
   const mo = month.getMonth();
   const first = new Date(y, mo, 1);
@@ -247,6 +264,7 @@ function Month({ month, value, onPick, blockedSet, dailyPrices, minNights, local
     const date = new Date(y, mo, d);
     const iso = `${y}-${String(mo + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     const past = date < today;
+    const pastLocked = past && !allowPastDates;
     const blocked = blockedSet.has(iso);
     const violatesMin =
       !!minNights &&
@@ -269,14 +287,14 @@ function Month({ month, value, onPick, blockedSet, dailyPrices, minNights, local
     const isStart = value.start && +date === +value.start;
     const isEnd = value.end && +date === +value.end;
     const between = value.start && value.end && date > value.start && date < value.end;
-    const disabled = past || (choosingCheckout ? !validCheckout : blocked || violatesMin);
+    const disabled = pastLocked || (choosingCheckout ? !validCheckout : blocked || violatesMin);
     const price = !disabled ? dailyPrices?.[iso] : undefined;
 
     let cls = hasAnyPrice
       ? 'min-h-[52px] flex flex-col items-center justify-center rounded-[10px] text-sm font-medium transition-colors px-0.5'
       : 'aspect-square grid place-items-center rounded-full text-sm font-medium transition-colors';
 
-    if (past) cls += ' text-soul-muted/40 line-through cursor-not-allowed';
+    if (pastLocked) cls += ' text-soul-muted/40 line-through cursor-not-allowed';
     else if (isStart || isEnd) cls += ' bg-soul-blue text-white font-bold cursor-pointer';
     else if (between) cls += ' bg-soul-blue-50 text-soul-blue rounded-none cursor-pointer';
     else if (choosingCheckout && validCheckout) {
