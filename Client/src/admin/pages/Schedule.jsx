@@ -60,8 +60,8 @@ const normDate = d => String(d).split('T')[0];
 
 function buildRow(unitId, dates, reservations) {
   const unitRes = reservations
-    .filter(r => r.unit_id === unitId)
-    .map(r => ({ ...r, check_in: normDate(r.check_in), check_out: normDate(r.check_out) }));
+    .filter((r) => r.unit_id === unitId)
+    .map((r) => ({ ...r, check_in: normDate(r.check_in), check_out: normDate(r.check_out) }));
 
   const cells = [];
   let i = 0;
@@ -70,38 +70,49 @@ function buildRow(unitId, dates, reservations) {
     const dStr = isoDate(dates[i]);
 
     
-    const ciRes = unitRes.find(r => r.check_in === dStr);
-    if (ciRes) {
-      cells.push({ type: 'checkin', res: ciRes, date: dStr, unitId });
-      i++;
-      
-      let span = 0;
-      const midStart = i < dates.length ? isoDate(dates[i]) : null;
-      while (i < dates.length && isoDate(dates[i]) < ciRes.check_out) { span++; i++; }
-      if (span > 0) cells.push({ type: 'mid', res: ciRes, span, firstDate: midStart, unitId });
-      
-      if (i < dates.length && isoDate(dates[i]) === ciRes.check_out) {
-        cells.push({ type: 'checkout', res: ciRes, date: ciRes.check_out, unitId });
-        i++;
-      }
-      continue;
-    }
-
-    
-    const midRes = unitRes.find(r => r.check_in < dStr && r.check_out > dStr);
-    if (midRes) {
+    const covering = unitRes.find((r) => r.check_in < dStr && r.check_out > dStr);
+    if (covering) {
       let span = 0;
       const midStart = dStr;
-      while (i < dates.length && isoDate(dates[i]) < midRes.check_out) { span++; i++; }
-      cells.push({ type: 'mid', res: midRes, span, firstDate: midStart, unitId });
-      if (i < dates.length && isoDate(dates[i]) === midRes.check_out) {
-        cells.push({ type: 'checkout', res: midRes, date: midRes.check_out, unitId });
+      while (i < dates.length) {
+        const d = isoDate(dates[i]);
+        if (!(covering.check_in < d && covering.check_out > d)) break;
+        span++;
         i++;
       }
+      cells.push({ type: 'mid', res: covering, span, firstDate: midStart, unitId });
+      continue;
+    }
+
+    const starting = unitRes.find((r) => r.check_in === dStr);
+    const ending = unitRes.find((r) => r.check_out === dStr);
+
+    
+    if (starting && ending && starting.id !== ending.id) {
+      cells.push({
+        type: 'turnover',
+        outRes: ending,
+        inRes: starting,
+        date: dStr,
+        unitId,
+      });
+      i++;
+      continue;
+    }
+
+    if (starting) {
+      cells.push({ type: 'checkin', res: starting, date: dStr, unitId });
+      i++;
       continue;
     }
 
     
+    if (ending) {
+      cells.push({ type: 'checkout', res: ending, date: dStr, unitId });
+      i++;
+      continue;
+    }
+
     cells.push({ type: 'price', date: dStr, unitId });
     i++;
   }
@@ -1785,10 +1796,11 @@ export default function Schedule() {
                         );
                       }
 
-                      const { bg, text, hover, ring, strike } = resColors(cell.res, TODAY);
-                      const tipText = `${cell.res.status === 'cancelled' ? 'CANCELLED · ' : ''}${cell.res.guest_name}\n${formatDate(normDate(cell.res.check_in))} → ${formatDate(normDate(cell.res.check_out))}\n${nightsText(cell.res.nights)} · ${currency(cell.res.total_amount)}`;
-
-                      if (cell.type === 'checkin') {
+                      if (cell.type === 'turnover') {
+                        const outColors = resColors(cell.outRes, TODAY);
+                        const inColors = resColors(cell.inRes, TODAY);
+                        const outTip = `${cell.outRes.guest_name}\n${formatDate(normDate(cell.outRes.check_in))} → ${formatDate(normDate(cell.outRes.check_out))}\nCheckout morning`;
+                        const inTip = `${cell.inRes.guest_name}\n${formatDate(normDate(cell.inRes.check_in))} → ${formatDate(normDate(cell.inRes.check_out))}\nCheck-in afternoon`;
                         return (
                           <td
                             key={j}
@@ -1796,7 +1808,54 @@ export default function Schedule() {
                             className="border-r border-slate-100 p-0 align-middle"
                           >
                             <div className="flex h-9 items-center">
-                              <div className="h-full w-1/2" />
+                              <div
+                                className={`h-6 w-1/2 cursor-pointer rounded-r-full shadow-sm ring-1 ${outColors.bg} ${outColors.hover} ${outColors.ring} transition`}
+                                title={outTip}
+                                onClick={() => handleResClick(cell.outRes)}
+                              />
+                              <div
+                                className={`h-6 w-1/2 cursor-pointer rounded-l-full shadow-sm ring-1 ${inColors.bg} ${inColors.hover} ${inColors.ring} transition`}
+                                title={inTip}
+                                onClick={() => handleResClick(cell.inRes)}
+                              />
+                            </div>
+                          </td>
+                        );
+                      }
+
+                      const { bg, text, hover, ring, strike } = resColors(cell.res, TODAY);
+                      const tipText = `${cell.res.status === 'cancelled' ? 'CANCELLED · ' : ''}${cell.res.guest_name}\n${formatDate(normDate(cell.res.check_in))} → ${formatDate(normDate(cell.res.check_out))}\n${nightsText(cell.res.nights)} · ${currency(cell.res.total_amount)}`;
+
+                      if (cell.type === 'checkin') {
+                        const openPrice = getUnitDayPrice(unit, cell.date);
+                        const isPastOpen = cell.date < TODAY;
+                        return (
+                          <td
+                            key={j}
+                            style={{ minWidth: CELL_W, width: CELL_W }}
+                            className="border-r border-slate-100 p-0 align-middle"
+                          >
+                            <div className="flex h-9 items-center">
+                              <div
+                                className={`flex h-full w-1/2 items-center justify-center ${
+                                  canEditPrice && !isPastOpen
+                                    ? 'cursor-pointer hover:bg-emerald-50/80'
+                                    : ''
+                                }`}
+                                title={`Open morning · checkout day for prior stay · ${formatDate(cell.date)}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (canEditPrice && !isPastOpen) handlePriceClick(unit, cell.date);
+                                }}
+                              >
+                                {openPrice != null && openPrice > 0 ? (
+                                  <span className="text-[8px] font-bold text-emerald-700">
+                                    {openPrice >= 1000
+                                      ? `${(openPrice / 1000).toFixed(openPrice % 1000 === 0 ? 0 : 1)}k`
+                                      : openPrice}
+                                  </span>
+                                ) : null}
+                              </div>
                               <div
                                 className={`h-6 flex-1 cursor-pointer rounded-l-full shadow-sm ring-1 ${bg} ${hover} ${ring} transition`}
                                 title={tipText}
@@ -1839,11 +1898,13 @@ export default function Schedule() {
                       }
 
                       if (cell.type === 'checkout') {
+                        const openPrice = getUnitDayPrice(unit, cell.date);
+                        const isPastOpen = cell.date < TODAY;
                         return (
                           <td
                             key={j}
                             style={{ minWidth: CELL_W, width: CELL_W }}
-                            className="border-r border-slate-100 p-0 align-middle"
+                            className="border-r border-slate-100 p-0 align-middle bg-emerald-50/40"
                           >
                             <div className="flex h-9 items-center">
                               <div
@@ -1851,7 +1912,28 @@ export default function Schedule() {
                                 title={tipText}
                                 onClick={() => handleResClick(cell.res)}
                               />
-                              <div className="h-full flex-1" />
+                              <div
+                                className={`flex h-full flex-1 items-center justify-center ${
+                                  canEditPrice && !isPastOpen
+                                    ? 'cursor-pointer hover:bg-emerald-100/80'
+                                    : ''
+                                }`}
+                                title={`Open for next check-in · ${formatDate(cell.date)}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (canEditPrice && !isPastOpen) handlePriceClick(unit, cell.date);
+                                }}
+                              >
+                                {openPrice != null && openPrice > 0 ? (
+                                  <span className="text-[8px] font-bold text-emerald-700">
+                                    {openPrice >= 1000
+                                      ? `${(openPrice / 1000).toFixed(openPrice % 1000 === 0 ? 0 : 1)}k`
+                                      : openPrice}
+                                  </span>
+                                ) : (
+                                  <span className="text-[8px] font-semibold text-emerald-600/70">in</span>
+                                )}
+                              </div>
                             </div>
                           </td>
                         );
@@ -1887,7 +1969,7 @@ export default function Schedule() {
       )}
 
       <p className="text-right text-[11px] text-soul-muted">
-        Tap a night to price or block it · Unpriced nights stay closed to guests · Bars open reservation details
+        Tap a night to price or block it · Checkout days stay open for the next check-in · Bars open reservation details
       </p>
 
       

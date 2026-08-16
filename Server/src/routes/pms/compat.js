@@ -1500,7 +1500,7 @@ router.get('/reservations/blocked-dates', async (req, res, next) => {
         const toDate = new Date(from);
         toDate.setMonth(toDate.getMonth() + 8);
         const to = req.query.to || toDate.toISOString().slice(0, 10);
-        const blocked = await getBlockedDates(wp, from, to, { includeUnpriced: true });
+        const blocked = await getBlockedDates(wp, from, to, { includeUnpriced: false });
         
         guestBlocked = blocked
           .filter((b) => b.source !== 'reservation')

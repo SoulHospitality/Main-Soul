@@ -49,7 +49,7 @@ function formatNights(checkIn, checkOut) {
 }
 
 
-function MonthGrid({ year, month, checkIn, checkOut, hovering, blockedSet, checkoutOnlySet, onDayClick, onDayHover, today, allowPastDates }) {
+function MonthGrid({ year, month, checkIn, checkOut, hovering, blockedSet, checkoutOnlySet, onDayClick, onDayHover, today, allowPastDates, rangeHasConflict }) {
   const total = daysInMonth(year, month);
   const firstDow = new Date(year, month, 1).getDay(); 
   const header = new Date(year, month).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
@@ -76,12 +76,24 @@ function MonthGrid({ year, month, checkIn, checkOut, hovering, blockedSet, check
 
           const ds = isoStr(date);
           const isPast       = ds < today;
+          const choosingCheckout = !!(checkIn && !checkOut);
+          const validCheckout =
+            choosingCheckout &&
+            ds > checkIn &&
+            typeof rangeHasConflict === 'function' &&
+            !rangeHasConflict(checkIn, ds);
           
-          const isBlocked    = blockedSet.has(ds) && !checkoutOnlySet.has(ds);
+          const isNightBlocked = blockedSet.has(ds);
           
-          
-          const isCoOnly     = checkoutOnlySet.has(ds) && !blockedSet.has(ds);
-          const isDisabled   = (isPast && !allowPastDates) || isBlocked;
+          const isCoOnly = checkoutOnlySet.has(ds) && !isNightBlocked;
+          let isDisabled = isPast && !allowPastDates;
+          if (!isDisabled) {
+            if (choosingCheckout) {
+              isDisabled = ds <= checkIn ? isNightBlocked : !validCheckout;
+            } else {
+              isDisabled = isNightBlocked;
+            }
+          }
           const isToday      = ds === today;
 
           const isCheckIn    = ds === checkIn;
@@ -115,8 +127,7 @@ function MonthGrid({ year, month, checkIn, checkOut, hovering, blockedSet, check
             circleClass += 'bg-gray-900 text-white ';
           } else if (isDisabled) {
             circleClass += 'text-gray-300 cursor-not-allowed line-through ';
-          } else if (isCoOnly) {
-            
+          } else if (isCoOnly || (choosingCheckout && validCheckout && isNightBlocked)) {
             
             circleClass += 'text-emerald-700 font-semibold cursor-pointer hover:bg-emerald-50 ring-1 ring-emerald-300 ';
           } else {
@@ -133,9 +144,11 @@ function MonthGrid({ year, month, checkIn, checkOut, hovering, blockedSet, check
               onClick={() => !isDisabled && onDayClick(ds)}
               onMouseEnter={() => !isDisabled && onDayHover(ds)}
               title={
-                isBlocked ? 'Unavailable — already booked' :
-                isCoOnly  ? '✓ Turnover day — free to check in or check out here' :
-                undefined
+                isDisabled && isNightBlocked ? 'Unavailable — already booked' :
+                isCoOnly  ? '✓ Checkout day — free for the next check-in' :
+                choosingCheckout && validCheckout && isNightBlocked
+                  ? '✓ Valid check-out (next guest arrives this day)'
+                : undefined
               }
             >
               
@@ -190,58 +203,52 @@ export default function BookingCalendar({ checkIn, checkOut, onChange, unitId, e
   
   const { blockedSet, checkoutOnlySet } = useMemo(() => {
     const blocked = new Set();
-    const turnover = new Set(); 
-    reservedRanges.forEach(r => {
-      
-      if (r._guest_block || r.date) {
+    const turnover = new Set();
+    reservedRanges.forEach((r) => {
+      if (r._guest_block) {
+        if (r.source === 'unpriced') return;
         blocked.add(normaliseDate(r.date || r.check_in));
         return;
       }
       const ci = normaliseDate(r.check_in);
       const co = normaliseDate(r.check_out);
-      
-      let cur = addOneDayStr(ci);
+      if (!ci || !co || co <= ci) return;
+      let cur = ci;
       while (cur < co) {
         blocked.add(cur);
         cur = addOneDayStr(cur);
       }
-      
-      turnover.add(ci); 
-      turnover.add(co); 
+      turnover.add(co);
     });
     return { blockedSet: blocked, checkoutOnlySet: turnover };
   }, [reservedRanges]);
 
   
   const rangeHasConflict = useCallback((from, to) => {
-    let cur = addOneDayStr(from);
+    let cur = from;
     while (cur < to) {
-      
-      if (blockedSet.has(cur) && !checkoutOnlySet.has(cur)) return true;
+      if (blockedSet.has(cur)) return true;
       cur = addOneDayStr(cur);
     }
     return false;
-  }, [blockedSet, checkoutOnlySet]);
+  }, [blockedSet]);
 
   
   const handleDayClick = useCallback((ds) => {
-    
-    if (blockedSet.has(ds) && !checkoutOnlySet.has(ds)) {
-      toast.error('This date is unavailable');
-      return;
-    }
+    const fullyBlocked = blockedSet.has(ds);
 
     if (!checkIn || (checkIn && checkOut)) {
-      
+      if (fullyBlocked) {
+        toast.error('This date is unavailable');
+        return;
+      }
       onChange(ds, '');
       setHovering(null);
       return;
     }
 
-    
     if (ds <= checkIn) {
-      
-      if (blockedSet.has(ds) && !checkoutOnlySet.has(ds)) return;
+      if (fullyBlocked) return;
       onChange(ds, '');
       setHovering(null);
       return;
@@ -255,7 +262,7 @@ export default function BookingCalendar({ checkIn, checkOut, onChange, unitId, e
 
     onChange(checkIn, ds);
     setHovering(null);
-  }, [checkIn, checkOut, onChange, blockedSet, checkoutOnlySet, rangeHasConflict]);
+  }, [checkIn, checkOut, onChange, blockedSet, rangeHasConflict]);
 
   
   const goPrev = () => {
@@ -277,6 +284,7 @@ export default function BookingCalendar({ checkIn, checkOut, onChange, unitId, e
     onDayHover: setHovering,
     today,
     allowPastDates,
+    rangeHasConflict,
   };
 
   if (!unitId) {

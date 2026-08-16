@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronDown, Upload } from 'lucide-react';
-import guestApi from '../../api/http';
+import api from '../api/axios';
 import ListingDatePicker, {
   isoToLocalDate,
   localDateToIso,
@@ -25,6 +25,36 @@ import {
   calcReservationFinancials,
   commissionModeLabel,
 } from '../utils/commission';
+
+function addOneDayStr(dateStr) {
+  const [y, m, d] = String(dateStr).slice(0, 10).split('-').map(Number);
+  const next = new Date(y, m - 1, d + 1);
+  const yy = next.getFullYear();
+  const mm = String(next.getMonth() + 1).padStart(2, '0');
+  const dd = String(next.getDate()).padStart(2, '0');
+  return `${yy}-${mm}-${dd}`;
+}
+
+/** Stay nights are [check_in, check_out) — checkout day stays free for the next guest. */
+function blockedNightsFromRanges(ranges = []) {
+  const nights = new Set();
+  for (const r of ranges) {
+    if (r._guest_block) {
+      if (r.source === 'unpriced') continue;
+      const d = String(r.date || r.check_in || '').slice(0, 10);
+      if (d) nights.add(d);
+      continue;
+    }
+    let cur = String(r.check_in || '').slice(0, 10);
+    const co = String(r.check_out || '').slice(0, 10);
+    if (!cur || !co || co <= cur) continue;
+    while (cur < co) {
+      nights.add(cur);
+      cur = addOneDayStr(cur);
+    }
+  }
+  return [...nights];
+}
 
 const money = (value) =>
   `EGP ${Number(value || 0).toLocaleString('en-EG', {
@@ -92,30 +122,19 @@ export default function ManualReservationForm({
   // Staff / reservation-team bookings: no project minimum stay (guests still have one).
   const minNights = 1;
 
-  const from = useMemo(() => {
-    const d = new Date();
-    if (allowPastDates) d.setMonth(d.getMonth() - 18);
-    return d.toISOString().slice(0, 10);
-  }, [allowPastDates]);
-  const to = useMemo(() => {
-    const d = new Date();
-    d.setMonth(d.getMonth() + 12);
-    return d.toISOString().slice(0, 10);
-  }, []);
-
-  const { data: availability, isLoading: availabilityLoading } = useQuery({
-    queryKey: ['manual-availability', form.unit_id, from, to],
+  const { data: reservedRanges = [], isLoading: availabilityLoading } = useQuery({
+    queryKey: ['manual-blocked-dates', form.unit_id],
     queryFn: () =>
-      guestApi
-        .get(`/units/${form.unit_id}/availability`, { params: { from, to } })
+      api
+        .get('/reservations/blocked-dates', { params: { unit_id: form.unit_id } })
         .then((r) => r.data),
     enabled: Boolean(form.unit_id),
     staleTime: 30_000,
   });
 
   const blockedDates = useMemo(
-    () => (availability?.blocked || []).map((item) => item.date || item).filter(Boolean),
-    [availability]
+    () => blockedNightsFromRanges(Array.isArray(reservedRanges) ? reservedRanges : []),
+    [reservedRanges]
   );
 
   const nights = useMemo(() => {
