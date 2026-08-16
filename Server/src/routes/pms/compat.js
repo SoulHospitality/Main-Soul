@@ -105,10 +105,11 @@ router.get('/users/owners/linkable-units', requireRoles('admin'), async (req, re
   }
 });
 
-router.get('/users/owners/:id/units', requireRoles('admin'), async (req, res, next) => {
+router.get('/users/owners/:id/units', requireRoles('admin', 'hr'), async (req, res, next) => {
   try {
     const { rows } = await query(
-      `SELECT u.id, u.title, u.unit_number, u.project, u.compound,
+      `SELECT u.id, u.title, u.unit_number, u.project, u.compound, u.area,
+              u.status, u.listing_type, u.ops_status,
               COALESCE(u.unit_number, u.title) AS name,
               COALESCE(u.project, u.compound) AS project_label
        FROM owner_units ou

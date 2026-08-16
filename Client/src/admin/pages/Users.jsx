@@ -13,6 +13,7 @@ import {
   Check,
   X,
   Link2,
+  Eye,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
@@ -413,6 +414,103 @@ function OwnerForm({ form, setForm, isEdit, ownerId, showUnits }) {
   );
 }
 
+function ownerEmailDisplay(email) {
+  if (!email || String(email).includes('@soul.owners.local')) return '—';
+  return email;
+}
+
+function OwnerDetailsView({ owner, units, loading }) {
+  if (!owner) return null;
+  const linked = Array.isArray(units) ? units : [];
+
+  return (
+    <div className="space-y-5">
+      <div className="rounded-xl border border-soul-line bg-slate-50 px-4 py-4">
+        <div className="flex items-start gap-3">
+          <div
+            className="w-11 h-11 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
+            style={avatarStyle('owner')}
+          >
+            {owner.full_name?.charAt(0)?.toUpperCase() || 'O'}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="font-semibold text-soul-blue">{owner.full_name}</div>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              {owner.is_active ? (
+                <span className="flex items-center gap-1 text-green-600 text-xs">
+                  <CheckCircle className="w-3.5 h-3.5" /> Active
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-red-500 text-xs">
+                  <XCircle className="w-3.5 h-3.5" /> Inactive
+                </span>
+              )}
+              {owner.is_first_login ? (
+                <span className="text-[10px] text-amber-600 font-medium">Must change password</span>
+              ) : null}
+            </div>
+          </div>
+        </div>
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+          <div>
+            <div className="text-[11px] uppercase tracking-wide text-gray-400">Phone</div>
+            <div className="font-mono font-semibold">{owner.username || '—'}</div>
+          </div>
+          <div>
+            <div className="text-[11px] uppercase tracking-wide text-gray-400">Email</div>
+            <div>{ownerEmailDisplay(owner.email)}</div>
+          </div>
+          <div>
+            <div className="text-[11px] uppercase tracking-wide text-gray-400">Created</div>
+            <div>{formatDate(owner.created_at)}</div>
+          </div>
+          <div>
+            <div className="text-[11px] uppercase tracking-wide text-gray-400">Linked units</div>
+            <div className="tabular-nums font-semibold">{linked.length}</div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div className="text-sm font-medium text-soul-blue mb-2">Linked units</div>
+        {loading ? (
+          <LoadingSpinner />
+        ) : linked.length === 0 ? (
+          <p className="text-sm text-gray-500 py-6 text-center">No units linked to this owner.</p>
+        ) : (
+          <div className="table-wrapper rounded-xl border border-soul-line">
+            <table className="table text-xs">
+              <thead>
+                <tr>
+                  <th>Unit</th>
+                  <th>Project</th>
+                  <th>Area</th>
+                  <th>Type</th>
+                </tr>
+              </thead>
+              <tbody>
+                {linked.map((u) => (
+                  <tr key={u.id}>
+                    <td className="font-medium">
+                      {u.unit_number || u.name || u.title || '—'}
+                      {u.title && u.unit_number && u.title !== u.unit_number ? (
+                        <div className="text-[10px] text-gray-400 font-normal">{u.title}</div>
+                      ) : null}
+                    </td>
+                    <td>{u.project || u.compound || u.project_label || '—'}</td>
+                    <td>{u.area || '—'}</td>
+                    <td className="capitalize">{u.listing_type || 'rent'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Users() {
   const qc = useQueryClient();
   const { isAdmin, role } = usePermissions();
@@ -436,6 +534,7 @@ export default function Users() {
   const [editId, setEditId] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
   const [createdInfo, setCreatedInfo] = useState(null);
+  const [viewOwnerId, setViewOwnerId] = useState(null);
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ['users'],
@@ -448,9 +547,16 @@ export default function Users() {
     enabled: isOwnersTab,
   });
 
+  const { data: viewOwnerUnits = [], isLoading: viewUnitsLoading } = useQuery({
+    queryKey: ['owner-units', viewOwnerId],
+    queryFn: () => api.get(`/users/owners/${viewOwnerId}/units`).then((r) => r.data),
+    enabled: Boolean(viewOwnerId),
+  });
+
   const unitCountById = Object.fromEntries(
     (Array.isArray(ownerStats) ? ownerStats : []).map((o) => [o.id, o.unit_count])
   );
+  const viewOwner = users.find((u) => Number(u.id) === Number(viewOwnerId)) || null;
 
   const scopedUsers = users.filter((u) =>
     isOwnersTab ? u.role === 'owner' : u.role !== 'owner'
@@ -504,6 +610,7 @@ export default function Users() {
       qc.invalidateQueries({ queryKey: ['users'] });
       qc.invalidateQueries({ queryKey: ['users-owners'] });
       qc.invalidateQueries({ queryKey: ['owner-linkable-units'] });
+      qc.invalidateQueries({ queryKey: ['owner-units'] });
       if (!editId && res?.data) {
         setCreatedInfo(res.data);
         setModal('created');
@@ -530,6 +637,7 @@ export default function Users() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['users-owners'] });
       qc.invalidateQueries({ queryKey: ['owner-linkable-units'] });
+      qc.invalidateQueries({ queryKey: ['owner-units'] });
       toast.success('Unit links updated');
       setModal(null);
       setEditId(null);
@@ -894,6 +1002,13 @@ export default function Users() {
                     <td>
                       <div className="flex gap-1">
                         <button
+                          onClick={() => setViewOwnerId(u.id)}
+                          className="p-1.5 rounded text-gray-400 hover:text-soul-blue hover:bg-primary-50"
+                          title="View"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
+                        <button
                           onClick={() => openEdit(u)}
                           className="p-1.5 rounded text-gray-400 hover:text-primary-600 hover:bg-primary-50"
                           title="Edit"
@@ -1069,6 +1184,48 @@ export default function Users() {
           </div>
         </div>
       )}
+
+      <Modal
+        open={!!viewOwnerId}
+        onClose={() => setViewOwnerId(null)}
+        title={viewOwner?.full_name ? viewOwner.full_name : 'Owner details'}
+        size="lg"
+        footer={
+          <>
+            <button type="button" className="btn-secondary" onClick={() => setViewOwnerId(null)}>
+              Close
+            </button>
+            {viewOwner && (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => {
+                  const owner = viewOwner;
+                  setViewOwnerId(null);
+                  openEdit(owner);
+                }}
+              >
+                Edit
+              </button>
+            )}
+            {viewOwner && isAdmin && (
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => {
+                  const owner = viewOwner;
+                  setViewOwnerId(null);
+                  openLinkUnits(owner);
+                }}
+              >
+                Link units
+              </button>
+            )}
+          </>
+        }
+      >
+        <OwnerDetailsView owner={viewOwner} units={viewOwnerUnits} loading={viewUnitsLoading} />
+      </Modal>
 
       <Modal
         open={modal === 'add-staff' || modal === 'edit-staff'}
