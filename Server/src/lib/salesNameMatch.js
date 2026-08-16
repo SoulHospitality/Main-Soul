@@ -13,6 +13,19 @@ function normalizeName(value) {
 /** Spreadsheet spellings that are the same sales person. */
 const EQUIVALENCE_GROUPS = [
   ['aml', 'amal', 'aml nasser', 'amal nasser', 'aml naser', 'amal naser'],
+  ['ahmed osama', 'osama'],
+  [
+    'abdullah al nabarawi',
+    'abdullah nabarawy',
+    'abdullah nabrawy',
+    'nabrawy',
+    'nabarawy',
+  ],
+  ['ahmed sherif', 'ahmed sharif'],
+  ['amro mousa', 'amr mousa', 'amro moussa', 'amr moussa'],
+  ['mohamed tarek', 'mohammad tarek', 'tarek'],
+  ['emery adham', 'emry adham', 'emery', 'emry'],
+  ['mazen mohamed', 'mazen'],
 ];
 
 function aliasLabelsForName(value) {
