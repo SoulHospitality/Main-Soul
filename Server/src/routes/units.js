@@ -1,6 +1,6 @@
 const express = require('express');
 const { query } = require('../config/db');
-const { quoteStay, getBlockedDates, todayIsoBusiness } = require('../services/pricing');
+const { quoteStay, getBlockedDates, getStayCheckoutDates, todayIsoBusiness } = require('../services/pricing');
 
 const router = express.Router();
 
@@ -269,7 +269,17 @@ router.get('/:idOrSlug/availability', async (req, res, next) => {
     toDate.setMonth(toDate.getMonth() + 6);
     const to = req.query.to || toDate.toISOString().slice(0, 10);
     const blocked = await getBlockedDates(unit.wp_post_id, from, to);
-    res.json({ wp_post_id: unit.wp_post_id, from, to, blocked });
+    const occupied = new Set(blocked.map((b) => b.date));
+    const checkoutDates = (await getStayCheckoutDates(unit.wp_post_id, from, to)).filter(
+      (d) => !occupied.has(d)
+    );
+    res.json({
+      wp_post_id: unit.wp_post_id,
+      from,
+      to,
+      blocked,
+      checkout_dates: checkoutDates,
+    });
   } catch (err) {
     next(err);
   }

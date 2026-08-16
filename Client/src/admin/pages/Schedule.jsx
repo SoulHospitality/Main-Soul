@@ -16,6 +16,7 @@ import ManualReservationForm, {
 import TransferReservationModal from '../components/TransferReservationModal';
 import { housekeepingFeeForUnit } from '../../utils/housekeeping';
 import { useAuth } from '../context/AuthContext';
+import { isoDateOnly } from '../../utils/stayNights';
 
 
 
@@ -54,7 +55,7 @@ function getMonthRange(dateStr) {
 }
 
 
-const normDate = d => String(d).split('T')[0];
+const normDate = (d) => isoDateOnly(d);
 
 
 
@@ -1835,29 +1836,31 @@ export default function Schedule() {
                             style={{ minWidth: CELL_W, width: CELL_W }}
                             className="border-r border-slate-100 p-0 align-middle"
                           >
-                            <div className="flex h-9 items-center">
+                            <div className="flex h-9 items-center overflow-hidden">
                               <div
-                                className={`flex h-full w-1/2 items-center justify-center ${
+                                className={`flex h-full w-1/2 items-center justify-center bg-emerald-50/90 ${
                                   canEditPrice && !isPastOpen
-                                    ? 'cursor-pointer hover:bg-emerald-50/80'
+                                    ? 'cursor-pointer hover:bg-emerald-100'
                                     : ''
                                 }`}
-                                title={`Open morning · checkout day for prior stay · ${formatDate(cell.date)}`}
+                                title={`Open morning — previous guest can check out · ${formatDate(cell.date)}`}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   if (canEditPrice && !isPastOpen) handlePriceClick(unit, cell.date);
                                 }}
                               >
                                 {openPrice != null && openPrice > 0 ? (
-                                  <span className="text-[8px] font-bold text-emerald-700">
+                                  <span className="text-[10px] font-bold leading-none text-emerald-700">
                                     {openPrice >= 1000
                                       ? `${(openPrice / 1000).toFixed(openPrice % 1000 === 0 ? 0 : 1)}k`
                                       : openPrice}
                                   </span>
-                                ) : null}
+                                ) : (
+                                  <span className="text-[8px] font-semibold text-emerald-600/70">out</span>
+                                )}
                               </div>
                               <div
-                                className={`h-6 flex-1 cursor-pointer rounded-l-full shadow-sm ring-1 ${bg} ${hover} ${ring} transition`}
+                                className={`h-6 w-1/2 cursor-pointer rounded-l-full shadow-sm ring-1 ${bg} ${hover} ${ring} transition`}
                                 title={tipText}
                                 onClick={() => handleResClick(cell.res)}
                               />
@@ -1904,18 +1907,18 @@ export default function Schedule() {
                           <td
                             key={j}
                             style={{ minWidth: CELL_W, width: CELL_W }}
-                            className="border-r border-slate-100 p-0 align-middle bg-emerald-50/40"
+                            className="border-r border-slate-100 p-0 align-middle bg-emerald-50/90"
                           >
-                            <div className="flex h-9 items-center">
+                            <div className="flex h-9 items-center overflow-hidden">
                               <div
-                                className={`h-6 w-1/4 cursor-pointer rounded-r-full shadow-sm ring-1 ${bg} ${hover} ${ring} transition`}
+                                className={`h-6 w-1/2 cursor-pointer rounded-r-full shadow-sm ring-1 ${bg} ${hover} ${ring} transition`}
                                 title={tipText}
                                 onClick={() => handleResClick(cell.res)}
                               />
                               <div
-                                className={`flex h-full flex-1 items-center justify-center ${
+                                className={`flex h-full w-1/2 items-center justify-center ${
                                   canEditPrice && !isPastOpen
-                                    ? 'cursor-pointer hover:bg-emerald-100/80'
+                                    ? 'cursor-pointer hover:bg-emerald-100'
                                     : ''
                                 }`}
                                 title={`Open for next check-in · ${formatDate(cell.date)}`}
@@ -1925,7 +1928,7 @@ export default function Schedule() {
                                 }}
                               >
                                 {openPrice != null && openPrice > 0 ? (
-                                  <span className="text-[8px] font-bold text-emerald-700">
+                                  <span className="text-[10px] font-bold leading-none text-emerald-700">
                                     {openPrice >= 1000
                                       ? `${(openPrice / 1000).toFixed(openPrice % 1000 === 0 ? 0 : 1)}k`
                                       : openPrice}

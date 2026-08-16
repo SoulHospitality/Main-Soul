@@ -25,36 +25,7 @@ import {
   calcReservationFinancials,
   commissionModeLabel,
 } from '../utils/commission';
-
-function addOneDayStr(dateStr) {
-  const [y, m, d] = String(dateStr).slice(0, 10).split('-').map(Number);
-  const next = new Date(y, m - 1, d + 1);
-  const yy = next.getFullYear();
-  const mm = String(next.getMonth() + 1).padStart(2, '0');
-  const dd = String(next.getDate()).padStart(2, '0');
-  return `${yy}-${mm}-${dd}`;
-}
-
-/** Stay nights are [check_in, check_out) — checkout day stays free for the next guest. */
-function blockedNightsFromRanges(ranges = []) {
-  const nights = new Set();
-  for (const r of ranges) {
-    if (r._guest_block) {
-      if (r.source === 'unpriced') continue;
-      const d = String(r.date || r.check_in || '').slice(0, 10);
-      if (d) nights.add(d);
-      continue;
-    }
-    let cur = String(r.check_in || '').slice(0, 10);
-    const co = String(r.check_out || '').slice(0, 10);
-    if (!cur || !co || co <= cur) continue;
-    while (cur < co) {
-      nights.add(cur);
-      cur = addOneDayStr(cur);
-    }
-  }
-  return [...nights];
-}
+import { occupancyFromRanges } from '../../utils/stayNights';
 
 const money = (value) =>
   `EGP ${Number(value || 0).toLocaleString('en-EG', {
@@ -132,10 +103,15 @@ export default function ManualReservationForm({
     staleTime: 30_000,
   });
 
-  const blockedDates = useMemo(
-    () => blockedNightsFromRanges(Array.isArray(reservedRanges) ? reservedRanges : []),
-    [reservedRanges]
-  );
+  const { blockedDates, checkoutDates } = useMemo(() => {
+    const { blockedSet, checkoutOnlySet } = occupancyFromRanges(
+      Array.isArray(reservedRanges) ? reservedRanges : []
+    );
+    return {
+      blockedDates: [...blockedSet],
+      checkoutDates: [...checkoutOnlySet].filter((d) => !blockedSet.has(d)),
+    };
+  }, [reservedRanges]);
 
   const nights = useMemo(() => {
     if (!form.check_in || !form.check_out) return 0;
@@ -289,6 +265,7 @@ export default function ManualReservationForm({
                     }))
                   }
                   blockedDates={blockedDates}
+                  checkoutDates={checkoutDates}
                   minNights={minNights}
                 />
                 {availabilityLoading && (

@@ -209,12 +209,16 @@ async function getBlockedDates(wpPostId, from, to, { includeUnpriced = true } = 
     if (!byDate.has(date)) byDate.set(date, source);
   };
 
-  const { rows: manual } = await query(
-    `SELECT date::text AS date FROM unit_blocked_dates
-     WHERE wp_post_id = $1 AND date >= $2 AND date < $3`,
+  // Stay occupancy comes from reservations/bookings below. Ignore leftover
+  // reservation-sourced rows so checkout days are not blocked twice (or at all).
+  const { rows: stored } = await query(
+    `SELECT date::text AS date, COALESCE(source, 'manual') AS source
+     FROM unit_blocked_dates
+     WHERE wp_post_id = $1 AND date >= $2 AND date < $3
+       AND COALESCE(source, 'manual') NOT IN ('reservation', 'reservation_import', 'booking')`,
     [wpPostId, from, to]
   );
-  for (const r of manual) push(r.date, 'manual');
+  for (const r of stored) push(r.date, r.source);
 
   const { rows: bookings } = await query(
     `SELECT d::text AS date FROM bookings b,
@@ -227,7 +231,6 @@ async function getBlockedDates(wpPostId, from, to, { includeUnpriced = true } = 
   );
   for (const r of bookings) push(r.date, 'booking');
 
-  
   const { rows: reservations } = await query(
     `SELECT d::text AS date FROM reservations r
        JOIN units u ON u.id = r.unit_id
@@ -244,7 +247,7 @@ async function getBlockedDates(wpPostId, from, to, { includeUnpriced = true } = 
     for (const date of live) push(date, 'ical');
   } catch (err) {
     console.warn('[pricing] live iCal failed', wpPostId, err.message);
-    
+
     const { rows: cached } = await query(
       `SELECT date::text AS date FROM unit_ical_blocks
        WHERE wp_post_id = $1 AND date >= $2 AND date < $3`,
@@ -261,9 +264,64 @@ async function getBlockedDates(wpPostId, from, to, { includeUnpriced = true } = 
     }
   }
 
+  // Checkout day is free for the next check-in. Drop stale leftover blocks on
+  // those days unless another stay already occupies the night, or iCal/owner holds it.
+  const occupiedNights = new Set(
+    [...byDate.entries()]
+      .filter(([, source]) => source === 'reservation' || source === 'booking')
+      .map(([date]) => date)
+  );
+  const { rows: turnover } = await query(
+    `SELECT d::text AS date FROM (
+        SELECT r.check_out AS d
+        FROM reservations r
+        JOIN units u ON u.id = r.unit_id
+        WHERE u.wp_post_id = $1
+          AND r.status <> 'cancelled'
+          AND r.check_out >= $2::date AND r.check_out < $3::date
+        UNION
+        SELECT b.checkout
+        FROM bookings b
+        WHERE b.listing_wp_id = $1
+          AND b.status IN ('confirmed','pending','held')
+          AND (b.hold_expires_at IS NULL OR b.hold_expires_at > now())
+          AND b.checkout >= $2::date AND b.checkout < $3::date
+      ) t`,
+    [wpPostId, from, to]
+  );
+  for (const row of turnover) {
+    if (!row.date || occupiedNights.has(row.date)) continue;
+    const src = byDate.get(row.date);
+    if (!src || src === 'manual' || src === 'reservation' || src === 'booking') {
+      byDate.delete(row.date);
+    }
+  }
+
   return [...byDate.entries()]
     .map(([date, source]) => ({ date, source }))
     .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+async function getStayCheckoutDates(wpPostId, from, to) {
+  const { rows } = await query(
+    `SELECT d::text AS date FROM (
+        SELECT r.check_out AS d
+        FROM reservations r
+        JOIN units u ON u.id = r.unit_id
+        WHERE u.wp_post_id = $1
+          AND r.status <> 'cancelled'
+          AND r.check_out >= $2::date AND r.check_out < $3::date
+        UNION
+        SELECT b.checkout
+        FROM bookings b
+        WHERE b.listing_wp_id = $1
+          AND b.status IN ('confirmed','pending','held')
+          AND (b.hold_expires_at IS NULL OR b.hold_expires_at > now())
+          AND b.checkout >= $2::date AND b.checkout < $3::date
+      ) t`,
+    [wpPostId, from, to]
+  );
+  return rows.map((r) => r.date).filter(Boolean);
 }
 
 module.exports = {
@@ -275,6 +333,7 @@ module.exports = {
   quoteStay,
   isDateBlocked,
   getBlockedDates,
+  getStayCheckoutDates,
   computeFees,
   eachNight,
   addDaysIso,

@@ -5,10 +5,11 @@ import { useLocale } from '../../context/LocaleContext';
 const dateToIso = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-function rangeHasBlockedNight(start, end, blockedSet) {
+function rangeHasBlockedNight(start, end, blockedSet, checkoutSet) {
   if (!blockedSet?.size) return false;
   for (let t = +start; t < +end; t += 86_400_000) {
-    if (blockedSet.has(dateToIso(new Date(t)))) return true;
+    const iso = dateToIso(new Date(t));
+    if (blockedSet.has(iso) && !checkoutSet?.has(iso)) return true;
   }
   return false;
 }
@@ -25,6 +26,7 @@ export default function ListingDatePicker({
   onClose,
   anchorRef,
   blockedDates = [],
+  checkoutDates = [],
   dailyPrices = {},
   minNights = 1,
   inline = false,
@@ -39,6 +41,8 @@ export default function ListingDatePicker({
   const [pos, setPos] = useState(null);
   const [isMobile, setIsMobile] = useState(false);
   const blockedSet = new Set(blockedDates);
+  const checkoutSet = new Set(checkoutDates);
+  const isOccupiedNight = (iso) => blockedSet.has(iso) && !checkoutSet.has(iso);
 
   useEffect(() => {
     if (inline) return undefined;
@@ -102,11 +106,11 @@ export default function ListingDatePicker({
     today.setHours(0, 0, 0, 0);
     if (!allowPastDates && d < today) return;
 
-    const isBlockedNight = blockedSet.has(dateToIso(d));
+    const isBlockedNight = isOccupiedNight(dateToIso(d));
     const choosingCheckout = !!value.start && !value.end && d > value.start;
 
     if (choosingCheckout) {
-      if (rangeHasBlockedNight(value.start, d, blockedSet)) {
+      if (rangeHasBlockedNight(value.start, d, blockedSet, checkoutSet)) {
         if (!isBlockedNight) onChange({ start: d, end: null });
         return;
       }
@@ -171,6 +175,7 @@ export default function ListingDatePicker({
           value={value}
           onPick={pick}
           blockedSet={blockedSet}
+          checkoutSet={checkoutSet}
           dailyPrices={dailyPrices}
           minNights={minNights}
           localeTag={localeTag}
@@ -181,6 +186,7 @@ export default function ListingDatePicker({
           value={value}
           onPick={pick}
           blockedSet={blockedSet}
+          checkoutSet={checkoutSet}
           dailyPrices={dailyPrices}
           minNights={minNights}
           localeTag={localeTag}
@@ -195,11 +201,16 @@ export default function ListingDatePicker({
       )}
 
       {blockedSet.size > 0 && (
-        <div className="mt-3 flex items-center gap-2 text-[11.5px] text-soul-muted">
-          <span className="inline-grid place-items-center w-5 h-5 rounded-full bg-[#f4f5f7] border border-[#e3e8ef] text-soul-muted/50 text-[11px] line-through">
-            14
-          </span>
-          {t('listing.blockedHint')}
+        <div className="mt-3 flex flex-col gap-1.5 text-[11.5px] text-soul-muted">
+          <div className="flex items-center gap-2">
+            <span className="inline-grid place-items-center w-5 h-5 rounded-full bg-[#f4f5f7] border border-[#e3e8ef] text-soul-muted/50 text-[11px] line-through">
+              14
+            </span>
+            {t('listing.blockedHint')}
+          </div>
+          {checkoutSet.size > 0 && (
+            <p>Checkout days stay open so the next guest can check in the same day.</p>
+          )}
         </div>
       )}
 
@@ -243,7 +254,7 @@ export default function ListingDatePicker({
   );
 }
 
-function Month({ month, value, onPick, blockedSet, dailyPrices, minNights, localeTag, allowPastDates = false }) {
+function Month({ month, value, onPick, blockedSet, checkoutSet, dailyPrices, minNights, localeTag, allowPastDates = false }) {
   const y = month.getFullYear();
   const mo = month.getMonth();
   const first = new Date(y, mo, 1);
@@ -265,7 +276,8 @@ function Month({ month, value, onPick, blockedSet, dailyPrices, minNights, local
     const iso = `${y}-${String(mo + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     const past = date < today;
     const pastLocked = past && !allowPastDates;
-    const blocked = blockedSet.has(iso);
+    const blocked = blockedSet.has(iso) && !checkoutSet?.has(iso);
+    const turnoverOpen = checkoutSet?.has(iso) && !blocked;
     const violatesMin =
       !!minNights &&
       minNights > 0 &&
@@ -278,7 +290,7 @@ function Month({ month, value, onPick, blockedSet, dailyPrices, minNights, local
     let validCheckout = false;
     let checkoutOnly = false;
     if (choosingCheckout && value.start) {
-      const crosses = rangeHasBlockedNight(value.start, date, blockedSet);
+      const crosses = rangeHasBlockedNight(value.start, date, blockedSet, checkoutSet);
       const nights = Math.round((+date - +value.start) / 86_400_000);
       validCheckout = !crosses && nights >= Math.max(1, minNights || 0);
       checkoutOnly = validCheckout && blocked;
@@ -303,6 +315,7 @@ function Month({ month, value, onPick, blockedSet, dailyPrices, minNights, local
         : ' hover:bg-soul-blue-50 cursor-pointer';
     } else if (blocked) cls += ' text-soul-muted/40 line-through bg-[#f4f5f7] cursor-not-allowed';
     else if (violatesMin) cls += ' text-soul-muted/40 bg-[#f7f8fa] cursor-not-allowed';
+    else if (turnoverOpen) cls += ' hover:bg-soul-blue-50 cursor-pointer ring-1 ring-inset ring-emerald-200';
     else cls += ' hover:bg-soul-blue-50 cursor-pointer';
 
     if (isStart && !isEnd) cls += ' rounded-r-none';
@@ -314,6 +327,13 @@ function Month({ month, value, onPick, blockedSet, dailyPrices, minNights, local
         key={d}
         onClick={() => !disabled && onPick(date)}
         disabled={disabled}
+        title={
+          turnoverOpen
+            ? 'Checkout day — free for the next check-in'
+            : blocked
+              ? 'Unavailable — already booked'
+              : undefined
+        }
         className={cls}
       >
         <span>{d}</span>

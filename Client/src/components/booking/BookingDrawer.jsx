@@ -60,6 +60,7 @@ export default function BookingDrawer({
   onClose,
   unit,
   blockedDates = [],
+  checkoutDates = [],
   dailyPrices = {},
   initialCheckin = '',
   initialCheckout = '',
@@ -320,6 +321,7 @@ export default function BookingDrawer({
                       setMessage('');
                     }}
                     blockedDates={blockedDates}
+                    checkoutDates={checkoutDates}
                     dailyPrices={dailyPrices}
                     minNights={minNights}
                   />

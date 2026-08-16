@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../api/axios';
+import { occupancyFromRanges } from '../../../utils/stayNights';
 
 
 const isoStr = (d) => {
@@ -201,27 +202,10 @@ export default function BookingCalendar({ checkIn, checkOut, onChange, unitId, e
   
   
   
-  const { blockedSet, checkoutOnlySet } = useMemo(() => {
-    const blocked = new Set();
-    const turnover = new Set();
-    reservedRanges.forEach((r) => {
-      if (r._guest_block) {
-        if (r.source === 'unpriced') return;
-        blocked.add(normaliseDate(r.date || r.check_in));
-        return;
-      }
-      const ci = normaliseDate(r.check_in);
-      const co = normaliseDate(r.check_out);
-      if (!ci || !co || co <= ci) return;
-      let cur = ci;
-      while (cur < co) {
-        blocked.add(cur);
-        cur = addOneDayStr(cur);
-      }
-      turnover.add(co);
-    });
-    return { blockedSet: blocked, checkoutOnlySet: turnover };
-  }, [reservedRanges]);
+  const { blockedSet, checkoutOnlySet } = useMemo(
+    () => occupancyFromRanges(Array.isArray(reservedRanges) ? reservedRanges : []),
+    [reservedRanges]
+  );
 
   
   const rangeHasConflict = useCallback((from, to) => {

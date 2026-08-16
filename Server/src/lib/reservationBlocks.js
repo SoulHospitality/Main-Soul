@@ -39,7 +39,7 @@ async function releaseReservationBlocks(wpPostId, checkIn, checkOut) {
     `DELETE FROM unit_blocked_dates b
      WHERE b.wp_post_id = $1
        AND b.date >= $2::date
-       AND b.date < $3::date
+       AND b.date <= $3::date
        AND COALESCE(b.source, '') IN ('reservation', 'reservation_import', 'booking')
        AND NOT EXISTS (
          SELECT 1
@@ -78,6 +78,37 @@ async function resyncReservationBlocks(previous, next) {
   await syncBlocksForReservation(next);
 }
 
+/**
+ * Drop reservation-sourced calendar blocks that are not an occupied stay night
+ * (typical leftover: checkout day written inclusively).
+ */
+async function purgeStaleReservationBlocks() {
+  const { rowCount } = await query(`
+    DELETE FROM unit_blocked_dates b
+    WHERE COALESCE(b.source, '') IN ('reservation', 'reservation_import', 'booking')
+      AND NOT EXISTS (
+        SELECT 1
+        FROM reservations r
+        JOIN units u ON u.id = r.unit_id
+        WHERE u.wp_post_id = b.wp_post_id
+          AND r.status IS DISTINCT FROM 'cancelled'
+          AND b.date >= r.check_in
+          AND b.date < r.check_out
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM bookings bk
+        JOIN units u ON u.wp_post_id = bk.listing_wp_id OR u.id = bk.unit_id
+        WHERE u.wp_post_id = b.wp_post_id
+          AND bk.status IN ('confirmed', 'pending', 'held')
+          AND (bk.hold_expires_at IS NULL OR bk.hold_expires_at > now())
+          AND b.date >= bk.checkin
+          AND b.date < bk.checkout
+      )
+  `);
+  return rowCount || 0;
+}
+
 /** Backfill every active reservation into unit_blocked_dates. */
 async function syncAllActiveReservationBlocks() {
   const inserted = await query(`
@@ -98,7 +129,8 @@ async function syncAllActiveReservationBlocks() {
     ON CONFLICT (wp_post_id, date) DO NOTHING
     RETURNING 1
   `);
-  return inserted.rowCount || 0;
+  const purged = await purgeStaleReservationBlocks();
+  return { inserted: inserted.rowCount || 0, purged };
 }
 
 module.exports = {
@@ -107,5 +139,6 @@ module.exports = {
   releaseReservationBlocks,
   syncBlocksForReservation,
   resyncReservationBlocks,
+  purgeStaleReservationBlocks,
   syncAllActiveReservationBlocks,
 };

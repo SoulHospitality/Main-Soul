@@ -12,6 +12,7 @@ import BookingDrawer from '../booking/BookingDrawer';
 export default function ListingBookingCard({
   unit,
   blockedDates = [],
+  checkoutDates = [],
   dailyPrices = {},
   initialCheckin = '',
   initialCheckout = '',
@@ -144,6 +145,7 @@ export default function ListingBookingCard({
         onClose={() => setDrawerOpen(false)}
         unit={unit}
         blockedDates={blockedDates}
+        checkoutDates={checkoutDates}
         dailyPrices={dailyPrices}
         initialCheckin={initialCheckin || ''}
         initialCheckout={initialCheckout || ''}

@@ -80,6 +80,7 @@ export default function ListingDetailPage() {
   const { user } = useAuth();
   const [unit, setUnit] = useState(null);
   const [blocked, setBlocked] = useState([]);
+  const [checkoutDates, setCheckoutDates] = useState([]);
   const [prices, setPrices] = useState({});
   const [similar, setSimilar] = useState([]);
   const [lightbox, setLightbox] = useState(false);
@@ -120,7 +121,13 @@ export default function ListingDetailPage() {
     api
       .get(`/units/${slug}/availability`, { params: { from, to } })
       .then((r) => {
-        if (!cancelled) setBlocked((r.data.blocked || []).map((b) => b.date));
+        if (!cancelled) {
+          const nights = (r.data.blocked || []).map((b) => b.date);
+          const turnover = r.data.checkout_dates || [];
+          const openTurnover = new Set(turnover);
+          setCheckoutDates(turnover);
+          setBlocked(nights.filter((d) => !openTurnover.has(d)));
+        }
       })
       .catch(() => {});
 
@@ -614,6 +621,7 @@ export default function ListingDetailPage() {
                 <ListingBookingCard
                   unit={unit}
                   blockedDates={blocked}
+                  checkoutDates={checkoutDates}
                   dailyPrices={prices}
                   initialCheckin={params.get('checkin') || undefined}
                   initialCheckout={params.get('checkout') || undefined}

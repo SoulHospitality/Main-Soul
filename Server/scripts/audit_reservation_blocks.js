@@ -59,8 +59,10 @@ async function main() {
     return;
   }
 
-  const inserted = await syncAllActiveReservationBlocks();
-  console.log(`[fix] inserted_missing_nights=${inserted}`);
+  const result = await syncAllActiveReservationBlocks();
+  const inserted = typeof result === 'number' ? result : result?.inserted || 0;
+  const purged = typeof result === 'object' ? result?.purged || 0 : 0;
+  console.log(`[fix] inserted_missing_nights=${inserted} purged_stale_checkout_blocks=${purged}`);
 
   const after = (
     await query(`

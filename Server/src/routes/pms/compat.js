@@ -755,6 +755,7 @@ router.get('/calendar-blocks', async (req, res, next) => {
        FROM unit_blocked_dates b
        JOIN units u ON u.wp_post_id = b.wp_post_id
        WHERE b.date >= $1 AND b.date < $2 ${filter}
+         AND COALESCE(b.source, 'manual') NOT IN ('reservation', 'reservation_import', 'booking')
        UNION ALL
        SELECT u.id AS unit_id, u.wp_post_id, d::text AS date, 'reservation' AS source
        FROM reservations r
