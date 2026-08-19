@@ -17,6 +17,9 @@ const WebsiteBookingHistoryPage = lazy(() => import('./pages/WebsiteBookingHisto
 const FinancialSystem = lazy(() => import('./pages/FinancialSystem'));
 const Commissions = lazy(() => import('./pages/Commissions'));
 const Users = lazy(() => import('./pages/Users'));
+const Payrolls = lazy(() => import('./pages/Payrolls'));
+const Deductions = lazy(() => import('./pages/Deductions'));
+const HolidayRequests = lazy(() => import('./pages/HolidayRequests'));
 const Profile = lazy(() => import('./pages/Profile'));
 const Schedule = lazy(() => import('./pages/Schedule'));
 const Housekeeping = lazy(() => import('./pages/Housekeeping'));
@@ -140,6 +143,9 @@ function AppRoutes() {
       <Route path="ops/checkins-history" element={<LegacyOpsRedirect tab="history" />} />
       <Route path="ops/checkin-comments" element={<LegacyOpsRedirect tab="comments" />} />
       <Route path="users" element={<ProtectedRoute page="users"><Users /></ProtectedRoute>} />
+      <Route path="payroll" element={<ProtectedRoute page="payroll"><Payrolls /></ProtectedRoute>} />
+      <Route path="deductions" element={<ProtectedRoute page="deductions"><Deductions /></ProtectedRoute>} />
+      <Route path="holiday-requests" element={<ProtectedRoute page="holiday_requests"><HolidayRequests /></ProtectedRoute>} />
       <Route path="promo-codes" element={<ProtectedRoute page="promo_codes"><PromoCodes /></ProtectedRoute>} />
       <Route path="acquisition" element={<ProtectedRoute page="acquisition"><AcquisitionPipeline /></ProtectedRoute>} />
       <Route path="owner" element={<ProtectedRoute page="owner"><OwnerDashboard /></ProtectedRoute>} />

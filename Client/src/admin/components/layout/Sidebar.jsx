@@ -11,6 +11,9 @@ import {
   LogOut, Building, CalendarRange,
   Sparkles, Briefcase, Globe, Tag, KeyRound,
   Landmark,
+  Wallet,
+  MinusCircle,
+  Palmtree,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -27,6 +30,9 @@ const NAV_ITEMS = [
   { path: '/admin/commissions', label: 'Commissions', icon: BadgeDollarSign, page: 'commissions', agentLabel: 'My Profit' },
   { path: '/admin/acquisition', label: 'Owner leads', icon: Briefcase, page: 'acquisition', resaleLabel: 'Owners requests' },
   { path: '/admin/users', label: 'User Management', icon: Users, page: 'users' },
+  { path: '/admin/payroll', label: 'Payrolls', icon: Wallet, page: 'payroll' },
+  { path: '/admin/deductions', label: 'Deductions', icon: MinusCircle, page: 'deductions' },
+  { path: '/admin/holiday-requests', label: 'Holiday requests', icon: Palmtree, page: 'holiday_requests', badge: 'leave_pending' },
   { path: '/admin/promo-codes',      label: 'Promo Codes',        icon: Tag,                page: 'promo_codes' },
 ];
 
@@ -55,6 +61,7 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
   const theme = getRoleTheme(user?.role);
 
   const showWebsitePending = canAccess('website_bookings');
+  const showLeavePending = canAccess('holiday_requests');
   const { data: pendingBookings = [] } = useQuery({
     queryKey: ['website-bookings-pending'],
     queryFn: () =>
@@ -72,6 +79,14 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
   const pendingWebsiteCount = Array.isArray(pendingBookings) ? pendingBookings.length : 0;
   const unassignedWebsiteCount = Array.isArray(unassignedBookings) ? unassignedBookings.length : 0;
   const websiteNeedsReviewCount = pendingWebsiteCount + unassignedWebsiteCount;
+  const { data: pendingLeave = [] } = useQuery({
+    queryKey: ['hr-leave-requests', 'pending'],
+    queryFn: () =>
+      api.get('/hr/leave-requests', { params: { status: 'pending' } }).then((r) => r.data),
+    enabled: showLeavePending,
+    refetchInterval: 30000,
+  });
+  const pendingLeaveCount = Array.isArray(pendingLeave) ? pendingLeave.length : 0;
 
   const handleLogout = () => {
     logout();
@@ -130,7 +145,12 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
                     user?.role === 'reservations')
                 ? item.agentLabel
                 : item.label;
-          const pendingCount = item.badge === 'website_pending' ? websiteNeedsReviewCount : 0;
+          const pendingCount =
+            item.badge === 'website_pending'
+              ? websiteNeedsReviewCount
+              : item.badge === 'leave_pending'
+                ? pendingLeaveCount
+                : 0;
           return (
             <NavLink
               key={item.path}

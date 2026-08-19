@@ -846,7 +846,8 @@ export default function Users() {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="page-header mb-0">
-          <h1 className="page-title">User Management</h1>
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-soul-muted">HR</p>
+          <h1 className="page-title mt-1">User Management</h1>
           <p className="page-subtitle">
             {isOwnersTab
               ? 'Owner portal accounts'

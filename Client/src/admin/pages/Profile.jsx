@@ -1,17 +1,18 @@
 import { useMemo, useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
-import { Lock, CheckCircle } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Lock, CheckCircle, Palmtree } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import { useAuth } from '../context/AuthContext';
 import { ROLE_LABELS, ROLE_COLORS, PMS_LABELS } from '../utils/permissions';
 import { getRoleTheme } from '../utils/roleTheme';
-import { formatDateTime } from '../utils/formatters';
+import { formatDate, formatDateTime } from '../utils/formatters';
 import { getPasswordRuleChecks, passwordPolicyMessage } from '../utils/passwordRules';
 import PasswordChecklist from '../../components/auth/PasswordChecklist';
 
 export default function Profile() {
   const { user, refreshUser } = useAuth();
+  const qc = useQueryClient();
   const theme = getRoleTheme(user?.role);
   const [pwForm, setPwForm] = useState({
     current_password: '',
@@ -30,6 +31,42 @@ export default function Profile() {
     Object.values(checks).every(Boolean) &&
     match &&
     Boolean(pwForm.confirm_password);
+
+  const canRequestLeave = user?.role && user.role !== 'owner';
+  const [leaveForm, setLeaveForm] = useState({
+    leave_type: 'holiday',
+    start_date: '',
+    end_date: '',
+    reason: '',
+  });
+
+  const { data: myLeave = [] } = useQuery({
+    queryKey: ['hr-leave-requests', 'mine'],
+    queryFn: () => api.get('/hr/leave-requests', { params: { mine: 1 } }).then((r) => r.data),
+    enabled: canRequestLeave,
+  });
+
+  const leaveMutation = useMutation({
+    mutationFn: (payload) => api.post('/hr/leave-requests', payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['hr-leave-requests'] });
+      toast.success('Holiday request sent to HR');
+      setLeaveForm({ leave_type: 'holiday', start_date: '', end_date: '', reason: '' });
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Could not submit request'),
+  });
+
+  const submitLeave = () => {
+    if (!leaveForm.start_date || !leaveForm.end_date) {
+      toast.error('Choose start and end dates');
+      return;
+    }
+    if (leaveForm.end_date < leaveForm.start_date) {
+      toast.error('End date must be on or after the start date');
+      return;
+    }
+    leaveMutation.mutate(leaveForm);
+  };
 
   const changePwMutation = useMutation({
     mutationFn: (d) =>
@@ -104,6 +141,106 @@ export default function Profile() {
           </div>
         </div>
       </div>
+
+      {canRequestLeave && (
+        <div className="card">
+          <div className="flex items-center gap-2 mb-4">
+            <Palmtree className="w-5 h-5 text-soul-muted" />
+            <h3 className="font-semibold text-soul-blue">Time off</h3>
+          </div>
+          <p className="text-sm text-soul-muted mb-4">
+            Request a holiday or day off. HR will accept or reject it.
+          </p>
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="label">Type</label>
+                <select
+                  className="input"
+                  value={leaveForm.leave_type}
+                  onChange={(e) => setLeaveForm((f) => ({ ...f, leave_type: e.target.value }))}
+                >
+                  <option value="holiday">Holiday</option>
+                  <option value="day_off">Day off</option>
+                  <option value="sick">Sick leave</option>
+                </select>
+              </div>
+              <div className="sm:col-span-2 grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">From</label>
+                  <input
+                    type="date"
+                    className="input"
+                    value={leaveForm.start_date}
+                    onChange={(e) =>
+                      setLeaveForm((f) => ({
+                        ...f,
+                        start_date: e.target.value,
+                        end_date: !f.end_date || f.end_date < e.target.value ? e.target.value : f.end_date,
+                      }))
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="label">To</label>
+                  <input
+                    type="date"
+                    className="input"
+                    value={leaveForm.end_date}
+                    onChange={(e) => setLeaveForm((f) => ({ ...f, end_date: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="sm:col-span-2">
+                <label className="label">Note</label>
+                <textarea
+                  className="input min-h-[72px]"
+                  value={leaveForm.reason}
+                  onChange={(e) => setLeaveForm((f) => ({ ...f, reason: e.target.value }))}
+                  placeholder="Optional"
+                />
+              </div>
+            </div>
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={leaveMutation.isPending}
+              onClick={submitLeave}
+            >
+              {leaveMutation.isPending ? 'Sending…' : 'Send request'}
+            </button>
+          </div>
+          {Array.isArray(myLeave) && myLeave.length > 0 && (
+            <div className="mt-5 border-t border-soul-line pt-4 space-y-2">
+              {myLeave.slice(0, 8).map((r) => (
+                <div key={r.id} className="flex items-start justify-between gap-3 text-sm">
+                  <div>
+                    <div className="font-medium text-soul-blue">
+                      {formatDate(r.start_date)}
+                      {r.start_date !== r.end_date ? ` → ${formatDate(r.end_date)}` : ''}
+                    </div>
+                    <div className="text-xs text-soul-muted capitalize">
+                      {String(r.leave_type || '').replace('_', ' ')}
+                      {r.reason ? ` · ${r.reason}` : ''}
+                    </div>
+                  </div>
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                      r.status === 'approved'
+                        ? 'bg-emerald-50 text-emerald-700'
+                        : r.status === 'rejected'
+                          ? 'bg-rose-50 text-rose-700'
+                          : 'bg-amber-50 text-amber-800'
+                    }`}
+                  >
+                    {r.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="card">
         <div className="flex items-center gap-2 mb-4">

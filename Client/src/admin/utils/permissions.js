@@ -90,6 +90,12 @@ const PERMISSIONS = {
   hr: [
     'users:read',
     'users:write',
+    'payroll:read',
+    'payroll:write',
+    'deductions:read',
+    'deductions:write',
+    'holiday_requests:read',
+    'holiday_requests:write',
     'notifications:read',
     'documents:read',
     'documents:write',
@@ -153,7 +159,7 @@ const PAGE_ACCESS = {
   housekeeping: new Set(['housekeeping', 'hk_today', 'profile']),
   housekeeping_supervisor: new Set(['housekeeping', 'hk_today', 'profile']),
   resale: new Set(['units_sale', 'acquisition', 'profile']),
-  hr: new Set(['users', 'profile']),
+  hr: new Set(['users', 'payroll', 'deductions', 'holiday_requests', 'profile']),
   owner: new Set([
     'owner',
     'owner_reservations',
