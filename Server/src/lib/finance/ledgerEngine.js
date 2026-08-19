@@ -243,6 +243,7 @@ function bookingEntry(r, asOf) {
       nights: r.nights,
       payment_method: r.payment_method,
       payment_status: r.payment_status,
+      stay_invoice: posted.stayInvoice,
       total_amount: posted.guestTotal,
       invoice_amount: posted.ar,
       amount_paid: paid,
@@ -672,6 +673,23 @@ async function loadPortalData(from, to) {
     expParams
   );
 
+  let hkOrders = [];
+  try {
+    const hkParams = [from];
+    let hkSql = `status <> 'cancelled' AND period_start >= $1::date`;
+    if (to) {
+      hkParams.push(to);
+      hkSql += ` AND period_start <= $${hkParams.length}::date`;
+    }
+    const { rows } = await query(
+      `SELECT * FROM housekeeping_service_orders WHERE ${hkSql} ORDER BY period_start DESC`,
+      hkParams
+    );
+    hkOrders = rows;
+  } catch (_) {
+    hkOrders = [];
+  }
+
   let petty = [];
   try {
     const pcParams = [from];
@@ -804,6 +822,7 @@ async function loadPortalData(from, to) {
     reservations,
     payments,
     expenses,
+    hkOrders,
     petty,
     manuals,
     payouts,
@@ -906,6 +925,26 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
 
   for (const e of data.expenses || []) {
     journal.push(...expenseEntries(e));
+  }
+
+  for (const hk of data.hkOrders || []) {
+    const amt = round2(parseFloat(hk.amount) || 0);
+    if (!(amt > 0.009)) continue;
+    const date = isoDate(hk.period_start || hk.created_at);
+    if (!inRange(date, from, to)) continue;
+    journal.push(
+      makeEntry({
+        id: `HK-${hk.id}`,
+        date,
+        type: 'housekeeping_order',
+        description: `Housekeeping service — ${hk.client_name || hk.unit_number || 'Order'}`,
+        lines: [
+          journalLine('105000', amt, 0, 'Housekeeping service receivable'),
+          journalLine('402000', 0, amt, 'Cleaning & turnover'),
+        ],
+        meta: { housekeeping_order_id: hk.id, unit_number: hk.unit_number },
+      })
+    );
   }
 
   for (const pc of data.petty || []) {
@@ -1074,6 +1113,24 @@ function balancesFromJournal(journal) {
 }
 
 function mirrorTransactions(journal, code) {
+  if (code === '400000') {
+    return (journal || [])
+      .filter((e) =>
+        ['booking', 'housekeeping_order', 'manual_revenue', 'miscellaneous', 'cancellation'].includes(e.type)
+      )
+      .map((e) => ({
+        id: e.id,
+        date: e.date,
+        description: e.description,
+        amount: round2(
+          Number(e.meta?.stay_invoice) || Number(e.meta?.total_amount) || e.credit || e.debit || 0
+        ),
+        side: 'credit',
+        counterparty: e.meta?.guest_name || e.meta?.unit_number || e.type,
+        type: e.type,
+      }));
+  }
+
   const acct = getAccount(code);
   const look = acct?.mirror || code;
   const out = [];
@@ -1154,7 +1211,7 @@ function agingFromReservations(reservations, asOf) {
 }
 
 function pnlFromBalances(bals) {
-  const revenue = bals.filter((a) => a.type === 'revenue');
+  const revenue = bals.filter((a) => a.type === 'revenue' && !a.virtual);
   const cogs = bals.filter((a) => a.group === 'cogs');
   const opex = bals.filter((a) => a.group === 'opex');
   const revTotal = round2(revenue.reduce((s, a) => s + a.balance, 0));
@@ -1167,6 +1224,41 @@ function pnlFromBalances(bals) {
     cogs,
     opex,
     totals: { revenue: revTotal, cogs: cogsTotal, gross, opex: opexTotal, net },
+  };
+}
+
+function computeGrossReceipts(journal) {
+  let stays = 0;
+  let housekeeping = 0;
+  let other = 0;
+  let ownerShare = 0;
+  for (const e of journal || []) {
+    if (e.type === 'period_close') continue;
+    if (e.type === 'booking') {
+      stays += Number(e.meta?.stay_invoice) || Number(e.meta?.total_amount) || 0;
+      ownerShare += Number(e.meta?.owner_share) || 0;
+    } else if (e.type === 'housekeeping_order') {
+      housekeeping += e.credit || 0;
+    } else if (e.type === 'manual_revenue') {
+      other += e.debit || 0;
+    } else if (e.type === 'cancellation') {
+      const line = (e.lines || []).find((l) => l.account === '409000' && l.credit > 0);
+      if (line) other += line.credit;
+    } else if (e.type === 'petty_cash') {
+      const inn = (e.lines || []).find((l) => l.account === '103000' && (l.debit || 0) > 0);
+      if (inn) other += inn.debit;
+    } else if (e.type === 'miscellaneous') {
+      const inn = (e.lines || []).find((l) => l.account === '101000' && (l.debit || 0) > 0);
+      const rev = (e.lines || []).find((l) => l.account === '409000' && (l.credit || 0) > 0);
+      if (inn && rev) other += inn.debit;
+    }
+  }
+  return {
+    stays: round2(stays),
+    housekeeping: round2(housekeeping),
+    other: round2(other),
+    owner_share: round2(ownerShare),
+    total: round2(stays + housekeeping + other),
   };
 }
 
@@ -1306,9 +1398,26 @@ function buildPortal(journal, reservations, recurring, extras = {}) {
   const bals = balancesFromJournal(journal);
   const byCode = Object.fromEntries(bals.map((a) => [a.code, a]));
   const groups = accountsByGroup();
+  const operatingJournal = journal.filter((e) => e.type !== 'period_close');
+  const pnl = pnlFromBalances(balancesFromJournal(operatingJournal));
+  const receipts = computeGrossReceipts(operatingJournal);
+  const soulFees = pnl.totals.revenue;
+
+  if (byCode['400000']) {
+    byCode['400000'].balance = receipts.total;
+    byCode['400000'].debit = 0;
+    byCode['400000'].credit = receipts.total;
+    byCode['400000'].txn_count = operatingJournal.filter((e) =>
+      ['booking', 'housekeeping_order', 'manual_revenue', 'miscellaneous', 'cancellation'].includes(e.type)
+    ).length;
+  }
+
   const groupCards = Object.entries(groups).map(([id, g]) => {
     const accounts = g.accounts.map((a) => byCode[a.code]).filter(Boolean);
-    const balance = round2(accounts.filter((a) => !a.virtual).reduce((s, a) => s + a.balance, 0));
+    const balance =
+      id === 'revenue'
+        ? receipts.total
+        : round2(accounts.filter((a) => !a.virtual).reduce((s, a) => s + a.balance, 0));
     return {
       id,
       label: g.label,
@@ -1340,9 +1449,8 @@ function buildPortal(journal, reservations, recurring, extras = {}) {
   );
   const inputVat = byCode['107000']?.balance || 0;
   const outputVat = byCode['205000']?.balance || 0;
-  const pnl = pnlFromBalances(
-    balancesFromJournal(journal.filter((e) => e.type !== 'period_close'))
-  );
+  const treasuryTotal = round2(treasury.reduce((s, t) => s + (t.balance || 0), 0));
+  const treasuryIn = round2(treasury.reduce((s, t) => s + (t.inflow || 0), 0));
 
   return {
     groups: groupCards,
@@ -1351,6 +1459,7 @@ function buildPortal(journal, reservations, recurring, extras = {}) {
     recurring,
     closes: extras.closes || [],
     settings: extras.settings || { gateway_mdr_pct: 1.5 },
+    receipts,
     kpis: {
       collected,
       uncollected: outstanding.amount,
@@ -1363,7 +1472,12 @@ function buildPortal(journal, reservations, recurring, extras = {}) {
       bank_egp: byCode['101000']?.balance || 0,
       gateway_clearing: byCode['106000']?.balance || 0,
       guest_ar: byCode['105000']?.balance || 0,
-      revenue: pnl.totals.revenue,
+      gross_revenue: receipts.total,
+      revenue: receipts.total,
+      soul_fees: soulFees,
+      owner_share: receipts.owner_share,
+      treasury_total: treasuryTotal,
+      treasury_in: treasuryIn,
       cogs: pnl.totals.cogs,
       opex: pnl.totals.opex,
       gross_profit: pnl.totals.gross,
@@ -1376,15 +1490,23 @@ function buildPortal(journal, reservations, recurring, extras = {}) {
 function buildStatements(journal) {
   const bals = balancesFromJournal(journal);
   const pnl = pnlFromBalances(bals.filter((a) => a.type === 'revenue' || a.type === 'expense'));
+  const receipts = computeGrossReceipts(journal.filter((e) => e.type !== 'period_close'));
   const closedPnl = journal.filter((e) => e.type === 'period_close');
-  const livePnl = closedPnl.length
-    ? 0
-    : pnl.totals.net;
+  const livePnl = closedPnl.length ? 0 : pnl.totals.net;
   const tb = trialBalance(bals);
   const bs = balanceSheet(bals, livePnl === 0 && closedPnl.length ? 0 : pnl.totals.net);
   return {
     trial_balance: tb,
-    profit_and_loss: pnl,
+    profit_and_loss: {
+      ...pnl,
+      receipts,
+      totals: {
+        ...pnl.totals,
+        gross_revenue: receipts.total,
+        soul_fees: pnl.totals.revenue,
+        owner_share: receipts.owner_share,
+      },
+    },
     balance_sheet: bs,
     cash_flow: cashFlow(journal),
   };

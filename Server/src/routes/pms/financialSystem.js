@@ -794,6 +794,7 @@ router.get('/financial-system/portal', requireRoles('admin'), async (req, res, n
       payouts: built.payouts || [],
       closes: built.closes || [],
       settings: built.settings || {},
+      receipts: built.receipts || {},
     });
   } catch (e) {
     next(e);

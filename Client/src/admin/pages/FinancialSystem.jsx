@@ -73,7 +73,7 @@ const GROUP_META = {
     icon: TrendingUp,
     tint: 'bg-emerald-50 text-emerald-900',
     tile: 'bg-emerald-600',
-    hint: 'Money Soul earns',
+    hint: 'Every guest penny in — stays, housekeeping, extras',
   },
   cogs: {
     label: ACCOUNT_GROUPS.cogs,
@@ -101,6 +101,7 @@ const ACCOUNT_ICONS = {
   '107000': Scale,
   '202000': Users,
   '205000': Scale,
+  '400000': TrendingUp,
   '401000': TrendingUp,
   '508000': UtensilsCrossed,
   '604000': Home,
@@ -196,10 +197,10 @@ function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
         {[
-          ['Collected in treasury', kpis.collected, 'Only paid / fully collected'],
+          ['Collected in treasury', kpis.collected, 'Cash that actually landed'],
           ['Outstanding', outstanding.amount, `${outstanding.count} stays unpaid`],
-          ['Soul commission', kpis.commission, 'Net management fees'],
-          ['Owner trust', kpis.owner_trust, 'Held for owners'],
+          ['Gross revenue', kpis.gross_revenue ?? kpis.revenue, 'Every guest penny in'],
+          ['Owner trust', kpis.owner_trust, 'Still held for owners'],
         ].map(([label, amount, sub]) => (
           <div key={label} className="rounded-2xl border border-soul-line bg-white px-4 py-4">
             <p className="text-[11px] uppercase tracking-wider text-gray-400">{label}</p>
@@ -207,6 +208,26 @@ function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool
             <p className="text-xs text-gray-500 mt-1">{sub}</p>
           </div>
         ))}
+      </div>
+
+      <div className="rounded-2xl border border-soul-line bg-white p-5">
+        <p className="text-xs uppercase tracking-wider text-gray-400">Why treasury is not the same as revenue</p>
+        <p className="text-sm text-gray-600 mt-1">
+          Revenue is every guest penny billed through Soul (stays, housekeeping, extras). Treasury is only the cash still sitting in bank and cash after owner payouts and bills. Guest money for owners stays in treasury until it is paid out — it is not Soul profit.
+        </p>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
+          {[
+            ['Gross revenue', kpis.gross_revenue ?? kpis.revenue],
+            ['Held for owners', kpis.owner_share ?? kpis.owner_trust],
+            ['Soul fees', kpis.soul_fees],
+            ['Still in treasury', kpis.treasury_total],
+          ].map(([label, amount]) => (
+            <div key={label}>
+              <p className="text-[11px] text-gray-400">{label}</p>
+              <p className="text-lg font-bold tabular-nums">{currency(amount)}</p>
+            </div>
+          ))}
+        </div>
       </div>
 
       <button
@@ -228,10 +249,9 @@ function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-xs uppercase tracking-wider text-gray-500">Soul net profit</p>
-            <p className="font-semibold text-soul-blue">Revenue − COGS − operating expenses</p>
+            <p className="font-semibold text-soul-blue">Soul fees − COGS − operating expenses</p>
             <p className="text-xs text-gray-500 mt-0.5">
-              {currency(kpis.revenue)} revenue · {currency(kpis.cogs)} direct costs · {currency(kpis.opex)} opex
-              · owner money is not included
+              {currency(kpis.gross_revenue ?? kpis.revenue)} guest receipts · {currency(kpis.owner_share)} to owners · {currency(kpis.soul_fees)} Soul fees · {currency(kpis.cogs)} direct · {currency(kpis.opex)} opex
             </p>
           </div>
           <p
@@ -247,7 +267,7 @@ function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool
           <div>
             <h2 className="text-lg font-semibold text-soul-blue">Treasury</h2>
             <p className="text-xs text-gray-500">
-              Cash and bank. Instapay collections land in Bank EGP. Nothing enters until it is actually paid.
+              Cash still on hand. Guest collections land here, including money that belongs to owners until payout.
             </p>
           </div>
         </div>
@@ -1061,7 +1081,7 @@ function ReportsTool({ rangeParams: params }) {
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-500">
-        Soul-only statements from {data?.from_date} → {data?.to_date}. Owner trust sits on the balance sheet, not in profit.
+        From {data?.from_date} → {data?.to_date}. Gross revenue is every guest penny. Net profit is Soul fees after costs — owner money is held in trust, not earned.
       </p>
       <div className="flex flex-wrap gap-2">
         {[
@@ -1083,13 +1103,21 @@ function ReportsTool({ rangeParams: params }) {
       {tab === 'pnl' && (
         <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
           <div className="px-6 py-4 border-b">
-            <h3 className="font-semibold">Soul profit & loss</h3>
-            <p className="text-xs text-gray-500">Commission, cleaning, markup, COGS, operating expenses</p>
+            <h3 className="font-semibold">Profit & loss</h3>
+            <p className="text-xs text-gray-500">Every guest penny in, then Soul’s cut after owner share and costs</p>
+          </div>
+          <div className="px-6 py-3 bg-emerald-50 text-sm flex justify-between font-semibold">
+            <span>Gross revenue (stays, housekeeping, extras)</span>
+            <span className="tabular-nums">{currency(pnl.totals?.gross_revenue ?? pnl.receipts?.total)}</span>
+          </div>
+          <div className="px-6 py-2 text-sm flex justify-between text-gray-600">
+            <span>Held for owners</span>
+            <span className="tabular-nums">−{currency(pnl.totals?.owner_share ?? pnl.receipts?.owner_share)}</span>
           </div>
           <AccountLines rows={pnl.revenue} />
           <div className="px-6 py-2 bg-slate-50 text-sm flex justify-between">
-            <span>Revenue</span>
-            <span className="tabular-nums font-semibold">{currency(pnl.totals?.revenue)}</span>
+            <span>Soul fees (commission, cleaning, markup)</span>
+            <span className="tabular-nums font-semibold">{currency(pnl.totals?.soul_fees ?? pnl.totals?.revenue)}</span>
           </div>
           <AccountLines rows={pnl.cogs} />
           <div className="px-6 py-2 bg-slate-50 text-sm flex justify-between">
