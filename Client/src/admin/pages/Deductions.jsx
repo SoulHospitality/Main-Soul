@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, MinusCircle, Plus, Trash2, Upload } from 'lucide-react';
+import { MinusCircle, Plus, Trash2, Upload } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import Modal from '../components/ui/Modal';
@@ -106,20 +106,6 @@ export default function Deductions() {
     onError: (e) => toast.error(e.response?.data?.error || 'Could not import attendance'),
   });
 
-  const downloadTemplate = async () => {
-    try {
-      const res = await api.get('/hr/attendance/template', { responseType: 'blob' });
-      const url = URL.createObjectURL(res.data);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'attendance-template.xlsx';
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      toast.error('Could not download template');
-    }
-  };
-
   const combined = useMemo(() => {
     const deductions = (Array.isArray(rows) ? rows : []).map((r) => ({
       ...r,
@@ -177,10 +163,6 @@ export default function Deductions() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button type="button" className="btn-secondary" onClick={downloadTemplate}>
-            <Download className="h-4 w-4" />
-            Template
-          </button>
           <button
             type="button"
             className="btn-secondary"

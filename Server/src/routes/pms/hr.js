@@ -1029,34 +1029,6 @@ router.patch('/hr/holiday-access/:id', requireRoles(...HR_ROLES), async (req, re
   }
 });
 
-router.get('/hr/attendance/template', requireRoles(...HR_ROLES), (_req, res) => {
-  const wb = XLSX.utils.book_new();
-  const sheet = XLSX.utils.json_to_sheet([
-    {
-      staff_code: 'SH0001',
-      date: '2026-08-19',
-      arrival_time: '11:20',
-      notified: '',
-      name: '',
-    },
-    {
-      staff_code: 'SH0002',
-      date: '2026-08-19',
-      arrival_time: '',
-      notified: 'yes',
-      name: '',
-    },
-  ]);
-  XLSX.utils.book_append_sheet(wb, sheet, 'Attendance');
-  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-  res.setHeader(
-    'Content-Type',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-  );
-  res.setHeader('Content-Disposition', 'attachment; filename="attendance-template.xlsx"');
-  res.send(buf);
-});
-
 function loadAttendanceJson(file) {
   const buf = file.buffer;
   const head = buf.slice(0, 800).toString('utf8');
