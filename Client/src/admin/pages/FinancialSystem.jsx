@@ -182,12 +182,6 @@ function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool
   const outstanding = data?.outstanding || { amount: 0, count: 0 };
 
   return (
-  const groups = data?.groups || [];
-  const treasury = data?.treasury || [];
-  const kpis = data?.kpis || {};
-  const outstanding = data?.outstanding || { amount: 0, count: 0 };
-
-  return (
     <div className="space-y-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-gray-500">
