@@ -49,6 +49,7 @@ const EMPTY_STAFF_FORM = {
   sales_commission_pct: '',
   leave_casual_days: '0',
   leave_annual_days: '0',
+  staff_code: '',
 };
 
 const EMPTY_OWNER_FORM = {
@@ -257,7 +258,7 @@ function StaffForm({ form, setForm, isEdit, roleOptions, isAdmin }) {
       <p className="text-xs text-slate-500">
         {isEdit
           ? 'Salary edits by HR require admin approval before they apply.'
-          : `Creates login with auto Staff ID and temporary password ${TEMP_STAFF_PASSWORD}. User must change password on first login.`}
+          : `Creates login with the Staff ID you enter and temporary password ${TEMP_STAFF_PASSWORD}. User must change password on first login.`}
       </p>
       <div className="form-grid">
         <div>
@@ -267,6 +268,15 @@ function StaffForm({ form, setForm, isEdit, roleOptions, isAdmin }) {
             value={form.full_name}
             onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))}
             placeholder="John Smith"
+          />
+        </div>
+        <div>
+          <label className="label">Staff ID *</label>
+          <input
+            className="input font-mono"
+            value={form.staff_code}
+            onChange={(e) => setForm((f) => ({ ...f, staff_code: e.target.value }))}
+            placeholder="e.g. SH12"
           />
         </div>
         <div>
@@ -751,6 +761,7 @@ export default function Users() {
             : '',
         leave_casual_days: String(u.leave_casual_days ?? 0),
         leave_annual_days: String(u.leave_annual_days ?? 0),
+        staff_code: u.staff_code || '',
       });
       setModal('edit-staff');
     }
@@ -780,6 +791,10 @@ export default function Users() {
       toast.error('Name, email, and base salary are required');
       return;
     }
+    if (!String(staffForm.staff_code || '').trim()) {
+      toast.error('Staff ID is required');
+      return;
+    }
     if (isReservationAgentRole(staffForm.role)) {
       if (staffForm.sales_commission_pct === '' || staffForm.sales_commission_pct == null) {
         toast.error('Commission % is required for reservation agents');
@@ -796,6 +811,7 @@ export default function Users() {
       base_salary: Number(staffForm.base_salary),
       leave_casual_days: Number(staffForm.leave_casual_days) || 0,
       leave_annual_days: Number(staffForm.leave_annual_days) || 0,
+      staff_code: String(staffForm.staff_code || '').trim(),
       sales_commission_pct: isReservationAgentRole(staffForm.role)
         ? Number(staffForm.sales_commission_pct)
         : Number(staffForm.sales_commission_pct) || 0,

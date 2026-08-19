@@ -16,7 +16,8 @@ const ownerPortal = require('./ownerPortal');
 const roadmapScaffold = require('./roadmapScaffold');
 const {
   TEMP_PASSWORD,
-  generateUniqueStaffCode,
+  normalizeStaffCode,
+  assertStaffCodeAvailable,
   passwordPolicyOk,
   passwordPolicyMessage,
 } = require('../../lib/staffIdentity');
@@ -339,8 +340,13 @@ router.post('/users', requireRoles('admin', 'hr'), async (req, res, next) => {
       return res.status(err.status || 400).json({ error: err.message });
     }
 
-    const staff_code = await generateUniqueStaffCode(role);
-    let username = String(b.username || b.phone || staff_code).trim();
+    const staff_code = normalizeStaffCode(b.staff_code);
+    if (!isOwner && !staff_code) {
+      return res.status(400).json({ error: 'Staff ID is required' });
+    }
+    await assertStaffCodeAvailable(staff_code);
+
+    let username = String(b.username || b.phone || '').trim();
     if (isOwner) {
       const { normalizeOwnerPhone } = require('../../lib/ownerPhone');
       const phone = normalizeOwnerPhone(username) || normalizeOwnerPhone(b.phone);
@@ -350,6 +356,7 @@ router.post('/users', requireRoles('admin', 'hr'), async (req, res, next) => {
       username = phone;
       if (!email) email = `owner.${phone}@soul.owners.local`;
     } else {
+      if (!username) username = email;
       username = username.toLowerCase();
     }
     const tempPassword = TEMP_PASSWORD;
@@ -397,7 +404,7 @@ router.post('/users', requireRoles('admin', 'hr'), async (req, res, next) => {
   } catch (e) {
     if (e.status) return res.status(e.status).json({ error: e.message });
     if (e.code === '23505') {
-      return res.status(409).json({ error: 'Username or email already exists' });
+      return res.status(409).json({ error: 'Username, email, or staff ID already exists' });
     }
     next(e);
   }
@@ -466,6 +473,15 @@ router.patch('/users/:id', requireRoles('admin', 'hr'), async (req, res, next) =
       annualDays = n;
     }
 
+    let staffCode = existing.staff_code || null;
+    if (b.staff_code !== undefined) {
+      staffCode = normalizeStaffCode(b.staff_code);
+      if (nextRole !== 'owner' && !staffCode) {
+        return res.status(400).json({ error: 'Staff ID is required' });
+      }
+      await assertStaffCodeAvailable(staffCode, existing.id);
+    }
+
     const { rows } = await query(
       `UPDATE staff_users SET
          full_name = COALESCE($1, full_name),
@@ -482,8 +498,9 @@ router.patch('/users/:id', requireRoles('admin', 'hr'), async (req, res, next) =
          salary_change_status = $12,
          leave_casual_days = $13,
          leave_annual_days = $14,
+         staff_code = $15,
          updated_at = now()
-       WHERE id = $15
+       WHERE id = $16
        RETURNING ${STAFF_SELECT}`,
       [
         b.full_name ?? null,
@@ -500,12 +517,16 @@ router.patch('/users/:id', requireRoles('admin', 'hr'), async (req, res, next) =
         salaryStatus,
         casualDays,
         annualDays,
+        staffCode,
         req.params.id,
       ]
     );
     res.json({ ...rows[0], is_first_login: Boolean(Number(rows[0].is_first_login)) });
   } catch (e) {
     if (e.status) return res.status(e.status).json({ error: e.message });
+    if (e.code === '23505') {
+      return res.status(409).json({ error: 'Username, email, or staff ID already exists' });
+    }
     next(e);
   }
 });

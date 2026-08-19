@@ -41,6 +41,27 @@ async function generateUniqueStaffCode(role) {
   throw new Error('Unable to generate a unique staff ID');
 }
 
+function normalizeStaffCode(value) {
+  const code = String(value || '').trim();
+  return code || null;
+}
+
+async function assertStaffCodeAvailable(code, exceptId = null) {
+  if (!code) return;
+  const params = [code];
+  let sql = `SELECT id FROM staff_users WHERE lower(staff_code) = lower($1)`;
+  if (exceptId) {
+    params.push(exceptId);
+    sql += ` AND id <> $2`;
+  }
+  const { rows } = await query(sql, params);
+  if (rows[0]) {
+    const err = new Error('This staff ID is already in use');
+    err.status = 409;
+    throw err;
+  }
+}
+
 function passwordPolicyOk(password) {
   const value = String(password || '');
   return value.length >= 8 && /[A-Z]/.test(value) && /[a-z]/.test(value);
@@ -63,6 +84,8 @@ module.exports = {
   TEMP_PASSWORD,
   ROLE_PREFIX,
   generateUniqueStaffCode,
+  normalizeStaffCode,
+  assertStaffCodeAvailable,
   passwordPolicyOk,
   passwordPolicyMessage,
   getPasswordPolicyChecks,
