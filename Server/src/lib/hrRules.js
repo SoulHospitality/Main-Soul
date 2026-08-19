@@ -207,11 +207,38 @@ function excelTimeToHhMm(value) {
     const mm = mins % 60;
     return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
   }
+  const text = String(value || '').trim();
+  const stamp = text.match(/(?:^|[ T])(\d{1,2}):(\d{2})(?::\d{2})?/);
+  if (stamp) {
+    const hh = Number(stamp[1]);
+    const mm = Number(stamp[2]);
+    if (hh <= 23 && mm <= 59) {
+      return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+    }
+  }
   const parsed = parseHhMm(value);
   if (parsed == null) return null;
   const hh = Math.floor(parsed / 60);
   const mm = parsed % 60;
   return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
+function toIsoDate(value) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+  }
+  if (typeof value === 'number') return excelSerialToIso(value);
+  const s = String(value || '').trim();
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : null;
+}
+
+function normalizePersonId(value) {
+  return String(value || '')
+    .trim()
+    .replace(/^'+/, '')
+    .replace(/\.0$/, '')
+    .trim();
 }
 
 function normalizeHeader(h) {
@@ -226,6 +253,38 @@ function truthyNotice(value) {
   return ['1', 'yes', 'y', 'true', 'notified', 'with notice', 'with_notice'].includes(t);
 }
 
+function stripHtmlCell(value) {
+  return String(value || '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .trim();
+}
+
+function parseHtmlExcelTables(html) {
+  const cells = [...String(html).matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)].map((m) =>
+    stripHtmlCell(m[1])
+  );
+  const headerIdx = cells.findIndex((c) => /^(person|personal)\s*id$/i.test(c));
+  if (headerIdx < 0) return [];
+  const headers = [];
+  let i = headerIdx;
+  while (i < cells.length && headers.length < 11) {
+    headers.push(cells[i]);
+    i += 1;
+  }
+  const colCount = headers.length;
+  if (colCount < 3) return [];
+  const rows = [];
+  while (i + colCount <= cells.length) {
+    const obj = {};
+    for (let c = 0; c < colCount; c += 1) obj[headers[c]] = cells[i + c];
+    rows.push(obj);
+    i += colCount;
+  }
+  return rows;
+}
+
 function parseAttendanceRows(rows) {
   return (rows || []).map((row, index) => {
     const keys = Object.keys(row || {});
@@ -236,29 +295,77 @@ function parseAttendanceRows(rows) {
       }
       return null;
     };
-    let dateVal = pick('date', 'day', 'attendance_date');
-    if (dateVal instanceof Date) {
-      dateVal = `${dateVal.getFullYear()}-${String(dateVal.getMonth() + 1).padStart(2, '0')}-${String(dateVal.getDate()).padStart(2, '0')}`;
-    } else if (typeof dateVal === 'number') {
-      dateVal = excelSerialToIso(dateVal);
-    } else if (dateVal) {
-      const s = String(dateVal).trim();
-      const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
-      dateVal = m ? m[1] : null;
-    }
-    const status = String(pick('status', 'type', 'attendance') || '').toLowerCase();
-    const arrivalRaw = pick('arrival_time', 'arrival', 'check_in', 'checkin', 'time', 'clock_in');
-    const arrival_time = arrivalRaw != null ? excelTimeToHhMm(arrivalRaw) : null;
-    const absent = !arrival_time || /absent|absence|no.show/.test(status);
-    const staffCode = pick('staff_code', 'staff_id', 'code', 'id');
+    const timeRaw = pick('time', 'arrival_time', 'arrival', 'check_in', 'checkin', 'clock_in');
+    let dateVal = toIsoDate(pick('date', 'day', 'attendance_date')) || toIsoDate(timeRaw);
+    const status = String(pick('attendance_status', 'status', 'type', 'attendance') || '').toLowerCase();
+    const isCheckIn = /check[\s_-]*in/.test(status);
+    const isCheckOut = /check[\s_-]*out/.test(status);
+    const arrival_time = timeRaw != null ? excelTimeToHhMm(timeRaw) : null;
+    const explicitAbsent = /absent|absence|no.show/.test(status);
+    const absent = explicitAbsent || (!isCheckIn && !isCheckOut && !arrival_time);
+    const staffCode = normalizePersonId(
+      pick('person_id', 'personal_id', 'staff_code', 'staff_id', 'code')
+    );
     const name = pick('name', 'full_name', 'staff', 'employee');
     return {
       row: index + 2,
-      staff_code: staffCode ? String(staffCode).trim() : '',
+      staff_code: staffCode,
       name: name ? String(name).trim() : '',
       date: dateVal,
       arrival_time: absent ? null : arrival_time,
       notified: truthyNotice(pick('notified', 'notice', 'with_notice')),
+      absent,
+      status,
+      is_check_in: isCheckIn,
+      is_check_out: isCheckOut,
+    };
+  });
+}
+
+function isDoorPunchLog(rows) {
+  return (rows || []).some((r) => r.is_check_in || r.is_check_out);
+}
+
+function timeToMinutes(hhmm) {
+  return parseHhMm(hhmm);
+}
+
+function collapsePunchAttendance(rows) {
+  const byKey = new Map();
+  for (const row of rows || []) {
+    if (!row.staff_code || !row.date) continue;
+    const key = `${row.staff_code.toLowerCase()}|${row.date}`;
+    const cur = byKey.get(key) || {
+      staff_code: row.staff_code,
+      name: row.name,
+      date: row.date,
+      checkIns: [],
+      punches: [],
+      notified: false,
+      explicitAbsent: false,
+    };
+    if (row.name && !cur.name) cur.name = row.name;
+    if (row.notified) cur.notified = true;
+    if (row.absent && !row.is_check_in && !row.is_check_out) cur.explicitAbsent = true;
+    if (row.arrival_time) {
+      cur.punches.push(row.arrival_time);
+      if (row.is_check_in) cur.checkIns.push(row.arrival_time);
+    }
+    byKey.set(key, cur);
+  }
+  return [...byKey.values()].map((cur) => {
+    const pickEarliest = (times) =>
+      times
+        .slice()
+        .sort((a, b) => (timeToMinutes(a) ?? 0) - (timeToMinutes(b) ?? 0))[0] || null;
+    const arrival = pickEarliest(cur.checkIns) || pickEarliest(cur.punches);
+    const absent = cur.explicitAbsent && !arrival;
+    return {
+      staff_code: cur.staff_code,
+      name: cur.name,
+      date: cur.date,
+      arrival_time: absent ? null : arrival,
+      notified: cur.notified,
       absent,
     };
   });
@@ -328,6 +435,10 @@ module.exports = {
   nextPayrollPeriod,
   dateCoveredByRanges,
   parseAttendanceRows,
+  parseHtmlExcelTables,
+  collapsePunchAttendance,
+  isDoorPunchLog,
+  normalizePersonId,
   excelTimeToHhMm,
   computeHalfDayDeduction,
   PENALTY_CATEGORIES,

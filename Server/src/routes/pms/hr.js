@@ -18,6 +18,10 @@ const {
   nextPayrollPeriod,
   dateCoveredByRanges,
   parseAttendanceRows,
+  parseHtmlExcelTables,
+  collapsePunchAttendance,
+  isDoorPunchLog,
+  normalizePersonId,
   roundMoney,
   splitSalaryAdjustments,
   hasOfficeAttendance,
@@ -1053,6 +1057,23 @@ router.get('/hr/attendance/template', requireRoles(...HR_ROLES), (_req, res) => 
   res.send(buf);
 });
 
+function loadAttendanceJson(file) {
+  const buf = file.buffer;
+  const head = buf.slice(0, 800).toString('utf8');
+  if (/<html/i.test(head) || /<table/i.test(head)) {
+    return parseHtmlExcelTables(buf.toString('utf8'));
+  }
+  try {
+    const wb = XLSX.read(buf, { type: 'buffer', cellDates: true });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    return XLSX.utils.sheet_to_json(sheet, { defval: '' });
+  } catch (err) {
+    const asText = buf.toString('utf8');
+    if (/<td/i.test(asText)) return parseHtmlExcelTables(asText);
+    throw err;
+  }
+}
+
 router.post(
   '/hr/attendance/import',
   requireRoles(...HR_ROLES),
@@ -1060,12 +1081,14 @@ router.post(
   async (req, res, next) => {
     try {
       if (!req.file?.buffer) {
-        return res.status(400).json({ error: 'Upload an Excel file (.xlsx)' });
+        return res.status(400).json({ error: 'Upload an Excel attendance file (.xls or .xlsx)' });
       }
-      const wb = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: true });
-      const sheet = wb.Sheets[wb.SheetNames[0]];
-      const json = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-      const parsed = parseAttendanceRows(json).filter((r) => r.staff_code || r.name || r.date);
+      const json = loadAttendanceJson(req.file);
+      const punches = parseAttendanceRows(json).filter((r) => r.staff_code || r.name || r.date);
+      if (!punches.length) {
+        return res.status(400).json({ error: 'The sheet has no attendance rows' });
+      }
+      let parsed = isDoorPunchLog(punches) ? collapsePunchAttendance(punches) : punches;
       if (!parsed.length) {
         return res.status(400).json({ error: 'The sheet has no attendance rows' });
       }
@@ -1076,8 +1099,32 @@ router.post(
       const byCode = new Map();
       const byName = new Map();
       for (const s of staffRows) {
-        if (s.staff_code) byCode.set(String(s.staff_code).trim().toLowerCase(), s);
+        if (s.staff_code) byCode.set(normalizePersonId(s.staff_code).toLowerCase(), s);
         byName.set(String(s.full_name || '').trim().toLowerCase(), s);
+      }
+
+      if (isDoorPunchLog(punches)) {
+        const workDates = [...new Set(parsed.map((p) => p.date).filter(Boolean))];
+        const present = new Set(
+          parsed.map((p) => `${normalizePersonId(p.staff_code).toLowerCase()}|${p.date}`)
+        );
+        for (const staff of staffRows) {
+          if (!hasOfficeAttendance(staff.role) || !staff.staff_code) continue;
+          const code = normalizePersonId(staff.staff_code).toLowerCase();
+          for (const date of workDates) {
+            if (!present.has(`${code}|${date}`)) {
+              parsed.push({
+                staff_code: staff.staff_code,
+                name: staff.full_name,
+                date,
+                arrival_time: null,
+                notified: false,
+                absent: true,
+              });
+              present.add(`${code}|${date}`);
+            }
+          }
+        }
       }
 
       const dates = parsed.map((p) => p.date).filter(Boolean).sort();
@@ -1131,7 +1178,7 @@ router.post(
           continue;
         }
         const staff =
-          (row.staff_code && byCode.get(row.staff_code.toLowerCase())) ||
+          (row.staff_code && byCode.get(normalizePersonId(row.staff_code).toLowerCase())) ||
           (row.name && byName.get(row.name.toLowerCase()));
         if (!staff) {
           errors.push({

@@ -14,6 +14,9 @@ const {
   nextPayrollPeriod,
   dateCoveredByRanges,
   parseAttendanceRows,
+  collapsePunchAttendance,
+  isDoorPunchLog,
+  parseHtmlExcelTables,
   splitSalaryAdjustments,
   hasOfficeAttendance,
 } = require('./hrRules');
@@ -98,6 +101,53 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.equal(rows[0].arrival_time, '11:20');
     assert.equal(rows[1].absent, true);
     assert.equal(rows[1].notified, true);
+  });
+
+  it('reads door punch logs by Person ID, Time, and Attendance Status', () => {
+    const punches = parseAttendanceRows([
+      {
+        'Person ID': "'15",
+        Time: '2026-05-31 12:03:17',
+        'Attendance Status': 'Check-in',
+      },
+      {
+        'Person ID': "'15",
+        Time: '2026-05-31 18:00:51',
+        'Attendance Status': 'Check-out',
+      },
+      {
+        'Person ID': "'15",
+        Time: '2026-06-02 09:49:33',
+        'Attendance Status': 'Check-in',
+      },
+    ]);
+    assert.equal(isDoorPunchLog(punches), true);
+    const daily = collapsePunchAttendance(punches);
+    const may31 = daily.find((r) => r.date === '2026-05-31');
+    const jun2 = daily.find((r) => r.date === '2026-06-02');
+    assert.equal(may31.staff_code, '15');
+    assert.equal(may31.arrival_time, '12:03');
+    assert.equal(may31.absent, false);
+    assert.equal(jun2.arrival_time, '09:49');
+  });
+
+  it('parses the HTML .xls door report layout', () => {
+    const html = `
+      <table><tr>
+        <td>Person ID</td><td>Name</td><td>Department</td><td>Time</td>
+        <td>Attendance Status</td><td>Attendance Check Point</td><td>Custom Name</td>
+        <td>Data Source</td><td>Handling Type</td><td>Temperature</td><td>Abnormal</td>
+      </tr></table>
+      <table><tr>
+        <td>'15</td><td>Wael</td><td>New Organization</td><td>2026-05-31 12:03:17</td>
+        <td>Check-in</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
+      </tr></table>`;
+    const json = parseHtmlExcelTables(html);
+    const rows = parseAttendanceRows(json);
+    assert.equal(rows[0].staff_code, '15');
+    assert.equal(rows[0].date, '2026-05-31');
+    assert.equal(rows[0].arrival_time, '12:03');
+    assert.equal(rows[0].is_check_in, true);
   });
 
   it('splits lateness and absence as penalties, loans as deductions', () => {
