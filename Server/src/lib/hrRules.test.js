@@ -15,6 +15,7 @@ const {
   dateCoveredByRanges,
   parseAttendanceRows,
   splitSalaryAdjustments,
+  hasOfficeAttendance,
 } = require('./hrRules');
 
 describe('HR daily-rate deductions and leave rules', () => {
@@ -107,5 +108,12 @@ describe('HR daily-rate deductions and leave rules', () => {
     ]);
     assert.equal(split.penalties_total, 75);
     assert.equal(split.deductions_total, 450);
+  });
+
+  it('does not apply office attendance to operations roles', () => {
+    assert.equal(hasOfficeAttendance('operations'), false);
+    assert.equal(hasOfficeAttendance('operations_supervisor'), false);
+    assert.equal(hasOfficeAttendance('hr'), true);
+    assert.equal(hasOfficeAttendance('reservations_web'), true);
   });
 });

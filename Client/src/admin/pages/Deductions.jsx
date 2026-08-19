@@ -172,8 +172,8 @@ export default function Deductions() {
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-soul-muted">HR</p>
           <h1 className="page-title mt-1">Deductions</h1>
           <p className="page-subtitle">
-            Upload attendance Excel for lateness and absence. Approved holidays (and WFH) are not deducted.
-            Manual entries are for other amounts only.
+            Upload attendance Excel for lateness and absence. Operations staff are skipped (they work in the field, not the office).
+            Approved holidays (and WFH) are not deducted. Manual entries are for other amounts only.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

@@ -275,6 +275,11 @@ function computeHalfDayDeduction(baseSalary) {
 }
 
 const PENALTY_CATEGORIES = ['lateness', 'absence', 'delay', 'performance', 'penalty'];
+const NO_OFFICE_ATTENDANCE_ROLES = new Set(['operations', 'operations_supervisor']);
+
+function hasOfficeAttendance(role) {
+  return !NO_OFFICE_ATTENDANCE_ROLES.has(String(role || ''));
+}
 
 function isPenaltyCategory(category) {
   return PENALTY_CATEGORIES.includes(String(category || '').toLowerCase());
@@ -326,6 +331,8 @@ module.exports = {
   excelTimeToHhMm,
   computeHalfDayDeduction,
   PENALTY_CATEGORIES,
+  NO_OFFICE_ATTENDANCE_ROLES,
+  hasOfficeAttendance,
   isPenaltyCategory,
   splitSalaryAdjustments,
 };

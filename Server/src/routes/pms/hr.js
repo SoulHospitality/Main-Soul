@@ -20,6 +20,7 @@ const {
   parseAttendanceRows,
   roundMoney,
   splitSalaryAdjustments,
+  hasOfficeAttendance,
 } = require('../../lib/hrRules');
 
 const router = express.Router();
@@ -887,7 +888,12 @@ router.post('/hr/wfh', async (req, res, next) => {
     let staffUserId = req.user.id;
     if (isHrActor(req.user) && req.body?.staff_user_id) {
       staffUserId = Number(req.body.staff_user_id);
-      await loadStaffForHr(staffUserId);
+    }
+    const target = await loadStaffForHr(staffUserId);
+    if (!hasOfficeAttendance(target.role)) {
+      return res.status(400).json({
+        error: 'Operations staff work in the field and do not use office attendance or work-from-home days',
+      });
     }
     const { rows: existing } = await query(
       `SELECT id FROM staff_wfh_requests
@@ -1065,7 +1071,7 @@ router.post(
       }
 
       const { rows: staffRows } = await query(
-        `SELECT id, staff_code, full_name, base_salary FROM staff_users WHERE role <> 'owner'`
+        `SELECT id, staff_code, full_name, base_salary, role FROM staff_users WHERE role <> 'owner'`
       );
       const byCode = new Map();
       const byName = new Map();
@@ -1132,6 +1138,10 @@ router.post(
             row: row.row,
             error: `Unknown staff (${row.staff_code || row.name || 'blank'})`,
           });
+          continue;
+        }
+        if (!hasOfficeAttendance(staff.role)) {
+          skipped.push({ row: row.row, staff_user_id: staff.id, reason: 'no_office_attendance' });
           continue;
         }
         if (dateCoveredByRanges(row.date, leavesByStaff.get(staff.id) || [])) {
