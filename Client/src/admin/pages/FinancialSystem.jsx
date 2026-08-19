@@ -73,7 +73,7 @@ const GROUP_META = {
     icon: TrendingUp,
     tint: 'bg-emerald-50 text-emerald-900',
     tile: 'bg-emerald-600',
-    hint: 'Every guest penny in — stays, housekeeping, extras',
+    hint: 'Reservation totals plus custom revenue',
   },
   cogs: {
     label: ACCOUNT_GROUPS.cogs,
@@ -181,6 +181,7 @@ function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool
   const treasury = data?.treasury || [];
   const kpis = data?.kpis || {};
   const outstanding = data?.outstanding || { amount: 0, count: 0 };
+  const receipts = data?.receipts || {};
 
   return (
     <div className="space-y-8">
@@ -199,7 +200,7 @@ function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool
         {[
           ['Collected in treasury', kpis.collected, 'Cash that actually landed'],
           ['Outstanding', outstanding.amount, `${outstanding.count} stays unpaid`],
-          ['Gross revenue', kpis.gross_revenue ?? kpis.revenue, 'Every guest penny in'],
+          ['Gross revenue', kpis.gross_revenue ?? kpis.revenue, `${currency(receipts.stays)} reservations + ${currency(receipts.custom)} custom`],
           ['Owner trust', kpis.owner_trust, 'Still held for owners'],
         ].map(([label, amount, sub]) => (
           <div key={label} className="rounded-2xl border border-soul-line bg-white px-4 py-4">
@@ -208,26 +209,6 @@ function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool
             <p className="text-xs text-gray-500 mt-1">{sub}</p>
           </div>
         ))}
-      </div>
-
-      <div className="rounded-2xl border border-soul-line bg-white p-5">
-        <p className="text-xs uppercase tracking-wider text-gray-400">Why treasury is not the same as revenue</p>
-        <p className="text-sm text-gray-600 mt-1">
-          Revenue is every guest penny billed through Soul (stays, housekeeping, extras). Treasury is only the cash still sitting in bank and cash after owner payouts and bills. Guest money for owners stays in treasury until it is paid out — it is not Soul profit.
-        </p>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
-          {[
-            ['Gross revenue', kpis.gross_revenue ?? kpis.revenue],
-            ['Held for owners', kpis.owner_share ?? kpis.owner_trust],
-            ['Soul fees', kpis.soul_fees],
-            ['Still in treasury', kpis.treasury_total],
-          ].map(([label, amount]) => (
-            <div key={label}>
-              <p className="text-[11px] text-gray-400">{label}</p>
-              <p className="text-lg font-bold tabular-nums">{currency(amount)}</p>
-            </div>
-          ))}
-        </div>
       </div>
 
       <button
@@ -251,7 +232,7 @@ function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool
             <p className="text-xs uppercase tracking-wider text-gray-500">Soul net profit</p>
             <p className="font-semibold text-soul-blue">Soul fees − COGS − operating expenses</p>
             <p className="text-xs text-gray-500 mt-0.5">
-              {currency(kpis.gross_revenue ?? kpis.revenue)} guest receipts · {currency(kpis.owner_share)} to owners · {currency(kpis.soul_fees)} Soul fees · {currency(kpis.cogs)} direct · {currency(kpis.opex)} opex
+              {currency(kpis.gross_revenue ?? kpis.revenue)} reservation totals + custom · {currency(kpis.owner_share)} to owners · {currency(kpis.soul_fees)} Soul fees · {currency(kpis.cogs)} direct · {currency(kpis.opex)} opex
             </p>
           </div>
           <p
@@ -1081,7 +1062,7 @@ function ReportsTool({ rangeParams: params }) {
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-500">
-        From {data?.from_date} → {data?.to_date}. Gross revenue is every guest penny. Net profit is Soul fees after costs — owner money is held in trust, not earned.
+        From {data?.from_date} → {data?.to_date}. Revenue is reservation totals plus custom revenue. Net profit is Soul fees after costs.
       </p>
       <div className="flex flex-wrap gap-2">
         {[
@@ -1104,11 +1085,19 @@ function ReportsTool({ rangeParams: params }) {
         <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
           <div className="px-6 py-4 border-b">
             <h3 className="font-semibold">Profit & loss</h3>
-            <p className="text-xs text-gray-500">Every guest penny in, then Soul’s cut after owner share and costs</p>
+            <p className="text-xs text-gray-500">Reservation totals plus custom revenue, then Soul’s cut after owner share and costs</p>
           </div>
           <div className="px-6 py-3 bg-emerald-50 text-sm flex justify-between font-semibold">
-            <span>Gross revenue (stays, housekeeping, extras)</span>
+            <span>Gross revenue (reservation totals + custom)</span>
             <span className="tabular-nums">{currency(pnl.totals?.gross_revenue ?? pnl.receipts?.total)}</span>
+          </div>
+          <div className="px-6 py-1.5 text-sm flex justify-between text-gray-600">
+            <span>Reservation totals</span>
+            <span className="tabular-nums">{currency(pnl.receipts?.stays)}</span>
+          </div>
+          <div className="px-6 py-1.5 text-sm flex justify-between text-gray-600">
+            <span>Custom revenue</span>
+            <span className="tabular-nums">{currency(pnl.receipts?.custom)}</span>
           </div>
           <div className="px-6 py-2 text-sm flex justify-between text-gray-600">
             <span>Held for owners</span>

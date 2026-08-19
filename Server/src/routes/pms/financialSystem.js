@@ -819,7 +819,11 @@ router.get('/financial-system/accounts/:code', requireRoles('admin'), async (req
       from_date: from,
       to_date: to,
       account: summary,
-      transactions: mirrorTransactions(built.journal, code),
+      transactions: mirrorTransactions(built.journal, code, {
+        reservations: built.reservations,
+        from,
+        to,
+      }),
     });
   } catch (e) {
     next(e);

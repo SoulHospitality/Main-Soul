@@ -244,7 +244,8 @@ function bookingEntry(r, asOf) {
       payment_method: r.payment_method,
       payment_status: r.payment_status,
       stay_invoice: posted.stayInvoice,
-      total_amount: posted.guestTotal,
+      total_amount: parseFloat(r.total_amount) || 0,
+      guest_total: posted.guestTotal,
       invoice_amount: posted.ar,
       amount_paid: paid,
       outstanding,
@@ -1010,6 +1011,7 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
         lines,
         meta: {
           manual_id: row.id,
+          amount: amt,
           unit_name: row.unit_name,
           created_by_name: row.created_by_name,
           notes: row.notes,
@@ -1112,23 +1114,44 @@ function balancesFromJournal(journal) {
   });
 }
 
-function mirrorTransactions(journal, code) {
+function stayCountsInRevenue(r, from, to) {
+  if (isCancelledStay(r)) return false;
+  return inRange(r.check_in, from, to);
+}
+
+function reservationListTotal(r) {
+  return round2(parseFloat(r?.total_amount) || 0);
+}
+
+function mirrorTransactions(journal, code, opts = {}) {
   if (code === '400000') {
-    return (journal || [])
-      .filter((e) =>
-        ['booking', 'housekeeping_order', 'manual_revenue', 'miscellaneous', 'cancellation'].includes(e.type)
-      )
-      .map((e) => ({
+    const { reservations, from, to } = opts;
+    const rows = [];
+    for (const r of reservations || []) {
+      if (!stayCountsInRevenue(r, from, to)) continue;
+      rows.push({
+        id: `BK-${r.id}`,
+        date: isoDate(r.check_in),
+        description: `${r.guest_name || 'Guest'} — ${r.unit_name || 'Unit'}`,
+        amount: reservationListTotal(r),
+        side: 'credit',
+        counterparty: r.guest_name || r.unit_name || 'Stay',
+        type: 'booking',
+      });
+    }
+    for (const e of journal || []) {
+      if (e.type !== 'manual_revenue') continue;
+      rows.push({
         id: e.id,
         date: e.date,
         description: e.description,
-        amount: round2(
-          Number(e.meta?.stay_invoice) || Number(e.meta?.total_amount) || e.credit || e.debit || 0
-        ),
+        amount: round2(parseFloat(e.meta?.amount) || e.debit || 0),
         side: 'credit',
-        counterparty: e.meta?.guest_name || e.meta?.unit_number || e.type,
+        counterparty: e.meta?.unit_name || 'Custom revenue',
         type: e.type,
-      }));
+      });
+    }
+    return rows;
   }
 
   const acct = getAccount(code);
@@ -1227,38 +1250,44 @@ function pnlFromBalances(bals) {
   };
 }
 
-function computeGrossReceipts(journal) {
+function computeGrossReceipts(journal, reservations, from, to) {
   let stays = 0;
-  let housekeeping = 0;
-  let other = 0;
+  let stayCount = 0;
+  if (reservations) {
+    for (const r of reservations) {
+      if (!stayCountsInRevenue(r, from, to)) continue;
+      stays += parseFloat(r.total_amount) || 0;
+      stayCount += 1;
+    }
+  } else {
+    for (const e of journal || []) {
+      if (e.type !== 'booking') continue;
+      stays += parseFloat(e.meta?.total_amount) || 0;
+      stayCount += 1;
+    }
+  }
+
+  let custom = 0;
+  let customCount = 0;
   let ownerShare = 0;
   for (const e of journal || []) {
     if (e.type === 'period_close') continue;
     if (e.type === 'booking') {
-      stays += Number(e.meta?.stay_invoice) || Number(e.meta?.total_amount) || 0;
       ownerShare += Number(e.meta?.owner_share) || 0;
-    } else if (e.type === 'housekeeping_order') {
-      housekeeping += e.credit || 0;
     } else if (e.type === 'manual_revenue') {
-      other += e.debit || 0;
-    } else if (e.type === 'cancellation') {
-      const line = (e.lines || []).find((l) => l.account === '409000' && l.credit > 0);
-      if (line) other += line.credit;
-    } else if (e.type === 'petty_cash') {
-      const inn = (e.lines || []).find((l) => l.account === '103000' && (l.debit || 0) > 0);
-      if (inn) other += inn.debit;
-    } else if (e.type === 'miscellaneous') {
-      const inn = (e.lines || []).find((l) => l.account === '101000' && (l.debit || 0) > 0);
-      const rev = (e.lines || []).find((l) => l.account === '409000' && (l.credit || 0) > 0);
-      if (inn && rev) other += inn.debit;
+      custom += parseFloat(e.meta?.amount) || e.debit || 0;
+      customCount += 1;
     }
   }
   return {
     stays: round2(stays),
-    housekeeping: round2(housekeeping),
-    other: round2(other),
+    custom: round2(custom),
+    stay_count: stayCount,
+    custom_count: customCount,
+    housekeeping: 0,
+    other: round2(custom),
     owner_share: round2(ownerShare),
-    total: round2(stays + housekeeping + other),
+    total: round2(stays + custom),
   };
 }
 
@@ -1400,16 +1429,14 @@ function buildPortal(journal, reservations, recurring, extras = {}) {
   const groups = accountsByGroup();
   const operatingJournal = journal.filter((e) => e.type !== 'period_close');
   const pnl = pnlFromBalances(balancesFromJournal(operatingJournal));
-  const receipts = computeGrossReceipts(operatingJournal);
+  const receipts = computeGrossReceipts(operatingJournal, reservations, extras.from, extras.to);
   const soulFees = pnl.totals.revenue;
 
   if (byCode['400000']) {
     byCode['400000'].balance = receipts.total;
     byCode['400000'].debit = 0;
     byCode['400000'].credit = receipts.total;
-    byCode['400000'].txn_count = operatingJournal.filter((e) =>
-      ['booking', 'housekeeping_order', 'manual_revenue', 'miscellaneous', 'cancellation'].includes(e.type)
-    ).length;
+    byCode['400000'].txn_count = (receipts.stay_count || 0) + (receipts.custom_count || 0);
   }
 
   const groupCards = Object.entries(groups).map(([id, g]) => {
@@ -1487,10 +1514,15 @@ function buildPortal(journal, reservations, recurring, extras = {}) {
   };
 }
 
-function buildStatements(journal) {
+function buildStatements(journal, reservations, from, to) {
   const bals = balancesFromJournal(journal);
   const pnl = pnlFromBalances(bals.filter((a) => a.type === 'revenue' || a.type === 'expense'));
-  const receipts = computeGrossReceipts(journal.filter((e) => e.type !== 'period_close'));
+  const receipts = computeGrossReceipts(
+    journal.filter((e) => e.type !== 'period_close'),
+    reservations,
+    from,
+    to
+  );
   const closedPnl = journal.filter((e) => e.type === 'period_close');
   const livePnl = closedPnl.length ? 0 : pnl.totals.net;
   const tb = trialBalance(bals);
@@ -1534,6 +1566,8 @@ async function buildFinancialPortal(from, to) {
   const portal = buildPortal(journal, data.reservations, data.recurring, {
     closes: data.closes,
     settings: data.settings,
+    from,
+    to,
   });
   return {
     journal,
@@ -1556,7 +1590,7 @@ async function buildYtdStatements(to) {
   return {
     from_date: from,
     to_date: asOf,
-    ...buildStatements(journal),
+    ...buildStatements(journal, data.reservations, from, asOf),
     vat_return: vatReturn(journal),
     owner_trust: ownerTrustSubledger(journal, data),
     aging: agingFromReservations(data.reservations, asOf),

@@ -34,7 +34,7 @@ const CHART_OF_ACCOUNTS = [
   { code: '302000', name: 'Retained Earnings', group: 'equity', type: 'equity' },
   { code: '303000', name: 'Current Year Profit / Loss', group: 'equity', type: 'equity' },
 
-  { code: '400000', name: 'Gross guest receipts (every penny in from stays & housekeeping)', group: 'revenue', type: 'revenue', virtual: true },
+  { code: '400000', name: 'Gross revenue (reservation totals + custom revenue)', group: 'revenue', type: 'revenue', virtual: true },
   { code: '401000', name: 'Management Fee / Commission Revenue (Agent Split)', group: 'revenue', type: 'revenue' },
   { code: '402000', name: 'Cleaning & Turnover Fee Revenue', group: 'revenue', type: 'revenue' },
   { code: '403000', name: 'Maintenance Markup & Service Fee Revenue', group: 'revenue', type: 'revenue' },
