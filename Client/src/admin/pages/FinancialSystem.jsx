@@ -229,10 +229,10 @@ function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool
             <TrendingUp className="w-6 h-6" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-xs uppercase tracking-wider text-gray-500">Soul net profit</p>
-            <p className="font-semibold text-soul-blue">Soul fees − COGS − operating expenses</p>
+            <p className="text-xs uppercase tracking-wider text-gray-500">Net profit</p>
+            <p className="font-semibold text-soul-blue">Gross revenue − direct costs − operating expenses</p>
             <p className="text-xs text-gray-500 mt-0.5">
-              {currency(kpis.gross_revenue ?? kpis.revenue)} reservation totals + custom · {currency(kpis.owner_share)} to owners · {currency(kpis.soul_fees)} Soul fees · {currency(kpis.cogs)} direct · {currency(kpis.opex)} opex
+              {currency(kpis.gross_revenue ?? kpis.revenue)} revenue · {currency(kpis.cogs)} direct · {currency(kpis.opex)} opex
             </p>
           </div>
           <p
@@ -1062,7 +1062,7 @@ function ReportsTool({ rangeParams: params }) {
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-500">
-        From {data?.from_date} → {data?.to_date}. Revenue is reservation totals plus custom revenue. Net profit is Soul fees after costs.
+        From {data?.from_date} → {data?.to_date}. Revenue is reservation totals plus custom revenue. Net profit is that figure after direct costs and operating expenses.
       </p>
       <div className="flex flex-wrap gap-2">
         {[
@@ -1085,7 +1085,7 @@ function ReportsTool({ rangeParams: params }) {
         <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
           <div className="px-6 py-4 border-b">
             <h3 className="font-semibold">Profit & loss</h3>
-            <p className="text-xs text-gray-500">Reservation totals plus custom revenue, then Soul’s cut after owner share and costs</p>
+            <p className="text-xs text-gray-500">Reservation totals plus custom revenue, less direct costs and operating expenses</p>
           </div>
           <div className="px-6 py-3 bg-emerald-50 text-sm flex justify-between font-semibold">
             <span>Gross revenue (reservation totals + custom)</span>
@@ -1098,15 +1098,6 @@ function ReportsTool({ rangeParams: params }) {
           <div className="px-6 py-1.5 text-sm flex justify-between text-gray-600">
             <span>Custom revenue</span>
             <span className="tabular-nums">{currency(pnl.receipts?.custom)}</span>
-          </div>
-          <div className="px-6 py-2 text-sm flex justify-between text-gray-600">
-            <span>Held for owners</span>
-            <span className="tabular-nums">−{currency(pnl.totals?.owner_share ?? pnl.receipts?.owner_share)}</span>
-          </div>
-          <AccountLines rows={pnl.revenue} />
-          <div className="px-6 py-2 bg-slate-50 text-sm flex justify-between">
-            <span>Soul fees (commission, cleaning, markup)</span>
-            <span className="tabular-nums font-semibold">{currency(pnl.totals?.soul_fees ?? pnl.totals?.revenue)}</span>
           </div>
           <AccountLines rows={pnl.cogs} />
           <div className="px-6 py-2 bg-slate-50 text-sm flex justify-between">

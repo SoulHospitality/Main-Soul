@@ -1253,28 +1253,29 @@ function pnlFromBalances(bals) {
 function computeGrossReceipts(journal, reservations, from, to) {
   let stays = 0;
   let stayCount = 0;
+  let ownerShare = 0;
   if (reservations) {
     for (const r of reservations) {
       if (!stayCountsInRevenue(r, from, to)) continue;
       stays += parseFloat(r.total_amount) || 0;
       stayCount += 1;
+      const { fin } = reservationFinancials(r);
+      ownerShare += Number(fin.ownerNet) || 0;
     }
   } else {
     for (const e of journal || []) {
       if (e.type !== 'booking') continue;
       stays += parseFloat(e.meta?.total_amount) || 0;
       stayCount += 1;
+      ownerShare += Number(e.meta?.owner_share) || 0;
     }
   }
 
   let custom = 0;
   let customCount = 0;
-  let ownerShare = 0;
   for (const e of journal || []) {
     if (e.type === 'period_close') continue;
-    if (e.type === 'booking') {
-      ownerShare += Number(e.meta?.owner_share) || 0;
-    } else if (e.type === 'manual_revenue') {
+    if (e.type === 'manual_revenue') {
       custom += parseFloat(e.meta?.amount) || e.debit || 0;
       customCount += 1;
     }
@@ -1288,6 +1289,24 @@ function computeGrossReceipts(journal, reservations, from, to) {
     other: round2(custom),
     owner_share: round2(ownerShare),
     total: round2(stays + custom),
+  };
+}
+
+function pnlTotalsFromReceipts(pnl, receipts) {
+  const grossRevenue = round2(receipts?.total || 0);
+  const cogs = round2(pnl.totals.cogs);
+  const opex = round2(pnl.totals.opex);
+  const gross = round2(grossRevenue - cogs);
+  const net = round2(gross - opex);
+  return {
+    ...pnl.totals,
+    gross_revenue: grossRevenue,
+    soul_fees: pnl.totals.revenue,
+    owner_share: round2(receipts?.owner_share || 0),
+    cogs,
+    opex,
+    gross,
+    net,
   };
 }
 
@@ -1431,6 +1450,7 @@ function buildPortal(journal, reservations, recurring, extras = {}) {
   const pnl = pnlFromBalances(balancesFromJournal(operatingJournal));
   const receipts = computeGrossReceipts(operatingJournal, reservations, extras.from, extras.to);
   const soulFees = pnl.totals.revenue;
+  const headline = pnlTotalsFromReceipts(pnl, receipts);
 
   if (byCode['400000']) {
     byCode['400000'].balance = receipts.total;
@@ -1502,13 +1522,13 @@ function buildPortal(journal, reservations, recurring, extras = {}) {
       gross_revenue: receipts.total,
       revenue: receipts.total,
       soul_fees: soulFees,
-      owner_share: receipts.owner_share,
+      owner_share: headline.owner_share,
       treasury_total: treasuryTotal,
       treasury_in: treasuryIn,
-      cogs: pnl.totals.cogs,
-      opex: pnl.totals.opex,
-      gross_profit: pnl.totals.gross,
-      net_profit: pnl.totals.net,
+      cogs: headline.cogs,
+      opex: headline.opex,
+      gross_profit: headline.gross,
+      net_profit: headline.net,
     },
     accounts: bals,
   };
@@ -1532,12 +1552,7 @@ function buildStatements(journal, reservations, from, to) {
     profit_and_loss: {
       ...pnl,
       receipts,
-      totals: {
-        ...pnl.totals,
-        gross_revenue: receipts.total,
-        soul_fees: pnl.totals.revenue,
-        owner_share: receipts.owner_share,
-      },
+      totals: pnlTotalsFromReceipts(pnl, receipts),
     },
     balance_sheet: bs,
     cash_flow: cashFlow(journal),
