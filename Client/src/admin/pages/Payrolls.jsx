@@ -44,7 +44,7 @@ export default function Payrolls() {
   });
 
   const staff = data?.staff || [];
-  const totals = data?.totals || { base: 0, deductions: 0, net: 0, paid: 0, unpaid: 0 };
+  const totals = data?.totals || { base: 0, bonuses: 0, deductions: 0, net: 0, paid: 0, unpaid: 0 };
   const q = search.trim().toLowerCase();
   const filtered = useMemo(
     () =>
@@ -94,9 +94,10 @@ export default function Payrolls() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         {[
           { label: 'Gross salaries', value: totals.base },
+          { label: 'Bonuses', value: totals.bonuses },
           { label: 'Deductions', value: totals.deductions },
           { label: 'Net payroll', value: totals.net },
           { label: 'Still unpaid', value: totals.unpaid },
@@ -122,6 +123,7 @@ export default function Payrolls() {
                 <tr>
                   <th>Staff</th>
                   <th>Base salary</th>
+                  <th>Bonuses</th>
                   <th>Deductions</th>
                   <th>Net pay</th>
                   <th>Status</th>
@@ -139,6 +141,7 @@ export default function Payrolls() {
                       </div>
                     </td>
                     <td className="tabular-nums whitespace-nowrap">{currency(s.base_salary)}</td>
+                    <td className="tabular-nums whitespace-nowrap text-emerald-700">{currency(s.bonuses || 0)}</td>
                     <td className="tabular-nums whitespace-nowrap text-rose-700">{currency(s.deductions)}</td>
                     <td className="tabular-nums whitespace-nowrap font-semibold">{currency(s.net_pay)}</td>
                     <td>

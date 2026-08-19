@@ -172,6 +172,7 @@ const PAGE_ACCESS = {
     'holiday_access',
     'loans',
     'wfh',
+    'payslip',
     'profile',
   ]),
   owner: new Set([
@@ -206,7 +207,7 @@ export function canAccess(user, page) {
   if (!user) return false;
   if (user.role === 'admin') return true;
   if (page === 'profile' || page === 'change-password') return true;
-  if ((page === 'loans' || page === 'wfh') && user.role !== 'owner') return true;
+  if ((page === 'loans' || page === 'wfh' || page === 'payslip') && user.role !== 'owner') return true;
   const allowed = PAGE_ACCESS[user.role];
   if (allowed === true) return true;
   if (allowed instanceof Set) return allowed.has(page);

@@ -17,6 +17,7 @@ import {
   Banknote,
   Home,
   ShieldCheck,
+  Receipt,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -34,6 +35,7 @@ const NAV_ITEMS = [
   { path: '/admin/acquisition', label: 'Owner leads', icon: Briefcase, page: 'acquisition', resaleLabel: 'Owners requests' },
   { path: '/admin/users', label: 'User Management', icon: Users, page: 'users' },
   { path: '/admin/payroll', label: 'Payrolls', icon: Wallet, page: 'payroll' },
+  { path: '/admin/payslip', label: 'Payslip', icon: Receipt, page: 'payslip' },
   { path: '/admin/deductions', label: 'Deductions', icon: MinusCircle, page: 'deductions' },
   { path: '/admin/holiday-requests', label: 'Holiday requests', icon: Palmtree, page: 'holiday_requests', badge: 'leave_pending' },
   { path: '/admin/holiday-access', label: 'Holidays access', icon: ShieldCheck, page: 'holiday_access' },

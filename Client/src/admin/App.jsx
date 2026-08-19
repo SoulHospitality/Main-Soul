@@ -23,6 +23,7 @@ const HolidayRequests = lazy(() => import('./pages/HolidayRequests'));
 const HolidayAccess = lazy(() => import('./pages/HolidayAccess'));
 const Loans = lazy(() => import('./pages/Loans'));
 const WorkFromHome = lazy(() => import('./pages/WorkFromHome'));
+const Payslip = lazy(() => import('./pages/Payslip'));
 const Profile = lazy(() => import('./pages/Profile'));
 const Schedule = lazy(() => import('./pages/Schedule'));
 const Housekeeping = lazy(() => import('./pages/Housekeeping'));
@@ -152,6 +153,7 @@ function AppRoutes() {
       <Route path="holiday-access" element={<ProtectedRoute page="holiday_access"><HolidayAccess /></ProtectedRoute>} />
       <Route path="loans" element={<ProtectedRoute page="loans"><Loans /></ProtectedRoute>} />
       <Route path="wfh" element={<ProtectedRoute page="wfh"><WorkFromHome /></ProtectedRoute>} />
+      <Route path="payslip" element={<ProtectedRoute page="payslip"><Payslip /></ProtectedRoute>} />
       <Route path="promo-codes" element={<ProtectedRoute page="promo_codes"><PromoCodes /></ProtectedRoute>} />
       <Route path="acquisition" element={<ProtectedRoute page="acquisition"><AcquisitionPipeline /></ProtectedRoute>} />
       <Route path="owner" element={<ProtectedRoute page="owner"><OwnerDashboard /></ProtectedRoute>} />

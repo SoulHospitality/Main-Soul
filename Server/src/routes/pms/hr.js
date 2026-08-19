@@ -18,6 +18,8 @@ const {
   nextPayrollPeriod,
   dateCoveredByRanges,
   parseAttendanceRows,
+  roundMoney,
+  splitSalaryAdjustments,
 } = require('../../lib/hrRules');
 
 const router = express.Router();
@@ -62,7 +64,7 @@ function parsePeriod(req) {
 
 async function loadStaffForHr(staffUserId) {
   const { rows } = await query(
-    `SELECT id, role, full_name, base_salary, created_at,
+    `SELECT id, role, full_name, staff_code, base_salary, created_at,
             COALESCE(leave_casual_days, 0)::int AS leave_casual_days,
             COALESCE(leave_annual_days, 0)::int AS leave_annual_days,
             COALESCE(holiday_access, 'auto') AS holiday_access
@@ -153,9 +155,11 @@ router.get('/hr/payroll', requireRoles(...HR_ROLES), async (req, res, next) => {
          u.is_active,
          COALESCE(u.base_salary, 0)::float AS live_base_salary,
          COALESCE(d.deductions, 0)::float AS live_deductions,
+         COALESCE(b.bonuses, 0)::float AS live_bonuses,
          p.id AS payroll_id,
          p.base_salary::float AS paid_base_salary,
          p.deductions::float AS paid_deductions,
+         COALESCE(p.bonuses, 0)::float AS paid_bonuses,
          p.net_pay::float AS paid_net_pay,
          p.status AS payroll_status,
          p.paid_at,
@@ -168,6 +172,12 @@ router.get('/hr/payroll', requireRoles(...HR_ROLES), async (req, res, next) => {
          WHERE deduction_date >= $1::date AND deduction_date < $2::date
          GROUP BY staff_user_id
        ) d ON d.staff_user_id = u.id
+       LEFT JOIN (
+         SELECT staff_user_id, SUM(amount)::float AS bonuses
+         FROM staff_salary_bonuses
+         WHERE bonus_date >= $1::date AND bonus_date < $2::date
+         GROUP BY staff_user_id
+       ) b ON b.staff_user_id = u.id
        LEFT JOIN staff_payroll_entries p
          ON p.staff_user_id = u.id AND p.period_year = $3 AND p.period_month = $4
        LEFT JOIN staff_users payer ON payer.id = p.paid_by
@@ -180,7 +190,8 @@ router.get('/hr/payroll', requireRoles(...HR_ROLES), async (req, res, next) => {
       const paid = r.payroll_status === 'paid';
       const base = paid ? Number(r.paid_base_salary) : Number(r.live_base_salary) || 0;
       const deductions = paid ? Number(r.paid_deductions) : Number(r.live_deductions) || 0;
-      const net = paid ? Number(r.paid_net_pay) : Math.max(0, base - deductions);
+      const bonuses = paid ? Number(r.paid_bonuses) : Number(r.live_bonuses) || 0;
+      const net = paid ? Number(r.paid_net_pay) : Math.max(0, roundMoney(base + bonuses - deductions));
       return {
         staff_user_id: r.staff_user_id,
         full_name: r.full_name,
@@ -188,9 +199,11 @@ router.get('/hr/payroll', requireRoles(...HR_ROLES), async (req, res, next) => {
         staff_code: r.staff_code,
         is_active: r.is_active,
         base_salary: base,
+        bonuses,
         deductions,
         net_pay: net,
         live_deductions: Number(r.live_deductions) || 0,
+        live_bonuses: Number(r.live_bonuses) || 0,
         status: paid ? 'paid' : 'unpaid',
         paid_at: r.paid_at,
         paid_by_name: r.paid_by_name,
@@ -204,13 +217,14 @@ router.get('/hr/payroll', requireRoles(...HR_ROLES), async (req, res, next) => {
     const totals = visible.reduce(
       (acc, s) => {
         acc.base += s.base_salary;
+        acc.bonuses += s.bonuses;
         acc.deductions += s.deductions;
         acc.net += s.net_pay;
         if (s.status === 'paid') acc.paid += s.net_pay;
         else acc.unpaid += s.net_pay;
         return acc;
       },
-      { base: 0, deductions: 0, net: 0, paid: 0, unpaid: 0 }
+      { base: 0, bonuses: 0, deductions: 0, net: 0, paid: 0, unpaid: 0 }
     );
 
     res.json({ year, month, from, to, totals, staff: visible });
@@ -231,7 +245,8 @@ router.post('/hr/payroll/mark-paid', requireRoles(...HR_ROLES), async (req, res,
       `SELECT
          u.id,
          COALESCE(u.base_salary, 0)::float AS base_salary,
-         COALESCE(d.deductions, 0)::float AS deductions
+         COALESCE(d.deductions, 0)::float AS deductions,
+         COALESCE(b.bonuses, 0)::float AS bonuses
        FROM staff_users u
        LEFT JOIN (
          SELECT staff_user_id, SUM(amount)::float AS deductions
@@ -239,6 +254,12 @@ router.post('/hr/payroll/mark-paid', requireRoles(...HR_ROLES), async (req, res,
          WHERE deduction_date >= $1::date AND deduction_date < $2::date
          GROUP BY staff_user_id
        ) d ON d.staff_user_id = u.id
+       LEFT JOIN (
+         SELECT staff_user_id, SUM(amount)::float AS bonuses
+         FROM staff_salary_bonuses
+         WHERE bonus_date >= $1::date AND bonus_date < $2::date
+         GROUP BY staff_user_id
+       ) b ON b.staff_user_id = u.id
        WHERE u.role <> 'owner'
          AND u.is_active = 1
          ${ids.length ? `AND u.id = ANY($3::int[])` : ''}`,
@@ -253,23 +274,25 @@ router.post('/hr/payroll/mark-paid', requireRoles(...HR_ROLES), async (req, res,
     for (const row of staffRows) {
       const base = Number(row.base_salary) || 0;
       const deductions = Number(row.deductions) || 0;
-      const net = Math.max(0, base - deductions);
+      const bonuses = Number(row.bonuses) || 0;
+      const net = Math.max(0, roundMoney(base + bonuses - deductions));
       const { rows } = await query(
         `INSERT INTO staff_payroll_entries (
-           staff_user_id, period_year, period_month, base_salary, deductions, net_pay,
+           staff_user_id, period_year, period_month, base_salary, deductions, bonuses, net_pay,
            status, paid_at, paid_by, notes
-         ) VALUES ($1,$2,$3,$4,$5,$6,'paid', now(), $7, $8)
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,'paid', now(), $8, $9)
          ON CONFLICT (staff_user_id, period_year, period_month)
          DO UPDATE SET
            base_salary = EXCLUDED.base_salary,
            deductions = EXCLUDED.deductions,
+           bonuses = EXCLUDED.bonuses,
            net_pay = EXCLUDED.net_pay,
            status = 'paid',
            paid_at = now(),
            paid_by = EXCLUDED.paid_by,
            notes = COALESCE(EXCLUDED.notes, staff_payroll_entries.notes)
          RETURNING *`,
-        [row.id, year, month, base, deductions, net, req.user.id, notes]
+        [row.id, year, month, base, deductions, bonuses, net, req.user.id, notes]
       );
       paid.push(rows[0]);
     }
@@ -286,6 +309,145 @@ router.get('/hr/my-leave', async (req, res, next) => {
       return res.status(403).json({ error: 'Owner accounts do not have staff leave' });
     }
     res.json(await leaveSnapshot(req.user.id));
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/hr/payslip', async (req, res, next) => {
+  try {
+    if (req.user.role === 'owner') {
+      return res.status(403).json({ error: 'Owner accounts do not have a staff payslip' });
+    }
+    const { year, month, from, to } = parsePeriod(req);
+    let staffUserId = req.user.id;
+    if (isHrActor(req.user) && req.query.staff_user_id) {
+      staffUserId = Number(req.query.staff_user_id);
+    }
+    const staff = await loadStaffForHr(staffUserId);
+    if (!isHrActor(req.user) && staffUserId !== req.user.id) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const { rows: deductionRows } = await query(
+      `SELECT id, amount, reason, deduction_date, category, arrival_time, notified, daily_rate, days_factor
+       FROM staff_salary_deductions
+       WHERE staff_user_id = $1 AND deduction_date >= $2::date AND deduction_date < $3::date
+       ORDER BY deduction_date, id`,
+      [staffUserId, from, to]
+    );
+    const { rows: bonusRows } = await query(
+      `SELECT id, amount, reason, bonus_date
+       FROM staff_salary_bonuses
+       WHERE staff_user_id = $1 AND bonus_date >= $2::date AND bonus_date < $3::date
+       ORDER BY bonus_date, id`,
+      [staffUserId, from, to]
+    );
+    const { rows: payrollRows } = await query(
+      `SELECT * FROM staff_payroll_entries
+       WHERE staff_user_id = $1 AND period_year = $2 AND period_month = $3`,
+      [staffUserId, year, month]
+    );
+    const payroll = payrollRows[0] || null;
+    const paid = payroll?.status === 'paid';
+    const split = splitSalaryAdjustments(deductionRows);
+    const liveBonuses = roundMoney(bonusRows.reduce((acc, r) => acc + (Number(r.amount) || 0), 0));
+    const liveDebits = roundMoney(split.penalties_total + split.deductions_total);
+    const base = paid ? Number(payroll.base_salary) || 0 : Number(staff.base_salary) || 0;
+    const bonuses = paid ? Number(payroll.bonuses) || liveBonuses : liveBonuses;
+    const debits = paid ? Number(payroll.deductions) || liveDebits : liveDebits;
+    const net = paid
+      ? Number(payroll.net_pay) || 0
+      : Math.max(0, roundMoney(base + bonuses - liveDebits));
+
+    res.json({
+      year,
+      month,
+      from,
+      to,
+      staff_user_id: staff.id,
+      full_name: staff.full_name,
+      staff_code: staff.staff_code || null,
+      role: staff.role,
+      daily_rate: dailyRate(staff.base_salary),
+      status: paid ? 'paid' : 'unpaid',
+      paid_at: payroll?.paid_at || null,
+      notes: payroll?.notes || null,
+      base_salary: base,
+      bonuses,
+      penalties: split.penalties_total,
+      deductions: split.deductions_total,
+      debits,
+      net_pay: net,
+      bonus_items: bonusRows,
+      penalty_items: split.penalties,
+      deduction_items: split.deductions,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/hr/salary-bonuses', requireRoles(...HR_ROLES), async (req, res, next) => {
+  try {
+    const staffId = req.query.staff_user_id ? Number(req.query.staff_user_id) : null;
+    const params = [];
+    let filter = '';
+    if (staffId) {
+      params.push(staffId);
+      filter = `WHERE b.staff_user_id = $${params.length}`;
+    }
+    const { rows } = await query(
+      `SELECT b.*,
+              u.full_name,
+              u.role,
+              u.staff_code,
+              creator.full_name AS created_by_name
+       FROM staff_salary_bonuses b
+       JOIN staff_users u ON u.id = b.staff_user_id
+       LEFT JOIN staff_users creator ON creator.id = b.created_by
+       ${filter}
+       ORDER BY b.bonus_date DESC, b.id DESC
+       LIMIT 500`,
+      params
+    );
+    res.json(rows);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/hr/salary-bonuses', requireRoles(...HR_ROLES), async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const staffUserId = Number(b.staff_user_id);
+    const bonusDate = String(b.bonus_date || b.deduction_date || '').slice(0, 10);
+    const amount = parseFloat(b.amount);
+    const reason = String(b.reason || '').trim();
+    if (!staffUserId || !bonusDate) {
+      return res.status(400).json({ error: 'Staff and date are required' });
+    }
+    if (Number.isNaN(amount) || amount <= 0 || !reason) {
+      return res.status(400).json({ error: 'Amount and reason are required' });
+    }
+    await loadStaffForHr(staffUserId);
+    const { rows } = await query(
+      `INSERT INTO staff_salary_bonuses (staff_user_id, amount, reason, bonus_date, created_by)
+       VALUES ($1,$2,$3,$4::date,$5)
+       RETURNING *`,
+      [staffUserId, amount, reason.slice(0, 255), bonusDate, req.user.id]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.delete('/hr/salary-bonuses/:id', requireRoles(...HR_ROLES), async (req, res, next) => {
+  try {
+    const { rowCount } = await query(`DELETE FROM staff_salary_bonuses WHERE id = $1`, [req.params.id]);
+    if (!rowCount) return res.status(404).json({ error: 'Bonus not found' });
+    res.json({ ok: true });
   } catch (e) {
     next(e);
   }
@@ -327,7 +489,7 @@ router.post('/hr/salary-deductions', requireRoles(...HR_ROLES), async (req, res,
     const deductionDate = String(b.deduction_date || '').slice(0, 10);
     let category = String(b.category || b.kind || 'other').trim() || 'other';
     if (category === 'delay') category = 'other';
-    const allowed = new Set(['performance', 'advance', 'other']);
+    const allowed = new Set(['performance', 'advance', 'other', 'penalty']);
     if (!staffUserId || !deductionDate) {
       return res.status(400).json({ error: 'Staff and date are required' });
     }

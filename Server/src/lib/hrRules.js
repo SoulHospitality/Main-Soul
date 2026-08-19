@@ -274,6 +274,28 @@ function computeHalfDayDeduction(baseSalary) {
   };
 }
 
+const PENALTY_CATEGORIES = ['lateness', 'absence', 'delay', 'performance', 'penalty'];
+
+function isPenaltyCategory(category) {
+  return PENALTY_CATEGORIES.includes(String(category || '').toLowerCase());
+}
+
+function splitSalaryAdjustments(deductionRows = []) {
+  const penalties = [];
+  const deductions = [];
+  for (const row of deductionRows) {
+    if (isPenaltyCategory(row.category)) penalties.push(row);
+    else deductions.push(row);
+  }
+  const sum = (rows) => roundMoney(rows.reduce((acc, r) => acc + (Number(r.amount) || 0), 0));
+  return {
+    penalties,
+    deductions,
+    penalties_total: sum(penalties),
+    deductions_total: sum(deductions),
+  };
+}
+
 module.exports = {
   DAYS_IN_MONTH,
   SHIFT_START_MINUTES,
@@ -303,4 +325,7 @@ module.exports = {
   parseAttendanceRows,
   excelTimeToHhMm,
   computeHalfDayDeduction,
+  PENALTY_CATEGORIES,
+  isPenaltyCategory,
+  splitSalaryAdjustments,
 };

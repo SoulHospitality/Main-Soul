@@ -14,6 +14,7 @@ const {
   nextPayrollPeriod,
   dateCoveredByRanges,
   parseAttendanceRows,
+  splitSalaryAdjustments,
 } = require('./hrRules');
 
 describe('HR daily-rate deductions and leave rules', () => {
@@ -96,5 +97,15 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.equal(rows[0].arrival_time, '11:20');
     assert.equal(rows[1].absent, true);
     assert.equal(rows[1].notified, true);
+  });
+
+  it('splits lateness and absence as penalties, loans as deductions', () => {
+    const split = splitSalaryAdjustments([
+      { amount: 75, category: 'lateness' },
+      { amount: 300, category: 'loan' },
+      { amount: 150, category: 'wfh' },
+    ]);
+    assert.equal(split.penalties_total, 75);
+    assert.equal(split.deductions_total, 450);
   });
 });
