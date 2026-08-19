@@ -125,9 +125,91 @@ function stayExtras(r, fin) {
   const broker = round2(fin.brokerDeduction || 0);
   const tenant = round2(fin.tenantDeduction || 0);
   const beach = round2(parseFloat(r.beach_access_fees) || 0);
+  const cleaning = round2(fin.housekeepingFees || 0);
   const agentPct = parseFloat(r.agent_commission_pct) || 0;
   const agent = agentPct > 0 ? round2((fin.companyCommission || 0) * (agentPct / 100)) : 0;
-  return { insurance, utilities, broker, tenant, beach, agent };
+  return { insurance, utilities, broker, tenant, beach, cleaning, agent };
+}
+
+function addCredit(lines, account, amount, memo) {
+  const amt = round2(amount);
+  if (amt > 0.009) lines.push(journalLine(account, 0, amt, memo));
+  return amt > 0.009 ? amt : 0;
+}
+
+/**
+ * Split a stay from the commission engine, not from leftover guest total.
+ * Accommodation → owner / commission / broker / tenant.
+ * Amounts already inside total_amount (website quotes) are taken from the remainder.
+ * Housekeeping / insurance / utilities / beach billed on top of total_amount
+ * increase AR instead of debiting miscellaneous revenue.
+ */
+function allocateStayCredits(r, fin, split) {
+  const extras = stayExtras(r, fin);
+  const guestTotal = guestQuotedTotal(r, split);
+  const commission = round2(split.soul_commission || 0);
+  let owner = round2(split.owner_trust_credit || 0);
+  const lines = [];
+
+  let rem = round2(guestTotal - extras.broker - owner - commission - extras.tenant);
+  if (rem < -0.009) {
+    owner = round2(Math.max(0, owner + rem));
+    rem = 0;
+  }
+
+  addCredit(lines, '208000', extras.broker, 'Broker payable');
+  addCredit(lines, '202000', owner, 'Owner share held in trust');
+  addCredit(lines, '401000', commission, 'Management commission');
+  addCredit(lines, '403000', extras.tenant, 'Tenant markup');
+
+  const consume = (amount, account, memo) => {
+    const want = round2(amount);
+    if (!(want > 0.009)) return 0;
+    if (rem > 0.009) {
+      const take = round2(Math.min(want, rem));
+      addCredit(lines, account, take, memo);
+      rem = round2(rem - take);
+      return round2(want - take);
+    }
+    return want;
+  };
+
+  const unbilledCleaning = consume(extras.cleaning, '402000', 'Cleaning & turnover');
+  const unbilledInsurance = consume(extras.insurance, '204000', 'Guest security / insurance escrow');
+  consume(extras.utilities, '110000', 'Guest utilities (owner recoverable)');
+  const unbilledBeach = consume(extras.beach, '409000', 'Beach access fees');
+
+  const serviceFee = rem > 0.009 ? rem : 0;
+  addCredit(lines, '403000', serviceFee, 'Guest service fee / markup');
+  rem = 0;
+
+  const extraAr = round2(
+    addCredit(lines, '402000', unbilledCleaning, 'Cleaning billed in addition to stay total') +
+      addCredit(lines, '204000', unbilledInsurance, 'Insurance billed in addition to stay total') +
+      addCredit(lines, '409000', unbilledBeach, 'Beach access billed in addition to stay total')
+  );
+
+  const vat = split.vat_on_commission || 0;
+  const stayInvoice = round2(guestTotal + extraAr);
+  const ar = round2(stayInvoice + vat);
+  const debitLines = [journalLine('105000', stayInvoice, 0, extraAr > 0.009 ? 'Guest invoice (stay + billed extras)' : 'Guest invoice / receivable')];
+  if (vat > 0.009) {
+    debitLines.push(journalLine('105000', vat, 0, 'Output VAT 14% on commission + cleaning'));
+    addCredit(lines, '205000', vat, 'Output VAT 14% on commission + cleaning');
+  }
+
+  return {
+    lines: [...debitLines, ...lines],
+    extras,
+    guestTotal,
+    extraAr,
+    stayInvoice,
+    ar,
+    vat,
+    serviceFee,
+    owner,
+    commission,
+  };
 }
 
 function shouldRecognizeStay(r, asOf) {
@@ -139,59 +221,17 @@ function shouldRecognizeStay(r, asOf) {
 
 function bookingEntry(r, asOf) {
   const { fin, split } = reservationFinancials(r);
-  const extras = stayExtras(r, fin);
-  const guestTotal = guestQuotedTotal(r, split);
-  const vat = split.vat_on_commission || 0;
-  const invoice = round2(guestTotal + vat);
-  const lines = [];
-
-  lines.push(journalLine('105000', invoice, 0, vat > 0 ? 'Guest invoice (quoted + exclusive VAT)' : 'Guest invoice / receivable'));
-  if (split.soul_commission > 0) {
-    lines.push(journalLine('401000', 0, split.soul_commission, 'Management commission (exclusive of VAT)'));
-  }
-  if ((split.cleaning_fee || 0) > 0) {
-    lines.push(journalLine('402000', 0, split.cleaning_fee, 'Cleaning & turnover (exclusive of VAT)'));
-  }
-  if (vat > 0) {
-    lines.push(journalLine('205000', 0, vat, 'Output VAT 14% on commission + cleaning'));
-  }
-  if (split.owner_trust_credit > 0) {
-    lines.push(journalLine('202000', 0, split.owner_trust_credit, 'Owner share held in trust'));
-  }
-  if (extras.insurance > 0) {
-    lines.push(journalLine('204000', 0, extras.insurance, 'Guest security / insurance escrow'));
-  }
-  if (extras.utilities > 0) {
-    lines.push(journalLine('110000', 0, extras.utilities, 'Guest utilities (owner recoverable)'));
-  }
-  if (extras.broker > 0) {
-    lines.push(journalLine('208000', 0, extras.broker, 'Broker payable'));
-  }
-  if (extras.tenant > 0) {
-    lines.push(journalLine('403000', 0, extras.tenant, 'Tenant / guest service markup'));
-  }
-  if (extras.beach > 0) {
-    lines.push(journalLine('409000', 0, extras.beach, 'Beach access fees'));
-  }
-
-  const credits = lines.reduce((s, l) => s + l.credit, 0);
-  const diff = round2(invoice - credits);
-  if (diff > 0.009) {
-    lines.push(journalLine('409000', 0, diff, 'Other guest charges'));
-  } else if (diff < -0.009) {
-    lines.push(journalLine('409000', Math.abs(diff), 0, 'Balancing'));
-  }
-
+  const posted = allocateStayCredits(r, fin, split);
   const checkIn = isoDate(r.check_in);
   const paid = round2(parseFloat(r.amount_paid) || 0);
-  const outstanding = round2(Math.max(0, guestTotal - paid));
+  const outstanding = round2(Math.max(0, posted.guestTotal - paid));
 
   return makeEntry({
     id: `BK-${r.id}`,
     date: r.check_in,
     type: 'booking',
     description: `${r.guest_name || 'Guest'} — ${r.unit_name || 'Unit'}`,
-    lines,
+    lines: posted.lines,
     meta: {
       reservation_id: r.id,
       guest_name: r.guest_name,
@@ -203,23 +243,24 @@ function bookingEntry(r, asOf) {
       nights: r.nights,
       payment_method: r.payment_method,
       payment_status: r.payment_status,
-      total_amount: guestTotal,
-      invoice_amount: invoice,
+      total_amount: posted.guestTotal,
+      invoice_amount: posted.ar,
       amount_paid: paid,
       outstanding,
-      vat,
+      vat: posted.vat,
       recognized: shouldRecognizeStay(r, asOf),
       from_website: isWebsiteOriginReservation(r),
       sales_person: r.sales_person_name,
-      owner_share: split.owner_trust_credit,
-      commission: split.soul_commission,
-      cleaning: split.cleaning_fee,
-      insurance: extras.insurance,
-      utilities: extras.utilities,
-      broker: extras.broker,
-      tenant_markup: extras.tenant,
-      beach: extras.beach,
-      agent_commission: extras.agent,
+      owner_share: posted.owner,
+      commission: posted.commission,
+      cleaning: posted.extras.cleaning,
+      insurance: posted.extras.insurance,
+      utilities: posted.extras.utilities,
+      broker: posted.extras.broker,
+      tenant_markup: posted.extras.tenant,
+      service_fee: posted.serviceFee,
+      beach: posted.extras.beach,
+      agent_commission: posted.extras.agent,
       channel: isWebsiteOriginReservation(r) ? 'Website' : 'Manual',
     },
   });
