@@ -1,6 +1,6 @@
 require('dotenv').config({ path: require('path').join(__dirname, '../../.env') }); 
 require('dotenv').config({ path: require('path').join(__dirname, '../../../.env') }); 
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
 const fs = require('fs');
 const path = require('path');
 
@@ -12,6 +12,8 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: useSsl ? { rejectUnauthorized: false } : false,
 });
+
+types.setTypeParser(1082, (val) => val);
 
 async function query(text, params) {
   return pool.query(text, params);

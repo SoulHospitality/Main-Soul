@@ -15,8 +15,19 @@ const {
 const { bookingSplit, withholdingTax, extractInputVat } = require('./taxEngine');
 
 function isoDate(value) {
-  if (!value) return '';
-  return String(value).replace('T', ' ').slice(0, 10);
+  if (value == null || value === '') return '';
+  if (typeof value === 'string') {
+    const matched = value.match(/(\d{4}-\d{2}-\d{2})/);
+    if (matched) return matched[1];
+  }
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const y = value.getFullYear();
+    const m = String(value.getMonth() + 1).padStart(2, '0');
+    const d = String(value.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  const matched = String(value).match(/(\d{4}-\d{2}-\d{2})/);
+  return matched ? matched[1] : '';
 }
 
 function inRange(date, from, to) {
@@ -616,6 +627,8 @@ async function loadPortalData(from, to) {
 
   const { rows: reservations } = await query(
     `SELECT r.*,
+            to_char(r.check_in, 'YYYY-MM-DD') AS check_in,
+            to_char(r.check_out, 'YYYY-MM-DD') AS check_out,
             COALESCE(u.unit_number, u.title, 'Unit') AS unit_name,
             COALESCE(u.project, u.compound) AS project,
             u.commission_mode, u.company_commission_pct,
@@ -630,6 +643,24 @@ async function loadPortalData(from, to) {
      ORDER BY r.check_in DESC`,
     resParams
   );
+
+  const totParams = [from];
+  let totSql = `LOWER(COALESCE(status::text, '')) <> 'cancelled' AND check_in >= $1::date`;
+  if (to) {
+    totParams.push(to);
+    totSql += ` AND check_in <= $2::date`;
+  }
+  const { rows: totalRows } = await query(
+    `SELECT COALESCE(SUM(total_amount), 0)::float AS stays,
+            COUNT(*)::int AS stay_count
+     FROM reservations
+     WHERE ${totSql}`,
+    totParams
+  );
+  const reservationTotals = {
+    stays: Number(totalRows[0]?.stays) || 0,
+    stay_count: Number(totalRows[0]?.stay_count) || 0,
+  };
 
   const payParams = [from];
   let paySql = `COALESCE(p.payment_date, p.created_at::date) >= $1::date`;
@@ -835,6 +866,7 @@ async function loadPortalData(from, to) {
     ownerLinks,
     snapshots,
     reconciled,
+    reservationTotals,
   };
 }
 
@@ -1250,11 +1282,19 @@ function pnlFromBalances(bals) {
   };
 }
 
-function computeGrossReceipts(journal, reservations, from, to) {
+function computeGrossReceipts(journal, reservations, from, to, sqlTotals) {
   let stays = 0;
   let stayCount = 0;
   let ownerShare = 0;
-  if (reservations) {
+  if (sqlTotals && Number.isFinite(Number(sqlTotals.stays))) {
+    stays = Number(sqlTotals.stays) || 0;
+    stayCount = Number(sqlTotals.stay_count) || 0;
+    for (const r of reservations || []) {
+      if (!stayCountsInRevenue(r, from, to)) continue;
+      const { fin } = reservationFinancials(r);
+      ownerShare += Number(fin.ownerNet) || 0;
+    }
+  } else if (reservations) {
     for (const r of reservations) {
       if (!stayCountsInRevenue(r, from, to)) continue;
       stays += parseFloat(r.total_amount) || 0;
@@ -1448,7 +1488,13 @@ function buildPortal(journal, reservations, recurring, extras = {}) {
   const groups = accountsByGroup();
   const operatingJournal = journal.filter((e) => e.type !== 'period_close');
   const pnl = pnlFromBalances(balancesFromJournal(operatingJournal));
-  const receipts = computeGrossReceipts(operatingJournal, reservations, extras.from, extras.to);
+  const receipts = computeGrossReceipts(
+    operatingJournal,
+    reservations,
+    extras.from,
+    extras.to,
+    extras.reservationTotals
+  );
   const soulFees = pnl.totals.revenue;
   const headline = pnlTotalsFromReceipts(pnl, receipts);
 
@@ -1534,14 +1580,15 @@ function buildPortal(journal, reservations, recurring, extras = {}) {
   };
 }
 
-function buildStatements(journal, reservations, from, to) {
+function buildStatements(journal, reservations, from, to, reservationTotals) {
   const bals = balancesFromJournal(journal);
   const pnl = pnlFromBalances(bals.filter((a) => a.type === 'revenue' || a.type === 'expense'));
   const receipts = computeGrossReceipts(
     journal.filter((e) => e.type !== 'period_close'),
     reservations,
     from,
-    to
+    to,
+    reservationTotals
   );
   const closedPnl = journal.filter((e) => e.type === 'period_close');
   const livePnl = closedPnl.length ? 0 : pnl.totals.net;
@@ -1583,6 +1630,7 @@ async function buildFinancialPortal(from, to) {
     settings: data.settings,
     from,
     to,
+    reservationTotals: data.reservationTotals,
   });
   return {
     journal,
@@ -1597,15 +1645,15 @@ async function buildFinancialPortal(from, to) {
   };
 }
 
-async function buildYtdStatements(to) {
-  const from = FINANCIAL_EPOCH;
+async function buildYtdStatements(to, fromDate) {
+  const from = fromDate || FINANCIAL_EPOCH;
   const asOf = to || todayIso();
   const data = await loadPortalData(from, asOf);
   const journal = buildJournal(data, from, asOf);
   return {
     from_date: from,
     to_date: asOf,
-    ...buildStatements(journal, data.reservations, from, asOf),
+    ...buildStatements(journal, data.reservations, from, asOf, data.reservationTotals),
     vat_return: vatReturn(journal),
     owner_trust: ownerTrustSubledger(journal, data),
     aging: agingFromReservations(data.reservations, asOf),

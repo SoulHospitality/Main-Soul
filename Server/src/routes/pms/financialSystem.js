@@ -907,8 +907,8 @@ router.delete('/financial-system/manual-entries/:id', requireRoles('admin'), asy
 
 router.get('/financial-system/reports', requireRoles('admin'), async (req, res, next) => {
   try {
-    const { to } = dateRange(req);
-    const built = await buildYtdStatements(to);
+    const { from, to } = dateRange(req);
+    const built = await buildYtdStatements(to, from);
     res.json({
       from_date: built.from_date,
       to_date: built.to_date,
