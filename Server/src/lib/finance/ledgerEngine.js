@@ -1299,6 +1299,9 @@ function buildPortal(journal, reservations, recurring, extras = {}) {
   );
   const inputVat = byCode['107000']?.balance || 0;
   const outputVat = byCode['205000']?.balance || 0;
+  const pnl = pnlFromBalances(
+    balancesFromJournal(journal.filter((e) => e.type !== 'period_close'))
+  );
 
   return {
     groups: groupCards,
@@ -1319,6 +1322,11 @@ function buildPortal(journal, reservations, recurring, extras = {}) {
       bank_egp: byCode['101000']?.balance || 0,
       gateway_clearing: byCode['106000']?.balance || 0,
       guest_ar: byCode['105000']?.balance || 0,
+      revenue: pnl.totals.revenue,
+      cogs: pnl.totals.cogs,
+      opex: pnl.totals.opex,
+      gross_profit: pnl.totals.gross,
+      net_profit: pnl.totals.net,
     },
     accounts: bals,
   };

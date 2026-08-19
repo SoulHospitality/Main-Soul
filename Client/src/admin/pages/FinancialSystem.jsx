@@ -209,6 +209,39 @@ function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool
         ))}
       </div>
 
+      <button
+        type="button"
+        onClick={() => onOpenTool('reports')}
+        className={`w-full rounded-2xl border p-5 text-left transition-colors ${
+          (kpis.net_profit || 0) >= 0
+            ? 'border-emerald-200 bg-emerald-50/70 hover:border-emerald-300'
+            : 'border-rose-200 bg-rose-50/70 hover:border-rose-300'
+        }`}
+      >
+        <div className="flex flex-wrap items-center gap-4">
+          <div
+            className={`w-12 h-12 rounded-2xl text-white flex items-center justify-center ${
+              (kpis.net_profit || 0) >= 0 ? 'bg-emerald-600' : 'bg-rose-600'
+            }`}
+          >
+            <TrendingUp className="w-6 h-6" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs uppercase tracking-wider text-gray-500">Soul net profit</p>
+            <p className="font-semibold text-soul-blue">Revenue − COGS − operating expenses</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {currency(kpis.revenue)} revenue · {currency(kpis.cogs)} direct costs · {currency(kpis.opex)} opex
+              · owner money is not included
+            </p>
+          </div>
+          <p
+            className={`text-2xl font-bold tabular-nums ${(kpis.net_profit || 0) >= 0 ? 'text-emerald-800' : 'text-rose-800'}`}
+          >
+            {currency(kpis.net_profit)}
+          </p>
+        </div>
+      </button>
+
       <section>
         <div className="flex items-end justify-between mb-3">
           <div>
