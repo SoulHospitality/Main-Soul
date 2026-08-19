@@ -26,4 +26,4 @@ export function defaultAdminPage(role) {
 
 export const ADMIN_LOGIN = '/sign-in';
 export const ADMIN_CHANGE_PASSWORD = `${A}/change-password`;
-export const ADMIN_OWNER_STATEMENT = `${A}/financial-system?tab=owners`;
+export const ADMIN_OWNER_STATEMENT = `${A}/financial-system?tool=owners`;

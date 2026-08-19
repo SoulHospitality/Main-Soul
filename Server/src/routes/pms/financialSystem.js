@@ -19,10 +19,31 @@ const {
   monthlyTaxLiability,
   VAT_OUTPUT_PCT,
 } = require('../../lib/finance/taxEngine');
+const {
+  buildFinancialPortal,
+  buildYtdStatements,
+  buildJournal,
+  loadPortalData,
+  mirrorTransactions,
+  accountLabel,
+  lastDayOfMonth,
+  isPeriodClosed,
+  vatReturn,
+  agingFromReservations,
+  closeMonthEntry,
+} = require('../../lib/finance/ledgerEngine');
 
 const router = express.Router();
 
 const MANUAL_ENTRY_TYPES = new Set(['revenue', 'expense']);
+
+async function assertPeriodOpen(date) {
+  if (await isPeriodClosed(date)) {
+    const err = new Error(`Books are closed for ${String(date).slice(0, 7)}`);
+    err.status = 400;
+    throw err;
+  }
+}
 
 function dateRange(req) {
   const from = clampFromDate(req.query.from_date);
@@ -34,10 +55,6 @@ function dateRange(req) {
     resSql += ` AND r.check_out <= $${params.length}::date`;
   }
   return { from, to, params, resSql };
-}
-
-function accountLabel(code) {
-  return getAccount(code)?.name || code;
 }
 
 async function loadReservations(req) {
@@ -583,12 +600,17 @@ router.get('/financial-system/ledger', requireRoles('admin'), async (req, res, n
 router.get('/financial-system/tax', requireRoles('admin'), async (req, res, next) => {
   try {
     const { from, to } = dateRange(req);
-    const rows = await loadReservations(req);
+    const built = await buildFinancialPortal(from, to);
+    const vat = vatReturn(built.journal);
+    const rows = built.reservations || [];
 
     let commissionTotal = 0;
+    let cleaningTotal = 0;
     for (const r of rows) {
+      if (String(r.status || '').toLowerCase() === 'cancelled') continue;
       const fin = calcReservationFinancials(r, r);
-      commissionTotal += fin.companyCommission;
+      commissionTotal += fin.companyCommission || 0;
+      cleaningTotal += fin.housekeepingFees || 0;
     }
 
     const expParams = [from];
@@ -610,14 +632,21 @@ router.get('/financial-system/tax', requireRoles('admin'), async (req, res, next
     }));
 
     const monthLabel = to ? `${from} → ${to}` : `From ${from}`;
-    const liability = monthlyTaxLiability({ commissionTotal, vendorBills, monthLabel });
+    const liability = monthlyTaxLiability({
+      commissionTotal,
+      cleaningTotal,
+      vendorBills,
+      monthLabel,
+    });
 
     res.json({
       from_date: from,
       to_date: to,
       vat_output_pct: VAT_OUTPUT_PCT,
       liability,
+      vat_return: vat,
       commission_taxable_base: round2(commissionTotal),
+      cleaning_taxable_base: round2(cleaningTotal),
     });
   } catch (e) {
     next(e);
@@ -729,6 +758,7 @@ router.post('/financial-system/manual-entries', requireRoles('admin'), async (re
     if (String(entryDate) < FINANCIAL_EPOCH) {
       return res.status(400).json({ error: `entry_date cannot be before ${FINANCIAL_EPOCH}` });
     }
+    await assertPeriodOpen(entryDate);
 
     const unitId = req.body.unit_id || null;
     const notes = req.body.notes ? String(req.body.notes).trim() : null;
@@ -748,14 +778,390 @@ router.post('/financial-system/manual-entries', requireRoles('admin'), async (re
 });
 
 
-router.delete('/financial-system/manual-entries/:id', requireRoles('admin'), async (req, res, next) => {
+router.get('/financial-system/portal', requireRoles('admin'), async (req, res, next) => {
+  try {
+    const { from, to } = dateRange(req);
+    const built = await buildFinancialPortal(from, to);
+    res.json({
+      from_date: from,
+      to_date: to,
+      financial_epoch: FINANCIAL_EPOCH,
+      kpis: built.kpis,
+      treasury: built.treasury,
+      groups: built.groups,
+      outstanding: built.outstanding,
+      recurring: built.recurring,
+      payouts: built.payouts || [],
+      closes: built.closes || [],
+      settings: built.settings || {},
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/financial-system/accounts/:code', requireRoles('admin'), async (req, res, next) => {
+  try {
+    const { from, to } = dateRange(req);
+    const code = String(req.params.code || '').trim();
+    const acct = getAccount(code);
+    if (!acct) return res.status(404).json({ error: 'Unknown account' });
+    const built = await buildFinancialPortal(from, to);
+    const summary = (built.accounts || []).find((a) => a.code === code) || {
+      ...acct,
+      debit: 0,
+      credit: 0,
+      balance: 0,
+      txn_count: 0,
+    };
+    res.json({
+      from_date: from,
+      to_date: to,
+      account: summary,
+      transactions: mirrorTransactions(built.journal, code),
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/financial-system/transactions/:id', requireRoles('admin'), async (req, res, next) => {
+  try {
+    const { from, to } = dateRange(req);
+    const id = decodeURIComponent(req.params.id || '');
+    const built = await buildFinancialPortal(from, to);
+    const entry = built.journal.find((e) => e.id === id);
+    if (!entry) return res.status(404).json({ error: 'Transaction not found in this period' });
+    const fromLine = entry.lines.find((l) => l.credit > 0);
+    const toLine = entry.lines.find((l) => l.debit > 0);
+    res.json({
+      ...entry,
+      flow: {
+        from_account: fromLine?.account || entry.meta?.from_account || null,
+        from_name: fromLine?.account_name || accountLabel(entry.meta?.from_account),
+        to_account: toLine?.account || entry.meta?.to_account || null,
+        to_name: toLine?.account_name || accountLabel(entry.meta?.to_account),
+      },
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/financial-system/recurring', requireRoles('admin'), async (_req, res, next) => {
   try {
     const { rows } = await query(
-      `DELETE FROM financial_manual_entries WHERE id = $1 RETURNING id`,
+      `SELECT kind, label, account_code, amount_egp, day_of_month, is_active
+       FROM financial_recurring_charges ORDER BY kind`
+    );
+    res.json(rows);
+  } catch (e) {
+    if (e.code === '42P01') return res.json([]);
+    next(e);
+  }
+});
+
+router.put('/financial-system/recurring/:kind', requireRoles('admin'), async (req, res, next) => {
+  try {
+    const kind = String(req.params.kind || '').toLowerCase();
+    if (!['rent', 'utilities', 'buffet'].includes(kind)) {
+      return res.status(400).json({ error: 'Unknown recurring charge' });
+    }
+    await assertPeriodOpen(new Date().toISOString().slice(0, 10));
+    const amount = Math.max(0, parseFloat(req.body.amount_egp) || 0);
+    const day = Math.min(28, Math.max(1, parseInt(req.body.day_of_month, 10) || 1));
+    const active = req.body.is_active === 0 || req.body.is_active === false ? 0 : 1;
+    const { rows } = await query(
+      `UPDATE financial_recurring_charges
+       SET amount_egp = $2, day_of_month = $3, is_active = $4, updated_at = now(), updated_by = $5
+       WHERE kind = $1
+       RETURNING *`,
+      [kind, amount, day, active, req.user.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Charge not found' });
+    res.json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.delete('/financial-system/manual-entries/:id', requireRoles('admin'), async (req, res, next) => {
+  try {
+    const { rows: existing } = await query(
+      `SELECT id, entry_date FROM financial_manual_entries WHERE id = $1`,
       [req.params.id]
     );
-    if (!rows[0]) return res.status(404).json({ error: 'Entry not found' });
-    res.json({ ok: true, id: rows[0].id });
+    if (!existing[0]) return res.status(404).json({ error: 'Entry not found' });
+    await assertPeriodOpen(existing[0].entry_date);
+    await query(`DELETE FROM financial_manual_entries WHERE id = $1`, [req.params.id]);
+    res.json({ ok: true, id: existing[0].id });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/financial-system/reports', requireRoles('admin'), async (req, res, next) => {
+  try {
+    const { to } = dateRange(req);
+    const built = await buildYtdStatements(to);
+    res.json({
+      from_date: built.from_date,
+      to_date: built.to_date,
+      trial_balance: built.trial_balance,
+      profit_and_loss: built.profit_and_loss,
+      balance_sheet: built.balance_sheet,
+      cash_flow: built.cash_flow,
+      vat_return: built.vat_return,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/financial-system/aging', requireRoles('admin'), async (req, res, next) => {
+  try {
+    const { from, to } = dateRange(req);
+    const built = await buildFinancialPortal(from, to);
+    const asOf = to || new Date().toISOString().slice(0, 10);
+    res.json({
+      from_date: from,
+      to_date: to,
+      ar_balance: built.kpis?.guest_ar || 0,
+      ...agingFromReservations(built.reservations, asOf),
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/financial-system/owner-trust', requireRoles('admin'), async (req, res, next) => {
+  try {
+    const { to } = dateRange(req);
+    const built = await buildYtdStatements(to);
+    res.json({
+      from_date: built.from_date,
+      to_date: built.to_date,
+      control_202000: built.owner_trust.control_202000,
+      tied: built.owner_trust.tied,
+      owners: built.owner_trust.rows,
+      holdbacks: built.data?.holdbacks || [],
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/financial-system/holdbacks', requireRoles('admin'), async (req, res, next) => {
+  try {
+    const ownerId = parseInt(req.body.owner_id, 10);
+    const amount = parseFloat(req.body.amount);
+    if (!ownerId || !(amount > 0)) {
+      return res.status(400).json({ error: 'owner_id and a positive amount are required' });
+    }
+    await assertPeriodOpen(new Date().toISOString().slice(0, 10));
+    const { rows } = await query(
+      `INSERT INTO financial_owner_holdbacks (owner_id, unit_id, amount, reason, created_by)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [ownerId, req.body.unit_id || null, amount, req.body.reason || null, req.user.id]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/financial-system/holdbacks/:id/release', requireRoles('admin'), async (req, res, next) => {
+  try {
+    await assertPeriodOpen(new Date().toISOString().slice(0, 10));
+    const { rows } = await query(
+      `UPDATE financial_owner_holdbacks SET is_released = 1 WHERE id = $1 AND is_released = 0 RETURNING *`,
+      [req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Holdback not found or already released' });
+    res.json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/financial-system/gateway', requireRoles('admin'), async (req, res, next) => {
+  try {
+    const { from, to } = dateRange(req);
+    const built = await buildFinancialPortal(from, to);
+    const settlements = (built.journal || []).filter((e) => e.type === 'gateway_settle');
+    const clearingIn = (built.journal || [])
+      .filter((e) => e.type === 'collection' && e.meta?.treasury_account === '106000')
+      .reduce((s, e) => s + (e.debit || 0), 0);
+    const mdr = settlements.reduce((s, e) => s + (Number(e.meta?.mdr_amount) || 0), 0);
+    const net = settlements.reduce((s, e) => s + (Number(e.meta?.net) || 0), 0);
+    res.json({
+      from_date: from,
+      to_date: to,
+      mdr_pct: built.settings?.gateway_mdr_pct || 1.5,
+      clearing_in: round2(clearingIn),
+      settled_net: round2(net),
+      mdr_expense: round2(mdr),
+      uncleared: built.kpis?.gateway_clearing || 0,
+      settlements,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/financial-system/settings', requireRoles('admin'), async (_req, res, next) => {
+  try {
+    const { rows } = await query(`SELECT key, value_num, value_text FROM financial_settings`);
+    res.json(Object.fromEntries(rows.map((r) => [r.key, r.value_num != null ? r.value_num : r.value_text])));
+  } catch (e) {
+    if (e.code === '42P01') return res.json({ gateway_mdr_pct: 1.5 });
+    next(e);
+  }
+});
+
+router.put('/financial-system/settings/:key', requireRoles('admin'), async (req, res, next) => {
+  try {
+    const key = String(req.params.key || '').trim();
+    if (key !== 'gateway_mdr_pct') return res.status(400).json({ error: 'Unknown setting' });
+    const value = Math.max(0, Math.min(15, parseFloat(req.body.value_num) || 0));
+    const { rows } = await query(
+      `INSERT INTO financial_settings (key, value_num, updated_at)
+       VALUES ($1, $2, now())
+       ON CONFLICT (key) DO UPDATE SET value_num = $2, updated_at = now()
+       RETURNING *`,
+      [key, value]
+    );
+    res.json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/financial-system/periods', requireRoles('admin'), async (_req, res, next) => {
+  try {
+    const { rows } = await query(
+      `SELECT c.*, su.full_name AS closed_by_name
+       FROM financial_period_closes c
+       LEFT JOIN staff_users su ON su.id = c.closed_by
+       ORDER BY c.year_month DESC`
+    );
+    res.json(rows);
+  } catch (e) {
+    if (e.code === '42P01') return res.json([]);
+    next(e);
+  }
+});
+
+router.post('/financial-system/periods/:yearMonth/close', requireRoles('admin'), async (req, res, next) => {
+  try {
+    const yearMonth = String(req.params.yearMonth || '');
+    if (!/^\d{4}-\d{2}$/.test(yearMonth)) {
+      return res.status(400).json({ error: 'yearMonth must be YYYY-MM' });
+    }
+    const from = `${yearMonth}-01`;
+    const to = lastDayOfMonth(yearMonth);
+    const data = await loadPortalData(from, to);
+    const journal = buildJournal(data, from, to, { includeCloses: false });
+    const close = closeMonthEntry(yearMonth, journal);
+    const pnl = Number(close.meta?.pnl) || 0;
+    const { rows } = await query(
+      `INSERT INTO financial_period_closes (year_month, pnl_amount, closed_by, notes)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (year_month) DO NOTHING
+       RETURNING *`,
+      [yearMonth, pnl, req.user.id, req.body.notes || null]
+    );
+    if (!rows[0]) return res.status(409).json({ error: `${yearMonth} is already closed` });
+    res.status(201).json({ close: rows[0], pnl, entry: close });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.delete('/financial-system/periods/:yearMonth/close', requireRoles('admin'), async (req, res, next) => {
+  try {
+    const { rows } = await query(
+      `DELETE FROM financial_period_closes WHERE year_month = $1 RETURNING year_month`,
+      [req.params.yearMonth]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Period is not closed' });
+    res.json({ ok: true, year_month: rows[0].year_month });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/financial-system/bank-rec', requireRoles('admin'), async (req, res, next) => {
+  try {
+    const { from, to } = dateRange(req);
+    const code = String(req.query.account || '101000');
+    if (!['101000', '102000', '103000', '104000'].includes(code)) {
+      return res.status(400).json({ error: 'Treasury account required' });
+    }
+    const built = await buildFinancialPortal(from, to);
+    const reconciled = new Set((built.reconciled || []).filter((r) => r.account_code === code).map((r) => r.entry_id));
+    const lines = mirrorTransactions(built.journal, code).map((row) => ({
+      ...row,
+      reconciled: reconciled.has(row.id),
+    }));
+    const book = (built.accounts || []).find((a) => a.code === code);
+    let snapshots = [];
+    try {
+      const { rows } = await query(
+        `SELECT * FROM financial_bank_snapshots WHERE account_code = $1 ORDER BY statement_date DESC, id DESC LIMIT 20`,
+        [code]
+      );
+      snapshots = rows;
+    } catch (_) {}
+    res.json({
+      account: book,
+      lines,
+      snapshots,
+      unreconciled: round2(lines.filter((l) => !l.reconciled).reduce((s, l) => s + (l.side === 'debit' ? l.amount : -l.amount), 0)),
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/financial-system/bank-rec/toggle', requireRoles('admin'), async (req, res, next) => {
+  try {
+    const entryId = String(req.body.entry_id || '').trim();
+    const accountCode = String(req.body.account_code || '101000');
+    if (!entryId) return res.status(400).json({ error: 'entry_id is required' });
+    const { rows: existing } = await query(
+      `SELECT entry_id FROM financial_reconciled_entries WHERE entry_id = $1`,
+      [entryId]
+    );
+    if (existing[0]) {
+      await query(`DELETE FROM financial_reconciled_entries WHERE entry_id = $1`, [entryId]);
+      return res.json({ ok: true, reconciled: false });
+    }
+    await query(
+      `INSERT INTO financial_reconciled_entries (entry_id, account_code, reconciled_by)
+       VALUES ($1, $2, $3)`,
+      [entryId, accountCode, req.user.id]
+    );
+    res.json({ ok: true, reconciled: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/financial-system/bank-rec/snapshot', requireRoles('admin'), async (req, res, next) => {
+  try {
+    const accountCode = String(req.body.account_code || '101000');
+    const statementDate = req.body.statement_date || new Date().toISOString().slice(0, 10);
+    const balance = parseFloat(req.body.statement_balance);
+    if (!Number.isFinite(balance)) return res.status(400).json({ error: 'statement_balance is required' });
+    const { rows } = await query(
+      `INSERT INTO financial_bank_snapshots (account_code, statement_date, statement_balance, notes, created_by)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [accountCode, statementDate, balance, req.body.notes || null, req.user.id]
+    );
+    res.status(201).json(rows[0]);
   } catch (e) {
     next(e);
   }
