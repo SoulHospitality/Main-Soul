@@ -41,6 +41,7 @@ export const CHART_OF_ACCOUNTS = [
   { code: '503000', name: 'Direct Villa Repairs & Maintenance (Soul Cost)', group: 'cogs', type: 'expense' },
   { code: '504000', name: 'Merchant / Payment Gateway Transaction Fees', group: 'cogs', type: 'expense' },
   { code: '505000', name: 'Master-Lease Rent Expense (Principal Units)', group: 'cogs', type: 'expense' },
+  { code: '506000', name: 'Owner Share Expense (Unit % of nightly rate × nights)', group: 'cogs', type: 'expense' },
   { code: '508000', name: 'Staff Buffet & Meals', group: 'cogs', type: 'expense', recurring: 'buffet' },
   { code: '601000', name: 'Software & Tech Stack (Odoo, Channel Manager, PriceLabs)', group: 'opex', type: 'expense' },
   { code: '602000', name: 'Salaries, Wages & Field Staff Payroll', group: 'opex', type: 'expense' },

@@ -169,8 +169,8 @@ function allocateStayCredits(r, fin, split) {
   }
 
   addCredit(lines, '208000', extras.broker, 'Broker payable');
-  addCredit(lines, '202000', owner, 'Owner share held in trust');
-  addCredit(lines, '401000', commission, 'Management commission');
+  addCredit(lines, '404000', owner, 'Accommodation (owner slice of nightly × nights)');
+  addCredit(lines, '401000', commission, 'Company share of nightly × nights');
   addCredit(lines, '403000', extras.tenant, 'Tenant markup');
 
   const consume = (amount, account, memo) => {
@@ -203,6 +203,11 @@ function allocateStayCredits(r, fin, split) {
   const vat = split.vat_on_commission || 0;
   const stayInvoice = round2(guestTotal + extraAr);
   const ar = round2(stayInvoice + vat);
+  const dueOwner = round2(split.owner_trust_credit || fin.ownerNet || 0);
+  if (dueOwner > 0.009) {
+    lines.push(journalLine('506000', dueOwner, 0, 'Owner share expense (unit % of nightly rate × nights)'));
+    lines.push(journalLine('202000', 0, dueOwner, 'Amount the company must pay the owner'));
+  }
   const debitLines = [journalLine('105000', stayInvoice, 0, extraAr > 0.009 ? 'Guest invoice (stay + billed extras)' : 'Guest invoice / receivable')];
   if (vat > 0.009) {
     debitLines.push(journalLine('105000', vat, 0, 'Output VAT 14% on commission + cleaning'));
@@ -218,7 +223,7 @@ function allocateStayCredits(r, fin, split) {
     ar,
     vat,
     serviceFee,
-    owner,
+    owner: dueOwner,
     commission,
   };
 }
@@ -1286,21 +1291,25 @@ function computeGrossReceipts(journal, reservations, from, to, sqlTotals) {
   let stays = 0;
   let stayCount = 0;
   let ownerShare = 0;
+  let companyShare = 0;
+  const addSplit = (r) => {
+    const { fin } = reservationFinancials(r);
+    ownerShare += Number(fin.ownerNet) || 0;
+    companyShare += Number(fin.companyCommission) || 0;
+  };
   if (sqlTotals && Number.isFinite(Number(sqlTotals.stays))) {
     stays = Number(sqlTotals.stays) || 0;
     stayCount = Number(sqlTotals.stay_count) || 0;
     for (const r of reservations || []) {
       if (!stayCountsInRevenue(r, from, to)) continue;
-      const { fin } = reservationFinancials(r);
-      ownerShare += Number(fin.ownerNet) || 0;
+      addSplit(r);
     }
   } else if (reservations) {
     for (const r of reservations) {
       if (!stayCountsInRevenue(r, from, to)) continue;
       stays += parseFloat(r.total_amount) || 0;
       stayCount += 1;
-      const { fin } = reservationFinancials(r);
-      ownerShare += Number(fin.ownerNet) || 0;
+      addSplit(r);
     }
   } else {
     for (const e of journal || []) {
@@ -1308,6 +1317,7 @@ function computeGrossReceipts(journal, reservations, from, to, sqlTotals) {
       stays += parseFloat(e.meta?.total_amount) || 0;
       stayCount += 1;
       ownerShare += Number(e.meta?.owner_share) || 0;
+      companyShare += Number(e.meta?.commission) || 0;
     }
   }
 
@@ -1328,22 +1338,31 @@ function computeGrossReceipts(journal, reservations, from, to, sqlTotals) {
     housekeeping: 0,
     other: round2(custom),
     owner_share: round2(ownerShare),
+    company_share: round2(companyShare),
     total: round2(stays + custom),
   };
 }
 
 function pnlTotalsFromReceipts(pnl, receipts) {
   const grossRevenue = round2(receipts?.total || 0);
-  const cogs = round2(pnl.totals.cogs);
+  const ownerShare = round2(receipts?.owner_share || 0);
+  const postedOwner = round2(
+    (pnl.cogs || []).find((a) => a.code === '506000')?.balance || 0
+  );
+  const otherCogs = round2(Math.max(0, (pnl.totals.cogs || 0) - postedOwner));
   const opex = round2(pnl.totals.opex);
-  const gross = round2(grossRevenue - cogs);
+  const netRevenue = round2(grossRevenue - ownerShare);
+  const gross = round2(netRevenue - otherCogs);
   const net = round2(gross - opex);
   return {
     ...pnl.totals,
     gross_revenue: grossRevenue,
+    net_revenue: netRevenue,
     soul_fees: pnl.totals.revenue,
-    owner_share: round2(receipts?.owner_share || 0),
-    cogs,
+    owner_share: ownerShare,
+    company_share: round2(receipts?.company_share || 0),
+    cogs: otherCogs,
+    owner_expense: ownerShare,
     opex,
     gross,
     net,
@@ -1504,6 +1523,12 @@ function buildPortal(journal, reservations, recurring, extras = {}) {
     byCode['400000'].credit = receipts.total;
     byCode['400000'].txn_count = (receipts.stay_count || 0) + (receipts.custom_count || 0);
   }
+  if (byCode['506000']) {
+    byCode['506000'].balance = receipts.owner_share;
+    byCode['506000'].debit = receipts.owner_share;
+    byCode['506000'].credit = 0;
+    byCode['506000'].txn_count = receipts.stay_count || 0;
+  }
 
   const groupCards = Object.entries(groups).map(([id, g]) => {
     const accounts = g.accounts.map((a) => byCode[a.code]).filter(Boolean);
@@ -1567,8 +1592,11 @@ function buildPortal(journal, reservations, recurring, extras = {}) {
       guest_ar: byCode['105000']?.balance || 0,
       gross_revenue: receipts.total,
       revenue: receipts.total,
+      net_revenue: headline.net_revenue,
       soul_fees: soulFees,
       owner_share: headline.owner_share,
+      owner_expense: headline.owner_share,
+      company_share: headline.company_share,
       treasury_total: treasuryTotal,
       treasury_in: treasuryIn,
       cogs: headline.cogs,
