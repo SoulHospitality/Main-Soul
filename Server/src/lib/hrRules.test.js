@@ -10,6 +10,10 @@ const {
   assertAnnualNotice,
   addDaysIso,
   EARLY_LEAVE_MAX_PER_YEAR,
+  canRequestHolidays,
+  nextPayrollPeriod,
+  dateCoveredByRanges,
+  parseAttendanceRows,
 } = require('./hrRules');
 
 describe('HR daily-rate deductions and leave rules', () => {
@@ -49,5 +53,48 @@ describe('HR daily-rate deductions and leave rules', () => {
 
   it('caps early leaves at two per year', () => {
     assert.equal(EARLY_LEAVE_MAX_PER_YEAR, 2);
+  });
+
+  it('enables holiday access after 6 months unless HR denies or grants', () => {
+    const created = new Date('2026-01-19T00:00:00Z');
+    const now = new Date('2026-08-19T00:00:00Z');
+    assert.equal(canRequestHolidays({ holiday_access: 'auto', created_at: created }, now), true);
+    assert.equal(
+      canRequestHolidays({ holiday_access: 'auto', created_at: new Date('2026-03-19T00:00:00Z') }, now),
+      false
+    );
+    assert.equal(canRequestHolidays({ holiday_access: 'granted', created_at: now }, now), true);
+    assert.equal(canRequestHolidays({ holiday_access: 'denied', created_at: created }, now), false);
+  });
+
+  it('schedules approved loans on the first of next month', () => {
+    assert.deepEqual(nextPayrollPeriod('2026-08-19'), {
+      year: 2026,
+      month: 9,
+      deductionDate: '2026-09-01',
+    });
+    assert.equal(nextPayrollPeriod('2026-12-31').deductionDate, '2027-01-01');
+  });
+
+  it('skips attendance when an approved holiday covers the date', () => {
+    assert.equal(
+      dateCoveredByRanges('2026-08-20', [{ start_date: '2026-08-18', end_date: '2026-08-22' }]),
+      true
+    );
+    assert.equal(
+      dateCoveredByRanges('2026-08-23', [{ start_date: '2026-08-18', end_date: '2026-08-22' }]),
+      false
+    );
+  });
+
+  it('parses attendance excel rows as lateness or absence', () => {
+    const rows = parseAttendanceRows([
+      { staff_code: 'SH1', date: '2026-08-19', arrival_time: '11:20' },
+      { 'Staff Code': 'SH2', Date: '2026-08-19', Status: 'absent', notified: 'yes' },
+    ]);
+    assert.equal(rows[0].absent, false);
+    assert.equal(rows[0].arrival_time, '11:20');
+    assert.equal(rows[1].absent, true);
+    assert.equal(rows[1].notified, true);
   });
 });

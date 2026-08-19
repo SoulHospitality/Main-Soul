@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { MinusCircle, Plus, Trash2 } from 'lucide-react';
+import { Download, MinusCircle, Plus, Trash2, Upload } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import Modal from '../components/ui/Modal';
@@ -15,9 +15,7 @@ import { dailyRate, DEDUCTION_TYPE_LABELS } from '../utils/hrPolicy';
 
 const EMPTY = {
   staff_user_id: '',
-  category: 'lateness',
-  arrival_time: '11:20',
-  notified: false,
+  category: 'other',
   amount: '',
   reason: '',
   deduction_date: '',
@@ -30,6 +28,7 @@ function todayIso() {
 
 export default function Deductions() {
   const qc = useQueryClient();
+  const fileRef = useRef(null);
   const [search, setSearch] = useState('');
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState({ ...EMPTY, deduction_date: todayIso() });
@@ -42,35 +41,6 @@ export default function Deductions() {
   const staffOptions = (Array.isArray(users) ? users : []).filter((u) => u.role !== 'owner');
   const selectedStaff = staffOptions.find((u) => String(u.id) === String(form.staff_user_id));
   const rate = selectedStaff ? dailyRate(selectedStaff.base_salary) : 0;
-
-  const preview = useMemo(() => {
-    if (form.category === 'lateness' && rate) {
-      const [h, m] = String(form.arrival_time || '0:0').split(':').map(Number);
-      const minutes = h * 60 + m;
-      let factor = 1;
-      let label = 'After 12:00 PM · 1 × daily rate';
-      if (minutes <= 11 * 60 + 15) {
-        factor = 0;
-        label = '11:00–11:15 grace · no deduction';
-      } else if (minutes <= 11 * 60 + 30) {
-        factor = 0.25;
-        label = '11:16–11:30 · 0.25 × daily rate';
-      } else if (minutes <= 12 * 60) {
-        factor = 0.5;
-        label = '11:31–12:00 · 0.5 × daily rate';
-      }
-      return { amount: Math.round((rate * factor + Number.EPSILON) * 100) / 100, label, factor };
-    }
-    if (form.category === 'absence' && rate) {
-      const factor = form.notified ? 1 : 2;
-      return {
-        amount: Math.round((rate * factor + Number.EPSILON) * 100) / 100,
-        label: form.notified ? 'With notice · 1 × daily rate' : 'No notice · 2 × daily rate',
-        factor,
-      };
-    }
-    return null;
-  }, [form.category, form.arrival_time, form.notified, rate]);
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['hr-deductions'],
@@ -100,6 +70,42 @@ export default function Deductions() {
     onError: (e) => toast.error(e.response?.data?.error || 'Could not delete'),
   });
 
+  const importMutation = useMutation({
+    mutationFn: (file) => {
+      const fd = new FormData();
+      fd.append('file', file);
+      return api.post('/hr/attendance/import', fd).then((r) => r.data);
+    },
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['hr-deductions'] });
+      qc.invalidateQueries({ queryKey: ['hr-payroll'] });
+      const errCount = Array.isArray(data.errors) ? data.errors.length : 0;
+      toast.success(
+        `Imported ${data.created || 0} deduction${data.created === 1 ? '' : 's'}` +
+          (data.skipped ? ` · skipped ${data.skipped}` : '') +
+          (errCount ? ` · ${errCount} error${errCount === 1 ? '' : 's'}` : '')
+      );
+      if (errCount && data.errors[0]?.error) {
+        toast.error(`Row ${data.errors[0].row}: ${data.errors[0].error}`);
+      }
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Could not import attendance'),
+  });
+
+  const downloadTemplate = async () => {
+    try {
+      const res = await api.get('/hr/attendance/template', { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'attendance-template.xlsx';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Could not download template');
+    }
+  };
+
   const q = search.trim().toLowerCase();
   const filtered = useMemo(
     () =>
@@ -117,23 +123,15 @@ export default function Deductions() {
   const handleSave = () => {
     if (!form.staff_user_id) return toast.error('Choose a staff member');
     if (!form.deduction_date) return toast.error('Choose a date');
-    const payload = {
+    if (!(Number(form.amount) > 0)) return toast.error('Enter an amount greater than 0');
+    if (!String(form.reason || '').trim()) return toast.error('Enter a reason');
+    saveMutation.mutate({
       staff_user_id: Number(form.staff_user_id),
       deduction_date: form.deduction_date,
       category: form.category,
-      reason: form.reason.trim() || undefined,
-    };
-    if (form.category === 'lateness') {
-      payload.arrival_time = form.arrival_time;
-    } else if (form.category === 'absence') {
-      payload.notified = !!form.notified;
-    } else {
-      if (!(Number(form.amount) > 0)) return toast.error('Enter an amount greater than 0');
-      if (!String(form.reason || '').trim()) return toast.error('Enter a reason');
-      payload.amount = Number(form.amount);
-      payload.reason = form.reason.trim();
-    }
-    saveMutation.mutate(payload);
+      amount: Number(form.amount),
+      reason: form.reason.trim(),
+    });
   };
 
   return (
@@ -143,20 +141,47 @@ export default function Deductions() {
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-soul-muted">HR</p>
           <h1 className="page-title mt-1">Deductions</h1>
           <p className="page-subtitle">
-            Daily rate is salary ÷ 30. Lateness after the 11:00–11:15 grace, or absence with/without notice.
+            Upload attendance Excel for lateness and absence. Approved holidays (and WFH) are not deducted.
+            Manual entries are for other amounts only.
           </p>
         </div>
-        <button
-          type="button"
-          className="btn-primary"
-          onClick={() => {
-            setForm({ ...EMPTY, deduction_date: todayIso() });
-            setModal(true);
-          }}
-        >
-          <Plus className="h-4 w-4" />
-          Apply deduction
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="btn-secondary" onClick={downloadTemplate}>
+            <Download className="h-4 w-4" />
+            Template
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            disabled={importMutation.isPending}
+            onClick={() => fileRef.current?.click()}
+          >
+            <Upload className="h-4 w-4" />
+            {importMutation.isPending ? 'Importing…' : 'Upload Excel'}
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".xlsx,.xls"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (file) importMutation.mutate(file);
+            }}
+          />
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => {
+              setForm({ ...EMPTY, deduction_date: todayIso() });
+              setModal(true);
+            }}
+          >
+            <Plus className="h-4 w-4" />
+            Other deduction
+          </button>
+        </div>
       </div>
 
       <SearchFilter value={search} onChange={setSearch} placeholder="Search deductions…" />
@@ -168,8 +193,8 @@ export default function Deductions() {
           icon={MinusCircle}
           title="No deductions yet"
           action={
-            <button type="button" className="btn-primary" onClick={() => setModal(true)}>
-              Apply first deduction
+            <button type="button" className="btn-primary" onClick={() => fileRef.current?.click()}>
+              Upload attendance Excel
             </button>
           }
         />
@@ -202,7 +227,9 @@ export default function Deductions() {
                     <td className="max-w-[18rem]">
                       <span className="line-clamp-2">{r.reason}</span>
                       {r.arrival_time ? (
-                        <span className="block text-[11px] text-soul-muted">Arrived {String(r.arrival_time).slice(0, 5)}</span>
+                        <span className="block text-[11px] text-soul-muted">
+                          Arrived {String(r.arrival_time).slice(0, 5)}
+                        </span>
                       ) : null}
                     </td>
                     <td className="tabular-nums whitespace-nowrap font-semibold text-rose-700">
@@ -228,11 +255,13 @@ export default function Deductions() {
       <Modal
         open={modal}
         onClose={() => setModal(false)}
-        title="Apply deduction"
+        title="Other deduction"
         size="md"
         footer={
           <>
-            <button type="button" className="btn-secondary" onClick={() => setModal(false)}>Cancel</button>
+            <button type="button" className="btn-secondary" onClick={() => setModal(false)}>
+              Cancel
+            </button>
             <button type="button" className="btn-primary" disabled={saveMutation.isPending} onClick={handleSave}>
               {saveMutation.isPending ? 'Saving…' : 'Apply'}
             </button>
@@ -265,9 +294,9 @@ export default function Deductions() {
                 value={form.category}
                 onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
               >
-                <option value="lateness">Lateness</option>
-                <option value="absence">Absence</option>
-                <option value="other">Other (manual amount)</option>
+                <option value="other">Other</option>
+                <option value="performance">Performance</option>
+                <option value="advance">Advance</option>
               </select>
             </div>
             <div>
@@ -280,82 +309,25 @@ export default function Deductions() {
               />
             </div>
           </div>
-
-          {form.category === 'lateness' && (
-            <div>
-              <label className="label">Arrival time *</label>
-              <input
-                type="time"
-                className="input"
-                value={form.arrival_time}
-                onChange={(e) => setForm((f) => ({ ...f, arrival_time: e.target.value }))}
-              />
-              <p className="mt-1 text-[11px] text-soul-muted">
-                Shift 11:00. Grace until 11:15. Then 0.25 / 0.5 / 1 × daily rate.
-              </p>
-            </div>
-          )}
-
-          {form.category === 'absence' && (
-            <label className="flex items-start gap-2 text-sm text-soul-blue">
-              <input
-                type="checkbox"
-                className="mt-1 rounded"
-                checked={form.notified}
-                onChange={(e) => setForm((f) => ({ ...f, notified: e.target.checked }))}
-              />
-              <span>
-                Staff notified before being absent
-                <span className="block text-[11px] text-soul-muted">
-                  With notice: 1 day. Without notice: 2 days.
-                </span>
-              </span>
-            </label>
-          )}
-
-          {form.category === 'other' && (
-            <>
-              <div>
-                <label className="label">Amount (EGP) *</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  className="input"
-                  value={form.amount}
-                  onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="label">Reason *</label>
-                <textarea
-                  className="input min-h-[72px]"
-                  value={form.reason}
-                  onChange={(e) => setForm((f) => ({ ...f, reason: e.target.value }))}
-                />
-              </div>
-            </>
-          )}
-
-          {preview && (
-            <div className="rounded-xl border border-soul-line bg-slate-50 px-3 py-2 text-sm">
-              <div className="text-soul-muted text-[11px]">{preview.label}</div>
-              <div className="font-semibold text-soul-blue">
-                {preview.factor === 0 ? 'No deduction' : `Deduct ${currency(preview.amount)}`}
-              </div>
-            </div>
-          )}
-
-          {form.category !== 'other' && (
-            <div>
-              <label className="label">Note (optional)</label>
-              <textarea
-                className="input min-h-[64px]"
-                value={form.reason}
-                onChange={(e) => setForm((f) => ({ ...f, reason: e.target.value }))}
-              />
-            </div>
-          )}
+          <div>
+            <label className="label">Amount (EGP) *</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              className="input"
+              value={form.amount}
+              onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="label">Reason *</label>
+            <textarea
+              className="input min-h-[72px]"
+              value={form.reason}
+              onChange={(e) => setForm((f) => ({ ...f, reason: e.target.value }))}
+            />
+          </div>
         </div>
       </Modal>
 

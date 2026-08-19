@@ -155,6 +155,125 @@ function assertEarlyLeaveTiming(startDate, now = new Date()) {
   }
 }
 
+const HOLIDAY_ACCESS_MONTHS = 6;
+
+function monthsBetween(fromDate, toDate) {
+  const from = fromDate instanceof Date ? fromDate : new Date(fromDate);
+  const to = toDate instanceof Date ? toDate : new Date(toDate);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return 0;
+  const years = to.getFullYear() - from.getFullYear();
+  const months = to.getMonth() - from.getMonth();
+  let total = years * 12 + months;
+  if (to.getDate() < from.getDate()) total -= 1;
+  return total;
+}
+
+function canRequestHolidays({ holiday_access, created_at }, now = new Date()) {
+  const mode = String(holiday_access || 'auto').toLowerCase();
+  if (mode === 'granted') return true;
+  if (mode === 'denied') return false;
+  return monthsBetween(created_at, now) >= HOLIDAY_ACCESS_MONTHS;
+}
+
+function nextPayrollPeriod(isoDate) {
+  const [y, m] = String(isoDate).slice(0, 10).split('-').map(Number);
+  if (m === 12) return { year: y + 1, month: 1, deductionDate: `${y + 1}-01-01` };
+  return {
+    year: y,
+    month: m + 1,
+    deductionDate: `${y}-${String(m + 1).padStart(2, '0')}-01`,
+  };
+}
+
+function dateCoveredByRanges(isoDate, ranges = []) {
+  return ranges.some((r) => r.start_date <= isoDate && isoDate <= r.end_date);
+}
+
+function excelSerialToIso(serial) {
+  const n = Number(serial);
+  if (!Number.isFinite(n)) return null;
+  const utc = Date.UTC(1899, 11, 30) + Math.round(n) * 86400000;
+  const d = new Date(utc);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
+function excelTimeToHhMm(value) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return `${String(value.getHours()).padStart(2, '0')}:${String(value.getMinutes()).padStart(2, '0')}`;
+  }
+  if (typeof value === 'number' && value >= 0 && value < 1.5) {
+    const mins = Math.round((value % 1) * 24 * 60);
+    const hh = Math.floor(mins / 60) % 24;
+    const mm = mins % 60;
+    return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+  }
+  const parsed = parseHhMm(value);
+  if (parsed == null) return null;
+  const hh = Math.floor(parsed / 60);
+  const mm = parsed % 60;
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
+function normalizeHeader(h) {
+  return String(h || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_');
+}
+
+function truthyNotice(value) {
+  const t = String(value || '').trim().toLowerCase();
+  return ['1', 'yes', 'y', 'true', 'notified', 'with notice', 'with_notice'].includes(t);
+}
+
+function parseAttendanceRows(rows) {
+  return (rows || []).map((row, index) => {
+    const keys = Object.keys(row || {});
+    const pick = (...aliases) => {
+      for (const alias of aliases) {
+        const key = keys.find((k) => normalizeHeader(k) === alias);
+        if (key != null && row[key] != null && String(row[key]).trim() !== '') return row[key];
+      }
+      return null;
+    };
+    let dateVal = pick('date', 'day', 'attendance_date');
+    if (dateVal instanceof Date) {
+      dateVal = `${dateVal.getFullYear()}-${String(dateVal.getMonth() + 1).padStart(2, '0')}-${String(dateVal.getDate()).padStart(2, '0')}`;
+    } else if (typeof dateVal === 'number') {
+      dateVal = excelSerialToIso(dateVal);
+    } else if (dateVal) {
+      const s = String(dateVal).trim();
+      const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+      dateVal = m ? m[1] : null;
+    }
+    const status = String(pick('status', 'type', 'attendance') || '').toLowerCase();
+    const arrivalRaw = pick('arrival_time', 'arrival', 'check_in', 'checkin', 'time', 'clock_in');
+    const arrival_time = arrivalRaw != null ? excelTimeToHhMm(arrivalRaw) : null;
+    const absent = !arrival_time || /absent|absence|no.show/.test(status);
+    const staffCode = pick('staff_code', 'staff_id', 'code', 'id');
+    const name = pick('name', 'full_name', 'staff', 'employee');
+    return {
+      row: index + 2,
+      staff_code: staffCode ? String(staffCode).trim() : '',
+      name: name ? String(name).trim() : '',
+      date: dateVal,
+      arrival_time: absent ? null : arrival_time,
+      notified: truthyNotice(pick('notified', 'notice', 'with_notice')),
+      absent,
+    };
+  });
+}
+
+function computeHalfDayDeduction(baseSalary) {
+  const rate = dailyRate(baseSalary);
+  return {
+    daily_rate: rate,
+    days_factor: 0.5,
+    amount: roundMoney(rate * 0.5),
+    label: 'Work from home · 0.5 × daily rate',
+  };
+}
+
 module.exports = {
   DAYS_IN_MONTH,
   SHIFT_START_MINUTES,
@@ -176,4 +295,12 @@ module.exports = {
   assertCasualTiming,
   assertAnnualNotice,
   assertEarlyLeaveTiming,
+  HOLIDAY_ACCESS_MONTHS,
+  monthsBetween,
+  canRequestHolidays,
+  nextPayrollPeriod,
+  dateCoveredByRanges,
+  parseAttendanceRows,
+  excelTimeToHhMm,
+  computeHalfDayDeduction,
 };

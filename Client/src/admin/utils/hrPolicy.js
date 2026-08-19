@@ -22,4 +22,6 @@ export const DEDUCTION_TYPE_LABELS = {
   performance: 'Performance',
   advance: 'Advance',
   other: 'Other',
+  loan: 'Loan',
+  wfh: 'Work from home',
 };

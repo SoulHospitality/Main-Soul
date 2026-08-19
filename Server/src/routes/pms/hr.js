@@ -1,15 +1,23 @@
 const express = require('express');
+const XLSX = require('xlsx');
 const { query, pool } = require('../../config/db');
 const { requireRoles } = require('../../middleware/auth');
+const { upload } = require('../../config/cloudinary');
 const {
   dailyRate,
   computeLatenessDeduction,
   computeAbsenceDeduction,
+  computeHalfDayDeduction,
   cairoParts,
   assertCasualTiming,
   assertAnnualNotice,
   assertEarlyLeaveTiming,
   EARLY_LEAVE_MAX_PER_YEAR,
+  canRequestHolidays,
+  monthsBetween,
+  nextPayrollPeriod,
+  dateCoveredByRanges,
+  parseAttendanceRows,
 } = require('../../lib/hrRules');
 
 const router = express.Router();
@@ -54,9 +62,10 @@ function parsePeriod(req) {
 
 async function loadStaffForHr(staffUserId) {
   const { rows } = await query(
-    `SELECT id, role, full_name, base_salary,
+    `SELECT id, role, full_name, base_salary, created_at,
             COALESCE(leave_casual_days, 0)::int AS leave_casual_days,
-            COALESCE(leave_annual_days, 0)::int AS leave_annual_days
+            COALESCE(leave_annual_days, 0)::int AS leave_annual_days,
+            COALESCE(holiday_access, 'auto') AS holiday_access
      FROM staff_users WHERE id = $1`,
     [staffUserId]
   );
@@ -113,7 +122,23 @@ async function leaveSnapshot(staffUserId) {
     early_leave_remaining: Math.max(0, EARLY_LEAVE_MAX_PER_YEAR - earlyUsed),
     early_leave_max: EARLY_LEAVE_MAX_PER_YEAR,
     year,
+    holiday_access: staff.holiday_access || 'auto',
+    can_request_holidays: canRequestHolidays(staff),
+    tenure_months: monthsBetween(staff.created_at, new Date()),
   };
+}
+
+async function insertDeduction(db, values) {
+  const q = db ? (sql, params) => db.query(sql, params) : query;
+  const { rows } = await q(
+    `INSERT INTO staff_salary_deductions
+       (staff_user_id, amount, reason, deduction_date, category, created_by,
+        arrival_time, notified, daily_rate, days_factor)
+     VALUES ($1,$2,$3,$4::date,$5,$6,$7,$8,$9,$10)
+     RETURNING *`,
+    values
+  );
+  return rows[0];
 }
 
 router.get('/hr/payroll', requireRoles(...HR_ROLES), async (req, res, next) => {
@@ -301,8 +326,8 @@ router.post('/hr/salary-deductions', requireRoles(...HR_ROLES), async (req, res,
     const staffUserId = Number(b.staff_user_id);
     const deductionDate = String(b.deduction_date || '').slice(0, 10);
     let category = String(b.category || b.kind || 'other').trim() || 'other';
-    if (category === 'delay') category = 'lateness';
-    const allowed = new Set(['lateness', 'absence', 'performance', 'advance', 'other']);
+    if (category === 'delay') category = 'other';
+    const allowed = new Set(['performance', 'advance', 'other']);
     if (!staffUserId || !deductionDate) {
       return res.status(400).json({ error: 'Staff and date are required' });
     }
@@ -318,30 +343,9 @@ router.post('/hr/salary-deductions', requireRoles(...HR_ROLES), async (req, res,
     let rate = dailyRate(staff.base_salary);
     let factor = null;
 
-    if (category === 'lateness') {
-      const computed = computeLatenessDeduction(staff.base_salary, b.arrival_time);
-      if (computed.factor <= 0) {
-        return res.status(400).json({
-          error: 'No lateness deduction — arrival is within the 11:00–11:15 grace period',
-        });
-      }
-      amount = computed.amount;
-      factor = computed.factor;
-      rate = computed.daily_rate;
-      arrivalTime = String(b.arrival_time).slice(0, 8);
-      reason = reason || `Lateness at ${arrivalTime} (${computed.label})`;
-    } else if (category === 'absence') {
-      const computed = computeAbsenceDeduction(staff.base_salary, b.notified);
-      amount = computed.amount;
-      factor = computed.factor;
-      rate = computed.daily_rate;
-      notified = !!b.notified;
-      reason = reason || computed.label;
-    } else {
-      amount = parseFloat(b.amount);
-      if (Number.isNaN(amount) || amount <= 0 || !reason) {
-        return res.status(400).json({ error: 'Amount and reason are required' });
-      }
+    amount = parseFloat(b.amount);
+    if (Number.isNaN(amount) || amount <= 0 || !reason) {
+      return res.status(400).json({ error: 'Amount and reason are required' });
     }
 
     const { rows } = await query(
@@ -442,6 +446,14 @@ router.post('/hr/leave-requests', async (req, res, next) => {
     }
     if (req.user.role === 'owner') {
       return res.status(403).json({ error: 'Owner accounts cannot request staff holidays' });
+    }
+
+    const targetStaff = await loadStaffForHr(staffUserId);
+    if (!canRequestHolidays(targetStaff)) {
+      return res.status(403).json({
+        error:
+          'Holiday requests are not enabled for this account yet. Access opens automatically after 6 months, or HR can grant it earlier.',
+      });
     }
 
     const now = new Date();
@@ -558,5 +570,482 @@ router.post('/hr/leave-requests/:id/review', requireRoles(...HR_ROLES), async (r
     next(e);
   }
 });
+
+async function listHrRequests(req, table) {
+  const status = String(req.query.status || '').toLowerCase();
+  const params = [];
+  const where = [];
+  if (req.query.mine === '1' || !isHrActor(req.user)) {
+    params.push(req.user.id);
+    where.push(`r.staff_user_id = $${params.length}`);
+  }
+  if (['pending', 'approved', 'rejected'].includes(status)) {
+    params.push(status);
+    where.push(`r.status = $${params.length}`);
+  }
+  const { rows } = await query(
+    `SELECT r.*,
+            u.full_name,
+            u.role,
+            u.staff_code,
+            reviewer.full_name AS reviewed_by_name
+     FROM ${table} r
+     JOIN staff_users u ON u.id = r.staff_user_id
+     LEFT JOIN staff_users reviewer ON reviewer.id = r.reviewed_by
+     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+     ORDER BY CASE r.status WHEN 'pending' THEN 0 ELSE 1 END, r.created_at DESC
+     LIMIT 500`,
+    params
+  );
+  return rows;
+}
+
+router.get('/hr/loans', async (req, res, next) => {
+  try {
+    if (req.user.role === 'owner') return res.status(403).json({ error: 'Forbidden' });
+    res.json(await listHrRequests(req, 'staff_loan_requests'));
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/hr/loans', async (req, res, next) => {
+  try {
+    if (req.user.role === 'owner') return res.status(403).json({ error: 'Forbidden' });
+    const amount = parseFloat(req.body?.amount);
+    const reason = String(req.body?.reason || '').trim();
+    if (!(amount > 0) || !reason) {
+      return res.status(400).json({ error: 'Amount and reason are required' });
+    }
+    let staffUserId = req.user.id;
+    if (isHrActor(req.user) && req.body?.staff_user_id) {
+      staffUserId = Number(req.body.staff_user_id);
+      await loadStaffForHr(staffUserId);
+    }
+    const { rows } = await query(
+      `INSERT INTO staff_loan_requests (staff_user_id, amount, reason, status)
+       VALUES ($1,$2,$3,'pending')
+       RETURNING *`,
+      [staffUserId, amount, reason]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/hr/loans/:id/review', requireRoles(...HR_ROLES), async (req, res, next) => {
+  try {
+    const status = String(req.body?.status || '').toLowerCase();
+    if (status !== 'approved' && status !== 'rejected') {
+      return res.status(400).json({ error: 'Status must be approved or rejected' });
+    }
+    const note = req.body?.review_note ? String(req.body.review_note).slice(0, 500) : null;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows: existingRows } = await client.query(
+        `SELECT * FROM staff_loan_requests WHERE id = $1 AND status = 'pending' FOR UPDATE`,
+        [req.params.id]
+      );
+      const row = existingRows[0];
+      if (!row) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Pending loan not found' });
+      }
+
+      let deductYear = null;
+      let deductMonth = null;
+      let deductionId = null;
+      if (status === 'approved') {
+        const staff = await loadStaffForHr(row.staff_user_id);
+        const next = nextPayrollPeriod(cairoParts().date);
+        deductYear = next.year;
+        deductMonth = next.month;
+        const inserted = await insertDeduction(client, [
+          row.staff_user_id,
+          row.amount,
+          String(row.reason || 'Salary loan').slice(0, 255),
+          next.deductionDate,
+          'loan',
+          req.user.id,
+          null,
+          null,
+          dailyRate(staff.base_salary),
+          null,
+        ]);
+        deductionId = inserted.id;
+      }
+
+      const { rows } = await client.query(
+        `UPDATE staff_loan_requests SET
+           status = $1,
+           reviewed_by = $2,
+           reviewed_at = now(),
+           review_note = $3,
+           deduct_year = $4,
+           deduct_month = $5,
+           deduction_id = $6
+         WHERE id = $7
+         RETURNING *`,
+        [status, req.user.id, note, deductYear, deductMonth, deductionId, req.params.id]
+      );
+      await client.query('COMMIT');
+      res.json(rows[0]);
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/hr/wfh', async (req, res, next) => {
+  try {
+    if (req.user.role === 'owner') return res.status(403).json({ error: 'Forbidden' });
+    res.json(await listHrRequests(req, 'staff_wfh_requests'));
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/hr/wfh', async (req, res, next) => {
+  try {
+    if (req.user.role === 'owner') return res.status(403).json({ error: 'Forbidden' });
+    const workDate = String(req.body?.work_date || '').slice(0, 10);
+    const reason = String(req.body?.reason || '').trim();
+    if (!workDate) return res.status(400).json({ error: 'Work date is required' });
+    const cairo = cairoParts();
+    if (workDate < cairo.date) {
+      return res.status(400).json({ error: 'Work from home cannot be requested for a past date' });
+    }
+    let staffUserId = req.user.id;
+    if (isHrActor(req.user) && req.body?.staff_user_id) {
+      staffUserId = Number(req.body.staff_user_id);
+      await loadStaffForHr(staffUserId);
+    }
+    const { rows: existing } = await query(
+      `SELECT id FROM staff_wfh_requests
+       WHERE staff_user_id = $1 AND work_date = $2::date AND status IN ('pending','approved')
+       LIMIT 1`,
+      [staffUserId, workDate]
+    );
+    if (existing[0]) {
+      return res.status(400).json({ error: 'A work-from-home request already exists for that day' });
+    }
+    const { rows } = await query(
+      `INSERT INTO staff_wfh_requests (staff_user_id, work_date, reason, status)
+       VALUES ($1,$2::date,$3,'pending')
+       RETURNING *`,
+      [staffUserId, workDate, reason || null]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/hr/wfh/:id/review', requireRoles(...HR_ROLES), async (req, res, next) => {
+  try {
+    const status = String(req.body?.status || '').toLowerCase();
+    if (status !== 'approved' && status !== 'rejected') {
+      return res.status(400).json({ error: 'Status must be approved or rejected' });
+    }
+    const note = req.body?.review_note ? String(req.body.review_note).slice(0, 500) : null;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows: existingRows } = await client.query(
+        `SELECT * FROM staff_wfh_requests WHERE id = $1 AND status = 'pending' FOR UPDATE`,
+        [req.params.id]
+      );
+      const row = existingRows[0];
+      if (!row) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Pending request not found' });
+      }
+
+      let deductionId = null;
+      if (status === 'approved') {
+        const staff = await loadStaffForHr(row.staff_user_id);
+        const computed = computeHalfDayDeduction(staff.base_salary);
+        const inserted = await insertDeduction(client, [
+          row.staff_user_id,
+          computed.amount,
+          computed.label,
+          row.work_date,
+          'wfh',
+          req.user.id,
+          null,
+          null,
+          computed.daily_rate,
+          computed.days_factor,
+        ]);
+        deductionId = inserted.id;
+      }
+
+      const { rows } = await client.query(
+        `UPDATE staff_wfh_requests SET
+           status = $1,
+           reviewed_by = $2,
+           reviewed_at = now(),
+           review_note = $3,
+           deduction_id = $4
+         WHERE id = $5
+         RETURNING *`,
+        [status, req.user.id, note, deductionId, req.params.id]
+      );
+      await client.query('COMMIT');
+      res.json(rows[0]);
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/hr/holiday-access', requireRoles(...HR_ROLES), async (req, res, next) => {
+  try {
+    const { rows } = await query(
+      `SELECT id, full_name, role, staff_code, is_active, created_at,
+              COALESCE(holiday_access, 'auto') AS holiday_access
+       FROM staff_users
+       WHERE role <> 'owner'
+       ORDER BY full_name`
+    );
+    const now = new Date();
+    res.json(
+      rows.map((r) => ({
+        ...r,
+        can_request_holidays: canRequestHolidays(r, now),
+        tenure_months: monthsBetween(r.created_at, now),
+      }))
+    );
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.patch('/hr/holiday-access/:id', requireRoles(...HR_ROLES), async (req, res, next) => {
+  try {
+    const access = String(req.body?.holiday_access || '').toLowerCase();
+    if (!['auto', 'granted', 'denied'].includes(access)) {
+      return res.status(400).json({ error: 'holiday_access must be auto, granted, or denied' });
+    }
+    const staff = await loadStaffForHr(Number(req.params.id));
+    const { rows } = await query(
+      `UPDATE staff_users SET holiday_access = $1, updated_at = now() WHERE id = $2
+       RETURNING id, full_name, role, staff_code, created_at,
+                 COALESCE(holiday_access, 'auto') AS holiday_access`,
+      [access, staff.id]
+    );
+    const row = rows[0];
+    res.json({
+      ...row,
+      can_request_holidays: canRequestHolidays(row),
+      tenure_months: monthsBetween(row.created_at, new Date()),
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/hr/attendance/template', requireRoles(...HR_ROLES), (_req, res) => {
+  const wb = XLSX.utils.book_new();
+  const sheet = XLSX.utils.json_to_sheet([
+    {
+      staff_code: 'SH0001',
+      date: '2026-08-19',
+      arrival_time: '11:20',
+      notified: '',
+      name: '',
+    },
+    {
+      staff_code: 'SH0002',
+      date: '2026-08-19',
+      arrival_time: '',
+      notified: 'yes',
+      name: '',
+    },
+  ]);
+  XLSX.utils.book_append_sheet(wb, sheet, 'Attendance');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  res.setHeader(
+    'Content-Type',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  );
+  res.setHeader('Content-Disposition', 'attachment; filename="attendance-template.xlsx"');
+  res.send(buf);
+});
+
+router.post(
+  '/hr/attendance/import',
+  requireRoles(...HR_ROLES),
+  upload.single('file'),
+  async (req, res, next) => {
+    try {
+      if (!req.file?.buffer) {
+        return res.status(400).json({ error: 'Upload an Excel file (.xlsx)' });
+      }
+      const wb = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: true });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const json = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+      const parsed = parseAttendanceRows(json).filter((r) => r.staff_code || r.name || r.date);
+      if (!parsed.length) {
+        return res.status(400).json({ error: 'The sheet has no attendance rows' });
+      }
+
+      const { rows: staffRows } = await query(
+        `SELECT id, staff_code, full_name, base_salary FROM staff_users WHERE role <> 'owner'`
+      );
+      const byCode = new Map();
+      const byName = new Map();
+      for (const s of staffRows) {
+        if (s.staff_code) byCode.set(String(s.staff_code).trim().toLowerCase(), s);
+        byName.set(String(s.full_name || '').trim().toLowerCase(), s);
+      }
+
+      const dates = parsed.map((p) => p.date).filter(Boolean).sort();
+      const minDate = dates[0] || cairoParts().date;
+      const maxDate = dates[dates.length - 1] || minDate;
+
+      const { rows: leaveRows } = await query(
+        `SELECT staff_user_id, start_date::text AS start_date, end_date::text AS end_date
+         FROM staff_leave_requests
+         WHERE status = 'approved' AND start_date <= $2::date AND end_date >= $1::date`,
+        [minDate, maxDate]
+      );
+      const leavesByStaff = new Map();
+      for (const l of leaveRows) {
+        const list = leavesByStaff.get(l.staff_user_id) || [];
+        list.push(l);
+        leavesByStaff.set(l.staff_user_id, list);
+      }
+
+      const { rows: wfhRows } = await query(
+        `SELECT staff_user_id, work_date::text AS work_date
+         FROM staff_wfh_requests
+         WHERE status = 'approved' AND work_date >= $1::date AND work_date <= $2::date`,
+        [minDate, maxDate]
+      );
+      const wfhByStaff = new Map();
+      for (const w of wfhRows) {
+        const set = wfhByStaff.get(w.staff_user_id) || new Set();
+        set.add(w.work_date);
+        wfhByStaff.set(w.staff_user_id, set);
+      }
+
+      const { rows: existingRows } = await query(
+        `SELECT staff_user_id, deduction_date::text AS deduction_date, category
+         FROM staff_salary_deductions
+         WHERE category IN ('lateness','absence')
+           AND deduction_date >= $1::date AND deduction_date <= $2::date`,
+        [minDate, maxDate]
+      );
+      const existing = new Set(
+        existingRows.map((d) => `${d.staff_user_id}|${d.deduction_date}|${d.category}`)
+      );
+
+      const created = [];
+      const skipped = [];
+      const errors = [];
+
+      for (const row of parsed) {
+        if (!row.date) {
+          errors.push({ row: row.row, error: 'Missing date' });
+          continue;
+        }
+        const staff =
+          (row.staff_code && byCode.get(row.staff_code.toLowerCase())) ||
+          (row.name && byName.get(row.name.toLowerCase()));
+        if (!staff) {
+          errors.push({
+            row: row.row,
+            error: `Unknown staff (${row.staff_code || row.name || 'blank'})`,
+          });
+          continue;
+        }
+        if (dateCoveredByRanges(row.date, leavesByStaff.get(staff.id) || [])) {
+          skipped.push({ row: row.row, staff_user_id: staff.id, reason: 'approved_holiday' });
+          continue;
+        }
+        if ((wfhByStaff.get(staff.id) || new Set()).has(row.date)) {
+          skipped.push({ row: row.row, staff_user_id: staff.id, reason: 'approved_wfh' });
+          continue;
+        }
+
+        try {
+          if (row.absent) {
+            const key = `${staff.id}|${row.date}|absence`;
+            if (existing.has(key)) {
+              skipped.push({ row: row.row, staff_user_id: staff.id, reason: 'duplicate' });
+              continue;
+            }
+            const computed = computeAbsenceDeduction(staff.base_salary, row.notified);
+            const inserted = await insertDeduction(null, [
+              staff.id,
+              computed.amount,
+              computed.label,
+              row.date,
+              'absence',
+              req.user.id,
+              null,
+              computed.notified,
+              computed.daily_rate,
+              computed.factor,
+            ]);
+            existing.add(key);
+            created.push(inserted);
+          } else {
+            const computed = computeLatenessDeduction(staff.base_salary, row.arrival_time);
+            if (computed.factor <= 0) {
+              skipped.push({ row: row.row, staff_user_id: staff.id, reason: 'on_time' });
+              continue;
+            }
+            const key = `${staff.id}|${row.date}|lateness`;
+            if (existing.has(key)) {
+              skipped.push({ row: row.row, staff_user_id: staff.id, reason: 'duplicate' });
+              continue;
+            }
+            const inserted = await insertDeduction(null, [
+              staff.id,
+              computed.amount,
+              `Lateness at ${row.arrival_time} (${computed.label})`,
+              row.date,
+              'lateness',
+              req.user.id,
+              row.arrival_time,
+              null,
+              computed.daily_rate,
+              computed.factor,
+            ]);
+            existing.add(key);
+            created.push(inserted);
+          }
+        } catch (err) {
+          errors.push({ row: row.row, error: err.message || 'Could not import row' });
+        }
+      }
+
+      res.json({
+        ok: true,
+        created: created.length,
+        skipped: skipped.length,
+        errors,
+        skipped_details: skipped,
+        deductions: created,
+      });
+    } catch (e) {
+      next(e);
+    }
+  }
+);
 
 module.exports = router;

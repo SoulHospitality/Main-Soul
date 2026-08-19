@@ -96,6 +96,11 @@ const PERMISSIONS = {
     'deductions:write',
     'holiday_requests:read',
     'holiday_requests:write',
+    'holiday_access:write',
+    'loans:read',
+    'loans:write',
+    'wfh:read',
+    'wfh:write',
     'notifications:read',
     'documents:read',
     'documents:write',
@@ -159,7 +164,16 @@ const PAGE_ACCESS = {
   housekeeping: new Set(['housekeeping', 'hk_today', 'profile']),
   housekeeping_supervisor: new Set(['housekeeping', 'hk_today', 'profile']),
   resale: new Set(['units_sale', 'acquisition', 'profile']),
-  hr: new Set(['users', 'payroll', 'deductions', 'holiday_requests', 'profile']),
+  hr: new Set([
+    'users',
+    'payroll',
+    'deductions',
+    'holiday_requests',
+    'holiday_access',
+    'loans',
+    'wfh',
+    'profile',
+  ]),
   owner: new Set([
     'owner',
     'owner_reservations',
@@ -192,6 +206,7 @@ export function canAccess(user, page) {
   if (!user) return false;
   if (user.role === 'admin') return true;
   if (page === 'profile' || page === 'change-password') return true;
+  if ((page === 'loans' || page === 'wfh') && user.role !== 'owner') return true;
   const allowed = PAGE_ACCESS[user.role];
   if (allowed === true) return true;
   if (allowed instanceof Set) return allowed.has(page);

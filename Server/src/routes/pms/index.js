@@ -218,7 +218,8 @@ const STAFF_SELECT = `
   petty_cash_location, staff_code, base_salary, pending_base_salary,
   salary_change_status, is_first_login, created_at, updated_at,
   COALESCE(leave_casual_days, 0) AS leave_casual_days,
-  COALESCE(leave_annual_days, 0) AS leave_annual_days
+  COALESCE(leave_annual_days, 0) AS leave_annual_days,
+  COALESCE(holiday_access, 'auto') AS holiday_access
 `;
 
 function assertCanAssignRole(actorRole, targetRole) {

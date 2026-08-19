@@ -14,6 +14,9 @@ import {
   Wallet,
   MinusCircle,
   Palmtree,
+  Banknote,
+  Home,
+  ShieldCheck,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -33,6 +36,9 @@ const NAV_ITEMS = [
   { path: '/admin/payroll', label: 'Payrolls', icon: Wallet, page: 'payroll' },
   { path: '/admin/deductions', label: 'Deductions', icon: MinusCircle, page: 'deductions' },
   { path: '/admin/holiday-requests', label: 'Holiday requests', icon: Palmtree, page: 'holiday_requests', badge: 'leave_pending' },
+  { path: '/admin/holiday-access', label: 'Holidays access', icon: ShieldCheck, page: 'holiday_access' },
+  { path: '/admin/loans', label: 'Loans', icon: Banknote, page: 'loans', badge: 'loan_pending' },
+  { path: '/admin/wfh', label: 'Work from home', icon: Home, page: 'wfh', badge: 'wfh_pending' },
   { path: '/admin/promo-codes',      label: 'Promo Codes',        icon: Tag,                page: 'promo_codes' },
 ];
 
@@ -62,6 +68,8 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
 
   const showWebsitePending = canAccess('website_bookings');
   const showLeavePending = canAccess('holiday_requests');
+  const showLoanPending = canAccess('payroll');
+  const showWfhPending = canAccess('payroll');
   const { data: pendingBookings = [] } = useQuery({
     queryKey: ['website-bookings-pending'],
     queryFn: () =>
@@ -87,6 +95,20 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
     refetchInterval: 30000,
   });
   const pendingLeaveCount = Array.isArray(pendingLeave) ? pendingLeave.length : 0;
+  const { data: pendingLoans = [] } = useQuery({
+    queryKey: ['hr-loans', 'pending'],
+    queryFn: () => api.get('/hr/loans', { params: { status: 'pending' } }).then((r) => r.data),
+    enabled: showLoanPending,
+    refetchInterval: 30000,
+  });
+  const { data: pendingWfh = [] } = useQuery({
+    queryKey: ['hr-wfh', 'pending'],
+    queryFn: () => api.get('/hr/wfh', { params: { status: 'pending' } }).then((r) => r.data),
+    enabled: showWfhPending,
+    refetchInterval: 30000,
+  });
+  const pendingLoanCount = Array.isArray(pendingLoans) ? pendingLoans.length : 0;
+  const pendingWfhCount = Array.isArray(pendingWfh) ? pendingWfh.length : 0;
 
   const handleLogout = () => {
     logout();
@@ -150,7 +172,11 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
               ? websiteNeedsReviewCount
               : item.badge === 'leave_pending'
                 ? pendingLeaveCount
-                : 0;
+                : item.badge === 'loan_pending'
+                  ? pendingLoanCount
+                  : item.badge === 'wfh_pending'
+                    ? pendingWfhCount
+                    : 0;
           return (
             <NavLink
               key={item.path}

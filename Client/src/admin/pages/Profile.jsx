@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Lock, CheckCircle, Palmtree } from 'lucide-react';
+import { Lock, CheckCircle, Palmtree, Banknote, Home } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import { useAuth } from '../context/AuthContext';
@@ -39,6 +39,8 @@ export default function Profile() {
     end_date: '',
     reason: '',
   });
+  const [loanForm, setLoanForm] = useState({ amount: '', reason: '' });
+  const [wfhForm, setWfhForm] = useState({ work_date: '', reason: '' });
 
   const { data: myLeave = [] } = useQuery({
     queryKey: ['hr-leave-requests', 'mine'],
@@ -58,6 +60,26 @@ export default function Profile() {
       qc.invalidateQueries({ queryKey: ['hr-my-leave'] });
       toast.success('Holiday request sent to HR');
       setLeaveForm({ leave_type: 'casual', start_date: '', end_date: '', reason: '' });
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Could not submit request'),
+  });
+
+  const loanMutation = useMutation({
+    mutationFn: (payload) => api.post('/hr/loans', payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['hr-loans'] });
+      toast.success('Loan request sent to HR');
+      setLoanForm({ amount: '', reason: '' });
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Could not submit loan'),
+  });
+
+  const wfhMutation = useMutation({
+    mutationFn: (payload) => api.post('/hr/wfh', payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['hr-wfh'] });
+      toast.success('Work-from-home request sent');
+      setWfhForm({ work_date: '', reason: '' });
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Could not submit request'),
   });
@@ -165,6 +187,12 @@ export default function Profile() {
           <p className="text-sm text-soul-muted mb-4">
             Casual: before the 11:00 shift. Annual: at least 7 days ahead. Early leave: max 2 per year.
           </p>
+          {leaveSnap && !leaveSnap.can_request_holidays ? (
+            <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mb-4">
+              Holiday requests open automatically after 6 months in the system, or when HR grants access.
+              {leaveSnap.tenure_months != null ? ` Current tenure: ${leaveSnap.tenure_months} months.` : ''}
+            </p>
+          ) : null}
           {leaveSnap && (
             <div className="mb-4 grid grid-cols-3 gap-2 text-center">
               <div className="rounded-xl border border-soul-line px-2 py-2">
@@ -183,6 +211,7 @@ export default function Profile() {
               </div>
             </div>
           )}
+          {leaveSnap?.can_request_holidays !== false && (
           <div className="space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
@@ -247,6 +276,7 @@ export default function Profile() {
               {leaveMutation.isPending ? 'Sending…' : 'Send request'}
             </button>
           </div>
+          )}
           {Array.isArray(myLeave) && myLeave.length > 0 && (
             <div className="mt-5 border-t border-soul-line pt-4 space-y-2">
               {myLeave.slice(0, 8).map((r) => (
@@ -276,6 +306,87 @@ export default function Profile() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {canRequestLeave && (
+        <div className="card space-y-3">
+          <div className="flex items-center gap-2">
+            <Banknote className="w-5 h-5 text-soul-muted" />
+            <h3 className="font-semibold text-soul-blue">Loan</h3>
+          </div>
+          <p className="text-sm text-soul-muted">If approved, the amount is deducted from next month’s salary.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="label">Amount (EGP)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className="input"
+                value={loanForm.amount}
+                onChange={(e) => setLoanForm((f) => ({ ...f, amount: e.target.value }))}
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="label">Reason</label>
+              <textarea
+                className="input min-h-[64px]"
+                value={loanForm.reason}
+                onChange={(e) => setLoanForm((f) => ({ ...f, reason: e.target.value }))}
+              />
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={loanMutation.isPending}
+            onClick={() => {
+              if (!(Number(loanForm.amount) > 0)) return toast.error('Enter an amount');
+              if (!loanForm.reason.trim()) return toast.error('Enter a reason');
+              loanMutation.mutate({ amount: Number(loanForm.amount), reason: loanForm.reason.trim() });
+            }}
+          >
+            {loanMutation.isPending ? 'Sending…' : 'Request loan'}
+          </button>
+        </div>
+      )}
+
+      {canRequestLeave && (
+        <div className="card space-y-3">
+          <div className="flex items-center gap-2">
+            <Home className="w-5 h-5 text-soul-muted" />
+            <h3 className="font-semibold text-soul-blue">Work from home</h3>
+          </div>
+          <p className="text-sm text-soul-muted">An approved WFH day counts as a half day on payroll.</p>
+          <div>
+            <label className="label">Date</label>
+            <input
+              type="date"
+              className="input"
+              value={wfhForm.work_date}
+              onChange={(e) => setWfhForm((f) => ({ ...f, work_date: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="label">Note</label>
+            <textarea
+              className="input min-h-[64px]"
+              value={wfhForm.reason}
+              onChange={(e) => setWfhForm((f) => ({ ...f, reason: e.target.value }))}
+            />
+          </div>
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={wfhMutation.isPending}
+            onClick={() => {
+              if (!wfhForm.work_date) return toast.error('Choose a date');
+              wfhMutation.mutate({ work_date: wfhForm.work_date, reason: wfhForm.reason.trim() || undefined });
+            }}
+          >
+            {wfhMutation.isPending ? 'Sending…' : 'Request WFH'}
+          </button>
         </div>
       )}
 
