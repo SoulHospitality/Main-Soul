@@ -216,7 +216,9 @@ const STAFF_SELECT = `
   id, username, email, full_name, role, is_active, sales_commission_pct,
   operation_specialist_pct, operation_manager_pct, reservation_manager_pct,
   petty_cash_location, staff_code, base_salary, pending_base_salary,
-  salary_change_status, is_first_login, created_at, updated_at
+  salary_change_status, is_first_login, created_at, updated_at,
+  COALESCE(leave_casual_days, 0) AS leave_casual_days,
+  COALESCE(leave_annual_days, 0) AS leave_annual_days
 `;
 
 function assertCanAssignRole(actorRole, targetRole) {
@@ -356,8 +358,8 @@ router.post('/users', requireRoles('admin', 'hr'), async (req, res, next) => {
       `INSERT INTO staff_users (
          username, password_hash, email, full_name, role, staff_code,
          base_salary, salary_change_status, is_first_login, is_active,
-         sales_commission_pct
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,'none',1,1,$8)
+         sales_commission_pct, leave_casual_days, leave_annual_days
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,'none',1,1,$8,COALESCE($9,0),COALESCE($10,0))
        RETURNING ${STAFF_SELECT}`,
       [
         username,
@@ -368,6 +370,8 @@ router.post('/users', requireRoles('admin', 'hr'), async (req, res, next) => {
         staff_code,
         baseSalary,
         agentCommissionPct,
+        b.leave_casual_days != null && b.leave_casual_days !== '' ? parseInt(b.leave_casual_days, 10) || 0 : 0,
+        b.leave_annual_days != null && b.leave_annual_days !== '' ? parseInt(b.leave_annual_days, 10) || 0 : 0,
       ]
     );
 
@@ -448,6 +452,19 @@ router.patch('/users/:id', requireRoles('admin', 'hr'), async (req, res, next) =
       }
     }
 
+    let casualDays = existing.leave_casual_days ?? 0;
+    let annualDays = existing.leave_annual_days ?? 0;
+    if (b.leave_casual_days != null && b.leave_casual_days !== '') {
+      const n = parseInt(b.leave_casual_days, 10);
+      if (Number.isNaN(n) || n < 0) return res.status(400).json({ error: 'Invalid casual leave balance' });
+      casualDays = n;
+    }
+    if (b.leave_annual_days != null && b.leave_annual_days !== '') {
+      const n = parseInt(b.leave_annual_days, 10);
+      if (Number.isNaN(n) || n < 0) return res.status(400).json({ error: 'Invalid annual leave balance' });
+      annualDays = n;
+    }
+
     const { rows } = await query(
       `UPDATE staff_users SET
          full_name = COALESCE($1, full_name),
@@ -462,8 +479,10 @@ router.patch('/users/:id', requireRoles('admin', 'hr'), async (req, res, next) =
          base_salary = $10,
          pending_base_salary = $11,
          salary_change_status = $12,
+         leave_casual_days = $13,
+         leave_annual_days = $14,
          updated_at = now()
-       WHERE id = $13
+       WHERE id = $15
        RETURNING ${STAFF_SELECT}`,
       [
         b.full_name ?? null,
@@ -478,6 +497,8 @@ router.patch('/users/:id', requireRoles('admin', 'hr'), async (req, res, next) =
         baseSalary,
         pendingSalary,
         salaryStatus,
+        casualDays,
+        annualDays,
         req.params.id,
       ]
     );

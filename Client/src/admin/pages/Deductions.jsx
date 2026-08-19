@@ -11,21 +11,16 @@ import SearchFilter from '../components/ui/SearchFilter';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import { ROLE_LABELS } from '../utils/permissions';
 import { currency, formatDate } from '../utils/formatters';
-
-const CATEGORIES = [
-  { value: 'delay', label: 'Delay / lateness' },
-  { value: 'performance', label: 'Performance' },
-  { value: 'advance', label: 'Salary advance' },
-  { value: 'absence', label: 'Absence' },
-  { value: 'other', label: 'Other' },
-];
+import { dailyRate, DEDUCTION_TYPE_LABELS } from '../utils/hrPolicy';
 
 const EMPTY = {
   staff_user_id: '',
+  category: 'lateness',
+  arrival_time: '11:20',
+  notified: false,
   amount: '',
   reason: '',
-  deduction_date: new Date().toISOString().slice(0, 10),
-  category: 'other',
+  deduction_date: '',
 };
 
 function todayIso() {
@@ -45,6 +40,37 @@ export default function Deductions() {
     queryFn: () => api.get('/users').then((r) => r.data),
   });
   const staffOptions = (Array.isArray(users) ? users : []).filter((u) => u.role !== 'owner');
+  const selectedStaff = staffOptions.find((u) => String(u.id) === String(form.staff_user_id));
+  const rate = selectedStaff ? dailyRate(selectedStaff.base_salary) : 0;
+
+  const preview = useMemo(() => {
+    if (form.category === 'lateness' && rate) {
+      const [h, m] = String(form.arrival_time || '0:0').split(':').map(Number);
+      const minutes = h * 60 + m;
+      let factor = 1;
+      let label = 'After 12:00 PM · 1 × daily rate';
+      if (minutes <= 11 * 60 + 15) {
+        factor = 0;
+        label = '11:00–11:15 grace · no deduction';
+      } else if (minutes <= 11 * 60 + 30) {
+        factor = 0.25;
+        label = '11:16–11:30 · 0.25 × daily rate';
+      } else if (minutes <= 12 * 60) {
+        factor = 0.5;
+        label = '11:31–12:00 · 0.5 × daily rate';
+      }
+      return { amount: Math.round((rate * factor + Number.EPSILON) * 100) / 100, label, factor };
+    }
+    if (form.category === 'absence' && rate) {
+      const factor = form.notified ? 1 : 2;
+      return {
+        amount: Math.round((rate * factor + Number.EPSILON) * 100) / 100,
+        label: form.notified ? 'With notice · 1 × daily rate' : 'No notice · 2 × daily rate',
+        factor,
+      };
+    }
+    return null;
+  }, [form.category, form.arrival_time, form.notified, rate]);
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['hr-deductions'],
@@ -90,16 +116,24 @@ export default function Deductions() {
 
   const handleSave = () => {
     if (!form.staff_user_id) return toast.error('Choose a staff member');
-    if (!(Number(form.amount) > 0)) return toast.error('Enter an amount greater than 0');
-    if (!String(form.reason || '').trim()) return toast.error('Enter a reason');
     if (!form.deduction_date) return toast.error('Choose a date');
-    saveMutation.mutate({
+    const payload = {
       staff_user_id: Number(form.staff_user_id),
-      amount: Number(form.amount),
-      reason: form.reason.trim(),
       deduction_date: form.deduction_date,
       category: form.category,
-    });
+      reason: form.reason.trim() || undefined,
+    };
+    if (form.category === 'lateness') {
+      payload.arrival_time = form.arrival_time;
+    } else if (form.category === 'absence') {
+      payload.notified = !!form.notified;
+    } else {
+      if (!(Number(form.amount) > 0)) return toast.error('Enter an amount greater than 0');
+      if (!String(form.reason || '').trim()) return toast.error('Enter a reason');
+      payload.amount = Number(form.amount);
+      payload.reason = form.reason.trim();
+    }
+    saveMutation.mutate(payload);
   };
 
   return (
@@ -109,7 +143,7 @@ export default function Deductions() {
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-soul-muted">HR</p>
           <h1 className="page-title mt-1">Deductions</h1>
           <p className="page-subtitle">
-            Choose a staff member and apply a deduction. Amounts reduce that month’s payroll.
+            Daily rate is salary ÷ 30. Lateness after the 11:00–11:15 grace, or absence with/without notice.
           </p>
         </div>
         <button
@@ -147,7 +181,7 @@ export default function Deductions() {
                 <tr>
                   <th>Date</th>
                   <th>Staff</th>
-                  <th>Category</th>
+                  <th>Type</th>
                   <th>Reason</th>
                   <th>Amount</th>
                   <th />
@@ -164,11 +198,11 @@ export default function Deductions() {
                         {ROLE_LABELS[r.role] || r.role}
                       </div>
                     </td>
-                    <td className="capitalize">{r.category?.replace('_', ' ')}</td>
+                    <td>{DEDUCTION_TYPE_LABELS[r.category] || r.category}</td>
                     <td className="max-w-[18rem]">
                       <span className="line-clamp-2">{r.reason}</span>
-                      {r.created_by_name ? (
-                        <span className="block text-[11px] text-soul-muted">By {r.created_by_name}</span>
+                      {r.arrival_time ? (
+                        <span className="block text-[11px] text-soul-muted">Arrived {String(r.arrival_time).slice(0, 5)}</span>
                       ) : null}
                     </td>
                     <td className="tabular-nums whitespace-nowrap font-semibold text-rose-700">
@@ -217,18 +251,24 @@ export default function Deductions() {
                 label: `${u.full_name}${u.staff_code ? ` · ${u.staff_code}` : ''}`,
               }))}
             />
+            {selectedStaff ? (
+              <p className="mt-1 text-[11px] text-soul-muted">
+                Salary {currency(selectedStaff.base_salary)} · daily rate {currency(rate)} (÷ 30)
+              </p>
+            ) : null}
           </div>
           <div className="form-grid">
             <div>
-              <label className="label">Amount (EGP) *</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
+              <label className="label">Type *</label>
+              <select
                 className="input"
-                value={form.amount}
-                onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
-              />
+                value={form.category}
+                onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
+              >
+                <option value="lateness">Lateness</option>
+                <option value="absence">Absence</option>
+                <option value="other">Other (manual amount)</option>
+              </select>
             </div>
             <div>
               <label className="label">Date *</label>
@@ -239,28 +279,83 @@ export default function Deductions() {
                 onChange={(e) => setForm((f) => ({ ...f, deduction_date: e.target.value }))}
               />
             </div>
+          </div>
+
+          {form.category === 'lateness' && (
             <div>
-              <label className="label">Category</label>
-              <select
+              <label className="label">Arrival time *</label>
+              <input
+                type="time"
                 className="input"
-                value={form.category}
-                onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
-              >
-                {CATEGORIES.map((c) => (
-                  <option key={c.value} value={c.value}>{c.label}</option>
-                ))}
-              </select>
+                value={form.arrival_time}
+                onChange={(e) => setForm((f) => ({ ...f, arrival_time: e.target.value }))}
+              />
+              <p className="mt-1 text-[11px] text-soul-muted">
+                Shift 11:00. Grace until 11:15. Then 0.25 / 0.5 / 1 × daily rate.
+              </p>
             </div>
-          </div>
-          <div>
-            <label className="label">Reason *</label>
-            <textarea
-              className="input min-h-[88px]"
-              value={form.reason}
-              onChange={(e) => setForm((f) => ({ ...f, reason: e.target.value }))}
-              placeholder="Why this amount is deducted"
-            />
-          </div>
+          )}
+
+          {form.category === 'absence' && (
+            <label className="flex items-start gap-2 text-sm text-soul-blue">
+              <input
+                type="checkbox"
+                className="mt-1 rounded"
+                checked={form.notified}
+                onChange={(e) => setForm((f) => ({ ...f, notified: e.target.checked }))}
+              />
+              <span>
+                Staff notified before being absent
+                <span className="block text-[11px] text-soul-muted">
+                  With notice: 1 day. Without notice: 2 days.
+                </span>
+              </span>
+            </label>
+          )}
+
+          {form.category === 'other' && (
+            <>
+              <div>
+                <label className="label">Amount (EGP) *</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className="input"
+                  value={form.amount}
+                  onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="label">Reason *</label>
+                <textarea
+                  className="input min-h-[72px]"
+                  value={form.reason}
+                  onChange={(e) => setForm((f) => ({ ...f, reason: e.target.value }))}
+                />
+              </div>
+            </>
+          )}
+
+          {preview && (
+            <div className="rounded-xl border border-soul-line bg-slate-50 px-3 py-2 text-sm">
+              <div className="text-soul-muted text-[11px]">{preview.label}</div>
+              <div className="font-semibold text-soul-blue">
+                {preview.factor === 0 ? 'No deduction' : `Deduct ${currency(preview.amount)}`}
+              </div>
+            </div>
+          )}
+
+          {form.category !== 'other' && (
+            <div>
+              <label className="label">Note (optional)</label>
+              <textarea
+                className="input min-h-[64px]"
+                value={form.reason}
+                onChange={(e) => setForm((f) => ({ ...f, reason: e.target.value }))}
+              />
+            </div>
+          )}
         </div>
       </Modal>
 

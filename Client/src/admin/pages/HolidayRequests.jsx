@@ -9,12 +9,7 @@ import EmptyState from '../components/ui/EmptyState';
 import SearchFilter from '../components/ui/SearchFilter';
 import { ROLE_LABELS } from '../utils/permissions';
 import { formatDate } from '../utils/formatters';
-
-const TYPE_LABELS = {
-  holiday: 'Holiday',
-  day_off: 'Day off',
-  sick: 'Sick leave',
-};
+import { LEAVE_TYPE_LABELS } from '../utils/hrPolicy';
 
 export default function HolidayRequests() {
   const qc = useQueryClient();
@@ -36,6 +31,7 @@ export default function HolidayRequests() {
       api.post(`/hr/leave-requests/${id}/review`, { status: next, review_note }),
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ['hr-leave-requests'] });
+      qc.invalidateQueries({ queryKey: ['users'] });
       toast.success(vars.status === 'approved' ? 'Request approved' : 'Request rejected');
       setRejectRow(null);
       setNote('');
@@ -48,7 +44,7 @@ export default function HolidayRequests() {
     () =>
       (Array.isArray(rows) ? rows : []).filter((r) => {
         if (!q) return true;
-        return [r.full_name, r.staff_code, r.reason, TYPE_LABELS[r.leave_type]]
+        return [r.full_name, r.staff_code, r.reason, LEAVE_TYPE_LABELS[r.leave_type]]
           .filter(Boolean)
           .join(' ')
           .toLowerCase()
@@ -64,7 +60,7 @@ export default function HolidayRequests() {
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-soul-muted">HR</p>
           <h1 className="page-title mt-1">Holiday requests</h1>
           <p className="page-subtitle">
-            Review holidays and days off. Approve or reject each request.
+            Review casual, annual, and early-leave requests. Approve or reject each one.
           </p>
         </div>
         <div className="flex rounded-xl border border-soul-line bg-white p-0.5">
@@ -120,7 +116,7 @@ export default function HolidayRequests() {
                         {ROLE_LABELS[r.role] || r.role}
                       </div>
                     </td>
-                    <td>{TYPE_LABELS[r.leave_type] || r.leave_type}</td>
+                    <td>{LEAVE_TYPE_LABELS[r.leave_type] || r.leave_type}</td>
                     <td className="whitespace-nowrap">
                       {formatDate(r.start_date)}
                       {r.start_date !== r.end_date ? ` → ${formatDate(r.end_date)}` : ''}
@@ -209,7 +205,7 @@ export default function HolidayRequests() {
         }
       >
         <p className="text-sm text-soul-muted mb-3">
-          Reject {rejectRow?.full_name}’s {TYPE_LABELS[rejectRow?.leave_type] || 'leave'} request
+          Reject {rejectRow?.full_name}’s {LEAVE_TYPE_LABELS[rejectRow?.leave_type] || 'leave'} request
           {rejectRow ? ` (${formatDate(rejectRow.start_date)})` : ''}?
         </p>
         <label className="label">Note (optional)</label>

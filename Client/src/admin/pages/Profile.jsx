@@ -34,7 +34,7 @@ export default function Profile() {
 
   const canRequestLeave = user?.role && user.role !== 'owner';
   const [leaveForm, setLeaveForm] = useState({
-    leave_type: 'holiday',
+    leave_type: 'casual',
     start_date: '',
     end_date: '',
     reason: '',
@@ -45,19 +45,33 @@ export default function Profile() {
     queryFn: () => api.get('/hr/leave-requests', { params: { mine: 1 } }).then((r) => r.data),
     enabled: canRequestLeave,
   });
+  const { data: leaveSnap } = useQuery({
+    queryKey: ['hr-my-leave'],
+    queryFn: () => api.get('/hr/my-leave').then((r) => r.data),
+    enabled: canRequestLeave,
+  });
 
   const leaveMutation = useMutation({
     mutationFn: (payload) => api.post('/hr/leave-requests', payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['hr-leave-requests'] });
+      qc.invalidateQueries({ queryKey: ['hr-my-leave'] });
       toast.success('Holiday request sent to HR');
-      setLeaveForm({ leave_type: 'holiday', start_date: '', end_date: '', reason: '' });
+      setLeaveForm({ leave_type: 'casual', start_date: '', end_date: '', reason: '' });
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Could not submit request'),
   });
 
   const submitLeave = () => {
-    if (!leaveForm.start_date || !leaveForm.end_date) {
+    if (!leaveForm.start_date) {
+      toast.error('Choose a date');
+      return;
+    }
+    if (leaveForm.leave_type === 'early_leave') {
+      leaveMutation.mutate({ ...leaveForm, end_date: leaveForm.start_date });
+      return;
+    }
+    if (!leaveForm.end_date) {
       toast.error('Choose start and end dates');
       return;
     }
@@ -149,8 +163,26 @@ export default function Profile() {
             <h3 className="font-semibold text-soul-blue">Time off</h3>
           </div>
           <p className="text-sm text-soul-muted mb-4">
-            Request a holiday or day off. HR will accept or reject it.
+            Casual: before the 11:00 shift. Annual: at least 7 days ahead. Early leave: max 2 per year.
           </p>
+          {leaveSnap && (
+            <div className="mb-4 grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-xl border border-soul-line px-2 py-2">
+                <div className="text-[10px] uppercase text-soul-muted">Casual</div>
+                <div className="font-semibold text-soul-blue">{leaveSnap.casual_available}</div>
+              </div>
+              <div className="rounded-xl border border-soul-line px-2 py-2">
+                <div className="text-[10px] uppercase text-soul-muted">Annual</div>
+                <div className="font-semibold text-soul-blue">{leaveSnap.annual_available}</div>
+              </div>
+              <div className="rounded-xl border border-soul-line px-2 py-2">
+                <div className="text-[10px] uppercase text-soul-muted">Early leave</div>
+                <div className="font-semibold text-soul-blue">
+                  {leaveSnap.early_leave_remaining}/{leaveSnap.early_leave_max}
+                </div>
+              </div>
+            </div>
+          )}
           <div className="space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
@@ -160,14 +192,14 @@ export default function Profile() {
                   value={leaveForm.leave_type}
                   onChange={(e) => setLeaveForm((f) => ({ ...f, leave_type: e.target.value }))}
                 >
-                  <option value="holiday">Holiday</option>
-                  <option value="day_off">Day off</option>
-                  <option value="sick">Sick leave</option>
+                  <option value="casual">Casual</option>
+                  <option value="annual">Annual</option>
+                  <option value="early_leave">Early leave</option>
                 </select>
               </div>
               <div className="sm:col-span-2 grid grid-cols-2 gap-3">
                 <div>
-                  <label className="label">From</label>
+                  <label className="label">{leaveForm.leave_type === 'early_leave' ? 'Day' : 'From'}</label>
                   <input
                     type="date"
                     className="input"
@@ -176,11 +208,15 @@ export default function Profile() {
                       setLeaveForm((f) => ({
                         ...f,
                         start_date: e.target.value,
-                        end_date: !f.end_date || f.end_date < e.target.value ? e.target.value : f.end_date,
+                        end_date:
+                          f.leave_type === 'early_leave' || !f.end_date || f.end_date < e.target.value
+                            ? e.target.value
+                            : f.end_date,
                       }))
                     }
                   />
                 </div>
+                {leaveForm.leave_type !== 'early_leave' && (
                 <div>
                   <label className="label">To</label>
                   <input
@@ -190,6 +226,7 @@ export default function Profile() {
                     onChange={(e) => setLeaveForm((f) => ({ ...f, end_date: e.target.value }))}
                   />
                 </div>
+                )}
               </div>
               <div className="sm:col-span-2">
                 <label className="label">Note</label>

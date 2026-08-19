@@ -47,6 +47,8 @@ const EMPTY_STAFF_FORM = {
   base_salary: '',
   is_active: 1,
   sales_commission_pct: '',
+  leave_casual_days: '0',
+  leave_annual_days: '0',
 };
 
 const EMPTY_OWNER_FORM = {
@@ -308,6 +310,30 @@ function StaffForm({ form, setForm, isEdit, roleOptions, isAdmin }) {
           {!isAdmin && isEdit && (
             <p className="mt-1 text-[11px] text-amber-600">Change requests go to admin for approval.</p>
           )}
+        </div>
+        <div>
+          <label className="label">Casual days</label>
+          <input
+            type="number"
+            min="0"
+            step="1"
+            className="input"
+            value={form.leave_casual_days}
+            onChange={(e) => setForm((f) => ({ ...f, leave_casual_days: e.target.value }))}
+          />
+          <p className="mt-1 text-[11px] text-slate-400">Paid casual balance. Requestable before the 11:00 shift.</p>
+        </div>
+        <div>
+          <label className="label">Annual days</label>
+          <input
+            type="number"
+            min="0"
+            step="1"
+            className="input"
+            value={form.leave_annual_days}
+            onChange={(e) => setForm((f) => ({ ...f, leave_annual_days: e.target.value }))}
+          />
+          <p className="mt-1 text-[11px] text-slate-400">Paid annual balance. Must be requested 7 days ahead.</p>
         </div>
         {showCommission && (
           <div>
@@ -723,6 +749,8 @@ export default function Users() {
           u.sales_commission_pct != null && u.sales_commission_pct !== ''
             ? String(u.sales_commission_pct)
             : '',
+        leave_casual_days: String(u.leave_casual_days ?? 0),
+        leave_annual_days: String(u.leave_annual_days ?? 0),
       });
       setModal('edit-staff');
     }
@@ -766,6 +794,8 @@ export default function Users() {
     saveStaffMutation.mutate({
       ...staffForm,
       base_salary: Number(staffForm.base_salary),
+      leave_casual_days: Number(staffForm.leave_casual_days) || 0,
+      leave_annual_days: Number(staffForm.leave_annual_days) || 0,
       sales_commission_pct: isReservationAgentRole(staffForm.role)
         ? Number(staffForm.sales_commission_pct)
         : Number(staffForm.sales_commission_pct) || 0,
@@ -1112,6 +1142,9 @@ export default function Users() {
                     </td>
                     <td>
                       <div>{currency(u.base_salary || 0)}</div>
+                      <div className="mt-0.5 text-[11px] text-soul-muted">
+                        Casual {u.leave_casual_days ?? 0} · Annual {u.leave_annual_days ?? 0}
+                      </div>
                       {u.salary_change_status === 'pending' && (
                         <div className="mt-1 text-[11px] text-amber-700">
                           Pending: {currency(u.pending_base_salary)}

@@ -1,6 +1,16 @@
 const express = require('express');
-const { query } = require('../../config/db');
+const { query, pool } = require('../../config/db');
 const { requireRoles } = require('../../middleware/auth');
+const {
+  dailyRate,
+  computeLatenessDeduction,
+  computeAbsenceDeduction,
+  cairoParts,
+  assertCasualTiming,
+  assertAnnualNotice,
+  assertEarlyLeaveTiming,
+  EARLY_LEAVE_MAX_PER_YEAR,
+} = require('../../lib/hrRules');
 
 const router = express.Router();
 
@@ -40,6 +50,70 @@ function parsePeriod(req) {
     throw err;
   }
   return { year, month, ...periodBounds(year, month) };
+}
+
+async function loadStaffForHr(staffUserId) {
+  const { rows } = await query(
+    `SELECT id, role, full_name, base_salary,
+            COALESCE(leave_casual_days, 0)::int AS leave_casual_days,
+            COALESCE(leave_annual_days, 0)::int AS leave_annual_days
+     FROM staff_users WHERE id = $1`,
+    [staffUserId]
+  );
+  if (!rows[0] || rows[0].role === 'owner') {
+    const err = new Error('Staff member not found');
+    err.status = 404;
+    throw err;
+  }
+  return rows[0];
+}
+
+async function pendingLeaveDays(staffUserId, leaveType, exceptId = null) {
+  const params = [staffUserId, leaveType];
+  let sql = `SELECT COALESCE(SUM(days), 0)::int AS days
+             FROM staff_leave_requests
+             WHERE staff_user_id = $1 AND leave_type = $2 AND status = 'pending'`;
+  if (exceptId) {
+    params.push(exceptId);
+    sql += ` AND id <> $3`;
+  }
+  const { rows } = await query(sql, params);
+  return Number(rows[0]?.days) || 0;
+}
+
+async function earlyLeaveUsed(staffUserId, year) {
+  const { rows } = await query(
+    `SELECT COALESCE(SUM(days), 0)::int AS days
+     FROM staff_leave_requests
+     WHERE staff_user_id = $1
+       AND leave_type = 'early_leave'
+       AND status IN ('pending', 'approved')
+       AND EXTRACT(YEAR FROM start_date) = $2`,
+    [staffUserId, year]
+  );
+  return Number(rows[0]?.days) || 0;
+}
+
+async function leaveSnapshot(staffUserId) {
+  const staff = await loadStaffForHr(staffUserId);
+  const year = Number(cairoParts().date.slice(0, 4));
+  const pendingCasual = await pendingLeaveDays(staffUserId, 'casual');
+  const pendingAnnual = await pendingLeaveDays(staffUserId, 'annual');
+  const earlyUsed = await earlyLeaveUsed(staffUserId, year);
+  return {
+    staff_user_id: staff.id,
+    full_name: staff.full_name,
+    base_salary: Number(staff.base_salary) || 0,
+    daily_rate: dailyRate(staff.base_salary),
+    casual_balance: Number(staff.leave_casual_days) || 0,
+    annual_balance: Number(staff.leave_annual_days) || 0,
+    casual_available: Math.max(0, (Number(staff.leave_casual_days) || 0) - pendingCasual),
+    annual_available: Math.max(0, (Number(staff.leave_annual_days) || 0) - pendingAnnual),
+    early_leave_used: earlyUsed,
+    early_leave_remaining: Math.max(0, EARLY_LEAVE_MAX_PER_YEAR - earlyUsed),
+    early_leave_max: EARLY_LEAVE_MAX_PER_YEAR,
+    year,
+  };
 }
 
 router.get('/hr/payroll', requireRoles(...HR_ROLES), async (req, res, next) => {
@@ -181,6 +255,17 @@ router.post('/hr/payroll/mark-paid', requireRoles(...HR_ROLES), async (req, res,
   }
 });
 
+router.get('/hr/my-leave', async (req, res, next) => {
+  try {
+    if (req.user.role === 'owner') {
+      return res.status(403).json({ error: 'Owner accounts do not have staff leave' });
+    }
+    res.json(await leaveSnapshot(req.user.id));
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.get('/hr/salary-deductions', requireRoles(...HR_ROLES), async (req, res, next) => {
   try {
     const staffId = req.query.staff_user_id ? Number(req.query.staff_user_id) : null;
@@ -214,32 +299,71 @@ router.post('/hr/salary-deductions', requireRoles(...HR_ROLES), async (req, res,
   try {
     const b = req.body || {};
     const staffUserId = Number(b.staff_user_id);
-    const amount = parseFloat(b.amount);
-    const reason = String(b.reason || '').trim();
     const deductionDate = String(b.deduction_date || '').slice(0, 10);
-    const category = String(b.category || 'other').trim() || 'other';
-    const allowed = new Set(['delay', 'performance', 'advance', 'absence', 'other']);
-    if (!staffUserId || Number.isNaN(amount) || amount <= 0 || !reason || !deductionDate) {
-      return res.status(400).json({ error: 'Staff, amount, reason, and date are required' });
+    let category = String(b.category || b.kind || 'other').trim() || 'other';
+    if (category === 'delay') category = 'lateness';
+    const allowed = new Set(['lateness', 'absence', 'performance', 'advance', 'other']);
+    if (!staffUserId || !deductionDate) {
+      return res.status(400).json({ error: 'Staff and date are required' });
     }
     if (!allowed.has(category)) {
       return res.status(400).json({ error: 'Invalid deduction category' });
     }
-    const { rows: staff } = await query(
-      `SELECT id, role FROM staff_users WHERE id = $1`,
-      [staffUserId]
-    );
-    if (!staff[0] || staff[0].role === 'owner') {
-      return res.status(404).json({ error: 'Staff member not found' });
+
+    const staff = await loadStaffForHr(staffUserId);
+    let amount;
+    let reason = String(b.reason || '').trim();
+    let arrivalTime = null;
+    let notified = null;
+    let rate = dailyRate(staff.base_salary);
+    let factor = null;
+
+    if (category === 'lateness') {
+      const computed = computeLatenessDeduction(staff.base_salary, b.arrival_time);
+      if (computed.factor <= 0) {
+        return res.status(400).json({
+          error: 'No lateness deduction — arrival is within the 11:00–11:15 grace period',
+        });
+      }
+      amount = computed.amount;
+      factor = computed.factor;
+      rate = computed.daily_rate;
+      arrivalTime = String(b.arrival_time).slice(0, 8);
+      reason = reason || `Lateness at ${arrivalTime} (${computed.label})`;
+    } else if (category === 'absence') {
+      const computed = computeAbsenceDeduction(staff.base_salary, b.notified);
+      amount = computed.amount;
+      factor = computed.factor;
+      rate = computed.daily_rate;
+      notified = !!b.notified;
+      reason = reason || computed.label;
+    } else {
+      amount = parseFloat(b.amount);
+      if (Number.isNaN(amount) || amount <= 0 || !reason) {
+        return res.status(400).json({ error: 'Amount and reason are required' });
+      }
     }
+
     const { rows } = await query(
       `INSERT INTO staff_salary_deductions
-         (staff_user_id, amount, reason, deduction_date, category, created_by)
-       VALUES ($1,$2,$3,$4::date,$5,$6)
+         (staff_user_id, amount, reason, deduction_date, category, created_by,
+          arrival_time, notified, daily_rate, days_factor)
+       VALUES ($1,$2,$3,$4::date,$5,$6,$7,$8,$9,$10)
        RETURNING *`,
-      [staffUserId, amount, reason, deductionDate, category, req.user.id]
+      [
+        staffUserId,
+        amount,
+        reason,
+        deductionDate,
+        category,
+        req.user.id,
+        arrivalTime,
+        notified,
+        rate,
+        factor,
+      ]
     );
-    res.status(201).json(rows[0]);
+    res.status(201).json({ ...rows[0], daily_rate: rate, days_factor: factor });
   } catch (e) {
     next(e);
   }
@@ -295,17 +419,22 @@ router.get('/hr/leave-requests', async (req, res, next) => {
 router.post('/hr/leave-requests', async (req, res, next) => {
   try {
     const b = req.body || {};
-    const leaveType = String(b.leave_type || 'holiday').trim() || 'holiday';
+    let leaveType = String(b.leave_type || 'casual').trim() || 'casual';
+    if (leaveType === 'holiday') leaveType = 'annual';
+    if (leaveType === 'day_off') leaveType = 'casual';
     const start = String(b.start_date || '').slice(0, 10);
-    const end = String(b.end_date || '').slice(0, 10);
+    const end = String(b.end_date || start).slice(0, 10);
     const reason = String(b.reason || '').trim();
-    const allowed = new Set(['holiday', 'day_off', 'sick']);
+    const allowed = new Set(['casual', 'annual', 'early_leave', 'sick']);
     if (!allowed.has(leaveType)) {
       return res.status(400).json({ error: 'Invalid leave type' });
     }
-    const days = inclusiveDays(start, end);
+    const days = leaveType === 'early_leave' ? 1 : inclusiveDays(start, end);
     if (!start || !end || !Number.isFinite(days) || days < 1) {
       return res.status(400).json({ error: 'Valid start and end dates are required' });
+    }
+    if (leaveType === 'early_leave' && start !== end) {
+      return res.status(400).json({ error: 'Early leave is a single day' });
     }
     let staffUserId = req.user.id;
     if (isHrActor(req.user) && b.staff_user_id) {
@@ -314,12 +443,35 @@ router.post('/hr/leave-requests', async (req, res, next) => {
     if (req.user.role === 'owner') {
       return res.status(403).json({ error: 'Owner accounts cannot request staff holidays' });
     }
+
+    const now = new Date();
+    if (leaveType === 'casual') assertCasualTiming(start, now);
+    if (leaveType === 'annual') assertAnnualNotice(start, now);
+    if (leaveType === 'early_leave') assertEarlyLeaveTiming(start, now);
+
+    const snap = await leaveSnapshot(staffUserId);
+    if (leaveType === 'casual' && days > snap.casual_available) {
+      return res.status(400).json({
+        error: `Not enough casual leave (${snap.casual_available} day${snap.casual_available === 1 ? '' : 's'} left)`,
+      });
+    }
+    if (leaveType === 'annual' && days > snap.annual_available) {
+      return res.status(400).json({
+        error: `Not enough annual leave (${snap.annual_available} day${snap.annual_available === 1 ? '' : 's'} left)`,
+      });
+    }
+    if (leaveType === 'early_leave' && days > snap.early_leave_remaining) {
+      return res.status(400).json({
+        error: `Early leave limit reached (maximum ${EARLY_LEAVE_MAX_PER_YEAR} per year)`,
+      });
+    }
+
     const { rows } = await query(
       `INSERT INTO staff_leave_requests
          (staff_user_id, leave_type, start_date, end_date, days, reason, status)
        VALUES ($1,$2,$3::date,$4::date,$5,$6,'pending')
        RETURNING *`,
-      [staffUserId, leaveType, start, end, days, reason || null]
+      [staffUserId, leaveType, start, leaveType === 'early_leave' ? start : end, days, reason || null]
     );
     res.status(201).json(rows[0]);
   } catch (e) {
@@ -334,18 +486,74 @@ router.post('/hr/leave-requests/:id/review', requireRoles(...HR_ROLES), async (r
       return res.status(400).json({ error: 'Status must be approved or rejected' });
     }
     const note = req.body?.review_note ? String(req.body.review_note).slice(0, 500) : null;
-    const { rows } = await query(
-      `UPDATE staff_leave_requests SET
-         status = $1,
-         reviewed_by = $2,
-         reviewed_at = now(),
-         review_note = $3
-       WHERE id = $4 AND status = 'pending'
-       RETURNING *`,
-      [status, req.user.id, note, req.params.id]
-    );
-    if (!rows[0]) return res.status(404).json({ error: 'Pending request not found' });
-    res.json(rows[0]);
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows: existingRows } = await client.query(
+        `SELECT * FROM staff_leave_requests WHERE id = $1 AND status = 'pending' FOR UPDATE`,
+        [req.params.id]
+      );
+      const row = existingRows[0];
+      if (!row) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Pending request not found' });
+      }
+
+      if (status === 'approved' && (row.leave_type === 'casual' || row.leave_type === 'annual')) {
+        const col = row.leave_type === 'casual' ? 'leave_casual_days' : 'leave_annual_days';
+        const { rows: staffRows } = await client.query(
+          `SELECT ${col} AS balance FROM staff_users WHERE id = $1 FOR UPDATE`,
+          [row.staff_user_id]
+        );
+        const balance = Number(staffRows[0]?.balance) || 0;
+        if (balance < Number(row.days)) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({
+            error: `Not enough ${row.leave_type} balance to approve (${balance} left, ${row.days} needed)`,
+          });
+        }
+        await client.query(
+          `UPDATE staff_users SET ${col} = ${col} - $1, updated_at = now() WHERE id = $2`,
+          [row.days, row.staff_user_id]
+        );
+      }
+
+      if (status === 'approved' && row.leave_type === 'early_leave') {
+        const year = String(row.start_date).slice(0, 4);
+        const { rows: usedRows } = await client.query(
+          `SELECT COALESCE(SUM(days), 0)::int AS days
+           FROM staff_leave_requests
+           WHERE staff_user_id = $1 AND leave_type = 'early_leave'
+             AND status = 'approved' AND EXTRACT(YEAR FROM start_date) = $2`,
+          [row.staff_user_id, Number(year)]
+        );
+        const used = Number(usedRows[0]?.days) || 0;
+        if (used + Number(row.days) > EARLY_LEAVE_MAX_PER_YEAR) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({
+            error: `Early leave limit reached (maximum ${EARLY_LEAVE_MAX_PER_YEAR} per year)`,
+          });
+        }
+      }
+
+      const { rows } = await client.query(
+        `UPDATE staff_leave_requests SET
+           status = $1,
+           reviewed_by = $2,
+           reviewed_at = now(),
+           review_note = $3
+         WHERE id = $4
+         RETURNING *`,
+        [status, req.user.id, note, req.params.id]
+      );
+      await client.query('COMMIT');
+      res.json(rows[0]);
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   } catch (e) {
     next(e);
   }
