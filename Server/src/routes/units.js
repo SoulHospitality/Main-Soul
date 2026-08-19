@@ -1,6 +1,7 @@
 const express = require('express');
 const { query } = require('../config/db');
 const { quoteStay, getBlockedDates, getStayCheckoutDates, todayIsoBusiness } = require('../services/pricing');
+const { GUEST_AVAILABILITY_MONTHS } = require('../lib/calendarOccupancy');
 
 const router = express.Router();
 
@@ -264,10 +265,10 @@ router.get('/:idOrSlug/availability', async (req, res, next) => {
   try {
     const unit = await loadUnit(req.params.idOrSlug);
     if (!unit?.wp_post_id) return res.status(404).json({ error: 'Unit not found' });
-    const from = req.query.from || new Date().toISOString().slice(0, 10);
-    const toDate = new Date(from);
-    toDate.setMonth(toDate.getMonth() + 6);
-    const to = req.query.to || toDate.toISOString().slice(0, 10);
+    const from = req.query.from || todayIsoBusiness();
+    const toDate = new Date(`${from}T00:00:00`);
+    toDate.setMonth(toDate.getMonth() + GUEST_AVAILABILITY_MONTHS);
+    const to = req.query.to || `${toDate.getFullYear()}-${String(toDate.getMonth() + 1).padStart(2, '0')}-${String(toDate.getDate()).padStart(2, '0')}`;
     const blocked = await getBlockedDates(unit.wp_post_id, from, to);
     const occupied = new Set(blocked.map((b) => b.date));
     const checkoutDates = (await getStayCheckoutDates(unit.wp_post_id, from, to)).filter(

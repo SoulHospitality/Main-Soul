@@ -890,7 +890,7 @@ export default function Schedule() {
 
   const blockMap = useMemo(() => {
     const m = {};
-    const priority = { reservation: 3, ical: 2, owner: 1, manual: 1 };
+      const priority = { reservation: 3, booking: 3, ical: 2, owner: 1, manual: 1 };
     for (const b of calendarBlocks) {
       if (!m[b.unit_id]) m[b.unit_id] = {};
       const dateKey = String(b.date).split('T')[0];
@@ -1744,12 +1744,12 @@ export default function Schedule() {
                             onClick={() => canEditPrice && !isPast && handlePriceClick(unit, cell.date)}
                             title={
                               blockSrc
-                                ? `${
+                                  ? `${
                                     blockSrc === 'ical'
                                       ? 'OTA (iCal)'
                                       : blockSrc === 'owner'
                                         ? 'Owner'
-                                        : blockSrc === 'reservation'
+                                        : blockSrc === 'reservation' || blockSrc === 'booking'
                                           ? 'Reservation'
                                           : 'Admin'
                                   } block · ${formatDate(cell.date)}${

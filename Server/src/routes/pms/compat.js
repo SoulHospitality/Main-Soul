@@ -735,6 +735,7 @@ router.post('/listing-ical/refresh', requireRoles('admin'), async (req, res, nex
 
 router.get('/calendar-blocks', async (req, res, next) => {
   try {
+    const { fetchCalendarOccupancyRows } = require('../../lib/calendarOccupancy');
     const from = req.query.from || new Date().toISOString().slice(0, 10);
     const to = req.query.to || new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10);
     const unitId = req.query.unit_id;
@@ -744,29 +745,7 @@ router.get('/calendar-blocks', async (req, res, next) => {
       if (!u[0]?.wp_post_id) return res.json([]);
       wpPostId = u[0].wp_post_id;
     }
-    const params = wpPostId != null ? [from, to, wpPostId] : [from, to];
-    const filter = wpPostId != null ? 'AND b.wp_post_id = $3' : '';
-    const { rows } = await query(
-      `SELECT u.id AS unit_id, b.wp_post_id, b.date::text AS date, 'ical' AS source
-       FROM unit_ical_blocks b
-       JOIN units u ON u.wp_post_id = b.wp_post_id
-       WHERE b.date >= $1 AND b.date < $2 ${filter}
-       UNION ALL
-       SELECT u.id AS unit_id, b.wp_post_id, b.date::text AS date, COALESCE(b.source,'manual') AS source
-       FROM unit_blocked_dates b
-       JOIN units u ON u.wp_post_id = b.wp_post_id
-       WHERE b.date >= $1 AND b.date < $2 ${filter}
-         AND COALESCE(b.source, 'manual') NOT IN ('reservation', 'reservation_import', 'booking')
-       UNION ALL
-       SELECT u.id AS unit_id, u.wp_post_id, d::text AS date, 'reservation' AS source
-       FROM reservations r
-       JOIN units u ON u.id = r.unit_id
-       , generate_series(r.check_in, r.check_out - 1, interval '1 day') d
-       WHERE r.status <> 'cancelled'
-         AND d >= $1::date AND d < $2::date
-         ${wpPostId != null ? 'AND u.wp_post_id = $3' : ''}`,
-      params
-    );
+    const rows = await fetchCalendarOccupancyRows({ from, to, wpPostId });
     res.json(rows);
   } catch (e) {
     next(e);

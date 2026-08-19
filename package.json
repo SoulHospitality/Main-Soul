@@ -11,7 +11,8 @@
     "dev:backend": "npm run dev --prefix Server",
     "dev:frontend": "npm run dev --prefix Client",
     "build:client": "npm run build --prefix Client",
-    "start": "npm start --prefix Server"
+    "start": "npm start --prefix Server",
+    "test": "npm test --prefix Server"
   },
   "engines": {
     "node": ">=18.0.0"

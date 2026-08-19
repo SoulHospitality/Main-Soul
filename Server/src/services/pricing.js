@@ -1,6 +1,11 @@
 const { query } = require('../config/db');
-const { fetchUpstreamBusyDates } = require('./ical');
 const { getMinimumStayNights } = require('../lib/minStay');
+const {
+  fetchCalendarOccupancyRows,
+  fetchStayCheckoutDates,
+  mergeOccupancyByDate,
+  applyCheckoutTurnover,
+} = require('../lib/calendarOccupancy');
 
 function roundMoney(n) {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -202,100 +207,19 @@ async function isDateBlocked(wpPostId, dateStr) {
 
 
 async function getBlockedDates(wpPostId, from, to, { includeUnpriced = true } = {}) {
-  const byDate = new Map();
-
-  const push = (date, source) => {
-    if (!date || date < from || date >= to) return;
-    if (!byDate.has(date)) byDate.set(date, source);
-  };
-
-  // Stay occupancy comes from reservations/bookings below. Ignore leftover
-  // reservation-sourced rows so checkout days are not blocked twice (or at all).
-  const { rows: stored } = await query(
-    `SELECT date::text AS date, COALESCE(source, 'manual') AS source
-     FROM unit_blocked_dates
-     WHERE wp_post_id = $1 AND date >= $2 AND date < $3
-       AND COALESCE(source, 'manual') NOT IN ('reservation', 'reservation_import', 'booking')`,
-    [wpPostId, from, to]
-  );
-  for (const r of stored) push(r.date, r.source);
-
-  const { rows: bookings } = await query(
-    `SELECT d::text AS date FROM bookings b,
-       generate_series(b.checkin, b.checkout - 1, interval '1 day') d
-     WHERE b.listing_wp_id = $1
-       AND b.status IN ('confirmed','pending','held')
-       AND (b.hold_expires_at IS NULL OR b.hold_expires_at > now())
-       AND d >= $2::date AND d < $3::date`,
-    [wpPostId, from, to]
-  );
-  for (const r of bookings) push(r.date, 'booking');
-
-  const { rows: reservations } = await query(
-    `SELECT d::text AS date FROM reservations r
-       JOIN units u ON u.id = r.unit_id
-       , generate_series(r.check_in, r.check_out - 1, interval '1 day') d
-     WHERE u.wp_post_id = $1
-       AND r.status <> 'cancelled'
-       AND d >= $2::date AND d < $3::date`,
-    [wpPostId, from, to]
-  );
-  for (const r of reservations) push(r.date, 'reservation');
-
-  try {
-    const live = await fetchUpstreamBusyDates(wpPostId, from, to);
-    for (const date of live) push(date, 'ical');
-  } catch (err) {
-    console.warn('[pricing] live iCal failed', wpPostId, err.message);
-
-    const { rows: cached } = await query(
-      `SELECT date::text AS date FROM unit_ical_blocks
-       WHERE wp_post_id = $1 AND date >= $2 AND date < $3`,
-      [wpPostId, from, to]
-    );
-    for (const r of cached) push(r.date, 'ical');
-  }
+  const rows = await fetchCalendarOccupancyRows({ from, to, wpPostId });
+  const byDate = mergeOccupancyByDate(rows, from, to);
 
   if (includeUnpriced) {
     const { map } = await getDailyPriceMap(wpPostId, from, to);
     for (let d = new Date(`${from}T00:00:00`); localIso(d) < to; d.setDate(d.getDate() + 1)) {
       const iso = localIso(d);
-      if (map[iso] == null) push(iso, 'unpriced');
+      if (map[iso] == null && !byDate.has(iso)) byDate.set(iso, 'unpriced');
     }
   }
 
-  // Checkout day is free for the next check-in. Drop stale leftover blocks on
-  // those days unless another stay already occupies the night, or iCal/owner holds it.
-  const occupiedNights = new Set(
-    [...byDate.entries()]
-      .filter(([, source]) => source === 'reservation' || source === 'booking')
-      .map(([date]) => date)
-  );
-  const { rows: turnover } = await query(
-    `SELECT d::text AS date FROM (
-        SELECT r.check_out AS d
-        FROM reservations r
-        JOIN units u ON u.id = r.unit_id
-        WHERE u.wp_post_id = $1
-          AND r.status <> 'cancelled'
-          AND r.check_out >= $2::date AND r.check_out < $3::date
-        UNION
-        SELECT b.checkout
-        FROM bookings b
-        WHERE b.listing_wp_id = $1
-          AND b.status IN ('confirmed','pending','held')
-          AND (b.hold_expires_at IS NULL OR b.hold_expires_at > now())
-          AND b.checkout >= $2::date AND b.checkout < $3::date
-      ) t`,
-    [wpPostId, from, to]
-  );
-  for (const row of turnover) {
-    if (!row.date || occupiedNights.has(row.date)) continue;
-    const src = byDate.get(row.date);
-    if (!src || src === 'manual' || src === 'reservation' || src === 'booking') {
-      byDate.delete(row.date);
-    }
-  }
+  const turnover = await fetchStayCheckoutDates({ from, to, wpPostId });
+  applyCheckoutTurnover(byDate, turnover);
 
   return [...byDate.entries()]
     .map(([date, source]) => ({ date, source }))
@@ -303,25 +227,7 @@ async function getBlockedDates(wpPostId, from, to, { includeUnpriced = true } = 
 }
 
 async function getStayCheckoutDates(wpPostId, from, to) {
-  const { rows } = await query(
-    `SELECT d::text AS date FROM (
-        SELECT r.check_out AS d
-        FROM reservations r
-        JOIN units u ON u.id = r.unit_id
-        WHERE u.wp_post_id = $1
-          AND r.status <> 'cancelled'
-          AND r.check_out >= $2::date AND r.check_out < $3::date
-        UNION
-        SELECT b.checkout
-        FROM bookings b
-        WHERE b.listing_wp_id = $1
-          AND b.status IN ('confirmed','pending','held')
-          AND (b.hold_expires_at IS NULL OR b.hold_expires_at > now())
-          AND b.checkout >= $2::date AND b.checkout < $3::date
-      ) t`,
-    [wpPostId, from, to]
-  );
-  return rows.map((r) => r.date).filter(Boolean);
+  return fetchStayCheckoutDates({ from, to, wpPostId });
 }
 
 module.exports = {

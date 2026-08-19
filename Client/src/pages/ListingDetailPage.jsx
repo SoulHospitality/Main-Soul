@@ -11,6 +11,7 @@ import { useAuth } from '../context/AuthContext';
 import { useLocale } from '../context/LocaleContext';
 import api, { createUnitReview, fetchUnitReviews } from '../api/http';
 import { optimizeImageUrl } from '../utils/imageUrl';
+import { GUEST_AVAILABILITY_MONTHS } from '../constants/availability';
 
 const localISO = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -115,7 +116,7 @@ export default function ListingDetailPage() {
     let cancelled = false;
     const from = localISO(new Date());
     const toDate = new Date();
-    toDate.setMonth(toDate.getMonth() + 6);
+    toDate.setMonth(toDate.getMonth() + GUEST_AVAILABILITY_MONTHS);
     const to = localISO(toDate);
 
     api
@@ -123,10 +124,10 @@ export default function ListingDetailPage() {
       .then((r) => {
         if (!cancelled) {
           const nights = (r.data.blocked || []).map((b) => b.date);
-          const turnover = r.data.checkout_dates || [];
-          const openTurnover = new Set(turnover);
+          const occupied = new Set(nights);
+          const turnover = (r.data.checkout_dates || []).filter((d) => !occupied.has(d));
           setCheckoutDates(turnover);
-          setBlocked(nights.filter((d) => !openTurnover.has(d)));
+          setBlocked(nights);
         }
       })
       .catch(() => {});
