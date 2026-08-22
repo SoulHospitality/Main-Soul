@@ -1,4 +1,5 @@
 const { query } = require('../config/db');
+const { isIcalOccupancySource } = require('./otaPlatforms');
 
 /** Guest listing calendars must load at least this far; keep in sync with Client/src/constants/availability.js */
 const GUEST_AVAILABILITY_MONTHS = 12;
@@ -23,8 +24,10 @@ function occupancySql({ wpScoped }) {
   const blockFilter = wpScoped ? 'AND b.wp_post_id = $3' : '';
   const unitFilter = wpScoped ? 'AND u.wp_post_id = $3' : '';
   return `
-    SELECT u.id AS unit_id, b.wp_post_id, b.date::text AS date, 'ical' AS source
+    SELECT u.id AS unit_id, b.wp_post_id, b.date::text AS date,
+           ('ical:' || COALESCE(b.platform, f.platform, 'other')) AS source
     FROM unit_ical_blocks b
+    JOIN unit_ota_feeds f ON f.id = b.feed_id
     JOIN units u ON u.wp_post_id = b.wp_post_id
     WHERE b.date >= $1 AND b.date < $2 ${blockFilter}
     UNION ALL
@@ -99,7 +102,7 @@ function applyCheckoutTurnover(byDate, checkoutDates) {
   for (const date of checkoutDates || []) {
     if (!date || occupiedNights.has(date)) continue;
     const src = byDate.get(date);
-    if (holds.has(src) || src === 'unpriced') continue;
+    if (holds.has(src) || isIcalOccupancySource(src) || src === 'unpriced') continue;
     if (!src || src === 'reservation' || src === 'booking') {
       byDate.delete(date);
     }
@@ -140,6 +143,7 @@ module.exports = {
   IMPLICIT_STAY_SOURCES,
   EXPLICIT_HOLD_SOURCES,
   REQUIRED_OCCUPANCY_TABLES,
+  isIcalOccupancySource,
   occupancySql,
   stayCheckoutSql,
   mergeOccupancyByDate,

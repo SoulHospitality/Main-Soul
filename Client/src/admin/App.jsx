@@ -25,6 +25,7 @@ const Loans = lazy(() => import('./pages/Loans'));
 const WorkFromHome = lazy(() => import('./pages/WorkFromHome'));
 const Payslip = lazy(() => import('./pages/Payslip'));
 const Profile = lazy(() => import('./pages/Profile'));
+const CalendarSync = lazy(() => import('./pages/CalendarSync'));
 const Schedule = lazy(() => import('./pages/Schedule'));
 const Housekeeping = lazy(() => import('./pages/Housekeeping'));
 const Operations = lazy(() => import('./pages/Operations'));
@@ -114,6 +115,7 @@ function AppRoutes() {
       <Route path="website-bookings/unassigned" element={<ProtectedRoute page="website_bookings"><WebsiteBookingUnassignedPage /></ProtectedRoute>} />
       <Route path="website-bookings/history" element={<ProtectedRoute page="website_bookings"><WebsiteBookingHistoryPage /></ProtectedRoute>} />
       <Route path="schedule" element={<ProtectedRoute page="schedule"><Schedule /></ProtectedRoute>} />
+      <Route path="calendar-sync" element={<ProtectedRoute page="calendar_sync"><CalendarSync /></ProtectedRoute>} />
 
       
       <Route path="financial-system" element={<ProtectedRoute page="financial_system"><FinancialSystem /></ProtectedRoute>} />

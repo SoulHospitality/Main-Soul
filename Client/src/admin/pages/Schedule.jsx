@@ -17,6 +17,7 @@ import TransferReservationModal from '../components/TransferReservationModal';
 import { housekeepingFeeForUnit } from '../../utils/housekeeping';
 import { useAuth } from '../context/AuthContext';
 import { isoDateOnly } from '../../utils/stayNights';
+import { isOtaBlockSource, otaBlockRank, otaBlockLabel, otaBlockBadge } from '../utils/otaCalendar';
 
 
 
@@ -223,8 +224,8 @@ function PriceEditorModal({
   };
 
   const blockLabel =
-    blockSource === 'ical'
-      ? 'OTA (iCal) block'
+    isOtaBlockSource(blockSource)
+      ? otaBlockLabel(blockSource)
       : blockSource === 'owner'
         ? 'Owner block'
         : blockSource === 'reservation'
@@ -890,14 +891,21 @@ export default function Schedule() {
 
   const blockMap = useMemo(() => {
     const m = {};
-      const priority = { reservation: 3, booking: 3, ical: 2, owner: 1, manual: 1 };
+    const priority = {
+      reservation: 3,
+      booking: 3,
+      owner: 1,
+      manual: 1,
+      csv_import: 1,
+      soul_availability_xlsx: 1,
+    };
     for (const b of calendarBlocks) {
       if (!m[b.unit_id]) m[b.unit_id] = {};
       const dateKey = String(b.date).split('T')[0];
       const prev = m[b.unit_id][dateKey];
-      const prevRank = priority[prev] || 0;
-      const nextRank = priority[b.source] || 0;
-      
+      const prevRank = priority[prev] ?? otaBlockRank(prev);
+      const nextRank = priority[b.source] ?? otaBlockRank(b.source);
+
       if (!prev || nextRank >= prevRank) {
         m[b.unit_id][dateKey] = b.source;
       }
@@ -1350,7 +1358,7 @@ export default function Schedule() {
         {[
           { swatch: 'bg-emerald-50 border border-emerald-200', label: 'Priced' },
           { swatch: 'bg-rose-50 border border-rose-200', label: 'Unpriced' },
-          { swatch: 'border border-slate-300', label: 'OTA / admin block', style: { backgroundImage: 'repeating-linear-gradient(135deg, rgba(40,63,94,0.14) 0 4px, transparent 4px 8px)' } },
+          { swatch: 'border border-slate-300', label: 'OTA block (AB / BK / TV)', style: { backgroundImage: 'repeating-linear-gradient(135deg, rgba(40,63,94,0.14) 0 4px, transparent 4px 8px)' } },
           { swatch: 'bg-[#2a9d8f]', label: 'Guest stay' },
           { swatch: 'bg-red-600', label: 'Cancelled' },
           { swatch: 'bg-amber-400', label: 'Hold' },
@@ -1745,14 +1753,14 @@ export default function Schedule() {
                             title={
                               blockSrc
                                   ? `${
-                                    blockSrc === 'ical'
-                                      ? 'OTA (iCal)'
+                                    isOtaBlockSource(blockSrc)
+                                      ? otaBlockLabel(blockSrc)
                                       : blockSrc === 'owner'
                                         ? 'Owner'
                                         : blockSrc === 'reservation' || blockSrc === 'booking'
                                           ? 'Reservation'
                                           : 'Admin'
-                                  } block · ${formatDate(cell.date)}${
+                                  } · ${formatDate(cell.date)}${
                                     canEditPrice && !isPast ? ' · Click to manage' : ''
                                   }`
                                 : isPriced
@@ -1778,7 +1786,7 @@ export default function Schedule() {
                               )}
                               {blockSrc && !isPriced ? (
                                 <span className="rounded-md bg-white/80 px-0.5 text-[8px] font-bold tracking-wide text-violet-700">
-                                  {blockSrc === 'ical' ? 'OTA' : 'BLK'}
+                                  {isOtaBlockSource(blockSrc) ? otaBlockBadge(blockSrc) : 'BLK'}
                                 </span>
                               ) : isPriced ? (
                                 <span className="text-[10px] font-bold leading-none tracking-tight">

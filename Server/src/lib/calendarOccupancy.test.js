@@ -6,6 +6,7 @@ const {
   GUEST_AVAILABILITY_MONTHS,
   EXPLICIT_HOLD_SOURCES,
   REQUIRED_OCCUPANCY_TABLES,
+  isIcalOccupancySource,
   occupancySql,
   mergeOccupancyByDate,
   applyCheckoutTurnover,
@@ -21,14 +22,22 @@ describe('calendar occupancy (Schedule ↔ guest)', () => {
     }
     assert.doesNotMatch(sql, /listing_ical/);
     assert.match(sql, /unit_ical_blocks/);
+    assert.match(sql, /unit_ota_feeds/);
+    assert.match(sql, /ical:/);
   });
 
   it('never drops Schedule holds on a checkout day', () => {
-    for (const source of EXPLICIT_HOLD_SOURCES) {
+    for (const source of [...EXPLICIT_HOLD_SOURCES, 'ical:airbnb', 'ical:booking']) {
       const byDate = new Map([['2026-09-10', source]]);
       applyCheckoutTurnover(byDate, ['2026-09-10']);
       assert.equal(byDate.get('2026-09-10'), source, source);
     }
+  });
+
+  it('treats per-platform OTA sources as explicit holds', () => {
+    assert.equal(isIcalOccupancySource('ical:airbnb'), true);
+    assert.equal(isIcalOccupancySource('ical'), true);
+    assert.equal(isIcalOccupancySource('manual'), false);
   });
 
   it('keeps a checkout day closed when the next stay occupies that night', () => {
@@ -41,7 +50,7 @@ describe('calendar occupancy (Schedule ↔ guest)', () => {
     const byDate = mergeOccupancyByDate(
       [
         { date: '2026-09-01', source: 'manual' },
-        { date: '2026-09-02', source: 'ical' },
+        { date: '2026-09-02', source: 'ical:airbnb' },
       ],
       '2026-09-01',
       '2026-09-30'
@@ -55,7 +64,7 @@ describe('calendar occupancy (Schedule ↔ guest)', () => {
     const scheduleDates = ['2026-09-01', '2026-09-02', '2026-09-03'];
     const guest = [
       { date: '2026-09-01', source: 'manual' },
-      { date: '2026-09-02', source: 'ical' },
+      { date: '2026-09-02', source: 'ical:airbnb' },
       { date: '2026-09-03', source: 'reservation' },
       { date: '2026-09-04', source: 'unpriced' },
     ];

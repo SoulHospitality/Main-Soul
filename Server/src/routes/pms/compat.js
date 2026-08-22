@@ -676,14 +676,139 @@ router.post('/daily-prices/batch', requireRoles('admin'), async (req, res, next)
   }
 });
 
+const RESERVATIONS_CALENDAR_ROLES = ['admin', 'reservations', 'reservations_web', 'reservations_manual'];
+
+router.get('/ota-calendar', async (_req, res, next) => {
+  try {
+    const { calendarExportUrl } = require('../../lib/otaPlatforms');
+    const { rows: units } = await query(
+      `SELECT id, wp_post_id, slug, title, unit_number, status
+       FROM units
+       WHERE status = 'published'
+       ORDER BY title NULLS LAST, unit_number NULLS LAST`
+    );
+    const { rows: feeds } = await query(
+      `SELECT id, unit_id, wp_post_id, platform, label, ical_url, enabled,
+              last_sync_at, last_sync_error, updated_at
+       FROM unit_ota_feeds
+       ORDER BY platform`
+    );
+    const feedsByUnit = new Map();
+    for (const feed of feeds) {
+      if (!feedsByUnit.has(feed.unit_id)) feedsByUnit.set(feed.unit_id, []);
+      feedsByUnit.get(feed.unit_id).push(feed);
+    }
+    res.json(
+      units.map((unit) => ({
+        ...unit,
+        export_url: unit.slug ? calendarExportUrl(unit.slug) : null,
+        feeds: feedsByUnit.get(unit.id) || [],
+      }))
+    );
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.put('/ota-calendar/:unitId/:platform', requireRoles(...RESERVATIONS_CALENDAR_ROLES), async (req, res, next) => {
+  try {
+    const {
+      normalizeOtaPlatform,
+      assertValidIcalUrl,
+    } = require('../../lib/otaPlatforms');
+    const { refreshIcalBlocks } = require('../../services/ical');
+    const platform = normalizeOtaPlatform(req.params.platform);
+    if (!platform) return res.status(400).json({ error: 'Invalid platform' });
+
+    const { rows: u } = await query(
+      `SELECT id, wp_post_id, slug, title FROM units WHERE id = $1`,
+      [req.params.unitId]
+    );
+    if (!u[0]?.wp_post_id) return res.status(404).json({ error: 'Unit not found' });
+
+    const { ical_url, label, enabled } = req.body || {};
+    if (ical_url === null || ical_url === '') {
+      await query(`DELETE FROM unit_ota_feeds WHERE unit_id = $1 AND platform = $2`, [
+        u[0].id,
+        platform,
+      ]);
+      return res.json({ ok: true, cleared: true, platform });
+    }
+
+    const url = assertValidIcalUrl(ical_url);
+
+    const { rows } = await query(
+      `INSERT INTO unit_ota_feeds
+         (unit_id, wp_post_id, platform, label, ical_url, enabled, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,now())
+       ON CONFLICT (unit_id, platform) DO UPDATE SET
+         ical_url = EXCLUDED.ical_url,
+         label = EXCLUDED.label,
+         enabled = EXCLUDED.enabled,
+         updated_at = now()
+       RETURNING *`,
+      [u[0].id, u[0].wp_post_id, platform, label || null, url, enabled !== false]
+    );
+
+    await query(
+      `INSERT INTO listing_ical (wordpress_post_id, listing_slug, ical_url, notes, updated_at)
+       VALUES ($1,$2,$3,$4,now())
+       ON CONFLICT (wordpress_post_id) DO UPDATE SET
+         ical_url = EXCLUDED.ical_url,
+         listing_slug = EXCLUDED.listing_slug,
+         notes = EXCLUDED.notes,
+         updated_at = now()`,
+      [u[0].wp_post_id, u[0].slug, url, label || null]
+    );
+    await query(`UPDATE units SET ical_url = $1, updated_at = now() WHERE id = $2`, [url, u[0].id]);
+
+    const sync = await refreshIcalBlocks({ unitId: u[0].id });
+    res.json({ feed: rows[0], sync });
+  } catch (e) {
+    if (e.message?.includes('calendar URL')) return res.status(400).json({ error: e.message });
+    next(e);
+  }
+});
+
+router.delete('/ota-calendar/:unitId/:platform', requireRoles(...RESERVATIONS_CALENDAR_ROLES), async (req, res, next) => {
+  try {
+    const { normalizeOtaPlatform } = require('../../lib/otaPlatforms');
+    const platform = normalizeOtaPlatform(req.params.platform);
+    if (!platform) return res.status(400).json({ error: 'Invalid platform' });
+
+    const { rows } = await query(
+      `DELETE FROM unit_ota_feeds
+       WHERE unit_id = $1 AND platform = $2
+       RETURNING id`,
+      [req.params.unitId, platform]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Feed not found' });
+    res.json({ ok: true, platform });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/ota-calendar/refresh', requireRoles(...RESERVATIONS_CALENDAR_ROLES), async (req, res, next) => {
+  try {
+    const { refreshIcalBlocks } = require('../../services/ical');
+    const unitId = req.body?.unit_id || null;
+    const result = await refreshIcalBlocks({ unitId });
+    res.json(result);
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.get('/listing-ical', async (_req, res, next) => {
   try {
     const { rows } = await query(
-      `SELECT li.wordpress_post_id, li.listing_slug, li.ical_url, li.notes, li.updated_at,
-              u.id AS unit_id, u.title AS unit_title, u.unit_number
-       FROM listing_ical li
-       LEFT JOIN units u ON u.wp_post_id = li.wordpress_post_id
-       ORDER BY u.title NULLS LAST`
+      `SELECT f.unit_id, f.wp_post_id AS wordpress_post_id, u.slug AS listing_slug,
+              f.ical_url, f.label AS notes, f.platform, f.updated_at,
+              u.title AS unit_title, u.unit_number
+       FROM unit_ota_feeds f
+       JOIN units u ON u.id = f.unit_id
+       ORDER BY u.title NULLS LAST, f.platform`
     );
     res.json(rows);
   } catch (e) {
@@ -691,39 +816,52 @@ router.get('/listing-ical', async (_req, res, next) => {
   }
 });
 
-router.put('/listing-ical/:unitId', requireRoles('admin'), async (req, res, next) => {
+router.put('/listing-ical/:unitId', requireRoles(...RESERVATIONS_CALENDAR_ROLES), async (req, res, next) => {
   try {
-    const { ical_url, notes } = req.body;
+    const { assertValidIcalUrl } = require('../../lib/otaPlatforms');
+    const { refreshIcalBlocks } = require('../../services/ical');
+    const { ical_url, notes } = req.body || {};
     const { rows: u } = await query(`SELECT id, wp_post_id, slug, title FROM units WHERE id = $1`, [
       req.params.unitId,
     ]);
     if (!u[0]?.wp_post_id) return res.status(404).json({ error: 'Unit not found' });
     if (!ical_url) {
+      await query(`DELETE FROM unit_ota_feeds WHERE unit_id = $1 AND platform = 'other'`, [u[0].id]);
       await query(`DELETE FROM listing_ical WHERE wordpress_post_id = $1`, [u[0].wp_post_id]);
       return res.json({ ok: true, cleared: true });
     }
+    const url = assertValidIcalUrl(ical_url);
     const { rows } = await query(
+      `INSERT INTO unit_ota_feeds
+         (unit_id, wp_post_id, platform, label, ical_url, enabled, updated_at)
+       VALUES ($1,$2,'other',$3,$4,true,now())
+       ON CONFLICT (unit_id, platform) DO UPDATE SET
+         ical_url = EXCLUDED.ical_url,
+         label = EXCLUDED.label,
+         updated_at = now()
+       RETURNING *`,
+      [u[0].id, u[0].wp_post_id, notes || null, url]
+    );
+    await query(
       `INSERT INTO listing_ical (wordpress_post_id, listing_slug, ical_url, notes, updated_at)
        VALUES ($1,$2,$3,$4,now())
        ON CONFLICT (wordpress_post_id) DO UPDATE SET
          ical_url = EXCLUDED.ical_url,
          listing_slug = EXCLUDED.listing_slug,
          notes = EXCLUDED.notes,
-         updated_at = now()
-       RETURNING *`,
-      [u[0].wp_post_id, u[0].slug, ical_url, notes || null]
+         updated_at = now()`,
+      [u[0].wp_post_id, u[0].slug, url, notes || null]
     );
-    await query(`UPDATE units SET ical_url = $1, updated_at = now() WHERE id = $2`, [
-      ical_url,
-      u[0].id,
-    ]);
-    res.json(rows[0]);
+    await query(`UPDATE units SET ical_url = $1, updated_at = now() WHERE id = $2`, [url, u[0].id]);
+    const sync = await refreshIcalBlocks({ unitId: u[0].id });
+    res.json({ ...rows[0], sync });
   } catch (e) {
+    if (e.message?.includes('calendar URL')) return res.status(400).json({ error: e.message });
     next(e);
   }
 });
 
-router.post('/listing-ical/refresh', requireRoles('admin'), async (req, res, next) => {
+router.post('/listing-ical/refresh', requireRoles(...RESERVATIONS_CALENDAR_ROLES), async (req, res, next) => {
   try {
     const { refreshIcalBlocks } = require('../../services/ical');
     const result = await refreshIcalBlocks();

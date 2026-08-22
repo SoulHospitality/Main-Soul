@@ -22,6 +22,7 @@ const RESERVATIONS_PAGE_ACCESS = new Set([
   'dashboard',
   'reservations',
   'schedule',
+  'calendar_sync',
   'housekeeping',
   'commissions',
   'profile',
@@ -31,6 +32,7 @@ const RESERVATIONS_PAGE_ACCESS = new Set([
 const RESERVATIONS_MANUAL_PAGE_ACCESS = new Set([
   'reservations',
   'schedule',
+  'calendar_sync',
   'profile',
 ]);
 
