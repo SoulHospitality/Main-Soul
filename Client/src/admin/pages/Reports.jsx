@@ -10,6 +10,7 @@ import {
   CalendarDays,
   Globe,
   FileBarChart2,
+  Trophy,
 } from 'lucide-react';
 import {
   BarChart,
@@ -29,6 +30,7 @@ import LoadingSpinner from '../components/ui/LoadingSpinner';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import { currency, unitDisplay } from '../utils/formatters';
 import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
+import { ROLE_LABELS } from '../utils/permissions';
 
 const COLORS = ['#283f5e', '#134e5e', '#F28C28', '#10b981', '#8b5cf6', '#ef4444'];
 
@@ -45,6 +47,63 @@ function moneyShort(v) {
   return Number(v || 0).toLocaleString('en-EG', { maximumFractionDigits: 0 });
 }
 
+function currentMonthIso() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function monthLabel(ym) {
+  const [y, m] = String(ym || '').split('-').map(Number);
+  if (!y || !m) return ym;
+  return new Date(y, m - 1, 1).toLocaleString('en-GB', { month: 'long', year: 'numeric' });
+}
+
+const PODIUM_STYLES = [
+  { ring: 'ring-amber-300', bg: 'bg-gradient-to-b from-amber-50 to-white', badge: 'bg-amber-400 text-white', label: '1st' },
+  { ring: 'ring-slate-300', bg: 'bg-gradient-to-b from-slate-50 to-white', badge: 'bg-slate-400 text-white', label: '2nd' },
+  { ring: 'ring-orange-300', bg: 'bg-gradient-to-b from-orange-50 to-white', badge: 'bg-orange-400 text-white', label: '3rd' },
+];
+
+function LeaderboardPodiumCard({ entry, style, tall = false }) {
+  if (!entry) {
+    return (
+      <div className={`rounded-2xl border border-dashed border-soul-line p-4 text-center text-sm text-soul-muted ${tall ? 'min-h-[220px]' : 'min-h-[190px]'}`}>
+        —
+      </div>
+    );
+  }
+  return (
+    <div className={`rounded-2xl border border-soul-line p-4 ring-2 ${style.ring} ${style.bg} ${tall ? 'min-h-[220px]' : 'min-h-[190px]'}`}>
+      <div className="flex items-start justify-between gap-2">
+        <span className={`inline-flex h-7 min-w-[2rem] items-center justify-center rounded-full px-2 text-xs font-bold ${style.badge}`}>
+          {style.label}
+        </span>
+        <span className="text-[11px] font-medium uppercase tracking-wide text-soul-muted">
+          {ROLE_LABELS[entry.role] || entry.role}
+        </span>
+      </div>
+      <p className="mt-3 font-display text-lg text-soul-blue leading-tight">{entry.full_name}</p>
+      <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+        <div>
+          <div className="text-[10px] uppercase tracking-wide text-sky-700">Website</div>
+          <div className="text-sm font-bold text-sky-800">{entry.website_count}</div>
+          <div className="text-[10px] text-sky-700/80">{moneyShort(entry.website_amount)}</div>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wide text-soul-blue">Manual</div>
+          <div className="text-sm font-bold text-soul-blue">{entry.manual_count}</div>
+          <div className="text-[10px] text-soul-muted">{moneyShort(entry.manual_amount)}</div>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wide text-gray-500">Total</div>
+          <div className="text-sm font-bold text-gray-900">{entry.reservation_count}</div>
+          <div className="text-[10px] text-gray-600">{moneyShort(entry.total_amount)}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Reports() {
   const [fromDate, setFromDate] = useState(FINANCIAL_EPOCH);
   const [toDate, setToDate] = useState('');
@@ -57,6 +116,7 @@ export default function Reports() {
   const [empSortDir, setEmpSortDir] = useState('desc');
   const [dailySortKey, setDailySortKey] = useState('date');
   const [dailySortDir, setDailySortDir] = useState('desc');
+  const [leaderboardMonth, setLeaderboardMonth] = useState(currentMonthIso);
 
   const rangeParams = {
     from_date: fromDate || undefined,
@@ -95,6 +155,15 @@ export default function Reports() {
       api.get('/reports/daily-reservations', { params: rangeParams }).then((r) => r.data),
     refetchInterval: 60_000,
   });
+
+  const { data: leaderboardData, isLoading: leaderboardLoading } = useQuery({
+    queryKey: ['report-monthly-leaderboard', leaderboardMonth],
+    queryFn: () =>
+      api.get('/reports/monthly-leaderboard', { params: { month: leaderboardMonth } }).then((r) => r.data),
+  });
+
+  const leaderboard = leaderboardData?.leaderboard || [];
+  const leaderboardTotals = leaderboardData?.totals;
 
   const dailyRows = dailyData?.daily || [];
   const dailyProjects = dailyData?.projects || [];
@@ -415,6 +484,104 @@ export default function Reports() {
           </div>
         </>
       ) : null}
+
+      {/* Monthly reservations team leaderboard */}
+      <div className="card p-0 overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Trophy className="w-5 h-5 text-amber-500" />
+            <div>
+              <h3 className="font-semibold text-gray-900">Monthly reservations leaderboard</h3>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Website + manual reservations team · ranked by bookings created in{' '}
+                {monthLabel(leaderboardMonth)} (Cairo time)
+              </p>
+            </div>
+          </div>
+          <div>
+            <label className="label sr-only">Month</label>
+            <input
+              type="month"
+              className="input w-44"
+              min={FINANCIAL_EPOCH.slice(0, 7)}
+              value={leaderboardMonth}
+              onChange={(e) => setLeaderboardMonth(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {leaderboardLoading ? (
+          <div className="p-6">
+            <LoadingSpinner />
+          </div>
+        ) : leaderboard.length === 0 ? (
+          <div className="p-8 text-center text-gray-400 text-sm">
+            No reservations team bookings recorded for {monthLabel(leaderboardMonth)} yet.
+          </div>
+        ) : (
+          <div className="p-6 space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+              <LeaderboardPodiumCard entry={leaderboard[1]} style={PODIUM_STYLES[1]} />
+              <LeaderboardPodiumCard entry={leaderboard[0]} style={PODIUM_STYLES[0]} tall />
+              <LeaderboardPodiumCard entry={leaderboard[2]} style={PODIUM_STYLES[2]} />
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="table text-sm">
+                <thead>
+                  <tr>
+                    <th className="w-12">#</th>
+                    <th>Agent</th>
+                    <th>Role</th>
+                    <th className="text-center">Website</th>
+                    <th className="text-center">Manual</th>
+                    <th className="text-center">Total bookings</th>
+                    <th className="text-right">Total amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {leaderboard.map((entry) => (
+                    <tr key={entry.id} className={entry.rank <= 3 ? 'bg-amber-50/40' : ''}>
+                      <td className="font-semibold text-gray-500">{entry.rank}</td>
+                      <td className="font-medium text-gray-900">{entry.full_name}</td>
+                      <td className="text-gray-500">{ROLE_LABELS[entry.role] || entry.role}</td>
+                      <td className="text-center">
+                        <div className="font-semibold text-sky-700">{entry.website_count}</div>
+                        <div className="text-[11px] text-sky-700/80">{currency(entry.website_amount)}</div>
+                      </td>
+                      <td className="text-center">
+                        <div className="font-semibold text-soul-blue">{entry.manual_count}</div>
+                        <div className="text-[11px] text-soul-muted">{currency(entry.manual_amount)}</div>
+                      </td>
+                      <td className="text-center font-bold text-gray-900">{entry.reservation_count}</td>
+                      <td className="text-right tabular-nums font-semibold">{currency(entry.total_amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                {leaderboardTotals && (
+                  <tfoot>
+                    <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
+                      <td colSpan={3} className="text-right text-gray-600 pr-4">
+                        Team totals
+                      </td>
+                      <td className="text-center text-sky-700">
+                        <div>{leaderboardTotals.website_count}</div>
+                        <div className="text-[11px] font-medium">{currency(leaderboardTotals.website_amount)}</div>
+                      </td>
+                      <td className="text-center">
+                        <div>{leaderboardTotals.manual_count}</div>
+                        <div className="text-[11px] font-medium">{currency(leaderboardTotals.manual_amount)}</div>
+                      </td>
+                      <td className="text-center">{leaderboardTotals.reservation_count}</td>
+                      <td className="text-right tabular-nums">{currency(leaderboardTotals.total_amount)}</td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Daily pivot */}
       <div className="card p-0">

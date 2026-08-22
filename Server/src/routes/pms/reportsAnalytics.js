@@ -46,6 +46,43 @@ function channelLabel(key) {
   return key || 'Unknown';
 }
 
+const RESERVATIONS_TEAM_ROLES = ['reservations', 'reservations_web', 'reservations_manual'];
+
+const WEBSITE_CHANNEL_SQL = `
+  r.booking_id IS NOT NULL
+  OR lower(COALESCE(r.booking_source, '')) IN ('website', 'web')
+  OR lower(COALESCE(r.booking_source, '')) LIKE '%website%'
+  OR lower(COALESCE(r.booking_source, '')) LIKE '%soul%'
+`;
+
+function parseMonthParam(raw) {
+  const match = String(raw || '').trim().match(/^(\d{4})-(\d{2})$/);
+  const now = new Date();
+  const year = match ? parseInt(match[1], 10) : now.getFullYear();
+  const month = match ? parseInt(match[2], 10) : now.getMonth() + 1;
+  if (month < 1 || month > 12) throw new Error('Invalid month');
+  const monthKey = `${year}-${String(month).padStart(2, '0')}`;
+  const from = clampFromDate(`${monthKey}-01`);
+  const lastDay = new Date(year, month, 0).getDate();
+  const to = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  return { month: monthKey, from_date: from, to_date: to };
+}
+
+function mapLeaderboardRow(row, rank) {
+  return {
+    rank,
+    id: row.id,
+    full_name: row.full_name,
+    role: row.role,
+    reservation_count: row.reservation_count,
+    website_count: row.website_count,
+    manual_count: row.manual_count,
+    total_amount: round2(parseFloat(row.total_amount) || 0),
+    website_amount: round2(parseFloat(row.website_amount) || 0),
+    manual_amount: round2(parseFloat(row.manual_amount) || 0),
+  };
+}
+
 /** GET /reports/revenue */
 router.get('/reports/revenue', requireRoles('admin'), async (req, res, next) => {
   try {
@@ -160,6 +197,72 @@ router.get('/reports/by-employee', requireRoles('admin'), async (req, res, next)
       })),
     });
   } catch (e) {
+    next(e);
+  }
+});
+
+/** GET /reports/monthly-leaderboard — reservations team, website + manual split */
+router.get('/reports/monthly-leaderboard', requireRoles('admin'), async (req, res, next) => {
+  try {
+    const { month, from_date, to_date } = parseMonthParam(req.query.month);
+    const { rows } = await query(
+      `SELECT su.id, su.full_name, su.role,
+              COUNT(r.id)::int AS reservation_count,
+              COALESCE(SUM(r.total_amount), 0)::float AS total_amount,
+              COUNT(*) FILTER (WHERE ${WEBSITE_CHANNEL_SQL})::int AS website_count,
+              COUNT(*) FILTER (WHERE NOT (${WEBSITE_CHANNEL_SQL}))::int AS manual_count,
+              COALESCE(SUM(r.total_amount) FILTER (WHERE ${WEBSITE_CHANNEL_SQL}), 0)::float AS website_amount,
+              COALESCE(SUM(r.total_amount) FILTER (WHERE NOT (${WEBSITE_CHANNEL_SQL})), 0)::float AS manual_amount
+       FROM reservations r
+       JOIN staff_users su ON su.id = r.sales_person_id
+       WHERE r.status <> 'cancelled'
+         AND su.role = ANY($3::text[])
+         AND (r.created_at AT TIME ZONE 'Africa/Cairo')::date >= $1::date
+         AND (r.created_at AT TIME ZONE 'Africa/Cairo')::date <= $2::date
+       GROUP BY su.id, su.full_name, su.role
+       ORDER BY reservation_count DESC, total_amount DESC, su.full_name ASC`,
+      [from_date, to_date, RESERVATIONS_TEAM_ROLES]
+    );
+
+    const leaderboard = rows.map((row, idx) => mapLeaderboardRow(row, idx + 1));
+    const totals = leaderboard.reduce(
+      (acc, row) => {
+        acc.reservation_count += row.reservation_count;
+        acc.website_count += row.website_count;
+        acc.manual_count += row.manual_count;
+        acc.total_amount += row.total_amount;
+        acc.website_amount += row.website_amount;
+        acc.manual_amount += row.manual_amount;
+        return acc;
+      },
+      {
+        reservation_count: 0,
+        website_count: 0,
+        manual_count: 0,
+        total_amount: 0,
+        website_amount: 0,
+        manual_amount: 0,
+      }
+    );
+
+    res.json({
+      month,
+      from_date,
+      to_date,
+      timezone: 'Africa/Cairo',
+      roles: RESERVATIONS_TEAM_ROLES,
+      leaderboard,
+      totals: {
+        reservation_count: totals.reservation_count,
+        website_count: totals.website_count,
+        manual_count: totals.manual_count,
+        total_amount: round2(totals.total_amount),
+        website_amount: round2(totals.website_amount),
+        manual_amount: round2(totals.manual_amount),
+      },
+    });
+  } catch (e) {
+    if (e.message === 'Invalid month') return res.status(400).json({ error: e.message });
     next(e);
   }
 });
