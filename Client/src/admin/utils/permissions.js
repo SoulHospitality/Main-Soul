@@ -280,6 +280,10 @@ export function canAccessFinancialSystem(user) {
   return !!user && user.role === 'admin';
 }
 
+export function canAccessReports(user) {
+  return !!user && user.role === 'admin';
+}
+
 export function canManageUsers(user) {
   return !!user && (user.role === 'admin' || user.role === 'hr');
 }

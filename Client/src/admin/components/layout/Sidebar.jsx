@@ -19,6 +19,7 @@ import {
   Home,
   ShieldCheck,
   Receipt,
+  FileBarChart2,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -33,6 +34,7 @@ const NAV_ITEMS = [
   { path: '/admin/operations', label: 'Operations', icon: KeyRound, page: 'operations' },
   { path: '/admin/housekeeping', label: 'Housekeeping', icon: Sparkles, page: 'housekeeping' },
   { path: '/admin/financial-system', label: 'Financial System', icon: Landmark, page: 'financial_system' },
+  { path: '/admin/reports',          label: 'Reports',            icon: FileBarChart2,      page: 'reports' },
   { path: '/admin/commissions', label: 'Commissions', icon: BadgeDollarSign, page: 'commissions', agentLabel: 'My Profit' },
   { path: '/admin/acquisition', label: 'Owner leads', icon: Briefcase, page: 'acquisition', resaleLabel: 'Owners requests' },
   { path: '/admin/users', label: 'User Management', icon: Users, page: 'users' },

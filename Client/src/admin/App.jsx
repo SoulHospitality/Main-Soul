@@ -40,6 +40,7 @@ const OwnerPayoutsPage = lazy(() =>
 const AcquisitionPipeline = lazy(() => import('./pages/AcquisitionPipeline'));
 const OwnerDateBlocks = lazy(() => import('./pages/OwnerDateBlocks'));
 const PromoCodes = lazy(() => import('./pages/PromoCodes'));
+const Reports = lazy(() => import('./pages/Reports'));
 
 function PageFallback() {
   return (
@@ -119,11 +120,10 @@ function AppRoutes() {
 
       
       <Route path="financial-system" element={<ProtectedRoute page="financial_system"><FinancialSystem /></ProtectedRoute>} />
+      <Route path="reports" element={<ProtectedRoute page="reports"><Reports /></ProtectedRoute>} />
 
-      
       <Route path="finance" element={<LegacyFinanceRedirect tab="overview" />} />
       <Route path="profit" element={<LegacyFinanceRedirect tab="overview" />} />
-      <Route path="reports" element={<LegacyFinanceRedirect tab="overview" />} />
       <Route path="expenses" element={<LegacyFinanceRedirect tab="manual" />} />
       <Route path="petty-cash" element={<LegacyFinanceRedirect tab="petty-cash" />} />
       <Route path="owner-settlements" element={<LegacyFinanceRedirect tab="owners" />} />
