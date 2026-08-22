@@ -1,5 +1,5 @@
 const { query } = require('../config/db');
-const { icalSourceForPlatform } = require('./otaPlatforms');
+const { icalSourceForPlatform } = require('../lib/otaPlatforms');
 
 const FEED_TIMEOUT_MS = 9000;
 const CONCURRENCY = 8;
