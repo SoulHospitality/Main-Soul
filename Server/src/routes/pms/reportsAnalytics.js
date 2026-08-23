@@ -32,7 +32,16 @@ const ACTIVE_STAY_SQL = `
   )
 `;
 
-function reportFilters(req, { alias = 'r', includeProject = true } = {}) {
+const CAIRO_CREATED_DATE_SQL = `(r.created_at AT TIME ZONE 'Africa/Cairo')::date`;
+
+function dateExprSql(alias, dateField) {
+  if (dateField === 'created_at') {
+    return alias === 'r' ? CAIRO_CREATED_DATE_SQL : `(${alias}.created_at AT TIME ZONE 'Africa/Cairo')::date`;
+  }
+  return `${alias}.check_in`;
+}
+
+function reportFilters(req, { alias = 'r', includeProject = true, dateField = 'check_in' } = {}) {
   const from = clampFromDate(req.query.from_date);
   const to = req.query.to_date || null;
   const project = includeProject ? String(req.query.project || '').trim() : '';
@@ -42,13 +51,14 @@ function reportFilters(req, { alias = 'r', includeProject = true } = {}) {
     COALESCE(${alias}.is_owner_reservation, 0)::int = 1
     AND COALESCE(${alias}.total_amount, 0) = 0
   )`;
+  const dateExpr = dateExprSql(alias, dateField);
   if (from) {
     params.push(from);
-    sql += ` AND ${alias}.check_in >= $${params.length}::date`;
+    sql += ` AND ${dateExpr} >= $${params.length}::date`;
   }
   if (to) {
     params.push(to);
-    sql += ` AND ${alias}.check_in <= $${params.length}::date`;
+    sql += ` AND ${dateExpr} <= $${params.length}::date`;
   }
   if (project) {
     params.push(project);
@@ -252,11 +262,11 @@ router.get('/reports/monthly-leaderboard', requireRoles('admin'), async (req, re
          WHERE ${ACTIVE_STAY_SQL}`;
     if (from_date) {
       stayParams.push(from_date);
-      staySql += ` AND r.check_in >= $${stayParams.length}::date`;
+      staySql += ` AND ${CAIRO_CREATED_DATE_SQL} >= $${stayParams.length}::date`;
     }
     if (to_date) {
       stayParams.push(to_date);
-      staySql += ` AND r.check_in <= $${stayParams.length}::date`;
+      staySql += ` AND ${CAIRO_CREATED_DATE_SQL} <= $${stayParams.length}::date`;
     }
     const [{ rows: team }, { rows: stays }] = await Promise.all([
       query(
@@ -299,7 +309,8 @@ router.get('/reports/monthly-leaderboard', requireRoles('admin'), async (req, re
       month,
       from_date,
       to_date,
-      date_field: 'check_in',
+      date_field: 'created_at',
+      timezone: 'Africa/Cairo',
       roles: RESERVATIONS_TEAM_ROLES,
       leaderboard,
       totals: {
@@ -394,11 +405,11 @@ router.get('/reports/by-unit', requireRoles('admin'), async (req, res, next) => 
 /** GET /reports/daily-reservations — pivot by creation date × project */
 router.get('/reports/daily-reservations', requireRoles('admin'), async (req, res, next) => {
   try {
-    const { sql: dateSql, params } = reportFilters(req);
+    const { sql: dateSql, params } = reportFilters(req, { dateField: 'created_at' });
 
     const { rows } = await query(
       `SELECT
-         to_char(r.check_in, 'YYYY-MM-DD') AS date,
+         to_char(${CAIRO_CREATED_DATE_SQL}, 'YYYY-MM-DD') AS date,
          COALESCE(u.project, u.compound, 'Unassigned') AS project,
          COUNT(r.id)::int AS count,
          COALESCE(SUM(r.total_amount), 0)::float AS amount,
@@ -407,7 +418,7 @@ router.get('/reports/daily-reservations', requireRoles('admin'), async (req, res
        JOIN units u ON u.id = r.unit_id
        WHERE TRUE
          ${dateSql}
-       GROUP BY r.check_in,
+       GROUP BY ${CAIRO_CREATED_DATE_SQL},
                 COALESCE(u.project, u.compound, 'Unassigned')
        ORDER BY date DESC, project`,
       params

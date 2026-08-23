@@ -514,8 +514,9 @@ export default function Reports() {
             <div>
               <h3 className="font-semibold text-gray-900">Reservations leaderboard</h3>
               <p className="text-xs text-gray-500 mt-0.5">
-                Website + manual reservations team · ranked by check-in
+                Website + manual reservations team · ranked by date added
                 {leaderboardMonth === 'all' ? ' · All-Time' : ` in ${monthLabel(leaderboardMonth)}`}
+                {leaderboardMonth === 'all' ? '' : ' (Cairo time)'}
               </p>
             </div>
           </div>
@@ -613,7 +614,7 @@ export default function Reports() {
             <CalendarDays className="w-5 h-5 text-soul-blue" />
             <h3 className="font-semibold text-gray-900">Daily reservations</h3>
             <span className="text-xs text-gray-400">
-              — by check-in date and project
+              — by date added and project (Cairo time)
             </span>
           </div>
           <span className="text-xs text-gray-400">{dailyRows.length} days</span>
