@@ -26,6 +26,7 @@ const EQUIVALENCE_GROUPS = [
   ['mohamed tarek', 'mohammad tarek', 'tarek'],
   ['emery adham', 'emry adham', 'emery', 'emry'],
   ['mazen mohamed', 'mazen'],
+  ['amira', 'amira hesham'],
 ];
 
 function aliasLabelsForName(value) {
@@ -181,6 +182,16 @@ function salesLabelBelongsToUser(salesLabel, user, { minScore = DEFAULT_MIN_SCOR
   return nameMatchScore(salesLabel, user.full_name) >= minScore;
 }
 
+/** Official assignee wins; otherwise credit the sales-label match used on reservation records. */
+function resolveReservationSalesPerson(reservation, staffList) {
+  const id = reservation?.sales_person_id;
+  if (id != null && String(id).trim() !== '') {
+    const byId = (staffList || []).find((s) => String(s.id) === String(id));
+    if (byId) return byId;
+  }
+  return matchSalesLabelToStaff(reservation?.sales_label, staffList)?.staff || null;
+}
+
 module.exports = {
   normalizeName,
   aliasLabelsForName,
@@ -188,5 +199,6 @@ module.exports = {
   nameMatchScore,
   matchSalesLabelToStaff,
   salesLabelBelongsToUser,
+  resolveReservationSalesPerson,
   DEFAULT_MIN_SCORE,
 };

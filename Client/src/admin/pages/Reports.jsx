@@ -493,8 +493,8 @@ export default function Reports() {
             <div>
               <h3 className="font-semibold text-gray-900">Monthly reservations leaderboard</h3>
               <p className="text-xs text-gray-500 mt-0.5">
-                Website + manual reservations team · ranked by bookings created in{' '}
-                {monthLabel(leaderboardMonth)} (Cairo time)
+                Website + manual reservations team · ranked by check-in in{' '}
+                {monthLabel(leaderboardMonth)}
               </p>
             </div>
           </div>

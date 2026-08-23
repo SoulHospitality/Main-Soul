@@ -21,6 +21,8 @@ import BookingCalendar from '../components/ui/BookingCalendar';
 import { currency, formatDate, formatDateTime, nightsText, BOOKING_SOURCES, PAYMENT_METHODS, PAYMENT_METHOD_LABELS, MANUAL_PAYMENT_METHODS, unitDisplay, unitSelectLabel } from '../utils/formatters';
 import { calcReservationFinancials, commissionModeLabel, appliedPctLabel } from '../utils/commission';
 import { housekeepingFeeForUnit } from '../../utils/housekeeping';
+import { isoDateOnly } from '../../utils/stayNights';
+import { canonicalSalesName, namesAreAliases } from '../utils/salesNameMatch';
 import AdminReservationDrawer from '../components/AdminReservationDrawer';
 import ManualReservationForm from '../components/ManualReservationForm';
 import TransferReservationModal from '../components/TransferReservationModal';
@@ -1241,12 +1243,13 @@ export default function Reservations() {
   const salesNameOptions = useMemo(() => {
     const names = new Set();
     for (const u of users) {
-      const name = String(u.full_name || '').trim();
+      const name = canonicalSalesName(u.full_name, users);
       if (name) names.add(name);
     }
     for (const r of reservations) {
-      const name = String(r.sales_person_name || r.sales_label || '').trim();
-      if (name && name.toLowerCase() !== 'owner') names.add(name);
+      const raw = String(r.sales_person_name || r.sales_label || '').trim();
+      if (!raw || raw.toLowerCase() === 'owner') continue;
+      names.add(canonicalSalesName(raw, users));
     }
     return [...names].sort((a, b) => a.localeCompare(b)).map((name) => ({ value: name, label: name }));
   }, [users, reservations]);
@@ -1261,14 +1264,23 @@ export default function Reservations() {
       if (r.payment_status !== want) return false;
     }
     if (filterSalesName) {
-      const want = filterSalesName.trim().toLowerCase();
-      const selected = users.find((u) => String(u.full_name || '').trim().toLowerCase() === want);
-      const assigned = selected && String(r.sales_person_id) === String(selected.id);
-      const names = [r.sales_person_name, r.sales_label]
-        .map((s) => String(s || '').trim().toLowerCase())
-        .filter((n) => n && n !== 'owner');
-      if (!assigned && !names.includes(want)) return false;
+      const selected = users.filter((u) => namesAreAliases(u.full_name, filterSalesName));
+      const assigned = selected.some((u) => String(r.sales_person_id) === String(u.id));
+      const labelHit = [r.sales_person_name, r.sales_label].some((n) => {
+        const name = String(n || '').trim();
+        return name && name.toLowerCase() !== 'owner' && namesAreAliases(name, filterSalesName);
+      });
+      if (!assigned && !labelHit) return false;
     }
+    const checkIn = isoDateOnly(r.check_in);
+    if (filterCheckInFrom && checkIn && checkIn < filterCheckInFrom) return false;
+    if (filterCheckInTo && checkIn && checkIn > filterCheckInTo) return false;
+    const checkOut = isoDateOnly(r.check_out);
+    if (filterCheckOutFrom && checkOut && checkOut < filterCheckOutFrom) return false;
+    if (filterCheckOutTo && checkOut && checkOut > filterCheckOutTo) return false;
+    const created = isoDateOnly(r.created_at);
+    if (filterCreatedFrom && created && created < filterCreatedFrom) return false;
+    if (filterCreatedTo && created && created > filterCreatedTo) return false;
     return true;
   });
   

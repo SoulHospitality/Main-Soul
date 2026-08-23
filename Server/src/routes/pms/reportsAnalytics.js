@@ -9,6 +9,7 @@ const { requireRoles } = require('../../middleware/auth');
 const { clampFromDate, FINANCIAL_EPOCH } = require('../../lib/financialEpoch');
 const { calcReservationFinancials, round2 } = require('../../lib/commission');
 const { isWebsiteOriginReservation } = require('../../lib/reservationScope');
+const { resolveReservationSalesPerson } = require('../../lib/salesNameMatch');
 
 const router = express.Router();
 
@@ -92,6 +93,41 @@ function mapLeaderboardRow(row, rank) {
   };
 }
 
+function aggregateBySalesPerson(stays, staffList) {
+  const buckets = new Map();
+  for (const stay of stays) {
+    const staff = resolveReservationSalesPerson(stay, staffList);
+    if (!staff) continue;
+    const key = String(staff.id);
+    if (!buckets.has(key)) {
+      buckets.set(key, {
+        id: staff.id,
+        full_name: staff.full_name,
+        role: staff.role,
+        reservation_count: 0,
+        website_count: 0,
+        manual_count: 0,
+        total_amount: 0,
+        website_amount: 0,
+        manual_amount: 0,
+      });
+    }
+    const row = buckets.get(key);
+    const amount = parseFloat(stay.total_amount) || 0;
+    const website = isWebsiteOriginReservation(stay);
+    row.reservation_count += 1;
+    row.total_amount += amount;
+    if (website) {
+      row.website_count += 1;
+      row.website_amount += amount;
+    } else {
+      row.manual_count += 1;
+      row.manual_amount += amount;
+    }
+  }
+  return [...buckets.values()];
+}
+
 /** GET /reports/revenue */
 router.get('/reports/revenue', requireRoles('admin'), async (req, res, next) => {
   try {
@@ -173,31 +209,26 @@ router.get('/reports/revenue', requireRoles('admin'), async (req, res, next) => 
 router.get('/reports/by-employee', requireRoles('admin'), async (req, res, next) => {
   try {
     const { sql: dateSql, params } = reportFilters(req);
-    const { rows } = await query(
-      `SELECT su.id, su.full_name, su.role,
-              COUNT(r.id)::int AS reservation_count,
-              COALESCE(SUM(r.total_amount), 0)::float AS total_amount,
-              COUNT(*) FILTER (WHERE ${WEBSITE_CHANNEL_SQL})::int AS website_count,
-              COUNT(*) FILTER (WHERE NOT (${WEBSITE_CHANNEL_SQL}))::int AS manual_count,
-              COALESCE(SUM(r.total_amount) FILTER (WHERE ${WEBSITE_CHANNEL_SQL}), 0)::float AS website_amount,
-              COALESCE(SUM(r.total_amount) FILTER (WHERE NOT (${WEBSITE_CHANNEL_SQL})), 0)::float AS manual_amount
-       FROM reservations r
-       JOIN staff_users su ON su.id = r.sales_person_id
-       JOIN units u ON u.id = r.unit_id
-       WHERE TRUE
-         ${dateSql}
-       GROUP BY su.id, su.full_name, su.role
-       ORDER BY total_amount DESC`,
-      params
-    );
-    res.json({
-      employees: rows.map((e) => ({
+    const [{ rows: staff }, { rows: stays }] = await Promise.all([
+      query(`SELECT id, full_name, role FROM staff_users`),
+      query(
+        `SELECT r.sales_person_id, r.sales_label, r.total_amount, r.booking_id, r.booking_source
+         FROM reservations r
+         JOIN units u ON u.id = r.unit_id
+         WHERE TRUE
+           ${dateSql}`,
+        params
+      ),
+    ]);
+    const employees = aggregateBySalesPerson(stays, staff)
+      .sort((a, b) => b.total_amount - a.total_amount)
+      .map((e) => ({
         ...e,
-        total_amount: round2(parseFloat(e.total_amount) || 0),
-        website_amount: round2(parseFloat(e.website_amount) || 0),
-        manual_amount: round2(parseFloat(e.manual_amount) || 0),
-      })),
-    });
+        total_amount: round2(e.total_amount),
+        website_amount: round2(e.website_amount),
+        manual_amount: round2(e.manual_amount),
+      }));
+    res.json({ employees });
   } catch (e) {
     next(e);
   }
@@ -207,26 +238,30 @@ router.get('/reports/by-employee', requireRoles('admin'), async (req, res, next)
 router.get('/reports/monthly-leaderboard', requireRoles('admin'), async (req, res, next) => {
   try {
     const { month, from_date, to_date } = parseMonthParam(req.query.month);
-    const { rows } = await query(
-      `SELECT su.id, su.full_name, su.role,
-              COUNT(r.id)::int AS reservation_count,
-              COALESCE(SUM(r.total_amount), 0)::float AS total_amount,
-              COUNT(*) FILTER (WHERE ${WEBSITE_CHANNEL_SQL})::int AS website_count,
-              COUNT(*) FILTER (WHERE NOT (${WEBSITE_CHANNEL_SQL}))::int AS manual_count,
-              COALESCE(SUM(r.total_amount) FILTER (WHERE ${WEBSITE_CHANNEL_SQL}), 0)::float AS website_amount,
-              COALESCE(SUM(r.total_amount) FILTER (WHERE NOT (${WEBSITE_CHANNEL_SQL})), 0)::float AS manual_amount
-       FROM reservations r
-       JOIN staff_users su ON su.id = r.sales_person_id
-       WHERE ${ACTIVE_STAY_SQL}
-         AND su.role = ANY($3::text[])
-         AND (r.created_at AT TIME ZONE 'Africa/Cairo')::date >= $1::date
-         AND (r.created_at AT TIME ZONE 'Africa/Cairo')::date <= $2::date
-       GROUP BY su.id, su.full_name, su.role
-       ORDER BY reservation_count DESC, total_amount DESC, su.full_name ASC`,
-      [from_date, to_date, RESERVATIONS_TEAM_ROLES]
-    );
+    const [{ rows: team }, { rows: stays }] = await Promise.all([
+      query(
+        `SELECT id, full_name, role
+         FROM staff_users
+         WHERE role = ANY($1::text[])`,
+        [RESERVATIONS_TEAM_ROLES]
+      ),
+      query(
+        `SELECT r.sales_person_id, r.sales_label, r.total_amount, r.booking_id, r.booking_source
+         FROM reservations r
+         WHERE ${ACTIVE_STAY_SQL}
+           AND r.check_in >= $1::date
+           AND r.check_in <= $2::date`,
+        [from_date, to_date]
+      ),
+    ]);
 
-    const leaderboard = rows.map((row, idx) => mapLeaderboardRow(row, idx + 1));
+    const leaderboard = aggregateBySalesPerson(stays, team)
+      .sort((a, b) => {
+        if (b.reservation_count !== a.reservation_count) return b.reservation_count - a.reservation_count;
+        if (b.total_amount !== a.total_amount) return b.total_amount - a.total_amount;
+        return String(a.full_name || '').localeCompare(String(b.full_name || ''));
+      })
+      .map((row, idx) => mapLeaderboardRow(row, idx + 1));
     const totals = leaderboard.reduce(
       (acc, row) => {
         acc.reservation_count += row.reservation_count;
@@ -251,7 +286,7 @@ router.get('/reports/monthly-leaderboard', requireRoles('admin'), async (req, re
       month,
       from_date,
       to_date,
-      timezone: 'Africa/Cairo',
+      date_field: 'check_in',
       roles: RESERVATIONS_TEAM_ROLES,
       leaderboard,
       totals: {
