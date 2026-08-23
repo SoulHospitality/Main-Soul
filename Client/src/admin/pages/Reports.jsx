@@ -121,6 +121,7 @@ export default function Reports() {
   const rangeParams = {
     from_date: fromDate || undefined,
     to_date: toDate || undefined,
+    project: project || undefined,
   };
 
   const { data: projects = [] } = useQuery({
@@ -139,18 +140,18 @@ export default function Reports() {
   });
 
   const { data: employeeData, isLoading: empLoading } = useQuery({
-    queryKey: ['report-by-employee', fromDate, toDate],
+    queryKey: ['report-by-employee', fromDate, toDate, project],
     queryFn: () =>
       api.get('/reports/by-employee', { params: rangeParams }).then((r) => r.data),
   });
 
   const { data: unitData, isLoading: unitLoading } = useQuery({
-    queryKey: ['report-by-unit', fromDate, toDate],
+    queryKey: ['report-by-unit', fromDate, toDate, project],
     queryFn: () => api.get('/reports/by-unit', { params: rangeParams }).then((r) => r.data),
   });
 
   const { data: dailyData, isLoading: dailyLoading } = useQuery({
-    queryKey: ['report-daily-reservations', fromDate, toDate],
+    queryKey: ['report-daily-reservations', fromDate, toDate, project],
     queryFn: () =>
       api.get('/reports/daily-reservations', { params: rangeParams }).then((r) => r.data),
     refetchInterval: 60_000,
@@ -229,7 +230,7 @@ export default function Reports() {
     return Object.entries(map).map(([name, value]) => ({ name, value }));
   }, [revenueData]);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' });
 
   async function exportExcel() {
     try {
@@ -287,8 +288,7 @@ export default function Reports() {
             Reports
           </h1>
           <p className="page-subtitle">
-            Admin analytics — reservations, website channel, agents, and units. Books from{' '}
-            {FINANCIAL_EPOCH}.
+            Admin analytics — reservation totals by check-in date. Books from {FINANCIAL_EPOCH}.
           </p>
         </div>
         <button
@@ -304,7 +304,7 @@ export default function Reports() {
 
       <div className="card p-4 flex flex-wrap gap-3 items-end">
         <div>
-          <label className="label">From</label>
+          <label className="label">Check-in from</label>
           <input
             type="date"
             className="input w-40"
@@ -314,7 +314,7 @@ export default function Reports() {
           />
         </div>
         <div>
-          <label className="label">To</label>
+          <label className="label">Check-in to</label>
           <input
             type="date"
             className="input w-40"
@@ -590,7 +590,7 @@ export default function Reports() {
             <CalendarDays className="w-5 h-5 text-soul-blue" />
             <h3 className="font-semibold text-gray-900">Daily reservations</h3>
             <span className="text-xs text-gray-400">
-              — created per day, by project (Cairo time)
+              — by check-in date and project
             </span>
           </div>
           <span className="text-xs text-gray-400">{dailyRows.length} days</span>

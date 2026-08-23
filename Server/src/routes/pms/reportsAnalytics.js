@@ -8,6 +8,7 @@ const { query } = require('../../config/db');
 const { requireRoles } = require('../../middleware/auth');
 const { clampFromDate, FINANCIAL_EPOCH } = require('../../lib/financialEpoch');
 const { calcReservationFinancials, round2 } = require('../../lib/commission');
+const { isWebsiteOriginReservation } = require('../../lib/reservationScope');
 
 const router = express.Router();
 
@@ -15,45 +16,53 @@ const router = express.Router();
 // This module is mounted at /api/pms without a path prefix; a router-level role
 // middleware would 403 every PMS request for non-admin roles (ops, HK, agents).
 
-function dateFilters(req, { alias = 'r', checkInCol = 'check_in', checkOutCol = 'check_out' } = {}) {
-  const from = clampFromDate(req.query.from_date);
-  const to = req.query.to_date || null;
-  const params = [];
-  let sql = '';
-  if (from) {
-    params.push(from);
-    sql += ` AND ${alias}.${checkInCol} >= $${params.length}::date`;
-  }
-  if (to) {
-    params.push(to);
-    sql += ` AND ${alias}.${checkOutCol} <= $${params.length}::date`;
-  }
-  return { sql, params, from, to };
-}
-
-function channelOf(row) {
-  if (row.booking_id) return 'website';
-  const src = String(row.booking_source || '').trim().toLowerCase();
-  if (!src || src === 'website' || src === 'web') return src ? 'website' : 'manual';
-  if (src.includes('website') || src.includes('soul')) return 'website';
-  return src;
-}
-
-function channelLabel(key) {
-  const k = String(key || 'manual').toLowerCase();
-  if (k === 'website') return 'Website';
-  if (k === 'manual') return 'Manual';
-  return key || 'Unknown';
-}
-
 const RESERVATIONS_TEAM_ROLES = ['reservations', 'reservations_web', 'reservations_manual'];
 
 const WEBSITE_CHANNEL_SQL = `
   r.booking_id IS NOT NULL
-  OR lower(COALESCE(r.booking_source, '')) IN ('website', 'web')
-  OR lower(COALESCE(r.booking_source, '')) LIKE '%website%'
-  OR lower(COALESCE(r.booking_source, '')) LIKE '%soul%'
+  OR lower(btrim(COALESCE(r.booking_source, ''))) = 'website'
 `;
+
+const ACTIVE_STAY_SQL = `
+  r.status <> 'cancelled'
+  AND NOT (
+    COALESCE(r.is_owner_reservation, 0)::int = 1
+    AND COALESCE(r.total_amount, 0) = 0
+  )
+`;
+
+function reportFilters(req, { alias = 'r', includeProject = true } = {}) {
+  const from = clampFromDate(req.query.from_date);
+  const to = req.query.to_date || null;
+  const project = includeProject ? String(req.query.project || '').trim() : '';
+  const params = [];
+  let sql = ` AND ${alias}.status <> 'cancelled'`;
+  sql += ` AND NOT (
+    COALESCE(${alias}.is_owner_reservation, 0)::int = 1
+    AND COALESCE(${alias}.total_amount, 0) = 0
+  )`;
+  if (from) {
+    params.push(from);
+    sql += ` AND ${alias}.check_in >= $${params.length}::date`;
+  }
+  if (to) {
+    params.push(to);
+    sql += ` AND ${alias}.check_in <= $${params.length}::date`;
+  }
+  if (project) {
+    params.push(project);
+    sql += ` AND COALESCE(u.project, u.compound) = $${params.length}`;
+  }
+  return { sql, params, from, to, project };
+}
+
+function channelOf(row) {
+  return isWebsiteOriginReservation(row) ? 'website' : 'manual';
+}
+
+function channelLabel(key) {
+  return String(key || '').toLowerCase() === 'website' ? 'Website' : 'Manual';
+}
 
 function parseMonthParam(raw) {
   const match = String(raw || '').trim().match(/^(\d{4})-(\d{2})$/);
@@ -62,10 +71,10 @@ function parseMonthParam(raw) {
   const month = match ? parseInt(match[2], 10) : now.getMonth() + 1;
   if (month < 1 || month > 12) throw new Error('Invalid month');
   const monthKey = `${year}-${String(month).padStart(2, '0')}`;
-  const from = clampFromDate(`${monthKey}-01`);
+  const monthStart = `${monthKey}-01`;
   const lastDay = new Date(year, month, 0).getDate();
-  const to = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-  return { month: monthKey, from_date: from, to_date: to };
+  const monthEnd = `${monthKey}-${String(lastDay).padStart(2, '0')}`;
+  return { month: monthKey, from_date: monthStart, to_date: monthEnd };
 }
 
 function mapLeaderboardRow(row, rank) {
@@ -86,17 +95,12 @@ function mapLeaderboardRow(row, rank) {
 /** GET /reports/revenue */
 router.get('/reports/revenue', requireRoles('admin'), async (req, res, next) => {
   try {
-    const { sql: dateSql, params, from } = dateFilters(req);
-    const project = String(req.query.project || '').trim();
-    if (project) {
-      params.push(project);
-    }
-    const projectSql = project
-      ? ` AND COALESCE(u.project, u.compound) = $${params.length}`
-      : '';
+    const { sql: dateSql, params, from, to, project } = reportFilters(req);
 
     const { rows } = await query(
       `SELECT r.*,
+              to_char(r.check_in, 'YYYY-MM-DD') AS check_in,
+              to_char(r.check_out, 'YYYY-MM-DD') AS check_out,
               COALESCE(u.unit_number, u.title, 'Unit') AS unit_name,
               COALESCE(u.project, u.compound) AS project,
               u.unit_number,
@@ -106,9 +110,8 @@ router.get('/reports/revenue', requireRoles('admin'), async (req, res, next) => 
        FROM reservations r
        JOIN units u ON u.id = r.unit_id
        LEFT JOIN staff_users su ON su.id = r.sales_person_id
-       WHERE r.status <> 'cancelled'
+       WHERE TRUE
          ${dateSql}
-         ${projectSql}
        ORDER BY r.check_in DESC`,
       params
     );
@@ -124,12 +127,12 @@ router.get('/reports/revenue', requireRoles('admin'), async (req, res, next) => 
     const websiteRows = enriched.filter((r) => r.booking_channel === 'website');
     const manualRows = enriched.filter((r) => r.booking_channel !== 'website');
 
-    // Pending website booking *requests* (not yet accepted) in the same window by created_at
+    // Pending website booking requests in the same check-in window
     const pendingParams = [from || FINANCIAL_EPOCH];
-    let pendingSql = `b.status = 'pending' AND b.created_at::date >= $1::date`;
-    if (req.query.to_date) {
-      pendingParams.push(req.query.to_date);
-      pendingSql += ` AND b.created_at::date <= $${pendingParams.length}::date`;
+    let pendingSql = `b.status = 'pending' AND b.checkin >= $1::date`;
+    if (to) {
+      pendingParams.push(to);
+      pendingSql += ` AND b.checkin <= $${pendingParams.length}::date`;
     }
     const { rows: pendingReq } = await query(
       `SELECT COUNT(*)::int AS count,
@@ -158,7 +161,7 @@ router.get('/reports/revenue', requireRoles('admin'), async (req, res, next) => 
         pending_website_requests_value: round2(Number(pendingReq[0]?.total) || 0),
         financial_epoch: FINANCIAL_EPOCH,
         from_date: from,
-        to_date: req.query.to_date || null,
+        to_date: to,
       },
     });
   } catch (e) {
@@ -169,22 +172,19 @@ router.get('/reports/revenue', requireRoles('admin'), async (req, res, next) => 
 /** GET /reports/by-employee */
 router.get('/reports/by-employee', requireRoles('admin'), async (req, res, next) => {
   try {
-    const { sql: dateSql, params } = dateFilters(req);
+    const { sql: dateSql, params } = reportFilters(req);
     const { rows } = await query(
       `SELECT su.id, su.full_name, su.role,
               COUNT(r.id)::int AS reservation_count,
               COALESCE(SUM(r.total_amount), 0)::float AS total_amount,
-              COUNT(*) FILTER (
-                WHERE r.booking_id IS NOT NULL
-                   OR lower(COALESCE(r.booking_source, '')) IN ('website', 'web')
-              )::int AS website_count,
-              COUNT(*) FILTER (
-                WHERE r.booking_id IS NULL
-                  AND lower(COALESCE(r.booking_source, '')) NOT IN ('website', 'web')
-              )::int AS manual_count
+              COUNT(*) FILTER (WHERE ${WEBSITE_CHANNEL_SQL})::int AS website_count,
+              COUNT(*) FILTER (WHERE NOT (${WEBSITE_CHANNEL_SQL}))::int AS manual_count,
+              COALESCE(SUM(r.total_amount) FILTER (WHERE ${WEBSITE_CHANNEL_SQL}), 0)::float AS website_amount,
+              COALESCE(SUM(r.total_amount) FILTER (WHERE NOT (${WEBSITE_CHANNEL_SQL})), 0)::float AS manual_amount
        FROM reservations r
        JOIN staff_users su ON su.id = r.sales_person_id
-       WHERE r.status <> 'cancelled'
+       JOIN units u ON u.id = r.unit_id
+       WHERE TRUE
          ${dateSql}
        GROUP BY su.id, su.full_name, su.role
        ORDER BY total_amount DESC`,
@@ -194,6 +194,8 @@ router.get('/reports/by-employee', requireRoles('admin'), async (req, res, next)
       employees: rows.map((e) => ({
         ...e,
         total_amount: round2(parseFloat(e.total_amount) || 0),
+        website_amount: round2(parseFloat(e.website_amount) || 0),
+        manual_amount: round2(parseFloat(e.manual_amount) || 0),
       })),
     });
   } catch (e) {
@@ -215,7 +217,7 @@ router.get('/reports/monthly-leaderboard', requireRoles('admin'), async (req, re
               COALESCE(SUM(r.total_amount) FILTER (WHERE NOT (${WEBSITE_CHANNEL_SQL})), 0)::float AS manual_amount
        FROM reservations r
        JOIN staff_users su ON su.id = r.sales_person_id
-       WHERE r.status <> 'cancelled'
+       WHERE ${ACTIVE_STAY_SQL}
          AND su.role = ANY($3::text[])
          AND (r.created_at AT TIME ZONE 'Africa/Cairo')::date >= $1::date
          AND (r.created_at AT TIME ZONE 'Africa/Cairo')::date <= $2::date
@@ -270,7 +272,7 @@ router.get('/reports/monthly-leaderboard', requireRoles('admin'), async (req, re
 /** GET /reports/by-unit */
 router.get('/reports/by-unit', requireRoles('admin'), async (req, res, next) => {
   try {
-    const { sql: dateSql, params } = dateFilters(req);
+    const { sql: dateSql, params } = reportFilters(req);
     const { rows } = await query(
       `SELECT
          r.id, r.nights, r.total_amount, r.utilities_amount,
@@ -285,7 +287,7 @@ router.get('/reports/by-unit', requireRoles('admin'), async (req, res, next) => 
          u.commission_tenant_pct
        FROM reservations r
        JOIN units u ON u.id = r.unit_id
-       WHERE r.status <> 'cancelled'
+       WHERE TRUE
          ${dateSql}`,
       params
     );
@@ -319,7 +321,7 @@ router.get('/reports/by-unit', requireRoles('admin'), async (req, res, next) => 
       u.reservation_count += 1;
       if (channelOf(r) === 'website') u.website_count += 1;
       u.total_nights += parseInt(r.nights, 10) || 0;
-      u.total_gross += fin.grossAmount;
+      u.total_gross += parseFloat(r.total_amount) || 0;
       u.total_owner_net += fin.ownerNet;
       u.total_company_commission += fin.companyCommission;
       u.total_utilities += fin.utilitiesDeduction;
@@ -344,30 +346,20 @@ router.get('/reports/by-unit', requireRoles('admin'), async (req, res, next) => 
 /** GET /reports/daily-reservations — pivot by creation date × project */
 router.get('/reports/daily-reservations', requireRoles('admin'), async (req, res, next) => {
   try {
-    const from = clampFromDate(req.query.from_date);
-    const params = [from];
-    let toSql = '';
-    if (req.query.to_date) {
-      params.push(req.query.to_date);
-      toSql = ` AND (r.created_at AT TIME ZONE 'Africa/Cairo')::date <= $${params.length}::date`;
-    }
+    const { sql: dateSql, params } = reportFilters(req);
 
     const { rows } = await query(
       `SELECT
-         (r.created_at AT TIME ZONE 'Africa/Cairo')::date AS date,
+         to_char(r.check_in, 'YYYY-MM-DD') AS date,
          COALESCE(u.project, u.compound, 'Unassigned') AS project,
          COUNT(r.id)::int AS count,
          COALESCE(SUM(r.total_amount), 0)::float AS amount,
-         COUNT(*) FILTER (
-           WHERE r.booking_id IS NOT NULL
-              OR lower(COALESCE(r.booking_source, '')) IN ('website', 'web')
-         )::int AS website_count
+         COUNT(*) FILTER (WHERE ${WEBSITE_CHANNEL_SQL})::int AS website_count
        FROM reservations r
        JOIN units u ON u.id = r.unit_id
-       WHERE r.status <> 'cancelled'
-         AND (r.created_at AT TIME ZONE 'Africa/Cairo')::date >= $1::date
-         ${toSql}
-       GROUP BY (r.created_at AT TIME ZONE 'Africa/Cairo')::date,
+       WHERE TRUE
+         ${dateSql}
+       GROUP BY r.check_in,
                 COALESCE(u.project, u.compound, 'Unassigned')
        ORDER BY date DESC, project`,
       params
@@ -398,13 +390,13 @@ router.get('/reports/daily-reservations', requireRoles('admin'), async (req, res
 /** GET /reports/export/reservations/excel */
 router.get('/reports/export/reservations/excel', requireRoles('admin'), async (req, res, next) => {
   try {
-    const { sql: dateSql, params } = dateFilters(req);
+    const { sql: dateSql, params } = reportFilters(req);
     const { rows } = await query(
       `SELECT r.id,
               r.guest_name,
               r.guest_phone,
-              r.check_in::text AS check_in,
-              r.check_out::text AS check_out,
+              to_char(r.check_in, 'YYYY-MM-DD') AS check_in,
+              to_char(r.check_out, 'YYYY-MM-DD') AS check_out,
               r.nights,
               r.total_amount,
               r.amount_paid,
@@ -417,9 +409,9 @@ router.get('/reports/export/reservations/excel', requireRoles('admin'), async (r
               COALESCE(u.project, u.compound) AS project,
               su.full_name AS sales_person
        FROM reservations r
-       LEFT JOIN units u ON u.id = r.unit_id
+       JOIN units u ON u.id = r.unit_id
        LEFT JOIN staff_users su ON su.id = r.sales_person_id
-       WHERE r.status <> 'cancelled'
+       WHERE TRUE
          ${dateSql}
        ORDER BY r.check_in DESC`,
       params
