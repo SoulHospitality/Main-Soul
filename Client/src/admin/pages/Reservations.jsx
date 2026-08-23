@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { Plus, Edit2, Eye, Ban, CreditCard, CalendarDays, Upload, Download, CheckCircle, AlertCircle, Lock, Trash2, Maximize2, X, FileText, ArrowRightLeft } from 'lucide-react';
@@ -943,6 +943,7 @@ export default function Reservations() {
   const [filterCheckInTo,    setFilterCheckInTo]    = useState('');
   const [filterCheckOutFrom, setFilterCheckOutFrom] = useState('');
   const [filterCheckOutTo,   setFilterCheckOutTo]   = useState('');
+  const [filterSalesName,    setFilterSalesName]    = useState('');
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [editId, setEditId] = useState(null);
@@ -1237,7 +1238,19 @@ export default function Reservations() {
 
   const canSeeOwnerStays = isAdmin;
 
-  
+  const salesNameOptions = useMemo(() => {
+    const names = new Set();
+    for (const u of users) {
+      const name = String(u.full_name || '').trim();
+      if (name) names.add(name);
+    }
+    for (const r of reservations) {
+      const name = String(r.sales_person_name || r.sales_label || '').trim();
+      if (name && name.toLowerCase() !== 'owner') names.add(name);
+    }
+    return [...names].sort((a, b) => a.localeCompare(b)).map((name) => ({ value: name, label: name }));
+  }, [users, reservations]);
+
   const allFiltered = reservations.filter(r => {
     if (filterProject && r.project !== filterProject) return false;
     if (filterUnit && String(r.unit_id) !== String(filterUnit)) return false;
@@ -1246,6 +1259,15 @@ export default function Reservations() {
     if (filterPayment) {
       const want = filterPayment === 'unpaid' ? 'pending' : filterPayment;
       if (r.payment_status !== want) return false;
+    }
+    if (filterSalesName) {
+      const want = filterSalesName.trim().toLowerCase();
+      const selected = users.find((u) => String(u.full_name || '').trim().toLowerCase() === want);
+      const assigned = selected && String(r.sales_person_id) === String(selected.id);
+      const names = [r.sales_person_name, r.sales_label]
+        .map((s) => String(s || '').trim().toLowerCase())
+        .filter((n) => n && n !== 'owner');
+      if (!assigned && !names.includes(want)) return false;
     }
     return true;
   });
@@ -1367,6 +1389,10 @@ export default function Reservations() {
         <SearchableSelect className="w-40" value={filterPayment} onChange={setFilterPayment}
           placeholder="All Payments"
           options={[{ value: '', label: 'All Payments' }, ...['unpaid','pending','partial','paid'].map(s => ({ value: s, label: s === 'unpaid' ? 'unpaid' : s }))]}
+        />
+        <SearchableSelect className="w-48" value={filterSalesName} onChange={setFilterSalesName}
+          placeholder="All Sales"
+          options={[{ value: '', label: 'All Sales' }, ...salesNameOptions]}
         />
         <SearchableSelect className="w-44" value={filterProject}
           onChange={v => { setFilterProject(v); setFilterUnit(''); }}
