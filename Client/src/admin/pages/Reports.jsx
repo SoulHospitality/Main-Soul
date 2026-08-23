@@ -53,9 +53,30 @@ function currentMonthIso() {
 }
 
 function monthLabel(ym) {
+  if (!ym || ym === 'all') return 'All-Time';
   const [y, m] = String(ym || '').split('-').map(Number);
   if (!y || !m) return ym;
   return new Date(y, m - 1, 1).toLocaleString('en-GB', { month: 'long', year: 'numeric' });
+}
+
+function leaderboardPeriodOptions() {
+  const start = FINANCIAL_EPOCH.slice(0, 7);
+  const [startY, startM] = start.split('-').map(Number);
+  const end = new Date();
+  end.setMonth(end.getMonth() + 12);
+  const months = [];
+  let y = startY;
+  let m = startM;
+  while (y < end.getFullYear() || (y === end.getFullYear() && m <= end.getMonth() + 1)) {
+    const value = `${y}-${String(m).padStart(2, '0')}`;
+    months.push({ value, label: monthLabel(value) });
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+  }
+  return [{ value: 'all', label: 'All-Time' }, ...months.reverse()];
 }
 
 const PODIUM_STYLES = [
@@ -491,21 +512,21 @@ export default function Reports() {
           <div className="flex items-center gap-2">
             <Trophy className="w-5 h-5 text-amber-500" />
             <div>
-              <h3 className="font-semibold text-gray-900">Monthly reservations leaderboard</h3>
+              <h3 className="font-semibold text-gray-900">Reservations leaderboard</h3>
               <p className="text-xs text-gray-500 mt-0.5">
-                Website + manual reservations team · ranked by check-in in{' '}
-                {monthLabel(leaderboardMonth)}
+                Website + manual reservations team · ranked by check-in
+                {leaderboardMonth === 'all' ? ' · All-Time' : ` in ${monthLabel(leaderboardMonth)}`}
               </p>
             </div>
           </div>
           <div>
-            <label className="label sr-only">Month</label>
-            <input
-              type="month"
-              className="input w-44"
-              min={FINANCIAL_EPOCH.slice(0, 7)}
+            <label className="label sr-only">Period</label>
+            <SearchableSelect
+              className="w-52"
               value={leaderboardMonth}
-              onChange={(e) => setLeaderboardMonth(e.target.value)}
+              onChange={setLeaderboardMonth}
+              placeholder="All-Time"
+              options={leaderboardPeriodOptions()}
             />
           </div>
         </div>
@@ -516,7 +537,9 @@ export default function Reports() {
           </div>
         ) : leaderboard.length === 0 ? (
           <div className="p-8 text-center text-gray-400 text-sm">
-            No reservations team bookings recorded for {monthLabel(leaderboardMonth)} yet.
+            {leaderboardMonth === 'all'
+              ? 'No reservations team bookings recorded yet.'
+              : `No reservations team bookings recorded for ${monthLabel(leaderboardMonth)} yet.`}
           </div>
         ) : (
           <div className="p-6 space-y-6">

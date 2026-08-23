@@ -78,6 +78,14 @@ function parseMonthParam(raw) {
   return { month: monthKey, from_date: monthStart, to_date: monthEnd };
 }
 
+function parseLeaderboardPeriod(raw) {
+  const value = String(raw || '').trim().toLowerCase();
+  if (value === 'all' || value === 'all-time') {
+    return { month: 'all', from_date: null, to_date: null };
+  }
+  return parseMonthParam(raw);
+}
+
 function mapLeaderboardRow(row, rank) {
   return {
     rank,
@@ -237,7 +245,19 @@ router.get('/reports/by-employee', requireRoles('admin'), async (req, res, next)
 /** GET /reports/monthly-leaderboard — reservations team, website + manual split */
 router.get('/reports/monthly-leaderboard', requireRoles('admin'), async (req, res, next) => {
   try {
-    const { month, from_date, to_date } = parseMonthParam(req.query.month);
+    const { month, from_date, to_date } = parseLeaderboardPeriod(req.query.month);
+    const stayParams = [];
+    let staySql = `SELECT r.sales_person_id, r.sales_label, r.total_amount, r.booking_id, r.booking_source
+         FROM reservations r
+         WHERE ${ACTIVE_STAY_SQL}`;
+    if (from_date) {
+      stayParams.push(from_date);
+      staySql += ` AND r.check_in >= $${stayParams.length}::date`;
+    }
+    if (to_date) {
+      stayParams.push(to_date);
+      staySql += ` AND r.check_in <= $${stayParams.length}::date`;
+    }
     const [{ rows: team }, { rows: stays }] = await Promise.all([
       query(
         `SELECT id, full_name, role
@@ -245,14 +265,7 @@ router.get('/reports/monthly-leaderboard', requireRoles('admin'), async (req, re
          WHERE role = ANY($1::text[])`,
         [RESERVATIONS_TEAM_ROLES]
       ),
-      query(
-        `SELECT r.sales_person_id, r.sales_label, r.total_amount, r.booking_id, r.booking_source
-         FROM reservations r
-         WHERE ${ACTIVE_STAY_SQL}
-           AND r.check_in >= $1::date
-           AND r.check_in <= $2::date`,
-        [from_date, to_date]
-      ),
+      query(staySql, stayParams),
     ]);
 
     const leaderboard = aggregateBySalesPerson(stays, team)
