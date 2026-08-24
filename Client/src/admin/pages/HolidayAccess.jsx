@@ -8,6 +8,7 @@ import EmptyState from '../components/ui/EmptyState';
 import SearchFilter from '../components/ui/SearchFilter';
 import { ROLE_LABELS } from '../utils/permissions';
 import { formatDate } from '../utils/formatters';
+import { usePermissions } from '../hooks/usePermissions';
 
 const ACCESS_LABELS = {
   auto: 'Auto (6 months)',
@@ -17,6 +18,7 @@ const ACCESS_LABELS = {
 
 export default function HolidayAccess() {
   const qc = useQueryClient();
+  const { isAdmin, user } = usePermissions();
   const [search, setSearch] = useState('');
 
   const { data: rows = [], isLoading } = useQuery({
@@ -54,6 +56,7 @@ export default function HolidayAccess() {
         <h1 className="page-title mt-1">Holidays access</h1>
         <p className="page-subtitle">
           Choose who can request holidays. Auto allows requests once the staff account is 6 months old.
+          HR cannot change their own access — an admin must do that.
         </p>
       </div>
 
@@ -77,7 +80,9 @@ export default function HolidayAccess() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((r) => (
+                {filtered.map((r) => {
+                  const isOwnRow = !isAdmin && String(user?.id) === String(r.id);
+                  return (
                   <tr key={r.id}>
                     <td>
                       <div className="font-semibold text-soul-blue">{r.full_name}</div>
@@ -92,7 +97,8 @@ export default function HolidayAccess() {
                       <select
                         className="input py-1 text-sm"
                         value={r.holiday_access || 'auto'}
-                        disabled={mutation.isPending}
+                        disabled={mutation.isPending || isOwnRow}
+                        title={isOwnRow ? 'Only an admin can change your holiday access' : undefined}
                         onChange={(e) =>
                           mutation.mutate({ id: r.id, holiday_access: e.target.value })
                         }
@@ -116,7 +122,8 @@ export default function HolidayAccess() {
                       </span>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

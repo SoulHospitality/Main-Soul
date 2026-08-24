@@ -251,14 +251,16 @@ function isReservationAgentRole(role) {
   return ['reservations_web', 'reservations_manual', 'reservations'].includes(role);
 }
 
-function StaffForm({ form, setForm, isEdit, roleOptions, isAdmin }) {
+function StaffForm({ form, setForm, isEdit, roleOptions, isAdmin, lockPayAndLeave }) {
   const showCommission = isReservationAgentRole(form.role);
   return (
     <div className="space-y-4">
       <p className="text-xs text-slate-500">
-        {isEdit
-          ? 'Salary edits by HR require admin approval before they apply.'
-          : `Creates login with the Staff ID you enter and temporary password ${TEMP_STAFF_PASSWORD}. User must change password on first login.`}
+        {lockPayAndLeave
+          ? 'Only an admin can change your salary and holiday balances.'
+          : isEdit
+            ? 'Salary edits by HR require admin approval before they apply.'
+            : `Creates login with the Staff ID you enter and temporary password ${TEMP_STAFF_PASSWORD}. User must change password on first login.`}
       </p>
       <div className="form-grid">
         <div>
@@ -314,12 +316,15 @@ function StaffForm({ form, setForm, isEdit, roleOptions, isAdmin }) {
             step="1"
             className="input"
             value={form.base_salary}
+            disabled={lockPayAndLeave}
             onChange={(e) => setForm((f) => ({ ...f, base_salary: e.target.value }))}
             placeholder="8000"
           />
-          {!isAdmin && isEdit && (
+          {lockPayAndLeave ? (
+            <p className="mt-1 text-[11px] text-amber-700">Ask an admin to update your salary.</p>
+          ) : !isAdmin && isEdit ? (
             <p className="mt-1 text-[11px] text-amber-600">Change requests go to admin for approval.</p>
-          )}
+          ) : null}
         </div>
         <div>
           <label className="label">Casual days</label>
@@ -329,6 +334,7 @@ function StaffForm({ form, setForm, isEdit, roleOptions, isAdmin }) {
             step="1"
             className="input"
             value={form.leave_casual_days}
+            disabled={lockPayAndLeave}
             onChange={(e) => setForm((f) => ({ ...f, leave_casual_days: e.target.value }))}
           />
           <p className="mt-1 text-[11px] text-slate-400">Paid casual balance. Requestable before the 11:00 shift.</p>
@@ -341,6 +347,7 @@ function StaffForm({ form, setForm, isEdit, roleOptions, isAdmin }) {
             step="1"
             className="input"
             value={form.leave_annual_days}
+            disabled={lockPayAndLeave}
             onChange={(e) => setForm((f) => ({ ...f, leave_annual_days: e.target.value }))}
           />
           <p className="mt-1 text-[11px] text-slate-400">Paid annual balance. Must be requested 7 days ahead.</p>
@@ -549,7 +556,7 @@ function OwnerDetailsView({ owner, units, loading }) {
 
 export default function Users() {
   const qc = useQueryClient();
-  const { isAdmin, role } = usePermissions();
+  const { isAdmin, role, user } = usePermissions();
   const staffRoleOptions = creatableRoles(role).filter((r) => r !== 'owner');
   const canCreateOwners = isAdmin;
 
@@ -1314,6 +1321,7 @@ export default function Users() {
               : staffRoleOptions
           }
           isAdmin={isAdmin}
+          lockPayAndLeave={!isAdmin && modal === 'edit-staff' && String(user?.id) === String(editId)}
         />
       </Modal>
 

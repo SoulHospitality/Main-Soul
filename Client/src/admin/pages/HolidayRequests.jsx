@@ -10,9 +10,11 @@ import SearchFilter from '../components/ui/SearchFilter';
 import { ROLE_LABELS } from '../utils/permissions';
 import { formatDate } from '../utils/formatters';
 import { LEAVE_TYPE_LABELS } from '../utils/hrPolicy';
+import { usePermissions } from '../hooks/usePermissions';
 
 export default function HolidayRequests() {
   const qc = useQueryClient();
+  const { isAdmin, user } = usePermissions();
   const [status, setStatus] = useState('pending');
   const [search, setSearch] = useState('');
   const [rejectRow, setRejectRow] = useState(null);
@@ -145,6 +147,9 @@ export default function HolidayRequests() {
                     </td>
                     <td>
                       {r.status === 'pending' ? (
+                        !isAdmin && String(user?.id) === String(r.staff_user_id) ? (
+                          <span className="text-[11px] text-soul-muted">Admin must review your request</span>
+                        ) : (
                         <div className="flex gap-1">
                           <button
                             type="button"
@@ -167,6 +172,7 @@ export default function HolidayRequests() {
                             Reject
                           </button>
                         </div>
+                        )
                       ) : r.reviewed_by_name ? (
                         <span className="text-[11px] text-soul-muted">{r.reviewed_by_name}</span>
                       ) : null}

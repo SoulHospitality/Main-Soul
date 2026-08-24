@@ -15,6 +15,8 @@ const {
   EARLY_LEAVE_MAX_PER_YEAR,
   canRequestHolidays,
   monthsBetween,
+  assertHrNotEditingOwnCompensation,
+  isHrActingOnSelf,
   nextPayrollPeriod,
   dateCoveredByRanges,
   parseAttendanceRows,
@@ -677,6 +679,12 @@ router.post('/hr/leave-requests/:id/review', requireRoles(...HR_ROLES), async (r
         await client.query('ROLLBACK');
         return res.status(404).json({ error: 'Pending request not found' });
       }
+      if (isHrActingOnSelf(req.user, row.staff_user_id)) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({
+          error: 'Only an admin can approve or reject your own holiday requests',
+        });
+      }
 
       if (status === 'approved' && (row.leave_type === 'casual' || row.leave_type === 'annual')) {
         const col = row.leave_type === 'casual' ? 'leave_casual_days' : 'leave_annual_days';
@@ -1012,6 +1020,7 @@ router.patch('/hr/holiday-access/:id', requireRoles(...HR_ROLES), async (req, re
       return res.status(400).json({ error: 'holiday_access must be auto, granted, or denied' });
     }
     const staff = await loadStaffForHr(Number(req.params.id));
+    assertHrNotEditingOwnCompensation(req.user, staff.id, 'holiday access');
     const { rows } = await query(
       `UPDATE staff_users SET holiday_access = $1, updated_at = now() WHERE id = $2
        RETURNING id, full_name, role, staff_code, created_at,

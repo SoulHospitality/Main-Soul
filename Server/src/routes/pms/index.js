@@ -43,6 +43,7 @@ const { normalizeProjectName } = require('../../lib/projectNames');
 const { guestsFromBedrooms } = require('../../lib/guestCapacity');
 const { logAudit } = require('../../lib/audit');
 const { calcReservationFinancials } = require('../../lib/commission');
+const { assertHrNotEditingOwnCompensation } = require('../../lib/hrRules');
 const { normalizePropertyType } = require('../../lib/propertyType');
 
 const router = express.Router();
@@ -422,6 +423,25 @@ router.patch('/users/:id', requireRoles('admin', 'hr'), async (req, res, next) =
 
     if (req.user.role === 'hr' && existing.role === 'admin') {
       return res.status(403).json({ error: 'HR cannot edit admin accounts' });
+    }
+
+    const editingSelfAsHr = req.user.role === 'hr' && String(req.user.id) === String(existing.id);
+    if (editingSelfAsHr) {
+      const salaryChanged =
+        b.base_salary != null &&
+        b.base_salary !== '' &&
+        Number(b.base_salary) !== Number(existing.base_salary);
+      const casualChanged =
+        b.leave_casual_days != null &&
+        b.leave_casual_days !== '' &&
+        parseInt(b.leave_casual_days, 10) !== Number(existing.leave_casual_days || 0);
+      const annualChanged =
+        b.leave_annual_days != null &&
+        b.leave_annual_days !== '' &&
+        parseInt(b.leave_annual_days, 10) !== Number(existing.leave_annual_days || 0);
+      if (salaryChanged || casualChanged || annualChanged) {
+        assertHrNotEditingOwnCompensation(req.user, existing.id, 'salary or holiday balances');
+      }
     }
 
     let nextRole = b.role != null ? String(b.role) : existing.role;

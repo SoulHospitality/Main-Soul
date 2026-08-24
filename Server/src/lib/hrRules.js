@@ -175,6 +175,21 @@ function canRequestHolidays({ holiday_access, created_at }, now = new Date()) {
   return monthsBetween(created_at, now) >= HOLIDAY_ACCESS_MONTHS;
 }
 
+function isHrActingOnSelf(actor, targetUserId) {
+  return actor?.role === 'hr' && targetUserId != null && String(actor.id) === String(targetUserId);
+}
+
+function assertHrNotEditingOwnCompensation(
+  actor,
+  targetUserId,
+  label = 'salary, holiday balances, or holiday access'
+) {
+  if (!isHrActingOnSelf(actor, targetUserId)) return;
+  const err = new Error(`Only an admin can change your ${label}`);
+  err.status = 403;
+  throw err;
+}
+
 function nextPayrollPeriod(isoDate) {
   const [y, m] = String(isoDate).slice(0, 10).split('-').map(Number);
   if (m === 12) return { year: y + 1, month: 1, deductionDate: `${y + 1}-01-01` };
@@ -432,6 +447,8 @@ module.exports = {
   HOLIDAY_ACCESS_MONTHS,
   monthsBetween,
   canRequestHolidays,
+  isHrActingOnSelf,
+  assertHrNotEditingOwnCompensation,
   nextPayrollPeriod,
   dateCoveredByRanges,
   parseAttendanceRows,
