@@ -306,9 +306,15 @@ function agentAccrualEntry(r, asOf) {
   });
 }
 
+const INSURANCE_REFUND_TRACKING_START = '2026-08-24';
+
 function insuranceRefundSettled(r) {
   const status = String(r?.insurance_refund_status || '').toLowerCase();
-  return ['refunded', 'partial', 'forfeited'].includes(status);
+  if (['refunded', 'partial', 'forfeited'].includes(status)) return true;
+  const held = round2(parseFloat(r?.insurance) || 0);
+  const checkOut = isoDate(r?.check_out);
+  // Ops already returned insurance before tracking started
+  return held > 0.009 && checkOut && checkOut < INSURANCE_REFUND_TRACKING_START;
 }
 
 /** Release 204000 at checkout: cash back to guest + optional damage retained as 410000. */
@@ -317,25 +323,43 @@ function insuranceRefundEntry(r) {
   const held = round2(parseFloat(r.insurance) || 0);
   if (!(held > 0.009)) return null;
 
+  const status = String(r?.insurance_refund_status || '').toLowerCase();
+  const checkOut = isoDate(r.check_out);
+  const inferredHistorical =
+    !['refunded', 'partial', 'forfeited'].includes(status) &&
+    checkOut &&
+    checkOut < INSURANCE_REFUND_TRACKING_START;
+
   const refunded = round2(parseFloat(r.insurance_refunded_amount) || 0);
   const damage = round2(parseFloat(r.insurance_damage_amount) || 0);
-  const method = r.insurance_refund_method || 'cash';
+  const method = inferredHistorical
+    ? 'historical'
+    : r.insurance_refund_method || 'cash';
   const treasury = treasuryAccountForMethod(method);
-  const date = isoDate(r.insurance_refunded_at) || isoDate(r.check_out) || todayIso();
+  const date = isoDate(r.insurance_refunded_at) || checkOut || todayIso();
+  const historical = String(method).toLowerCase() === 'historical';
+  const checkIn = isoDate(r.check_in);
+
+  // Pre-tracking settlements: clear escrow only when the stay was recognized on the books.
+  if (historical && (!checkIn || checkIn < FINANCIAL_EPOCH)) return null;
 
   const lines = [journalLine('204000', held, 0, 'Release guest insurance escrow')];
-  if (refunded > 0.009) {
-    lines.push(journalLine(treasury, 0, refunded, `Insurance refund to guest (${method})`));
-  }
-  if (damage > 0.009) {
-    lines.push(journalLine('410000', 0, damage, 'Damage retained from insurance'));
-  }
+  if (historical) {
+    lines.push(journalLine('302000', 0, held, 'Historical insurance settlement (pre-tracking)'));
+  } else {
+    if (refunded > 0.009) {
+      lines.push(journalLine(treasury, 0, refunded, `Insurance refund to guest (${method})`));
+    }
+    if (damage > 0.009) {
+      lines.push(journalLine('410000', 0, damage, 'Damage retained from insurance'));
+    }
 
-  const posted = round2(refunded + damage);
-  if (Math.abs(posted - held) > 0.05) {
-    const gap = round2(held - posted);
-    if (gap > 0.009) {
-      lines.push(journalLine('410000', 0, gap, 'Insurance escrow residual (auto)'));
+    const posted = round2(refunded + damage);
+    if (Math.abs(posted - held) > 0.05) {
+      const gap = round2(held - posted);
+      if (gap > 0.009) {
+        lines.push(journalLine('410000', 0, gap, 'Insurance escrow residual (auto)'));
+      }
     }
   }
 
@@ -349,14 +373,15 @@ function insuranceRefundEntry(r) {
       reservation_id: r.id,
       guest_name: r.guest_name,
       unit_name: r.unit_name,
-      check_out: isoDate(r.check_out),
+      check_out: checkOut,
       insurance: held,
-      refunded_amount: refunded,
-      damage_amount: damage,
+      refunded_amount: historical ? held : refunded,
+      damage_amount: historical ? 0 : damage,
       payment_method: method,
-      status: r.insurance_refund_status,
+      status: historical ? 'refunded' : r.insurance_refund_status,
+      historical,
       from_account: '204000',
-      to_account: refunded > 0.009 ? treasury : '410000',
+      to_account: historical ? '302000' : refunded > 0.009 ? treasury : '410000',
     },
   });
 }

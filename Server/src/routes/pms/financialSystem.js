@@ -1201,6 +1201,9 @@ function mapInsuranceRow(r) {
   };
 }
 
+/** Checkout on/after this date is tracked for insurance refunds; earlier stays are treated as settled. */
+const INSURANCE_REFUND_TRACKING_START = '2026-08-24';
+
 /** Insurance collected at check-in (204000); due for refund on checkout. */
 router.get('/financial-system/insurance-refunds', requireRoles('admin'), async (req, res, next) => {
   try {
@@ -1229,15 +1232,28 @@ router.get('/financial-system/insurance-refunds', requireRoles('admin'), async (
     );
 
     const mapped = rows.map(mapInsuranceRow);
+    const isPending = (r) => r.insurance_refund_status === 'pending';
+    const inTrackingWindow = (r) => r.check_out && r.check_out >= INSURANCE_REFUND_TRACKING_START;
+
     const due = mapped.filter(
-      (r) => r.insurance_refund_status === 'pending' && r.check_out && r.check_out <= today
+      (r) => isPending(r) && inTrackingWindow(r) && r.check_out <= today
     );
     const upcoming = mapped.filter(
-      (r) => r.insurance_refund_status === 'pending' && r.check_out && r.check_out > today
+      (r) => isPending(r) && inTrackingWindow(r) && r.check_out > today
     );
     const settled = mapped
-      .filter((r) => r.insurance_refund_status !== 'pending')
-      .sort((a, b) => String(b.insurance_refunded_at || '').localeCompare(String(a.insurance_refunded_at || '')));
+      .filter((r) => !isPending(r) || (r.check_out && r.check_out < INSURANCE_REFUND_TRACKING_START))
+      .map((r) =>
+        isPending(r)
+          ? {
+              ...r,
+              insurance_refund_status: 'refunded',
+              insurance_refunded_amount: r.insurance,
+              due_amount: 0,
+            }
+          : r
+      )
+      .sort((a, b) => String(b.insurance_refunded_at || b.check_out || '').localeCompare(String(a.insurance_refunded_at || a.check_out || '')));
 
     let list = due;
     if (filter === 'upcoming') list = upcoming;
@@ -1246,13 +1262,14 @@ router.get('/financial-system/insurance-refunds', requireRoles('admin'), async (
 
     const escrowBalance = round2(
       mapped
-        .filter((r) => r.insurance_refund_status === 'pending' && r.check_in && r.check_in <= today)
+        .filter((r) => isPending(r) && inTrackingWindow(r) && r.check_in && r.check_in <= today)
         .reduce((s, r) => s + r.insurance, 0)
     );
 
     res.json({
       filter,
       as_of: today,
+      tracking_start: INSURANCE_REFUND_TRACKING_START,
       account: {
         code: '204000',
         name: getAccount('204000')?.name || 'Guest Insurance Payable',
