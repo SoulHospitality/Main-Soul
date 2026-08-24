@@ -41,7 +41,7 @@ const NAV_ITEMS = [
   { path: '/admin/payroll', label: 'Payrolls', icon: Wallet, page: 'payroll' },
   { path: '/admin/payslip', label: 'Payslip', icon: Receipt, page: 'payslip' },
   { path: '/admin/deductions', label: 'Deductions', icon: MinusCircle, page: 'deductions' },
-  { path: '/admin/holiday-requests', label: 'Holiday requests', icon: Palmtree, page: 'holiday_requests', badge: 'leave_pending' },
+  { path: '/admin/holiday-requests', label: 'Holiday requests', icon: Palmtree, page: 'holiday_requests', badge: 'leave_pending', agentLabel: 'Request holiday' },
   { path: '/admin/holiday-access', label: 'Holidays access', icon: ShieldCheck, page: 'holiday_access' },
   { path: '/admin/loans', label: 'Loans', icon: Banknote, page: 'loans', badge: 'loan_pending' },
   { path: '/admin/wfh', label: 'Work from home', icon: Home, page: 'wfh', badge: 'wfh_pending' },
@@ -73,7 +73,7 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
   const theme = getRoleTheme(user?.role);
 
   const showWebsitePending = canAccess('website_bookings');
-  const showLeavePending = canAccess('holiday_requests');
+  const showLeavePending = canAccess('holiday_access');
   const showLoanPending = canAccess('payroll');
   const showWfhPending = canAccess('payroll');
   const { data: pendingBookings = [] } = useQuery({

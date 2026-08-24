@@ -25,6 +25,7 @@ const RESERVATIONS_PAGE_ACCESS = new Set([
   'calendar_sync',
   'housekeeping',
   'commissions',
+  'holiday_requests',
   'profile',
 ]);
 
@@ -33,6 +34,7 @@ const RESERVATIONS_MANUAL_PAGE_ACCESS = new Set([
   'reservations',
   'schedule',
   'calendar_sync',
+  'holiday_requests',
   'profile',
 ]);
 
@@ -209,7 +211,7 @@ export function canAccess(user, page) {
   if (!user) return false;
   if (user.role === 'admin') return true;
   if (page === 'profile' || page === 'change-password') return true;
-  if ((page === 'loans' || page === 'payslip') && user.role !== 'owner') return true;
+  if ((page === 'loans' || page === 'payslip' || page === 'holiday_requests') && user.role !== 'owner') return true;
   if (
     page === 'wfh' &&
     user.role !== 'owner' &&
