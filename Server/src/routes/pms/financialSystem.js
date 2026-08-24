@@ -1172,4 +1172,207 @@ router.post('/financial-system/bank-rec/snapshot', requireRoles('admin'), async 
   }
 });
 
+function mapInsuranceRow(r) {
+  const held = round2(parseFloat(r.insurance) || 0);
+  const refunded = round2(parseFloat(r.insurance_refunded_amount) || 0);
+  const damage = round2(parseFloat(r.insurance_damage_amount) || 0);
+  const status = String(r.insurance_refund_status || '').toLowerCase();
+  const settled = ['refunded', 'partial', 'forfeited'].includes(status);
+  return {
+    reservation_id: r.id,
+    booking_id: r.booking_id,
+    guest_name: r.guest_name,
+    guest_phone: r.guest_phone,
+    unit_id: r.unit_id,
+    unit_name: r.unit_name,
+    project: r.project,
+    status: r.status,
+    check_in: r.check_in,
+    check_out: r.check_out,
+    insurance: held,
+    insurance_refund_status: settled ? status : 'pending',
+    insurance_refunded_amount: refunded,
+    insurance_damage_amount: damage,
+    insurance_refunded_at: r.insurance_refunded_at,
+    insurance_refund_method: r.insurance_refund_method,
+    insurance_refund_notes: r.insurance_refund_notes,
+    refunded_by_name: r.refunded_by_name || null,
+    due_amount: settled ? 0 : held,
+  };
+}
+
+/** Insurance collected at check-in (204000); due for refund on checkout. */
+router.get('/financial-system/insurance-refunds', requireRoles('admin'), async (req, res, next) => {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const filter = String(req.query.filter || 'due').toLowerCase();
+    const { rows } = await query(
+      `SELECT r.id, r.booking_id, r.guest_name, r.guest_phone, r.unit_id, r.status,
+              to_char(r.check_in, 'YYYY-MM-DD') AS check_in,
+              to_char(r.check_out, 'YYYY-MM-DD') AS check_out,
+              COALESCE(r.insurance, 0)::float AS insurance,
+              r.insurance_refund_status,
+              COALESCE(r.insurance_refunded_amount, 0)::float AS insurance_refunded_amount,
+              COALESCE(r.insurance_damage_amount, 0)::float AS insurance_damage_amount,
+              r.insurance_refunded_at,
+              r.insurance_refund_method,
+              r.insurance_refund_notes,
+              COALESCE(u.unit_number, u.title, 'Unit') AS unit_name,
+              COALESCE(u.project, u.compound) AS project,
+              su.full_name AS refunded_by_name
+       FROM reservations r
+       JOIN units u ON u.id = r.unit_id
+       LEFT JOIN staff_users su ON su.id = r.insurance_refunded_by
+       WHERE COALESCE(r.insurance, 0) > 0.009
+         AND LOWER(COALESCE(r.status::text, '')) <> 'cancelled'
+       ORDER BY r.check_out ASC, r.id ASC`
+    );
+
+    const mapped = rows.map(mapInsuranceRow);
+    const due = mapped.filter(
+      (r) => r.insurance_refund_status === 'pending' && r.check_out && r.check_out <= today
+    );
+    const upcoming = mapped.filter(
+      (r) => r.insurance_refund_status === 'pending' && r.check_out && r.check_out > today
+    );
+    const settled = mapped
+      .filter((r) => r.insurance_refund_status !== 'pending')
+      .sort((a, b) => String(b.insurance_refunded_at || '').localeCompare(String(a.insurance_refunded_at || '')));
+
+    let list = due;
+    if (filter === 'upcoming') list = upcoming;
+    else if (filter === 'settled') list = settled.slice(0, 200);
+    else if (filter === 'all') list = [...due, ...upcoming, ...settled.slice(0, 100)];
+
+    const escrowBalance = round2(
+      mapped
+        .filter((r) => r.insurance_refund_status === 'pending' && r.check_in && r.check_in <= today)
+        .reduce((s, r) => s + r.insurance, 0)
+    );
+
+    res.json({
+      filter,
+      as_of: today,
+      account: {
+        code: '204000',
+        name: getAccount('204000')?.name || 'Guest Insurance Payable',
+      },
+      damage_account: {
+        code: '410000',
+        name: getAccount('410000')?.name || 'Insurance Damage Retention Revenue',
+      },
+      summary: {
+        due_count: due.length,
+        due_amount: round2(due.reduce((s, r) => s + r.insurance, 0)),
+        upcoming_count: upcoming.length,
+        upcoming_amount: round2(upcoming.reduce((s, r) => s + r.insurance, 0)),
+        settled_count: settled.length,
+        escrow_open: escrowBalance,
+      },
+      rows: list,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/financial-system/insurance-refunds/:id/settle', requireRoles('admin'), async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!id) return res.status(400).json({ error: 'Invalid reservation id' });
+
+    const { rows } = await query(
+      `SELECT id, insurance, insurance_refund_status, check_out, status
+       FROM reservations WHERE id = $1`,
+      [id]
+    );
+    const r = rows[0];
+    if (!r) return res.status(404).json({ error: 'Reservation not found' });
+
+    const held = round2(parseFloat(r.insurance) || 0);
+    if (!(held > 0.009)) {
+      return res.status(400).json({ error: 'This reservation has no insurance to refund' });
+    }
+
+    const existing = String(r.insurance_refund_status || '').toLowerCase();
+    if (['refunded', 'partial', 'forfeited'].includes(existing)) {
+      return res.status(400).json({ error: 'Insurance already settled for this stay' });
+    }
+
+    let refunded =
+      req.body.refunded_amount != null && req.body.refunded_amount !== ''
+        ? round2(parseFloat(req.body.refunded_amount))
+        : held;
+    let damage =
+      req.body.damage_amount != null && req.body.damage_amount !== ''
+        ? round2(parseFloat(req.body.damage_amount))
+        : 0;
+
+    if (!Number.isFinite(refunded) || refunded < 0 || !Number.isFinite(damage) || damage < 0) {
+      return res.status(400).json({ error: 'refunded_amount and damage_amount must be non-negative numbers' });
+    }
+    if (Math.abs(round2(refunded + damage) - held) > 0.05) {
+      return res.status(400).json({
+        error: `Refunded + damage must equal insurance held (EGP ${held.toFixed(2)})`,
+      });
+    }
+
+    const method = String(req.body.payment_method || 'cash').toLowerCase();
+    const allowedMethods = new Set(['cash', 'instapay', 'bank_transfer', 'credit_card', 'online']);
+    if (!allowedMethods.has(method)) {
+      return res.status(400).json({ error: 'Invalid payment_method' });
+    }
+
+    const refundDate = req.body.refunded_at
+      ? String(req.body.refunded_at).slice(0, 10)
+      : r.check_out
+        ? String(r.check_out).slice(0, 10)
+        : new Date().toISOString().slice(0, 10);
+
+    await assertPeriodOpen(refundDate);
+
+    let status = 'refunded';
+    if (damage > 0.009 && refunded > 0.009) status = 'partial';
+    else if (damage > 0.009 && !(refunded > 0.009)) status = 'forfeited';
+
+    const { rows: updated } = await query(
+      `UPDATE reservations SET
+         insurance_refund_status = $2,
+         insurance_refunded_amount = $3,
+         insurance_damage_amount = $4,
+         insurance_refunded_at = $5::date,
+         insurance_refund_method = $6,
+         insurance_refund_notes = $7,
+         insurance_refunded_by = $8,
+         updated_at = NOW()
+       WHERE id = $1
+       RETURNING id, insurance, insurance_refund_status, insurance_refunded_amount,
+                 insurance_damage_amount, insurance_refunded_at, insurance_refund_method,
+                 insurance_refund_notes`,
+      [
+        id,
+        status,
+        refunded,
+        damage,
+        refundDate,
+        method,
+        req.body.notes ? String(req.body.notes).slice(0, 2000) : null,
+        req.user.id,
+      ]
+    );
+
+    res.json({
+      ok: true,
+      settlement: updated[0],
+      journal_hint: {
+        debit: '204000',
+        credit_refund: refunded > 0 ? method : null,
+        credit_damage: damage > 0 ? '410000' : null,
+      },
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 module.exports = router;

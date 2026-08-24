@@ -186,7 +186,7 @@ function allocateStayCredits(r, fin, split) {
   };
 
   const unbilledCleaning = consume(extras.cleaning, '402000', 'Cleaning & turnover');
-  const unbilledInsurance = consume(extras.insurance, '204000', 'Guest security / insurance escrow');
+  const unbilledInsurance = consume(extras.insurance, '204000', 'Guest insurance escrow (refundable)');
   consume(extras.utilities, '110000', 'Guest utilities (owner recoverable)');
   const unbilledBeach = consume(extras.beach, '409000', 'Beach access fees');
 
@@ -302,6 +302,61 @@ function agentAccrualEntry(r, asOf) {
       sales_person: r.sales_person_name,
       from_account: '209000',
       to_account: '609000',
+    },
+  });
+}
+
+function insuranceRefundSettled(r) {
+  const status = String(r?.insurance_refund_status || '').toLowerCase();
+  return ['refunded', 'partial', 'forfeited'].includes(status);
+}
+
+/** Release 204000 at checkout: cash back to guest + optional damage retained as 410000. */
+function insuranceRefundEntry(r) {
+  if (!insuranceRefundSettled(r)) return null;
+  const held = round2(parseFloat(r.insurance) || 0);
+  if (!(held > 0.009)) return null;
+
+  const refunded = round2(parseFloat(r.insurance_refunded_amount) || 0);
+  const damage = round2(parseFloat(r.insurance_damage_amount) || 0);
+  const method = r.insurance_refund_method || 'cash';
+  const treasury = treasuryAccountForMethod(method);
+  const date = isoDate(r.insurance_refunded_at) || isoDate(r.check_out) || todayIso();
+
+  const lines = [journalLine('204000', held, 0, 'Release guest insurance escrow')];
+  if (refunded > 0.009) {
+    lines.push(journalLine(treasury, 0, refunded, `Insurance refund to guest (${method})`));
+  }
+  if (damage > 0.009) {
+    lines.push(journalLine('410000', 0, damage, 'Damage retained from insurance'));
+  }
+
+  const posted = round2(refunded + damage);
+  if (Math.abs(posted - held) > 0.05) {
+    const gap = round2(held - posted);
+    if (gap > 0.009) {
+      lines.push(journalLine('410000', 0, gap, 'Insurance escrow residual (auto)'));
+    }
+  }
+
+  return makeEntry({
+    id: `INS-${r.id}`,
+    date,
+    type: 'insurance_refund',
+    description: `Insurance refund — ${r.guest_name || 'Guest'} · ${r.unit_name || 'Unit'}`,
+    lines,
+    meta: {
+      reservation_id: r.id,
+      guest_name: r.guest_name,
+      unit_name: r.unit_name,
+      check_out: isoDate(r.check_out),
+      insurance: held,
+      refunded_amount: refunded,
+      damage_amount: damage,
+      payment_method: method,
+      status: r.insurance_refund_status,
+      from_account: '204000',
+      to_account: refunded > 0.009 ? treasury : '410000',
     },
   });
 }
@@ -611,6 +666,11 @@ async function loadPortalData(from, to) {
   const resParams = [from];
   let resSql = `(
       r.check_in >= $1::date
+      OR (COALESCE(r.insurance, 0) > 0.009 AND r.check_out >= $1::date)
+      OR (
+        r.insurance_refund_status IN ('refunded', 'partial', 'forfeited')
+        AND COALESCE(r.insurance_refunded_at::date, r.check_out) >= $1::date
+      )
       OR r.id IN (
         SELECT p.reservation_id FROM payments p
         WHERE COALESCE(p.payment_date, p.created_at::date) >= $1::date
@@ -621,6 +681,16 @@ async function loadPortalData(from, to) {
     resParams.push(to);
     resSql = `(
       (r.check_in >= $1::date AND r.check_in <= $2::date)
+      OR (
+        COALESCE(r.insurance, 0) > 0.009
+        AND r.check_out >= $1::date
+        AND r.check_out <= $2::date
+      )
+      OR (
+        r.insurance_refund_status IN ('refunded', 'partial', 'forfeited')
+        AND COALESCE(r.insurance_refunded_at::date, r.check_out) >= $1::date
+        AND COALESCE(r.insurance_refunded_at::date, r.check_out) <= $2::date
+      )
       OR r.id IN (
         SELECT p.reservation_id FROM payments p
         WHERE COALESCE(p.payment_date, p.created_at::date) >= $1::date
@@ -1055,6 +1125,11 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
         },
       })
     );
+  }
+
+  for (const r of data.reservations || []) {
+    const ins = insuranceRefundEntry(r);
+    if (ins && inRange(ins.date, from, to)) journal.push(ins);
   }
 
   for (const p of data.payouts || []) {

@@ -154,6 +154,7 @@ function useFinanceNav() {
     'petty-cash': 'petty',
     reports: 'reports',
     aging: 'aging',
+    insurance: 'insurance',
     close: 'close',
     gateway: 'gateway',
     bank: 'bank',
@@ -337,11 +338,32 @@ function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool
         </div>
       </button>
 
+      <button
+        type="button"
+        onClick={() => onOpenTool('insurance')}
+        className="w-full rounded-2xl border border-sky-200 bg-sky-50/70 p-5 text-left hover:border-sky-300"
+      >
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-sky-600 text-white flex items-center justify-center">
+            <Shield className="w-6 h-6" />
+          </div>
+          <div className="flex-1">
+            <p className="text-xs uppercase tracking-wider text-sky-800">Liabilities · Guest insurance 204000</p>
+            <p className="font-semibold text-soul-blue">Insurance refunds due at checkout</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Collected at check-in · refund (or keep damage) on checkout
+            </p>
+          </div>
+          <ChevronRight className="w-5 h-5 text-sky-400" />
+        </div>
+      </button>
+
       <section>
         <h2 className="text-lg font-semibold text-soul-blue mb-3">Workspace</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
             { id: 'owners', label: 'Owner payouts', icon: Users },
+            { id: 'insurance', label: 'Insurance refunds', icon: Shield },
             { id: 'trust', label: 'Owner trust', icon: Building2 },
             { id: 'reports', label: 'Month-end reports', icon: FileSpreadsheet },
             { id: 'aging', label: 'AR aging', icon: AlertCircle },
@@ -1261,6 +1283,288 @@ function AgingTool({ rangeParams: params, onOpenAccount }) {
   );
 }
 
+function InsuranceRefundsTool({ onOpenAccount }) {
+  const qc = useQueryClient();
+  const [filter, setFilter] = useState('due');
+  const [settleRow, setSettleRow] = useState(null);
+  const [refundedAmount, setRefundedAmount] = useState('');
+  const [damageAmount, setDamageAmount] = useState('0');
+  const [method, setMethod] = useState('cash');
+  const [notes, setNotes] = useState('');
+  const [refundDate, setRefundDate] = useState('');
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['financial-system-insurance', filter],
+    queryFn: () =>
+      api.get('/financial-system/insurance-refunds', { params: { filter } }).then((r) => r.data),
+  });
+
+  const settle = useMutation({
+    mutationFn: ({ id, body }) => api.post(`/financial-system/insurance-refunds/${id}/settle`, body),
+    onSuccess: () => {
+      toast.success('Insurance settled');
+      setSettleRow(null);
+      qc.invalidateQueries({ queryKey: ['financial-system-insurance'] });
+      qc.invalidateQueries({ queryKey: ['financial-system-portal'] });
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed to settle'),
+  });
+
+  function openSettle(row) {
+    const held = Number(row.insurance) || 0;
+    setSettleRow(row);
+    setRefundedAmount(String(held));
+    setDamageAmount('0');
+    setMethod('cash');
+    setNotes('');
+    setRefundDate(row.check_out || new Date().toISOString().slice(0, 10));
+  }
+
+  function onDamageChange(value) {
+    setDamageAmount(value);
+    if (!settleRow) return;
+    const held = Number(settleRow.insurance) || 0;
+    const dmg = Math.max(0, parseFloat(value) || 0);
+    setRefundedAmount(String(Math.max(0, Math.round((held - dmg) * 100) / 100)));
+  }
+
+  function onRefundChange(value) {
+    setRefundedAmount(value);
+    if (!settleRow) return;
+    const held = Number(settleRow.insurance) || 0;
+    const ref = Math.max(0, parseFloat(value) || 0);
+    setDamageAmount(String(Math.max(0, Math.round((held - ref) * 100) / 100)));
+  }
+
+  if (isLoading) return <LoadingSpinner />;
+  const summary = data?.summary || {};
+  const rows = data?.rows || [];
+  const filters = [
+    { id: 'due', label: 'Due now' },
+    { id: 'upcoming', label: 'Upcoming' },
+    { id: 'settled', label: 'Settled' },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <p className="text-sm text-gray-500 max-w-2xl">
+          Guest insurance is held on account {data?.account?.code || '204000'} at check-in and refunded on
+          checkout. Retain a damage amount to keep part of the escrow as revenue ({data?.damage_account?.code || '410000'}).
+        </p>
+        <button type="button" className="btn-secondary text-sm" onClick={() => onOpenAccount('204000')}>
+          Open 204000
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
+          <p className="text-xs text-amber-800">Due to refund</p>
+          <p className="text-xl font-bold tabular-nums mt-1">{currency(summary.due_amount)}</p>
+          <p className="text-xs text-gray-500">{summary.due_count || 0} stays</p>
+        </div>
+        <div className="rounded-2xl border border-soul-line bg-white p-4">
+          <p className="text-xs text-gray-400">Upcoming checkouts</p>
+          <p className="text-xl font-bold tabular-nums mt-1">{currency(summary.upcoming_amount)}</p>
+          <p className="text-xs text-gray-500">{summary.upcoming_count || 0} stays</p>
+        </div>
+        <div className="rounded-2xl border border-soul-line bg-white p-4">
+          <p className="text-xs text-gray-400">Open escrow (204000)</p>
+          <p className="text-xl font-bold tabular-nums mt-1">{currency(summary.escrow_open)}</p>
+          <p className="text-xs text-gray-500">Held after check-in</p>
+        </div>
+        <div className="rounded-2xl border border-soul-line bg-white p-4">
+          <p className="text-xs text-gray-400">Settled records</p>
+          <p className="text-xl font-bold tabular-nums mt-1">{summary.settled_count || 0}</p>
+          <p className="text-xs text-gray-500">Full / partial / forfeited</p>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {filters.map((f) => (
+          <button
+            key={f.id}
+            type="button"
+            onClick={() => setFilter(f.id)}
+            className={`px-3 py-1.5 rounded-full text-sm border ${
+              filter === f.id
+                ? 'bg-soul-blue text-white border-soul-blue'
+                : 'bg-white border-soul-line text-gray-700 hover:bg-soul-blue-50/40'
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="table text-sm">
+            <thead>
+              <tr>
+                <th>Guest</th>
+                <th>Unit</th>
+                <th>Check-in</th>
+                <th>Checkout</th>
+                <th className="text-right">Insurance</th>
+                <th>Status</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="text-center text-gray-400 py-8">
+                    No insurance rows in this view
+                  </td>
+                </tr>
+              ) : (
+                rows.map((r) => (
+                  <tr key={r.reservation_id}>
+                    <td>
+                      <p className="font-medium">{r.guest_name || '—'}</p>
+                      {r.guest_phone ? <p className="text-xs text-gray-400">{r.guest_phone}</p> : null}
+                    </td>
+                    <td>
+                      <p>{r.unit_name}</p>
+                      {r.project ? <p className="text-xs text-gray-400">{r.project}</p> : null}
+                    </td>
+                    <td>{formatDate(r.check_in)}</td>
+                    <td>{formatDate(r.check_out)}</td>
+                    <td className="text-right tabular-nums font-medium">{currency(r.insurance)}</td>
+                    <td className="capitalize">
+                      {r.insurance_refund_status === 'pending' ? (
+                        <span className="text-amber-700">Pending refund</span>
+                      ) : r.insurance_refund_status === 'partial' ? (
+                        <span className="text-sky-700">
+                          Partial · refunded {currency(r.insurance_refunded_amount)}
+                        </span>
+                      ) : r.insurance_refund_status === 'forfeited' ? (
+                        <span className="text-rose-700">Forfeited (damage)</span>
+                      ) : (
+                        <span className="text-emerald-700">Refunded</span>
+                      )}
+                    </td>
+                    <td className="text-right">
+                      {r.insurance_refund_status === 'pending' ? (
+                        <button
+                          type="button"
+                          className="btn-secondary text-xs py-1 px-2"
+                          onClick={() => openSettle(r)}
+                        >
+                          Settle refund
+                        </button>
+                      ) : (
+                        <span className="text-xs text-gray-400">
+                          {r.insurance_damage_amount > 0
+                            ? `Damage ${currency(r.insurance_damage_amount)}`
+                            : '—'}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <Modal
+        open={Boolean(settleRow)}
+        onClose={() => setSettleRow(null)}
+        title="Settle insurance refund"
+      >
+        {settleRow ? (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              {settleRow.guest_name} · {settleRow.unit_name} · checkout {formatDate(settleRow.check_out)}
+            </p>
+            <p className="text-sm">
+              Held insurance: <span className="font-semibold tabular-nums">{currency(settleRow.insurance)}</span>
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="label">Refund to guest (EGP)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className="input"
+                  value={refundedAmount}
+                  onChange={(e) => onRefundChange(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="label">Damage retained (EGP)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className="input"
+                  value={damageAmount}
+                  onChange={(e) => onDamageChange(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="label">Refund method</label>
+                <select className="input" value={method} onChange={(e) => setMethod(e.target.value)}>
+                  <option value="cash">Cash</option>
+                  <option value="instapay">InstaPay</option>
+                  <option value="bank_transfer">Bank transfer</option>
+                  <option value="credit_card">Card</option>
+                </select>
+              </div>
+              <div>
+                <label className="label">Refund date</label>
+                <input
+                  type="date"
+                  className="input"
+                  value={refundDate}
+                  onChange={(e) => setRefundDate(e.target.value)}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="label">Notes (optional)</label>
+              <textarea
+                className="input min-h-[80px]"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Damage description, unit inspection notes…"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button type="button" className="btn-secondary" onClick={() => setSettleRow(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={settle.isPending}
+                onClick={() =>
+                  settle.mutate({
+                    id: settleRow.reservation_id,
+                    body: {
+                      refunded_amount: parseFloat(refundedAmount) || 0,
+                      damage_amount: parseFloat(damageAmount) || 0,
+                      payment_method: method,
+                      refunded_at: refundDate,
+                      notes: notes || undefined,
+                    },
+                  })
+                }
+              >
+                Confirm settle
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+    </div>
+  );
+}
+
 function CloseTool({ toDate }) {
   const qc = useQueryClient();
   const defaultMonth = (toDate || new Date().toISOString().slice(0, 10)).slice(0, 7);
@@ -1628,6 +1932,7 @@ export default function FinancialSystem() {
     if (tool) {
       const labels = {
         owners: 'Owner payouts',
+        insurance: 'Insurance refunds',
         trust: 'Owner trust',
         manual: 'Manual entries',
         petty: 'Petty cash',
@@ -1734,6 +2039,10 @@ export default function FinancialSystem() {
         <AgingTool
           rangeParams={params}
           onOpenAccount={(c) => go({ view: 'account', code: c, group: 'assets', txn: '', tool: '' })}
+        />
+      ) : tool === 'insurance' ? (
+        <InsuranceRefundsTool
+          onOpenAccount={(c) => go({ view: 'account', code: c, group: 'liabilities', txn: '', tool: '' })}
         />
       ) : tool === 'close' ? (
         <CloseTool toDate={toDate} />
