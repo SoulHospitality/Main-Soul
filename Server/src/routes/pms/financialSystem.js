@@ -86,7 +86,7 @@ async function computeOwnerPeriodBalance(ownerId, from, to) {
   const { rows: resRows } = await query(
     `SELECT r.nights, r.price_per_night, r.total_amount, r.utilities_amount,
             r.broker_total, r.broker_amount_per_night, r.housekeeping_fees,
-            r.insurance, r.beach_access_fees, r.is_owner_reservation, r.is_hold, r.status,
+            r.insurance, r.beach_access_fees, r.is_owner_reservation, r.status,
             u.commission_mode, u.company_commission_pct,
             u.company_commission_owner_pct, u.commission_tenant_pct,
             COALESCE(u.utilities_cost, 0) AS utilities_cost
@@ -169,7 +169,7 @@ async function loadOwnerStatementData(from, to, unitId = null) {
     `SELECT r.id, r.unit_id, r.nights, r.price_per_night, r.total_amount,
             r.utilities_amount, r.broker_total, r.broker_amount_per_night,
             r.housekeeping_fees, r.insurance, r.beach_access_fees,
-            r.is_owner_reservation, r.is_hold, r.status,
+            r.is_owner_reservation, r.status,
             COALESCE(u.unit_number, u.title, 'Unit') AS unit_name,
             COALESCE(u.project, u.compound) AS project,
             u.commission_mode, u.company_commission_pct,
@@ -313,10 +313,11 @@ async function loadOwnerStatementData(from, to, unitId = null) {
         net_payout_due: round2(gross - maintenance),
       };
     })
-    .sort((a, b) =>
-      String(a.project || '').localeCompare(String(b.project || '')) ||
-      String(a.unit_name || '').localeCompare(String(b.unit_name || ''))
-    );
+    .sort((a, b) => {
+      const byProject = String(a.project || '').localeCompare(String(b.project || ''));
+      if (byProject !== 0) return byProject;
+      return String(a.unit_name || '').localeCompare(String(b.unit_name || ''));
+    });
 
   const ownerIds = new Set([
     ...ownerCredits.keys(),
