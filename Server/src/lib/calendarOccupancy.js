@@ -12,6 +12,8 @@ const EXPLICIT_HOLD_SOURCES = [
   'csv_import',
   'soul_availability_xlsx',
 ];
+/** Schedule/owner blocks stay closed on a checkout morning. iCal leftovers and unpriced nights do not. */
+const SCHEDULE_HOLD_SOURCES = new Set(['manual', 'owner', 'csv_import', 'soul_availability_xlsx']);
 
 const REQUIRED_OCCUPANCY_TABLES = [
   'unit_ical_blocks',
@@ -90,7 +92,9 @@ function mergeOccupancyByDate(rows, from, to) {
 
 /**
  * Checkout morning is open for the next arrival unless that night is already
- * occupied or closed by an explicit calendar hold (Schedule / owner / iCal).
+ * occupied by another stay, or closed by an explicit Schedule/owner hold.
+ * Leftover unpriced nights and iCal DTEND-inclusive days must not block turnover —
+ * those are why some units allowed same-day check-in and others did not.
  */
 function applyCheckoutTurnover(byDate, checkoutDates) {
   const occupiedNights = new Set(
@@ -98,14 +102,11 @@ function applyCheckoutTurnover(byDate, checkoutDates) {
       .filter(([, source]) => source === 'reservation' || source === 'booking')
       .map(([date]) => date)
   );
-  const holds = new Set(EXPLICIT_HOLD_SOURCES);
   for (const date of checkoutDates || []) {
     if (!date || occupiedNights.has(date)) continue;
     const src = byDate.get(date);
-    if (holds.has(src) || isIcalOccupancySource(src) || src === 'unpriced') continue;
-    if (!src || src === 'reservation' || src === 'booking') {
-      byDate.delete(date);
-    }
+    if (SCHEDULE_HOLD_SOURCES.has(src)) continue;
+    byDate.delete(date);
   }
   return byDate;
 }
@@ -142,6 +143,7 @@ module.exports = {
   GUEST_AVAILABILITY_MONTHS,
   IMPLICIT_STAY_SOURCES,
   EXPLICIT_HOLD_SOURCES,
+  SCHEDULE_HOLD_SOURCES,
   REQUIRED_OCCUPANCY_TABLES,
   isIcalOccupancySource,
   occupancySql,

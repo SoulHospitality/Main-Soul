@@ -16,12 +16,17 @@ export function addOneDayStr(dateStr) {
   return `${yy}-${mm}-${dd}`;
 }
 
-const HARD_TURNOVER_SOURCES = new Set(['ical', 'owner']);
+const HARD_TURNOVER_SOURCES = new Set([
+  'manual',
+  'owner',
+  'csv_import',
+  'soul_availability_xlsx',
+]);
 
 /**
  * Flatten reservation ranges + extra calendar blocks into occupied nights.
  * Checkout days are not occupied unless another stay already covers that night.
- * Stale leftover blocks on a pure checkout day are ignored (except iCal / owner holds).
+ * Stale leftover blocks on a pure checkout day are ignored (except Schedule / owner holds).
  */
 export function occupancyFromRanges(ranges = []) {
   const occupied = new Set();

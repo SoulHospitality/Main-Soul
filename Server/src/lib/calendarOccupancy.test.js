@@ -4,7 +4,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {
   GUEST_AVAILABILITY_MONTHS,
-  EXPLICIT_HOLD_SOURCES,
   REQUIRED_OCCUPANCY_TABLES,
   isIcalOccupancySource,
   occupancySql,
@@ -26,11 +25,19 @@ describe('calendar occupancy (Schedule ↔ guest)', () => {
     assert.match(sql, /ical:/);
   });
 
-  it('never drops Schedule holds on a checkout day', () => {
-    for (const source of [...EXPLICIT_HOLD_SOURCES, 'ical:airbnb', 'ical:booking']) {
+  it('never drops Schedule/owner holds on a checkout day', () => {
+    for (const source of ['manual', 'owner', 'csv_import', 'soul_availability_xlsx']) {
       const byDate = new Map([['2026-09-10', source]]);
       applyCheckoutTurnover(byDate, ['2026-09-10']);
       assert.equal(byDate.get('2026-09-10'), source, source);
+    }
+  });
+
+  it('opens checkout morning when only unpriced or iCal leftover covers that day', () => {
+    for (const source of ['unpriced', 'ical', 'ical:airbnb', 'ical:booking']) {
+      const byDate = new Map([['2026-09-10', source]]);
+      applyCheckoutTurnover(byDate, ['2026-09-10']);
+      assert.equal(byDate.has('2026-09-10'), false, source);
     }
   });
 
@@ -57,7 +64,7 @@ describe('calendar occupancy (Schedule ↔ guest)', () => {
     );
     byDate.set('2026-09-03', 'unpriced');
     applyCheckoutTurnover(byDate, ['2026-09-01', '2026-09-02']);
-    assert.deepEqual(occupancyDates(byDate), ['2026-09-01', '2026-09-02', '2026-09-03']);
+    assert.deepEqual(occupancyDates(byDate), ['2026-09-01', '2026-09-03']);
   });
 
   it('requires guest blocked dates (minus unpriced) to include every Schedule night', () => {
