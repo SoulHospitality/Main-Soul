@@ -39,7 +39,9 @@ export default function Deductions() {
     queryKey: ['users'],
     queryFn: () => api.get('/users').then((r) => r.data),
   });
-  const staffOptions = (Array.isArray(users) ? users : []).filter((u) => u.role !== 'owner');
+  const staffOptions = (Array.isArray(users) ? users : []).filter(
+    (u) => u.role !== 'owner' && u.role !== 'admin'
+  );
   const selectedStaff = staffOptions.find((u) => String(u.id) === String(form.staff_user_id));
   const rate = selectedStaff ? dailyRate(selectedStaff.base_salary) : 0;
 

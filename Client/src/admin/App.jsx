@@ -21,6 +21,8 @@ const Payrolls = lazy(() => import('./pages/Payrolls'));
 const Deductions = lazy(() => import('./pages/Deductions'));
 const HolidayRequests = lazy(() => import('./pages/HolidayRequests'));
 const HolidayAccess = lazy(() => import('./pages/HolidayAccess'));
+const JobOffers = lazy(() => import('./pages/JobOffers'));
+const Attendance = lazy(() => import('./pages/Attendance'));
 const Loans = lazy(() => import('./pages/Loans'));
 const WorkFromHome = lazy(() => import('./pages/WorkFromHome'));
 const Payslip = lazy(() => import('./pages/Payslip'));
@@ -153,6 +155,8 @@ function AppRoutes() {
       <Route path="deductions" element={<ProtectedRoute page="deductions"><Deductions /></ProtectedRoute>} />
       <Route path="holiday-requests" element={<ProtectedRoute page="holiday_requests"><HolidayRequests /></ProtectedRoute>} />
       <Route path="holiday-access" element={<ProtectedRoute page="holiday_access"><HolidayAccess /></ProtectedRoute>} />
+      <Route path="job-offers" element={<ProtectedRoute page="job_offers"><JobOffers /></ProtectedRoute>} />
+      <Route path="attendance" element={<ProtectedRoute page="attendance"><Attendance /></ProtectedRoute>} />
       <Route path="loans" element={<ProtectedRoute page="loans"><Loans /></ProtectedRoute>} />
       <Route path="wfh" element={<ProtectedRoute page="wfh"><WorkFromHome /></ProtectedRoute>} />
       <Route path="payslip" element={<ProtectedRoute page="payslip"><Payslip /></ProtectedRoute>} />

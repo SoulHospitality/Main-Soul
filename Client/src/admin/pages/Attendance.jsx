@@ -1,0 +1,377 @@
+import { useEffect, useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import toast from 'react-hot-toast';
+import api from '../api/axios';
+import Modal from '../components/ui/Modal';
+import LoadingSpinner from '../components/ui/LoadingSpinner';
+import { ROLE_LABELS } from '../utils/permissions';
+import { currency } from '../utils/formatters';
+import { computeAttendanceAmount } from '../utils/hrPolicy';
+
+const CELL_W = 36;
+const STATUS_META = {
+  on_time: { label: 'On time', className: 'bg-emerald-500 hover:bg-emerald-600' },
+  late: { label: 'Late', className: 'bg-amber-400 hover:bg-amber-500' },
+  no_show: { label: 'No show', className: 'bg-red-500 hover:bg-red-600' },
+};
+
+function currentMonthIso() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function monthLabel(ym) {
+  const [y, m] = String(ym || '').split('-').map(Number);
+  if (!y || !m) return ym;
+  return new Date(y, m - 1, 1).toLocaleString('en-GB', { month: 'long', year: 'numeric' });
+}
+
+function shiftMonth(ym, delta) {
+  const [y, m] = String(ym).split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function weekday(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-GB', { weekday: 'short' });
+}
+
+function cellKey(staffId, date) {
+  return `${staffId}|${date}`;
+}
+
+function emptyForm(staff, date, cell) {
+  return {
+    staff_user_id: staff?.id || '',
+    staff_name: staff?.full_name || '',
+    work_date: date || '',
+    status: cell?.status || 'on_time',
+    check_in: String(cell?.check_in || '').slice(0, 5),
+    check_out: String(cell?.check_out || '').slice(0, 5),
+    deduction_amount: cell ? String(cell.deduction_amount ?? 0) : '',
+    notified: !!cell?.notified,
+  };
+}
+
+export default function Attendance() {
+  const qc = useQueryClient();
+  const [month, setMonth] = useState(currentMonthIso);
+  const [form, setForm] = useState(null);
+  const [deductionTouched, setDeductionTouched] = useState(false);
+  const [tip, setTip] = useState(null);
+
+  const year = Number(month.slice(0, 4));
+  const monthNum = Number(month.slice(5, 7));
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['hr-attendance', year, monthNum],
+    queryFn: () =>
+      api.get('/hr/attendance', { params: { year, month: monthNum } }).then((r) => r.data),
+  });
+
+  const days = data?.days || [];
+  const staff = data?.staff || [];
+  const cells = data?.cells || {};
+  const today = currentMonthIso() === month
+    ? `${year}-${String(monthNum).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`
+    : '';
+
+  const saveMutation = useMutation({
+    mutationFn: (payload) => api.put('/hr/attendance', payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['hr-attendance'] });
+      qc.invalidateQueries({ queryKey: ['hr-deductions'] });
+      qc.invalidateQueries({ queryKey: ['hr-payroll'] });
+      toast.success('Attendance saved');
+      setForm(null);
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Could not save attendance'),
+  });
+
+  const selectedStaff = useMemo(
+    () => staff.find((s) => String(s.id) === String(form?.staff_user_id)),
+    [staff, form?.staff_user_id]
+  );
+
+  useEffect(() => {
+    if (!form || deductionTouched || !selectedStaff) return;
+    const amount = String(computeAttendanceAmount(selectedStaff.base_salary, form));
+    if (String(form.deduction_amount) === amount) return;
+    setForm((f) => (f ? { ...f, deduction_amount: amount } : f));
+  }, [form?.status, form?.check_in, form?.notified, selectedStaff, deductionTouched]);
+
+  function openCell(person, date) {
+    const cell = cells[cellKey(person.id, date)];
+    setDeductionTouched(false);
+    setForm(emptyForm(person, date, cell));
+    setTip(null);
+  }
+
+  function submitCell() {
+    if (!form?.status) {
+      toast.error('Choose a status');
+      return;
+    }
+    if (form.status === 'late' && !String(form.check_in || '').trim()) {
+      toast.error('Check-in time is required for a late day');
+      return;
+    }
+    saveMutation.mutate({
+      staff_user_id: form.staff_user_id,
+      work_date: form.work_date,
+      status: form.status,
+      check_in: form.check_in,
+      check_out: form.check_out,
+      deduction_amount: form.deduction_amount === '' ? null : Number(form.deduction_amount),
+      notified: form.notified,
+    });
+  }
+
+  function clearCell() {
+    saveMutation.mutate({
+      staff_user_id: form.staff_user_id,
+      work_date: form.work_date,
+      clear: true,
+    });
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="page-header mb-0">
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-soul-muted">HR</p>
+          <h1 className="page-title mt-1">Attendance</h1>
+          <p className="page-subtitle">
+            Monthly staff schedule. Hover a cell for times and deduction; click to edit.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button type="button" className="rounded-lg p-2 text-soul-muted hover:bg-slate-50" onClick={() => setMonth((m) => shiftMonth(m, -1))}>
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+          <input
+            type="month"
+            className="input w-44"
+            value={month}
+            onChange={(e) => setMonth(e.target.value || currentMonthIso())}
+          />
+          <button type="button" className="rounded-lg p-2 text-soul-muted hover:bg-slate-50" onClick={() => setMonth((m) => shiftMonth(m, 1))}>
+            <ChevronRight className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-4 text-xs text-soul-muted">
+        <span className="font-medium text-soul-blue">{monthLabel(month)}</span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-3 w-3 rounded-sm bg-emerald-500" /> On time
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-3 w-3 rounded-sm bg-amber-400" /> Late
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-3 w-3 rounded-sm bg-red-500" /> No show
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-3 w-3 rounded-sm border border-slate-200 bg-white" /> Empty
+        </span>
+      </div>
+
+      {isLoading ? (
+        <LoadingSpinner />
+      ) : (
+        <div className="card p-0 overflow-hidden">
+          <div className="overflow-auto max-h-[calc(100vh-220px)]">
+            <table className="text-xs border-collapse">
+              <thead>
+                <tr>
+                  <th className="sticky left-0 top-0 z-20 bg-white border-b border-r border-soul-line px-3 py-2 text-left min-w-[180px] shadow-[2px_0_0_#eef1f6]">
+                    Staff
+                  </th>
+                  {days.map((date) => {
+                    const isToday = date === today;
+                    const dow = weekday(date);
+                    const weekend = dow === 'Sat' || dow === 'Sun';
+                    return (
+                      <th
+                        key={date}
+                        style={{ minWidth: CELL_W, width: CELL_W }}
+                        className={`sticky top-0 z-10 border-b border-r border-slate-100 px-0 py-1 text-center ${
+                          isToday ? 'bg-soul-blue text-white' : weekend ? 'bg-amber-50 text-amber-800' : 'bg-white text-soul-muted'
+                        }`}
+                      >
+                        <div className="text-[10px] font-bold">{Number(date.slice(8))}</div>
+                        <div className="text-[8px] uppercase opacity-70">{dow}</div>
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {staff.map((person) => (
+                  <tr key={person.id} className="hover:bg-slate-50/60">
+                    <td className="sticky left-0 z-10 bg-white border-b border-r border-soul-line px-3 py-1 min-w-[180px]">
+                      <div className="font-semibold text-soul-blue truncate">{person.full_name}</div>
+                      <div className="text-[10px] text-soul-muted truncate">
+                        {ROLE_LABELS[person.role] || person.role}
+                        {person.staff_code ? ` · ${person.staff_code}` : ''}
+                      </div>
+                    </td>
+                    {days.map((date) => {
+                      const cell = cells[cellKey(person.id, date)];
+                      const meta = cell ? STATUS_META[cell.status] : null;
+                      return (
+                        <td key={date} className="border-b border-r border-slate-100 p-0.5" style={{ width: CELL_W }}>
+                          <button
+                            type="button"
+                            className={`block h-7 w-full rounded-sm ${
+                              meta ? meta.className : 'bg-slate-100 hover:bg-slate-200'
+                            }`}
+                            onClick={() => openCell(person, date)}
+                            onMouseEnter={(e) => {
+                              const box = e.currentTarget.getBoundingClientRect();
+                              setTip({
+                                x: box.left + box.width / 2,
+                                y: box.bottom + 8,
+                                person,
+                                date,
+                                cell,
+                              });
+                            }}
+                            onMouseLeave={() => setTip(null)}
+                          />
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {tip ? (
+        <div
+          className="fixed z-[80] w-56 -translate-x-1/2 rounded-xl border border-soul-line bg-white p-3 text-xs shadow-xl pointer-events-none"
+          style={{ left: tip.x, top: tip.y }}
+        >
+          <div className="font-semibold text-soul-blue">{tip.person.full_name}</div>
+          <div className="text-soul-muted">{tip.date}</div>
+          {tip.cell ? (
+            <div className="mt-2 space-y-1 text-soul-blue">
+              <div>
+                Status:{' '}
+                <span className="font-medium">{STATUS_META[tip.cell.status]?.label || tip.cell.status}</span>
+              </div>
+              <div>Check-in: {tip.cell.check_in || '—'}</div>
+              <div>Check-out: {tip.cell.check_out || '—'}</div>
+              <div>Deduction: {currency(tip.cell.deduction_amount || 0)}</div>
+            </div>
+          ) : (
+            <div className="mt-2 text-soul-muted">No attendance recorded. Click to edit.</div>
+          )}
+        </div>
+      ) : null}
+
+      <Modal
+        open={!!form}
+        onClose={() => setForm(null)}
+        title={form ? `${form.staff_name} · ${form.work_date}` : 'Attendance'}
+        footer={
+          <>
+            {cells[cellKey(form?.staff_user_id, form?.work_date)] ? (
+              <button type="button" className="btn-secondary mr-auto" onClick={clearCell} disabled={saveMutation.isPending}>
+                Clear
+              </button>
+            ) : null}
+            <button type="button" className="btn-secondary" onClick={() => setForm(null)}>
+              Cancel
+            </button>
+            <button type="button" className="btn-primary" onClick={submitCell} disabled={saveMutation.isPending}>
+              {saveMutation.isPending ? 'Saving…' : 'Save'}
+            </button>
+          </>
+        }
+      >
+        {form ? (
+          <div className="space-y-4">
+            <div>
+              <label className="label">Status</label>
+              <div className="grid grid-cols-3 gap-2">
+                {Object.entries(STATUS_META).map(([value, meta]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => {
+                      setDeductionTouched(false);
+                      setForm((f) => ({ ...f, status: value }));
+                    }}
+                    className={`rounded-xl border px-3 py-2 text-sm font-semibold ${
+                      form.status === value ? 'border-soul-blue ring-2 ring-soul-blue/20' : 'border-soul-line'
+                    }`}
+                  >
+                    <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-sm ${meta.className.split(' ')[0]}`} />
+                    {meta.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">Check-in</label>
+                <input
+                  type="time"
+                  className="input"
+                  value={form.check_in}
+                  onChange={(e) => {
+                    setDeductionTouched(false);
+                    setForm((f) => ({ ...f, check_in: e.target.value }));
+                  }}
+                />
+              </div>
+              <div>
+                <label className="label">Check-out</label>
+                <input
+                  type="time"
+                  className="input"
+                  value={form.check_out}
+                  onChange={(e) => setForm((f) => ({ ...f, check_out: e.target.value }))}
+                />
+              </div>
+            </div>
+            {form.status === 'no_show' ? (
+              <label className="flex items-center gap-2 text-sm text-soul-blue">
+                <input
+                  type="checkbox"
+                  checked={form.notified}
+                  onChange={(e) => {
+                    setDeductionTouched(false);
+                    setForm((f) => ({ ...f, notified: e.target.checked }));
+                  }}
+                />
+                Absence with notice (1× daily rate instead of 2×)
+              </label>
+            ) : null}
+            <div>
+              <label className="label">Deduction</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className="input"
+                value={form.deduction_amount}
+                onChange={(e) => {
+                  setDeductionTouched(true);
+                  setForm((f) => ({ ...f, deduction_amount: e.target.value }));
+                }}
+              />
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+    </div>
+  );
+}

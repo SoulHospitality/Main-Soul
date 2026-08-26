@@ -26,7 +26,7 @@ import EmptyState from '../components/ui/EmptyState';
 import SearchFilter from '../components/ui/SearchFilter';
 import SortTh from '../components/ui/SortTh';
 import SearchableSelect from '../components/ui/SearchableSelect';
-import { ROLE_LABELS, ROLE_COLORS, creatableRoles } from '../utils/permissions';
+import { ROLE_LABELS, ROLE_COLORS, creatableRoles, canEditStaffCompensation } from '../utils/permissions';
 import { getRoleTheme } from '../utils/roleTheme';
 import { currency, formatDate } from '../utils/formatters';
 import { TEMP_STAFF_PASSWORD } from '../utils/passwordRules';
@@ -50,6 +50,7 @@ const EMPTY_STAFF_FORM = {
   leave_casual_days: '0',
   leave_annual_days: '0',
   staff_code: '',
+  manager_id: '',
 };
 
 const EMPTY_OWNER_FORM = {
@@ -251,15 +252,29 @@ function isReservationAgentRole(role) {
   return ['reservations_web', 'reservations_manual', 'reservations'].includes(role);
 }
 
-function StaffForm({ form, setForm, isEdit, roleOptions, isAdmin, lockPayAndLeave }) {
+function StaffForm({
+  form,
+  setForm,
+  isEdit,
+  roleOptions,
+  lockPayAndLeave,
+  editingSelf,
+  applySalaryImmediately,
+  managerOptions = [],
+}) {
   const showCommission = isReservationAgentRole(form.role);
+  const lockHint = editingSelf
+    ? 'Only an admin can change your salary and holiday balances.'
+    : 'Only an HR Supervisor or admin can change salary and holiday balances.';
   return (
     <div className="space-y-4">
       <p className="text-xs text-slate-500">
         {lockPayAndLeave
-          ? 'Only an admin can change your salary and holiday balances.'
+          ? lockHint
           : isEdit
-            ? 'Salary edits by HR require admin approval before they apply.'
+            ? applySalaryImmediately
+              ? 'Salary and holiday-balance changes apply immediately.'
+              : 'Salary edits require HR Supervisor or admin approval before they apply.'
             : `Creates login with the Staff ID you enter and temporary password ${TEMP_STAFF_PASSWORD}. User must change password on first login.`}
       </p>
       <div className="form-grid">
@@ -308,6 +323,26 @@ function StaffForm({ form, setForm, isEdit, roleOptions, isAdmin, lockPayAndLeav
             options={roleOptions.map((r) => ({ value: r, label: ROLE_LABELS[r] }))}
           />
         </div>
+        {form.role !== 'admin' && form.role !== 'owner' ? (
+          <div>
+            <label className="label">Line manager</label>
+            <SearchableSelect
+              value={form.manager_id ? String(form.manager_id) : ''}
+              onChange={(v) => setForm((f) => ({ ...f, manager_id: v }))}
+              placeholder="Department default"
+              options={[
+                { value: '', label: 'Department default' },
+                ...managerOptions.map((u) => ({
+                  value: String(u.id),
+                  label: `${u.full_name} (${ROLE_LABELS[u.role] || u.role})`,
+                })),
+              ]}
+            />
+            <p className="mt-1 text-[11px] text-slate-400">
+              Must accept holiday, loan, and WFH requests (with the HR Supervisor, except for HR staff).
+            </p>
+          </div>
+        ) : null}
         <div>
           <label className="label">Base Salary (EGP) *</label>
           <input
@@ -321,9 +356,11 @@ function StaffForm({ form, setForm, isEdit, roleOptions, isAdmin, lockPayAndLeav
             placeholder="8000"
           />
           {lockPayAndLeave ? (
-            <p className="mt-1 text-[11px] text-amber-700">Ask an admin to update your salary.</p>
-          ) : !isAdmin && isEdit ? (
-            <p className="mt-1 text-[11px] text-amber-600">Change requests go to admin for approval.</p>
+            <p className="mt-1 text-[11px] text-amber-700">
+              {editingSelf
+                ? 'Ask an admin to update your salary.'
+                : 'Ask an HR Supervisor or admin to update this salary.'}
+            </p>
           ) : null}
         </div>
         <div>
@@ -556,7 +593,7 @@ function OwnerDetailsView({ owner, units, loading }) {
 
 export default function Users() {
   const qc = useQueryClient();
-  const { isAdmin, role, user } = usePermissions();
+  const { isAdmin, isHrSupervisor, role, user } = usePermissions();
   const staffRoleOptions = creatableRoles(role).filter((r) => r !== 'owner');
   const canCreateOwners = isAdmin;
 
@@ -769,6 +806,7 @@ export default function Users() {
         leave_casual_days: String(u.leave_casual_days ?? 0),
         leave_annual_days: String(u.leave_annual_days ?? 0),
         staff_code: u.staff_code || '',
+        manager_id: u.manager_id ? String(u.manager_id) : '',
       });
       setModal('edit-staff');
     }
@@ -819,6 +857,12 @@ export default function Users() {
       leave_casual_days: Number(staffForm.leave_casual_days) || 0,
       leave_annual_days: Number(staffForm.leave_annual_days) || 0,
       staff_code: String(staffForm.staff_code || '').trim(),
+      manager_id:
+        staffForm.role === 'admin' || staffForm.role === 'owner'
+          ? null
+          : staffForm.manager_id
+            ? Number(staffForm.manager_id)
+            : null,
       sales_commission_pct: isReservationAgentRole(staffForm.role)
         ? Number(staffForm.sales_commission_pct)
         : Number(staffForm.sales_commission_pct) || 0,
@@ -876,6 +920,7 @@ export default function Users() {
         'housekeeping',
         'resale',
         'hr',
+        'hr_supervisor',
       ]
     : [
         'reservations_web',
@@ -887,6 +932,7 @@ export default function Users() {
         'housekeeping',
         'resale',
         'hr',
+        'hr_supervisor',
       ];
 
   const showAddButton = isOwnersTab ? canCreateOwners : staffRoleOptions.length > 0;
@@ -1317,11 +1363,23 @@ export default function Users() {
                   'housekeeping',
                   'resale',
                   'hr',
+                  'hr_supervisor',
                 ]
               : staffRoleOptions
           }
-          isAdmin={isAdmin}
-          lockPayAndLeave={!isAdmin && modal === 'edit-staff' && String(user?.id) === String(editId)}
+          lockPayAndLeave={
+            modal === 'edit-staff' && !canEditStaffCompensation(user, editId)
+          }
+          editingSelf={
+            modal === 'edit-staff' && String(user?.id) === String(editId)
+          }
+          applySalaryImmediately={isAdmin || isHrSupervisor}
+          managerOptions={users.filter(
+            (u) =>
+              u.role !== 'owner' &&
+              u.role !== 'admin' &&
+              (!editId || String(u.id) !== String(editId))
+          )}
         />
       </Modal>
 

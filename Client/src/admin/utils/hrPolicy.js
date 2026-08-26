@@ -15,6 +15,23 @@ export const LEAVE_TYPE_LABELS = {
   day_off: 'Day off',
 };
 
+export function computeAttendanceAmount(baseSalary, { status, check_in, notified } = {}) {
+  const rate = dailyRate(baseSalary);
+  const st = String(status || '').toLowerCase();
+  if (st === 'on_time') return 0;
+  if (st === 'no_show') return Math.round((rate * (notified ? 1 : 2) + Number.EPSILON) * 100) / 100;
+  if (st !== 'late') return 0;
+  const text = String(check_in || '').trim();
+  const m = text.match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return 0;
+  const minutes = Number(m[1]) * 60 + Number(m[2]);
+  let factor = 1;
+  if (minutes <= 11 * 60 + 15) factor = 0;
+  else if (minutes <= 11 * 60 + 30) factor = 0.25;
+  else if (minutes <= 12 * 60) factor = 0.5;
+  return Math.round((rate * factor + Number.EPSILON) * 100) / 100;
+}
+
 export const DEDUCTION_TYPE_LABELS = {
   lateness: 'Lateness',
   delay: 'Lateness',

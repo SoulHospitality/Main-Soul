@@ -1,19 +1,24 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Home, Check, X } from 'lucide-react';
+import { Home } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import Modal from '../components/ui/Modal';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
 import SearchFilter from '../components/ui/SearchFilter';
-import { ROLE_LABELS, canAccess } from '../utils/permissions';
+import { ROLE_LABELS, canRequestStaffBenefits, canSeeRequestQueue } from '../utils/permissions';
 import { formatDate } from '../utils/formatters';
 import { useAuth } from '../context/AuthContext';
+import { RequestReviewActions, approvalStatusClass } from '../components/RequestReviewActions';
 
 export default function WorkFromHome() {
   const { user } = useAuth();
-  const isHr = canAccess(user, 'payroll');
+  const canQueue = canSeeRequestQueue(user);
+  const canRequest =
+    canRequestStaffBenefits(user) &&
+    user?.role !== 'operations' &&
+    user?.role !== 'operations_supervisor';
   const qc = useQueryClient();
   const [status, setStatus] = useState('pending');
   const [search, setSearch] = useState('');
@@ -22,13 +27,12 @@ export default function WorkFromHome() {
   const [form, setForm] = useState({ work_date: '', reason: '' });
 
   const { data: rows = [], isLoading } = useQuery({
-    queryKey: ['hr-wfh', status, isHr],
+    queryKey: ['hr-wfh', status],
     queryFn: () =>
       api
         .get('/hr/wfh', {
           params: {
             ...(status === 'all' ? {} : { status }),
-            ...(!isHr ? { mine: 1 } : {}),
           },
         })
         .then((r) => r.data),
@@ -51,9 +55,7 @@ export default function WorkFromHome() {
       qc.invalidateQueries({ queryKey: ['hr-wfh'] });
       qc.invalidateQueries({ queryKey: ['hr-deductions'] });
       qc.invalidateQueries({ queryKey: ['hr-payroll'] });
-      toast.success(
-        vars.status === 'approved' ? 'Approved as a half-day deduction' : 'Request rejected'
-      );
+      toast.success(vars.status === 'approved' ? 'Acceptance recorded' : 'Request rejected');
       setRejectRow(null);
       setNote('');
     },
@@ -80,10 +82,13 @@ export default function WorkFromHome() {
         <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-soul-muted">HR</p>
         <h1 className="page-title mt-1">Work from home</h1>
         <p className="page-subtitle">
-          Request a WFH day. If approved, it counts as a half day (0.5 × daily rate) on payroll.
+          {canQueue
+            ? 'WFH needs the same dual acceptance as holidays. Admins can accept or reject any request.'
+            : 'Request a WFH day. Your manager and the HR Supervisor must accept it. If approved, it counts as a half day on payroll.'}
         </p>
       </div>
 
+      {canRequest ? (
       <div className="card space-y-3">
         <h3 className="font-semibold text-soul-blue">Request a day</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -117,6 +122,7 @@ export default function WorkFromHome() {
           {createMutation.isPending ? 'Sending…' : 'Send request'}
         </button>
       </div>
+      ) : null}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <SearchFilter value={search} onChange={setSearch} placeholder="Search requests…" />
@@ -142,7 +148,7 @@ export default function WorkFromHome() {
                   <th>Date</th>
                   <th>Note</th>
                   <th>Status</th>
-                  {isHr ? <th /> : null}
+                  <th />
                 </tr>
               </thead>
               <tbody>
@@ -157,36 +163,22 @@ export default function WorkFromHome() {
                     </td>
                     <td className="whitespace-nowrap">{formatDate(r.work_date)}</td>
                     <td className="max-w-[16rem]"><span className="line-clamp-2">{r.reason || '—'}</span></td>
-                    <td className="capitalize">{r.status}</td>
-                    {isHr ? (
-                      <td>
-                        {r.status === 'pending' ? (
-                          <div className="flex gap-1">
-                            <button
-                              type="button"
-                              className="btn-secondary text-xs px-2 py-1 text-emerald-700"
-                              onClick={() => reviewMutation.mutate({ id: r.id, status: 'approved' })}
-                            >
-                              <Check className="h-3.5 w-3.5" />
-                              Accept
-                            </button>
-                            <button
-                              type="button"
-                              className="btn-secondary text-xs px-2 py-1 text-rose-700"
-                              onClick={() => {
-                                setRejectRow(r);
-                                setNote('');
-                              }}
-                            >
-                              <X className="h-3.5 w-3.5" />
-                              Reject
-                            </button>
-                          </div>
-                        ) : r.reviewed_by_name ? (
-                          <span className="text-[11px] text-soul-muted">{r.reviewed_by_name}</span>
-                        ) : null}
-                      </td>
-                    ) : null}
+                    <td>
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${approvalStatusClass(r.status)}`}>
+                        {r.approval_label || r.status}
+                      </span>
+                    </td>
+                    <td>
+                      <RequestReviewActions
+                        row={r}
+                        pending={reviewMutation.isPending}
+                        onApprove={(row) => reviewMutation.mutate({ id: row.id, status: 'approved' })}
+                        onReject={(row) => {
+                          setRejectRow(row);
+                          setNote('');
+                        }}
+                      />
+                    </td>
                   </tr>
                 ))}
               </tbody>

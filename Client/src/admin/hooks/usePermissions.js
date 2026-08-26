@@ -39,7 +39,8 @@ export function usePermissions() {
     isWebsiteReservations,
     isManualReservations,
     isResale: user?.role === 'resale',
-    isHr: user?.role === 'hr',
+    isHr: user?.role === 'hr' || user?.role === 'hr_supervisor',
+    isHrSupervisor: user?.role === 'hr_supervisor',
     isOwner: user?.role === 'owner',
     
     isFinance: user?.role === 'admin',

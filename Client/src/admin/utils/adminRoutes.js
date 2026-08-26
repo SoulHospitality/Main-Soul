@@ -15,6 +15,7 @@ export function defaultAdminPage(role) {
     case 'resale':
       return `${A}/units-for-sale`;
     case 'hr':
+    case 'hr_supervisor':
       return `${A}/users`;
     case 'owner':
       return `${A}/owner`;

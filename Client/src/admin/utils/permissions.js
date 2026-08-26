@@ -9,6 +9,7 @@ export const ROLES = {
   HOUSEKEEPING_SUPERVISOR: 'housekeeping_supervisor',
   RESALE: 'resale',
   HR: 'hr',
+  HR_SUPERVISOR: 'hr_supervisor',
   OWNER: 'owner',
 };
 
@@ -76,6 +77,42 @@ const RESERVATIONS_WEB_PERMISSIONS = [
   'units:write',
 ];
 
+const HR_PERMISSIONS = [
+  'users:read',
+  'users:write',
+  'payroll:read',
+  'payroll:write',
+  'deductions:read',
+  'deductions:write',
+  'holiday_requests:read',
+  'holiday_requests:write',
+  'job_offers:read',
+  'job_offers:write',
+  'attendance:read',
+  'attendance:write',
+  'loans:read',
+  'loans:write',
+  'wfh:read',
+  'wfh:write',
+  'notifications:read',
+  'documents:read',
+  'documents:write',
+];
+
+const HR_PAGE_ACCESS = new Set([
+  'users',
+  'payroll',
+  'deductions',
+  'holiday_requests',
+  'holiday_access',
+  'job_offers',
+  'attendance',
+  'loans',
+  'wfh',
+  'payslip',
+  'profile',
+]);
+
 const PERMISSIONS = {
   admin: ['*'],
   reservations: RESERVATIONS_WEB_PERMISSIONS,
@@ -91,24 +128,8 @@ const PERMISSIONS = {
     'documents:read',
     'documents:write',
   ],
-  hr: [
-    'users:read',
-    'users:write',
-    'payroll:read',
-    'payroll:write',
-    'deductions:read',
-    'deductions:write',
-    'holiday_requests:read',
-    'holiday_requests:write',
-    'holiday_access:write',
-    'loans:read',
-    'loans:write',
-    'wfh:read',
-    'wfh:write',
-    'notifications:read',
-    'documents:read',
-    'documents:write',
-  ],
+  hr: HR_PERMISSIONS,
+  hr_supervisor: [...HR_PERMISSIONS, 'holiday_access:write'],
   operations: [
     'ops_checkins:read',
     'ops_checkins:write',
@@ -168,17 +189,8 @@ const PAGE_ACCESS = {
   housekeeping: new Set(['housekeeping', 'hk_today', 'profile']),
   housekeeping_supervisor: new Set(['housekeeping', 'hk_today', 'profile']),
   resale: new Set(['units_sale', 'acquisition', 'profile']),
-  hr: new Set([
-    'users',
-    'payroll',
-    'deductions',
-    'holiday_requests',
-    'holiday_access',
-    'loans',
-    'wfh',
-    'payslip',
-    'profile',
-  ]),
+  hr: HR_PAGE_ACCESS,
+  hr_supervisor: HR_PAGE_ACCESS,
   owner: new Set([
     'owner',
     'owner_reservations',
@@ -215,6 +227,7 @@ export function canAccess(user, page) {
   if (
     page === 'wfh' &&
     user.role !== 'owner' &&
+    user.role !== 'admin' &&
     user.role !== 'operations' &&
     user.role !== 'operations_supervisor'
   ) {
@@ -287,7 +300,34 @@ export function canAccessReports(user) {
 }
 
 export function canManageUsers(user) {
-  return !!user && (user.role === 'admin' || user.role === 'hr');
+  return !!user && (user.role === 'admin' || isHrTeamRole(user.role));
+}
+
+export function isHrTeamRole(role) {
+  return role === 'hr' || role === 'hr_supervisor';
+}
+
+export function canSeeRequestQueue(user) {
+  return (
+    !!user &&
+    (user.role === 'admin' ||
+      isHrTeamRole(user.role) ||
+      user.role === 'operations_supervisor' ||
+      user.role === 'housekeeping_supervisor')
+  );
+}
+
+export function canRequestStaffBenefits(user) {
+  return !!user && user.role !== 'admin' && user.role !== 'owner';
+}
+
+export function canEditStaffCompensation(user, targetUserId) {
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  if (user.role === 'hr_supervisor') {
+    return targetUserId == null || String(user.id) !== String(targetUserId);
+  }
+  return false;
 }
 
 export function isOwnerRole(user) {
@@ -302,10 +342,11 @@ export function creatableRoles(actorRole) {
     'housekeeping_supervisor',
     'housekeeping',
   ];
+  const hrCreatable = [...reservationRoles, ...fieldRoles, 'resale', 'hr'];
   if (actorRole === 'admin') {
-    return ['admin', ...reservationRoles, ...fieldRoles, 'resale', 'hr', 'owner'];
+    return ['admin', ...reservationRoles, ...fieldRoles, 'resale', 'hr', 'hr_supervisor', 'owner'];
   }
-  if (actorRole === 'hr') return [...reservationRoles, ...fieldRoles, 'resale', 'hr'];
+  if (isHrTeamRole(actorRole)) return hrCreatable;
   return [];
 }
 
@@ -320,6 +361,7 @@ export const ROLE_LABELS = {
   housekeeping_supervisor: 'Housekeeping Supervisor',
   resale: 'Resale',
   hr: 'HR',
+  hr_supervisor: 'HR Supervisor',
   owner: 'Owner',
 };
 
@@ -334,6 +376,7 @@ export const ROLE_COLORS = {
   housekeeping_supervisor: 'badge-soul-slate',
   resale: 'badge-soul-teal',
   hr: 'badge-soul-slate',
+  hr_supervisor: 'badge-soul-slate',
   owner: 'badge-soul-teal',
 };
 
@@ -348,5 +391,6 @@ export const PMS_LABELS = {
   housekeeping_supervisor: 'Housekeeping Supervisor PMS',
   resale: 'Resale PMS',
   hr: 'HR PMS',
+  hr_supervisor: 'HR Supervisor PMS',
   owner: 'Owner Portal',
 };

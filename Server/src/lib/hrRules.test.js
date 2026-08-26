@@ -19,6 +19,14 @@ const {
   parseHtmlExcelTables,
   splitSalaryAdjustments,
   hasOfficeAttendance,
+  canRequestStaffBenefits,
+  staffRequestPolicy,
+  eligibleReviewSlots,
+  applyRequestReview,
+  canEditStaffCompensation,
+  appliesSalaryImmediately,
+  isHrActingOnSelf,
+  assertCanEditStaffCompensation,
 } = require('./hrRules');
 
 describe('HR daily-rate deductions and leave rules', () => {
@@ -127,6 +135,7 @@ describe('HR daily-rate deductions and leave rules', () => {
     const jun2 = daily.find((r) => r.date === '2026-06-02');
     assert.equal(may31.staff_code, '15');
     assert.equal(may31.arrival_time, '12:03');
+    assert.equal(may31.check_out, '18:00');
     assert.equal(may31.absent, false);
     assert.equal(jun2.arrival_time, '09:49');
   });
@@ -164,6 +173,101 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.equal(hasOfficeAttendance('operations'), false);
     assert.equal(hasOfficeAttendance('operations_supervisor'), false);
     assert.equal(hasOfficeAttendance('hr'), true);
+    assert.equal(hasOfficeAttendance('hr_supervisor'), true);
     assert.equal(hasOfficeAttendance('reservations_web'), true);
+    assert.equal(hasOfficeAttendance('admin'), false);
+    assert.equal(canRequestStaffBenefits('admin'), false);
+    assert.equal(canRequestStaffBenefits('reservations_web'), true);
+  });
+
+  it('requires manager + HR Supervisor for agents, HR Supervisor only for HR, manager only for HR Supervisor', () => {
+    assert.deepEqual(staffRequestPolicy('reservations_web'), {
+      canRequest: true,
+      needsManager: true,
+      needsHr: true,
+    });
+    assert.deepEqual(staffRequestPolicy('hr'), {
+      canRequest: true,
+      needsManager: false,
+      needsHr: true,
+    });
+    assert.deepEqual(staffRequestPolicy('hr_supervisor'), {
+      canRequest: true,
+      needsManager: true,
+      needsHr: false,
+    });
+    assert.equal(staffRequestPolicy('admin').canRequest, false);
+
+    const agentReq = {
+      status: 'pending',
+      staff_user_id: 20,
+      role: 'reservations_web',
+      manager_id: 5,
+      needs_manager_approval: true,
+      needs_hr_approval: true,
+    };
+    const agent = { id: 20, role: 'reservations_web', manager_id: 5 };
+    const manager = { id: 5, role: 'reservations_manual' };
+    const hrSuper = { id: 8, role: 'hr_supervisor' };
+    const admin = { id: 1, role: 'admin' };
+
+    assert.deepEqual(eligibleReviewSlots(manager, agentReq, agent), ['manager']);
+    assert.deepEqual(eligibleReviewSlots(hrSuper, agentReq, agent), ['hr']);
+    assert.deepEqual(eligibleReviewSlots(admin, agentReq, agent), ['admin']);
+    assert.deepEqual(eligibleReviewSlots({ id: 20, role: 'reservations_web' }, agentReq, agent), []);
+
+    const afterManager = applyRequestReview(agentReq, manager, 'approved', agent);
+    assert.equal(afterManager.status, 'pending');
+    assert.equal(afterManager.manager_reviewed_by, 5);
+    const afterHr = applyRequestReview(
+      { ...agentReq, manager_reviewed_by: 5 },
+      hrSuper,
+      'approved',
+      agent
+    );
+    assert.equal(afterHr.status, 'approved');
+    assert.equal(afterHr.finalized, true);
+
+    const hrReq = {
+      status: 'pending',
+      staff_user_id: 11,
+      role: 'hr',
+      needs_manager_approval: false,
+      needs_hr_approval: true,
+    };
+    const hrStaff = { id: 11, role: 'hr' };
+    assert.deepEqual(eligibleReviewSlots(hrSuper, hrReq, hrStaff), ['hr']);
+    assert.equal(applyRequestReview(hrReq, hrSuper, 'approved', hrStaff).status, 'approved');
+
+    const superReq = {
+      status: 'pending',
+      staff_user_id: 8,
+      role: 'hr_supervisor',
+      needs_manager_approval: true,
+      needs_hr_approval: false,
+    };
+    const superStaff = { id: 8, role: 'hr_supervisor' };
+    assert.deepEqual(eligibleReviewSlots(hrSuper, superReq, superStaff), []);
+    assert.deepEqual(eligibleReviewSlots(admin, superReq, superStaff), ['admin']);
+    assert.equal(applyRequestReview(superReq, admin, 'approved', superStaff).status, 'approved');
+  });
+
+  it('lets HR Supervisor change pay and leave for others, but not themselves', () => {
+    const supervisor = { id: 10, role: 'hr_supervisor' };
+    const hr = { id: 11, role: 'hr' };
+    const admin = { id: 1, role: 'admin' };
+    assert.equal(canEditStaffCompensation(admin, 10), true);
+    assert.equal(canEditStaffCompensation(supervisor, 11), true);
+    assert.equal(canEditStaffCompensation(supervisor, 10), false);
+    assert.equal(canEditStaffCompensation(hr, 12), false);
+    assert.equal(canEditStaffCompensation(hr, 11), false);
+    assert.equal(appliesSalaryImmediately(admin), true);
+    assert.equal(appliesSalaryImmediately(supervisor), true);
+    assert.equal(appliesSalaryImmediately(hr), false);
+    assert.equal(isHrActingOnSelf(supervisor, 10), true);
+    assert.equal(isHrActingOnSelf(hr, 11), true);
+    assert.doesNotThrow(() => assertCanEditStaffCompensation(supervisor, 11));
+    assert.throws(() => assertCanEditStaffCompensation(supervisor, 10), /Only an admin/);
+    assert.throws(() => assertCanEditStaffCompensation(hr, 12), /HR Supervisor or admin/);
   });
 });

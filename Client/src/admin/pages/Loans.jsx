@@ -1,19 +1,21 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Banknote, Check, X } from 'lucide-react';
+import { Banknote } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import Modal from '../components/ui/Modal';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
 import SearchFilter from '../components/ui/SearchFilter';
-import { ROLE_LABELS, canAccess } from '../utils/permissions';
+import { ROLE_LABELS, canRequestStaffBenefits, canSeeRequestQueue } from '../utils/permissions';
 import { currency, formatDate } from '../utils/formatters';
 import { useAuth } from '../context/AuthContext';
+import { RequestReviewActions, approvalStatusClass } from '../components/RequestReviewActions';
 
 export default function Loans() {
   const { user } = useAuth();
-  const isHr = canAccess(user, 'payroll');
+  const canQueue = canSeeRequestQueue(user);
+  const canRequest = canRequestStaffBenefits(user);
   const qc = useQueryClient();
   const [status, setStatus] = useState('pending');
   const [search, setSearch] = useState('');
@@ -22,13 +24,12 @@ export default function Loans() {
   const [form, setForm] = useState({ amount: '', reason: '' });
 
   const { data: rows = [], isLoading } = useQuery({
-    queryKey: ['hr-loans', status, isHr],
+    queryKey: ['hr-loans', status],
     queryFn: () =>
       api
         .get('/hr/loans', {
           params: {
             ...(status === 'all' ? {} : { status }),
-            ...(!isHr ? { mine: 1 } : {}),
           },
         })
         .then((r) => r.data),
@@ -38,7 +39,7 @@ export default function Loans() {
     mutationFn: (payload) => api.post('/hr/loans', payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['hr-loans'] });
-      toast.success('Loan request sent to HR');
+      toast.success('Loan request sent');
       setForm({ amount: '', reason: '' });
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Could not submit loan'),
@@ -51,7 +52,7 @@ export default function Loans() {
       qc.invalidateQueries({ queryKey: ['hr-loans'] });
       qc.invalidateQueries({ queryKey: ['hr-deductions'] });
       qc.invalidateQueries({ queryKey: ['hr-payroll'] });
-      toast.success(vars.status === 'approved' ? 'Loan approved — deducted next month' : 'Loan rejected');
+      toast.success(vars.status === 'approved' ? 'Acceptance recorded' : 'Loan rejected');
       setRejectRow(null);
       setNote('');
     },
@@ -78,10 +79,13 @@ export default function Loans() {
         <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-soul-muted">HR</p>
         <h1 className="page-title mt-1">Loans</h1>
         <p className="page-subtitle">
-          Request a loan. If HR accepts it, the amount is deducted from next month’s salary.
+          {canQueue
+            ? 'Loans need the same dual acceptance as holidays. Admins can accept or reject any request.'
+            : 'Request a loan. Your manager and the HR Supervisor must accept it before it is deducted from next month’s salary.'}
         </p>
       </div>
 
+      {canRequest ? (
       <div className="card space-y-3">
         <h3 className="font-semibold text-soul-blue">Request a loan</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -118,6 +122,7 @@ export default function Loans() {
           {createMutation.isPending ? 'Sending…' : 'Send request'}
         </button>
       </div>
+      ) : null}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <SearchFilter value={search} onChange={setSearch} placeholder="Search loans…" />
@@ -144,7 +149,7 @@ export default function Loans() {
                   <th>Reason</th>
                   <th>Payroll month</th>
                   <th>Status</th>
-                  {isHr ? <th /> : null}
+                  <th />
                 </tr>
               </thead>
               <tbody>
@@ -164,36 +169,22 @@ export default function Loans() {
                         ? `${r.deduct_year}-${String(r.deduct_month).padStart(2, '0')}`
                         : '—'}
                     </td>
-                    <td className="capitalize">{r.status}</td>
-                    {isHr ? (
-                      <td>
-                        {r.status === 'pending' ? (
-                          <div className="flex gap-1">
-                            <button
-                              type="button"
-                              className="btn-secondary text-xs px-2 py-1 text-emerald-700"
-                              onClick={() => reviewMutation.mutate({ id: r.id, status: 'approved' })}
-                            >
-                              <Check className="h-3.5 w-3.5" />
-                              Accept
-                            </button>
-                            <button
-                              type="button"
-                              className="btn-secondary text-xs px-2 py-1 text-rose-700"
-                              onClick={() => {
-                                setRejectRow(r);
-                                setNote('');
-                              }}
-                            >
-                              <X className="h-3.5 w-3.5" />
-                              Reject
-                            </button>
-                          </div>
-                        ) : r.reviewed_by_name ? (
-                          <span className="text-[11px] text-soul-muted">{r.reviewed_by_name}</span>
-                        ) : null}
-                      </td>
-                    ) : null}
+                    <td>
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${approvalStatusClass(r.status)}`}>
+                        {r.approval_label || r.status}
+                      </span>
+                    </td>
+                    <td>
+                      <RequestReviewActions
+                        row={r}
+                        pending={reviewMutation.isPending}
+                        onApprove={(row) => reviewMutation.mutate({ id: row.id, status: 'approved' })}
+                        onReject={(row) => {
+                          setRejectRow(row);
+                          setNote('');
+                        }}
+                      />
+                    </td>
                   </tr>
                 ))}
               </tbody>

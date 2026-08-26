@@ -175,8 +175,43 @@ function canRequestHolidays({ holiday_access, created_at }, now = new Date()) {
   return monthsBetween(created_at, now) >= HOLIDAY_ACCESS_MONTHS;
 }
 
+const HR_TEAM_ROLES = ['hr', 'hr_supervisor'];
+
+function isHrTeamRole(role) {
+  return HR_TEAM_ROLES.includes(String(role || ''));
+}
+
 function isHrActingOnSelf(actor, targetUserId) {
-  return actor?.role === 'hr' && targetUserId != null && String(actor.id) === String(targetUserId);
+  return isHrTeamRole(actor?.role) && targetUserId != null && String(actor.id) === String(targetUserId);
+}
+
+function appliesSalaryImmediately(actor) {
+  return actor?.role === 'admin' || actor?.role === 'hr_supervisor';
+}
+
+function canEditStaffCompensation(actor, targetUserId) {
+  if (!actor) return false;
+  if (actor.role === 'admin') return true;
+  if (actor.role === 'hr_supervisor') {
+    return targetUserId == null || String(actor.id) !== String(targetUserId);
+  }
+  return false;
+}
+
+function assertCanEditStaffCompensation(
+  actor,
+  targetUserId,
+  label = 'salary, holiday balances, or holiday access'
+) {
+  if (canEditStaffCompensation(actor, targetUserId)) return;
+  if (isHrActingOnSelf(actor, targetUserId)) {
+    const err = new Error(`Only an admin can change your ${label}`);
+    err.status = 403;
+    throw err;
+  }
+  const err = new Error(`Only an HR Supervisor or admin can change ${label}`);
+  err.status = 403;
+  throw err;
 }
 
 function assertHrNotEditingOwnCompensation(
@@ -355,6 +390,7 @@ function collapsePunchAttendance(rows) {
       name: row.name,
       date: row.date,
       checkIns: [],
+      checkOuts: [],
       punches: [],
       notified: false,
       explicitAbsent: false,
@@ -365,6 +401,7 @@ function collapsePunchAttendance(rows) {
     if (row.arrival_time) {
       cur.punches.push(row.arrival_time);
       if (row.is_check_in) cur.checkIns.push(row.arrival_time);
+      if (row.is_check_out) cur.checkOuts.push(row.arrival_time);
     }
     byKey.set(key, cur);
   }
@@ -373,13 +410,23 @@ function collapsePunchAttendance(rows) {
       times
         .slice()
         .sort((a, b) => (timeToMinutes(a) ?? 0) - (timeToMinutes(b) ?? 0))[0] || null;
+    const pickLatest = (times) =>
+      times
+        .slice()
+        .sort((a, b) => (timeToMinutes(b) ?? 0) - (timeToMinutes(a) ?? 0))[0] || null;
     const arrival = pickEarliest(cur.checkIns) || pickEarliest(cur.punches);
+    let check_out = pickLatest(cur.checkOuts);
+    if (!check_out && cur.punches.length > 1) {
+      const last = pickLatest(cur.punches);
+      if (last && last !== arrival) check_out = last;
+    }
     const absent = cur.explicitAbsent && !arrival;
     return {
       staff_code: cur.staff_code,
       name: cur.name,
       date: cur.date,
       arrival_time: absent ? null : arrival,
+      check_out: absent ? null : check_out,
       notified: cur.notified,
       absent,
     };
@@ -397,10 +444,135 @@ function computeHalfDayDeduction(baseSalary) {
 }
 
 const PENALTY_CATEGORIES = ['lateness', 'absence', 'delay', 'performance', 'penalty'];
-const NO_OFFICE_ATTENDANCE_ROLES = new Set(['operations', 'operations_supervisor']);
+const NO_OFFICE_ATTENDANCE_ROLES = new Set(['admin', 'operations', 'operations_supervisor']);
+const NO_STAFF_BENEFIT_ROLES = new Set(['admin', 'owner']);
 
 function hasOfficeAttendance(role) {
   return !NO_OFFICE_ATTENDANCE_ROLES.has(String(role || ''));
+}
+
+function canRequestStaffBenefits(role) {
+  return !NO_STAFF_BENEFIT_ROLES.has(String(role || ''));
+}
+
+function staffRequestPolicy(role) {
+  const r = String(role || '');
+  if (!canRequestStaffBenefits(r)) {
+    return { canRequest: false, needsManager: false, needsHr: false };
+  }
+  if (r === 'hr') return { canRequest: true, needsManager: false, needsHr: true };
+  if (r === 'hr_supervisor') return { canRequest: true, needsManager: true, needsHr: false };
+  return { canRequest: true, needsManager: true, needsHr: true };
+}
+
+function departmentManagerRole(role) {
+  switch (String(role || '')) {
+    case 'operations':
+      return 'operations_supervisor';
+    case 'housekeeping':
+      return 'housekeeping_supervisor';
+    case 'hr':
+      return 'hr_supervisor';
+    case 'hr_supervisor':
+    case 'operations_supervisor':
+    case 'housekeeping_supervisor':
+      return 'admin';
+    default:
+      return null;
+  }
+}
+
+function isLineManager(actor, staff) {
+  if (!actor || !staff) return false;
+  if (String(actor.id) === String(staff.id)) return false;
+  if (staff.manager_id != null && String(actor.id) === String(staff.manager_id)) return true;
+  const dept = departmentManagerRole(staff.role);
+  return Boolean(dept) && actor.role === dept;
+}
+
+function canViewAllStaffRequests(actor) {
+  return actor?.role === 'admin' || isHrTeamRole(actor?.role);
+}
+
+function eligibleReviewSlots(actor, request, staff) {
+  if (!actor || !request || request.status !== 'pending') return [];
+  if (String(actor.id) === String(request.staff_user_id || staff?.id)) return [];
+  if (actor.role === 'admin') return ['admin'];
+  const slots = [];
+  const needsManager = request.needs_manager_approval !== false;
+  const needsHr = request.needs_hr_approval !== false;
+  const managerDone = Boolean(request.manager_reviewed_by);
+  const hrDone = Boolean(request.hr_reviewed_by);
+  if (needsManager && !managerDone && isLineManager(actor, staff || { id: request.staff_user_id, role: request.role, manager_id: request.manager_id })) {
+    slots.push('manager');
+  }
+  if (needsHr && !hrDone && actor.role === 'hr_supervisor') {
+    slots.push('hr');
+  }
+  return slots;
+}
+
+function applyRequestReview(request, actor, decision, staff) {
+  const status = String(decision || '').toLowerCase();
+  if (status !== 'approved' && status !== 'rejected') {
+    const err = new Error('Status must be approved or rejected');
+    err.status = 400;
+    throw err;
+  }
+  const slots = eligibleReviewSlots(actor, request, staff);
+  if (!slots.length) {
+    const err = new Error(
+      'Only the staff manager, HR Supervisor, or an admin can review this request'
+    );
+    err.status = 403;
+    throw err;
+  }
+
+  const next = {
+    manager_reviewed_by: request.manager_reviewed_by || null,
+    hr_reviewed_by: request.hr_reviewed_by || null,
+    reviewed_by: actor.id,
+    status: 'pending',
+    finalized: false,
+    slots,
+  };
+
+  if (status === 'rejected') {
+    next.status = 'rejected';
+    next.finalized = true;
+    if (slots.includes('admin') || slots.includes('manager')) next.manager_reviewed_by = actor.id;
+    if (slots.includes('admin') || slots.includes('hr')) next.hr_reviewed_by = actor.id;
+    return next;
+  }
+
+  if (slots.includes('admin')) {
+    if (request.needs_manager_approval !== false) next.manager_reviewed_by = actor.id;
+    if (request.needs_hr_approval !== false) next.hr_reviewed_by = actor.id;
+    next.status = 'approved';
+    next.finalized = true;
+    return next;
+  }
+
+  if (slots.includes('manager')) next.manager_reviewed_by = actor.id;
+  if (slots.includes('hr')) next.hr_reviewed_by = actor.id;
+
+  const managerOk = request.needs_manager_approval === false || next.manager_reviewed_by;
+  const hrOk = request.needs_hr_approval === false || next.hr_reviewed_by;
+  if (managerOk && hrOk) {
+    next.status = 'approved';
+    next.finalized = true;
+  }
+  return next;
+}
+
+function describeRequestApproval(request) {
+  if (request.status === 'approved') return 'Approved';
+  if (request.status === 'rejected') return 'Rejected';
+  const waiting = [];
+  if (request.needs_manager_approval && !request.manager_reviewed_by) waiting.push('manager');
+  if (request.needs_hr_approval && !request.hr_reviewed_by) waiting.push('HR Supervisor');
+  if (!waiting.length) return 'Pending';
+  return `Waiting for ${waiting.join(' & ')}`;
 }
 
 function isPenaltyCategory(category) {
@@ -447,7 +619,12 @@ module.exports = {
   HOLIDAY_ACCESS_MONTHS,
   monthsBetween,
   canRequestHolidays,
+  HR_TEAM_ROLES,
+  isHrTeamRole,
   isHrActingOnSelf,
+  appliesSalaryImmediately,
+  canEditStaffCompensation,
+  assertCanEditStaffCompensation,
   assertHrNotEditingOwnCompensation,
   nextPayrollPeriod,
   dateCoveredByRanges,
@@ -460,7 +637,16 @@ module.exports = {
   computeHalfDayDeduction,
   PENALTY_CATEGORIES,
   NO_OFFICE_ATTENDANCE_ROLES,
+  NO_STAFF_BENEFIT_ROLES,
   hasOfficeAttendance,
+  canRequestStaffBenefits,
+  staffRequestPolicy,
+  departmentManagerRole,
+  isLineManager,
+  canViewAllStaffRequests,
+  eligibleReviewSlots,
+  applyRequestReview,
+  describeRequestApproval,
   isPenaltyCategory,
   splitSalaryAdjustments,
 };

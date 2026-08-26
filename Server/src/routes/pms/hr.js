@@ -15,8 +15,8 @@ const {
   EARLY_LEAVE_MAX_PER_YEAR,
   canRequestHolidays,
   monthsBetween,
-  assertHrNotEditingOwnCompensation,
-  isHrActingOnSelf,
+  HR_TEAM_ROLES,
+  assertCanEditStaffCompensation,
   nextPayrollPeriod,
   dateCoveredByRanges,
   parseAttendanceRows,
@@ -27,14 +27,182 @@ const {
   roundMoney,
   splitSalaryAdjustments,
   hasOfficeAttendance,
+  canRequestStaffBenefits,
+  staffRequestPolicy,
+  canViewAllStaffRequests,
+  eligibleReviewSlots,
+  applyRequestReview,
+  describeRequestApproval,
 } = require('../../lib/hrRules');
 
 const router = express.Router();
 
-const HR_ROLES = ['admin', 'hr'];
+const HR_ROLES = ['admin', ...HR_TEAM_ROLES];
 
 function isHrActor(user) {
-  return user && (user.role === 'admin' || user.role === 'hr');
+  return user && (user.role === 'admin' || HR_TEAM_ROLES.includes(user.role));
+}
+
+function assertCanTargetBenefits(staff) {
+  if (!canRequestStaffBenefits(staff?.role)) {
+    const err = new Error('Admins do not request holidays, loans, or work-from-home days');
+    err.status = 403;
+    throw err;
+  }
+}
+
+function requestListScope(actor, { mine, alias = 'r', staffAlias = 'u' } = {}) {
+  const params = [];
+  const where = [];
+  const wantMine = mine === '1' || mine === 1 || mine === true;
+  if (wantMine || !canViewAllStaffRequests(actor)) {
+    params.push(actor.id);
+    const me = `$${params.length}`;
+    if (wantMine) {
+      where.push(`${alias}.staff_user_id = ${me}`);
+    } else {
+      const parts = [`${alias}.staff_user_id = ${me}`, `${staffAlias}.manager_id = ${me}`];
+      if (actor.role === 'operations_supervisor') parts.push(`${staffAlias}.role = 'operations'`);
+      if (actor.role === 'housekeeping_supervisor') parts.push(`${staffAlias}.role = 'housekeeping'`);
+      where.push(`(${parts.join(' OR ')})`);
+    }
+  }
+  return { params, where };
+}
+
+function presentStaffRequest(row, actor) {
+  const staff = { id: row.staff_user_id, role: row.role, manager_id: row.manager_id };
+  return {
+    ...row,
+    can_review_slots: eligibleReviewSlots(actor, row, staff),
+    approval_label: describeRequestApproval(row),
+  };
+}
+
+const REQUEST_LIST_JOINS = `
+      JOIN staff_users u ON u.id = r.staff_user_id
+      LEFT JOIN staff_users mgr ON mgr.id = u.manager_id
+      LEFT JOIN staff_users reviewer ON reviewer.id = r.reviewed_by
+      LEFT JOIN staff_users mgr_rev ON mgr_rev.id = r.manager_reviewed_by
+      LEFT JOIN staff_users hr_rev ON hr_rev.id = r.hr_reviewed_by
+`;
+
+const REQUEST_LIST_SELECT = `
+      r.*,
+      u.full_name,
+      u.role,
+      u.staff_code,
+      u.manager_id,
+      mgr.full_name AS manager_name,
+      reviewer.full_name AS reviewed_by_name,
+      mgr_rev.full_name AS manager_reviewed_by_name,
+      hr_rev.full_name AS hr_reviewed_by_name
+`;
+
+async function listStaffRequests(req, table) {
+  const status = String(req.query.status || '').toLowerCase();
+  const { params, where } = requestListScope(req.user, { mine: req.query.mine });
+  if (['pending', 'approved', 'rejected'].includes(status)) {
+    params.push(status);
+    where.push(`r.status = $${params.length}`);
+  }
+  const { rows } = await query(
+    `SELECT ${REQUEST_LIST_SELECT}
+     FROM ${table} r
+     ${REQUEST_LIST_JOINS}
+     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+     ORDER BY CASE r.status WHEN 'pending' THEN 0 ELSE 1 END, r.created_at DESC
+     LIMIT 500`,
+    params
+  );
+  return rows.map((row) => presentStaffRequest(row, req.user));
+}
+
+async function reviewStaffRequest({ table, id, actor, body, onApprove }) {
+  const status = String(body?.status || '').toLowerCase();
+  const note = body?.review_note ? String(body.review_note).slice(0, 500) : null;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: existingRows } = await client.query(
+      `SELECT r.*, u.role, u.manager_id, u.base_salary, u.full_name
+       FROM ${table} r
+       JOIN staff_users u ON u.id = r.staff_user_id
+       WHERE r.id = $1
+       FOR UPDATE OF r`,
+      [id]
+    );
+    const row = existingRows[0];
+    if (!row || row.status !== 'pending') {
+      await client.query('ROLLBACK');
+      const err = new Error('Pending request not found');
+      err.status = 404;
+      throw err;
+    }
+    const staff = {
+      id: row.staff_user_id,
+      role: row.role,
+      manager_id: row.manager_id,
+      base_salary: row.base_salary,
+      full_name: row.full_name,
+    };
+    const next = applyRequestReview(row, actor, status, staff);
+    const extra = {};
+    if (next.finalized && next.status === 'approved' && onApprove) {
+      const fromApprove = await onApprove(client, row, staff);
+      if (fromApprove && typeof fromApprove === 'object') {
+        Object.assign(extra, fromApprove);
+      }
+    }
+    const managerJustSet = next.manager_reviewed_by && !row.manager_reviewed_by;
+    const hrJustSet = next.hr_reviewed_by && !row.hr_reviewed_by;
+    const extraCols = Object.keys(extra);
+    const extraSql = extraCols.map((col, i) => `${col} = $${8 + i}`).join(', ');
+    const { rows } = await client.query(
+      `UPDATE ${table} SET
+         status = $1,
+         reviewed_by = $2,
+         reviewed_at = now(),
+         review_note = COALESCE($3, review_note),
+         manager_reviewed_by = $4,
+         manager_reviewed_at = CASE WHEN $5 THEN now() ELSE manager_reviewed_at END,
+         hr_reviewed_by = $6,
+         hr_reviewed_at = CASE WHEN $7 THEN now() ELSE hr_reviewed_at END
+         ${extraSql ? `, ${extraSql}` : ''}
+       WHERE id = $${8 + extraCols.length}
+       RETURNING *`,
+      [
+        next.status,
+        actor.id,
+        note,
+        next.manager_reviewed_by,
+        managerJustSet,
+        next.hr_reviewed_by,
+        hrJustSet,
+        ...extraCols.map((col) => extra[col]),
+        id,
+      ]
+    );
+    await client.query('COMMIT');
+    return presentStaffRequest(
+      {
+        ...rows[0],
+        role: staff.role,
+        manager_id: staff.manager_id,
+        full_name: staff.full_name,
+      },
+      actor
+    );
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      /* ignore */
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 function inclusiveDays(start, end) {
@@ -71,7 +239,7 @@ function parsePeriod(req) {
 
 async function loadStaffForHr(staffUserId) {
   const { rows } = await query(
-    `SELECT id, role, full_name, staff_code, base_salary, created_at,
+    `SELECT id, role, full_name, staff_code, base_salary, created_at, manager_id,
             COALESCE(leave_casual_days, 0)::int AS leave_casual_days,
             COALESCE(leave_annual_days, 0)::int AS leave_annual_days,
             COALESCE(holiday_access, 'auto') AS holiday_access
@@ -148,6 +316,161 @@ async function insertDeduction(db, values) {
     values
   );
   return rows[0];
+}
+
+function cellKey(staffId, date) {
+  return `${staffId}|${String(date).slice(0, 10)}`;
+}
+
+function hhMmOrNull(value) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  const m = text.match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  return `${String(m[1]).padStart(2, '0')}:${m[2]}`;
+}
+
+function mapAttendanceRow(row) {
+  if (!row) return null;
+  return {
+    staff_user_id: row.staff_user_id,
+    work_date: String(row.work_date || '').slice(0, 10),
+    status: row.status,
+    check_in: row.check_in || null,
+    check_out: row.check_out || null,
+    deduction_amount: Number(row.deduction_amount) || 0,
+    notified: !!row.notified,
+    notes: row.notes || '',
+  };
+}
+
+function cellFromDeduction(row) {
+  const category = String(row.category || '').toLowerCase();
+  const status = category === 'absence' ? 'no_show' : 'late';
+  return {
+    staff_user_id: row.staff_user_id,
+    work_date: String(row.deduction_date || '').slice(0, 10),
+    status,
+    check_in: row.arrival_time || null,
+    check_out: null,
+    deduction_amount: Number(row.amount) || 0,
+    notified: !!row.notified,
+    notes: row.reason || '',
+    from_deduction: true,
+  };
+}
+
+async function clearDayPenalties(staffId, date) {
+  await query(
+    `DELETE FROM staff_salary_deductions
+     WHERE staff_user_id = $1
+       AND deduction_date = $2::date
+       AND category IN ('lateness', 'absence')`,
+    [staffId, date]
+  );
+}
+
+async function upsertAttendanceRecord({
+  staff,
+  date,
+  status,
+  checkIn,
+  checkOut,
+  amount,
+  notified,
+  actorId,
+}) {
+  const st = String(status || '').trim();
+  if (!['on_time', 'late', 'no_show'].includes(st)) {
+    const err = new Error('Status must be on time, late, or no show');
+    err.status = 400;
+    throw err;
+  }
+  const inTime = hhMmOrNull(checkIn);
+  const outTime = hhMmOrNull(checkOut);
+  if (st === 'late' && !inTime) {
+    const err = new Error('Check-in time is required for a late day');
+    err.status = 400;
+    throw err;
+  }
+
+  let deductionAmount = amount;
+  if (deductionAmount == null || Number.isNaN(Number(deductionAmount))) {
+    if (st === 'on_time') deductionAmount = 0;
+    else if (st === 'late') {
+      deductionAmount = computeLatenessDeduction(staff.base_salary, inTime).amount;
+    } else {
+      deductionAmount = computeAbsenceDeduction(staff.base_salary, !!notified).amount;
+    }
+  }
+  deductionAmount = roundMoney(Number(deductionAmount) || 0);
+  if (deductionAmount < 0) deductionAmount = 0;
+
+  await query(
+    `INSERT INTO staff_attendance
+       (staff_user_id, work_date, status, check_in, check_out, deduction_amount, notified, created_by, updated_at)
+     VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8,now())
+     ON CONFLICT (staff_user_id, work_date) DO UPDATE SET
+       status = EXCLUDED.status,
+       check_in = EXCLUDED.check_in,
+       check_out = EXCLUDED.check_out,
+       deduction_amount = EXCLUDED.deduction_amount,
+       notified = EXCLUDED.notified,
+       created_by = EXCLUDED.created_by,
+       updated_at = now()`,
+    [staff.id, date, st, inTime, outTime, deductionAmount, st === 'no_show' ? !!notified : null, actorId || null]
+  );
+
+  await clearDayPenalties(staff.id, date);
+  if (deductionAmount > 0 && st !== 'on_time') {
+    if (st === 'late') {
+      const computed = computeLatenessDeduction(staff.base_salary, inTime);
+      await insertDeduction(null, [
+        staff.id,
+        deductionAmount,
+        `Lateness at ${inTime} (${computed.label})`,
+        date,
+        'lateness',
+        actorId || null,
+        inTime,
+        null,
+        computed.daily_rate,
+        computed.factor,
+      ]);
+    } else {
+      const computed = computeAbsenceDeduction(staff.base_salary, !!notified);
+      await insertDeduction(null, [
+        staff.id,
+        deductionAmount,
+        computed.label,
+        date,
+        'absence',
+        actorId || null,
+        null,
+        !!notified,
+        computed.daily_rate,
+        computed.factor,
+      ]);
+    }
+  }
+
+  return mapAttendanceRow({
+    staff_user_id: staff.id,
+    work_date: date,
+    status: st,
+    check_in: inTime,
+    check_out: outTime,
+    deduction_amount: deductionAmount,
+    notified: st === 'no_show' ? !!notified : false,
+  });
+}
+
+async function deleteAttendanceRecord(staffId, date) {
+  await clearDayPenalties(staffId, date);
+  await query(
+    `DELETE FROM staff_attendance WHERE staff_user_id = $1 AND work_date = $2::date`,
+    [staffId, date]
+  );
 }
 
 router.get('/hr/payroll', requireRoles(...HR_ROLES), async (req, res, next) => {
@@ -505,6 +828,9 @@ router.post('/hr/salary-deductions', requireRoles(...HR_ROLES), async (req, res,
     }
 
     const staff = await loadStaffForHr(staffUserId);
+    if (staff.role === 'admin') {
+      return res.status(403).json({ error: 'Admins do not have salary deductions' });
+    }
     let amount;
     let reason = String(b.reason || '').trim();
     let arrivalTime = null;
@@ -556,34 +882,7 @@ router.delete('/hr/salary-deductions/:id', requireRoles(...HR_ROLES), async (req
 
 router.get('/hr/leave-requests', async (req, res, next) => {
   try {
-    const status = String(req.query.status || '').toLowerCase();
-    const params = [];
-    const where = [];
-    if (req.query.mine === '1' || !isHrActor(req.user)) {
-      params.push(req.user.id);
-      where.push(`lr.staff_user_id = $${params.length}`);
-    }
-    if (['pending', 'approved', 'rejected'].includes(status)) {
-      params.push(status);
-      where.push(`lr.status = $${params.length}`);
-    }
-    const sql = `
-      SELECT lr.*,
-             u.full_name,
-             u.role,
-             u.staff_code,
-             reviewer.full_name AS reviewed_by_name
-      FROM staff_leave_requests lr
-      JOIN staff_users u ON u.id = lr.staff_user_id
-      LEFT JOIN staff_users reviewer ON reviewer.id = lr.reviewed_by
-      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-      ORDER BY
-        CASE lr.status WHEN 'pending' THEN 0 ELSE 1 END,
-        lr.created_at DESC
-      LIMIT 500
-    `;
-    const { rows } = await query(sql, params);
-    res.json(rows);
+    res.json(await listStaffRequests(req, 'staff_leave_requests'));
   } catch (e) {
     next(e);
   }
@@ -591,6 +890,9 @@ router.get('/hr/leave-requests', async (req, res, next) => {
 
 router.post('/hr/leave-requests', async (req, res, next) => {
   try {
+    if (req.user.role === 'admin') {
+      return res.status(403).json({ error: 'Admins do not request holidays' });
+    }
     const b = req.body || {};
     let leaveType = String(b.leave_type || 'casual').trim() || 'casual';
     if (leaveType === 'holiday') leaveType = 'annual';
@@ -618,6 +920,7 @@ router.post('/hr/leave-requests', async (req, res, next) => {
     }
 
     const targetStaff = await loadStaffForHr(staffUserId);
+    assertCanTargetBenefits(targetStaff);
     if (!canRequestHolidays(targetStaff)) {
       return res.status(403).json({
         error:
@@ -647,138 +950,98 @@ router.post('/hr/leave-requests', async (req, res, next) => {
       });
     }
 
+    const policy = staffRequestPolicy(targetStaff.role);
     const { rows } = await query(
       `INSERT INTO staff_leave_requests
-         (staff_user_id, leave_type, start_date, end_date, days, reason, status)
-       VALUES ($1,$2,$3::date,$4::date,$5,$6,'pending')
+         (staff_user_id, leave_type, start_date, end_date, days, reason, status,
+          needs_manager_approval, needs_hr_approval)
+       VALUES ($1,$2,$3::date,$4::date,$5,$6,'pending',$7,$8)
        RETURNING *`,
-      [staffUserId, leaveType, start, leaveType === 'early_leave' ? start : end, days, reason || null]
+      [
+        staffUserId,
+        leaveType,
+        start,
+        leaveType === 'early_leave' ? start : end,
+        days,
+        reason || null,
+        policy.needsManager,
+        policy.needsHr,
+      ]
     );
-    res.status(201).json(rows[0]);
+    res.status(201).json(
+      presentStaffRequest(
+        {
+          ...rows[0],
+          full_name: targetStaff.full_name,
+          role: targetStaff.role,
+          staff_code: targetStaff.staff_code,
+          manager_id: targetStaff.manager_id,
+        },
+        req.user
+      )
+    );
   } catch (e) {
     next(e);
   }
 });
 
-router.post('/hr/leave-requests/:id/review', requireRoles(...HR_ROLES), async (req, res, next) => {
+router.post('/hr/leave-requests/:id/review', async (req, res, next) => {
   try {
-    const status = String(req.body?.status || '').toLowerCase();
-    if (status !== 'approved' && status !== 'rejected') {
-      return res.status(400).json({ error: 'Status must be approved or rejected' });
-    }
-    const note = req.body?.review_note ? String(req.body.review_note).slice(0, 500) : null;
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      const { rows: existingRows } = await client.query(
-        `SELECT * FROM staff_leave_requests WHERE id = $1 AND status = 'pending' FOR UPDATE`,
-        [req.params.id]
-      );
-      const row = existingRows[0];
-      if (!row) {
-        await client.query('ROLLBACK');
-        return res.status(404).json({ error: 'Pending request not found' });
-      }
-      if (isHrActingOnSelf(req.user, row.staff_user_id)) {
-        await client.query('ROLLBACK');
-        return res.status(403).json({
-          error: 'Only an admin can approve or reject your own holiday requests',
-        });
-      }
-
-      if (status === 'approved' && (row.leave_type === 'casual' || row.leave_type === 'annual')) {
-        const col = row.leave_type === 'casual' ? 'leave_casual_days' : 'leave_annual_days';
-        const { rows: staffRows } = await client.query(
-          `SELECT ${col} AS balance FROM staff_users WHERE id = $1 FOR UPDATE`,
-          [row.staff_user_id]
-        );
-        const balance = Number(staffRows[0]?.balance) || 0;
-        if (balance < Number(row.days)) {
-          await client.query('ROLLBACK');
-          return res.status(400).json({
-            error: `Not enough ${row.leave_type} balance to approve (${balance} left, ${row.days} needed)`,
-          });
+    const updated = await reviewStaffRequest({
+      table: 'staff_leave_requests',
+      id: req.params.id,
+      actor: req.user,
+      body: req.body,
+      onApprove: async (client, row) => {
+        if (row.leave_type === 'casual' || row.leave_type === 'annual') {
+          const col = row.leave_type === 'casual' ? 'leave_casual_days' : 'leave_annual_days';
+          const { rows: staffRows } = await client.query(
+            `SELECT ${col} AS balance FROM staff_users WHERE id = $1 FOR UPDATE`,
+            [row.staff_user_id]
+          );
+          const balance = Number(staffRows[0]?.balance) || 0;
+          if (balance < Number(row.days)) {
+            const err = new Error(
+              `Not enough ${row.leave_type} balance to approve (${balance} left, ${row.days} needed)`
+            );
+            err.status = 400;
+            throw err;
+          }
+          await client.query(
+            `UPDATE staff_users SET ${col} = ${col} - $1, updated_at = now() WHERE id = $2`,
+            [row.days, row.staff_user_id]
+          );
         }
-        await client.query(
-          `UPDATE staff_users SET ${col} = ${col} - $1, updated_at = now() WHERE id = $2`,
-          [row.days, row.staff_user_id]
-        );
-      }
-
-      if (status === 'approved' && row.leave_type === 'early_leave') {
-        const year = String(row.start_date).slice(0, 4);
-        const { rows: usedRows } = await client.query(
-          `SELECT COALESCE(SUM(days), 0)::int AS days
-           FROM staff_leave_requests
-           WHERE staff_user_id = $1 AND leave_type = 'early_leave'
-             AND status = 'approved' AND EXTRACT(YEAR FROM start_date) = $2`,
-          [row.staff_user_id, Number(year)]
-        );
-        const used = Number(usedRows[0]?.days) || 0;
-        if (used + Number(row.days) > EARLY_LEAVE_MAX_PER_YEAR) {
-          await client.query('ROLLBACK');
-          return res.status(400).json({
-            error: `Early leave limit reached (maximum ${EARLY_LEAVE_MAX_PER_YEAR} per year)`,
-          });
+        if (row.leave_type === 'early_leave') {
+          const year = String(row.start_date).slice(0, 4);
+          const { rows: usedRows } = await client.query(
+            `SELECT COALESCE(SUM(days), 0)::int AS days
+             FROM staff_leave_requests
+             WHERE staff_user_id = $1 AND leave_type = 'early_leave'
+               AND status = 'approved' AND EXTRACT(YEAR FROM start_date) = $2`,
+            [row.staff_user_id, Number(year)]
+          );
+          const used = Number(usedRows[0]?.days) || 0;
+          if (used + Number(row.days) > EARLY_LEAVE_MAX_PER_YEAR) {
+            const err = new Error(
+              `Early leave limit reached (maximum ${EARLY_LEAVE_MAX_PER_YEAR} per year)`
+            );
+            err.status = 400;
+            throw err;
+          }
         }
-      }
-
-      const { rows } = await client.query(
-        `UPDATE staff_leave_requests SET
-           status = $1,
-           reviewed_by = $2,
-           reviewed_at = now(),
-           review_note = $3
-         WHERE id = $4
-         RETURNING *`,
-        [status, req.user.id, note, req.params.id]
-      );
-      await client.query('COMMIT');
-      res.json(rows[0]);
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+      },
+    });
+    res.json(updated);
   } catch (e) {
     next(e);
   }
 });
-
-async function listHrRequests(req, table) {
-  const status = String(req.query.status || '').toLowerCase();
-  const params = [];
-  const where = [];
-  if (req.query.mine === '1' || !isHrActor(req.user)) {
-    params.push(req.user.id);
-    where.push(`r.staff_user_id = $${params.length}`);
-  }
-  if (['pending', 'approved', 'rejected'].includes(status)) {
-    params.push(status);
-    where.push(`r.status = $${params.length}`);
-  }
-  const { rows } = await query(
-    `SELECT r.*,
-            u.full_name,
-            u.role,
-            u.staff_code,
-            reviewer.full_name AS reviewed_by_name
-     FROM ${table} r
-     JOIN staff_users u ON u.id = r.staff_user_id
-     LEFT JOIN staff_users reviewer ON reviewer.id = r.reviewed_by
-     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-     ORDER BY CASE r.status WHEN 'pending' THEN 0 ELSE 1 END, r.created_at DESC
-     LIMIT 500`,
-    params
-  );
-  return rows;
-}
 
 router.get('/hr/loans', async (req, res, next) => {
   try {
     if (req.user.role === 'owner') return res.status(403).json({ error: 'Forbidden' });
-    res.json(await listHrRequests(req, 'staff_loan_requests'));
+    res.json(await listStaffRequests(req, 'staff_loan_requests'));
   } catch (e) {
     next(e);
   }
@@ -786,6 +1049,9 @@ router.get('/hr/loans', async (req, res, next) => {
 
 router.post('/hr/loans', async (req, res, next) => {
   try {
+    if (req.user.role === 'admin') {
+      return res.status(403).json({ error: 'Admins do not request loans' });
+    }
     if (req.user.role === 'owner') return res.status(403).json({ error: 'Forbidden' });
     const amount = parseFloat(req.body?.amount);
     const reason = String(req.body?.reason || '').trim();
@@ -795,48 +1061,43 @@ router.post('/hr/loans', async (req, res, next) => {
     let staffUserId = req.user.id;
     if (isHrActor(req.user) && req.body?.staff_user_id) {
       staffUserId = Number(req.body.staff_user_id);
-      await loadStaffForHr(staffUserId);
     }
+    const target = await loadStaffForHr(staffUserId);
+    assertCanTargetBenefits(target);
+    const policy = staffRequestPolicy(target.role);
     const { rows } = await query(
-      `INSERT INTO staff_loan_requests (staff_user_id, amount, reason, status)
-       VALUES ($1,$2,$3,'pending')
+      `INSERT INTO staff_loan_requests
+         (staff_user_id, amount, reason, status, needs_manager_approval, needs_hr_approval)
+       VALUES ($1,$2,$3,'pending',$4,$5)
        RETURNING *`,
-      [staffUserId, amount, reason]
+      [staffUserId, amount, reason, policy.needsManager, policy.needsHr]
     );
-    res.status(201).json(rows[0]);
+    res.status(201).json(
+      presentStaffRequest(
+        {
+          ...rows[0],
+          full_name: target.full_name,
+          role: target.role,
+          staff_code: target.staff_code,
+          manager_id: target.manager_id,
+        },
+        req.user
+      )
+    );
   } catch (e) {
     next(e);
   }
 });
 
-router.post('/hr/loans/:id/review', requireRoles(...HR_ROLES), async (req, res, next) => {
+router.post('/hr/loans/:id/review', async (req, res, next) => {
   try {
-    const status = String(req.body?.status || '').toLowerCase();
-    if (status !== 'approved' && status !== 'rejected') {
-      return res.status(400).json({ error: 'Status must be approved or rejected' });
-    }
-    const note = req.body?.review_note ? String(req.body.review_note).slice(0, 500) : null;
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      const { rows: existingRows } = await client.query(
-        `SELECT * FROM staff_loan_requests WHERE id = $1 AND status = 'pending' FOR UPDATE`,
-        [req.params.id]
-      );
-      const row = existingRows[0];
-      if (!row) {
-        await client.query('ROLLBACK');
-        return res.status(404).json({ error: 'Pending loan not found' });
-      }
-
-      let deductYear = null;
-      let deductMonth = null;
-      let deductionId = null;
-      if (status === 'approved') {
-        const staff = await loadStaffForHr(row.staff_user_id);
+    const updated = await reviewStaffRequest({
+      table: 'staff_loan_requests',
+      id: req.params.id,
+      actor: req.user,
+      body: req.body,
+      onApprove: async (client, row, staff) => {
         const next = nextPayrollPeriod(cairoParts().date);
-        deductYear = next.year;
-        deductMonth = next.month;
         const inserted = await insertDeduction(client, [
           row.staff_user_id,
           row.amount,
@@ -849,30 +1110,14 @@ router.post('/hr/loans/:id/review', requireRoles(...HR_ROLES), async (req, res, 
           dailyRate(staff.base_salary),
           null,
         ]);
-        deductionId = inserted.id;
-      }
-
-      const { rows } = await client.query(
-        `UPDATE staff_loan_requests SET
-           status = $1,
-           reviewed_by = $2,
-           reviewed_at = now(),
-           review_note = $3,
-           deduct_year = $4,
-           deduct_month = $5,
-           deduction_id = $6
-         WHERE id = $7
-         RETURNING *`,
-        [status, req.user.id, note, deductYear, deductMonth, deductionId, req.params.id]
-      );
-      await client.query('COMMIT');
-      res.json(rows[0]);
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+        return {
+          deduct_year: next.year,
+          deduct_month: next.month,
+          deduction_id: inserted.id,
+        };
+      },
+    });
+    res.json(updated);
   } catch (e) {
     next(e);
   }
@@ -881,7 +1126,7 @@ router.post('/hr/loans/:id/review', requireRoles(...HR_ROLES), async (req, res, 
 router.get('/hr/wfh', async (req, res, next) => {
   try {
     if (req.user.role === 'owner') return res.status(403).json({ error: 'Forbidden' });
-    res.json(await listHrRequests(req, 'staff_wfh_requests'));
+    res.json(await listStaffRequests(req, 'staff_wfh_requests'));
   } catch (e) {
     next(e);
   }
@@ -889,6 +1134,9 @@ router.get('/hr/wfh', async (req, res, next) => {
 
 router.post('/hr/wfh', async (req, res, next) => {
   try {
+    if (req.user.role === 'admin') {
+      return res.status(403).json({ error: 'Admins do not request work-from-home days' });
+    }
     if (req.user.role === 'owner') return res.status(403).json({ error: 'Forbidden' });
     const workDate = String(req.body?.work_date || '').slice(0, 10);
     const reason = String(req.body?.reason || '').trim();
@@ -902,6 +1150,7 @@ router.post('/hr/wfh', async (req, res, next) => {
       staffUserId = Number(req.body.staff_user_id);
     }
     const target = await loadStaffForHr(staffUserId);
+    assertCanTargetBenefits(target);
     if (!hasOfficeAttendance(target.role)) {
       return res.status(400).json({
         error: 'Operations staff work in the field and do not use office attendance or work-from-home days',
@@ -916,41 +1165,39 @@ router.post('/hr/wfh', async (req, res, next) => {
     if (existing[0]) {
       return res.status(400).json({ error: 'A work-from-home request already exists for that day' });
     }
+    const policy = staffRequestPolicy(target.role);
     const { rows } = await query(
-      `INSERT INTO staff_wfh_requests (staff_user_id, work_date, reason, status)
-       VALUES ($1,$2::date,$3,'pending')
+      `INSERT INTO staff_wfh_requests
+         (staff_user_id, work_date, reason, status, needs_manager_approval, needs_hr_approval)
+       VALUES ($1,$2::date,$3,'pending',$4,$5)
        RETURNING *`,
-      [staffUserId, workDate, reason || null]
+      [staffUserId, workDate, reason || null, policy.needsManager, policy.needsHr]
     );
-    res.status(201).json(rows[0]);
+    res.status(201).json(
+      presentStaffRequest(
+        {
+          ...rows[0],
+          full_name: target.full_name,
+          role: target.role,
+          staff_code: target.staff_code,
+          manager_id: target.manager_id,
+        },
+        req.user
+      )
+    );
   } catch (e) {
     next(e);
   }
 });
 
-router.post('/hr/wfh/:id/review', requireRoles(...HR_ROLES), async (req, res, next) => {
+router.post('/hr/wfh/:id/review', async (req, res, next) => {
   try {
-    const status = String(req.body?.status || '').toLowerCase();
-    if (status !== 'approved' && status !== 'rejected') {
-      return res.status(400).json({ error: 'Status must be approved or rejected' });
-    }
-    const note = req.body?.review_note ? String(req.body.review_note).slice(0, 500) : null;
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      const { rows: existingRows } = await client.query(
-        `SELECT * FROM staff_wfh_requests WHERE id = $1 AND status = 'pending' FOR UPDATE`,
-        [req.params.id]
-      );
-      const row = existingRows[0];
-      if (!row) {
-        await client.query('ROLLBACK');
-        return res.status(404).json({ error: 'Pending request not found' });
-      }
-
-      let deductionId = null;
-      if (status === 'approved') {
-        const staff = await loadStaffForHr(row.staff_user_id);
+    const updated = await reviewStaffRequest({
+      table: 'staff_wfh_requests',
+      id: req.params.id,
+      actor: req.user,
+      body: req.body,
+      onApprove: async (client, row, staff) => {
         const computed = computeHalfDayDeduction(staff.base_salary);
         const inserted = await insertDeduction(client, [
           row.staff_user_id,
@@ -964,28 +1211,10 @@ router.post('/hr/wfh/:id/review', requireRoles(...HR_ROLES), async (req, res, ne
           computed.daily_rate,
           computed.days_factor,
         ]);
-        deductionId = inserted.id;
-      }
-
-      const { rows } = await client.query(
-        `UPDATE staff_wfh_requests SET
-           status = $1,
-           reviewed_by = $2,
-           reviewed_at = now(),
-           review_note = $3,
-           deduction_id = $4
-         WHERE id = $5
-         RETURNING *`,
-        [status, req.user.id, note, deductionId, req.params.id]
-      );
-      await client.query('COMMIT');
-      res.json(rows[0]);
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+        return { deduction_id: inserted.id };
+      },
+    });
+    res.json(updated);
   } catch (e) {
     next(e);
   }
@@ -997,7 +1226,7 @@ router.get('/hr/holiday-access', requireRoles(...HR_ROLES), async (req, res, nex
       `SELECT id, full_name, role, staff_code, is_active, created_at,
               COALESCE(holiday_access, 'auto') AS holiday_access
        FROM staff_users
-       WHERE role <> 'owner'
+       WHERE role NOT IN ('owner', 'admin')
        ORDER BY full_name`
     );
     const now = new Date();
@@ -1013,14 +1242,14 @@ router.get('/hr/holiday-access', requireRoles(...HR_ROLES), async (req, res, nex
   }
 });
 
-router.patch('/hr/holiday-access/:id', requireRoles(...HR_ROLES), async (req, res, next) => {
+router.patch('/hr/holiday-access/:id', requireRoles('admin', 'hr_supervisor'), async (req, res, next) => {
   try {
     const access = String(req.body?.holiday_access || '').toLowerCase();
     if (!['auto', 'granted', 'denied'].includes(access)) {
       return res.status(400).json({ error: 'holiday_access must be auto, granted, or denied' });
     }
     const staff = await loadStaffForHr(Number(req.params.id));
-    assertHrNotEditingOwnCompensation(req.user, staff.id, 'holiday access');
+    assertCanEditStaffCompensation(req.user, staff.id, 'holiday access');
     const { rows } = await query(
       `UPDATE staff_users SET holiday_access = $1, updated_at = now() WHERE id = $2
        RETURNING id, full_name, role, staff_code, created_at,
@@ -1055,6 +1284,108 @@ function loadAttendanceJson(file) {
   }
 }
 
+router.get('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) => {
+  try {
+    const { year, month, from, to } = parsePeriod(req);
+    const days = [];
+    const cursor = new Date(`${from}T00:00:00`);
+    const end = new Date(`${to}T00:00:00`);
+    while (cursor < end) {
+      const y = cursor.getFullYear();
+      const m = String(cursor.getMonth() + 1).padStart(2, '0');
+      const d = String(cursor.getDate()).padStart(2, '0');
+      days.push(`${y}-${m}-${d}`);
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    const { rows: staff } = await query(
+      `SELECT id, full_name, role, staff_code, is_active,
+              COALESCE(base_salary, 0)::float AS base_salary
+       FROM staff_users
+       WHERE role NOT IN ('owner', 'admin')
+         AND COALESCE(is_active, 1)::int = 1
+       ORDER BY full_name ASC, id ASC`
+    );
+
+    const { rows: attendanceRows } = await query(
+      `SELECT staff_user_id, work_date::text AS work_date, status, check_in, check_out,
+              deduction_amount, notified, notes
+       FROM staff_attendance
+       WHERE work_date >= $1::date AND work_date < $2::date`,
+      [from, to]
+    );
+    const { rows: deductionRows } = await query(
+      `SELECT staff_user_id, deduction_date::text AS deduction_date, category, amount,
+              arrival_time, notified, reason
+       FROM staff_salary_deductions
+       WHERE category IN ('lateness', 'absence')
+         AND deduction_date >= $1::date AND deduction_date < $2::date
+       ORDER BY id`,
+      [from, to]
+    );
+
+    const cells = {};
+    for (const row of deductionRows) {
+      cells[cellKey(row.staff_user_id, row.deduction_date)] = cellFromDeduction(row);
+    }
+    for (const row of attendanceRows) {
+      cells[cellKey(row.staff_user_id, row.work_date)] = mapAttendanceRow(row);
+    }
+
+    res.json({
+      year,
+      month,
+      from_date: from,
+      to_date: to,
+      days,
+      staff: staff.map((s) => ({
+        ...s,
+        daily_rate: dailyRate(s.base_salary),
+      })),
+      cells,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.put('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const staffUserId = Number(b.staff_user_id);
+    const date = String(b.work_date || b.date || '').slice(0, 10);
+    if (!staffUserId || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ error: 'Staff and date are required' });
+    }
+    const staff = await loadStaffForHr(staffUserId);
+    if (staff.role === 'admin') {
+      return res.status(400).json({ error: 'Admins do not use office attendance' });
+    }
+    if (b.clear === true || b.status === '' || b.status === 'clear') {
+      await deleteAttendanceRecord(staff.id, date);
+      return res.json({ ok: true, cleared: true, staff_user_id: staff.id, work_date: date });
+    }
+    const amountRaw = b.deduction_amount;
+    const amount =
+      amountRaw === '' || amountRaw == null || amountRaw === undefined
+        ? null
+        : Number(amountRaw);
+    const cell = await upsertAttendanceRecord({
+      staff,
+      date,
+      status: b.status,
+      checkIn: b.check_in,
+      checkOut: b.check_out,
+      amount,
+      notified: b.notified,
+      actorId: req.user.id,
+    });
+    res.json({ ok: true, cell });
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.post(
   '/hr/attendance/import',
   requireRoles(...HR_ROLES),
@@ -1075,7 +1406,7 @@ router.post(
       }
 
       const { rows: staffRows } = await query(
-        `SELECT id, staff_code, full_name, base_salary, role FROM staff_users WHERE role <> 'owner'`
+        `SELECT id, staff_code, full_name, base_salary, role FROM staff_users WHERE role NOT IN ('owner', 'admin')`
       );
       const byCode = new Map();
       const byName = new Map();
@@ -1138,17 +1469,6 @@ router.post(
         wfhByStaff.set(w.staff_user_id, set);
       }
 
-      const { rows: existingRows } = await query(
-        `SELECT staff_user_id, deduction_date::text AS deduction_date, category
-         FROM staff_salary_deductions
-         WHERE category IN ('lateness','absence')
-           AND deduction_date >= $1::date AND deduction_date <= $2::date`,
-        [minDate, maxDate]
-      );
-      const existing = new Set(
-        existingRows.map((d) => `${d.staff_user_id}|${d.deduction_date}|${d.category}`)
-      );
-
       const created = [];
       const skipped = [];
       const errors = [];
@@ -1183,51 +1503,32 @@ router.post(
 
         try {
           if (row.absent) {
-            const key = `${staff.id}|${row.date}|absence`;
-            if (existing.has(key)) {
-              skipped.push({ row: row.row, staff_user_id: staff.id, reason: 'duplicate' });
-              continue;
-            }
-            const computed = computeAbsenceDeduction(staff.base_salary, row.notified);
-            const inserted = await insertDeduction(null, [
-              staff.id,
-              computed.amount,
-              computed.label,
-              row.date,
-              'absence',
-              req.user.id,
-              null,
-              computed.notified,
-              computed.daily_rate,
-              computed.factor,
-            ]);
-            existing.add(key);
-            created.push(inserted);
+            const cell = await upsertAttendanceRecord({
+              staff,
+              date: row.date,
+              status: 'no_show',
+              checkIn: null,
+              checkOut: null,
+              amount: null,
+              notified: row.notified,
+              actorId: req.user.id,
+            });
+            created.push(cell);
           } else {
             const computed = computeLatenessDeduction(staff.base_salary, row.arrival_time);
+            const cell = await upsertAttendanceRecord({
+              staff,
+              date: row.date,
+              status: computed.factor <= 0 ? 'on_time' : 'late',
+              checkIn: row.arrival_time,
+              checkOut: row.check_out,
+              amount: computed.amount,
+              actorId: req.user.id,
+            });
+            created.push(cell);
             if (computed.factor <= 0) {
               skipped.push({ row: row.row, staff_user_id: staff.id, reason: 'on_time' });
-              continue;
             }
-            const key = `${staff.id}|${row.date}|lateness`;
-            if (existing.has(key)) {
-              skipped.push({ row: row.row, staff_user_id: staff.id, reason: 'duplicate' });
-              continue;
-            }
-            const inserted = await insertDeduction(null, [
-              staff.id,
-              computed.amount,
-              `Lateness at ${row.arrival_time} (${computed.label})`,
-              row.date,
-              'lateness',
-              req.user.id,
-              row.arrival_time,
-              null,
-              computed.daily_rate,
-              computed.factor,
-            ]);
-            existing.add(key);
-            created.push(inserted);
           }
         } catch (err) {
           errors.push({ row: row.row, error: err.message || 'Could not import row' });

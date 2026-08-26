@@ -6,7 +6,7 @@ import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
 import SearchFilter from '../components/ui/SearchFilter';
-import { ROLE_LABELS } from '../utils/permissions';
+import { ROLE_LABELS, canEditStaffCompensation } from '../utils/permissions';
 import { formatDate } from '../utils/formatters';
 import { usePermissions } from '../hooks/usePermissions';
 
@@ -18,7 +18,7 @@ const ACCESS_LABELS = {
 
 export default function HolidayAccess() {
   const qc = useQueryClient();
-  const { isAdmin, user } = usePermissions();
+  const { user } = usePermissions();
   const [search, setSearch] = useState('');
 
   const { data: rows = [], isLoading } = useQuery({
@@ -56,7 +56,7 @@ export default function HolidayAccess() {
         <h1 className="page-title mt-1">Holidays access</h1>
         <p className="page-subtitle">
           Choose who can request holidays. Auto allows requests once the staff account is 6 months old.
-          HR cannot change their own access — an admin must do that.
+          Only an HR Supervisor or admin can change access, and they cannot change their own.
         </p>
       </div>
 
@@ -81,7 +81,7 @@ export default function HolidayAccess() {
               </thead>
               <tbody>
                 {filtered.map((r) => {
-                  const isOwnRow = !isAdmin && String(user?.id) === String(r.id);
+                  const canEditRow = canEditStaffCompensation(user, r.id);
                   return (
                   <tr key={r.id}>
                     <td>
@@ -97,8 +97,14 @@ export default function HolidayAccess() {
                       <select
                         className="input py-1 text-sm"
                         value={r.holiday_access || 'auto'}
-                        disabled={mutation.isPending || isOwnRow}
-                        title={isOwnRow ? 'Only an admin can change your holiday access' : undefined}
+                        disabled={mutation.isPending || !canEditRow}
+                        title={
+                          !canEditRow
+                            ? String(user?.id) === String(r.id)
+                              ? 'Only an admin can change your holiday access'
+                              : 'Only an HR Supervisor or admin can change holiday access'
+                            : undefined
+                        }
                         onChange={(e) =>
                           mutation.mutate({ id: r.id, holiday_access: e.target.value })
                         }

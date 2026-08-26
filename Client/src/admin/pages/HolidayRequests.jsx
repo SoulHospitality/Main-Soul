@@ -1,16 +1,17 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Palmtree, Check, X } from 'lucide-react';
+import { Palmtree } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import Modal from '../components/ui/Modal';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
 import SearchFilter from '../components/ui/SearchFilter';
-import { ROLE_LABELS, canAccess } from '../utils/permissions';
+import { ROLE_LABELS, canRequestStaffBenefits, canSeeRequestQueue } from '../utils/permissions';
 import { formatDate } from '../utils/formatters';
 import { LEAVE_TYPE_LABELS } from '../utils/hrPolicy';
 import { useAuth } from '../context/AuthContext';
+import { RequestReviewActions, approvalStatusClass } from '../components/RequestReviewActions';
 
 const EMPTY_FORM = {
   leave_type: 'casual',
@@ -21,8 +22,8 @@ const EMPTY_FORM = {
 
 export default function HolidayRequests() {
   const { user } = useAuth();
-  const isHr = canAccess(user, 'payroll');
-  const isAdmin = user?.role === 'admin';
+  const canQueue = canSeeRequestQueue(user);
+  const canRequest = canRequestStaffBenefits(user);
   const qc = useQueryClient();
   const [status, setStatus] = useState('pending');
   const [search, setSearch] = useState('');
@@ -31,13 +32,12 @@ export default function HolidayRequests() {
   const [form, setForm] = useState(EMPTY_FORM);
 
   const { data: rows = [], isLoading } = useQuery({
-    queryKey: ['hr-leave-requests', status, isHr],
+    queryKey: ['hr-leave-requests', status],
     queryFn: () =>
       api
         .get('/hr/leave-requests', {
           params: {
             ...(status === 'all' ? {} : { status }),
-            ...(!isHr ? { mine: 1 } : {}),
           },
         })
         .then((r) => r.data),
@@ -46,6 +46,7 @@ export default function HolidayRequests() {
   const { data: leaveSnap } = useQuery({
     queryKey: ['hr-my-leave'],
     queryFn: () => api.get('/hr/my-leave').then((r) => r.data),
+    enabled: canRequest,
   });
 
   const createMutation = useMutation({
@@ -53,7 +54,7 @@ export default function HolidayRequests() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['hr-leave-requests'] });
       qc.invalidateQueries({ queryKey: ['hr-my-leave'] });
-      toast.success('Holiday request sent to HR');
+      toast.success('Holiday request sent');
       setForm(EMPTY_FORM);
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Could not submit request'),
@@ -65,7 +66,11 @@ export default function HolidayRequests() {
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ['hr-leave-requests'] });
       qc.invalidateQueries({ queryKey: ['users'] });
-      toast.success(vars.status === 'approved' ? 'Request approved' : 'Request rejected');
+      toast.success(
+        vars.status === 'approved'
+          ? 'Acceptance recorded'
+          : 'Request rejected'
+      );
       setRejectRow(null);
       setNote('');
     },
@@ -106,21 +111,19 @@ export default function HolidayRequests() {
     createMutation.mutate(form);
   };
 
-  const canReview = (row) =>
-    isHr && (isAdmin || String(user?.id) !== String(row.staff_user_id));
-
   return (
     <div className="space-y-6">
       <div className="page-header">
         <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-soul-muted">HR</p>
         <h1 className="page-title mt-1">Holiday requests</h1>
         <p className="page-subtitle">
-          {isHr
-            ? 'Review casual, annual, and early-leave requests. Approve or reject each one.'
-            : 'Request casual, annual, or early leave. HR will review each request.'}
+          {canQueue
+            ? 'Agents need their manager and the HR Supervisor. HR needs the HR Supervisor. HR Supervisor requests go to their manager. Admins can accept or reject any request.'
+            : 'Request casual, annual, or early leave. Your manager and the HR Supervisor review it.'}
         </p>
       </div>
 
+      {canRequest ? (
       <div className="card space-y-3">
         <h3 className="font-semibold text-soul-blue">Request a holiday</h3>
         {leaveSnap && !leaveSnap.can_request_holidays ? (
@@ -212,6 +215,7 @@ export default function HolidayRequests() {
           </>
         ) : null}
       </div>
+      ) : null}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <SearchFilter value={search} onChange={setSearch} placeholder="Search requests…" />
@@ -253,7 +257,7 @@ export default function HolidayRequests() {
                   <th>Dates</th>
                   <th>Reason</th>
                   <th>Status</th>
-                  {isHr ? <th /> : null}
+                  <th />
                 </tr>
               </thead>
               <tbody>
@@ -282,51 +286,22 @@ export default function HolidayRequests() {
                     </td>
                     <td>
                       <span
-                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
-                          r.status === 'approved'
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : r.status === 'rejected'
-                              ? 'bg-rose-50 text-rose-700'
-                              : 'bg-amber-50 text-amber-800'
-                        }`}
+                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${approvalStatusClass(r.status)}`}
                       >
-                        {r.status}
+                        {r.approval_label || r.status}
                       </span>
                     </td>
-                    {isHr ? (
-                      <td>
-                        {r.status === 'pending' ? (
-                          canReview(r) ? (
-                            <div className="flex gap-1">
-                              <button
-                                type="button"
-                                className="btn-secondary text-xs px-2 py-1 text-emerald-700"
-                                disabled={reviewMutation.isPending}
-                                onClick={() => reviewMutation.mutate({ id: r.id, status: 'approved' })}
-                              >
-                                <Check className="h-3.5 w-3.5" />
-                                Accept
-                              </button>
-                              <button
-                                type="button"
-                                className="btn-secondary text-xs px-2 py-1 text-rose-700"
-                                onClick={() => {
-                                  setRejectRow(r);
-                                  setNote('');
-                                }}
-                              >
-                                <X className="h-3.5 w-3.5" />
-                                Reject
-                              </button>
-                            </div>
-                          ) : (
-                            <span className="text-[11px] text-soul-muted">Admin must review your request</span>
-                          )
-                        ) : r.reviewed_by_name ? (
-                          <span className="text-[11px] text-soul-muted">{r.reviewed_by_name}</span>
-                        ) : null}
-                      </td>
-                    ) : null}
+                    <td>
+                      <RequestReviewActions
+                        row={r}
+                        pending={reviewMutation.isPending}
+                        onApprove={(row) => reviewMutation.mutate({ id: row.id, status: 'approved' })}
+                        onReject={(row) => {
+                          setRejectRow(row);
+                          setNote('');
+                        }}
+                      />
+                    </td>
                   </tr>
                 ))}
               </tbody>

@@ -43,7 +43,13 @@ const { normalizeProjectName } = require('../../lib/projectNames');
 const { guestsFromBedrooms } = require('../../lib/guestCapacity');
 const { logAudit } = require('../../lib/audit');
 const { calcReservationFinancials } = require('../../lib/commission');
-const { assertHrNotEditingOwnCompensation } = require('../../lib/hrRules');
+const {
+  isHrTeamRole,
+  assertCanEditStaffCompensation,
+  appliesSalaryImmediately,
+} = require('../../lib/hrRules');
+
+const HR_ROUTE_ROLES = ['admin', 'hr', 'hr_supervisor'];
 const { normalizePropertyType } = require('../../lib/propertyType');
 
 const router = express.Router();
@@ -221,12 +227,18 @@ const STAFF_SELECT = `
   salary_change_status, is_first_login, created_at, updated_at,
   COALESCE(leave_casual_days, 0) AS leave_casual_days,
   COALESCE(leave_annual_days, 0) AS leave_annual_days,
-  COALESCE(holiday_access, 'auto') AS holiday_access
+  COALESCE(holiday_access, 'auto') AS holiday_access,
+  manager_id
 `;
 
 function assertCanAssignRole(actorRole, targetRole) {
   if (targetRole === 'admin' && actorRole !== 'admin') {
     const err = new Error('Only admins can create or assign the admin role');
+    err.status = 403;
+    throw err;
+  }
+  if (targetRole === 'hr_supervisor' && actorRole !== 'admin') {
+    const err = new Error('Only admins can create or assign the HR Supervisor role');
     err.status = 403;
     throw err;
   }
@@ -241,17 +253,18 @@ function assertCanAssignRole(actorRole, targetRole) {
     'housekeeping_supervisor',
     'resale',
     'hr',
+    'hr_supervisor',
     'owner',
   ];
   if (!allowed.includes(targetRole)) {
     const err = new Error(
-      'Invalid role. Use admin, reservations_web, reservations_manual, operations, operations_supervisor, housekeeping, housekeeping_supervisor, resale, hr, or owner.'
+      'Invalid role. Use admin, reservations_web, reservations_manual, operations, operations_supervisor, housekeeping, housekeeping_supervisor, resale, hr, hr_supervisor, or owner.'
     );
     err.status = 400;
     throw err;
   }
   if (
-    actorRole === 'hr' &&
+    isHrTeamRole(actorRole) &&
     ![
       'reservations_web',
       'reservations_manual',
@@ -276,6 +289,29 @@ function isReservationAgentRole(role) {
   return ['reservations_web', 'reservations_manual', 'reservations'].includes(String(role || ''));
 }
 
+async function parseManagerId(raw, selfId) {
+  if (raw === undefined) return undefined;
+  if (raw === '' || raw == null) return null;
+  const id = Number(raw);
+  if (!Number.isFinite(id) || id < 1) {
+    const err = new Error('Invalid manager');
+    err.status = 400;
+    throw err;
+  }
+  if (selfId != null && String(id) === String(selfId)) {
+    const err = new Error('A staff member cannot manage themselves');
+    err.status = 400;
+    throw err;
+  }
+  const { rows } = await query(`SELECT id, role FROM staff_users WHERE id = $1`, [id]);
+  if (!rows[0] || rows[0].role === 'owner') {
+    const err = new Error('Manager not found');
+    err.status = 400;
+    throw err;
+  }
+  return id;
+}
+
 function parseAgentCommissionPct(b, role) {
   if (!isReservationAgentRole(role)) {
     return b.sales_commission_pct != null && b.sales_commission_pct !== ''
@@ -296,7 +332,7 @@ function parseAgentCommissionPct(b, role) {
   return pct;
 }
 
-router.get('/users', requireRoles('admin', 'hr'), async (_req, res, next) => {
+router.get('/users', requireRoles(...HR_ROUTE_ROLES), async (_req, res, next) => {
   try {
     const { rows } = await query(
       `SELECT ${STAFF_SELECT} FROM staff_users ORDER BY id`
@@ -310,7 +346,7 @@ router.get('/users', requireRoles('admin', 'hr'), async (_req, res, next) => {
   }
 });
 
-router.post('/users', requireRoles('admin', 'hr'), async (req, res, next) => {
+router.post('/users', requireRoles(...HR_ROUTE_ROLES), async (req, res, next) => {
   try {
     const b = req.body || {};
     const full_name = String(b.full_name || b.name || '').trim();
@@ -362,13 +398,14 @@ router.post('/users', requireRoles('admin', 'hr'), async (req, res, next) => {
     }
     const tempPassword = TEMP_PASSWORD;
     const hash = await bcrypt.hash(tempPassword, 10);
+    const managerId = isOwner ? null : await parseManagerId(b.manager_id);
 
     const { rows } = await query(
       `INSERT INTO staff_users (
          username, password_hash, email, full_name, role, staff_code,
          base_salary, salary_change_status, is_first_login, is_active,
-         sales_commission_pct, leave_casual_days, leave_annual_days
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,'none',1,1,$8,COALESCE($9,0),COALESCE($10,0))
+         sales_commission_pct, leave_casual_days, leave_annual_days, manager_id
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,'none',1,1,$8,COALESCE($9,0),COALESCE($10,0),$11)
        RETURNING ${STAFF_SELECT}`,
       [
         username,
@@ -381,6 +418,7 @@ router.post('/users', requireRoles('admin', 'hr'), async (req, res, next) => {
         agentCommissionPct,
         b.leave_casual_days != null && b.leave_casual_days !== '' ? parseInt(b.leave_casual_days, 10) || 0 : 0,
         b.leave_annual_days != null && b.leave_annual_days !== '' ? parseInt(b.leave_annual_days, 10) || 0 : 0,
+        managerId ?? null,
       ]
     );
 
@@ -411,7 +449,7 @@ router.post('/users', requireRoles('admin', 'hr'), async (req, res, next) => {
   }
 });
 
-router.patch('/users/:id', requireRoles('admin', 'hr'), async (req, res, next) => {
+router.patch('/users/:id', requireRoles(...HR_ROUTE_ROLES), async (req, res, next) => {
   try {
     const b = req.body || {};
     const { rows: existingRows } = await query(
@@ -421,27 +459,24 @@ router.patch('/users/:id', requireRoles('admin', 'hr'), async (req, res, next) =
     const existing = existingRows[0];
     if (!existing) return res.status(404).json({ error: 'Not found' });
 
-    if (req.user.role === 'hr' && existing.role === 'admin') {
+    if (isHrTeamRole(req.user.role) && existing.role === 'admin') {
       return res.status(403).json({ error: 'HR cannot edit admin accounts' });
     }
 
-    const editingSelfAsHr = req.user.role === 'hr' && String(req.user.id) === String(existing.id);
-    if (editingSelfAsHr) {
-      const salaryChanged =
-        b.base_salary != null &&
-        b.base_salary !== '' &&
-        Number(b.base_salary) !== Number(existing.base_salary);
-      const casualChanged =
-        b.leave_casual_days != null &&
-        b.leave_casual_days !== '' &&
-        parseInt(b.leave_casual_days, 10) !== Number(existing.leave_casual_days || 0);
-      const annualChanged =
-        b.leave_annual_days != null &&
-        b.leave_annual_days !== '' &&
-        parseInt(b.leave_annual_days, 10) !== Number(existing.leave_annual_days || 0);
-      if (salaryChanged || casualChanged || annualChanged) {
-        assertHrNotEditingOwnCompensation(req.user, existing.id, 'salary or holiday balances');
-      }
+    const salaryChanged =
+      b.base_salary != null &&
+      b.base_salary !== '' &&
+      Number(b.base_salary) !== Number(existing.base_salary);
+    const casualChanged =
+      b.leave_casual_days != null &&
+      b.leave_casual_days !== '' &&
+      parseInt(b.leave_casual_days, 10) !== Number(existing.leave_casual_days || 0);
+    const annualChanged =
+      b.leave_annual_days != null &&
+      b.leave_annual_days !== '' &&
+      parseInt(b.leave_annual_days, 10) !== Number(existing.leave_annual_days || 0);
+    if (salaryChanged || casualChanged || annualChanged) {
+      assertCanEditStaffCompensation(req.user, existing.id, 'salary or holiday balances');
     }
 
     let nextRole = b.role != null ? String(b.role) : existing.role;
@@ -470,7 +505,7 @@ router.patch('/users/:id', requireRoles('admin', 'hr'), async (req, res, next) =
       if (Number.isNaN(requested) || requested < 0) {
         return res.status(400).json({ error: 'Invalid base salary' });
       }
-      if (req.user.role === 'admin') {
+      if (appliesSalaryImmediately(req.user)) {
         baseSalary = requested;
         pendingSalary = null;
         salaryStatus = 'none';
@@ -502,6 +537,13 @@ router.patch('/users/:id', requireRoles('admin', 'hr'), async (req, res, next) =
       await assertStaffCodeAvailable(staffCode, existing.id);
     }
 
+    const nextManagerId =
+      nextRole === 'owner'
+        ? null
+        : b.manager_id !== undefined
+          ? await parseManagerId(b.manager_id, existing.id)
+          : existing.manager_id;
+
     const { rows } = await query(
       `UPDATE staff_users SET
          full_name = COALESCE($1, full_name),
@@ -519,8 +561,9 @@ router.patch('/users/:id', requireRoles('admin', 'hr'), async (req, res, next) =
          leave_casual_days = $13,
          leave_annual_days = $14,
          staff_code = $15,
+         manager_id = $16,
          updated_at = now()
-       WHERE id = $16
+       WHERE id = $17
        RETURNING ${STAFF_SELECT}`,
       [
         b.full_name ?? null,
@@ -538,6 +581,7 @@ router.patch('/users/:id', requireRoles('admin', 'hr'), async (req, res, next) =
         casualDays,
         annualDays,
         staffCode,
+        nextManagerId,
         req.params.id,
       ]
     );
@@ -551,7 +595,7 @@ router.patch('/users/:id', requireRoles('admin', 'hr'), async (req, res, next) =
   }
 });
 
-router.put('/users/:id', requireRoles('admin', 'hr'), async (req, res, next) => {
+router.put('/users/:id', requireRoles(...HR_ROUTE_ROLES), async (req, res, next) => {
   const patchLayer = router.stack.find(
     (l) => l.route && l.route.path === '/users/:id' && l.route.methods.patch
   );
@@ -596,13 +640,13 @@ router.post('/users/:id/reject-salary', requireRoles('admin'), async (req, res, 
   }
 });
 
-router.put('/users/:id/reset-password', requireRoles('admin', 'hr'), async (req, res, next) => {
+router.put('/users/:id/reset-password', requireRoles(...HR_ROUTE_ROLES), async (req, res, next) => {
   try {
     const { rows: existingRows } = await query(`SELECT role FROM staff_users WHERE id = $1`, [
       req.params.id,
     ]);
     if (!existingRows[0]) return res.status(404).json({ error: 'Not found' });
-    if (req.user.role === 'hr' && existingRows[0].role === 'admin') {
+    if (isHrTeamRole(req.user.role) && existingRows[0].role === 'admin') {
       return res.status(403).json({ error: 'HR cannot reset admin passwords' });
     }
 
@@ -623,7 +667,7 @@ router.put('/users/:id/reset-password', requireRoles('admin', 'hr'), async (req,
   }
 });
 
-router.delete('/users/:id', requireRoles('admin', 'hr'), async (req, res, next) => {
+router.delete('/users/:id', requireRoles(...HR_ROUTE_ROLES), async (req, res, next) => {
   const targetId = Number(req.params.id);
   const actorId = Number(req.user.id);
   try {
@@ -635,7 +679,7 @@ router.delete('/users/:id', requireRoles('admin', 'hr'), async (req, res, next) 
       [targetId]
     );
     if (!existingRows[0]) return res.status(404).json({ error: 'Not found' });
-    if (req.user.role === 'hr' && existingRows[0].role === 'admin') {
+    if (isHrTeamRole(req.user.role) && existingRows[0].role === 'admin') {
       return res.status(403).json({ error: 'HR cannot delete admin accounts' });
     }
 
@@ -3084,7 +3128,7 @@ router.get('/dashboard/stats', async (req, res, next) => {
 });
 
 
-router.get('/hr/employees', requireRoles('admin', 'hr'), async (_req, res, next) => {
+router.get('/hr/employees', requireRoles(...HR_ROUTE_ROLES), async (_req, res, next) => {
   try {
     const { rows } = await query(`SELECT * FROM employees ORDER BY name`);
     sendList(res, rows);
@@ -3093,7 +3137,7 @@ router.get('/hr/employees', requireRoles('admin', 'hr'), async (_req, res, next)
   }
 });
 
-router.post('/hr/employees', requireRoles('admin', 'hr'), async (req, res, next) => {
+router.post('/hr/employees', requireRoles(...HR_ROUTE_ROLES), async (req, res, next) => {
   try {
     const b = req.body;
     const { rows } = await query(

@@ -78,7 +78,7 @@ router.get('/users/sales', async (_req, res, next) => {
 });
 
 
-router.get('/users/owners', requireRoles('admin', 'hr'), async (_req, res, next) => {
+router.get('/users/owners', requireRoles('admin', 'hr', 'hr_supervisor'), async (_req, res, next) => {
   try {
     const { rows } = await query(
       `SELECT s.id, s.full_name, s.email, s.username, s.is_active,
@@ -105,7 +105,7 @@ router.get('/users/owners/linkable-units', requireRoles('admin'), async (req, re
   }
 });
 
-router.get('/users/owners/:id/units', requireRoles('admin', 'hr'), async (req, res, next) => {
+router.get('/users/owners/:id/units', requireRoles('admin', 'hr', 'hr_supervisor'), async (req, res, next) => {
   try {
     const { rows } = await query(
       `SELECT u.id, u.title, u.unit_number, u.project, u.compound, u.area,
@@ -1652,7 +1652,7 @@ router.get('/reservations/blocked-dates', async (req, res, next) => {
   }
 });
 
-router.post('/hr/deductions', requireRoles('admin', 'hr'), async (req, res, next) => {
+router.post('/hr/deductions', requireRoles('admin', 'hr', 'hr_supervisor'), async (req, res, next) => {
   try {
     const b = req.body;
     const { rows } = await query(

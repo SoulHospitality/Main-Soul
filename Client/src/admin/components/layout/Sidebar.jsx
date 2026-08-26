@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../context/AuthContext';
 import { usePermissions } from '../../hooks/usePermissions';
-import { ROLE_LABELS, PMS_LABELS } from '../../utils/permissions';
+import { ROLE_LABELS, PMS_LABELS, canSeeRequestQueue } from '../../utils/permissions';
 import { getRoleTheme } from '../../utils/roleTheme';
 import api from '../../api/axios';
 import {
@@ -17,6 +17,8 @@ import {
   Palmtree,
   Banknote,
   Home,
+  ClipboardList,
+  Clock,
   ShieldCheck,
   Receipt,
   FileBarChart2,
@@ -43,6 +45,8 @@ const NAV_ITEMS = [
   { path: '/admin/deductions', label: 'Deductions', icon: MinusCircle, page: 'deductions' },
   { path: '/admin/holiday-requests', label: 'Holiday requests', icon: Palmtree, page: 'holiday_requests', badge: 'leave_pending', agentLabel: 'Request holiday' },
   { path: '/admin/holiday-access', label: 'Holidays access', icon: ShieldCheck, page: 'holiday_access' },
+  { path: '/admin/job-offers', label: 'Job offers', icon: ClipboardList, page: 'job_offers', badge: 'job_pending' },
+  { path: '/admin/attendance', label: 'Attendance', icon: Clock, page: 'attendance' },
   { path: '/admin/loans', label: 'Loans', icon: Banknote, page: 'loans', badge: 'loan_pending' },
   { path: '/admin/wfh', label: 'Work from home', icon: Home, page: 'wfh', badge: 'wfh_pending' },
   { path: '/admin/promo-codes',      label: 'Promo Codes',        icon: Tag,                page: 'promo_codes' },
@@ -73,9 +77,10 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
   const theme = getRoleTheme(user?.role);
 
   const showWebsitePending = canAccess('website_bookings');
-  const showLeavePending = canAccess('holiday_access');
-  const showLoanPending = canAccess('payroll');
-  const showWfhPending = canAccess('payroll');
+  const showLeavePending = canSeeRequestQueue(user) || canAccess('holiday_access');
+  const showLoanPending = canSeeRequestQueue(user) || canAccess('payroll');
+  const showWfhPending = canSeeRequestQueue(user) || canAccess('payroll');
+  const showJobPending = canAccess('job_offers');
   const { data: pendingBookings = [] } = useQuery({
     queryKey: ['website-bookings-pending'],
     queryFn: () =>
@@ -115,6 +120,13 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
   });
   const pendingLoanCount = Array.isArray(pendingLoans) ? pendingLoans.length : 0;
   const pendingWfhCount = Array.isArray(pendingWfh) ? pendingWfh.length : 0;
+  const { data: jobSummary } = useQuery({
+    queryKey: ['recruitment-summary'],
+    queryFn: () => api.get('/recruitment/summary').then((r) => r.data),
+    enabled: showJobPending,
+    refetchInterval: 30000,
+  });
+  const pendingJobCount = jobSummary?.pendingApplications || 0;
 
   const handleLogout = () => {
     logout();
@@ -182,6 +194,8 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
                   ? pendingLoanCount
                   : item.badge === 'wfh_pending'
                     ? pendingWfhCount
+                    : item.badge === 'job_pending'
+                      ? pendingJobCount
                     : 0;
           return (
             <NavLink

@@ -4,7 +4,7 @@ import { Lock, CheckCircle, Palmtree, Banknote, Home } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import { useAuth } from '../context/AuthContext';
-import { ROLE_LABELS, ROLE_COLORS, PMS_LABELS } from '../utils/permissions';
+import { ROLE_LABELS, ROLE_COLORS, PMS_LABELS, canRequestStaffBenefits } from '../utils/permissions';
 import { getRoleTheme } from '../utils/roleTheme';
 import { formatDate, formatDateTime } from '../utils/formatters';
 import { getPasswordRuleChecks, passwordPolicyMessage } from '../utils/passwordRules';
@@ -32,7 +32,7 @@ export default function Profile() {
     match &&
     Boolean(pwForm.confirm_password);
 
-  const canRequestLeave = user?.role && user.role !== 'owner';
+  const canRequestLeave = canRequestStaffBenefits(user);
   const canRequestWfh =
     canRequestLeave && user.role !== 'operations' && user.role !== 'operations_supervisor';
   const [leaveForm, setLeaveForm] = useState({
@@ -60,7 +60,7 @@ export default function Profile() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['hr-leave-requests'] });
       qc.invalidateQueries({ queryKey: ['hr-my-leave'] });
-      toast.success('Holiday request sent to HR');
+      toast.success('Holiday request sent');
       setLeaveForm({ leave_type: 'casual', start_date: '', end_date: '', reason: '' });
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Could not submit request'),
@@ -70,7 +70,7 @@ export default function Profile() {
     mutationFn: (payload) => api.post('/hr/loans', payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['hr-loans'] });
-      toast.success('Loan request sent to HR');
+      toast.success('Loan request sent');
       setLoanForm({ amount: '', reason: '' });
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Could not submit loan'),
