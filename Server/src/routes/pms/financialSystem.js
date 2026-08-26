@@ -84,7 +84,10 @@ async function computeOwnerPeriodBalance(ownerId, from, to) {
     resSql += ` AND r.created_at::date <= $3::date`;
   }
   const { rows: resRows } = await query(
-    `SELECT r.*, u.commission_mode, u.company_commission_pct,
+    `SELECT r.nights, r.price_per_night, r.total_amount, r.utilities_amount,
+            r.broker_total, r.broker_amount_per_night, r.housekeeping_fees,
+            r.insurance, r.beach_access_fees, r.is_owner_reservation, r.is_hold, r.status,
+            u.commission_mode, u.company_commission_pct,
             u.company_commission_owner_pct, u.commission_tenant_pct,
             COALESCE(u.utilities_cost, 0) AS utilities_cost
      FROM reservations r
@@ -96,7 +99,7 @@ async function computeOwnerPeriodBalance(ownerId, from, to) {
   let grossCredits = 0;
   for (const r of resRows) {
     const fin = calcReservationFinancials(r, r);
-    grossCredits += fin.ownerNet;
+    grossCredits += Number(fin.ownerNet) || 0;
   }
 
   const expParams = [unitIds, from, ownerId];
@@ -136,7 +139,6 @@ async function computeOwnerPeriodBalance(ownerId, from, to) {
   }
 
   const earned = round2(grossCredits - maintenance);
-  const remaining = round2(Math.max(0, earned - paidOut));
   return {
     owner_id: ownerId,
     unit_count: unitIds.length,
@@ -144,8 +146,213 @@ async function computeOwnerPeriodBalance(ownerId, from, to) {
     maintenance_deductions: round2(maintenance),
     paid_out: round2(paidOut),
     earned,
-    remaining,
+    remaining: round2(Math.max(0, earned - paidOut)),
   };
+}
+
+/**
+ * One-pass load for owner statements / settle-by-owner (avoids N+1 per unit/owner).
+ */
+async function loadOwnerStatementData(from, to, unitId = null) {
+  const resParams = [from];
+  let resWhere = `r.status <> 'cancelled' AND r.created_at::date >= $1::date`;
+  if (to) {
+    resParams.push(to);
+    resWhere += ` AND r.created_at::date <= $${resParams.length}::date`;
+  }
+  if (unitId) {
+    resParams.push(unitId);
+    resWhere += ` AND r.unit_id = $${resParams.length}`;
+  }
+
+  const { rows: reservations } = await query(
+    `SELECT r.id, r.unit_id, r.nights, r.price_per_night, r.total_amount,
+            r.utilities_amount, r.broker_total, r.broker_amount_per_night,
+            r.housekeeping_fees, r.insurance, r.beach_access_fees,
+            r.is_owner_reservation, r.is_hold, r.status,
+            COALESCE(u.unit_number, u.title, 'Unit') AS unit_name,
+            COALESCE(u.project, u.compound) AS project,
+            u.commission_mode, u.company_commission_pct,
+            u.company_commission_owner_pct, u.commission_tenant_pct,
+            COALESCE(u.utilities_cost, 0) AS utilities_cost
+     FROM reservations r
+     JOIN units u ON u.id = r.unit_id
+     WHERE ${resWhere}`,
+    resParams
+  );
+
+  const unitIds = [...new Set(reservations.map((r) => r.unit_id).filter(Boolean))];
+
+  const { rows: ownerLinks } = await query(
+    `SELECT ou.unit_id, ou.owner_id, su.full_name
+     FROM owner_units ou
+     JOIN staff_users su ON su.id = ou.owner_id
+     WHERE su.role = 'owner'
+       ${unitIds.length ? 'AND ou.unit_id = ANY($1::uuid[])' : 'AND FALSE'}`,
+    unitIds.length ? [unitIds] : []
+  );
+
+  const ownersByUnit = new Map();
+  const unitsByOwner = new Map();
+  const ownerName = new Map();
+  for (const link of ownerLinks) {
+    if (!ownersByUnit.has(link.unit_id)) ownersByUnit.set(link.unit_id, []);
+    ownersByUnit.get(link.unit_id).push({ id: link.owner_id, full_name: link.full_name });
+    if (!unitsByOwner.has(link.owner_id)) unitsByOwner.set(link.owner_id, new Set());
+    unitsByOwner.get(link.owner_id).add(link.unit_id);
+    ownerName.set(link.owner_id, link.full_name);
+  }
+
+  const unitCredits = new Map();
+  const unitMeta = new Map();
+  const ownerCredits = new Map();
+
+  for (const r of reservations) {
+    const fin = calcReservationFinancials(r, r);
+    const ownerNet = Number(fin.ownerNet) || 0;
+    unitCredits.set(r.unit_id, (unitCredits.get(r.unit_id) || 0) + ownerNet);
+    if (!unitMeta.has(r.unit_id)) {
+      unitMeta.set(r.unit_id, {
+        unit_id: r.unit_id,
+        unit_name: r.unit_name,
+        project: r.project,
+        reservation_count: 0,
+      });
+    }
+    unitMeta.get(r.unit_id).reservation_count += 1;
+
+    const owners = ownersByUnit.get(r.unit_id) || [];
+    if (!owners.length) continue;
+    // Split unit owner-net evenly across linked owners for the period rollup.
+    const share = ownerNet / owners.length;
+    for (const o of owners) {
+      ownerCredits.set(o.id, (ownerCredits.get(o.id) || 0) + share);
+    }
+  }
+
+  const expParams = [from];
+  let expWhere = `paid_by = 'owner' AND expense_date >= $1::date`;
+  if (to) {
+    expParams.push(to);
+    expWhere += ` AND expense_date <= $${expParams.length}::date`;
+  }
+  if (unitId) {
+    expParams.push(unitId);
+    expWhere += ` AND unit_id = $${expParams.length}`;
+  } else if (unitIds.length) {
+    expParams.push(unitIds);
+    expWhere += ` AND unit_id = ANY($${expParams.length}::uuid[])`;
+  } else {
+    expWhere += ` AND FALSE`;
+  }
+
+  let expenses = [];
+  try {
+    const { rows } = await query(
+      `SELECT unit_id, owner_id, amount FROM expenses WHERE ${expWhere}`,
+      expParams
+    );
+    expenses = rows;
+  } catch (_) {
+    expenses = [];
+  }
+
+  const unitExpenses = new Map();
+  const ownerExpenses = new Map();
+  for (const e of expenses) {
+    const amt = Number(e.amount) || 0;
+    if (e.unit_id) {
+      unitExpenses.set(e.unit_id, (unitExpenses.get(e.unit_id) || 0) + amt);
+    }
+    if (e.owner_id) {
+      ownerExpenses.set(e.owner_id, (ownerExpenses.get(e.owner_id) || 0) + amt);
+    } else if (e.unit_id) {
+      const owners = ownersByUnit.get(e.unit_id) || [];
+      if (!owners.length) continue;
+      const share = amt / owners.length;
+      for (const o of owners) {
+        ownerExpenses.set(o.id, (ownerExpenses.get(o.id) || 0) + share);
+      }
+    }
+  }
+
+  const payParams = [from];
+  let payWhere = `status = 'paid' AND COALESCE(reviewed_at, created_at)::date >= $1::date`;
+  if (to) {
+    payParams.push(to);
+    payWhere += ` AND COALESCE(reviewed_at, created_at)::date <= $${payParams.length}::date`;
+  }
+  const paidByOwner = new Map();
+  try {
+    const { rows: payRows } = await query(
+      `SELECT owner_id, COALESCE(SUM(amount), 0)::float AS total
+       FROM owner_payout_requests
+       WHERE ${payWhere}
+       GROUP BY owner_id`,
+      payParams
+    );
+    for (const p of payRows) {
+      paidByOwner.set(p.owner_id, Number(p.total) || 0);
+    }
+  } catch (_) {}
+
+  const statements = [...unitMeta.values()]
+    .map((u) => {
+      const gross = round2(unitCredits.get(u.unit_id) || 0);
+      const maintenance = round2(unitExpenses.get(u.unit_id) || 0);
+      const owners = ownersByUnit.get(u.unit_id) || [];
+      return {
+        unit_id: u.unit_id,
+        unit_name: u.unit_name,
+        project: u.project,
+        owners,
+        owner_names: owners.map((o) => o.full_name).join(', ') || '—',
+        reservation_count: u.reservation_count,
+        gross_credits: gross,
+        maintenance_deductions: maintenance,
+        net_payout_due: round2(gross - maintenance),
+      };
+    })
+    .sort((a, b) =>
+      String(a.project || '').localeCompare(String(b.project || '')) ||
+      String(a.unit_name || '').localeCompare(String(b.unit_name || ''))
+    );
+
+  const ownerIds = new Set([
+    ...ownerCredits.keys(),
+    ...ownerExpenses.keys(),
+    ...paidByOwner.keys(),
+  ]);
+  // When filtering by unit, only owners linked to that unit.
+  if (unitId) {
+    const allowed = new Set((ownersByUnit.get(unitId) || []).map((o) => o.id));
+    for (const id of [...ownerIds]) {
+      if (!allowed.has(id)) ownerIds.delete(id);
+    }
+  }
+
+  const ownerBalances = [];
+  for (const oid of ownerIds) {
+    const gross = round2(ownerCredits.get(oid) || 0);
+    const maintenance = round2(ownerExpenses.get(oid) || 0);
+    const paidOut = round2(paidByOwner.get(oid) || 0);
+    const earned = round2(gross - maintenance);
+    const remaining = round2(Math.max(0, earned - paidOut));
+    if (earned <= 0.009 && paidOut <= 0.009 && remaining <= 0.009) continue;
+    ownerBalances.push({
+      owner_id: oid,
+      full_name: ownerName.get(oid) || `Owner #${oid}`,
+      unit_count: (unitsByOwner.get(oid) || new Set()).size,
+      gross_credits: gross,
+      maintenance_deductions: maintenance,
+      paid_out: paidOut,
+      earned,
+      remaining,
+    });
+  }
+  ownerBalances.sort((a, b) => String(a.full_name).localeCompare(String(b.full_name)));
+
+  return { statements, ownerBalances };
 }
 
 async function loadReservations(req) {
@@ -484,112 +691,9 @@ router.get('/financial-system/booking-splits', requireRoles('admin'), async (req
 
 router.get('/financial-system/owner-statements', requireRoles('admin'), async (req, res, next) => {
   try {
-    const { from, to, params, resSql } = dateRange(req);
+    const { from, to } = dateRange(req);
     const unitId = req.query.unit_id || null;
-    const unitParams = [...params];
-    let unitFilter = '';
-    if (unitId) {
-      unitParams.push(unitId);
-      unitFilter = ` AND u.id = $${unitParams.length}`;
-    }
-
-    const { rows: units } = await query(
-      `SELECT DISTINCT u.id, COALESCE(u.unit_number, u.title) AS unit_name,
-              COALESCE(u.project, u.compound) AS project
-       FROM units u
-       JOIN reservations r ON r.unit_id = u.id
-       WHERE ${resSql}${unitFilter}
-       ORDER BY project, unit_name`,
-      unitParams
-    );
-
-    const statements = [];
-    for (const unit of units) {
-      const uParams = [unit.id, from];
-      let uResSql = `r.unit_id = $1 AND r.status <> 'cancelled' AND r.created_at::date >= $2::date`;
-      if (to) {
-        uParams.push(to);
-        uResSql += ` AND r.created_at::date <= $${uParams.length}::date`;
-      }
-      const { rows: resRows } = await query(
-        `SELECT r.*, COALESCE(u.unit_number, u.title) AS unit_name,
-                u.commission_mode, u.company_commission_pct,
-                u.company_commission_owner_pct, u.commission_tenant_pct,
-                COALESCE(u.utilities_cost, 0) AS utilities_cost
-         FROM reservations r
-         JOIN units u ON u.id = r.unit_id
-         WHERE ${uResSql}`,
-        uParams
-      );
-
-      let grossCredits = 0;
-      for (const r of resRows) {
-        const fin = calcReservationFinancials(r, r);
-        grossCredits += fin.ownerNet;
-      }
-
-      const expParams = [unit.id, from];
-      let expWhere = `unit_id = $1 AND paid_by = 'owner' AND expense_date >= $2::date`;
-      if (to) {
-        expParams.push(to);
-        expWhere += ` AND expense_date <= $${expParams.length}::date`;
-      }
-      const { rows: expRows } = await query(
-        `SELECT COALESCE(SUM(amount), 0)::float AS total FROM expenses WHERE ${expWhere}`,
-        expParams
-      );
-      const maintenanceDeductions = Number(expRows[0]?.total) || 0;
-      const netPayout = round2(grossCredits - maintenanceDeductions);
-
-      const { rows: owners } = await query(
-        `SELECT su.id, su.full_name FROM owner_units ou
-         JOIN staff_users su ON su.id = ou.owner_id
-         WHERE ou.unit_id = $1`,
-        [unit.id]
-      );
-
-      statements.push({
-        unit_id: unit.id,
-        unit_name: unit.unit_name,
-        project: unit.project,
-        owners: owners.map((o) => ({ id: o.id, full_name: o.full_name })),
-        owner_names: owners.map((o) => o.full_name).join(', ') || '—',
-        reservation_count: resRows.length,
-        gross_credits: round2(grossCredits),
-        maintenance_deductions: round2(maintenanceDeductions),
-        net_payout_due: netPayout,
-      });
-    }
-
-    const ownerIds = new Set();
-    for (const s of statements) {
-      for (const o of s.owners || []) ownerIds.add(o.id);
-    }
-    // Also include owners who only have payout activity / linked units in period filter scope
-    try {
-      const { rows: allLinked } = await query(
-        `SELECT DISTINCT ou.owner_id AS id, su.full_name
-         FROM owner_units ou
-         JOIN staff_users su ON su.id = ou.owner_id
-         WHERE su.role = 'owner' AND su.is_active = 1`
-      );
-      for (const o of allLinked) ownerIds.add(o.id);
-    } catch (_) {}
-
-    const ownerBalances = [];
-    for (const oid of ownerIds) {
-      const bal = await computeOwnerPeriodBalance(oid, from, to);
-      if (bal.earned <= 0.009 && bal.paid_out <= 0.009 && bal.remaining <= 0.009) continue;
-      const { rows: nameRows } = await query(
-        `SELECT id, full_name FROM staff_users WHERE id = $1`,
-        [oid]
-      );
-      ownerBalances.push({
-        ...bal,
-        full_name: nameRows[0]?.full_name || `Owner #${oid}`,
-      });
-    }
-    ownerBalances.sort((a, b) => String(a.full_name).localeCompare(String(b.full_name)));
+    const { statements, ownerBalances } = await loadOwnerStatementData(from, to, unitId);
 
     let payouts = [];
     try {
