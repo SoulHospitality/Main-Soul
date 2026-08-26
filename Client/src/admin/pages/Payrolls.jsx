@@ -6,7 +6,9 @@ import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
+import Modal from '../components/ui/Modal';
 import SearchFilter from '../components/ui/SearchFilter';
+import PayslipDetail, { PAYSLIP_MONTHS } from '../components/PayslipDetail';
 import { ROLE_LABELS } from '../utils/permissions';
 import { currency } from '../utils/formatters';
 
@@ -15,11 +17,6 @@ function currentPeriod() {
   return { year: now.getFullYear(), month: now.getMonth() + 1 };
 }
 
-const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
-
 export default function Payrolls() {
   const qc = useQueryClient();
   const initial = currentPeriod();
@@ -27,16 +24,29 @@ export default function Payrolls() {
   const [month, setMonth] = useState(initial.month);
   const [search, setSearch] = useState('');
   const [payTarget, setPayTarget] = useState(null);
+  const [viewStaff, setViewStaff] = useState(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['hr-payroll', year, month],
     queryFn: () => api.get('/hr/payroll', { params: { year, month } }).then((r) => r.data),
   });
 
+  const { data: payslip, isLoading: payslipLoading, isError: payslipError } = useQuery({
+    queryKey: ['hr-payslip', year, month, viewStaff?.staff_user_id],
+    enabled: !!viewStaff?.staff_user_id,
+    queryFn: () =>
+      api
+        .get('/hr/payslip', {
+          params: { year, month, staff_user_id: viewStaff.staff_user_id },
+        })
+        .then((r) => r.data),
+  });
+
   const payMutation = useMutation({
     mutationFn: (payload) => api.post('/hr/payroll/mark-paid', payload),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['hr-payroll'] });
+      qc.invalidateQueries({ queryKey: ['hr-payslip'] });
       toast.success(`Marked ${res.data.count} salary payment${res.data.count === 1 ? '' : 's'}`);
       setPayTarget(null);
     },
@@ -68,12 +78,12 @@ export default function Payrolls() {
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-soul-muted">HR</p>
           <h1 className="page-title mt-1">Payrolls</h1>
           <p className="page-subtitle">
-            Track staff salaries, deductions, and money paid for each month.
+            Track staff salaries, deductions, and money paid for each month. Click a row to open that employee’s payslip.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <select className="input w-auto" value={month} onChange={(e) => setMonth(Number(e.target.value))}>
-            {MONTHS.map((label, i) => (
+            {PAYSLIP_MONTHS.map((label, i) => (
               <option key={label} value={i + 1}>{label}</option>
             ))}
           </select>
@@ -132,7 +142,11 @@ export default function Payrolls() {
               </thead>
               <tbody>
                 {filtered.map((s) => (
-                  <tr key={s.staff_user_id}>
+                  <tr
+                    key={s.staff_user_id}
+                    className="cursor-pointer hover:bg-slate-50"
+                    onClick={() => setViewStaff(s)}
+                  >
                     <td>
                       <div className="font-semibold text-soul-blue">{s.full_name}</div>
                       <div className="text-[11px] text-soul-muted">
@@ -160,7 +174,10 @@ export default function Payrolls() {
                         <button
                           type="button"
                           className="btn-secondary text-xs px-2 py-1"
-                          onClick={() => setPayTarget({ staff: s })}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPayTarget({ staff: s });
+                          }}
                         >
                           <Check className="h-3.5 w-3.5" />
                           Mark paid
@@ -187,8 +204,8 @@ export default function Payrolls() {
         loading={payMutation.isPending}
         message={
           payTarget?.all
-            ? `Record net pay for ${unpaidIds.length} unpaid staff in ${MONTHS[month - 1]} ${year}? This freezes the amounts for this month.`
-            : `Record ${currency(payTarget?.staff?.net_pay)} paid to ${payTarget?.staff?.full_name} for ${MONTHS[month - 1]} ${year}?`
+            ? `Record net pay for ${unpaidIds.length} unpaid staff in ${PAYSLIP_MONTHS[month - 1]} ${year}? This freezes the amounts for this month.`
+            : `Record ${currency(payTarget?.staff?.net_pay)} paid to ${payTarget?.staff?.full_name} for ${PAYSLIP_MONTHS[month - 1]} ${year}?`
         }
         onConfirm={() =>
           payMutation.mutate({
@@ -198,6 +215,26 @@ export default function Payrolls() {
           })
         }
       />
+
+      <Modal
+        open={!!viewStaff}
+        onClose={() => setViewStaff(null)}
+        title="Payslip"
+        size="lg"
+      >
+        {payslipLoading || (payslip && Number(payslip.staff_user_id) !== Number(viewStaff?.staff_user_id)) ? (
+          <LoadingSpinner />
+        ) : payslipError || !payslip ? (
+          <p className="text-sm text-soul-muted">Could not load this payslip.</p>
+        ) : (
+          <PayslipDetail
+            data={payslip}
+            year={year}
+            month={month}
+            fallbackName={viewStaff?.full_name}
+          />
+        )}
+      </Modal>
     </div>
   );
 }
