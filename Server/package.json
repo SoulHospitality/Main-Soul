@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "test": "node --test src/lib/calendarOccupancy.test.js src/lib/hrRules.test.js"
+    "test": "node --test src/lib/calendarOccupancy.test.js src/lib/hrRules.test.js src/lib/staffUserCleanup.test.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",

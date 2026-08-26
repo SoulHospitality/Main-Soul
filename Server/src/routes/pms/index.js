@@ -48,6 +48,10 @@ const {
   assertCanEditStaffCompensation,
   appliesSalaryImmediately,
 } = require('../../lib/hrRules');
+const {
+  detachStaffUserReferences,
+  asStaffDeleteError,
+} = require('../../lib/staffUserCleanup');
 
 const HR_ROUTE_ROLES = ['admin', 'hr', 'hr_supervisor'];
 const { normalizePropertyType } = require('../../lib/propertyType');
@@ -686,103 +690,7 @@ router.delete('/users/:id', requireRoles(...HR_ROUTE_ROLES), async (req, res, ne
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-
-      
-      await client.query(`DELETE FROM sales_notifications WHERE user_id = $1`, [targetId]);
-      await client.query(`DELETE FROM commissions WHERE user_id = $1`, [targetId]);
-      await client.query(`DELETE FROM notifications WHERE user_id = $1`, [targetId]);
-      await client.query(`DELETE FROM owner_units WHERE owner_id = $1`, [targetId]);
-      await client.query(`DELETE FROM owner_payout_requests WHERE owner_id = $1`, [targetId]);
-      await client.query(`DELETE FROM owner_settlements WHERE owner_id = $1`, [targetId]);
-
-      
-      await client.query(`UPDATE documents SET created_by = $2 WHERE created_by = $1`, [
-        targetId,
-        actorId,
-      ]);
-      await client.query(`UPDATE expenses SET created_by = $2 WHERE created_by = $1`, [
-        targetId,
-        actorId,
-      ]);
-      await client.query(`UPDATE petty_cash SET created_by = $2 WHERE created_by = $1`, [
-        targetId,
-        actorId,
-      ]);
-      await client.query(`UPDATE reservations SET created_by = $2 WHERE created_by = $1`, [
-        targetId,
-        actorId,
-      ]);
-      await client.query(`UPDATE tasks SET created_by = $2 WHERE created_by = $1`, [
-        targetId,
-        actorId,
-      ]);
-
-      
-      await client.query(
-        `UPDATE acquisition_contracts SET created_by = NULL WHERE created_by = $1`,
-        [targetId]
-      );
-      await client.query(
-        `UPDATE acquisition_leads SET created_by = NULL WHERE created_by = $1`,
-        [targetId]
-      );
-      await client.query(
-        `UPDATE acquisition_negotiation_events SET created_by = NULL WHERE created_by = $1`,
-        [targetId]
-      );
-      await client.query(`UPDATE audit_log SET user_id = NULL WHERE user_id = $1`, [targetId]);
-      await client.query(
-        `UPDATE bookings SET assigned_sales_id = NULL WHERE assigned_sales_id = $1`,
-        [targetId]
-      );
-      await client.query(`UPDATE cash_ledger SET created_by = NULL WHERE created_by = $1`, [
-        targetId,
-      ]);
-      await client.query(
-        `UPDATE housekeeping_inspections SET inspector_id = NULL WHERE inspector_id = $1`,
-        [targetId]
-      );
-      await client.query(
-        `UPDATE housekeeping_tasks SET assigned_to = NULL WHERE assigned_to = $1`,
-        [targetId]
-      );
-      await client.query(
-        `UPDATE maintenance_tickets SET created_by = NULL WHERE created_by = $1`,
-        [targetId]
-      );
-      await client.query(
-        `UPDATE owner_payout_requests SET reviewed_by = NULL WHERE reviewed_by = $1`,
-        [targetId]
-      );
-      await client.query(`UPDATE payments SET approved_by = NULL WHERE approved_by = $1`, [
-        targetId,
-      ]);
-      await client.query(`UPDATE payments SET created_by = NULL WHERE created_by = $1`, [
-        targetId,
-      ]);
-      await client.query(`UPDATE price_change_log SET actor_id = NULL WHERE actor_id = $1`, [
-        targetId,
-      ]);
-      await client.query(
-        `UPDATE pricing_recommendations SET created_by = NULL WHERE created_by = $1`,
-        [targetId]
-      );
-      await client.query(
-        `UPDATE reservations SET sales_person_id = NULL WHERE sales_person_id = $1`,
-        [targetId]
-      );
-      await client.query(
-        `UPDATE salary_deductions SET created_by = NULL WHERE created_by = $1`,
-        [targetId]
-      );
-      await client.query(`UPDATE tasks SET assigned_to = NULL WHERE assigned_to = $1`, [
-        targetId,
-      ]);
-      await client.query(
-        `UPDATE units SET created_by_staff = NULL WHERE created_by_staff = $1`,
-        [targetId]
-      );
-
+      await detachStaffUserReferences(client, targetId, actorId);
       const { rows } = await client.query(
         `DELETE FROM staff_users WHERE id = $1 RETURNING id, username`,
         [targetId]
@@ -791,7 +699,7 @@ router.delete('/users/:id', requireRoles(...HR_ROUTE_ROLES), async (req, res, ne
       res.json({ ok: true, deleted: rows[0] });
     } catch (err) {
       await client.query('ROLLBACK');
-      throw err;
+      throw asStaffDeleteError(err);
     } finally {
       client.release();
     }
