@@ -1066,9 +1066,12 @@ export default function Schedule() {
       adults,
       children,
       nanny_count: nannyCount,
-      housekeeping_fees: selectedUnit
-        ? housekeepingFeeForUnit(selectedUnit)
-        : createForm.housekeeping_fees,
+      housekeeping_fees:
+        createForm.housekeeping_fees !== '' && createForm.housekeeping_fees != null
+          ? Number(createForm.housekeeping_fees) || 0
+          : selectedUnit
+            ? housekeepingFeeForUnit(selectedUnit)
+            : 0,
       beach_access_fees: createForm.is_owner_reservation
         ? 0
         : createForm.beach_access_fees !== '' && createForm.beach_access_fees != null

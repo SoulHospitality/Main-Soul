@@ -1194,9 +1194,12 @@ export default function Reservations() {
       adults,
       children,
       nanny_count: nannyCount,
-      housekeeping_fees: selectedUnit
-        ? housekeepingFeeForUnit(selectedUnit)
-        : form.housekeeping_fees,
+      housekeeping_fees:
+        form.housekeeping_fees !== '' && form.housekeeping_fees != null
+          ? Number(form.housekeeping_fees) || 0
+          : selectedUnit
+            ? housekeepingFeeForUnit(selectedUnit)
+            : 0,
       beach_access_fees: form.is_owner_reservation
         ? 0
         : form.beach_access_fees !== '' && form.beach_access_fees != null

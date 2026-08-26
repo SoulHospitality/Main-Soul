@@ -124,7 +124,11 @@ export default function ManualReservationForm({
     );
   }, [form.check_in, form.check_out]);
 
-  const housekeeping = selectedUnit ? housekeepingFeeForUnit(selectedUnit) : 0;
+  const defaultHousekeeping = selectedUnit ? housekeepingFeeForUnit(selectedUnit) : 0;
+  const housekeeping =
+    form.housekeeping_fees !== '' && form.housekeeping_fees != null
+      ? Number(form.housekeeping_fees) || 0
+      : defaultHousekeeping;
   const adultsCount = Math.max(0, parseInt(form.adults, 10) || 0);
   const childrenCount = Math.max(0, parseInt(form.children, 10) || 0);
   const capacity = Number(selectedUnit?.guests || selectedUnit?.capacity) || 0;
@@ -279,7 +283,7 @@ export default function ManualReservationForm({
             )}
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div>
               <Label>Nights</Label>
               <div className={`${fieldClass} bg-[#f6f8fb] font-semibold`}>
@@ -309,6 +313,25 @@ export default function ManualReservationForm({
                 className={fieldClass}
                 placeholder="EGP"
               />
+            </div>
+            <div>
+              <Label>Housekeeping (EGP)</Label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.housekeeping_fees}
+                onChange={(e) =>
+                  setForm((cur) => ({ ...cur, housekeeping_fees: e.target.value }))
+                }
+                className={fieldClass}
+                placeholder={defaultHousekeeping ? String(defaultHousekeeping) : '0'}
+              />
+              {selectedUnit && (
+                <p className="mt-1 text-[11px] text-[#8b97aa]">
+                  Unit default {money(defaultHousekeeping)} — edit if this stay differs
+                </p>
+              )}
             </div>
           </div>
 
