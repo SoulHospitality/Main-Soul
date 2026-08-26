@@ -32,6 +32,7 @@ export function occupancyFromRanges(ranges = []) {
   const occupied = new Set();
   const checkoutDays = new Set();
   const extra = [];
+  const sourceByDate = {};
 
   for (const r of ranges) {
     if (r?._guest_block) {
@@ -54,7 +55,8 @@ export function occupancyFromRanges(ranges = []) {
       !HARD_TURNOVER_SOURCES.has(b.source);
     if (leftoverTurnover) continue;
     occupied.add(b.date);
+    if (b.source) sourceByDate[b.date] = b.source;
   }
 
-  return { blockedSet: occupied, checkoutOnlySet: checkoutDays };
+  return { blockedSet: occupied, checkoutOnlySet: checkoutDays, sourceByDate };
 }

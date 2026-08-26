@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocale } from '../../context/LocaleContext';
+import { otaBlockLook } from '../../admin/utils/otaCalendar';
 
 const dateToIso = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -27,6 +28,7 @@ export default function ListingDatePicker({
   anchorRef,
   blockedDates = [],
   checkoutDates = [],
+  blockedSources = {},
   dailyPrices = {},
   minNights = 1,
   inline = false,
@@ -176,6 +178,7 @@ export default function ListingDatePicker({
           onPick={pick}
           blockedSet={blockedSet}
           checkoutSet={checkoutSet}
+          blockedSources={blockedSources}
           dailyPrices={dailyPrices}
           minNights={minNights}
           localeTag={localeTag}
@@ -187,6 +190,7 @@ export default function ListingDatePicker({
           onPick={pick}
           blockedSet={blockedSet}
           checkoutSet={checkoutSet}
+          blockedSources={blockedSources}
           dailyPrices={dailyPrices}
           minNights={minNights}
           localeTag={localeTag}
@@ -208,6 +212,13 @@ export default function ListingDatePicker({
             </span>
             {t('listing.blockedHint')}
           </div>
+          {Object.values(blockedSources || {}).some((src) => otaBlockLook(src)) && (
+            <div className="flex items-center gap-2">
+              <span className="rounded px-1 py-px text-[8px] font-black tracking-widest bg-[#FF5A5F] text-white">AB</span>
+              <span className="rounded px-1 py-px text-[8px] font-black tracking-widest bg-[#003580] text-white">BK</span>
+              Outside booking (calendar sync)
+            </div>
+          )}
           {checkoutSet.size > 0 && (
             <p>Checkout days stay open so the next guest can check in the same day.</p>
           )}
@@ -254,7 +265,7 @@ export default function ListingDatePicker({
   );
 }
 
-function Month({ month, value, onPick, blockedSet, checkoutSet, dailyPrices, minNights, localeTag, allowPastDates = false }) {
+function Month({ month, value, onPick, blockedSet, checkoutSet, blockedSources, dailyPrices, minNights, localeTag, allowPastDates = false }) {
   const y = month.getFullYear();
   const mo = month.getMonth();
   const first = new Date(y, mo, 1);
@@ -277,6 +288,7 @@ function Month({ month, value, onPick, blockedSet, checkoutSet, dailyPrices, min
     const past = date < today;
     const pastLocked = past && !allowPastDates;
     const blocked = blockedSet.has(iso) && !checkoutSet?.has(iso);
+    const otaLook = blocked ? otaBlockLook(blockedSources?.[iso]) : null;
     const turnoverOpen = checkoutSet?.has(iso) && !blocked;
     const violatesMin =
       !!minNights &&
@@ -313,6 +325,8 @@ function Month({ month, value, onPick, blockedSet, checkoutSet, dailyPrices, min
       cls += checkoutOnly
         ? ' bg-[#eef2f7] text-soul-blue cursor-pointer ring-1 ring-inset ring-[#d7deea]'
         : ' hover:bg-soul-blue-50 cursor-pointer';
+    } else if (otaLook) {
+      cls += ` cursor-not-allowed ${otaLook.ringClass}`;
     } else if (blocked) cls += ' text-soul-muted/40 line-through bg-[#f4f5f7] cursor-not-allowed';
     else if (violatesMin) cls += ' text-soul-muted/40 bg-[#f7f8fa] cursor-not-allowed';
     else if (turnoverOpen) cls += ' hover:bg-soul-blue-50 cursor-pointer ring-1 ring-inset ring-emerald-200';
@@ -330,13 +344,23 @@ function Month({ month, value, onPick, blockedSet, checkoutSet, dailyPrices, min
         title={
           turnoverOpen
             ? 'Checkout day — free for the next check-in'
-            : blocked
-              ? 'Unavailable — already booked'
-              : undefined
+            : otaLook
+              ? otaLook.label
+              : blocked
+                ? 'Unavailable — already booked'
+                : undefined
         }
         className={cls}
+        style={otaLook && !isStart && !isEnd ? { backgroundImage: otaLook.hatch } : undefined}
       >
-        <span>{d}</span>
+        {otaLook && !isStart && !isEnd ? (
+          <span className="flex flex-col items-center gap-0.5 leading-none">
+            <span className={`rounded px-0.5 text-[8px] font-black tracking-widest ${otaLook.badgeClass}`}>{otaLook.badge}</span>
+            <span className="text-[11px] font-bold text-slate-700">{d}</span>
+          </span>
+        ) : (
+          <span>{d}</span>
+        )}
         {price !== undefined && (
           <span
             className={`mt-0.5 text-[10px] leading-none font-normal ${

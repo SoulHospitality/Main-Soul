@@ -103,13 +103,14 @@ export default function ManualReservationForm({
     staleTime: 30_000,
   });
 
-  const { blockedDates, checkoutDates } = useMemo(() => {
-    const { blockedSet, checkoutOnlySet } = occupancyFromRanges(
+  const { blockedDates, checkoutDates, blockedSources } = useMemo(() => {
+    const { blockedSet, checkoutOnlySet, sourceByDate } = occupancyFromRanges(
       Array.isArray(reservedRanges) ? reservedRanges : []
     );
     return {
       blockedDates: [...blockedSet],
       checkoutDates: [...checkoutOnlySet].filter((d) => !blockedSet.has(d)),
+      blockedSources: sourceByDate,
     };
   }, [reservedRanges]);
 
@@ -270,6 +271,7 @@ export default function ManualReservationForm({
                   }
                   blockedDates={blockedDates}
                   checkoutDates={checkoutDates}
+                  blockedSources={blockedSources}
                   minNights={minNights}
                 />
                 {availabilityLoading && (

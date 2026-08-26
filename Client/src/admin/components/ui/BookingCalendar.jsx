@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../api/axios';
 import { occupancyFromRanges } from '../../../utils/stayNights';
+import { otaBlockLook } from '../../utils/otaCalendar';
 
 
 const isoStr = (d) => {
@@ -50,7 +51,7 @@ function formatNights(checkIn, checkOut) {
 }
 
 
-function MonthGrid({ year, month, checkIn, checkOut, hovering, blockedSet, checkoutOnlySet, onDayClick, onDayHover, today, allowPastDates, rangeHasConflict }) {
+function MonthGrid({ year, month, checkIn, checkOut, hovering, blockedSet, checkoutOnlySet, sourceByDate, onDayClick, onDayHover, today, allowPastDates, rangeHasConflict }) {
   const total = daysInMonth(year, month);
   const firstDow = new Date(year, month, 1).getDay(); 
   const header = new Date(year, month).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
@@ -85,7 +86,7 @@ function MonthGrid({ year, month, checkIn, checkOut, hovering, blockedSet, check
             !rangeHasConflict(checkIn, ds);
           
           const isNightBlocked = blockedSet.has(ds);
-          
+          const otaLook = otaBlockLook(sourceByDate?.[ds]);
           const isCoOnly = checkoutOnlySet.has(ds) && !isNightBlocked;
           let isDisabled = isPast && !allowPastDates;
           if (!isDisabled) {
@@ -123,20 +124,22 @@ function MonthGrid({ year, month, checkIn, checkOut, hovering, blockedSet, check
           }
 
           
+          const showOta = otaLook && isNightBlocked && !isCheckIn && !isCheckOut && !(choosingCheckout && validCheckout);
           let circleClass = 'relative z-10 w-9 h-9 flex items-center justify-center rounded-full text-sm font-medium transition-colors ';
           if (isCheckIn || isCheckOut || isHoverEnd) {
             circleClass += 'bg-gray-900 text-white ';
+          } else if (showOta) {
+            circleClass += `flex-col gap-px font-black cursor-not-allowed ${otaLook.ringClass} `;
           } else if (isDisabled) {
             circleClass += 'text-gray-300 cursor-not-allowed line-through ';
           } else if (isCoOnly || (choosingCheckout && validCheckout && isNightBlocked)) {
-            
             circleClass += 'text-emerald-700 font-semibold cursor-pointer hover:bg-emerald-50 ring-1 ring-emerald-300 ';
           } else {
             circleClass += 'text-gray-700 cursor-pointer hover:bg-gray-100 ';
           }
 
           
-          if (isToday && !isCheckIn && !isCheckOut) circleClass += 'ring-1 ring-gray-400 ';
+          if (isToday && !isCheckIn && !isCheckOut && !showOta) circleClass += 'ring-1 ring-gray-400 ';
 
           return (
             <div
@@ -145,6 +148,7 @@ function MonthGrid({ year, month, checkIn, checkOut, hovering, blockedSet, check
               onClick={() => !isDisabled && onDayClick(ds)}
               onMouseEnter={() => !isDisabled && onDayHover(ds)}
               title={
+                isDisabled && otaLook ? otaLook.label :
                 isDisabled && isNightBlocked ? 'Unavailable — already booked' :
                 isCoOnly  ? '✓ Checkout day — free for the next check-in' :
                 choosingCheckout && validCheckout && isNightBlocked
@@ -162,8 +166,15 @@ function MonthGrid({ year, month, checkIn, checkOut, hovering, blockedSet, check
               )}
 
               
-              <div className={circleClass}>
-                {date.getDate()}
+              <div className={circleClass} style={showOta ? { backgroundImage: otaLook.hatch } : undefined}>
+                {showOta ? (
+                  <>
+                    <span className={`rounded px-0.5 text-[8px] leading-none tracking-widest ${otaLook.badgeClass}`}>{otaLook.badge}</span>
+                    <span className="text-[8px] font-bold leading-none text-slate-700">{date.getDate()}</span>
+                  </>
+                ) : (
+                  date.getDate()
+                )}
               </div>
             </div>
           );
@@ -202,7 +213,7 @@ export default function BookingCalendar({ checkIn, checkOut, onChange, unitId, e
   
   
   
-  const { blockedSet, checkoutOnlySet } = useMemo(
+  const { blockedSet, checkoutOnlySet, sourceByDate } = useMemo(
     () => occupancyFromRanges(Array.isArray(reservedRanges) ? reservedRanges : []),
     [reservedRanges]
   );
@@ -263,7 +274,7 @@ export default function BookingCalendar({ checkIn, checkOut, onChange, unitId, e
   
   const gridProps = {
     checkIn, checkOut, hovering,
-    blockedSet, checkoutOnlySet,
+    blockedSet, checkoutOnlySet, sourceByDate,
     onDayClick: handleDayClick,
     onDayHover: setHovering,
     today,
@@ -384,6 +395,11 @@ export default function BookingCalendar({ checkIn, checkOut, onChange, unitId, e
         <span className="flex items-center gap-1.5">
           <span className="w-5 h-5 rounded-full bg-gray-100 inline-flex items-center justify-center text-gray-300 text-[10px] line-through">1</span>
           Unavailable
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="rounded px-1 py-px text-[8px] font-black tracking-widest bg-[#FF5A5F] text-white">AB</span>
+          <span className="rounded px-1 py-px text-[8px] font-black tracking-widest bg-[#003580] text-white">BK</span>
+          Outside booking
         </span>
         {loadingDates && (
           <span className="ml-auto text-gray-400 animate-pulse">Loading availability…</span>

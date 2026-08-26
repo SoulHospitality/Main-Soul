@@ -5,6 +5,41 @@ const OTA_PLATFORM_LABELS = {
   other: 'OTA',
 };
 
+const OTA_LOOK = {
+  airbnb: {
+    badge: 'AB',
+    label: 'Airbnb · outside booking',
+    hatch: 'repeating-linear-gradient(135deg, #FF5A5F 0 3px, #fff5f5 3px 7px)',
+    badgeClass: 'bg-[#FF5A5F] text-white shadow-sm',
+    ringClass: 'ring-1 ring-inset ring-[#FF5A5F]',
+    cellBg: 'bg-[#fff1f2]',
+  },
+  booking: {
+    badge: 'BK',
+    label: 'Booking.com · outside booking',
+    hatch: 'repeating-linear-gradient(135deg, #003580 0 3px, #eef3fb 3px 7px)',
+    badgeClass: 'bg-[#003580] text-white shadow-sm',
+    ringClass: 'ring-1 ring-inset ring-[#003580]',
+    cellBg: 'bg-[#e8eef8]',
+  },
+  travigo: {
+    badge: 'TV',
+    label: 'Travigo · outside booking',
+    hatch: 'repeating-linear-gradient(135deg, #6d28d9 0 3px, #f5f3ff 3px 7px)',
+    badgeClass: 'bg-[#6d28d9] text-white shadow-sm',
+    ringClass: 'ring-1 ring-inset ring-[#6d28d9]',
+    cellBg: 'bg-[#f3e8ff]',
+  },
+  other: {
+    badge: 'OTA',
+    label: 'OTA · outside booking',
+    hatch: 'repeating-linear-gradient(135deg, #4338ca 0 3px, #eef2ff 3px 7px)',
+    badgeClass: 'bg-[#4338ca] text-white shadow-sm',
+    ringClass: 'ring-1 ring-inset ring-[#4338ca]',
+    cellBg: 'bg-[#eef2ff]',
+  },
+};
+
 export function isOtaBlockSource(source) {
   return source === 'ical' || String(source || '').startsWith('ical:');
 }
@@ -19,17 +54,15 @@ export function otaPlatformFromSource(source) {
   return source.split(':')[1] || 'other';
 }
 
-export function otaBlockLabel(source) {
+export function otaBlockLook(source) {
   if (!isOtaBlockSource(source)) return null;
-  const platform = otaPlatformFromSource(source);
-  return `${OTA_PLATFORM_LABELS[platform] || 'OTA'} block`;
+  return OTA_LOOK[otaPlatformFromSource(source)] || OTA_LOOK.other;
+}
+
+export function otaBlockLabel(source) {
+  return otaBlockLook(source)?.label || null;
 }
 
 export function otaBlockBadge(source) {
-  if (!isOtaBlockSource(source)) return null;
-  const platform = otaPlatformFromSource(source);
-  if (platform === 'airbnb') return 'AB';
-  if (platform === 'booking') return 'BK';
-  if (platform === 'travigo') return 'TV';
-  return 'OTA';
+  return otaBlockLook(source)?.badge || null;
 }

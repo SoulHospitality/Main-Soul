@@ -17,7 +17,7 @@ import TransferReservationModal from '../components/TransferReservationModal';
 import { housekeepingFeeForUnit } from '../../utils/housekeeping';
 import { useAuth } from '../context/AuthContext';
 import { isoDateOnly } from '../../utils/stayNights';
-import { isOtaBlockSource, otaBlockRank, otaBlockLabel, otaBlockBadge } from '../utils/otaCalendar';
+import { otaBlockRank, otaBlockLook } from '../utils/otaCalendar';
 
 
 
@@ -223,9 +223,10 @@ function PriceEditorModal({
     onUnblock(unitId, from, to);
   };
 
+  const otaLook = otaBlockLook(blockSource);
   const blockLabel =
-    isOtaBlockSource(blockSource)
-      ? otaBlockLabel(blockSource)
+    otaLook
+      ? otaLook.label
       : blockSource === 'owner'
         ? 'Owner block'
         : blockSource === 'reservation'
@@ -258,8 +259,19 @@ function PriceEditorModal({
           <p className="mt-0.5 text-xs text-soul-muted">
             {formatDate(dateStr)}
             {currentPrice > 0 ? ` · Current ${currency(currentPrice)}` : ' · Unpriced'}
-            {blockLabel ? ` · ${blockLabel}` : ''}
+            {blockLabel && !otaLook ? ` · ${blockLabel}` : ''}
           </p>
+          {otaLook && (
+            <div
+              className="mt-2 flex items-center gap-2 rounded-lg px-2 py-1.5 ring-1 ring-inset"
+              style={{ backgroundImage: otaLook.hatch }}
+            >
+              <span className={`rounded px-1 text-[10px] font-black tracking-widest ${otaLook.badgeClass}`}>
+                {otaLook.badge}
+              </span>
+              <span className="text-[11px] font-semibold text-slate-800">{blockLabel}</span>
+            </div>
+          )}
         </div>
 
         <div>
@@ -1361,7 +1373,6 @@ export default function Schedule() {
         {[
           { swatch: 'bg-emerald-50 border border-emerald-200', label: 'Priced' },
           { swatch: 'bg-rose-50 border border-rose-200', label: 'Unpriced' },
-          { swatch: 'border border-slate-300', label: 'OTA block (AB / BK / TV)', style: { backgroundImage: 'repeating-linear-gradient(135deg, rgba(40,63,94,0.14) 0 4px, transparent 4px 8px)' } },
           { swatch: 'bg-[#2a9d8f]', label: 'Guest stay' },
           { swatch: 'bg-red-600', label: 'Cancelled' },
           { swatch: 'bg-amber-400', label: 'Hold' },
@@ -1372,6 +1383,17 @@ export default function Schedule() {
         ].map((item) => (
           <div key={item.label} className="inline-flex items-center gap-1.5 text-[11px] font-medium text-soul-muted">
             <span className={`h-3 w-3 rounded-md ${item.swatch}`} style={item.style} />
+            {item.label}
+          </div>
+        ))}
+        {[
+          { badge: 'AB', className: 'bg-[#FF5A5F] text-white', label: 'Airbnb outside' },
+          { badge: 'BK', className: 'bg-[#003580] text-white', label: 'Booking.com outside' },
+          { badge: 'TV', className: 'bg-[#6d28d9] text-white', label: 'Travigo outside' },
+          { badge: 'OTA', className: 'bg-[#4338ca] text-white', label: 'Other OTA' },
+        ].map((item) => (
+          <div key={item.badge} className="inline-flex items-center gap-1.5 text-[11px] font-medium text-soul-muted">
+            <span className={`rounded px-1 py-px text-[8px] font-black tracking-widest ${item.className}`}>{item.badge}</span>
             {item.label}
           </div>
         ))}
@@ -1725,6 +1747,7 @@ export default function Schedule() {
                       if (cell.type === 'price') {
                         const price = getUnitDayPrice(unit, cell.date);
                         const blockSrc = blockMap[unit.id]?.[cell.date];
+                        const otaLook = otaBlockLook(blockSrc);
                         const isToday = cell.date === TODAY;
                         const isPast = cell.date < TODAY;
                         const isPriced = price != null && price > 0;
@@ -1733,10 +1756,14 @@ export default function Schedule() {
                           allReservations.some(
                             (r) => r.unit_id === unit.id && normDate(r.check_in) === TOMORROW
                           );
-                        const hatch =
-                          'repeating-linear-gradient(135deg, rgba(40,63,94,0.14) 0 4px, transparent 4px 8px)';
+                        const hatch = otaLook
+                          ? otaLook.hatch
+                          : blockSrc
+                            ? 'repeating-linear-gradient(135deg, rgba(40,63,94,0.14) 0 4px, transparent 4px 8px)'
+                            : undefined;
                         let cellBg = 'bg-white';
-                        if (blockSrc) cellBg = 'bg-slate-50';
+                        if (otaLook) cellBg = otaLook.cellBg;
+                        else if (blockSrc) cellBg = 'bg-slate-50';
                         else if (isPriced) cellBg = 'bg-emerald-50/90';
                         else if (!isPast) cellBg = 'bg-rose-50/80';
                         return (
@@ -1745,9 +1772,11 @@ export default function Schedule() {
                             style={{
                               minWidth: CELL_W,
                               width: CELL_W,
-                              ...(blockSrc ? { backgroundImage: hatch } : {}),
+                              ...(hatch ? { backgroundImage: hatch } : {}),
                             }}
                             className={`border-r border-slate-100 p-0 text-center align-middle ${cellBg} ${
+                              otaLook ? otaLook.ringClass : ''
+                            } ${
                               isPast ? 'opacity-45' : ''
                             } ${isToday ? 'ring-1 ring-inset ring-[var(--pms-accent,#283f5e)]/35' : ''} ${
                               hasCheckinTomorrow && !blockSrc ? 'bg-orange-50' : ''
@@ -1756,8 +1785,8 @@ export default function Schedule() {
                             title={
                               blockSrc
                                   ? `${
-                                    isOtaBlockSource(blockSrc)
-                                      ? otaBlockLabel(blockSrc)
+                                    otaLook
+                                      ? otaLook.label
                                       : blockSrc === 'owner'
                                         ? 'Owner'
                                         : blockSrc === 'reservation' || blockSrc === 'booking'
@@ -1777,19 +1806,30 @@ export default function Schedule() {
                           >
                             <div
                               className={`relative flex h-11 flex-col items-center justify-center py-1 ${
-                                hasCheckinTomorrow
-                                  ? 'text-orange-700'
-                                  : isPriced
-                                    ? 'text-emerald-700'
-                                    : 'text-rose-300'
+                                otaLook
+                                  ? 'text-slate-800'
+                                  : hasCheckinTomorrow
+                                    ? 'text-orange-700'
+                                    : isPriced
+                                      ? 'text-emerald-700'
+                                      : 'text-rose-300'
                               }`}
                             >
-                              {hasCheckinTomorrow && (
+                              {hasCheckinTomorrow && !otaLook && (
                                 <span className="mb-0.5 text-[10px] leading-none text-orange-500">●</span>
                               )}
-                              {blockSrc && !isPriced ? (
+                              {otaLook ? (
+                                <>
+                                  <span className={`rounded px-0.5 text-[8px] font-black leading-none tracking-widest ${otaLook.badgeClass}`}>
+                                    {otaLook.badge}
+                                  </span>
+                                  <span className="mt-0.5 text-[7px] font-extrabold uppercase leading-none tracking-wide text-slate-600">
+                                    out
+                                  </span>
+                                </>
+                              ) : blockSrc && !isPriced ? (
                                 <span className="rounded-md bg-white/80 px-0.5 text-[8px] font-bold tracking-wide text-violet-700">
-                                  {isOtaBlockSource(blockSrc) ? otaBlockBadge(blockSrc) : 'BLK'}
+                                  BLK
                                 </span>
                               ) : isPriced ? (
                                 <span className="text-[10px] font-bold leading-none tracking-tight">
