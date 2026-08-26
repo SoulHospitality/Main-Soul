@@ -58,6 +58,96 @@ function dateRange(req) {
   return { from, to, params, resSql };
 }
 
+async function computeOwnerPeriodBalance(ownerId, from, to) {
+  const { rows: links } = await query(`SELECT unit_id FROM owner_units WHERE owner_id = $1`, [
+    ownerId,
+  ]);
+  const unitIds = links.map((r) => r.unit_id);
+  if (!unitIds.length) {
+    return {
+      owner_id: ownerId,
+      unit_count: 0,
+      gross_credits: 0,
+      maintenance_deductions: 0,
+      paid_out: 0,
+      earned: 0,
+      remaining: 0,
+    };
+  }
+
+  const resParams = [unitIds, from];
+  let resSql = `r.unit_id = ANY($1::uuid[])
+       AND r.status <> 'cancelled'
+       AND r.created_at::date >= $2::date`;
+  if (to) {
+    resParams.push(to);
+    resSql += ` AND r.created_at::date <= $3::date`;
+  }
+  const { rows: resRows } = await query(
+    `SELECT r.*, u.commission_mode, u.company_commission_pct,
+            u.company_commission_owner_pct, u.commission_tenant_pct,
+            COALESCE(u.utilities_cost, 0) AS utilities_cost
+     FROM reservations r
+     JOIN units u ON u.id = r.unit_id
+     WHERE ${resSql}`,
+    resParams
+  );
+
+  let grossCredits = 0;
+  for (const r of resRows) {
+    const fin = calcReservationFinancials(r, r);
+    grossCredits += fin.ownerNet;
+  }
+
+  const expParams = [unitIds, from, ownerId];
+  let expWhere = `paid_by = 'owner'
+       AND expense_date >= $2::date
+       AND (
+         owner_id = $3
+         OR (owner_id IS NULL AND unit_id = ANY($1::uuid[]))
+       )`;
+  if (to) {
+    expParams.push(to);
+    expWhere += ` AND expense_date <= $4::date`;
+  }
+  const { rows: expRows } = await query(
+    `SELECT COALESCE(SUM(amount), 0)::float AS total FROM expenses WHERE ${expWhere}`,
+    expParams
+  );
+  const maintenance = Number(expRows[0]?.total) || 0;
+
+  const payParams = [ownerId, from];
+  let payWhere = `owner_id = $1 AND status = 'paid' AND COALESCE(reviewed_at, created_at)::date >= $2::date`;
+  if (to) {
+    payParams.push(to);
+    payWhere += ` AND COALESCE(reviewed_at, created_at)::date <= $3::date`;
+  }
+  let paidOut = 0;
+  try {
+    const { rows: payRows } = await query(
+      `SELECT COALESCE(SUM(amount), 0)::float AS total
+       FROM owner_payout_requests
+       WHERE ${payWhere}`,
+      payParams
+    );
+    paidOut = Number(payRows[0]?.total) || 0;
+  } catch (_) {
+    paidOut = 0;
+  }
+
+  const earned = round2(grossCredits - maintenance);
+  const remaining = round2(Math.max(0, earned - paidOut));
+  return {
+    owner_id: ownerId,
+    unit_count: unitIds.length,
+    gross_credits: round2(grossCredits),
+    maintenance_deductions: round2(maintenance),
+    paid_out: round2(paidOut),
+    earned,
+    remaining,
+  };
+}
+
 async function loadReservations(req) {
   const { params, resSql } = dateRange(req);
   const unitId = req.query.unit_id ? String(req.query.unit_id).trim() : '';
@@ -462,6 +552,7 @@ router.get('/financial-system/owner-statements', requireRoles('admin'), async (r
         unit_id: unit.id,
         unit_name: unit.unit_name,
         project: unit.project,
+        owners: owners.map((o) => ({ id: o.id, full_name: o.full_name })),
         owner_names: owners.map((o) => o.full_name).join(', ') || '—',
         reservation_count: resRows.length,
         gross_credits: round2(grossCredits),
@@ -469,6 +560,36 @@ router.get('/financial-system/owner-statements', requireRoles('admin'), async (r
         net_payout_due: netPayout,
       });
     }
+
+    const ownerIds = new Set();
+    for (const s of statements) {
+      for (const o of s.owners || []) ownerIds.add(o.id);
+    }
+    // Also include owners who only have payout activity / linked units in period filter scope
+    try {
+      const { rows: allLinked } = await query(
+        `SELECT DISTINCT ou.owner_id AS id, su.full_name
+         FROM owner_units ou
+         JOIN staff_users su ON su.id = ou.owner_id
+         WHERE su.role = 'owner' AND su.is_active = 1`
+      );
+      for (const o of allLinked) ownerIds.add(o.id);
+    } catch (_) {}
+
+    const ownerBalances = [];
+    for (const oid of ownerIds) {
+      const bal = await computeOwnerPeriodBalance(oid, from, to);
+      if (bal.earned <= 0.009 && bal.paid_out <= 0.009 && bal.remaining <= 0.009) continue;
+      const { rows: nameRows } = await query(
+        `SELECT id, full_name FROM staff_users WHERE id = $1`,
+        [oid]
+      );
+      ownerBalances.push({
+        ...bal,
+        full_name: nameRows[0]?.full_name || `Owner #${oid}`,
+      });
+    }
+    ownerBalances.sort((a, b) => String(a.full_name).localeCompare(String(b.full_name)));
 
     let payouts = [];
     try {
@@ -481,7 +602,13 @@ router.get('/financial-system/owner-statements', requireRoles('admin'), async (r
       payouts = rows;
     } catch (_) {}
 
-    res.json({ statements, payouts, from_date: from, to_date: to });
+    res.json({
+      statements,
+      owner_balances: ownerBalances,
+      payouts,
+      from_date: from,
+      to_date: to,
+    });
   } catch (e) {
     next(e);
   }
@@ -494,6 +621,9 @@ router.post('/financial-system/payouts/:id/settle', requireRoles('admin'), async
     const { rows } = await query(`SELECT * FROM owner_payout_requests WHERE id = $1`, [id]);
     if (!rows[0]) return res.status(404).json({ error: 'Payout not found' });
     if (rows[0].status === 'paid') return res.json({ ok: true, payout: rows[0] });
+    if (rows[0].status === 'rejected') {
+      return res.status(400).json({ error: 'Cannot settle a rejected payout request' });
+    }
 
     await query(
       `UPDATE owner_payout_requests SET
@@ -504,9 +634,112 @@ router.post('/financial-system/payouts/:id/settle', requireRoles('admin'), async
        WHERE id = $1`,
       [id, req.user.id]
     );
+    if (rows[0].settlement_id) {
+      await query(
+        `UPDATE owner_settlements SET status = 'paid', updated_at = now() WHERE id = $1`,
+        [rows[0].settlement_id]
+      );
+    }
     const { rows: updated } = await query(`SELECT * FROM owner_payout_requests WHERE id = $1`, [id]);
     res.json({ ok: true, payout: updated[0] });
   } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * Admin marks an owner's balance settled without an owner withdrawal request.
+ * Creates a paid payout (and optional settlement) immediately.
+ */
+router.post('/financial-system/owners/:ownerId/settle', requireRoles('admin'), async (req, res, next) => {
+  try {
+    const ownerId = parseInt(req.params.ownerId, 10);
+    if (!Number.isInteger(ownerId) || ownerId <= 0) {
+      return res.status(400).json({ error: 'Invalid owner id' });
+    }
+
+    const { rows: owners } = await query(
+      `SELECT id, full_name FROM staff_users WHERE id = $1 AND role = 'owner'`,
+      [ownerId]
+    );
+    if (!owners[0]) return res.status(404).json({ error: 'Owner not found' });
+
+    const { from, to } = dateRange(req);
+    const settleDate = String(req.body.settle_date || to || new Date().toISOString().slice(0, 10)).slice(0, 10);
+    await assertPeriodOpen(settleDate);
+
+    const amountRaw = req.body.amount;
+    let amount =
+      amountRaw == null || amountRaw === ''
+        ? null
+        : round2(parseFloat(amountRaw));
+
+    if (amount == null || Number.isNaN(amount)) {
+      const balance = await computeOwnerPeriodBalance(ownerId, from, to);
+      amount = balance.remaining;
+    }
+
+    if (!(amount > 0.009)) {
+      return res.status(400).json({ error: 'Nothing to settle for this owner in the selected period' });
+    }
+
+    const periodEnd = to || settleDate;
+    let settlementId = null;
+    try {
+      const { rows: existing } = await query(
+        `SELECT id FROM owner_settlements
+         WHERE owner_id = $1 AND period_start = $2::date AND period_end = $3::date
+         ORDER BY id DESC LIMIT 1`,
+        [ownerId, from, periodEnd]
+      );
+      if (existing[0]) {
+        settlementId = existing[0].id;
+        await query(
+          `UPDATE owner_settlements SET
+             status = 'paid',
+             net_amount = $1,
+             notes = COALESCE($2, notes),
+             updated_at = now()
+           WHERE id = $3`,
+          [amount, req.body.notes || 'Admin settled without owner request', settlementId]
+        );
+      } else {
+        const { rows: created } = await query(
+          `INSERT INTO owner_settlements (
+             owner_id, period_start, period_end, gross_amount, commission_amount, net_amount, status, notes
+           ) VALUES ($1,$2,$3,$4,0,$4,'paid',$5)
+           RETURNING id`,
+          [
+            ownerId,
+            from,
+            periodEnd,
+            amount,
+            req.body.notes || 'Admin settled without owner request',
+          ]
+        );
+        settlementId = created[0]?.id || null;
+      }
+    } catch (e) {
+      if (e.code !== '42P01') throw e;
+    }
+
+    const { rows: payoutRows } = await query(
+      `INSERT INTO owner_payout_requests (
+         owner_id, settlement_id, amount, status, two_fa_verified, reviewed_by, reviewed_at
+       ) VALUES ($1,$2,$3,'paid',1,$4,now())
+       RETURNING *`,
+      [ownerId, settlementId, amount, req.user.id]
+    );
+
+    res.status(201).json({
+      ok: true,
+      payout: payoutRows[0],
+      owner: owners[0],
+      amount,
+      settle_date: settleDate,
+    });
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
     next(e);
   }
 });

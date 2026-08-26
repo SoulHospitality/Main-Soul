@@ -789,6 +789,9 @@ function TaxTab({ rangeParams: params }) {
 
 function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
   const [unitId, setUnitId] = useState('');
+  const [settleOwner, setSettleOwner] = useState(null);
+  const [settleAmount, setSettleAmount] = useState('');
+  const [settleNotes, setSettleNotes] = useState('');
   const qc = useQueryClient();
   const { data: units = [] } = useQuery({
     queryKey: ['financial-system-units'],
@@ -805,8 +808,27 @@ function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
       toast.success('Payout marked settled');
       qc.invalidateQueries({ queryKey: ['financial-system-owners'] });
       qc.invalidateQueries({ queryKey: ['financial-system-portal'] });
+      qc.invalidateQueries({ queryKey: ['financial-system-trust'] });
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+  });
+  const settleOwnerMutation = useMutation({
+    mutationFn: ({ ownerId, amount, notes }) =>
+      api.post(
+        `/financial-system/owners/${ownerId}/settle`,
+        { amount, notes },
+        { params: { from_date: fromDate || undefined, to_date: toDate || undefined } }
+      ),
+    onSuccess: (res) => {
+      toast.success(`Settled ${currency(res.data?.amount)} for ${res.data?.owner?.full_name || 'owner'}`);
+      setSettleOwner(null);
+      setSettleAmount('');
+      setSettleNotes('');
+      qc.invalidateQueries({ queryKey: ['financial-system-owners'] });
+      qc.invalidateQueries({ queryKey: ['financial-system-portal'] });
+      qc.invalidateQueries({ queryKey: ['financial-system-trust'] });
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed to settle'),
   });
   const reviewPayout = useMutation({
     mutationFn: ({ id, status }) => api.post(`/owner/payout-requests/${id}/review`, { status }),
@@ -818,9 +840,23 @@ function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
   });
   if (isLoading) return <LoadingSpinner />;
   const statements = data?.statements || [];
+  const ownerBalances = data?.owner_balances || [];
   const payouts = data?.payouts || [];
+
+  function openSettle(owner) {
+    setSettleOwner(owner);
+    setSettleAmount(
+      owner.remaining != null && owner.remaining > 0 ? String(owner.remaining) : ''
+    );
+    setSettleNotes('');
+  }
+
   return (
     <div className="space-y-6">
+      <p className="text-sm text-gray-500">
+        You can settle an owner&apos;s balance yourself — no withdrawal request required. Paid
+        amounts post against owner trust (202000).
+      </p>
       <SearchableSelect
         className="w-72"
         value={unitId}
@@ -834,6 +870,63 @@ function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
           })),
         ]}
       />
+
+      <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
+        <div className="px-6 py-4 border-b">
+          <h3 className="font-semibold">Settle by owner</h3>
+          <p className="text-xs text-gray-500 mt-1">
+            Period earnings minus maintenance and amounts already marked paid
+          </p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="table text-sm">
+            <thead>
+              <tr>
+                <th>Owner</th>
+                <th className="text-right">Earned</th>
+                <th className="text-right">Already paid</th>
+                <th className="text-right">Remaining</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {ownerBalances.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="text-center text-sm text-gray-400 py-8">
+                    No owner balances for this period
+                  </td>
+                </tr>
+              ) : (
+                ownerBalances.map((o) => (
+                  <tr key={o.owner_id}>
+                    <td className="font-medium">{o.full_name}</td>
+                    <td className="text-right tabular-nums">{currency(o.earned)}</td>
+                    <td className="text-right tabular-nums text-emerald-700">
+                      {o.paid_out > 0 ? currency(o.paid_out) : '—'}
+                    </td>
+                    <td className="text-right font-bold tabular-nums">{currency(o.remaining)}</td>
+                    <td className="text-right">
+                      {o.remaining > 0.009 ? (
+                        <button
+                          type="button"
+                          className="btn-secondary text-xs py-1 px-2"
+                          onClick={() => openSettle(o)}
+                        >
+                          <CheckCircle2 className="w-3 h-3 inline mr-1" />
+                          Mark settled
+                        </button>
+                      ) : (
+                        <span className="text-xs text-emerald-600 font-medium">Settled</span>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
         <div className="px-6 py-4 border-b">
           <h3 className="font-semibold">Owner balances by unit</h3>
@@ -877,34 +970,121 @@ function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
             </tr>
           </thead>
           <tbody>
-            {payouts.map((p) => (
-              <tr key={p.id}>
-                <td>{p.owner_name}</td>
-                <td className="text-right tabular-nums">{currency(p.amount)}</td>
-                <td className="capitalize">{p.status}</td>
-                <td className="text-right space-x-2">
-                  {p.status === 'requested' && (
-                    <>
-                      <button type="button" className="text-xs text-emerald-700" onClick={() => reviewPayout.mutate({ id: p.id, status: 'approved' })}>
-                        Approve
-                      </button>
-                      <button type="button" className="text-xs text-red-600" onClick={() => reviewPayout.mutate({ id: p.id, status: 'rejected' })}>
-                        Reject
-                      </button>
-                    </>
-                  )}
-                  {p.status === 'approved' && (
-                    <button type="button" className="btn-secondary text-xs py-1 px-2" onClick={() => settle.mutate(p.id)}>
-                      <CheckCircle2 className="w-3 h-3 inline mr-1" />
-                      Mark settled
-                    </button>
-                  )}
+            {payouts.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="text-center text-sm text-gray-400 py-6">
+                  No withdrawal requests — use Mark settled above when you pay an owner directly
                 </td>
               </tr>
-            ))}
+            ) : (
+              payouts.map((p) => (
+                <tr key={p.id}>
+                  <td>{p.owner_name}</td>
+                  <td className="text-right tabular-nums">{currency(p.amount)}</td>
+                  <td className="capitalize">{p.status}</td>
+                  <td className="text-right space-x-2">
+                    {p.status === 'requested' && (
+                      <>
+                        <button
+                          type="button"
+                          className="text-xs text-emerald-700"
+                          onClick={() => reviewPayout.mutate({ id: p.id, status: 'approved' })}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          type="button"
+                          className="text-xs text-red-600"
+                          onClick={() => reviewPayout.mutate({ id: p.id, status: 'rejected' })}
+                        >
+                          Reject
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-secondary text-xs py-1 px-2"
+                          onClick={() => settle.mutate(p.id)}
+                        >
+                          Mark settled
+                        </button>
+                      </>
+                    )}
+                    {p.status === 'approved' && (
+                      <button
+                        type="button"
+                        className="btn-secondary text-xs py-1 px-2"
+                        onClick={() => settle.mutate(p.id)}
+                      >
+                        <CheckCircle2 className="w-3 h-3 inline mr-1" />
+                        Mark settled
+                      </button>
+                    )}
+                    {p.status === 'paid' && (
+                      <span className="text-xs text-emerald-600 font-medium">Paid</span>
+                    )}
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
+
+      <Modal
+        open={Boolean(settleOwner)}
+        onClose={() => setSettleOwner(null)}
+        title={settleOwner ? `Settle — ${settleOwner.full_name}` : 'Settle owner'}
+        size="sm"
+        footer={
+          <>
+            <button type="button" className="btn-secondary" onClick={() => setSettleOwner(null)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={settleOwnerMutation.isPending || !(parseFloat(settleAmount) > 0)}
+              onClick={() =>
+                settleOwnerMutation.mutate({
+                  ownerId: settleOwner.owner_id,
+                  amount: parseFloat(settleAmount),
+                  notes: settleNotes || undefined,
+                })
+              }
+            >
+              {settleOwnerMutation.isPending ? 'Saving…' : 'Confirm settled'}
+            </button>
+          </>
+        }
+      >
+        {settleOwner && (
+          <div className="space-y-4 text-sm">
+            <p className="text-gray-600">
+              Marks this amount as paid to the owner without a portal withdrawal request. Remaining
+              in period: <span className="font-semibold tabular-nums">{currency(settleOwner.remaining)}</span>
+            </p>
+            <div>
+              <label className="label">Amount (EGP)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className="input w-full"
+                value={settleAmount}
+                onChange={(e) => setSettleAmount(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="label">Notes (optional)</label>
+              <input
+                className="input w-full"
+                value={settleNotes}
+                onChange={(e) => setSettleNotes(e.target.value)}
+                placeholder="e.g. Cash handover / bank transfer ref"
+              />
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
