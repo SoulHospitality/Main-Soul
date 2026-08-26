@@ -22,7 +22,7 @@ import { currency, formatDate, formatDateTime, nightsText, BOOKING_SOURCES, PAYM
 import { calcReservationFinancials, commissionModeLabel, appliedPctLabel } from '../utils/commission';
 import { housekeepingFeeForUnit } from '../../utils/housekeeping';
 import { isoDateOnly } from '../../utils/stayNights';
-import { canonicalSalesName, namesAreAliases } from '../utils/salesNameMatch';
+import { canonicalSalesName, namesAreAliases, reservationSalesDisplay } from '../utils/salesNameMatch';
 import AdminReservationDrawer from '../components/AdminReservationDrawer';
 import ManualReservationForm from '../components/ManualReservationForm';
 import TransferReservationModal from '../components/TransferReservationModal';
@@ -487,6 +487,7 @@ function InfoRow({ label, value, bold }) {
 
 function ReservationDetail({
   reservation,
+  users = [],
   onAddPayment,
   canPay,
   canApprove,
@@ -557,12 +558,7 @@ function ReservationDetail({
           <InfoRow label="Source" value={reservation.booking_source} />
           <InfoRow
             label="Sales / Owner"
-            value={
-              reservation.sales_owner_label ||
-              (reservation.is_owner_reservation
-                ? 'Owner'
-                : reservation.sales_person_name || reservation.sales_label || '—')
-            }
+            value={reservationSalesDisplay(reservation, users)}
           />
           <InfoRow label="Created by" value={reservation.created_by_name || '—'} />
           {reservation.booking_id && (
@@ -1329,9 +1325,7 @@ export default function Reservations() {
         Utilities: parseFloat(r.utilities_amount ?? r.utilities) || 0,
         'Payment Status': payLabel,
         Status: r.status || '',
-        'Sales / Owner':
-          r.sales_owner_label ||
-          (r.is_owner_reservation ? 'Owner' : r.sales_person_name || r.sales_label || ''),
+        'Sales / Owner': reservationSalesDisplay(r, users, ''),
       };
     });
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -1495,9 +1489,7 @@ export default function Reservations() {
                       : r.payment_status === 'partial'
                         ? 'partial'
                         : 'unpaid';
-                  const salesLabel =
-                    r.sales_owner_label ||
-                    (r.is_owner_reservation ? 'Owner' : r.sales_person_name || r.sales_label || '—');
+                  const salesLabel = reservationSalesDisplay(r, users);
                   const idPhotos = Array.isArray(r.id_photo_urls) ? r.id_photo_urls.filter(Boolean) : [];
                   const isCancelled = r.status === 'cancelled';
                   return (
@@ -1774,6 +1766,7 @@ export default function Reservations() {
       >
         <ReservationDetail
           reservation={viewDetail}
+          users={users}
           onAddPayment={handleAddPayment}
           canPay={canPay}
           canApprove={canApprove}

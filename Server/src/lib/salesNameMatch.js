@@ -27,6 +27,13 @@ const EQUIVALENCE_GROUPS = [
   ['emery adham', 'emry adham', 'emery', 'emry'],
   ['mazen mohamed', 'mazen'],
   ['amira', 'amira hesham'],
+  ['aya ahmed', 'aya'],
+  [
+    'abdelrahman dawod',
+    'abdelrahman dawood',
+    'abdelrhman dawod',
+    'abdelrhman dawood',
+  ],
 ];
 
 function aliasLabelsForName(value) {

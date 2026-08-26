@@ -16,6 +16,13 @@ const EQUIVALENCE_GROUPS = [
   ['emery adham', 'emry adham', 'emery', 'emry'],
   ['mazen mohamed', 'mazen'],
   ['amira', 'amira hesham'],
+  ['aya ahmed', 'aya'],
+  [
+    'abdelrahman dawod',
+    'abdelrahman dawood',
+    'abdelrhman dawod',
+    'abdelrhman dawood',
+  ],
 ];
 
 function aliasLabelsForName(value) {
@@ -38,4 +45,14 @@ export function canonicalSalesName(value, staffList = []) {
   if (!raw) return '';
   const staff = (staffList || []).find((u) => namesAreAliases(u.full_name, raw));
   return String(staff?.full_name || raw).trim();
+}
+
+export function reservationSalesDisplay(reservation, staffList = [], empty = '—') {
+  if (!reservation) return empty;
+  if (reservation.sales_owner_label) return reservation.sales_owner_label;
+  if (reservation.is_owner_reservation) return 'Owner';
+  return canonicalSalesName(
+    reservation.sales_person_name || reservation.sales_label,
+    staffList
+  ) || empty;
 }
