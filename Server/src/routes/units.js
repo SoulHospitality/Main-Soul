@@ -1,9 +1,69 @@
 const express = require('express');
 const { query } = require('../config/db');
-const { quoteStay, getBlockedDates, getStayCheckoutDates, todayIsoBusiness } = require('../services/pricing');
+const { quoteStay, getBlockedDates, getStayCheckoutDates, todayIsoBusiness, toIsoDate, nightsBetween } = require('../services/pricing');
 const { GUEST_AVAILABILITY_MONTHS } = require('../lib/calendarOccupancy');
+const { DEFAULT_MIN_STAY_NIGHTS } = require('../lib/minStay');
 
 const router = express.Router();
+
+/**
+ * Guest search: unit must be free for [checkin, checkout) and priced every night.
+ * Half-open stays — checkout morning is free for the next arrival.
+ */
+function appendStayAvailabilityFilters(where, params, i, checkinIso, checkoutIso, stayNights) {
+  const ci = i;
+  params.push(checkinIso);
+  i += 1;
+  const co = i;
+  params.push(checkoutIso);
+  i += 1;
+  const nightsIdx = i;
+  params.push(stayNights);
+  i += 1;
+
+  where.push(`COALESCE(u.min_nights, ${DEFAULT_MIN_STAY_NIGHTS}) <= $${nightsIdx}`);
+
+  where.push(`NOT EXISTS (
+    SELECT 1 FROM unit_ical_blocks b
+    JOIN unit_ota_feeds f ON f.id = b.feed_id
+    WHERE b.wp_post_id = u.wp_post_id
+      AND b.date >= $${ci}::date AND b.date < $${co}::date
+  )`);
+
+  where.push(`NOT EXISTS (
+    SELECT 1 FROM unit_blocked_dates b
+    WHERE b.wp_post_id = u.wp_post_id
+      AND b.date >= $${ci}::date AND b.date < $${co}::date
+      AND COALESCE(b.source, 'manual') NOT IN ('reservation', 'reservation_import', 'booking')
+  )`);
+
+  where.push(`NOT EXISTS (
+    SELECT 1 FROM reservations r
+    WHERE r.unit_id = u.id
+      AND r.status <> 'cancelled'
+      AND r.check_in < $${co}::date
+      AND r.check_out > $${ci}::date
+  )`);
+
+  where.push(`NOT EXISTS (
+    SELECT 1 FROM bookings bk
+    WHERE bk.listing_wp_id = u.wp_post_id
+      AND bk.status IN ('confirmed', 'pending', 'held')
+      AND (bk.hold_expires_at IS NULL OR bk.hold_expires_at > now())
+      AND bk.checkin < $${co}::date
+      AND bk.checkout > $${ci}::date
+  )`);
+
+  where.push(`(
+    SELECT COUNT(*)::int
+    FROM unit_daily_prices p
+    WHERE p.wp_post_id = u.wp_post_id
+      AND p.date >= $${ci}::date AND p.date < $${co}::date
+      AND COALESCE(p.price, 0) > 0
+  ) = $${nightsIdx}`);
+
+  return i;
+}
 
 
 const GUEST_UNIT_OMIT = new Set([
@@ -140,6 +200,8 @@ router.get('/', async (req, res, next) => {
       property_type,
       status = 'published',
       listing_type: listingTypeParam,
+      checkin,
+      checkout,
       limit = 24,
       offset = 0,
     } = req.query;
@@ -192,6 +254,14 @@ router.get('/', async (req, res, next) => {
       const placeholders = typeList.map(() => `$${i++}`);
       where.push(`u.property_type ILIKE ANY(ARRAY[${placeholders.join(', ')}])`);
       params.push(...typeList);
+    }
+
+    const checkinIso = listingType === 'rent' ? toIsoDate(checkin) : null;
+    const checkoutIso = listingType === 'rent' ? toIsoDate(checkout) : null;
+    const stayNights =
+      checkinIso && checkoutIso ? nightsBetween(checkinIso, checkoutIso) : 0;
+    if (checkinIso && checkoutIso && Number.isFinite(stayNights) && stayNights > 0) {
+      i = appendStayAvailabilityFilters(where, params, i, checkinIso, checkoutIso, stayNights);
     }
 
     params.push(Number(limit), Number(offset));

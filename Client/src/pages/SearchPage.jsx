@@ -25,6 +25,8 @@ function buildApiParams(sp, { limit, offset, listingType }) {
   const destination = sp.get('destination') || sp.get('area') || '';
   const compound = sp.get('compound') || sp.get('project') || '';
   const types = sp.get('types') || '';
+  const checkin = listingType === 'sale' ? '' : sp.get('checkin') || '';
+  const checkout = listingType === 'sale' ? '' : sp.get('checkout') || '';
 
   return {
     q: sp.get('q') || undefined,
@@ -34,6 +36,8 @@ function buildApiParams(sp, { limit, offset, listingType }) {
     guests: listingType === 'sale' ? undefined : sp.get('guests') || undefined,
     types: types || undefined,
     listing_type: listingType,
+    checkin: checkin && checkout ? checkin : undefined,
+    checkout: checkin && checkout ? checkout : undefined,
     limit,
     offset,
   };

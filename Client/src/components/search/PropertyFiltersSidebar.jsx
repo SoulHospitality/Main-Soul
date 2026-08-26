@@ -340,8 +340,8 @@ export default function PropertyFiltersSidebar({
   }
 
   return (
-    <aside className="hidden lg:block">
-      <div className="sticky top-[104px] max-h-[calc(100vh-120px)] overflow-visible rounded-2xl border border-soul-line bg-white p-5 shadow-[0_12px_40px_rgba(40,63,94,0.08)]">
+    <aside className="relative z-40 hidden lg:block">
+      <div className="sticky top-[104px] z-40 max-h-[calc(100vh-120px)] overflow-visible rounded-2xl border border-soul-line bg-white p-5 shadow-[0_12px_40px_rgba(40,63,94,0.08)]">
         <div className="mb-4">
           <p className="text-[10.5px] font-bold uppercase tracking-[0.18em] text-soul-muted">{t('search.filters')}</p>
           <h2 className="mt-1 font-display text-xl font-semibold text-soul-blue">{t('search.findStay')}</h2>

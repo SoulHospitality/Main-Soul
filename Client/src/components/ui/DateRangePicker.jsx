@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { CalendarDays } from 'lucide-react';
 import { useLocale } from '../../context/LocaleContext';
 
@@ -55,18 +56,53 @@ export default function DateRangePicker({
 }) {
   const { t, localeTag } = useLocale();
   const rootRef = useRef(null);
+  const popoverRef = useRef(null);
   const [open, setOpen] = useState(defaultOpen);
   const [activeField, setActiveField] = useState('arrive');
+  const [popoverStyle, setPopoverStyle] = useState(null);
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const seed = checkin || checkout;
     return seed ? new Date(`${seed}T00:00:00`) : new Date();
   });
   const isHero = variant === 'hero';
 
+  useLayoutEffect(() => {
+    if (!open) {
+      setPopoverStyle(null);
+      return undefined;
+    }
+    function place() {
+      const el = rootRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const width = Math.min(340, Math.max(rect.width, 280));
+      let left = rect.left;
+      if (left + width > window.innerWidth - 12) {
+        left = Math.max(12, window.innerWidth - width - 12);
+      }
+      setPopoverStyle({
+        position: 'fixed',
+        top: rect.bottom + 12,
+        left,
+        width,
+        zIndex: 400,
+      });
+    }
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [open, calendarMonth, checkin, checkout, activeField]);
+
   useEffect(() => {
     if (!open) return undefined;
     const onOutside = (event) => {
-      if (rootRef.current && !rootRef.current.contains(event.target)) {
+      const inRoot = rootRef.current?.contains(event.target);
+      const inPopover = popoverRef.current?.contains(event.target);
+      if (!inRoot && !inPopover) {
         setOpen(false);
         onOpenChange?.(false);
       }
@@ -154,11 +190,118 @@ export default function DateRangePicker({
         ? 'bg-soul-blue-50/70'
         : 'hover:bg-soul-blue-50/40';
   const popoverCls = isHero
-    ? 'absolute left-0 right-0 top-full z-[130] mt-3 rounded-2xl border border-white/25 bg-white/95 p-4 shadow-2xl backdrop-blur-xl sm:left-0 sm:right-auto sm:w-[340px] sm:p-6'
-    : 'absolute left-0 right-0 top-full z-[130] mt-3 rounded-2xl border border-soul-line bg-white p-4 shadow-[0_18px_50px_rgba(40,63,94,0.18)] sm:left-0 sm:right-auto sm:w-[340px]';
+    ? 'rounded-2xl border border-white/25 bg-white/95 p-4 shadow-2xl backdrop-blur-xl sm:p-6'
+    : 'rounded-2xl border border-soul-line bg-white p-4 shadow-[0_18px_50px_rgba(40,63,94,0.18)]';
+
+  const calendarPanel = open && popoverStyle ? (
+    <div ref={popoverRef} className={popoverCls} style={popoverStyle}>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="inline-flex rounded-full border border-soul-line bg-soul-ivory/50 p-0.5">
+          <button
+            type="button"
+            onClick={() => setActiveField('arrive')}
+            className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
+              activeField === 'arrive'
+                ? 'bg-soul-blue text-white'
+                : 'text-soul-muted hover:text-soul-blue'
+            }`}
+          >
+            {isHero ? t('home.arrive') : t('common.from')}
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveField('depart')}
+            className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
+              activeField === 'depart'
+                ? 'bg-soul-blue text-white'
+                : 'text-soul-muted hover:text-soul-blue'
+            }`}
+          >
+            {isHero ? t('home.depart') : t('common.to')}
+          </button>
+        </div>
+        {(checkin || checkout) && (
+          <button
+            type="button"
+            onClick={clearDates}
+            className="text-[11px] font-semibold text-soul-muted hover:text-soul-blue"
+          >
+            {t('common.clear')}
+          </button>
+        )}
+      </div>
+
+      <div className="mb-3 flex items-center justify-between text-soul-blue">
+        <button
+          type="button"
+          onClick={() => setCalendarMonth((c) => addMonths(c, -1))}
+          className="rounded-full px-2 py-1 text-lg font-semibold transition-colors hover:bg-soul-blue-50"
+          aria-label={t('common.previousMonth')}
+        >
+          ←
+        </button>
+        <span className="text-sm font-semibold uppercase tracking-[0.18em]">
+          {formatMonthLabel(calendarMonth, localeTag)}
+        </span>
+        <button
+          type="button"
+          onClick={() => setCalendarMonth((c) => addMonths(c, 1))}
+          className="rounded-full px-2 py-1 text-lg font-semibold transition-colors hover:bg-soul-blue-50"
+          aria-label={t('common.nextMonth')}
+        >
+          →
+        </button>
+      </div>
+
+      <div className="grid grid-cols-7 gap-1 text-center font-medium">
+        {WEEKDAYS.map((weekday) => (
+          <span
+            key={weekday}
+            className="text-[10px] font-semibold tracking-[0.14em] text-soul-muted/70"
+          >
+            {weekday}
+          </span>
+        ))}
+
+        {calendarDays.map((day) => {
+          const inCurrentMonth = day.getMonth() === calendarMonth.getMonth();
+          const isDisabled = isBeforeDay(day, today);
+          const isSelectedStart = arriveDate && isSameDay(day, arriveDate);
+          const isSelectedEnd = departDate && isSameDay(day, departDate);
+          const isInRange =
+            arriveDate &&
+            departDate &&
+            isAfterDay(day, arriveDate) &&
+            isBeforeDay(day, departDate);
+
+          return (
+            <button
+              key={day.toISOString()}
+              type="button"
+              disabled={isDisabled}
+              onClick={() => handleSelect(day)}
+              className={[
+                'mx-auto flex h-8 w-8 items-center justify-center rounded-full text-[13px] transition-colors',
+                isDisabled
+                  ? 'cursor-not-allowed text-soul-muted/35'
+                  : 'cursor-pointer text-soul-blue hover:bg-soul-blue-50',
+                !inCurrentMonth ? 'opacity-35' : '',
+                isInRange ? 'bg-soul-blue-50 text-soul-blue' : '',
+                isSelectedStart || isSelectedEnd
+                  ? 'bg-soul-blue font-bold text-white hover:bg-soul-blue'
+                  : '',
+              ].join(' ')}
+            >
+              {day.getDate()}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  ) : null;
 
   return (
-    <div ref={rootRef} className={`relative ${open ? 'z-[120]' : 'z-10'}`}>
+    <div ref={rootRef} className="relative z-10">
       <div className={shellCls}>
         <button
           type="button"
@@ -182,112 +325,9 @@ export default function DateRangePicker({
         </button>
       </div>
 
-      {open ? (
-        <div className={popoverCls}>
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <div className="inline-flex rounded-full border border-soul-line bg-soul-ivory/50 p-0.5">
-              <button
-                type="button"
-                onClick={() => setActiveField('arrive')}
-                className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
-                  activeField === 'arrive'
-                    ? 'bg-soul-blue text-white'
-                    : 'text-soul-muted hover:text-soul-blue'
-                }`}
-              >
-                {isHero ? t('home.arrive') : t('common.from')}
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveField('depart')}
-                className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
-                  activeField === 'depart'
-                    ? 'bg-soul-blue text-white'
-                    : 'text-soul-muted hover:text-soul-blue'
-                }`}
-              >
-                {isHero ? t('home.depart') : t('common.to')}
-              </button>
-            </div>
-            {(checkin || checkout) && (
-              <button
-                type="button"
-                onClick={clearDates}
-                className="text-[11px] font-semibold text-soul-muted hover:text-soul-blue"
-              >
-                {t('common.clear')}
-              </button>
-            )}
-          </div>
-
-          <div className="mb-3 flex items-center justify-between text-soul-blue">
-            <button
-              type="button"
-              onClick={() => setCalendarMonth((c) => addMonths(c, -1))}
-              className="rounded-full px-2 py-1 text-lg font-semibold transition-colors hover:bg-soul-blue-50"
-              aria-label={t('common.previousMonth')}
-            >
-              ←
-            </button>
-            <span className="text-sm font-semibold uppercase tracking-[0.18em]">
-              {formatMonthLabel(calendarMonth, localeTag)}
-            </span>
-            <button
-              type="button"
-              onClick={() => setCalendarMonth((c) => addMonths(c, 1))}
-              className="rounded-full px-2 py-1 text-lg font-semibold transition-colors hover:bg-soul-blue-50"
-              aria-label={t('common.nextMonth')}
-            >
-              →
-            </button>
-          </div>
-
-          <div className="grid grid-cols-7 gap-1 text-center font-medium">
-            {WEEKDAYS.map((weekday) => (
-              <span
-                key={weekday}
-                className="text-[10px] font-semibold tracking-[0.14em] text-soul-muted/70"
-              >
-                {weekday}
-              </span>
-            ))}
-
-            {calendarDays.map((day) => {
-              const inCurrentMonth = day.getMonth() === calendarMonth.getMonth();
-              const isDisabled = isBeforeDay(day, today);
-              const isSelectedStart = arriveDate && isSameDay(day, arriveDate);
-              const isSelectedEnd = departDate && isSameDay(day, departDate);
-              const isInRange =
-                arriveDate &&
-                departDate &&
-                isAfterDay(day, arriveDate) &&
-                isBeforeDay(day, departDate);
-
-              return (
-                <button
-                  key={day.toISOString()}
-                  type="button"
-                  disabled={isDisabled}
-                  onClick={() => handleSelect(day)}
-                  className={[
-                    'mx-auto flex h-8 w-8 items-center justify-center rounded-full text-[13px] transition-colors',
-                    isDisabled
-                      ? 'cursor-not-allowed text-soul-muted/35'
-                      : 'cursor-pointer text-soul-blue hover:bg-soul-blue-50',
-                    !inCurrentMonth ? 'opacity-35' : '',
-                    isInRange ? 'bg-soul-blue-50 text-soul-blue' : '',
-                    isSelectedStart || isSelectedEnd
-                      ? 'bg-soul-blue font-bold text-white hover:bg-soul-blue'
-                      : '',
-                  ].join(' ')}
-                >
-                  {day.getDate()}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
+      {calendarPanel && typeof document !== 'undefined'
+        ? createPortal(calendarPanel, document.body)
+        : null}
     </div>
   );
 }
