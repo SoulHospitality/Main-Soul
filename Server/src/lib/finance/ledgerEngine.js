@@ -30,6 +30,11 @@ function isoDate(value) {
   return matched ? matched[1] : '';
 }
 
+/** Financial period date for a reservation = when it was booked/created. */
+function reservationBookedDate(r) {
+  return isoDate(r?.created_at) || isoDate(r?.check_in);
+}
+
 function inRange(date, from, to) {
   const d = isoDate(date);
   if (!d) return false;
@@ -230,21 +235,22 @@ function allocateStayCredits(r, fin, split) {
 
 function shouldRecognizeStay(r, asOf) {
   if (isCancelledStay(r)) return false;
-  const checkIn = isoDate(r.check_in);
-  if (!checkIn) return false;
-  return checkIn <= (asOf || todayIso());
+  const booked = reservationBookedDate(r);
+  if (!booked) return false;
+  return booked <= (asOf || todayIso());
 }
 
 function bookingEntry(r, asOf) {
   const { fin, split } = reservationFinancials(r);
   const posted = allocateStayCredits(r, fin, split);
   const checkIn = isoDate(r.check_in);
+  const booked = reservationBookedDate(r);
   const paid = round2(parseFloat(r.amount_paid) || 0);
   const outstanding = round2(Math.max(0, posted.guestTotal - paid));
 
   return makeEntry({
     id: `BK-${r.id}`,
-    date: r.check_in,
+    date: booked || r.check_in,
     type: 'booking',
     description: `${r.guest_name || 'Guest'} — ${r.unit_name || 'Unit'}`,
     lines: posted.lines,
@@ -254,6 +260,7 @@ function bookingEntry(r, asOf) {
       unit_name: r.unit_name,
       project: r.project,
       unit_id: r.unit_id,
+      created_at: booked,
       check_in: checkIn,
       check_out: isoDate(r.check_out),
       nights: r.nights,
@@ -290,7 +297,7 @@ function agentAccrualEntry(r, asOf) {
   if (!(extras.agent > 0.009) || !shouldRecognizeStay(r, asOf)) return null;
   return makeEntry({
     id: `AG-${r.id}`,
-    date: r.check_in,
+    date: reservationBookedDate(r) || r.check_in,
     type: 'agent_commission',
     description: `Sales agent commission — ${r.sales_person_name || 'Agent'}`,
     lines: [
@@ -690,7 +697,7 @@ function prepaidAmount(r, payments) {
 async function loadPortalData(from, to) {
   const resParams = [from];
   let resSql = `(
-      r.check_in >= $1::date
+      r.created_at::date >= $1::date
       OR (COALESCE(r.insurance, 0) > 0.009 AND r.check_out >= $1::date)
       OR (
         r.insurance_refund_status IN ('refunded', 'partial', 'forfeited')
@@ -705,7 +712,7 @@ async function loadPortalData(from, to) {
   if (to) {
     resParams.push(to);
     resSql = `(
-      (r.check_in >= $1::date AND r.check_in <= $2::date)
+      (r.created_at::date >= $1::date AND r.created_at::date <= $2::date)
       OR (
         COALESCE(r.insurance, 0) > 0.009
         AND r.check_out >= $1::date
@@ -727,6 +734,7 @@ async function loadPortalData(from, to) {
 
   const { rows: reservations } = await query(
     `SELECT r.*,
+            to_char(r.created_at, 'YYYY-MM-DD') AS created_at,
             to_char(r.check_in, 'YYYY-MM-DD') AS check_in,
             to_char(r.check_out, 'YYYY-MM-DD') AS check_out,
             COALESCE(u.unit_number, u.title, 'Unit') AS unit_name,
@@ -740,15 +748,15 @@ async function loadPortalData(from, to) {
      JOIN units u ON u.id = r.unit_id
      LEFT JOIN staff_users sp ON sp.id = r.sales_person_id
      WHERE ${resSql}
-     ORDER BY r.check_in DESC`,
+     ORDER BY r.created_at DESC`,
     resParams
   );
 
   const totParams = [from];
-  let totSql = `LOWER(COALESCE(status::text, '')) <> 'cancelled' AND check_in >= $1::date`;
+  let totSql = `LOWER(COALESCE(status::text, '')) <> 'cancelled' AND created_at::date >= $1::date`;
   if (to) {
     totParams.push(to);
-    totSql += ` AND check_in <= $2::date`;
+    totSql += ` AND created_at::date <= $2::date`;
   }
   const { rows: totalRows } = await query(
     `SELECT COALESCE(SUM(total_amount), 0)::float AS stays,
@@ -978,7 +986,7 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
 
   for (const r of data.reservations || []) {
     if (!shouldRecognizeStay(r, asOf)) continue;
-    if (!inRange(r.check_in, from, to)) continue;
+    if (!inRange(reservationBookedDate(r), from, to)) continue;
     journal.push(bookingEntry(r, asOf));
     const agent = agentAccrualEntry(r, asOf);
     if (agent) journal.push(agent);
@@ -1253,7 +1261,7 @@ function balancesFromJournal(journal) {
 
 function stayCountsInRevenue(r, from, to) {
   if (isCancelledStay(r)) return false;
-  return inRange(r.check_in, from, to);
+  return inRange(reservationBookedDate(r), from, to);
 }
 
 function reservationListTotal(r) {
@@ -1268,7 +1276,7 @@ function mirrorTransactions(journal, code, opts = {}) {
       if (!stayCountsInRevenue(r, from, to)) continue;
       rows.push({
         id: `BK-${r.id}`,
-        date: isoDate(r.check_in),
+        date: reservationBookedDate(r),
         description: `${r.guest_name || 'Guest'} — ${r.unit_name || 'Unit'}`,
         amount: reservationListTotal(r),
         side: 'credit',

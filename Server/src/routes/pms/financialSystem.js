@@ -49,10 +49,11 @@ function dateRange(req) {
   const from = clampFromDate(req.query.from_date);
   const to = req.query.to_date || null;
   const params = [from];
-  let resSql = `r.status <> 'cancelled' AND r.check_in >= $1::date`;
+  // Period filter is by when the reservation was created (booked), not check-in.
+  let resSql = `r.status <> 'cancelled' AND r.created_at::date >= $1::date`;
   if (to) {
     params.push(to);
-    resSql += ` AND r.check_out <= $${params.length}::date`;
+    resSql += ` AND r.created_at::date <= $${params.length}::date`;
   }
   return { from, to, params, resSql };
 }
@@ -88,7 +89,7 @@ async function loadReservations(req) {
      ${joinSql}
      LEFT JOIN staff_users sp ON sp.id = r.sales_person_id
      WHERE ${resSql}${filterSql}
-     ORDER BY r.check_in DESC`,
+     ORDER BY r.created_at DESC`,
     extraParams
   );
   return rows;
@@ -221,7 +222,7 @@ function reservationJournalEntry(r, fin, split) {
 
   return {
     id: ref,
-    date: r.check_in,
+    date: r.created_at || r.check_in,
     type: 'booking',
     reference: ref,
     description: `${r.guest_name} — ${r.unit_name}`,
@@ -415,10 +416,10 @@ router.get('/financial-system/owner-statements', requireRoles('admin'), async (r
     const statements = [];
     for (const unit of units) {
       const uParams = [unit.id, from];
-      let uResSql = `r.unit_id = $1 AND r.status <> 'cancelled' AND r.check_in >= $2::date`;
+      let uResSql = `r.unit_id = $1 AND r.status <> 'cancelled' AND r.created_at::date >= $2::date`;
       if (to) {
         uParams.push(to);
-        uResSql += ` AND r.check_out <= $${uParams.length}::date`;
+        uResSql += ` AND r.created_at::date <= $${uParams.length}::date`;
       }
       const { rows: resRows } = await query(
         `SELECT r.*, COALESCE(u.unit_number, u.title) AS unit_name,
@@ -666,6 +667,7 @@ router.get('/financial-system/export', requireRoles('admin'), async (req, res, n
         Guest: r.guest_name,
         Unit: r.unit_name,
         Project: r.project,
+        Created: r.created_at,
         'Check-in': r.check_in,
         'Check-out': r.check_out,
         Gross: split.gross_booking,

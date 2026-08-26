@@ -118,6 +118,7 @@ function IconFor({ code, group, className = 'w-5 h-5' }) {
 function DateFilters({ fromDate, toDate, onFrom, onTo }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
+      <span className="text-xs text-gray-500 mr-1">By booking date</span>
       <label className="text-xs text-gray-500">From</label>
       <input
         type="date"
@@ -190,7 +191,7 @@ function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-gray-500">
           Period {data?.from_date}
-          {data?.to_date ? ` → ${data.to_date}` : ' → open'} · collected money only hits treasury
+          {data?.to_date ? ` → ${data.to_date}` : ' → open'} · reservations by booking (created) date · collected money only hits treasury
         </p>
         <button type="button" className="btn-secondary text-sm" onClick={onExport} disabled={exporting}>
           <Download className="w-4 h-4" />
@@ -621,6 +622,12 @@ function TransactionView({ txnId, fromDate, toDate }) {
           <div>
             <p className="text-xs text-gray-400">Channel</p>
             <p className="font-medium">{meta.channel}</p>
+          </div>
+        )}
+        {meta.created_at && (
+          <div>
+            <p className="text-xs text-gray-400">Booked</p>
+            <p className="font-medium">{formatDate(meta.created_at)}</p>
           </div>
         )}
         {meta.check_in && (
@@ -1085,7 +1092,7 @@ function ReportsTool({ rangeParams: params }) {
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-500">
-        From {data?.from_date} → {data?.to_date}. Revenue is reservation totals plus custom revenue. Owner share (each unit’s % of nightly rate × nights) is an expense deducted from that revenue.
+        From {data?.from_date} → {data?.to_date}. Revenue is reservation totals (by booking / created date) plus custom revenue. Owner share (each unit’s % of nightly rate × nights) is an expense deducted from that revenue.
       </p>
       <div className="flex flex-wrap gap-2">
         {[
