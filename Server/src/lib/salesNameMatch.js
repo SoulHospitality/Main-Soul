@@ -28,6 +28,7 @@ const EQUIVALENCE_GROUPS = [
   ['mazen mohamed', 'mazen'],
   ['amira', 'amira hesham'],
   ['aya ahmed', 'aya'],
+  ['hana kamal', 'hana', 'hanna'],
   [
     'abdelrahman dawod',
     'abdelrahman dawood',
