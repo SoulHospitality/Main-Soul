@@ -24,6 +24,7 @@ const {
   collapsePunchAttendance,
   isDoorPunchLog,
   normalizePersonId,
+  matchAttendanceStaff,
   roundMoney,
   splitSalaryAdjustments,
   hasOfficeAttendance,
@@ -1408,12 +1409,6 @@ router.post(
       const { rows: staffRows } = await query(
         `SELECT id, staff_code, full_name, base_salary, role FROM staff_users WHERE role NOT IN ('owner', 'admin')`
       );
-      const byCode = new Map();
-      const byName = new Map();
-      for (const s of staffRows) {
-        if (s.staff_code) byCode.set(normalizePersonId(s.staff_code).toLowerCase(), s);
-        byName.set(String(s.full_name || '').trim().toLowerCase(), s);
-      }
 
       if (isDoorPunchLog(punches)) {
         const workDates = [...new Set(parsed.map((p) => p.date).filter(Boolean))];
@@ -1478,9 +1473,7 @@ router.post(
           errors.push({ row: row.row, error: 'Missing date' });
           continue;
         }
-        const staff =
-          (row.staff_code && byCode.get(normalizePersonId(row.staff_code).toLowerCase())) ||
-          (row.name && byName.get(row.name.toLowerCase()));
+        const staff = matchAttendanceStaff(row, staffRows);
         if (!staff) {
           errors.push({
             row: row.row,

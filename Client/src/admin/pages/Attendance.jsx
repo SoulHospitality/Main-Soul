@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Upload } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import Modal from '../components/ui/Modal';
@@ -57,6 +57,7 @@ function emptyForm(staff, date, cell) {
 
 export default function Attendance() {
   const qc = useQueryClient();
+  const fileRef = useRef(null);
   const [month, setMonth] = useState(currentMonthIso);
   const [form, setForm] = useState(null);
   const [deductionTouched, setDeductionTouched] = useState(false);
@@ -88,6 +89,35 @@ export default function Attendance() {
       setForm(null);
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Could not save attendance'),
+  });
+
+  const importMutation = useMutation({
+    mutationFn: (file) => {
+      const fd = new FormData();
+      fd.append('file', file);
+      return api.post('/hr/attendance/import', fd).then((r) => r.data);
+    },
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['hr-attendance'] });
+      qc.invalidateQueries({ queryKey: ['hr-deductions'] });
+      qc.invalidateQueries({ queryKey: ['hr-payroll'] });
+      qc.invalidateQueries({ queryKey: ['hr-payslip'] });
+      const dates = (Array.isArray(data.deductions) ? data.deductions : [])
+        .map((c) => String(c.work_date || '').slice(0, 10))
+        .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+        .sort();
+      if (dates[0]) setMonth(dates[0].slice(0, 7));
+      const errCount = Array.isArray(data.errors) ? data.errors.length : 0;
+      toast.success(
+        `Imported ${data.created || 0} day${data.created === 1 ? '' : 's'} onto the schedule` +
+          (data.skipped ? ` · skipped ${data.skipped}` : '') +
+          (errCount ? ` · ${errCount} error${errCount === 1 ? '' : 's'}` : '')
+      );
+      if (errCount && data.errors[0]?.error) {
+        toast.error(`Row ${data.errors[0].row}: ${data.errors[0].error}`);
+      }
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Could not import attendance'),
   });
 
   const selectedStaff = useMemo(
@@ -144,10 +174,30 @@ export default function Attendance() {
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-soul-muted">HR</p>
           <h1 className="page-title mt-1">Attendance</h1>
           <p className="page-subtitle">
-            Monthly staff schedule. Hover a cell for times and deduction; click to edit.
+            Upload the door report and it fills this monthly schedule. Hover a cell for times and deduction; click to edit.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="btn-secondary"
+            disabled={importMutation.isPending}
+            onClick={() => fileRef.current?.click()}
+          >
+            <Upload className="h-4 w-4" />
+            {importMutation.isPending ? 'Importing…' : 'Upload Excel'}
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".xlsx,.xls"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (file) importMutation.mutate(file);
+            }}
+          />
           <button type="button" className="rounded-lg p-2 text-soul-muted hover:bg-slate-50" onClick={() => setMonth((m) => shiftMonth(m, -1))}>
             <ChevronLeft className="w-5 h-5" />
           </button>

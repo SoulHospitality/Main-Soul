@@ -17,6 +17,7 @@ const {
   collapsePunchAttendance,
   isDoorPunchLog,
   parseHtmlExcelTables,
+  matchAttendanceStaff,
   splitSalaryAdjustments,
   hasOfficeAttendance,
   canRequestStaffBenefits,
@@ -178,6 +179,20 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.equal(hasOfficeAttendance('admin'), false);
     assert.equal(canRequestStaffBenefits('admin'), false);
     assert.equal(canRequestStaffBenefits('reservations_web'), true);
+  });
+
+  it('matches door-report names and person IDs to user-management staff', () => {
+    const staff = [
+      { id: 15, staff_code: 'SH15', full_name: 'Hana Kamal' },
+      { id: 22, staff_code: 'AYA', full_name: 'Aya Ahmed' },
+      { id: 30, staff_code: 'AD1', full_name: 'Abdelrahman Dawood' },
+    ];
+    assert.equal(matchAttendanceStaff({ staff_code: '15' }, staff).id, 15);
+    assert.equal(matchAttendanceStaff({ staff_code: 'SH15' }, staff).full_name, 'Hana Kamal');
+    assert.equal(matchAttendanceStaff({ name: 'Hanna' }, staff).id, 15);
+    assert.equal(matchAttendanceStaff({ name: 'Aya' }, staff).id, 22);
+    assert.equal(matchAttendanceStaff({ name: 'Abdelrhman Dawod' }, staff).id, 30);
+    assert.equal(matchAttendanceStaff({ name: 'Unknown' }, staff), null);
   });
 
   it('requires manager + HR Supervisor for agents, HR Supervisor only for HR, manager only for HR Supervisor', () => {

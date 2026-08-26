@@ -95,6 +95,7 @@ export default function Deductions() {
       qc.invalidateQueries({ queryKey: ['hr-deductions'] });
       qc.invalidateQueries({ queryKey: ['hr-payroll'] });
       qc.invalidateQueries({ queryKey: ['hr-payslip'] });
+      qc.invalidateQueries({ queryKey: ['hr-attendance'] });
       const errCount = Array.isArray(data.errors) ? data.errors.length : 0;
       toast.success(
         `Imported ${data.created || 0} deduction${data.created === 1 ? '' : 's'}` +

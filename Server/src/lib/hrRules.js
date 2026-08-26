@@ -1,3 +1,5 @@
+const { namesAreAliases } = require('./salesNameMatch');
+
 const DAYS_IN_MONTH = 30;
 const SHIFT_START_MINUTES = 11 * 60;
 const GRACE_END_MINUTES = 11 * 60 + 15;
@@ -289,6 +291,36 @@ function normalizePersonId(value) {
     .replace(/^'+/, '')
     .replace(/\.0$/, '')
     .trim();
+}
+
+function matchAttendanceStaff(row, staffList) {
+  const list = staffList || [];
+  const code = normalizePersonId(row?.staff_code).toLowerCase();
+  if (code) {
+    const byCode = list.filter(
+      (s) => normalizePersonId(s.staff_code).toLowerCase() === code
+    );
+    if (byCode.length === 1) return byCode[0];
+    if (/^\d+$/.test(code)) {
+      const byId = list.filter((s) => String(s.id) === code);
+      if (byId.length === 1) return byId[0];
+    }
+  }
+  const name = String(row?.name || '').trim();
+  if (!name) return null;
+  const exact = list.filter(
+    (s) => String(s.full_name || '').trim().toLowerCase() === name.toLowerCase()
+  );
+  if (exact.length === 1) return exact[0];
+  const aliased = list.filter((s) => namesAreAliases(s.full_name, name));
+  if (aliased.length === 1) return aliased[0];
+  const n = name.toLowerCase();
+  const prefix = list.filter((s) => {
+    const full = String(s.full_name || '').trim().toLowerCase();
+    return full === n || full.startsWith(`${n} `) || n.startsWith(`${full} `);
+  });
+  if (prefix.length === 1) return prefix[0];
+  return null;
 }
 
 function normalizeHeader(h) {
@@ -633,6 +665,7 @@ module.exports = {
   collapsePunchAttendance,
   isDoorPunchLog,
   normalizePersonId,
+  matchAttendanceStaff,
   excelTimeToHhMm,
   computeHalfDayDeduction,
   PENALTY_CATEGORIES,
