@@ -24,32 +24,68 @@ import {
   FileBarChart2,
 } from 'lucide-react';
 
-const NAV_ITEMS = [
-  { path: '/admin/dashboard',        label: 'Dashboard',          icon: LayoutDashboard,   page: 'dashboard' },
-  { path: '/admin/units',            label: 'Units (Rent)',       icon: Building2,          page: 'units' },
-  { path: '/admin/units-for-sale',   label: 'Units for Sale',     icon: Building2,          page: 'units_sale', resaleLabel: 'Units' },
-  { path: '/admin/projects',         label: 'Destinations',       icon: Building,           page: 'projects' },
-  { path: '/admin/reservations',     label: 'Reservations',       icon: CalendarDays,       page: 'reservations', agentLabel: 'My Reservations' },
-  { path: '/admin/website-bookings', label: 'Website Requests',   icon: Globe,              page: 'website_bookings', badge: 'website_pending' },
-  { path: '/admin/schedule',         label: 'Schedule',           icon: CalendarRange,      page: 'schedule' },
-  { path: '/admin/calendar-sync',    label: 'Calendar sync',      icon: Link2,              page: 'calendar_sync' },
-  { path: '/admin/operations', label: 'Operations', icon: KeyRound, page: 'operations' },
-  { path: '/admin/housekeeping', label: 'Housekeeping', icon: Sparkles, page: 'housekeeping' },
-  { path: '/admin/financial-system', label: 'Financial System', icon: Landmark, page: 'financial_system' },
-  { path: '/admin/reports',          label: 'Reports',            icon: FileBarChart2,      page: 'reports' },
-  { path: '/admin/commissions', label: 'Commissions', icon: BadgeDollarSign, page: 'commissions', agentLabel: 'My Profit' },
-  { path: '/admin/acquisition', label: 'Owner leads', icon: Briefcase, page: 'acquisition', resaleLabel: 'Owners requests' },
-  { path: '/admin/users', label: 'User Management', icon: Users, page: 'users' },
-  { path: '/admin/payroll', label: 'Payrolls', icon: Wallet, page: 'payroll' },
-  { path: '/admin/payslip', label: 'Payslip', icon: Receipt, page: 'payslip' },
-  { path: '/admin/deductions', label: 'Deductions', icon: MinusCircle, page: 'deductions' },
-  { path: '/admin/holiday-requests', label: 'Holiday requests', icon: Palmtree, page: 'holiday_requests', badge: 'leave_pending', agentLabel: 'Request holiday' },
-  { path: '/admin/holiday-access', label: 'Holidays access', icon: ShieldCheck, page: 'holiday_access' },
-  { path: '/admin/job-offers', label: 'Job offers', icon: ClipboardList, page: 'job_offers', badge: 'job_pending' },
-  { path: '/admin/attendance', label: 'Attendance', icon: Clock, page: 'attendance' },
-  { path: '/admin/loans', label: 'Loans', icon: Banknote, page: 'loans', badge: 'loan_pending' },
-  { path: '/admin/wfh', label: 'Work from home', icon: Home, page: 'wfh', badge: 'wfh_pending' },
-  { path: '/admin/promo-codes',      label: 'Promo Codes',        icon: Tag,                page: 'promo_codes' },
+const NAV_SECTIONS = [
+  {
+    id: 'overview',
+    label: 'Overview',
+    items: [
+      { path: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard, page: 'dashboard' },
+    ],
+  },
+  {
+    id: 'inventory',
+    label: 'Inventory',
+    items: [
+      { path: '/admin/units', label: 'Units (Rent)', icon: Building2, page: 'units' },
+      { path: '/admin/units-for-sale', label: 'Units for Sale', icon: Building2, page: 'units_sale', resaleLabel: 'Units' },
+      { path: '/admin/projects', label: 'Destinations', icon: Building, page: 'projects' },
+      { path: '/admin/acquisition', label: 'Owner leads', icon: Briefcase, page: 'acquisition', resaleLabel: 'Owners requests' },
+    ],
+  },
+  {
+    id: 'bookings',
+    label: 'Bookings',
+    items: [
+      { path: '/admin/reservations', label: 'Reservations', icon: CalendarDays, page: 'reservations', agentLabel: 'My Reservations' },
+      { path: '/admin/website-bookings', label: 'Website Requests', icon: Globe, page: 'website_bookings', badge: 'website_pending' },
+      { path: '/admin/schedule', label: 'Schedule', icon: CalendarRange, page: 'schedule' },
+      { path: '/admin/calendar-sync', label: 'Calendar sync', icon: Link2, page: 'calendar_sync' },
+    ],
+  },
+  {
+    id: 'operations',
+    label: 'Operations',
+    items: [
+      { path: '/admin/operations', label: 'Operations', icon: KeyRound, page: 'operations' },
+      { path: '/admin/housekeeping', label: 'Housekeeping', icon: Sparkles, page: 'housekeeping' },
+    ],
+  },
+  {
+    id: 'finance',
+    label: 'Finance',
+    items: [
+      { path: '/admin/financial-system', label: 'Financial System', icon: Landmark, page: 'financial_system' },
+      { path: '/admin/reports', label: 'Reports', icon: FileBarChart2, page: 'reports' },
+      { path: '/admin/commissions', label: 'Commissions', icon: BadgeDollarSign, page: 'commissions', agentLabel: 'My Profit' },
+      { path: '/admin/promo-codes', label: 'Promo Codes', icon: Tag, page: 'promo_codes' },
+    ],
+  },
+  {
+    id: 'hr',
+    label: 'HR',
+    items: [
+      { path: '/admin/users', label: 'User Management', icon: Users, page: 'users' },
+      { path: '/admin/attendance', label: 'Attendance', icon: Clock, page: 'attendance' },
+      { path: '/admin/holiday-requests', label: 'Holiday requests', icon: Palmtree, page: 'holiday_requests', badge: 'leave_pending', agentLabel: 'Request holiday' },
+      { path: '/admin/holiday-access', label: 'Holidays access', icon: ShieldCheck, page: 'holiday_access' },
+      { path: '/admin/wfh', label: 'Work from home', icon: Home, page: 'wfh', badge: 'wfh_pending' },
+      { path: '/admin/loans', label: 'Loans', icon: Banknote, page: 'loans', badge: 'loan_pending' },
+      { path: '/admin/deductions', label: 'Deductions', icon: MinusCircle, page: 'deductions' },
+      { path: '/admin/payslip', label: 'Payslip', icon: Receipt, page: 'payslip' },
+      { path: '/admin/payroll', label: 'Payrolls', icon: Wallet, page: 'payroll' },
+      { path: '/admin/job-offers', label: 'Job offers', icon: ClipboardList, page: 'job_offers', badge: 'job_pending' },
+    ],
+  },
 ];
 
 function PendingCountBadge({ count, compact = false }) {
@@ -136,6 +172,11 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
   const showLabels = isMobile || !collapsed;
   const sidebarW = isMobile ? 288 : collapsed ? 64 : 256;
 
+  const visibleSections = NAV_SECTIONS.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => canAccess(item.page)),
+  })).filter((section) => section.items.length);
+
   const handleNavClick = () => {
     if (isMobile) onCloseMobile();
   };
@@ -174,49 +215,62 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
         </div>
       )}
 
-      <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
-        {NAV_ITEMS.filter((item) => canAccess(item.page)).map((item) => {
-          const label =
-            user?.role === 'resale' && item.resaleLabel
-              ? item.resaleLabel
-              : item.agentLabel &&
-                  (user?.role === 'reservations_web' ||
-                    user?.role === 'reservations_manual' ||
-                    user?.role === 'reservations')
-                ? item.agentLabel
-                : item.label;
-          const pendingCount =
-            item.badge === 'website_pending'
-              ? websiteNeedsReviewCount
-              : item.badge === 'leave_pending'
-                ? pendingLeaveCount
-                : item.badge === 'loan_pending'
-                  ? pendingLoanCount
-                  : item.badge === 'wfh_pending'
-                    ? pendingWfhCount
-                    : item.badge === 'job_pending'
-                      ? pendingJobCount
-                    : 0;
-          return (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              end={Boolean(item.end)}
-              onClick={handleNavClick}
-              className={({ isActive }) =>
-                `sidebar-link ${isActive ? 'sidebar-link-active' : 'sidebar-link-inactive'} ${!showLabels ? 'justify-center px-2' : ''}`
-              }
-              title={!showLabels ? (pendingCount ? `${label} (${pendingCount} pending)` : label) : undefined}
-            >
-              <span className="relative flex-shrink-0">
-                <item.icon className="w-5 h-5" strokeWidth={1.75} />
-                {!showLabels ? <PendingCountBadge count={pendingCount} compact /> : null}
-              </span>
-              {showLabels && <span className="truncate">{label}</span>}
-              {showLabels ? <PendingCountBadge count={pendingCount} /> : null}
-            </NavLink>
-          );
-        })}
+      <nav className="flex-1 overflow-y-auto py-2 px-2">
+        {visibleSections.map((section, sectionIdx) => (
+            <div key={section.id} className={sectionIdx === 0 ? '' : 'mt-1'}>
+              {showLabels ? (
+                <p className={`px-3 pb-1 text-[10px] font-bold uppercase tracking-[0.22em] text-white/35 ${sectionIdx === 0 ? 'pt-1' : 'pt-3'}`}>
+                  {section.label}
+                </p>
+              ) : sectionIdx > 0 ? (
+                <div className="mx-2 my-2 h-px bg-white/10" />
+              ) : null}
+              <div className="space-y-0.5">
+                {section.items.map((item) => {
+                  const label =
+                    user?.role === 'resale' && item.resaleLabel
+                      ? item.resaleLabel
+                      : item.agentLabel &&
+                          (user?.role === 'reservations_web' ||
+                            user?.role === 'reservations_manual' ||
+                            user?.role === 'reservations')
+                        ? item.agentLabel
+                        : item.label;
+                  const pendingCount =
+                    item.badge === 'website_pending'
+                      ? websiteNeedsReviewCount
+                      : item.badge === 'leave_pending'
+                        ? pendingLeaveCount
+                        : item.badge === 'loan_pending'
+                          ? pendingLoanCount
+                          : item.badge === 'wfh_pending'
+                            ? pendingWfhCount
+                            : item.badge === 'job_pending'
+                              ? pendingJobCount
+                              : 0;
+                  return (
+                    <NavLink
+                      key={item.path}
+                      to={item.path}
+                      end={Boolean(item.end)}
+                      onClick={handleNavClick}
+                      className={({ isActive }) =>
+                        `sidebar-link ${isActive ? 'sidebar-link-active' : 'sidebar-link-inactive'} ${!showLabels ? 'justify-center px-2' : ''}`
+                      }
+                      title={!showLabels ? (pendingCount ? `${label} (${pendingCount} pending)` : label) : undefined}
+                    >
+                      <span className="relative flex-shrink-0">
+                        <item.icon className="w-5 h-5" strokeWidth={1.75} />
+                        {!showLabels ? <PendingCountBadge count={pendingCount} compact /> : null}
+                      </span>
+                      {showLabels && <span className="truncate">{label}</span>}
+                      {showLabels ? <PendingCountBadge count={pendingCount} /> : null}
+                    </NavLink>
+                  );
+                })}
+              </div>
+            </div>
+        ))}
       </nav>
 
       <div className="border-t border-white/10 p-3">
