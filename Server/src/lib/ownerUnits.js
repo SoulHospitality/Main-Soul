@@ -1,11 +1,14 @@
 const { pool, query } = require('../config/db');
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function normalizeUnitIds(unitIds) {
   return [
     ...new Set(
       (Array.isArray(unitIds) ? unitIds : [])
-        .map((id) => Number(id))
-        .filter((n) => Number.isInteger(n) && n > 0)
+        .map((id) => String(id ?? '').trim())
+        .filter((id) => UUID_RE.test(id))
     ),
   ];
 }
@@ -38,7 +41,7 @@ async function setOwnerUnits(ownerId, unitIds) {
   if (ids.length) {
     const { rows: units } = await query(
       `SELECT id FROM units
-       WHERE id = ANY($1::int[])
+       WHERE id = ANY($1::uuid[])
          AND COALESCE(listing_type, 'rent') <> 'sale'`,
       [ids]
     );
@@ -52,7 +55,7 @@ async function setOwnerUnits(ownerId, unitIds) {
       `SELECT ou.unit_id, s.full_name AS owner_name
        FROM owner_units ou
        JOIN staff_users s ON s.id = ou.owner_id
-       WHERE ou.unit_id = ANY($1::int[])
+       WHERE ou.unit_id = ANY($1::uuid[])
          AND ou.owner_id <> $2`,
       [ids, oid]
     );
@@ -126,10 +129,11 @@ async function listLinkableUnits(ownerId) {
   // A unit with multiple owner_units rows could duplicate; keep one row per unit.
   const byId = new Map();
   for (const row of rows) {
-    const existing = byId.get(row.id);
+    const id = String(row.id);
+    const existing = byId.get(id);
     if (!existing) {
-      byId.set(row.id, {
-        id: row.id,
+      byId.set(id, {
+        id,
         title: row.title,
         unit_number: row.unit_number,
         name: row.unit_number || row.name || row.title,

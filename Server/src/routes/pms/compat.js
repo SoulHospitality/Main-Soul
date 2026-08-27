@@ -130,6 +130,7 @@ router.get('/users/owners/:id/units', requireRoles('admin', 'hr', 'hr_supervisor
     res.json(
       rows.map((u) => ({
         ...u,
+        id: String(u.id),
         name: u.unit_number || u.name || u.title,
         project: u.project || u.compound || u.project_label,
       }))

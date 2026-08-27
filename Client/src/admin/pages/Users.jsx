@@ -76,7 +76,7 @@ function OwnerUnitPicker({ selectedIds, onChange, ownerId, enabled }) {
     enabled: Boolean(enabled),
   });
 
-  const selected = new Set((selectedIds || []).map(Number));
+  const selected = new Set((selectedIds || []).map((id) => String(id)));
   const q = search.trim().toLowerCase();
   const allUnits = Array.isArray(units) ? units : [];
 
@@ -95,24 +95,24 @@ function OwnerUnitPicker({ selectedIds, onChange, ownerId, enabled }) {
       .filter(Boolean)
       .join(' · ') || '—';
 
-  const linkedUnits = allUnits.filter((u) => selected.has(Number(u.id))).filter(matchesSearch);
+  const linkedUnits = allUnits.filter((u) => selected.has(String(u.id))).filter(matchesSearch);
   const availableUnits = allUnits
-    .filter((u) => !selected.has(Number(u.id)))
+    .filter((u) => !selected.has(String(u.id)))
     .filter(matchesSearch);
 
   // Keep selected units that might not be in the latest list (edge case) visible for unlink.
-  const linkedIdsInList = new Set(allUnits.map((u) => Number(u.id)));
+  const linkedIdsInList = new Set(allUnits.map((u) => String(u.id)));
   const orphanLinkedIds = [...selected].filter((id) => !linkedIdsInList.has(id));
 
   const linkUnit = (id) => {
-    const nid = Number(id);
-    if (selected.has(nid)) return;
-    onChange([...(selectedIds || []), nid]);
+    const sid = String(id);
+    if (selected.has(sid)) return;
+    onChange([...(selectedIds || []), sid]);
   };
 
   const unlinkUnit = (id) => {
-    const nid = Number(id);
-    onChange((selectedIds || []).filter((x) => Number(x) !== nid));
+    const sid = String(id);
+    onChange((selectedIds || []).filter((x) => String(x) !== sid));
   };
 
   const unlinkAll = () => onChange([]);
@@ -165,7 +165,7 @@ function OwnerUnitPicker({ selectedIds, onChange, ownerId, enabled }) {
               ) : (
                 <>
                   {linkedUnits.map((u) => {
-                    const id = Number(u.id);
+                    const id = String(u.id);
                     return (
                       <div
                         key={id}
@@ -220,7 +220,7 @@ function OwnerUnitPicker({ selectedIds, onChange, ownerId, enabled }) {
                 </div>
               ) : (
                 availableUnits.map((u) => {
-                  const id = Number(u.id);
+                  const id = String(u.id);
                   return (
                     <div key={id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50">
                       <span className="min-w-0 flex-1">
@@ -806,9 +806,10 @@ export default function Users() {
       let unit_ids = [];
       try {
         const { data } = await api.get(`/users/owners/${u.id}/units`);
-        unit_ids = (Array.isArray(data) ? data : []).map((x) => x.id);
+        unit_ids = (Array.isArray(data) ? data : []).map((x) => String(x.id));
       } catch {
-        unit_ids = [];
+        toast.error('Could not load linked units — try again');
+        return;
       }
       setOwnerForm({
         full_name: u.full_name || '',
@@ -843,9 +844,10 @@ export default function Users() {
     let unit_ids = [];
     try {
       const { data } = await api.get(`/users/owners/${u.id}/units`);
-      unit_ids = (Array.isArray(data) ? data : []).map((x) => x.id);
+      unit_ids = (Array.isArray(data) ? data : []).map((x) => String(x.id));
     } catch {
-      unit_ids = [];
+      toast.error('Could not load linked units — try again');
+      return;
     }
     setOwnerForm({
       full_name: u.full_name || '',
@@ -911,7 +913,7 @@ export default function Users() {
         is_active: ownerForm.is_active,
         role: 'owner',
         base_salary: 0,
-        unit_ids: ownerForm.unit_ids || [],
+        ...(isAdmin ? { unit_ids: ownerForm.unit_ids || [] } : {}),
       });
     } else {
       saveOwnerMutation.mutate({
@@ -921,7 +923,7 @@ export default function Users() {
         email: ownerForm.email?.trim() || '',
         role: 'owner',
         base_salary: 0,
-        unit_ids: ownerForm.unit_ids || [],
+        unit_ids: isAdmin ? ownerForm.unit_ids || [] : [],
       });
     }
   };
