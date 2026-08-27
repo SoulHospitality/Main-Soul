@@ -81,12 +81,21 @@ router.get('/users/sales', async (_req, res, next) => {
 router.get('/users/owners', requireRoles('admin', 'hr', 'hr_supervisor'), async (_req, res, next) => {
   try {
     const { rows } = await query(
-      `SELECT s.id, s.full_name, s.email, s.username, s.is_active,
-              COUNT(ou.unit_id)::int AS unit_count
+      `SELECT s.id, s.full_name, s.email, s.username, s.is_active, s.created_at,
+              COUNT(ou.unit_id)::int AS unit_count,
+              COALESCE(
+                string_agg(
+                  COALESCE(NULLIF(u.unit_number, ''), u.title),
+                  ', '
+                  ORDER BY u.unit_number NULLS LAST, u.title
+                ),
+                ''
+              ) AS unit_numbers
        FROM staff_users s
        LEFT JOIN owner_units ou ON ou.owner_id = s.id
+       LEFT JOIN units u ON u.id = ou.unit_id
        WHERE s.role = 'owner'
-       GROUP BY s.id, s.full_name, s.email, s.username, s.is_active
+       GROUP BY s.id, s.full_name, s.email, s.username, s.is_active, s.created_at
        ORDER BY s.full_name`
     );
     res.json(rows);

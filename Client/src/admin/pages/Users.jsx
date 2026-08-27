@@ -14,8 +14,10 @@ import {
   X,
   Link2,
   Eye,
+  Download,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import * as XLSX from 'xlsx';
 import api from '../api/axios';
 import { usePermissions } from '../hooks/usePermissions';
 import { useSortableTable } from '../hooks/useSortableTable';
@@ -636,6 +638,9 @@ export default function Users() {
   const unitCountById = Object.fromEntries(
     (Array.isArray(ownerStats) ? ownerStats : []).map((o) => [o.id, o.unit_count])
   );
+  const unitNumbersById = Object.fromEntries(
+    (Array.isArray(ownerStats) ? ownerStats : []).map((o) => [o.id, o.unit_numbers || ''])
+  );
   const viewOwner = users.find((u) => Number(u.id) === Number(viewOwnerId)) || null;
 
   const scopedUsers = users.filter((u) =>
@@ -657,6 +662,27 @@ export default function Users() {
     'full_name',
     'asc'
   );
+
+  const exportOwnersExcel = () => {
+    const rows = sorted.map((u) => ({
+      Name: u.full_name || '',
+      Phone: u.username || '',
+      Email: u.email?.includes('@soul.owners.local') ? '' : u.email || '',
+      'Units count': unitCountById[u.id] != null ? unitCountById[u.id] : 0,
+      Units: unitNumbersById[u.id] || '',
+      Status: u.is_active ? 'Active' : 'Inactive',
+      Created: u.created_at ? String(u.created_at).split('T')[0] : '',
+    }));
+    if (!rows.length) {
+      toast.error('No owners to export');
+      return;
+    }
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Owners');
+    XLSX.writeFile(wb, `owners_${new Date().toISOString().split('T')[0]}.xlsx`);
+    toast.success(`Exported ${rows.length} owner${rows.length === 1 ? '' : 's'}`);
+  };
 
   const saveStaffMutation = useMutation({
     mutationFn: (d) => (editId ? api.put(`/users/${editId}`, d) : api.post('/users', d)),
@@ -958,11 +984,18 @@ export default function Users() {
             {filtered.length !== 1 ? 's' : ''}
           </p>
         </div>
-        {showAddButton && (
-          <button onClick={openAdd} className="btn-primary">
-            <Plus className="w-4 h-4" /> {isOwnersTab ? 'Add Owner' : 'Add User'}
-          </button>
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          {isOwnersTab && filtered.length > 0 && (
+            <button type="button" onClick={exportOwnersExcel} className="btn-secondary">
+              <Download className="w-4 h-4" /> Export Excel
+            </button>
+          )}
+          {showAddButton && (
+            <button onClick={openAdd} className="btn-primary">
+              <Plus className="w-4 h-4" /> {isOwnersTab ? 'Add Owner' : 'Add User'}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-1 p-1 bg-gray-100 rounded-xl w-fit">
