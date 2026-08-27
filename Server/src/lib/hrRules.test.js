@@ -18,6 +18,7 @@ const {
   isDoorPunchLog,
   parseHtmlExcelTables,
   matchAttendanceStaff,
+  fillMissingOfficeAbsences,
   splitSalaryAdjustments,
   hasOfficeAttendance,
   canRequestStaffBenefits,
@@ -144,6 +145,9 @@ describe('HR daily-rate deductions and leave rules', () => {
   it('parses the HTML .xls door report layout', () => {
     const html = `
       <table><tr>
+        <td colspan="11">Original Records Report</td>
+      </tr></table>
+      <table><tr>
         <td>Person ID</td><td>Name</td><td>Department</td><td>Time</td>
         <td>Attendance Status</td><td>Attendance Check Point</td><td>Custom Name</td>
         <td>Data Source</td><td>Handling Type</td><td>Temperature</td><td>Abnormal</td>
@@ -151,13 +155,48 @@ describe('HR daily-rate deductions and leave rules', () => {
       <table><tr>
         <td>'15</td><td>Wael</td><td>New Organization</td><td>2026-05-31 12:03:17</td>
         <td>Check-in</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
+      </tr>
+      <td>'15</td><td>Wael</td><td>New Organization</td><td>2026-05-31 18:00:51</td>
+      <td>Check-out</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
+      </tr>
+      <td>'103</td><td>Hana</td><td>New Organization</td><td>2026-06-04 09:36:39</td>
+      <td>Overtime-Out</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
       </tr></table>`;
     const json = parseHtmlExcelTables(html);
     const rows = parseAttendanceRows(json);
+    assert.equal(json.length, 3);
     assert.equal(rows[0].staff_code, '15');
     assert.equal(rows[0].date, '2026-05-31');
     assert.equal(rows[0].arrival_time, '12:03');
     assert.equal(rows[0].is_check_in, true);
+    assert.equal(rows[1].is_check_out, true);
+    assert.equal(rows[1].arrival_time, '18:00');
+    assert.equal(rows[2].staff_code, '103');
+    assert.equal(rows[2].is_check_out, true);
+  });
+
+  it('fills absences by staff id and skips admin and operations', () => {
+    const daily = [
+      {
+        staff_code: '15',
+        name: 'Hana',
+        date: '2026-06-02',
+        arrival_time: '09:49',
+        check_out: '18:00',
+        absent: false,
+      },
+    ];
+    const staff = [
+      { id: 15, staff_code: 'SH15', full_name: 'Hana Kamal', role: 'hr' },
+      { id: 22, staff_code: 'AYA', full_name: 'Aya Ahmed', role: 'reservations_web' },
+      { id: 8, staff_code: 'OPS1', full_name: 'Field Agent', role: 'operations' },
+      { id: 1, staff_code: 'ADM', full_name: 'Boss', role: 'admin' },
+    ];
+    const extra = fillMissingOfficeAbsences(daily, staff);
+    assert.equal(extra.length, 1);
+    assert.equal(extra[0].staff_code, '22');
+    assert.equal(extra[0].date, '2026-06-02');
+    assert.equal(extra[0].absent, true);
   });
 
   it('splits lateness and absence as penalties, loans as deductions', () => {
@@ -177,11 +216,12 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.equal(hasOfficeAttendance('hr_supervisor'), true);
     assert.equal(hasOfficeAttendance('reservations_web'), true);
     assert.equal(hasOfficeAttendance('admin'), false);
+    assert.equal(hasOfficeAttendance('owner'), false);
     assert.equal(canRequestStaffBenefits('admin'), false);
     assert.equal(canRequestStaffBenefits('reservations_web'), true);
   });
 
-  it('matches door-report names and person IDs to user-management staff', () => {
+  it('matches door-report Person ID to staff user id first', () => {
     const staff = [
       { id: 15, staff_code: 'SH15', full_name: 'Hana Kamal' },
       { id: 22, staff_code: 'AYA', full_name: 'Aya Ahmed' },

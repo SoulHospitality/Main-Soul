@@ -22,6 +22,7 @@ const {
   parseAttendanceRows,
   parseHtmlExcelTables,
   collapsePunchAttendance,
+  fillMissingOfficeAbsences,
   isDoorPunchLog,
   normalizePersonId,
   matchAttendanceStaff,
@@ -329,6 +330,182 @@ function hhMmOrNull(value) {
   const m = text.match(/^(\d{1,2}):(\d{2})/);
   if (!m) return null;
   return `${String(m[1]).padStart(2, '0')}:${m[2]}`;
+}
+
+function buildAttendanceWrite({ staff, date, status, checkIn, checkOut, amount, notified, actorId }) {
+  const st = String(status || '').trim();
+  if (!['on_time', 'late', 'no_show'].includes(st)) {
+    const err = new Error('Status must be on time, late, or no show');
+    err.status = 400;
+    throw err;
+  }
+  const inTime = hhMmOrNull(checkIn);
+  const outTime = hhMmOrNull(checkOut);
+  if (st === 'late' && !inTime) {
+    const err = new Error('Check-in time is required for a late day');
+    err.status = 400;
+    throw err;
+  }
+
+  let lateComputed = null;
+  let absenceComputed = null;
+  let deductionAmount = amount;
+  if (deductionAmount == null || Number.isNaN(Number(deductionAmount))) {
+    if (st === 'on_time') deductionAmount = 0;
+    else if (st === 'late') {
+      lateComputed = computeLatenessDeduction(staff.base_salary, inTime);
+      deductionAmount = lateComputed.amount;
+    } else {
+      absenceComputed = computeAbsenceDeduction(staff.base_salary, !!notified);
+      deductionAmount = absenceComputed.amount;
+    }
+  }
+  deductionAmount = roundMoney(Number(deductionAmount) || 0);
+  if (deductionAmount < 0) deductionAmount = 0;
+
+  if (st === 'late' && !lateComputed && inTime) {
+    lateComputed = computeLatenessDeduction(staff.base_salary, inTime);
+  }
+  if (st === 'no_show' && !absenceComputed) {
+    absenceComputed = computeAbsenceDeduction(staff.base_salary, !!notified);
+  }
+
+  const notifiedFlag = st === 'no_show' ? !!notified : null;
+  const cell = mapAttendanceRow({
+    staff_user_id: staff.id,
+    work_date: date,
+    status: st,
+    check_in: inTime,
+    check_out: outTime,
+    deduction_amount: deductionAmount,
+    notified: st === 'no_show' ? !!notified : false,
+  });
+
+  let deduction = null;
+  if (deductionAmount > 0 && st !== 'on_time') {
+    if (st === 'late' && lateComputed) {
+      deduction = {
+        staff_user_id: staff.id,
+        amount: deductionAmount,
+        reason: `Lateness at ${inTime} (${lateComputed.label})`,
+        deduction_date: date,
+        category: 'lateness',
+        created_by: actorId || null,
+        arrival_time: inTime,
+        notified: null,
+        daily_rate: lateComputed.daily_rate,
+        days_factor: lateComputed.factor,
+      };
+    } else if (absenceComputed) {
+      deduction = {
+        staff_user_id: staff.id,
+        amount: deductionAmount,
+        reason: absenceComputed.label,
+        deduction_date: date,
+        category: 'absence',
+        created_by: actorId || null,
+        arrival_time: null,
+        notified: !!notified,
+        daily_rate: absenceComputed.daily_rate,
+        days_factor: absenceComputed.factor,
+      };
+    }
+  }
+
+  return {
+    cell,
+    attendance: {
+      staff_user_id: staff.id,
+      work_date: date,
+      status: st,
+      check_in: inTime,
+      check_out: outTime,
+      deduction_amount: deductionAmount,
+      notified: notifiedFlag,
+      created_by: actorId || null,
+    },
+    deduction,
+  };
+}
+
+async function bulkWriteAttendance(writes) {
+  if (!writes.length) return;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const staffIds = writes.map((w) => w.attendance.staff_user_id);
+    const dates = writes.map((w) => w.attendance.work_date);
+    await client.query(
+      `DELETE FROM staff_salary_deductions d
+       USING unnest($1::int[], $2::date[]) AS x(staff_user_id, deduction_date)
+       WHERE d.staff_user_id = x.staff_user_id
+         AND d.deduction_date = x.deduction_date
+         AND d.category IN ('lateness', 'absence')`,
+      [staffIds, dates]
+    );
+    await client.query(
+      `INSERT INTO staff_attendance
+         (staff_user_id, work_date, status, check_in, check_out, deduction_amount, notified, created_by, updated_at)
+       SELECT t.staff_user_id, t.work_date::date, t.status, t.check_in, t.check_out,
+              t.deduction_amount, t.notified, t.created_by, now()
+       FROM unnest(
+         $1::int[], $2::date[], $3::text[], $4::text[], $5::text[], $6::float8[], $7::boolean[], $8::int[]
+       ) AS t(staff_user_id, work_date, status, check_in, check_out, deduction_amount, notified, created_by)
+       ON CONFLICT (staff_user_id, work_date) DO UPDATE SET
+         status = EXCLUDED.status,
+         check_in = EXCLUDED.check_in,
+         check_out = EXCLUDED.check_out,
+         deduction_amount = EXCLUDED.deduction_amount,
+         notified = EXCLUDED.notified,
+         created_by = EXCLUDED.created_by,
+         updated_at = now()`,
+      [
+        writes.map((w) => w.attendance.staff_user_id),
+        writes.map((w) => w.attendance.work_date),
+        writes.map((w) => w.attendance.status),
+        writes.map((w) => w.attendance.check_in),
+        writes.map((w) => w.attendance.check_out),
+        writes.map((w) => w.attendance.deduction_amount),
+        writes.map((w) => w.attendance.notified),
+        writes.map((w) => w.attendance.created_by),
+      ]
+    );
+    const deductions = writes.map((w) => w.deduction).filter(Boolean);
+    if (deductions.length) {
+      await client.query(
+        `INSERT INTO staff_salary_deductions
+           (staff_user_id, amount, reason, deduction_date, category, created_by,
+            arrival_time, notified, daily_rate, days_factor)
+         SELECT t.staff_user_id, t.amount, t.reason, t.deduction_date::date, t.category, t.created_by,
+                t.arrival_time, t.notified, t.daily_rate, t.days_factor
+         FROM unnest(
+           $1::int[], $2::float8[], $3::text[], $4::date[], $5::text[], $6::int[],
+           $7::text[], $8::boolean[], $9::float8[], $10::float8[]
+         ) AS t(staff_user_id, amount, reason, deduction_date, category, created_by,
+                arrival_time, notified, daily_rate, days_factor)`,
+        [
+          deductions.map((d) => d.staff_user_id),
+          deductions.map((d) => d.amount),
+          deductions.map((d) => d.reason),
+          deductions.map((d) => d.deduction_date),
+          deductions.map((d) => d.category),
+          deductions.map((d) => d.created_by),
+          deductions.map((d) => d.arrival_time),
+          deductions.map((d) => d.notified),
+          deductions.map((d) => d.daily_rate),
+          deductions.map((d) => d.days_factor),
+        ]
+      );
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (_) {}
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 function mapAttendanceRow(row) {
@@ -1299,14 +1476,14 @@ router.get('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
       cursor.setDate(cursor.getDate() + 1);
     }
 
-    const { rows: staff } = await query(
+    const { rows: staffRows } = await query(
       `SELECT id, full_name, role, staff_code, is_active,
               COALESCE(base_salary, 0)::float AS base_salary
        FROM staff_users
-       WHERE role NOT IN ('owner', 'admin')
-         AND COALESCE(is_active, 1)::int = 1
+       WHERE COALESCE(is_active, 1)::int = 1
        ORDER BY full_name ASC, id ASC`
     );
+    const staff = staffRows.filter((s) => hasOfficeAttendance(s.role));
 
     const { rows: attendanceRows } = await query(
       `SELECT staff_user_id, work_date::text AS work_date, status, check_in, check_out,
@@ -1359,8 +1536,8 @@ router.put('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
       return res.status(400).json({ error: 'Staff and date are required' });
     }
     const staff = await loadStaffForHr(staffUserId);
-    if (staff.role === 'admin') {
-      return res.status(400).json({ error: 'Admins do not use office attendance' });
+    if (!hasOfficeAttendance(staff.role)) {
+      return res.status(400).json({ error: 'This role does not use office attendance' });
     }
     if (b.clear === true || b.status === '' || b.status === 'clear') {
       await deleteAttendanceRecord(staff.id, date);
@@ -1407,31 +1584,11 @@ router.post(
       }
 
       const { rows: staffRows } = await query(
-        `SELECT id, staff_code, full_name, base_salary, role FROM staff_users WHERE role NOT IN ('owner', 'admin')`
+        `SELECT id, staff_code, full_name, base_salary, role FROM staff_users WHERE role <> 'owner'`
       );
 
       if (isDoorPunchLog(punches)) {
-        const workDates = [...new Set(parsed.map((p) => p.date).filter(Boolean))];
-        const present = new Set(
-          parsed.map((p) => `${normalizePersonId(p.staff_code).toLowerCase()}|${p.date}`)
-        );
-        for (const staff of staffRows) {
-          if (!hasOfficeAttendance(staff.role) || !staff.staff_code) continue;
-          const code = normalizePersonId(staff.staff_code).toLowerCase();
-          for (const date of workDates) {
-            if (!present.has(`${code}|${date}`)) {
-              parsed.push({
-                staff_code: staff.staff_code,
-                name: staff.full_name,
-                date,
-                arrival_time: null,
-                notified: false,
-                absent: true,
-              });
-              present.add(`${code}|${date}`);
-            }
-          }
-        }
+        parsed = parsed.concat(fillMissingOfficeAbsences(parsed, staffRows));
       }
 
       const dates = parsed.map((p) => p.date).filter(Boolean).sort();
@@ -1464,16 +1621,30 @@ router.post(
         wfhByStaff.set(w.staff_user_id, set);
       }
 
+      const staffById = new Map(staffRows.map((s) => [String(s.id), s]));
+      const staffByCode = new Map();
+      for (const s of staffRows) {
+        const code = normalizePersonId(s.staff_code).toLowerCase();
+        if (code && !staffByCode.has(code)) staffByCode.set(code, s);
+      }
+      const findStaff = (row) => {
+        const code = normalizePersonId(row.staff_code);
+        if (code && /^\d+$/.test(code) && staffById.has(code)) return staffById.get(code);
+        if (code && staffByCode.has(code.toLowerCase())) return staffByCode.get(code.toLowerCase());
+        return matchAttendanceStaff(row, staffRows);
+      };
+
       const created = [];
       const skipped = [];
       const errors = [];
+      const writesByKey = new Map();
 
       for (const row of parsed) {
         if (!row.date) {
           errors.push({ row: row.row, error: 'Missing date' });
           continue;
         }
-        const staff = matchAttendanceStaff(row, staffRows);
+        const staff = findStaff(row);
         if (!staff) {
           errors.push({
             row: row.row,
@@ -1495,38 +1666,32 @@ router.post(
         }
 
         try {
-          if (row.absent) {
-            const cell = await upsertAttendanceRecord({
-              staff,
-              date: row.date,
-              status: 'no_show',
-              checkIn: null,
-              checkOut: null,
-              amount: null,
-              notified: row.notified,
-              actorId: req.user.id,
-            });
-            created.push(cell);
-          } else {
-            const computed = computeLatenessDeduction(staff.base_salary, row.arrival_time);
-            const cell = await upsertAttendanceRecord({
-              staff,
-              date: row.date,
-              status: computed.factor <= 0 ? 'on_time' : 'late',
-              checkIn: row.arrival_time,
-              checkOut: row.check_out,
-              amount: computed.amount,
-              actorId: req.user.id,
-            });
-            created.push(cell);
-            if (computed.factor <= 0) {
-              skipped.push({ row: row.row, staff_user_id: staff.id, reason: 'on_time' });
-            }
+          const absent = row.absent || !row.arrival_time;
+          const computed = absent
+            ? null
+            : computeLatenessDeduction(staff.base_salary, row.arrival_time);
+          const write = buildAttendanceWrite({
+            staff,
+            date: row.date,
+            status: absent ? 'no_show' : computed.factor <= 0 ? 'on_time' : 'late',
+            checkIn: absent ? null : row.arrival_time,
+            checkOut: absent ? null : row.check_out,
+            amount: absent ? null : computed.amount,
+            notified: row.notified,
+            actorId: req.user.id,
+          });
+          writesByKey.set(`${staff.id}|${row.date}`, write);
+          if (!absent && computed.factor <= 0) {
+            skipped.push({ row: row.row, staff_user_id: staff.id, reason: 'on_time' });
           }
         } catch (err) {
           errors.push({ row: row.row, error: err.message || 'Could not import row' });
         }
       }
+
+      const writes = [...writesByKey.values()];
+      if (writes.length) await bulkWriteAttendance(writes);
+      created.push(...writes.map((w) => w.cell));
 
       res.json({
         ok: true,

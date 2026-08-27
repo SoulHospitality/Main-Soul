@@ -89,7 +89,7 @@ export default function Deductions() {
     mutationFn: (file) => {
       const fd = new FormData();
       fd.append('file', file);
-      return api.post('/hr/attendance/import', fd).then((r) => r.data);
+      return api.post('/hr/attendance/import', fd, { timeout: 180000 }).then((r) => r.data);
     },
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['hr-deductions'] });

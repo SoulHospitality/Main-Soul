@@ -296,15 +296,15 @@ function normalizePersonId(value) {
 function matchAttendanceStaff(row, staffList) {
   const list = staffList || [];
   const code = normalizePersonId(row?.staff_code).toLowerCase();
+  if (code && /^\d+$/.test(code)) {
+    const byId = list.filter((s) => String(s.id) === code);
+    if (byId.length === 1) return byId[0];
+  }
   if (code) {
     const byCode = list.filter(
       (s) => normalizePersonId(s.staff_code).toLowerCase() === code
     );
     if (byCode.length === 1) return byCode[0];
-    if (/^\d+$/.test(code)) {
-      const byId = list.filter((s) => String(s.id) === code);
-      if (byId.length === 1) return byId[0];
-    }
   }
   const name = String(row?.name || '').trim();
   if (!name) return null;
@@ -344,9 +344,36 @@ function stripHtmlCell(value) {
 }
 
 function parseHtmlExcelTables(html) {
-  const cells = [...String(html).matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)].map((m) =>
-    stripHtmlCell(m[1])
+  const rowCells = String(html)
+    .split(/<\/tr>/i)
+    .map((frag) =>
+      [...frag.matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)].map((m) => stripHtmlCell(m[1]))
+    )
+    .filter((cells) => cells.length > 0);
+
+  const headerRowIdx = rowCells.findIndex(
+    (cells) =>
+      cells.some((c) => /^(person|personal)\s*id$/i.test(c)) &&
+      cells.some((c) => /^time$/i.test(c)) &&
+      cells.some((c) => /^attendance\s*status$/i.test(c))
   );
+  if (headerRowIdx >= 0) {
+    const headers = rowCells[headerRowIdx];
+    const rows = [];
+    for (let r = headerRowIdx + 1; r < rowCells.length; r += 1) {
+      const cells = rowCells[r];
+      if (cells.length < 3) continue;
+      const obj = {};
+      const n = Math.min(headers.length, cells.length);
+      for (let c = 0; c < n; c += 1) obj[headers[c]] = cells[c];
+      const person = normalizePersonId(obj[headers[0]]);
+      if (!person || /^(person|personal)\s*id$/i.test(person)) continue;
+      rows.push(obj);
+    }
+    if (rows.length) return rows;
+  }
+
+  const cells = rowCells.flat();
   const headerIdx = cells.findIndex((c) => /^(person|personal)\s*id$/i.test(c));
   if (headerIdx < 0) return [];
   const headers = [];
@@ -380,8 +407,8 @@ function parseAttendanceRows(rows) {
     const timeRaw = pick('time', 'arrival_time', 'arrival', 'check_in', 'checkin', 'clock_in');
     let dateVal = toIsoDate(pick('date', 'day', 'attendance_date')) || toIsoDate(timeRaw);
     const status = String(pick('attendance_status', 'status', 'type', 'attendance') || '').toLowerCase();
-    const isCheckIn = /check[\s_-]*in/.test(status);
-    const isCheckOut = /check[\s_-]*out/.test(status);
+    const isCheckIn = /(?:check|clock|overtime)[\s_-]*in/.test(status);
+    const isCheckOut = /(?:check|clock|overtime)[\s_-]*out/.test(status);
     const arrival_time = timeRaw != null ? excelTimeToHhMm(timeRaw) : null;
     const explicitAbsent = /absent|absence|no.show/.test(status);
     const absent = explicitAbsent || (!isCheckIn && !isCheckOut && !arrival_time);
@@ -465,6 +492,36 @@ function collapsePunchAttendance(rows) {
   });
 }
 
+function fillMissingOfficeAbsences(dailyRows, staffList) {
+  const workDates = new Set();
+  const present = new Set();
+  for (const row of dailyRows || []) {
+    const staff = matchAttendanceStaff(row, staffList);
+    if (!staff || !hasOfficeAttendance(staff.role) || !row.date) continue;
+    present.add(`${staff.id}|${row.date}`);
+    if (!row.absent) workDates.add(row.date);
+  }
+  const extra = [];
+  for (const staff of staffList || []) {
+    if (!hasOfficeAttendance(staff.role)) continue;
+    for (const date of workDates) {
+      const key = `${staff.id}|${date}`;
+      if (present.has(key)) continue;
+      extra.push({
+        staff_code: String(staff.id),
+        name: staff.full_name,
+        date,
+        arrival_time: null,
+        check_out: null,
+        notified: false,
+        absent: true,
+      });
+      present.add(key);
+    }
+  }
+  return extra;
+}
+
 function computeHalfDayDeduction(baseSalary) {
   const rate = dailyRate(baseSalary);
   return {
@@ -476,7 +533,12 @@ function computeHalfDayDeduction(baseSalary) {
 }
 
 const PENALTY_CATEGORIES = ['lateness', 'absence', 'delay', 'performance', 'penalty'];
-const NO_OFFICE_ATTENDANCE_ROLES = new Set(['admin', 'operations', 'operations_supervisor']);
+const NO_OFFICE_ATTENDANCE_ROLES = new Set([
+  'admin',
+  'owner',
+  'operations',
+  'operations_supervisor',
+]);
 const NO_STAFF_BENEFIT_ROLES = new Set(['admin', 'owner']);
 
 function hasOfficeAttendance(role) {
@@ -663,6 +725,7 @@ module.exports = {
   parseAttendanceRows,
   parseHtmlExcelTables,
   collapsePunchAttendance,
+  fillMissingOfficeAbsences,
   isDoorPunchLog,
   normalizePersonId,
   matchAttendanceStaff,

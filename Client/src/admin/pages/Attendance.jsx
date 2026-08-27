@@ -73,7 +73,9 @@ export default function Attendance() {
   });
 
   const days = data?.days || [];
-  const staff = data?.staff || [];
+  const staff = (data?.staff || []).filter(
+    (s) => !['admin', 'owner', 'operations', 'operations_supervisor'].includes(String(s.role || ''))
+  );
   const cells = data?.cells || {};
   const today = currentMonthIso() === month
     ? `${year}-${String(monthNum).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`
@@ -95,15 +97,15 @@ export default function Attendance() {
     mutationFn: (file) => {
       const fd = new FormData();
       fd.append('file', file);
-      return api.post('/hr/attendance/import', fd).then((r) => r.data);
+      return api.post('/hr/attendance/import', fd, { timeout: 180000 }).then((r) => r.data);
     },
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['hr-attendance'] });
       qc.invalidateQueries({ queryKey: ['hr-deductions'] });
       qc.invalidateQueries({ queryKey: ['hr-payroll'] });
       qc.invalidateQueries({ queryKey: ['hr-payslip'] });
-      const dates = (Array.isArray(data.deductions) ? data.deductions : [])
-        .map((c) => String(c.work_date || '').slice(0, 10))
+      const dates = (Array.isArray(data?.deductions) ? data.deductions : [])
+        .map((c) => String(c?.work_date || '').slice(0, 10))
         .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
         .sort();
       if (dates[0]) setMonth(dates[0].slice(0, 7));
@@ -117,7 +119,12 @@ export default function Attendance() {
         toast.error(`Row ${data.errors[0].row}: ${data.errors[0].error}`);
       }
     },
-    onError: (e) => toast.error(e.response?.data?.error || 'Could not import attendance'),
+    onError: (e) =>
+      toast.error(
+        e.code === 'ECONNABORTED'
+          ? 'Import timed out — try a smaller date range'
+          : e.response?.data?.error || 'Could not import attendance'
+      ),
   });
 
   const selectedStaff = useMemo(
@@ -174,7 +181,8 @@ export default function Attendance() {
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-soul-muted">HR</p>
           <h1 className="page-title mt-1">Attendance</h1>
           <p className="page-subtitle">
-            Upload the door report and it fills this monthly schedule. Hover a cell for times and deduction; click to edit.
+            Upload the door report (Person ID, Time, Attendance Status). Person ID is the Staff ID.
+            Admin and operations are not on this sheet.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -265,7 +273,8 @@ export default function Attendance() {
                     <td className="sticky left-0 z-10 bg-white border-b border-r border-soul-line px-3 py-1 min-w-[180px]">
                       <div className="font-semibold text-soul-blue truncate">{person.full_name}</div>
                       <div className="text-[10px] text-soul-muted truncate">
-                        {ROLE_LABELS[person.role] || person.role}
+                        ID {person.id}
+                        {ROLE_LABELS[person.role] ? ` · ${ROLE_LABELS[person.role]}` : person.role ? ` · ${person.role}` : ''}
                         {person.staff_code ? ` · ${person.staff_code}` : ''}
                       </div>
                     </td>
