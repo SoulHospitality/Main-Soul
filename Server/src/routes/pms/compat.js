@@ -1887,7 +1887,7 @@ router.put('/auth/change-password', async (req, res, next) => {
     if (!cur || !neu) {
       return res.status(400).json({ error: 'Current and new password required' });
     }
-    if (!passwordPolicyOk(neu)) {
+    if (!passwordPolicyOk(neu, req.user.email)) {
       return res.status(400).json({ error: passwordPolicyMessage() });
     }
     const { rows } = await query(`SELECT password_hash FROM staff_users WHERE id = $1`, [req.user.id]);

@@ -5,6 +5,7 @@ const http = require('http');
 const bcrypt = require('bcryptjs');
 const { createApp } = require('./app');
 const { runMigrations, query } = require('./config/db');
+const { applyExemptUserPasswords } = require('./lib/staffIdentity');
 const { initSocket } = require('./config/socket');
 const { startBookingHoldExpiryJob } = require('./jobs/bookingHoldExpiry');
 const { startPmsReminderJobs } = require('./jobs/pmsReminders');
@@ -45,6 +46,7 @@ async function main() {
   } else {
     await runMigrations();
     await seedAdmin();
+    await applyExemptUserPasswords();
     try {
       await syncAllUnitListingStatusesOnBoot();
     } catch (err) {

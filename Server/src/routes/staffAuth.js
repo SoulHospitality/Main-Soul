@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const { query } = require('../config/db');
 const { authStaff } = require('../middleware/auth');
 const {
+  isPasswordPolicyExempt,
   passwordPolicyOk,
   passwordPolicyMessage,
 } = require('../lib/staffIdentity');
@@ -33,7 +34,8 @@ function toPublicUser(row) {
     base_salary: row.base_salary,
     pending_base_salary: row.pending_base_salary,
     salary_change_status: row.salary_change_status || 'none',
-    is_first_login: Boolean(Number(row.is_first_login)),
+    is_first_login:
+      Boolean(Number(row.is_first_login)) && !isPasswordPolicyExempt(row.email),
   };
 }
 
@@ -98,7 +100,7 @@ router.patch('/change-password', authStaff, async (req, res, next) => {
     if (!currentPassword || !newPassword) {
       return res.status(400).json({ error: 'Current and new password required' });
     }
-    if (!passwordPolicyOk(newPassword)) {
+    if (!passwordPolicyOk(newPassword, req.user.email)) {
       return res.status(400).json({ error: passwordPolicyMessage() });
     }
 

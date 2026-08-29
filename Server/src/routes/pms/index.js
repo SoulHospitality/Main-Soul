@@ -646,7 +646,7 @@ router.post('/users/:id/reject-salary', requireRoles('admin'), async (req, res, 
 
 router.put('/users/:id/reset-password', requireRoles(...HR_ROUTE_ROLES), async (req, res, next) => {
   try {
-    const { rows: existingRows } = await query(`SELECT role FROM staff_users WHERE id = $1`, [
+    const { rows: existingRows } = await query(`SELECT role, email FROM staff_users WHERE id = $1`, [
       req.params.id,
     ]);
     if (!existingRows[0]) return res.status(404).json({ error: 'Not found' });
@@ -655,7 +655,7 @@ router.put('/users/:id/reset-password', requireRoles(...HR_ROUTE_ROLES), async (
     }
 
     const newPassword = req.body?.new_password || TEMP_PASSWORD;
-    if (req.body?.new_password && !passwordPolicyOk(newPassword)) {
+    if (req.body?.new_password && !passwordPolicyOk(newPassword, existingRows[0].email)) {
       return res.status(400).json({ error: passwordPolicyMessage() });
     }
     const hash = await bcrypt.hash(newPassword, 10);

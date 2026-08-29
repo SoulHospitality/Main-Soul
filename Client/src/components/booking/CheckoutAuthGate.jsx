@@ -23,14 +23,14 @@ export default function CheckoutAuthGate({ prefill = {} }) {
   });
 
   const checks = useMemo(
-    () => getPasswordRuleChecks(signUpForm.password),
-    [signUpForm.password]
+    () => getPasswordRuleChecks(signUpForm.password, signUpForm.email),
+    [signUpForm.password, signUpForm.email]
   );
   const match = signUpForm.password === signUpForm.confirmPassword;
   const canSignUp =
     Boolean(signUpForm.email) &&
     Boolean(signUpForm.full_name) &&
-    passwordPolicyOk(signUpForm.password) &&
+    passwordPolicyOk(signUpForm.password, signUpForm.email) &&
     match &&
     Boolean(signUpForm.confirmPassword);
 
@@ -57,7 +57,7 @@ export default function CheckoutAuthGate({ prefill = {} }) {
       setError(t('common.passwordsDoNotMatch'));
       return;
     }
-    if (!passwordPolicyOk(signUpForm.password)) {
+    if (!passwordPolicyOk(signUpForm.password, signUpForm.email)) {
       setError(t('common.passwordPolicy'));
       return;
     }

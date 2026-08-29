@@ -23,12 +23,15 @@ export default function SignUpPage() {
   const [loading, setLoading] = useState(false);
 
   const setField = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
-  const checks = useMemo(() => getPasswordRuleChecks(form.password), [form.password]);
+  const checks = useMemo(
+    () => getPasswordRuleChecks(form.password, form.email),
+    [form.password, form.email]
+  );
   const match = form.password === form.confirmPassword;
   const canSubmit =
     Boolean(form.email) &&
     Boolean(form.full_name) &&
-    passwordPolicyOk(form.password) &&
+    passwordPolicyOk(form.password, form.email) &&
     match &&
     Boolean(form.confirmPassword);
 
@@ -58,7 +61,7 @@ export default function SignUpPage() {
             setError(t('common.passwordsDoNotMatch'));
             return;
           }
-          if (!passwordPolicyOk(form.password)) {
+          if (!passwordPolicyOk(form.password, form.email)) {
             setError(t('common.passwordPolicy'));
             return;
           }

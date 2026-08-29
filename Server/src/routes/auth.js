@@ -76,7 +76,7 @@ async function localSignUp({ email, password, full_name, phone }) {
     err.status = 400;
     throw err;
   }
-  if (!passwordPolicyOk(password)) {
+  if (!passwordPolicyOk(password, email)) {
     const err = new Error(passwordPolicyMessage());
     err.status = 400;
     throw err;
@@ -128,7 +128,7 @@ router.post('/sign-up', async (req, res, next) => {
   try {
     const { email, password, full_name, phone } = req.body;
 
-    if (!passwordPolicyOk(password)) {
+    if (!passwordPolicyOk(password, email)) {
       return res.status(400).json({ error: passwordPolicyMessage() });
     }
 
@@ -333,9 +333,6 @@ router.post('/reset-password', async (req, res, next) => {
     if (!token || !newPassword) {
       return res.status(400).json({ error: 'Token and new password are required' });
     }
-    if (!passwordPolicyOk(newPassword)) {
-      return res.status(400).json({ error: passwordPolicyMessage() });
-    }
 
     const tokenHash = hashResetToken(token);
     const { rows } = await query(
@@ -349,6 +346,9 @@ router.post('/reset-password', async (req, res, next) => {
     );
     if (!rows[0]) {
       return res.status(400).json({ error: 'Reset link is invalid or has expired' });
+    }
+    if (!passwordPolicyOk(newPassword, rows[0].email)) {
+      return res.status(400).json({ error: passwordPolicyMessage() });
     }
 
     const password_hash = await bcrypt.hash(newPassword, 10);

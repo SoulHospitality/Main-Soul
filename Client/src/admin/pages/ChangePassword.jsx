@@ -22,7 +22,10 @@ export default function ChangePassword() {
   });
   const [saving, setSaving] = useState(false);
 
-  const checks = useMemo(() => getPasswordRuleChecks(form.newPassword), [form.newPassword]);
+  const checks = useMemo(
+    () => getPasswordRuleChecks(form.newPassword, user?.email),
+    [form.newPassword, user?.email]
+  );
   const match = form.newPassword === form.confirmPassword;
   const canSubmit =
     Boolean(form.currentPassword) &&

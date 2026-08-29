@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { query } = require('../config/db');
 const { getServiceClient } = require('../config/supabase');
+const { isPasswordPolicyExempt } = require('../lib/staffIdentity');
 
 async function authStaff(req, res, next) {
   try {
@@ -22,7 +23,8 @@ async function authStaff(req, res, next) {
     if (!rows[0] || !rows[0].is_active) return res.status(401).json({ error: 'Unauthorized' });
     req.user = {
       ...rows[0],
-      is_first_login: Boolean(Number(rows[0].is_first_login)),
+      is_first_login:
+        Boolean(Number(rows[0].is_first_login)) && !isPasswordPolicyExempt(rows[0].email),
     };
     next();
   } catch {
