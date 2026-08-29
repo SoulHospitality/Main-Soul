@@ -169,11 +169,10 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
             skipBlockCheck: true,
           });
           if (quote?.available) {
-            
+            // Fee lines from current quote; stay total stays on booking.total_egp (promo already applied).
             pricePerNight = nights > 0 ? Number(quote.base_subtotal || quote.subtotal || 0) / nights : 0;
             housekeepingFees = Number(quote.cleaning_fee_egp) || housekeepingFees;
             beachAccessFees = Number(quote.access_fee_egp) || 0;
-            stayTotal = Number(quote.total_egp) || stayTotal;
           }
         } catch (_) {}
 

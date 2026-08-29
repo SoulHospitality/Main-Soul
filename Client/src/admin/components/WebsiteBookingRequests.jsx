@@ -130,7 +130,8 @@ export default function WebsiteBookingRequests() {
     [salesUsers]
   );
 
-  const acceptTotal = Number(acceptBooking?.total_egp) || 0;
+  const acceptTotal =
+    Number(acceptBooking?.payment_breakdown?.total_egp ?? acceptBooking?.total_egp) || 0;
   const halfAmount = Math.round(acceptTotal * 0.5 * 100) / 100;
   const amountPaid = resolveAmountPaid(
     acceptBooking,
@@ -205,7 +206,13 @@ export default function WebsiteBookingRequests() {
   const openAcceptModal = (booking) => {
     setAcceptBooking(booking);
     setPaymentMode('half');
-    setCustomAmount(String(Math.round((Number(booking.total_egp) || 0) * 0.5 * 100) / 100));
+    setCustomAmount(
+      String(
+        Math.round(
+          (Number(booking.payment_breakdown?.total_egp ?? booking.total_egp) || 0) * 0.5 * 100
+        ) / 100
+      )
+    );
     setEvidenceFile(null);
   };
 
@@ -415,6 +422,17 @@ export default function WebsiteBookingRequests() {
                               Service{pay.service_fee_percent ? ` (${pay.service_fee_percent}%)` : ''}
                             </span>
                             <span className="font-medium tabular-nums">{currency(pay.service_fees)}</span>
+                          </div>
+                        )}
+                        {Number(pay.promo_discount) > 0 && (
+                          <div className="flex justify-between gap-3 text-emerald-700">
+                            <span>
+                              Promo
+                              {pay.promo_code ? ` ${pay.promo_code}` : ''}
+                            </span>
+                            <span className="font-medium tabular-nums">
+                              −{currency(pay.promo_discount)}
+                            </span>
                           </div>
                         )}
                         <div className="flex justify-between gap-3 border-t border-gray-100 pt-1">
@@ -636,6 +654,18 @@ export default function WebsiteBookingRequests() {
                             Service fees{pay.service_fee_percent ? ` + taxes (${pay.service_fee_percent}%)` : ''}
                           </span>
                           <span className="font-medium tabular-nums">{currency(pay.service_fees)}</span>
+                        </div>
+                      )}
+                      {Number(pay.promo_discount) > 0 && (
+                        <div className="flex justify-between gap-3 text-emerald-700">
+                          <span>
+                            Promo
+                            {pay.promo_code ? ` ${pay.promo_code}` : ''}
+                            {pay.promo_discount_percent ? ` (−${pay.promo_discount_percent}%)` : ''}
+                          </span>
+                          <span className="font-medium tabular-nums">
+                            −{currency(pay.promo_discount)}
+                          </span>
                         </div>
                       )}
                       {Number(pay.security_deposit) > 0 && (

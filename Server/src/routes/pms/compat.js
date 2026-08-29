@@ -1135,6 +1135,9 @@ router.get('/website-bookings', async (req, res, next) => {
               r.id AS reservation_id,
               COALESCE(r.amount_paid, 0)::float AS amount_paid,
               COALESCE(NULLIF(r.payment_status, ''), b.payment_status) AS reservation_payment_status,
+              promo.code AS promo_code,
+              promo.discount_amount AS promo_discount_amount,
+              promo.discount_percent AS promo_discount_percent,
               COALESCE(
                 NULLIF(b.id_photo_urls, '{}'),
                 (
@@ -1171,6 +1174,16 @@ router.get('/website-bookings', async (req, res, next) => {
          ORDER BY created_at DESC
          LIMIT 1
        ) r ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT p.code,
+                red.discount_amount,
+                p.discount_percent
+         FROM promo_code_redemptions red
+         JOIN promo_codes p ON p.id = red.promo_code_id
+         WHERE red.booking_id = b.id
+         ORDER BY red.created_at DESC
+         LIMIT 1
+       ) promo ON TRUE
        WHERE ${where}${scope.clause}
        ORDER BY b.created_at DESC
        LIMIT ${limit}`,
@@ -1232,6 +1245,11 @@ router.get('/website-bookings', async (req, res, next) => {
         service_fees: null,
         security_deposit: null,
         fee_lines: [],
+        amount_before_promo: null,
+        promo_code: row.promo_code || null,
+        promo_discount: Number(row.promo_discount_amount) > 0 ? Number(row.promo_discount_amount) : null,
+        promo_discount_percent:
+          row.promo_discount_percent != null ? Number(row.promo_discount_percent) : null,
         total_egp: total,
         amount_paid: amountPaid,
         amount_due: Math.max(0, Math.round((total - amountPaid) * 100) / 100),
@@ -1254,11 +1272,15 @@ router.get('/website-bookings', async (req, res, next) => {
             skipBlockCheck: true,
           });
           if (quote?.available && Number(quote.nights) > 0 && Number(quote.subtotal) > 0) {
-            const quoteTotal = Number(quote.total_egp) || total;
-            const displayTotal =
-              total > 0 && Math.abs(quoteTotal - total) > Math.max(50, total * 0.15)
-                ? total
-                : quoteTotal;
+            const quoteTotal = Number(quote.total_egp) || 0;
+            // Guest checkout total (includes promo) is authoritative — never replace with a fresh undiscountd quote.
+            const displayTotal = total > 0 ? total : quoteTotal;
+            const promoDiscount =
+              Number(row.promo_discount_amount) > 0
+                ? Number(row.promo_discount_amount)
+                : quoteTotal > 0 && displayTotal > 0 && quoteTotal - displayTotal > 0.5
+                  ? Math.round((quoteTotal - displayTotal) * 100) / 100
+                  : 0;
             const paid = prepaid ? displayTotal : amountPaid;
             breakdown = {
               nights: quote.nights,
@@ -1269,6 +1291,11 @@ router.get('/website-bookings', async (req, res, next) => {
               service_fee_percent: quote.service_fee_percent,
               security_deposit: quote.security_deposit_egp,
               fee_lines: quote.lines || [],
+              amount_before_promo: promoDiscount > 0 ? quoteTotal || displayTotal + promoDiscount : null,
+              promo_code: row.promo_code || null,
+              promo_discount: promoDiscount > 0 ? promoDiscount : null,
+              promo_discount_percent:
+                row.promo_discount_percent != null ? Number(row.promo_discount_percent) : null,
               total_egp: displayTotal,
               amount_paid: paid,
               amount_due: Math.max(0, Math.round((displayTotal - paid) * 100) / 100),
