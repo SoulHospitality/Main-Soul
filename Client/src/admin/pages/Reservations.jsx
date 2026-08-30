@@ -21,7 +21,7 @@ import BookingCalendar from '../components/ui/BookingCalendar';
 import { currency, formatDate, formatDateTime, nightsText, BOOKING_SOURCES, PAYMENT_METHODS, PAYMENT_METHOD_LABELS, MANUAL_PAYMENT_METHODS, unitDisplay, unitSelectLabel } from '../utils/formatters';
 import { calcReservationFinancials, commissionModeLabel, appliedPctLabel } from '../utils/commission';
 import { housekeepingFeeForUnit } from '../../utils/housekeeping';
-import { isoDateOnly } from '../../utils/stayNights';
+import { isoDateOnly, addOneDayStr } from '../../utils/stayNights';
 import { canonicalSalesName, namesAreAliases, reservationSalesDisplay } from '../utils/salesNameMatch';
 import AdminReservationDrawer from '../components/AdminReservationDrawer';
 import ManualReservationForm from '../components/ManualReservationForm';
@@ -913,10 +913,12 @@ function DateRangeFilter({ label, from, to, onFromChange, onToChange, onClear })
   );
 }
 
-function addDaysIso(iso, days) {
-  const d = new Date(`${iso}T12:00:00`);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+function localTodayIso() {
+  const d = new Date();
+  const yy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yy}-${mm}-${dd}`;
 }
 
 function orChecklistNetNightRate(reservation) {
@@ -935,8 +937,8 @@ function orChecklistNetNightRate(reservation) {
 }
 
 function OrChecklistSection({ reservations, canEdit, onToggle, savingId }) {
-  const today = isoDateOnly(new Date());
-  const tomorrow = addDaysIso(today, 1);
+  const today = localTodayIso();
+  const tomorrow = addOneDayStr(today);
 
   const rows = useMemo(() => {
     return reservations
