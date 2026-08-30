@@ -9,6 +9,7 @@ import LoadingSpinner from './ui/LoadingSpinner';
 import Modal from './ui/Modal';
 import { idDocumentThumbUrl, isPdfUrl } from '../utils/idDocuments';
 import { currency, formatDate, PAYMENT_METHOD_LABELS } from '../utils/formatters';
+import { resolveWebsiteBookingPayTotals } from '../utils/websiteBookingPay';
 import { usePermissions } from '../hooks/usePermissions';
 
 function isWebsiteAgent(user) {
@@ -51,7 +52,7 @@ function partyLabel(booking) {
 }
 
 function paymentBreakdown(booking) {
-  return booking?.payment_breakdown || {};
+  return resolveWebsiteBookingPayTotals(booking?.payment_breakdown || {}, booking);
 }
 
 function paymentMethodLabel(method) {
@@ -131,7 +132,12 @@ export default function WebsiteBookingRequests() {
   );
 
   const acceptTotal =
-    Number(acceptBooking?.payment_breakdown?.total_egp ?? acceptBooking?.total_egp) || 0;
+    Number(
+      resolveWebsiteBookingPayTotals(
+        acceptBooking?.payment_breakdown,
+        acceptBooking
+      ).total_egp ?? acceptBooking?.total_egp
+    ) || 0;
   const halfAmount = Math.round(acceptTotal * 0.5 * 100) / 100;
   const amountPaid = resolveAmountPaid(
     acceptBooking,
@@ -209,7 +215,12 @@ export default function WebsiteBookingRequests() {
     setCustomAmount(
       String(
         Math.round(
-          (Number(booking.payment_breakdown?.total_egp ?? booking.total_egp) || 0) * 0.5 * 100
+          (Number(
+            resolveWebsiteBookingPayTotals(booking?.payment_breakdown, booking).total_egp ??
+              booking.total_egp
+          ) || 0) *
+            0.5 *
+            100
         ) / 100
       )
     );
@@ -424,11 +435,20 @@ export default function WebsiteBookingRequests() {
                             <span className="font-medium tabular-nums">{currency(pay.service_fees)}</span>
                           </div>
                         )}
+                        {Number(pay.amount_before_promo) > 0 && Number(pay.promo_discount) > 0 && (
+                          <div className="flex justify-between gap-3 border-t border-gray-100 pt-1">
+                            <span className="text-gray-500">Before promo</span>
+                            <span className="font-medium tabular-nums">
+                              {currency(pay.amount_before_promo)}
+                            </span>
+                          </div>
+                        )}
                         {Number(pay.promo_discount) > 0 && (
                           <div className="flex justify-between gap-3 text-emerald-700">
                             <span>
                               Promo
                               {pay.promo_code ? ` ${pay.promo_code}` : ''}
+                              {pay.promo_discount_percent ? ` (−${pay.promo_discount_percent}%)` : ''}
                             </span>
                             <span className="font-medium tabular-nums">
                               −{currency(pay.promo_discount)}
@@ -436,7 +456,9 @@ export default function WebsiteBookingRequests() {
                           </div>
                         )}
                         <div className="flex justify-between gap-3 border-t border-gray-100 pt-1">
-                          <span className="font-semibold text-gray-800">Total</span>
+                          <span className="font-semibold text-gray-800">
+                            {Number(pay.promo_discount) > 0 ? 'Total after promo' : 'Total'}
+                          </span>
                           <span className="font-bold text-soul-blue tabular-nums">{currency(total)}</span>
                         </div>
                         <div className="flex justify-between gap-3">
@@ -656,6 +678,12 @@ export default function WebsiteBookingRequests() {
                           <span className="font-medium tabular-nums">{currency(pay.service_fees)}</span>
                         </div>
                       )}
+                      {Number(pay.amount_before_promo) > 0 && Number(pay.promo_discount) > 0 && (
+                        <div className="flex justify-between gap-3">
+                          <span className="text-gray-500">Before promo</span>
+                          <span className="font-medium tabular-nums">{currency(pay.amount_before_promo)}</span>
+                        </div>
+                      )}
                       {Number(pay.promo_discount) > 0 && (
                         <div className="flex justify-between gap-3 text-emerald-700">
                           <span>
@@ -675,7 +703,9 @@ export default function WebsiteBookingRequests() {
                         </div>
                       )}
                       <div className="flex justify-between gap-3 border-t border-gray-200 pt-1.5">
-                        <span className="font-semibold text-gray-800">Total</span>
+                        <span className="font-semibold text-gray-800">
+                          {Number(pay.promo_discount) > 0 ? 'Total after promo' : 'Total'}
+                        </span>
                         <span className="font-bold text-lg text-gray-900 tabular-nums">{currency(total)}</span>
                       </div>
                       <div className="flex justify-between gap-3">

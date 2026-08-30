@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import api from '../api/axios';
 import LoadingSpinner from './ui/LoadingSpinner';
 import { currency, formatDate, PAYMENT_METHOD_LABELS } from '../utils/formatters';
+import { resolveWebsiteBookingPayTotals } from '../utils/websiteBookingPay';
 import { usePermissions } from '../hooks/usePermissions';
 
 function paymentMethodLabel(method) {
@@ -111,7 +112,9 @@ export default function WebsiteBookingUnassigned() {
           <tbody>
             {bookings.map((b) => {
               const nights = nightsBetween(b.checkin, b.checkout);
-              const total = Number(b.payment_breakdown?.total_egp ?? b.total_egp) || 0;
+              const total =
+                Number(resolveWebsiteBookingPayTotals(b.payment_breakdown, b).total_egp ?? b.total_egp) ||
+                0;
               return (
                 <tr key={b.id} className="border-t border-sky-100 align-top">
                   <td className="py-3 pr-3 min-w-[12rem]">

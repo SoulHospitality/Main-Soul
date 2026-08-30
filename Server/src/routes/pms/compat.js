@@ -1273,14 +1273,22 @@ router.get('/website-bookings', async (req, res, next) => {
           });
           if (quote?.available && Number(quote.nights) > 0 && Number(quote.subtotal) > 0) {
             const quoteTotal = Number(quote.total_egp) || 0;
-            // Guest checkout total (includes promo) is authoritative — never replace with a fresh undiscountd quote.
+            const lineSum =
+              Number(quote.subtotal || 0) +
+              Number(quote.cleaning_fee_egp || 0) +
+              Number(quote.access_fee_egp || 0) +
+              Number(quote.service_fee_egp || 0);
+            // Guest checkout total (includes promo) is authoritative — never replace with a fresh undiscounted quote.
             const displayTotal = total > 0 ? total : quoteTotal;
-            const promoDiscount =
-              Number(row.promo_discount_amount) > 0
-                ? Number(row.promo_discount_amount)
-                : quoteTotal > 0 && displayTotal > 0 && quoteTotal - displayTotal > 0.5
-                  ? Math.round((quoteTotal - displayTotal) * 100) / 100
-                  : 0;
+            const hasPromo = Boolean(row.promo_code) || Number(row.promo_discount_amount) > 0;
+            let promoDiscount = 0;
+            if (hasPromo && displayTotal > 0 && lineSum > displayTotal + 0.5) {
+              promoDiscount = Math.round((lineSum - displayTotal) * 100) / 100;
+            } else if (Number(row.promo_discount_amount) > 0) {
+              promoDiscount = Number(row.promo_discount_amount);
+            } else if (quoteTotal > displayTotal + 0.5) {
+              promoDiscount = Math.round((quoteTotal - displayTotal) * 100) / 100;
+            }
             const paid = prepaid ? displayTotal : amountPaid;
             breakdown = {
               nights: quote.nights,
@@ -1291,7 +1299,8 @@ router.get('/website-bookings', async (req, res, next) => {
               service_fee_percent: quote.service_fee_percent,
               security_deposit: quote.security_deposit_egp,
               fee_lines: quote.lines || [],
-              amount_before_promo: promoDiscount > 0 ? quoteTotal || displayTotal + promoDiscount : null,
+              amount_before_promo:
+                promoDiscount > 0 ? lineSum || quoteTotal : hasPromo ? lineSum || null : null,
               promo_code: row.promo_code || null,
               promo_discount: promoDiscount > 0 ? promoDiscount : null,
               promo_discount_percent:
@@ -1881,7 +1890,10 @@ router.put(
           ? Math.max(0, parseInt(b.nanny_count ?? b.nanny, 10) || 0)
           : null,
         b.sales_label !== undefined || b.sales_owner !== undefined
-          ? (b.sales_label ?? b.sales_owner ?? null)
+          ? (() => {
+              const { resolveSalesLabel } = require('../../lib/salesNameMatch');
+              return resolveSalesLabel(b.sales_label ?? b.sales_owner ?? '');
+            })()
           : null,
         b.utilities_amount != null && b.utilities_amount !== ''
           ? parseFloat(b.utilities_amount) || 0

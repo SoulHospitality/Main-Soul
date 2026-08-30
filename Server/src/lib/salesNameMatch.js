@@ -46,6 +46,35 @@ function aliasLabelsForName(value) {
   return [n];
 }
 
+function titleCaseWords(value) {
+  return String(value || '')
+    .split(' ')
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+/** Canonical display label for spreadsheet / ops agent spellings (Emry → Emery Adham). */
+function canonicalSalesLabelFromLabel(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  try {
+    const { canonicalOpsAgentFromLabel } = require('./opsAgentAliases');
+    const ops = canonicalOpsAgentFromLabel(raw);
+    if (ops) return ops;
+  } catch (_) {}
+  const n = normalizeName(raw);
+  if (!n) return raw;
+  for (const group of EQUIVALENCE_GROUPS) {
+    if (group.includes(n)) return titleCaseWords(group[0]);
+  }
+  return raw;
+}
+
+function resolveSalesLabel(value) {
+  return canonicalSalesLabelFromLabel(value) || String(value || '').trim() || null;
+}
+
 function namesAreAliases(a, b) {
   const left = new Set(aliasLabelsForName(a));
   if (!left.size) return false;
@@ -208,5 +237,7 @@ module.exports = {
   matchSalesLabelToStaff,
   salesLabelBelongsToUser,
   resolveReservationSalesPerson,
+  canonicalSalesLabelFromLabel,
+  resolveSalesLabel,
   DEFAULT_MIN_SCORE,
 };

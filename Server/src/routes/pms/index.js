@@ -1726,7 +1726,10 @@ router.post(
         party.adults,
         party.children,
         party.nanny_count,
-        b.sales_label || b.sales_owner || null,
+        (() => {
+          const { resolveSalesLabel } = require('../../lib/salesNameMatch');
+          return resolveSalesLabel(b.sales_label || b.sales_owner || '');
+        })(),
         beachAccessFeesFinal,
       ]
     );

@@ -45,7 +45,18 @@ export function canonicalSalesName(value, staffList = []) {
   const raw = String(value || '').trim();
   if (!raw) return '';
   const staff = (staffList || []).find((u) => namesAreAliases(u.full_name, raw));
-  return String(staff?.full_name || raw).trim();
+  if (staff?.full_name) return String(staff.full_name).trim();
+  const n = normalizeName(raw);
+  for (const group of EQUIVALENCE_GROUPS) {
+    if (group.includes(n)) {
+      return group[0]
+        .split(' ')
+        .filter(Boolean)
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
+    }
+  }
+  return raw;
 }
 
 export function reservationSalesDisplay(reservation, staffList = [], empty = '—') {
