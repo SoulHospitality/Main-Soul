@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Edit2, Trash2, Building2, BedDouble, Bath, Layers, Eye, ExternalLink, DollarSign, Globe } from 'lucide-react';
+import { Plus, Edit2, Trash2, Building2, BedDouble, Bath, Layers, Eye, ExternalLink, DollarSign, Globe, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import { usePermissions } from '../hooks/usePermissions';
@@ -27,6 +27,7 @@ import {
 } from '../../utils/beachAccess';
 import { isGaiaUnit } from '../../utils/bookingRules';
 import TagSelect from '../components/ui/TagSelect';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
 
 function guestListingPath(unit) {
   const slug = String(unit?.slug || '').trim();
@@ -614,6 +615,7 @@ export default function Units({ listingType = 'rent' }) {
   const [deleteWithReservations, setDeleteWithReservations] = useState(false);
   const [viewMode, setViewMode] = useState('grid');
   const [handoffUnit, setHandoffUnit] = useState(null);
+  const [unpublishTarget, setUnpublishTarget] = useState(null);
 
   const { data: units = [], isLoading } = useQuery({
     queryKey: ['units', listingType, search, filterStatus, filterProject, filterBedrooms],
@@ -684,6 +686,32 @@ export default function Units({ listingType = 'rent' }) {
       setDeleteWithReservations(false);
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Error deleting unit'),
+  });
+
+  const unpublishMutation = useMutation({
+    mutationFn: (id) => api.patch(`/units/${id}/unpublish`),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['units'] });
+      toast.success(`${res.data?.name || res.data?.title || 'Unit'} unpublished — hidden from guests`);
+      setUnpublishTarget(null);
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Error unpublishing unit'),
+  });
+
+  const publishMutation = useMutation({
+    mutationFn: (id) => api.patch(`/units/${id}/publish`),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['units'] });
+      const missing = res.data?.listing_completeness?.missing || [];
+      if (res.data?.status === 'published') {
+        toast.success(`${res.data?.name || res.data?.title || 'Unit'} published`);
+      } else if (missing.length) {
+        toast.error(`Still draft — missing: ${missing.join(', ')}`);
+      } else {
+        toast.success(`${res.data?.name || res.data?.title || 'Unit'} updated`);
+      }
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Error publishing unit'),
   });
 
   const openDelete = (unit) => {
@@ -928,6 +956,29 @@ export default function Units({ listingType = 'rent' }) {
                       <ExternalLink className="w-4 h-4" />
                     </a>
                   )}
+                  {canWrite && u.status === 'published' && (
+                    <button
+                      type="button"
+                      onClick={() => setUnpublishTarget(u)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-100 transition-colors"
+                      title="Unpublish — hide from guest website"
+                    >
+                      <EyeOff className="w-3.5 h-3.5" />
+                      Unpublish
+                    </button>
+                  )}
+                  {canWrite && u.listing_unpublished && (
+                    <button
+                      type="button"
+                      onClick={() => publishMutation.mutate(u.id)}
+                      disabled={publishMutation.isPending}
+                      className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-100 transition-colors disabled:opacity-50"
+                      title="Publish — show on guest website"
+                    >
+                      <Globe className="w-3.5 h-3.5" />
+                      Publish
+                    </button>
+                  )}
                   {canWrite && <button onClick={() => openEdit(u)} className="p-1.5 rounded-lg text-gray-400 hover:text-primary-600 hover:bg-primary-50 transition-colors"><Edit2 className="w-4 h-4" /></button>}
                   {canDeleteUnits && <button onClick={() => openDelete(u)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"><Trash2 className="w-4 h-4" /></button>}
                 </div>
@@ -990,6 +1041,29 @@ export default function Units({ listingType = 'rent' }) {
                               Guest
                             </a>
                           ) : null}
+                          {canWrite && u.status === 'published' && (
+                            <button
+                              type="button"
+                              onClick={() => setUnpublishTarget(u)}
+                              className="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-1.5 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-100"
+                              title="Unpublish — hide from guest website"
+                            >
+                              <EyeOff className="w-3.5 h-3.5" />
+                              Unpublish
+                            </button>
+                          )}
+                          {canWrite && u.listing_unpublished && (
+                            <button
+                              type="button"
+                              onClick={() => publishMutation.mutate(u.id)}
+                              disabled={publishMutation.isPending}
+                              className="inline-flex items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-1.5 py-1 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+                              title="Publish — show on guest website"
+                            >
+                              <Globe className="w-3.5 h-3.5" />
+                              Publish
+                            </button>
+                          )}
                           {canWrite && (
                             <button onClick={() => openEdit(u)} className="p-1.5 rounded text-gray-400 hover:text-primary-600 hover:bg-primary-50"><Edit2 className="w-3.5 h-3.5" /></button>
                           )}
@@ -1103,6 +1177,24 @@ export default function Units({ listingType = 'rent' }) {
           </div>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={!!unpublishTarget}
+        onClose={() => {
+          if (unpublishMutation.isPending) return;
+          setUnpublishTarget(null);
+        }}
+        onConfirm={() => unpublishMutation.mutate(unpublishTarget.id)}
+        title="Unpublish unit"
+        message={
+          unpublishTarget
+            ? `Hide ${unitDisplay(unpublishTarget, 'this unit')} from the guest website? The listing stays in admin as draft until you publish it again.`
+            : ''
+        }
+        confirmText="Unpublish"
+        danger
+        loading={unpublishMutation.isPending}
+      />
     </div>
   );
 }

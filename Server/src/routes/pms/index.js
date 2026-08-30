@@ -111,6 +111,13 @@ function buildOtherDetails({ facilities, photos_folder_url, cover_drive_url, exi
   return JSON.stringify(base);
 }
 
+function setListingUnpublishedFlag(existing, unpublished) {
+  const base = parseOtherDetails(existing);
+  if (unpublished) base.listing_unpublished = true;
+  else delete base.listing_unpublished;
+  return JSON.stringify(base);
+}
+
 function normalizeTagList(value) {
   if (Array.isArray(value)) return value.map((s) => String(s).trim()).filter(Boolean);
   if (value == null || value === '') return [];
@@ -167,6 +174,7 @@ function mapUnitRow(u) {
     listing_type: u.listing_type || 'rent',
     unit_area: u.size_m2,
     has_nanny_room: !!u.has_nanny_room,
+    listing_unpublished: details.listing_unpublished === true,
   };
 }
 
@@ -1253,6 +1261,77 @@ async function updateUnitHandler(req, res, next) {
 
 router.patch('/units/:id', requireRoles('admin', 'resale', 'reservations_web', 'reservations'), updateUnitHandler);
 router.put('/units/:id', requireRoles('admin', 'resale', 'reservations_web', 'reservations'), updateUnitHandler);
+
+router.patch('/units/:id/unpublish', requireRoles('admin', 'resale', 'reservations_web', 'reservations'), async (req, res, next) => {
+  try {
+    const { rows: existing } = await query(
+      `SELECT id, listing_type, status, other_details FROM units WHERE id = $1`,
+      [req.params.id]
+    );
+    if (!existing[0]) return res.status(404).json({ error: 'Not found' });
+
+    const listingType =
+      String(existing[0].listing_type || 'rent').toLowerCase() === 'sale' ? 'sale' : 'rent';
+    if (req.user?.role === 'resale' && listingType !== 'sale') {
+      return res.status(403).json({ error: 'Resale can only manage for-sale units' });
+    }
+    if (
+      (req.user?.role === 'reservations_web' || req.user?.role === 'reservations') &&
+      listingType !== 'rent'
+    ) {
+      return res.status(403).json({ error: 'Website reservation agents can only manage rental units' });
+    }
+
+    const otherDetails = setListingUnpublishedFlag(existing[0].other_details, true);
+    const { rows } = await query(
+      `UPDATE units SET status = 'draft', other_details = $1, updated_at = now() WHERE id = $2 RETURNING *`,
+      [otherDetails, req.params.id]
+    );
+    res.json(mapUnitRow(rows[0]));
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.patch('/units/:id/publish', requireRoles('admin', 'resale', 'reservations_web', 'reservations'), async (req, res, next) => {
+  try {
+    const { rows: existing } = await query(
+      `SELECT id, listing_type, other_details FROM units WHERE id = $1`,
+      [req.params.id]
+    );
+    if (!existing[0]) return res.status(404).json({ error: 'Not found' });
+
+    const listingType =
+      String(existing[0].listing_type || 'rent').toLowerCase() === 'sale' ? 'sale' : 'rent';
+    if (req.user?.role === 'resale' && listingType !== 'sale') {
+      return res.status(403).json({ error: 'Resale can only manage for-sale units' });
+    }
+    if (
+      (req.user?.role === 'reservations_web' || req.user?.role === 'reservations') &&
+      listingType !== 'rent'
+    ) {
+      return res.status(403).json({ error: 'Website reservation agents can only manage rental units' });
+    }
+
+    const otherDetails = setListingUnpublishedFlag(existing[0].other_details, false);
+    await query(
+      `UPDATE units SET other_details = $1, updated_at = now() WHERE id = $2`,
+      [otherDetails, req.params.id]
+    );
+    const synced = await syncUnitListingStatus(req.params.id);
+    const payload = mapUnitRow(synced || existing[0]);
+    if (synced?._completeness) {
+      payload.listing_completeness = {
+        complete: synced._completeness.complete,
+        missing: synced._completeness.missing,
+        status: synced.status,
+      };
+    }
+    res.json(payload);
+  } catch (e) {
+    next(e);
+  }
+});
 
 router.delete('/units/:id', requireRoles('admin', 'resale'), async (req, res, next) => {
   try {

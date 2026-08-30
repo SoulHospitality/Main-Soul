@@ -1,6 +1,20 @@
 const { query } = require('../config/db');
 const { resolveListingStatus } = require('./unitCompleteness');
 
+function parseOtherDetails(otherDetails) {
+  if (!otherDetails) return {};
+  try {
+    const parsed = typeof otherDetails === 'string' ? JSON.parse(otherDetails) : otherDetails;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function isListingManuallyUnpublished(unit) {
+  return parseOtherDetails(unit?.other_details).listing_unpublished === true;
+}
+
 async function unitHasPrice(unitId, { priceFallback, wpPostId } = {}) {
   let fallback = Number(priceFallback);
   let postId = wpPostId;
@@ -39,14 +53,16 @@ async function syncUnitListingStatus(unitId) {
     unit,
     hasPrice,
   });
-  if (resolved.status === unit.status) {
-    return { ...unit, _completeness: resolved };
+  const nextStatus = isListingManuallyUnpublished(unit) ? 'draft' : resolved.status;
+  const completeness = { ...resolved, status: nextStatus };
+  if (nextStatus === unit.status) {
+    return { ...unit, _completeness: completeness };
   }
   const { rows: updated } = await query(
     `UPDATE units SET status = $1, updated_at = now() WHERE id = $2 RETURNING *`,
-    [resolved.status, unitId]
+    [nextStatus, unitId]
   );
-  return { ...updated[0], _completeness: resolved };
+  return { ...updated[0], _completeness: completeness };
 }
 
 async function enforceDraftWithoutPrice(unitId) {
@@ -67,4 +83,6 @@ module.exports = {
   unitHasPrice,
   syncUnitListingStatus,
   enforceDraftWithoutPrice,
+  isListingManuallyUnpublished,
+  parseOtherDetails,
 };
