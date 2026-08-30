@@ -11,6 +11,7 @@ const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Units = lazy(() => import('./pages/Units'));
 const UnitsForSale = lazy(() => import('./pages/UnitsForSale'));
 const Reservations = lazy(() => import('./pages/Reservations'));
+const ReservationsChecklist = lazy(() => import('./pages/ReservationsChecklist'));
 const WebsiteBookings = lazy(() => import('./pages/WebsiteBookings'));
 const WebsiteBookingUnassignedPage = lazy(() => import('./pages/WebsiteBookingUnassignedPage'));
 const WebsiteBookingHistoryPage = lazy(() => import('./pages/WebsiteBookingHistoryPage'));
@@ -114,6 +115,7 @@ function AppRoutes() {
       <Route path="units-for-sale" element={<ProtectedRoute page="units_sale"><UnitsForSale /></ProtectedRoute>} />
       <Route path="projects" element={<ProtectedRoute page="projects"><Projects /></ProtectedRoute>} />
       <Route path="reservations" element={<ProtectedRoute page="reservations"><Reservations /></ProtectedRoute>} />
+      <Route path="reservations/checklist" element={<ProtectedRoute page="reservations"><ReservationsChecklist /></ProtectedRoute>} />
       <Route path="website-bookings" element={<ProtectedRoute page="website_bookings"><WebsiteBookings /></ProtectedRoute>} />
       <Route path="website-bookings/unassigned" element={<ProtectedRoute page="website_bookings"><WebsiteBookingUnassignedPage /></ProtectedRoute>} />
       <Route path="website-bookings/history" element={<ProtectedRoute page="website_bookings"><WebsiteBookingHistoryPage /></ProtectedRoute>} />
