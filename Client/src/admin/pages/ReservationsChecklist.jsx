@@ -33,7 +33,7 @@ export default function ReservationsChecklist() {
       <div className="page-header mb-0">
         <h1 className="page-title">{pageTitle}</h1>
         <p className="page-subtitle">
-          Today and tomorrow check-ins — notify owners, collect IDs, and confirm permissions.
+          Notify owners, collect IDs, and confirm permissions.
         </p>
       </div>
 

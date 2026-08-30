@@ -1,15 +1,6 @@
 import { useMemo } from 'react';
-import { currency, formatDate, unitDisplay } from '../utils/formatters';
+import { currency, formatDate, formatDateTime, unitDisplay } from '../utils/formatters';
 import { calcReservationFinancials } from '../utils/commission';
-import { isoDateOnly, addOneDayStr } from '../../utils/stayNights';
-
-function localTodayIso() {
-  const d = new Date();
-  const yy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${yy}-${mm}-${dd}`;
-}
 
 function orChecklistNetNightRate(reservation) {
   if (!reservation) return null;
@@ -26,34 +17,27 @@ function orChecklistNetNightRate(reservation) {
   return fin?.adjustedPricePerNight ?? null;
 }
 
+function createdAtMs(reservation) {
+  const raw = reservation?.created_at;
+  if (!raw) return 0;
+  const t = new Date(raw).getTime();
+  return Number.isFinite(t) ? t : 0;
+}
+
 export function countOrChecklistRows(reservations = []) {
-  const today = localTodayIso();
-  const tomorrow = addOneDayStr(today);
-  return reservations.filter((r) => {
-    if (String(r.status || '').toLowerCase() === 'cancelled') return false;
-    const checkIn = isoDateOnly(r.check_in);
-    return checkIn === today || checkIn === tomorrow;
-  }).length;
+  return reservations.filter((r) => String(r.status || '').toLowerCase() !== 'cancelled').length;
 }
 
 export default function OrChecklistSection({ reservations, canEdit, onToggle, savingId }) {
-  const today = localTodayIso();
-  const tomorrow = addOneDayStr(today);
-
   const rows = useMemo(() => {
     return reservations
-      .filter((r) => {
-        if (String(r.status || '').toLowerCase() === 'cancelled') return false;
-        const checkIn = isoDateOnly(r.check_in);
-        return checkIn === today || checkIn === tomorrow;
-      })
+      .filter((r) => String(r.status || '').toLowerCase() !== 'cancelled')
       .sort((a, b) => {
-        const ai = isoDateOnly(a.check_in);
-        const bi = isoDateOnly(b.check_in);
-        if (ai !== bi) return ai.localeCompare(bi);
-        return String(a.unit_number || '').localeCompare(String(b.unit_number || ''));
+        const diff = createdAtMs(b) - createdAtMs(a);
+        if (diff !== 0) return diff;
+        return Number(b.id) - Number(a.id);
       });
-  }, [reservations, today, tomorrow]);
+  }, [reservations]);
 
   const checkCell = (reservation, field, label) => (
     <td className="py-2 px-2 text-center">
@@ -73,17 +57,18 @@ export default function OrChecklistSection({ reservations, canEdit, onToggle, sa
       <div>
         <h2 className="font-semibold text-gray-900">Checklist</h2>
         <p className="text-xs text-gray-500">
-          Check-ins today ({formatDate(today)}) and tomorrow ({formatDate(tomorrow)}). Net / night is
-          after broker, tenant cut, company commission, and utilities.
+          All reservations, newest first. Net / night is after broker, tenant cut, company
+          commission, and utilities.
         </p>
       </div>
       {rows.length === 0 ? (
-        <div className="text-sm text-gray-500 py-4 text-center">No check-ins today or tomorrow.</div>
+        <div className="text-sm text-gray-500 py-4 text-center">No reservations to checklist.</div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-gray-500 border-b border-teal-100">
               <tr>
+                <th className="py-2 pr-3">Created</th>
                 <th className="py-2 pr-3">Unit</th>
                 <th className="py-2 pr-3">Check-in</th>
                 <th className="py-2 pr-3">Guest</th>
@@ -100,6 +85,9 @@ export default function OrChecklistSection({ reservations, canEdit, onToggle, sa
                 const nights = Math.max(parseInt(r.nights, 10) || 1, 1);
                 return (
                   <tr key={r.id} className="border-t border-teal-100/80 align-middle">
+                    <td className="py-2 pr-3 tabular-nums text-gray-600 whitespace-nowrap">
+                      {r.created_at ? formatDateTime(r.created_at) : '—'}
+                    </td>
                     <td className="py-2 pr-3 font-semibold text-gray-900">
                       {r.unit_number || unitDisplay(r)}
                     </td>

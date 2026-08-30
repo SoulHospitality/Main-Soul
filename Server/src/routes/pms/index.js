@@ -2100,14 +2100,11 @@ router.delete(
 
   try {
     const id = req.params.id;
-    const { rows: existing } = await query(
-      `SELECT id, booking_id, sales_person_id FROM reservations WHERE id = $1`,
-      [id]
-    );
-    if (!existing[0]) return res.status(404).json({ error: 'Not found' });
-    assertReservationOwned(req.user, existing[0]);
+    const existing = await loadReservationAccess(id);
+    if (!existing) return res.status(404).json({ error: 'Reservation not found' });
+    assertReservationOwned(req.user, existing);
 
-    const bookingId = existing[0].booking_id;
+    const bookingId = existing.booking_id;
 
     await query(`DELETE FROM commissions WHERE reservation_id = $1`, [id]);
     await query(`DELETE FROM payments WHERE reservation_id = $1`, [id]);
@@ -2302,6 +2299,8 @@ router.get('/reservations/schedule', async (req, res, next) => {
               r.hold_expires_at AS hold_until,
               sp.full_name AS sales_person_name,
               u.title AS unit_title,
+              u.unit_number,
+              r.sales_label,
               'pms' AS source
        FROM reservations r
        LEFT JOIN units u ON u.id = r.unit_id
@@ -2413,10 +2412,10 @@ router.patch(
 router.get('/reservations/:id', async (req, res, next) => {
   try {
     if (!/^\d+$/.test(String(req.params.id))) {
-      return res.status(404).json({ error: 'Not found' });
+      return res.status(404).json({ error: 'Reservation not found' });
     }
     const existing = await loadReservationAccess(req.params.id);
-    if (!existing) return res.status(404).json({ error: 'Not found' });
+    if (!existing) return res.status(404).json({ error: 'Reservation not found' });
     assertReservationOwned(req.user, existing);
 
     const { rows } = await query(
@@ -2438,14 +2437,14 @@ router.get('/reservations/:id', async (req, res, next) => {
               b.notes AS booking_notes,
               COALESCE(r.id_photo_urls, '{}'::text[]) AS id_photo_urls
        FROM reservations r
-       JOIN units u ON u.id = r.unit_id
+       LEFT JOIN units u ON u.id = r.unit_id
        LEFT JOIN bookings b ON b.id = r.booking_id
        LEFT JOIN staff_users su ON su.id = r.sales_person_id
        LEFT JOIN staff_users creator ON creator.id = r.created_by
        WHERE r.id = $1`,
       [req.params.id]
     );
-    if (!rows[0]) return res.status(404).json({ error: 'Not found' });
+    if (!rows[0]) return res.status(404).json({ error: 'Reservation not found' });
 
     const row = rows[0];
     let accepted_by_name = null;

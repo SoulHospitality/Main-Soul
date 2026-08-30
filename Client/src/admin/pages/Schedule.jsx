@@ -6,6 +6,7 @@ import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import Modal from '../components/ui/Modal';
 import Badge from '../components/ui/Badge';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { currency, formatDate, nightsText, BOOKING_SOURCES, unitDisplay, unitSelectLabel } from '../utils/formatters';
 import { usePermissions } from '../hooks/usePermissions';
 import SearchableSelect from '../components/ui/SearchableSelect';
@@ -355,52 +356,119 @@ function PriceEditorModal({
 }
 
 
-function ReservationDetailModal({ open, onClose, reservationId, canWrite, onMoveUnit }) {
-  const { data: res, isLoading } = useQuery({
-    queryKey: ['reservation-detail', reservationId],
-    queryFn: () => api.get(`/reservations/${reservationId}`).then(r => r.data),
-    enabled: !!reservationId && open,
+function ReservationDetailModal({
+  open,
+  onClose,
+  reservationId,
+  seed,
+  canWrite,
+  onMoveUnit,
+  onEdit,
+  onCancel,
+  onDelete,
+  cancelling,
+  deleting,
+}) {
+  const isWebsitePending = String(reservationId || '').startsWith('web-');
+  const numericId = isWebsitePending ? null : reservationId;
+
+  const { data: fetched, isLoading, isError, error } = useQuery({
+    queryKey: ['reservation-detail', numericId],
+    queryFn: () => api.get(`/reservations/${numericId}`).then((r) => r.data),
+    enabled: !!numericId && open && !isWebsitePending,
+    retry: 1,
   });
 
+  const res = fetched || (open ? seed : null);
   const paid = parseFloat(res?.amount_paid) || 0;
   const total = parseFloat(res?.total_amount) || 0;
   const remaining = total - paid;
+  const cancelled = String(res?.status || '').toLowerCase() === 'cancelled';
+  const isOwner = Number(res?.is_owner_reservation) === 1;
+  const titleId = isWebsitePending
+    ? String(reservationId).replace(/^web-/, '').slice(0, 8)
+    : reservationId;
 
   return (
-    <Modal open={open} onClose={onClose} title={`Reservation #${reservationId}`} size="md"
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={isWebsitePending ? `Website request` : `Reservation #${titleId}`}
+      size="md"
       footer={
-        <div className="flex items-center justify-end gap-2 w-full">
-          {canWrite && res && res.status !== 'cancelled' && Number(res.is_owner_reservation) !== 1 && (
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() => onMoveUnit?.(res)}
-            >
-              <ArrowRightLeft className="w-4 h-4" /> Move unit
+        <div className="flex flex-wrap items-center justify-between gap-2 w-full">
+          <div className="flex flex-wrap gap-2">
+            {canWrite && res && !cancelled && !isWebsitePending && (
+              <>
+                <button
+                  type="button"
+                  className="btn-secondary text-amber-800 border-amber-200 hover:bg-amber-50"
+                  disabled={cancelling || deleting}
+                  onClick={() => onCancel?.(res)}
+                >
+                  <Ban className="w-4 h-4" /> Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary text-rose-700 border-rose-200 hover:bg-rose-50"
+                  disabled={cancelling || deleting}
+                  onClick={() => onDelete?.(res)}
+                >
+                  <Trash2 className="w-4 h-4" /> Delete
+                </button>
+              </>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {canWrite && res && !cancelled && !isOwner && !isWebsitePending && (
+              <button type="button" className="btn-secondary" onClick={() => onMoveUnit?.(res)}>
+                <ArrowRightLeft className="w-4 h-4" /> Move unit
+              </button>
+            )}
+            {canWrite && res && !cancelled && !isWebsitePending && (
+              <button type="button" className="btn-primary" onClick={() => onEdit?.(res)}>
+                <Edit2 className="w-4 h-4" /> Edit
+              </button>
+            )}
+            <button onClick={onClose} className="btn-secondary">
+              Close
             </button>
-          )}
-          <button onClick={onClose} className="btn-secondary">Close</button>
+          </div>
         </div>
       }
     >
-      {isLoading ? <LoadingSpinner /> : res ? (
+      {isLoading && !res ? (
+        <LoadingSpinner />
+      ) : res ? (
         <div className="space-y-4">
-          
+          {isError && !fetched && (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Could not refresh full details
+              {error?.response?.data?.error ? `: ${error.response.data.error}` : ''}. Showing
+              schedule summary.
+            </p>
+          )}
+          {isWebsitePending && (
+            <p className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+              This is a website booking that has not been accepted yet. Open Website Bookings to
+              accept or reject it.
+            </p>
+          )}
+
           <div className="flex gap-2 flex-wrap">
             <Badge status={res.status} />
             <Badge status={res.payment_status} />
-            {res.is_owner_reservation && <span className="badge badge-blue">Owner Reservation</span>}
+            {isOwner && <span className="badge badge-blue">Owner Reservation</span>}
+            {res.booking_source === 'website' && (
+              <span className="badge badge-soul-orange">Website</span>
+            )}
           </div>
 
-          
           <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-            <Info label="Tenant"     value={res.guest_name} bold />
-            <Info
-              label="Unit"
-              value={unitDisplay(res)}
-            />
-            <Info label="Phone"      value={res.guest_phone} />
-            <Info label="Email"      value={res.guest_email} />
+            <Info label="Tenant" value={res.guest_name} bold />
+            <Info label="Unit" value={unitDisplay(res) || res.unit_title || res.unit_number} />
+            <Info label="Phone" value={res.guest_phone} />
+            <Info label="Email" value={res.guest_email} />
             <Info label="Nationality" value={res.guest_nationality} />
             <Info
               label="Party"
@@ -416,20 +484,23 @@ function ReservationDetailModal({ open, onClose, reservationId, canWrite, onMove
                 .filter(Boolean)
                 .join(' · ') || '—'}
             />
-            <Info label="Source"     value={res.booking_source} />
-            <Info label="Sales"      value={res.sales_person_name} />
+            <Info label="Source" value={res.booking_source} />
+            <Info
+              label="Sales"
+              value={res.sales_person_name || res.sales_label || res.sales_owner_label}
+            />
             <Info label="Created by" value={res.created_by_name} />
-            {res.booking_id ? (
-              <Info label="Accepted by" value={res.accepted_by_name} />
-            ) : null}
+            {res.booking_id ? <Info label="Accepted by" value={res.accepted_by_name} /> : null}
           </div>
 
-          
           <div className="bg-gray-50 rounded-xl px-4 py-3 grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-            <Info label="Check-in"   value={formatDate(res.check_in)} />
-            <Info label="Check-out"  value={formatDate(res.check_out)} />
-            <Info label="Nights"     value={nightsText(res.nights)} />
-            <Info label="Price/Night" value={res.price_per_night > 0 ? currency(res.price_per_night) : '—'} />
+            <Info label="Check-in" value={formatDate(res.check_in)} />
+            <Info label="Check-out" value={formatDate(res.check_out)} />
+            <Info label="Nights" value={nightsText(res.nights)} />
+            <Info
+              label="Price/Night"
+              value={res.price_per_night > 0 ? currency(res.price_per_night) : '—'}
+            />
           </div>
 
           <div className="grid grid-cols-3 gap-3">
@@ -441,19 +512,36 @@ function ReservationDetailModal({ open, onClose, reservationId, canWrite, onMove
               <p className="text-xs text-green-600 mb-1">Paid</p>
               <p className="font-bold text-green-700 text-sm">{currency(paid)}</p>
             </div>
-            <div className={`border rounded-xl p-3 text-center ${remaining > 0 ? 'bg-red-50 border-red-100' : 'bg-gray-50 border-gray-100'}`}>
-              <p className={`text-xs mb-1 ${remaining > 0 ? 'text-red-500' : 'text-gray-400'}`}>Remaining</p>
-              <p className={`font-bold text-sm ${remaining > 0 ? 'text-red-600' : 'text-gray-400'}`}>{currency(remaining)}</p>
+            <div
+              className={`border rounded-xl p-3 text-center ${
+                remaining > 0 ? 'bg-red-50 border-red-100' : 'bg-gray-50 border-gray-100'
+              }`}
+            >
+              <p className={`text-xs mb-1 ${remaining > 0 ? 'text-red-500' : 'text-gray-400'}`}>
+                Remaining
+              </p>
+              <p
+                className={`font-bold text-sm ${remaining > 0 ? 'text-red-600' : 'text-gray-400'}`}
+              >
+                {currency(remaining)}
+              </p>
             </div>
           </div>
 
           {res.notes && (
             <div className="bg-amber-50 rounded-lg px-4 py-3 text-sm text-amber-800">
-              <span className="font-semibold">Notes: </span>{res.notes}
+              <span className="font-semibold">Notes: </span>
+              {res.notes}
             </div>
           )}
         </div>
-      ) : <p className="text-gray-400 text-center py-8">Reservation not found</p>}
+      ) : (
+        <p className="text-gray-400 text-center py-8">
+          {isError
+            ? error?.response?.data?.error || 'Could not load reservation'
+            : 'Reservation not found'}
+        </p>
+      )}
     </Modal>
   );
 }
@@ -817,6 +905,9 @@ export default function Schedule() {
   
   const [detailModal,       setDetailModal]       = useState(false);
   const [detailResId,       setDetailResId]       = useState(null);
+  const [detailSeed,        setDetailSeed]        = useState(null);
+  const [cancelConfirmId,   setCancelConfirmId]   = useState(null);
+  const [deleteConfirmId,   setDeleteConfirmId]   = useState(null);
   const [transferRes,       setTransferRes]       = useState(null);
 
   
@@ -1114,6 +1205,38 @@ export default function Schedule() {
     onError: (e) => toast.error(e.response?.data?.error || 'Error deleting hold'),
   });
 
+  const cancelReservationMutation = useMutation({
+    mutationFn: ({ id, reason }) =>
+      api.post(`/reservations/${id}/cancel-request`, {
+        reason: reason || 'Cancelled from schedule',
+        cancel_type: 'non_refundable',
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['schedule'] });
+      qc.invalidateQueries({ queryKey: ['reservations'] });
+      qc.invalidateQueries({ queryKey: ['reservation-detail'] });
+      toast.success('Reservation cancelled');
+      setCancelConfirmId(null);
+      setDetailModal(false);
+      setDetailSeed(null);
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Error cancelling reservation'),
+  });
+
+  const deleteReservationMutation = useMutation({
+    mutationFn: (id) => api.delete(`/reservations/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['schedule'] });
+      qc.invalidateQueries({ queryKey: ['reservations'] });
+      qc.invalidateQueries({ queryKey: ['reservation-detail'] });
+      toast.success('Reservation deleted');
+      setDeleteConfirmId(null);
+      setDetailModal(false);
+      setDetailSeed(null);
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Error deleting reservation'),
+  });
+
   
   const goPrevMonth = () => { if (viewMonth === 0) { setViewYear(y=>y-1); setViewMonth(11); } else setViewMonth(m=>m-1); };
   const goNextMonth = () => { if (viewMonth === 11) { setViewYear(y=>y+1); setViewMonth(0);  } else setViewMonth(m=>m+1); };
@@ -1141,6 +1264,7 @@ export default function Schedule() {
       setHoldDetailModal(true);
       return;
     }
+    setDetailSeed(res);
     setDetailResId(res.id);
     setDetailModal(true);
   }, []);
@@ -2044,13 +2168,54 @@ export default function Schedule() {
 
       <ReservationDetailModal
         open={detailModal}
-        onClose={() => setDetailModal(false)}
+        onClose={() => {
+          setDetailModal(false);
+          setDetailSeed(null);
+        }}
         reservationId={detailResId}
+        seed={detailSeed}
         canWrite={canWrite}
+        cancelling={cancelReservationMutation.isPending}
+        deleting={deleteReservationMutation.isPending}
         onMoveUnit={(res) => {
           setTransferRes(res);
           setDetailModal(false);
         }}
+        onEdit={(res) => {
+          openEditFromDetail(res);
+          setDetailModal(false);
+        }}
+        onCancel={(res) => {
+          setCancelConfirmId(res.id);
+        }}
+        onDelete={(res) => setDeleteConfirmId(res.id)}
+      />
+
+      <ConfirmDialog
+        open={!!cancelConfirmId}
+        onClose={() => setCancelConfirmId(null)}
+        onConfirm={() =>
+          cancelReservationMutation.mutate({
+            id: cancelConfirmId,
+            reason: 'Cancelled from schedule',
+          })
+        }
+        loading={cancelReservationMutation.isPending}
+        title="Cancel reservation?"
+        message="This marks the reservation as cancelled and frees the calendar nights."
+        confirmText="Cancel reservation"
+        danger
+      />
+
+      <ConfirmDialog
+        open={!!deleteConfirmId}
+        onClose={() => setDeleteConfirmId(null)}
+        onConfirm={() => deleteReservationMutation.mutate(deleteConfirmId)}
+        loading={deleteReservationMutation.isPending}
+        title="Delete reservation?"
+        message="Permanently delete this reservation from the system. This cannot be undone."
+        confirmText="Delete"
+        danger
       />
 
       <TransferReservationModal
