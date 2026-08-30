@@ -28,7 +28,7 @@ export function countOrChecklistRows(reservations = []) {
   return reservations.filter((r) => String(r.status || '').toLowerCase() !== 'cancelled').length;
 }
 
-export default function OrChecklistSection({ reservations, canEdit, onToggle, savingId }) {
+export default function OrChecklistSection({ reservations, canEdit, onToggle }) {
   const rows = useMemo(() => {
     return reservations
       .filter((r) => String(r.status || '').toLowerCase() !== 'cancelled')
@@ -45,7 +45,7 @@ export default function OrChecklistSection({ reservations, canEdit, onToggle, sa
         type="checkbox"
         className="h-4 w-4 rounded border-slate-300 text-teal-700 focus:ring-teal-600 disabled:opacity-50"
         checked={Boolean(reservation[field])}
-        disabled={!canEdit || savingId === reservation.id}
+        disabled={!canEdit}
         aria-label={label}
         onChange={(e) => onToggle(reservation.id, field, e.target.checked)}
       />
