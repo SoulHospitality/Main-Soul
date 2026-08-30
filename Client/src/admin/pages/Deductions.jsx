@@ -1,6 +1,6 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { MinusCircle, Plus, Trash2, Upload } from 'lucide-react';
+import { MinusCircle, Plus, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import Modal from '../components/ui/Modal';
@@ -29,7 +29,6 @@ function todayIso() {
 
 export default function Deductions() {
   const qc = useQueryClient();
-  const fileRef = useRef(null);
   const [search, setSearch] = useState('');
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState({ ...EMPTY, deduction_date: todayIso() });
@@ -85,30 +84,6 @@ export default function Deductions() {
     onError: (e) => toast.error(e.response?.data?.error || 'Could not delete'),
   });
 
-  const importMutation = useMutation({
-    mutationFn: (file) => {
-      const fd = new FormData();
-      fd.append('file', file);
-      return api.post('/hr/attendance/import', fd, { timeout: 180000 }).then((r) => r.data);
-    },
-    onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ['hr-deductions'] });
-      qc.invalidateQueries({ queryKey: ['hr-payroll'] });
-      qc.invalidateQueries({ queryKey: ['hr-payslip'] });
-      qc.invalidateQueries({ queryKey: ['hr-attendance'] });
-      const errCount = Array.isArray(data.errors) ? data.errors.length : 0;
-      toast.success(
-        `Imported ${data.created || 0} deduction${data.created === 1 ? '' : 's'}` +
-          (data.skipped ? ` · skipped ${data.skipped}` : '') +
-          (errCount ? ` · ${errCount} error${errCount === 1 ? '' : 's'}` : '')
-      );
-      if (errCount && data.errors[0]?.error) {
-        toast.error(`Row ${data.errors[0].row}: ${data.errors[0].error}`);
-      }
-    },
-    onError: (e) => toast.error(e.response?.data?.error || 'Could not import attendance'),
-  });
-
   const combined = useMemo(() => {
     const deductions = (Array.isArray(rows) ? rows : []).map((r) => ({
       ...r,
@@ -161,31 +136,10 @@ export default function Deductions() {
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-soul-muted">HR</p>
           <h1 className="page-title mt-1">Deductions</h1>
           <p className="page-subtitle">
-            Upload the door report (Person ID, Time, Attendance Status). Check-in time is used for lateness;
-            no check-in on a day in the report is absence, unless there is an approved holiday. Operations staff are skipped.
+            Apply manual deductions and bonuses to staff payroll.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            className="btn-secondary"
-            disabled={importMutation.isPending}
-            onClick={() => fileRef.current?.click()}
-          >
-            <Upload className="h-4 w-4" />
-            {importMutation.isPending ? 'Importing…' : 'Upload Excel'}
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".xlsx,.xls"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              e.target.value = '';
-              if (file) importMutation.mutate(file);
-            }}
-          />
           <button
             type="button"
             className="btn-primary"
@@ -220,8 +174,15 @@ export default function Deductions() {
           icon={MinusCircle}
           title="No deductions yet"
           action={
-            <button type="button" className="btn-primary" onClick={() => fileRef.current?.click()}>
-              Upload attendance Excel
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => {
+                setForm({ ...EMPTY, deduction_date: todayIso() });
+                setModal(true);
+              }}
+            >
+              Add deduction
             </button>
           }
         />
