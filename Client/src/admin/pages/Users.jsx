@@ -949,6 +949,7 @@ export default function Users() {
         'resale',
         'hr',
         'hr_supervisor',
+        'owners_relations',
       ]
     : [
         'reservations_web',
@@ -1399,6 +1400,7 @@ export default function Users() {
                   'resale',
                   'hr',
                   'hr_supervisor',
+                  'owners_relations',
                 ]
               : staffRoleOptions
           }

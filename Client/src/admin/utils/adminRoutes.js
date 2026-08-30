@@ -17,6 +17,8 @@ export function defaultAdminPage(role) {
     case 'hr':
     case 'hr_supervisor':
       return `${A}/users`;
+    case 'owners_relations':
+      return `${A}/reservations`;
     case 'owner':
       return `${A}/owner`;
     default:

@@ -258,11 +258,12 @@ function assertCanAssignRole(actorRole, targetRole) {
     'resale',
     'hr',
     'hr_supervisor',
+    'owners_relations',
     'owner',
   ];
   if (!allowed.includes(targetRole)) {
     const err = new Error(
-      'Invalid role. Use admin, reservations_web, reservations_manual, operations, operations_supervisor, housekeeping, housekeeping_supervisor, resale, hr, hr_supervisor, or owner.'
+      'Invalid role. Use admin, reservations_web, reservations_manual, operations, operations_supervisor, housekeeping, housekeeping_supervisor, resale, hr, hr_supervisor, owners_relations, or owner.'
     );
     err.status = 400;
     throw err;
@@ -1467,6 +1468,11 @@ router.get('/reservations', async (req, res, next) => {
               u.slug AS unit_slug,
               u.unit_number,
               u.compound AS project,
+              u.utilities_cost AS unit_utilities_cost,
+              u.commission_mode,
+              u.company_commission_pct,
+              u.company_commission_owner_pct,
+              u.commission_tenant_pct,
               creator.full_name AS created_by_name,
               su.full_name AS sales_person_name,
               COALESCE(r.id_photo_urls, '{}'::text[]) AS id_photo_urls
@@ -2354,6 +2360,52 @@ router.get('/reservations/schedule', async (req, res, next) => {
     next(e);
   }
 });
+
+router.patch(
+  '/reservations/:id/or-checklist',
+  requireRoles('owners_relations', 'admin'),
+  async (req, res, next) => {
+    try {
+      if (!/^\d+$/.test(String(req.params.id))) {
+        return res.status(404).json({ error: 'Not found' });
+      }
+      const id = Number(req.params.id);
+      const { rows: existing } = await query(`SELECT id FROM reservations WHERE id = $1`, [id]);
+      if (!existing[0]) return res.status(404).json({ error: 'Not found' });
+
+      const fields = [];
+      const params = [];
+      const map = {
+        or_notified_owner: 'or_notified_owner',
+        or_ids_collected: 'or_ids_collected',
+        or_permissions_done: 'or_permissions_done',
+        notified_owner: 'or_notified_owner',
+        ids_collected: 'or_ids_collected',
+        permissions_done: 'or_permissions_done',
+      };
+      for (const [key, column] of Object.entries(map)) {
+        if (req.body?.[key] === undefined) continue;
+        if (fields.some((f) => f.startsWith(`${column} =`))) continue;
+        params.push(Boolean(req.body[key]));
+        fields.push(`${column} = $${params.length}`);
+      }
+      if (!fields.length) {
+        return res.status(400).json({ error: 'No checklist fields provided' });
+      }
+      params.push(id);
+      const { rows } = await query(
+        `UPDATE reservations
+         SET ${fields.join(', ')}, updated_at = now()
+         WHERE id = $${params.length}
+         RETURNING id, or_notified_owner, or_ids_collected, or_permissions_done`,
+        params
+      );
+      res.json(rows[0]);
+    } catch (e) {
+      next(e);
+    }
+  }
+);
 
 router.get('/reservations/:id', async (req, res, next) => {
   try {

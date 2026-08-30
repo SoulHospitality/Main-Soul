@@ -10,6 +10,7 @@ export const ROLES = {
   RESALE: 'resale',
   HR: 'hr',
   HR_SUPERVISOR: 'hr_supervisor',
+  OWNERS_RELATIONS: 'owners_relations',
   OWNER: 'owner',
 };
 
@@ -176,6 +177,12 @@ const PERMISSIONS = {
     'owner:statement',
     'owner:payouts',
   ],
+  owners_relations: [
+    'reservations:read',
+    'reservations:or_checklist',
+    'notifications:read',
+    'profile:read',
+  ],
 };
 
 
@@ -191,6 +198,7 @@ const PAGE_ACCESS = {
   resale: new Set(['units_sale', 'acquisition', 'profile']),
   hr: HR_PAGE_ACCESS,
   hr_supervisor: HR_PAGE_ACCESS,
+  owners_relations: new Set(['reservations', 'profile', 'holiday_requests', 'loans', 'payslip']),
   owner: new Set([
     'owner',
     'owner_reservations',
@@ -274,7 +282,15 @@ export function canHandleWebsiteBookings(user) {
 }
 
 export function canViewAllReservations(user) {
-  return !!user && user.role === 'admin';
+  return !!user && (user.role === 'admin' || user.role === 'owners_relations');
+}
+
+export function canEditOrChecklist(user) {
+  return !!user && (user.role === 'admin' || user.role === 'owners_relations');
+}
+
+export function isOwnersRelationsRole(user) {
+  return !!user && user.role === 'owners_relations';
 }
 
 
@@ -344,7 +360,16 @@ export function creatableRoles(actorRole) {
   ];
   const hrCreatable = [...reservationRoles, ...fieldRoles, 'resale', 'hr'];
   if (actorRole === 'admin') {
-    return ['admin', ...reservationRoles, ...fieldRoles, 'resale', 'hr', 'hr_supervisor', 'owner'];
+    return [
+      'admin',
+      ...reservationRoles,
+      ...fieldRoles,
+      'resale',
+      'hr',
+      'hr_supervisor',
+      'owners_relations',
+      'owner',
+    ];
   }
   if (isHrTeamRole(actorRole)) return hrCreatable;
   return [];
@@ -362,6 +387,7 @@ export const ROLE_LABELS = {
   resale: 'Resale',
   hr: 'HR',
   hr_supervisor: 'HR Supervisor',
+  owners_relations: 'Owners Relations',
   owner: 'Owner',
 };
 
@@ -377,6 +403,7 @@ export const ROLE_COLORS = {
   resale: 'badge-soul-teal',
   hr: 'badge-soul-slate',
   hr_supervisor: 'badge-soul-slate',
+  owners_relations: 'badge-soul-teal',
   owner: 'badge-soul-teal',
 };
 
@@ -392,5 +419,6 @@ export const PMS_LABELS = {
   resale: 'Resale PMS',
   hr: 'HR PMS',
   hr_supervisor: 'HR Supervisor PMS',
+  owners_relations: 'Owners Relations PMS',
   owner: 'Owner Portal',
 };

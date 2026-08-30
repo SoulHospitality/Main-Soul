@@ -7,6 +7,7 @@ import {
   canManageReservations,
   canHandleWebsiteBookings,
   canViewAllReservations,
+  canEditOrChecklist,
   canEditSchedulePricing,
   canAccessFinance,
   canAccessFinancialSystem,
@@ -14,6 +15,7 @@ import {
   isReservationsTeam,
   isWebsiteReservationsRole,
   isManualReservationsRole,
+  isOwnersRelationsRole,
 } from '../utils/permissions';
 
 export function usePermissions() {
@@ -21,6 +23,7 @@ export function usePermissions() {
   const isReservations = isReservationsTeam(user);
   const isWebsiteReservations = isWebsiteReservationsRole(user);
   const isManualReservations = isManualReservationsRole(user);
+  const isOwnersRelations = isOwnersRelationsRole(user);
 
   return {
     can: (permission) => hasPermission(user, permission),
@@ -30,6 +33,7 @@ export function usePermissions() {
     canManageReservations: canManageReservations(user),
     canHandleWebsiteBookings: canHandleWebsiteBookings(user),
     canViewAllReservations: canViewAllReservations(user),
+    canEditOrChecklist: canEditOrChecklist(user),
     canEditSchedulePricing: canEditSchedulePricing(user),
     canAccessFinance: canAccessFinance(user),
     canAccessFinancialSystem: canAccessFinancialSystem(user),
@@ -38,6 +42,7 @@ export function usePermissions() {
     isReservations,
     isWebsiteReservations,
     isManualReservations,
+    isOwnersRelations,
     isResale: user?.role === 'resale',
     isHr: user?.role === 'hr' || user?.role === 'hr_supervisor',
     isHrSupervisor: user?.role === 'hr_supervisor',
