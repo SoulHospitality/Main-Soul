@@ -115,6 +115,8 @@ const HR_PAGE_ACCESS = new Set([
   'profile',
 ]);
 
+const HR_SUPERVISOR_PAGE_ACCESS = new Set([...HR_PAGE_ACCESS]);
+
 const PERMISSIONS = {
   admin: ['*'],
   reservations: RESERVATIONS_WEB_PERMISSIONS,
@@ -205,7 +207,7 @@ const PAGE_ACCESS = {
   housekeeping_supervisor: new Set(['housekeeping', 'hk_today', 'profile']),
   resale: new Set(['units_sale', 'acquisition', 'commissions', 'profile']),
   hr: HR_PAGE_ACCESS,
-  hr_supervisor: HR_PAGE_ACCESS,
+  hr_supervisor: HR_SUPERVISOR_PAGE_ACCESS,
   owners_relations: new Set(['reservations', 'profile', 'holiday_requests', 'loans', 'payslip']),
   finance: new Set(['financial_system', 'profile']),
   owner: new Set([

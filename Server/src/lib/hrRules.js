@@ -536,6 +536,7 @@ const PENALTY_CATEGORIES = ['lateness', 'absence', 'delay', 'performance', 'pena
 const NO_OFFICE_ATTENDANCE_ROLES = new Set([
   'admin',
   'owner',
+  'hr_supervisor',
   'operations',
   'operations_supervisor',
 ]);
@@ -543,6 +544,11 @@ const NO_STAFF_BENEFIT_ROLES = new Set(['admin', 'owner']);
 
 function hasOfficeAttendance(role) {
   return !NO_OFFICE_ATTENDANCE_ROLES.has(String(role || ''));
+}
+
+function isFieldOperationsRole(role) {
+  const r = String(role || '');
+  return r === 'operations' || r === 'operations_supervisor';
 }
 
 function canRequestStaffBenefits(role) {
@@ -735,6 +741,7 @@ module.exports = {
   NO_OFFICE_ATTENDANCE_ROLES,
   NO_STAFF_BENEFIT_ROLES,
   hasOfficeAttendance,
+  isFieldOperationsRole,
   canRequestStaffBenefits,
   staffRequestPolicy,
   departmentManagerRole,

@@ -13,7 +13,11 @@ export function AuthProvider({ children }) {
     const token = localStorage.getItem('pms_token');
     if (token) {
       api.get('/auth/me')
-        .then(res => { setUser(res.data); localStorage.setItem('pms_user', JSON.stringify(res.data)); })
+        .then((res) => {
+          const next = res.data?.user || res.data;
+          setUser(next);
+          localStorage.setItem('pms_user', JSON.stringify(next));
+        })
         .catch(() => { localStorage.removeItem('pms_token'); localStorage.removeItem('pms_user'); setUser(null); })
         .finally(() => setLoading(false));
     } else {
@@ -41,7 +45,8 @@ export function AuthProvider({ children }) {
 
   const refreshUser = useCallback(async () => {
     const res = await api.get('/auth/me');
-    const next = { ...res.data, is_first_login: Boolean(res.data?.is_first_login) };
+    const raw = res.data?.user || res.data;
+    const next = { ...raw, is_first_login: Boolean(raw?.is_first_login) };
     setUser(next);
     localStorage.setItem('pms_user', JSON.stringify(next));
     return next;

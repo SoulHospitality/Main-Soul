@@ -74,7 +74,10 @@ export default function Attendance() {
 
   const days = data?.days || [];
   const staff = (data?.staff || []).filter(
-    (s) => !['admin', 'owner', 'operations', 'operations_supervisor'].includes(String(s.role || ''))
+    (s) =>
+      !['admin', 'owner', 'hr_supervisor', 'operations', 'operations_supervisor'].includes(
+        String(s.role || '')
+      )
   );
   const cells = data?.cells || {};
   const today = currentMonthIso() === month

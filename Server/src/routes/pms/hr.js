@@ -29,6 +29,7 @@ const {
   roundMoney,
   splitSalaryAdjustments,
   hasOfficeAttendance,
+  isFieldOperationsRole,
   canRequestStaffBenefits,
   staffRequestPolicy,
   canViewAllStaffRequests,
@@ -1329,7 +1330,7 @@ router.post('/hr/wfh', async (req, res, next) => {
     }
     const target = await loadStaffForHr(staffUserId);
     assertCanTargetBenefits(target);
-    if (!hasOfficeAttendance(target.role)) {
+    if (isFieldOperationsRole(target.role)) {
       return res.status(400).json({
         error: 'Operations staff work in the field and do not use office attendance or work-from-home days',
       });

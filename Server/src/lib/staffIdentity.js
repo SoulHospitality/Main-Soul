@@ -15,6 +15,8 @@ const ROLE_PREFIX = {
   resale: 'S',
   finance: 'F',
   hr: 'H',
+  hr_supervisor: 'U',
+  owners_relations: 'N',
   owner: 'O',
 };
 

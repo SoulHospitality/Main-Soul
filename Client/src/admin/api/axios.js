@@ -30,8 +30,8 @@ api.interceptors.request.use((config) => {
 
 api.interceptors.response.use(
   (res) => {
-    
-    if (res.config.url?.includes('/staff/auth/me') && res.data?.user) {
+    const url = String(res.config?.url || '');
+    if ((url.includes('/staff/auth/me') || url.includes('/auth/me')) && res.data?.user) {
       res.data = res.data.user;
     }
     return res;
