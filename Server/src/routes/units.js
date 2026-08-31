@@ -202,6 +202,7 @@ router.get('/', async (req, res, next) => {
       listing_type: listingTypeParam,
       checkin,
       checkout,
+      sort: sortParam,
       limit = 24,
       offset = 0,
     } = req.query;
@@ -265,7 +266,19 @@ router.get('/', async (req, res, next) => {
     }
 
     params.push(Number(limit), Number(offset));
-    
+
+    const sort = String(sortParam || '').toLowerCase();
+    let orderBy = 'u.featured DESC, u.created_at DESC';
+    if (sort === 'reviews-desc') {
+      orderBy =
+        'COALESCE(u.average_rating, 0) DESC, COALESCE(u.review_count, 0) DESC, u.featured DESC, u.created_at DESC';
+    } else if (sort === 'reviews-asc') {
+      orderBy =
+        'COALESCE(u.average_rating, 0) ASC, COALESCE(u.review_count, 0) ASC, u.featured DESC, u.created_at DESC';
+    } else if (sort === 'newest') {
+      orderBy = 'u.created_at DESC, u.featured DESC';
+    }
+
     const sql = `
       SELECT u.id, u.slug, u.title, u.status, u.compound, u.area, u.city, u.beds, u.baths, u.guests,
              u.cover_url,
@@ -280,7 +293,7 @@ router.get('/', async (req, res, next) => {
              COALESCE(u.review_count, 0) AS review_count
       FROM units u
       WHERE ${where.join(' AND ')}
-      ORDER BY u.featured DESC, u.created_at DESC
+      ORDER BY ${orderBy}
       LIMIT $${i++} OFFSET $${i}
     `;
     const { rows } = await query(sql, params);

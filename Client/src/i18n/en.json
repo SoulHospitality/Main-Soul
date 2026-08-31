@@ -131,6 +131,8 @@
     "sortRecommended": "Recommended",
     "sortPriceAsc": "Price: low to high",
     "sortPriceDesc": "Price: high to low",
+    "sortReviewsDesc": "Reviews: high to low",
+    "sortReviewsAsc": "Reviews: low to high",
     "sortNewest": "Newest",
     "allDestination": "All {{destination}}",
     "emptyHomes": "No homes match",

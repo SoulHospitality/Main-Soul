@@ -18,6 +18,8 @@ const SORT_KEYS = {
   recommended: 'search.sortRecommended',
   'price-asc': 'search.sortPriceAsc',
   'price-desc': 'search.sortPriceDesc',
+  'reviews-desc': 'search.sortReviewsDesc',
+  'reviews-asc': 'search.sortReviewsAsc',
   newest: 'search.sortNewest',
 };
 
@@ -27,6 +29,7 @@ function buildApiParams(sp, { limit, offset, listingType }) {
   const types = sp.get('types') || '';
   const checkin = listingType === 'sale' ? '' : sp.get('checkin') || '';
   const checkout = listingType === 'sale' ? '' : sp.get('checkout') || '';
+  const sort = sp.get('sort') || '';
 
   return {
     q: sp.get('q') || undefined,
@@ -38,6 +41,7 @@ function buildApiParams(sp, { limit, offset, listingType }) {
     listing_type: listingType,
     checkin: checkin && checkout ? checkin : undefined,
     checkout: checkin && checkout ? checkout : undefined,
+    sort: sort || undefined,
     limit,
     offset,
   };
@@ -160,6 +164,20 @@ export default function SearchPage({ listingType = 'rent' }) {
       list.sort(
         (a, b) => (getDisplayPriceEgp(b) || 0) - (getDisplayPriceEgp(a) || 0)
       );
+    } else if (sort === 'reviews-desc') {
+      list.sort((a, b) => {
+        const ratingDiff =
+          (Number(b.average_rating) || 0) - (Number(a.average_rating) || 0);
+        if (ratingDiff !== 0) return ratingDiff;
+        return (Number(b.review_count) || 0) - (Number(a.review_count) || 0);
+      });
+    } else if (sort === 'reviews-asc') {
+      list.sort((a, b) => {
+        const ratingDiff =
+          (Number(a.average_rating) || 0) - (Number(b.average_rating) || 0);
+        if (ratingDiff !== 0) return ratingDiff;
+        return (Number(a.review_count) || 0) - (Number(b.review_count) || 0);
+      });
     } else if (sort === 'newest') {
       list.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
     }

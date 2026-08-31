@@ -131,6 +131,8 @@
     "sortRecommended": "الموصى به",
     "sortPriceAsc": "السعر: من الأقل للأعلى",
     "sortPriceDesc": "السعر: من الأعلى للأقل",
+    "sortReviewsDesc": "التقييمات: من الأعلى للأقل",
+    "sortReviewsAsc": "التقييمات: من الأقل للأعلى",
     "sortNewest": "الأحدث",
     "allDestination": "كل {{destination}}",
     "emptyHomes": "لا توجد منازل مطابقة",
