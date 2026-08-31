@@ -725,7 +725,7 @@ router.delete('/users/:id', requireRoles(...HR_ROUTE_ROLES), async (req, res, ne
 
 router.get('/units', async (req, res, next) => {
   try {
-    const { search, status, project, bedrooms, listing_type } = req.query;
+    const { search, status, ops_status, project, bedrooms, listing_type } = req.query;
     const where = ['TRUE'];
     const params = [];
     let i = 1;
@@ -735,14 +735,22 @@ router.get('/units', async (req, res, next) => {
       i++;
     }
     if (status) {
-      
       if (['available', 'occupied', 'maintenance'].includes(status)) {
         where.push(`ops_status = $${i++}`);
         params.push(status);
+      } else if (status === 'unpublished') {
+        where.push(`(other_details ~* '"listing_unpublished"[[:space:]]*:[[:space:]]*true')`);
+      } else if (status === 'draft') {
+        where.push(`status = 'draft'`);
+        where.push(`NOT (other_details ~* '"listing_unpublished"[[:space:]]*:[[:space:]]*true')`);
       } else {
         where.push(`status = $${i++}`);
         params.push(status);
       }
+    }
+    if (ops_status && ['available', 'occupied', 'maintenance'].includes(String(ops_status))) {
+      where.push(`ops_status = $${i++}`);
+      params.push(String(ops_status));
     }
     if (project) {
       where.push(`(project ILIKE $${i} OR compound ILIKE $${i})`);

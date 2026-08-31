@@ -606,6 +606,7 @@ export default function Units({ listingType = 'rent' }) {
   const isSale = listingType === 'sale';
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [filterOpsStatus, setFilterOpsStatus] = useState('');
   const [filterProject, setFilterProject] = useState('');
   const [filterBedrooms, setFilterBedrooms] = useState('');
   const [modal, setModal] = useState(null);
@@ -618,12 +619,13 @@ export default function Units({ listingType = 'rent' }) {
   const [unpublishTarget, setUnpublishTarget] = useState(null);
 
   const { data: units = [], isLoading } = useQuery({
-    queryKey: ['units', listingType, search, filterStatus, filterProject, filterBedrooms],
+    queryKey: ['units', listingType, search, filterStatus, filterOpsStatus, filterProject, filterBedrooms],
     queryFn: () => api.get('/units', {
       params: {
         listing_type: listingType,
         search: search || undefined,
         status: filterStatus || undefined,
+        ops_status: !isSale ? (filterOpsStatus || undefined) : undefined,
         project: filterProject || undefined,
         bedrooms: filterBedrooms || undefined,
       },
@@ -868,18 +870,55 @@ export default function Units({ listingType = 'rent' }) {
         </div>
       </div>
 
-      <SearchFilter value={search} onChange={setSearch} placeholder="Search units, projects, owners...">
-        <SearchableSelect className="w-40" value={filterStatus} onChange={setFilterStatus}
-          placeholder="All Status"
-          options={[
-            { value: '', label: 'All Status' },
-            { value: 'draft', label: 'Draft' },
+      {!isSale ? (
+        <div className="flex gap-1.5 overflow-x-auto whitespace-nowrap pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {[
+            { value: '', label: 'All' },
             { value: 'published', label: 'Published' },
-            { value: 'available', label: 'Ops: Available' },
-            { value: 'occupied', label: 'Ops: Occupied' },
-            { value: 'maintenance', label: 'Ops: Maintenance' },
-          ]}
-        />
+            { value: 'unpublished', label: 'Unpublished' },
+            { value: 'draft', label: 'Draft' },
+          ].map((chip) => {
+            const active = filterStatus === chip.value;
+            return (
+              <button
+                key={chip.value || 'all'}
+                type="button"
+                onClick={() => setFilterStatus(chip.value)}
+                className={`inline-block flex-none rounded-full border px-3 py-1.5 text-[12.5px] font-semibold transition-colors ${
+                  active
+                    ? 'border-soul-blue bg-soul-blue-50 text-soul-blue'
+                    : 'border-soul-line bg-white text-soul-blue hover:border-soul-blue'
+                }`}
+              >
+                {chip.label}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
+      <SearchFilter value={search} onChange={setSearch} placeholder="Search units, projects, owners...">
+        {isSale ? (
+          <SearchableSelect className="w-40" value={filterStatus} onChange={setFilterStatus}
+            placeholder="All Status"
+            options={[
+              { value: '', label: 'All Status' },
+              { value: 'draft', label: 'Draft' },
+              { value: 'published', label: 'Published' },
+              { value: 'unpublished', label: 'Unpublished' },
+            ]}
+          />
+        ) : (
+          <SearchableSelect className="w-40" value={filterOpsStatus} onChange={setFilterOpsStatus}
+            placeholder="Ops status"
+            options={[
+              { value: '', label: 'All ops status' },
+              { value: 'available', label: 'Ops: Available' },
+              { value: 'occupied', label: 'Ops: Occupied' },
+              { value: 'maintenance', label: 'Ops: Maintenance' },
+            ]}
+          />
+        )}
         <SearchableSelect className="w-44" value={filterProject} onChange={setFilterProject}
           placeholder="All Projects"
           options={[{ value: '', label: 'All Projects' }, ...projects.map(p => ({ value: p, label: p }))]}
