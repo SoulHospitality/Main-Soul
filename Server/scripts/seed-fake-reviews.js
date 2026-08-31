@@ -9,31 +9,38 @@ const { query, pool } = require('../src/config/db');
 const { syncUnitRating } = require('../src/routes/reviews');
 
 const ENGLISH_NAMES = [
-  'Sarah Mitchell',
-  'James Carter',
-  'Emily Thompson',
-  'Daniel Brooks',
-  'Olivia Bennett',
-  'Michael Reed',
-  'Chloe Harris',
-  'Lucas Wright',
-  'Hannah Price',
-  'Noah Sullivan',
-  'Grace Miller',
-  'Ethan Clarke',
-  'Sophie Turner',
-  'Benjamin Hall',
-  'Amelia Scott',
-  'Jack Morgan',
-  'Lily Anderson',
-  'Ryan Cooper',
-  'Emma Wilson',
-  'Thomas Baker',
-  'Mia Collins',
-  'David Hughes',
-  'Charlotte Evans',
-  'Alex Rivera',
-  'Natalie Fox',
+  'Ahmed Hassan',
+  'Mohamed Ali',
+  'Sara Ibrahim',
+  'Nourhan Mahmoud',
+  'Youssef Abdelrahman',
+  'Mariam Khaled',
+  'Omar Fathy',
+  'Yasmin Saeed',
+  'Karim Mostafa',
+  'Hoda Farouk',
+  'Abdullah Nabil',
+  'Dina Hussein',
+  'Hossam Rabie',
+  'Salma Tarek',
+  'Mahmoud Galal',
+  'Fatma Anwar',
+  'Ibrahim Samir',
+  'Rania Wael',
+  'Tamer Shawky',
+  'Nadia Kamal',
+  'Amir Reda',
+  'Lina Adel',
+  'Sherif Magdy',
+  'Maysa Hamdy',
+  'Bassem Fathallah',
+  'Heba Salah',
+  'Ziad Mansour',
+  'Aya Gamal',
+  'Mostafa Emad',
+  'Nour El Din',
+  'Farida Ashraf',
+  'Hassan Younis',
 ];
 
 const ARABIC_EGYPTIAN_NAMES = [
@@ -144,7 +151,7 @@ function commentFor(rating, rand) {
 }
 
 function guestName(rand) {
-  // ~45% Arabic Egyptian names, rest English
+  // ~45% Arabic script, rest Egyptian names in Latin/English letters
   if (rand() < 0.45) return pick(rand, ARABIC_EGYPTIAN_NAMES);
   return pick(rand, ENGLISH_NAMES);
 }
