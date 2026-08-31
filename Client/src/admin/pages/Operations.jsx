@@ -1,13 +1,15 @@
 import { useSearchParams } from 'react-router-dom';
-import { KeyRound, History, MessageSquareText } from 'lucide-react';
+import { KeyRound, History, MessageSquareText, LogOut } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { canAccess } from '../utils/permissions';
 import { CheckinsTodaySection } from './OpsCheckinsToday';
 import { CheckinsHistorySection } from './OpsCheckinsHistory';
 import { CheckinCommentsSection } from './OpsCheckinComments';
+import { CheckoutsTodaySection } from './OpsCheckoutsToday';
 
 const TABS = [
   { id: 'today', label: "Today's check-ins", icon: KeyRound, page: 'ops_checkins' },
+  { id: 'checkouts', label: "Today's checkouts", icon: LogOut, page: 'ops_checkins' },
   { id: 'history', label: 'Check-ins history', icon: History, page: 'ops_checkins' },
   { id: 'comments', label: 'Check-in comments', icon: MessageSquareText, page: 'ops_comments' },
 ];
@@ -15,6 +17,8 @@ const TABS = [
 const TAB_ALIASES = {
   today: 'today',
   'checkins-today': 'today',
+  checkouts: 'checkouts',
+  'checkouts-today': 'checkouts',
   history: 'history',
   'checkins-history': 'history',
   comments: 'comments',
@@ -41,7 +45,7 @@ export default function Operations() {
       <div className="page-header mb-0">
         <h1 className="page-title">Operations</h1>
         <p className="page-subtitle">
-          Check-ins for today, history, and agent comments before guest handover
+          Check-ins, today&apos;s checkouts and insurance refunds, history, and agent comments
         </p>
       </div>
 
@@ -68,6 +72,7 @@ export default function Operations() {
       </div>
 
       {resolvedTab === 'today' ? <CheckinsTodaySection embedded /> : null}
+      {resolvedTab === 'checkouts' ? <CheckoutsTodaySection embedded /> : null}
       {resolvedTab === 'history' ? <CheckinsHistorySection embedded /> : null}
       {resolvedTab === 'comments' ? <CheckinCommentsSection embedded /> : null}
     </div>

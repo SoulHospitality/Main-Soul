@@ -84,6 +84,8 @@ export function CheckinsTodaySection({ embedded = false }) {
   const [collectingId, setCollectingId] = useState(null);
   const [amountDrafts, setAmountDrafts] = useState({});
   const [methodDrafts, setMethodDrafts] = useState({});
+  const [cashDrafts, setCashDrafts] = useState({});
+  const [instapayDrafts, setInstapayDrafts] = useState({});
   const [commentDrafts, setCommentDrafts] = useState({});
   const canAssign =
     user?.role === 'admin' || user?.role === 'operations_supervisor';
@@ -108,8 +110,13 @@ export function CheckinsTodaySection({ embedded = false }) {
   });
 
   const collectMutation = useMutation({
-    mutationFn: ({ id, amount, payment_method }) =>
-      api.post(`/ops/checkins-today/${id}/collect`, { amount, payment_method }),
+    mutationFn: ({ id, amount, payment_method, cash_amount, instapay_amount }) =>
+      api.post(`/ops/checkins-today/${id}/collect`, {
+        amount,
+        payment_method,
+        cash_amount,
+        instapay_amount,
+      }),
     onSuccess: () => {
       toast.success('Money marked as collected');
       setCollectingId(null);
@@ -209,6 +216,19 @@ export function CheckinsTodaySection({ embedded = false }) {
                 const draftAmount =
                   amountDrafts[r.id] != null ? amountDrafts[r.id] : String(remaining);
                 const method = methodDrafts[r.id] || 'cash';
+                const isSplit = method === 'split';
+                const cashDraft =
+                  cashDrafts[r.id] != null
+                    ? cashDrafts[r.id]
+                    : String(Math.round((Number(draftAmount) || remaining) * 50) / 100);
+                const instapayDraft =
+                  instapayDrafts[r.id] != null
+                    ? instapayDrafts[r.id]
+                    : String(
+                        Math.round(
+                          ((Number(draftAmount) || remaining) - (Number(cashDraft) || 0)) * 100
+                        ) / 100
+                      );
                 return (
                   <tr key={r.id} className="border-t align-top">
                     <td className="py-4 px-4 min-w-[12rem]">
@@ -265,7 +285,7 @@ export function CheckinsTodaySection({ embedded = false }) {
                         </select>
                       </td>
                     ) : null}
-                    <td className="py-4 px-4 min-w-[14rem]">
+                    <td className="py-4 px-4 min-w-[15rem]">
                       {r.ops_money_collected ? (
                         <div className="inline-flex items-center gap-1.5 text-emerald-700 text-xs font-semibold">
                           <CheckCircle2 className="w-4 h-4" />
@@ -284,12 +304,14 @@ export function CheckinsTodaySection({ embedded = false }) {
                               checked={collectingId === r.id}
                               onChange={(e) => setCollectingId(e.target.checked ? r.id : null)}
                             />
-                            Collect remaining
+                            Collect
                           </label>
                           {collectingId === r.id ? (
                             <div className="space-y-2 rounded-lg border bg-gray-50 p-2.5">
                               <div>
-                                <label className="text-[10px] uppercase text-gray-500">Amount</label>
+                                <label className="text-[10px] uppercase text-gray-500">
+                                  Amount collected
+                                </label>
                                 <input
                                   type="number"
                                   min={0}
@@ -297,36 +319,127 @@ export function CheckinsTodaySection({ embedded = false }) {
                                   step="0.01"
                                   className="input text-sm py-1.5"
                                   value={draftAmount}
-                                  onChange={(e) =>
-                                    setAmountDrafts((prev) => ({ ...prev, [r.id]: e.target.value }))
-                                  }
+                                  onChange={(e) => {
+                                    const next = e.target.value;
+                                    setAmountDrafts((prev) => ({ ...prev, [r.id]: next }));
+                                    if (isSplit && cashDrafts[r.id] == null && instapayDrafts[r.id] == null) {
+                                      const half = Math.round((Number(next) || 0) * 50) / 100;
+                                      setCashDrafts((prev) => ({ ...prev, [r.id]: String(half) }));
+                                      setInstapayDrafts((prev) => ({
+                                        ...prev,
+                                        [r.id]: String(
+                                          Math.round(((Number(next) || 0) - half) * 100) / 100
+                                        ),
+                                      }));
+                                    }
+                                  }}
                                 />
+                                <button
+                                  type="button"
+                                  className="mt-1 text-[11px] text-soul-blue hover:underline"
+                                  onClick={() =>
+                                    setAmountDrafts((prev) => ({
+                                      ...prev,
+                                      [r.id]: String(remaining),
+                                    }))
+                                  }
+                                >
+                                  Use full remaining ({currency(remaining)})
+                                </button>
                               </div>
                               <div>
-                                <label className="text-[10px] uppercase text-gray-500">Method</label>
+                                <label className="text-[10px] uppercase text-gray-500">How collected</label>
                                 <select
                                   className="input text-sm py-1.5"
                                   value={method}
-                                  onChange={(e) =>
-                                    setMethodDrafts((prev) => ({ ...prev, [r.id]: e.target.value }))
-                                  }
+                                  onChange={(e) => {
+                                    const next = e.target.value;
+                                    setMethodDrafts((prev) => ({ ...prev, [r.id]: next }));
+                                    if (next === 'split') {
+                                      const total = Number(draftAmount) || remaining;
+                                      const half = Math.round(total * 50) / 100;
+                                      setCashDrafts((prev) => ({ ...prev, [r.id]: String(half) }));
+                                      setInstapayDrafts((prev) => ({
+                                        ...prev,
+                                        [r.id]: String(Math.round((total - half) * 100) / 100),
+                                      }));
+                                    }
+                                  }}
                                 >
-                                  <option value="cash">Cash</option>
-                                  <option value="instapay">InstaPay</option>
-                                  <option value="bank_transfer">Bank transfer</option>
+                                  <option value="cash">Cash (full amount)</option>
+                                  <option value="instapay">InstaPay (full amount)</option>
+                                  <option value="bank_transfer">Bank transfer (full amount)</option>
+                                  <option value="split">Both (cash + InstaPay)</option>
                                 </select>
                               </div>
+                              {isSplit ? (
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div>
+                                    <label className="text-[10px] uppercase text-gray-500">Cash</label>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      step="0.01"
+                                      className="input text-sm py-1.5"
+                                      value={cashDraft}
+                                      onChange={(e) =>
+                                        setCashDrafts((prev) => ({ ...prev, [r.id]: e.target.value }))
+                                      }
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="text-[10px] uppercase text-gray-500">InstaPay</label>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      step="0.01"
+                                      className="input text-sm py-1.5"
+                                      value={instapayDraft}
+                                      onChange={(e) =>
+                                        setInstapayDrafts((prev) => ({
+                                          ...prev,
+                                          [r.id]: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                </div>
+                              ) : null}
                               <button
                                 type="button"
                                 className="btn-primary text-xs w-full justify-center"
                                 disabled={collectMutation.isPending}
-                                onClick={() =>
+                                onClick={() => {
+                                  const amount = Number(draftAmount);
+                                  if (!Number.isFinite(amount) || amount <= 0) {
+                                    toast.error('Enter how much you collected');
+                                    return;
+                                  }
+                                  if (isSplit) {
+                                    const cash = Number(cashDraft) || 0;
+                                    const instapay = Number(instapayDraft) || 0;
+                                    if (cash <= 0 && instapay <= 0) {
+                                      toast.error('Enter cash and/or InstaPay amounts');
+                                      return;
+                                    }
+                                    if (Math.abs(cash + instapay - amount) > 0.05) {
+                                      toast.error('Cash + InstaPay must equal the amount collected');
+                                      return;
+                                    }
+                                    collectMutation.mutate({
+                                      id: r.id,
+                                      amount,
+                                      cash_amount: cash,
+                                      instapay_amount: instapay,
+                                    });
+                                    return;
+                                  }
                                   collectMutation.mutate({
                                     id: r.id,
-                                    amount: Number(draftAmount),
+                                    amount,
                                     payment_method: method,
-                                  })
-                                }
+                                  });
+                                }}
                               >
                                 Confirm collect
                               </button>

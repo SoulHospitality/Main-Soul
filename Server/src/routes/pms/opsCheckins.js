@@ -418,25 +418,53 @@ router.post(
         return res.status(400).json({ error: `Amount cannot exceed remaining EGP ${remaining}` });
       }
 
-      let method = String(req.body?.payment_method || 'cash').toLowerCase();
-      if (!['cash', 'instapay', 'bank_transfer'].includes(method)) method = 'cash';
+      const splits = [];
+      const cashAmt = Number(req.body?.cash_amount);
+      const instapayAmt = Number(req.body?.instapay_amount);
+      const hasSplit =
+        (Number.isFinite(cashAmt) && cashAmt > 0) || (Number.isFinite(instapayAmt) && instapayAmt > 0);
 
-      await query(
-        `INSERT INTO payments (
-           reservation_id, amount, payment_date, payment_method,
-           notes, created_by, status, is_approved, approved_by, approved_at, paid_at
-         ) VALUES (
-           $1, $2, CURRENT_DATE, $3,
-           $4, $5, 'successful', 1, $5, now(), now()
-         )`,
-        [
-          reservationId,
-          amount,
-          method,
-          `[ops check-in] Collected at door by ${req.user.full_name || req.user.username || req.user.id}`,
-          req.user.id,
-        ]
-      );
+      if (hasSplit) {
+        const cash = Number.isFinite(cashAmt) && cashAmt > 0 ? Math.round(cashAmt * 100) / 100 : 0;
+        const instapay =
+          Number.isFinite(instapayAmt) && instapayAmt > 0 ? Math.round(instapayAmt * 100) / 100 : 0;
+        if (cash > 0) splits.push({ amount: cash, payment_method: 'cash' });
+        if (instapay > 0) splits.push({ amount: instapay, payment_method: 'instapay' });
+        const splitTotal = Math.round((cash + instapay) * 100) / 100;
+        if (Math.abs(splitTotal - amount) > 0.05) {
+          return res.status(400).json({
+            error: `Cash + InstaPay (EGP ${splitTotal}) must equal the collected amount (EGP ${amount})`,
+          });
+        }
+        if (splitTotal > remaining + 0.5) {
+          return res.status(400).json({ error: `Amount cannot exceed remaining EGP ${remaining}` });
+        }
+        amount = splitTotal;
+      } else {
+        let method = String(req.body?.payment_method || 'cash').toLowerCase();
+        if (!['cash', 'instapay', 'bank_transfer'].includes(method)) method = 'cash';
+        splits.push({ amount, payment_method: method });
+      }
+
+      const noteBase = `[ops check-in] Collected at door by ${req.user.full_name || req.user.username || req.user.id}`;
+      for (const part of splits) {
+        await query(
+          `INSERT INTO payments (
+             reservation_id, amount, payment_date, payment_method,
+             notes, created_by, status, is_approved, approved_by, approved_at, paid_at
+           ) VALUES (
+             $1, $2, CURRENT_DATE, $3,
+             $4, $5, 'successful', 1, $5, now(), now()
+           )`,
+          [
+            reservationId,
+            part.amount,
+            part.payment_method,
+            splits.length > 1 ? `${noteBase} · ${part.payment_method} share` : noteBase,
+            req.user.id,
+          ]
+        );
+      }
 
       await syncReservationPaymentStatus(reservationId);
 
@@ -456,7 +484,13 @@ router.post(
         action: 'OPS_COLLECT_CHECKIN',
         entityType: 'reservation',
         entityId: reservationId,
-        details: { amount, payment_method: method },
+        details: {
+          amount,
+          splits: splits.map((s) => ({
+            amount: s.amount,
+            payment_method: s.payment_method,
+          })),
+        },
       });
 
       const updated = await fetchCheckinRow(reservationId);
@@ -1009,6 +1043,180 @@ router.post(
         ...rows[0],
         cleaned: true,
       });
+    } catch (e) {
+      next(e);
+    }
+  }
+);
+
+function mapCheckout(row) {
+  const insurance = Math.round((Number(row.insurance) || 0) * 100) / 100;
+  const refundStatus = String(row.insurance_refund_status || '').toLowerCase();
+  const refunded = ['refunded', 'partial', 'forfeited'].includes(refundStatus);
+  return {
+    id: row.id,
+    guest_name: row.guest_name,
+    guest_phone: row.guest_phone,
+    check_in: row.check_in,
+    check_out: row.check_out,
+    status: row.status,
+    unit_id: row.unit_id,
+    unit_number: row.unit_number,
+    unit_title: row.unit_title,
+    project: row.project,
+    insurance,
+    insurance_refund_status: refunded ? refundStatus : insurance > 0.009 ? 'pending' : 'none',
+    insurance_refunded_amount: Number(row.insurance_refunded_amount) || 0,
+    insurance_damage_amount: Number(row.insurance_damage_amount) || 0,
+    insurance_refunded_at: row.insurance_refunded_at,
+    insurance_refund_method: row.insurance_refund_method,
+    insurance_refunded_by_name: row.insurance_refunded_by_name || null,
+    can_refund_insurance: insurance > 0.009 && !refunded,
+  };
+}
+
+router.get('/ops/checkouts-today', requireRoles(...OPS_ROLES), async (req, res, next) => {
+  try {
+    const { rows } = await query(
+      `SELECT r.id,
+              r.guest_name,
+              r.guest_phone,
+              r.check_in,
+              r.check_out,
+              r.status,
+              r.unit_id,
+              COALESCE(r.insurance, 0)::float AS insurance,
+              r.insurance_refund_status,
+              COALESCE(r.insurance_refunded_amount, 0)::float AS insurance_refunded_amount,
+              COALESCE(r.insurance_damage_amount, 0)::float AS insurance_damage_amount,
+              r.insurance_refunded_at,
+              r.insurance_refund_method,
+              u.unit_number,
+              COALESCE(u.unit_number, u.title, 'Unit') AS unit_title,
+              COALESCE(u.project, u.compound) AS project,
+              refunded_by.full_name AS insurance_refunded_by_name
+       FROM reservations r
+       JOIN units u ON u.id = r.unit_id
+       LEFT JOIN staff_users refunded_by ON refunded_by.id = r.insurance_refunded_by
+       WHERE r.check_out::date = ${todayCairoSql()}
+         AND r.status IS DISTINCT FROM 'cancelled'
+       ORDER BY r.check_out ASC, u.unit_number ASC NULLS LAST`
+    );
+    res.json(rows.map(mapCheckout));
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post(
+  '/ops/checkouts-today/:reservationId/refund-insurance',
+  requireRoles(...OPS_ROLES),
+  async (req, res, next) => {
+    try {
+      const reservationId = Number(req.params.reservationId);
+      if (!reservationId) return res.status(400).json({ error: 'Invalid reservation id' });
+
+      const { rows } = await query(
+        `SELECT r.id,
+                r.guest_name,
+                r.guest_phone,
+                r.check_in,
+                r.check_out,
+                r.status,
+                r.unit_id,
+                COALESCE(r.insurance, 0)::float AS insurance,
+                r.insurance_refund_status,
+                COALESCE(r.insurance_refunded_amount, 0)::float AS insurance_refunded_amount,
+                COALESCE(r.insurance_damage_amount, 0)::float AS insurance_damage_amount,
+                r.insurance_refunded_at,
+                r.insurance_refund_method,
+                u.unit_number,
+                COALESCE(u.unit_number, u.title, 'Unit') AS unit_title,
+                COALESCE(u.project, u.compound) AS project,
+                refunded_by.full_name AS insurance_refunded_by_name
+         FROM reservations r
+         JOIN units u ON u.id = r.unit_id
+         LEFT JOIN staff_users refunded_by ON refunded_by.id = r.insurance_refunded_by
+         WHERE r.id = $1`,
+        [reservationId]
+      );
+      const row = rows[0];
+      if (!row) return res.status(404).json({ error: 'Reservation not found' });
+      if (String(row.status).toLowerCase() === 'cancelled') {
+        return res.status(409).json({ error: 'Reservation is cancelled' });
+      }
+
+      const held = Math.round((Number(row.insurance) || 0) * 100) / 100;
+      if (!(held > 0.009)) {
+        return res.status(400).json({ error: 'This reservation has no insurance to refund' });
+      }
+
+      const existing = String(row.insurance_refund_status || '').toLowerCase();
+      if (['refunded', 'partial', 'forfeited'].includes(existing)) {
+        return res.json(mapCheckout(row));
+      }
+
+      let method = String(req.body?.payment_method || 'cash').toLowerCase();
+      if (!['cash', 'instapay', 'bank_transfer'].includes(method)) method = 'cash';
+
+      const notes = req.body?.notes
+        ? String(req.body.notes).slice(0, 2000)
+        : `[ops checkout] Insurance refunded by ${req.user.full_name || req.user.username || req.user.id}`;
+
+      const refundDate = row.check_out
+        ? String(row.check_out).slice(0, 10)
+        : new Date().toISOString().slice(0, 10);
+
+      const { rows: updated } = await query(
+        `UPDATE reservations SET
+           insurance_refund_status = 'refunded',
+           insurance_refunded_amount = $2,
+           insurance_damage_amount = 0,
+           insurance_refunded_at = $3::date,
+           insurance_refund_method = $4,
+           insurance_refund_notes = $5,
+           insurance_refunded_by = $6,
+           updated_at = now()
+         WHERE id = $1
+         RETURNING id`,
+        [reservationId, held, refundDate, method, notes, req.user.id]
+      );
+
+      if (!updated[0]) return res.status(404).json({ error: 'Reservation not found' });
+
+      await logAudit({
+        userId: req.user.id,
+        action: 'OPS_REFUND_INSURANCE',
+        entityType: 'reservation',
+        entityId: reservationId,
+        details: { amount: held, payment_method: method },
+      });
+
+      const { rows: refreshed } = await query(
+        `SELECT r.id,
+                r.guest_name,
+                r.guest_phone,
+                r.check_in,
+                r.check_out,
+                r.status,
+                r.unit_id,
+                COALESCE(r.insurance, 0)::float AS insurance,
+                r.insurance_refund_status,
+                COALESCE(r.insurance_refunded_amount, 0)::float AS insurance_refunded_amount,
+                COALESCE(r.insurance_damage_amount, 0)::float AS insurance_damage_amount,
+                r.insurance_refunded_at,
+                r.insurance_refund_method,
+                u.unit_number,
+                COALESCE(u.unit_number, u.title, 'Unit') AS unit_title,
+                COALESCE(u.project, u.compound) AS project,
+                refunded_by.full_name AS insurance_refunded_by_name
+         FROM reservations r
+         JOIN units u ON u.id = r.unit_id
+         LEFT JOIN staff_users refunded_by ON refunded_by.id = r.insurance_refunded_by
+         WHERE r.id = $1`,
+        [reservationId]
+      );
+      res.json(mapCheckout(refreshed[0]));
     } catch (e) {
       next(e);
     }
