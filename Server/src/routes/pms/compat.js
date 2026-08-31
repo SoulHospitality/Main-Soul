@@ -78,7 +78,7 @@ router.get('/users/sales', async (_req, res, next) => {
 });
 
 
-router.get('/users/owners', requireRoles('admin', 'hr', 'hr_supervisor'), async (_req, res, next) => {
+router.get('/users/owners', requireRoles('admin', 'finance', 'hr', 'hr_supervisor'), async (_req, res, next) => {
   try {
     const { rows } = await query(
       `SELECT s.id, s.full_name, s.email, s.username, s.is_active, s.created_at,
@@ -344,6 +344,81 @@ router.get(
     next(e);
   }
 });
+
+
+router.get(
+  '/commissions/resale-breakdown',
+  requireRoles('admin', 'resale'),
+  async (req, res, next) => {
+    try {
+      const from_date = clampFromDate(req.query.from_date);
+      const { to_date } = req.query;
+      const agentScoped = req.user.role === 'resale';
+      const params = [from_date];
+      let where = `al.stage = 'signed' AND al.updated_at >= $1::timestamptz`;
+      if (to_date) {
+        params.push(to_date);
+        where += ` AND al.updated_at < ($${params.length}::date + interval '1 day')`;
+      }
+      if (agentScoped) {
+        params.push(req.user.id);
+        where += ` AND al.created_by = $${params.length}`;
+      }
+
+      const { rows } = await query(
+        `SELECT al.id, al.title, al.owner_name, al.project, al.destination,
+                al.property_type, al.expected_price, al.stage, al.created_at, al.updated_at,
+                al.created_by, su.full_name AS agent_name,
+                COALESCE(su.sales_commission_pct, 0) AS agent_commission_pct
+         FROM acquisition_leads al
+         LEFT JOIN staff_users su ON su.id = al.created_by
+         WHERE ${where}
+         ORDER BY al.updated_at DESC`,
+        params
+      );
+
+      const { round2 } = require('../../lib/commission');
+      let totalSaleValue = 0;
+      let totalCommission = 0;
+
+      const breakdown = rows.map((r) => {
+        const saleValue = Number(r.expected_price) || 0;
+        const pct = Number(r.agent_commission_pct) || 0;
+        const commission = round2((saleValue * pct) / 100);
+        totalSaleValue += saleValue;
+        totalCommission += commission;
+        return {
+          id: r.id,
+          title: r.title,
+          owner_name: r.owner_name,
+          project: r.project,
+          destination: r.destination,
+          property_type: r.property_type,
+          sale_value: round2(saleValue),
+          agent_commission_pct: pct,
+          agent_commission: commission,
+          signed_at: r.updated_at,
+          created_at: r.created_at,
+          agent_name: r.agent_name,
+        };
+      });
+
+      res.json({
+        breakdown,
+        scoped_to_agent: agentScoped,
+        agent_id: agentScoped ? req.user.id : null,
+        totals: {
+          signed_deals: rows.length,
+          totalSaleValue: round2(totalSaleValue),
+          myCommission: round2(totalCommission),
+          agentCommissions: round2(totalCommission),
+        },
+      });
+    } catch (e) {
+      next(e);
+    }
+  }
+);
 
 
 router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => {

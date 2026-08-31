@@ -8,6 +8,7 @@ export const ROLES = {
   HOUSEKEEPING: 'housekeeping',
   HOUSEKEEPING_SUPERVISOR: 'housekeeping_supervisor',
   RESALE: 'resale',
+  FINANCE: 'finance',
   HR: 'hr',
   HR_SUPERVISOR: 'hr_supervisor',
   OWNERS_RELATIONS: 'owners_relations',
@@ -125,6 +126,7 @@ const PERMISSIONS = {
     'units:delete',
     'acquisition:read',
     'acquisition:write',
+    'commissions:read',
     'notifications:read',
     'documents:read',
     'documents:write',
@@ -183,6 +185,12 @@ const PERMISSIONS = {
     'notifications:read',
     'profile:read',
   ],
+  finance: [
+    'financial_system:read',
+    'financial_system:write',
+    'notifications:read',
+    'profile:read',
+  ],
 };
 
 
@@ -195,10 +203,11 @@ const PAGE_ACCESS = {
   operations_supervisor: new Set(['operations', 'ops_checkins', 'ops_comments', 'reservations', 'schedule', 'profile']),
   housekeeping: new Set(['housekeeping', 'hk_today', 'profile']),
   housekeeping_supervisor: new Set(['housekeeping', 'hk_today', 'profile']),
-  resale: new Set(['units_sale', 'acquisition', 'profile']),
+  resale: new Set(['units_sale', 'acquisition', 'commissions', 'profile']),
   hr: HR_PAGE_ACCESS,
   hr_supervisor: HR_PAGE_ACCESS,
   owners_relations: new Set(['reservations', 'profile', 'holiday_requests', 'loans', 'payslip']),
+  finance: new Set(['financial_system', 'profile']),
   owner: new Set([
     'owner',
     'owner_reservations',
@@ -231,11 +240,18 @@ export function canAccess(user, page) {
   if (!user) return false;
   if (user.role === 'admin') return true;
   if (page === 'profile' || page === 'change-password') return true;
-  if ((page === 'loans' || page === 'payslip' || page === 'holiday_requests') && user.role !== 'owner') return true;
+  if (
+    (page === 'loans' || page === 'payslip' || page === 'holiday_requests') &&
+    user.role !== 'owner' &&
+    user.role !== 'finance'
+  ) {
+    return true;
+  }
   if (
     page === 'wfh' &&
     user.role !== 'owner' &&
     user.role !== 'admin' &&
+    user.role !== 'finance' &&
     user.role !== 'operations' &&
     user.role !== 'operations_supervisor'
   ) {
@@ -295,7 +311,15 @@ export function isOwnersRelationsRole(user) {
 
 
 export function canViewOwnCommissions(user) {
-  return !!user && (user.role === 'admin' || isReservationsTeam(user));
+  return !!user && (user.role === 'admin' || isReservationsTeam(user) || user.role === 'resale');
+}
+
+export function isResaleRole(user) {
+  return !!user && user.role === 'resale';
+}
+
+export function isFinanceRole(user) {
+  return !!user && user.role === 'finance';
 }
 
 export function canEditSchedulePricing(user) {
@@ -308,7 +332,7 @@ export function canAccessFinance(user) {
 
 
 export function canAccessFinancialSystem(user) {
-  return !!user && user.role === 'admin';
+  return !!user && (user.role === 'admin' || user.role === 'finance');
 }
 
 export function canAccessReports(user) {
@@ -365,6 +389,7 @@ export function creatableRoles(actorRole) {
       ...reservationRoles,
       ...fieldRoles,
       'resale',
+      'finance',
       'hr',
       'hr_supervisor',
       'owners_relations',
@@ -385,6 +410,7 @@ export const ROLE_LABELS = {
   housekeeping: 'Housekeeping',
   housekeeping_supervisor: 'Housekeeping Supervisor',
   resale: 'Resale',
+  finance: 'Finance',
   hr: 'HR',
   hr_supervisor: 'HR Supervisor',
   owners_relations: 'Owners Relations',
@@ -401,6 +427,7 @@ export const ROLE_COLORS = {
   housekeeping: 'badge-soul-slate',
   housekeeping_supervisor: 'badge-soul-slate',
   resale: 'badge-soul-teal',
+  finance: 'badge-soul-slate',
   hr: 'badge-soul-slate',
   hr_supervisor: 'badge-soul-slate',
   owners_relations: 'badge-soul-teal',
@@ -417,6 +444,7 @@ export const PMS_LABELS = {
   housekeeping: 'Housekeeping PMS',
   housekeeping_supervisor: 'Housekeeping Supervisor PMS',
   resale: 'Resale PMS',
+  finance: 'Finance PMS',
   hr: 'HR PMS',
   hr_supervisor: 'HR Supervisor PMS',
   owners_relations: 'Owners Relations PMS',

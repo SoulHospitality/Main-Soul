@@ -14,6 +14,8 @@ export function defaultAdminPage(role) {
       return `${A}/housekeeping`;
     case 'resale':
       return `${A}/units-for-sale`;
+    case 'finance':
+      return `${A}/financial-system`;
     case 'hr':
     case 'hr_supervisor':
       return `${A}/users`;

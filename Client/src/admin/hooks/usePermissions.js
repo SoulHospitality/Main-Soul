@@ -44,11 +44,12 @@ export function usePermissions() {
     isManualReservations,
     isOwnersRelations,
     isResale: user?.role === 'resale',
+    isFinanceRole: user?.role === 'finance',
     isHr: user?.role === 'hr' || user?.role === 'hr_supervisor',
     isHrSupervisor: user?.role === 'hr_supervisor',
     isOwner: user?.role === 'owner',
     
-    isFinance: user?.role === 'admin',
+    isFinance: user?.role === 'admin' || user?.role === 'finance',
     isOpManager: user?.role === 'admin',
     isSales: isReservations,
     isOwnerExperience: user?.role === 'resale',

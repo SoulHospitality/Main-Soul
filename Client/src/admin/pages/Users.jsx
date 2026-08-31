@@ -254,6 +254,10 @@ function isReservationAgentRole(role) {
   return ['reservations_web', 'reservations_manual', 'reservations'].includes(role);
 }
 
+function usesCommissionPct(role) {
+  return isReservationAgentRole(role) || role === 'resale';
+}
+
 function StaffForm({
   form,
   setForm,
@@ -264,7 +268,7 @@ function StaffForm({
   applySalaryImmediately,
   managerOptions = [],
 }) {
-  const showCommission = isReservationAgentRole(form.role);
+  const showCommission = usesCommissionPct(form.role);
   const lockHint = editingSelf
     ? 'Only an admin can change your salary and holiday balances.'
     : 'Only an HR Supervisor or admin can change salary and holiday balances.';
@@ -316,7 +320,7 @@ function StaffForm({
               setForm((f) => ({
                 ...f,
                 role: v,
-                sales_commission_pct: isReservationAgentRole(v)
+                sales_commission_pct: usesCommissionPct(v)
                   ? f.sales_commission_pct
                   : '',
               }))
@@ -405,7 +409,9 @@ function StaffForm({
               placeholder="e.g. 1.5"
             />
             <p className="mt-1 text-[11px] text-slate-400">
-              Of company commission on reservations assigned to this agent
+              {form.role === 'resale'
+                ? 'Of expected sale value on signed owner requests'
+                : 'Of company commission on reservations assigned to this agent'}
             </p>
           </div>
         )}
@@ -868,9 +874,9 @@ export default function Users() {
       toast.error('Staff ID is required');
       return;
     }
-    if (isReservationAgentRole(staffForm.role)) {
+    if (usesCommissionPct(staffForm.role)) {
       if (staffForm.sales_commission_pct === '' || staffForm.sales_commission_pct == null) {
-        toast.error('Commission % is required for reservation agents');
+        toast.error('Commission % is required for this role');
         return;
       }
       const pct = Number(staffForm.sales_commission_pct);
@@ -891,7 +897,7 @@ export default function Users() {
           : staffForm.manager_id
             ? Number(staffForm.manager_id)
             : null,
-      sales_commission_pct: isReservationAgentRole(staffForm.role)
+      sales_commission_pct: usesCommissionPct(staffForm.role)
         ? Number(staffForm.sales_commission_pct)
         : Number(staffForm.sales_commission_pct) || 0,
     });
@@ -947,6 +953,7 @@ export default function Users() {
         'housekeeping_supervisor',
         'housekeeping',
         'resale',
+        'finance',
         'hr',
         'hr_supervisor',
         'owners_relations',
@@ -960,6 +967,7 @@ export default function Users() {
         'housekeeping_supervisor',
         'housekeeping',
         'resale',
+        'finance',
         'hr',
         'hr_supervisor',
       ];
@@ -1275,7 +1283,7 @@ export default function Users() {
                       )}
                     </td>
                     <td className="tabular-nums">
-                      {isReservationAgentRole(u.role)
+                      {usesCommissionPct(u.role)
                         ? `${Number(u.sales_commission_pct || 0)}%`
                         : '—'}
                     </td>
@@ -1398,6 +1406,7 @@ export default function Users() {
                   'housekeeping_supervisor',
                   'housekeeping',
                   'resale',
+                  'finance',
                   'hr',
                   'hr_supervisor',
                   'owners_relations',

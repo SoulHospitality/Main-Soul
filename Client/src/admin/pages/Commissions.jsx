@@ -15,11 +15,182 @@ import * as XLSX from 'xlsx';
 
 const normDate = (d) => String(d).split('T')[0];
 
+function ResaleCommissions({ fromDate, setFromDate, toDate, setToDate }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['commissions-resale-breakdown', fromDate, toDate],
+    queryFn: () =>
+      api
+        .get('/commissions/resale-breakdown', {
+          params: { from_date: fromDate || undefined, to_date: toDate || undefined },
+        })
+        .then((r) => r.data),
+  });
+
+  const rows = data?.breakdown || [];
+  const totals = data?.totals || {};
+  const { sorted, sortKey, sortDir, handleSort } = useSortableTable(rows, 'signed_at', 'desc');
+  const myCommission = totals.myCommission ?? totals.agentCommissions ?? 0;
+
+  const cards = [
+    {
+      label: 'My commission',
+      value: myCommission,
+      subtitle: 'Your % on signed owner requests',
+    },
+    {
+      label: 'Signed deals',
+      value: totals.signed_deals ?? rows.length,
+      subtitle: 'In selected date range',
+      format: 'count',
+    },
+    {
+      label: 'Sale value',
+      value: totals.totalSaleValue ?? 0,
+      subtitle: 'Expected price on signed requests',
+    },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="page-header mb-0">
+        <h1 className="page-title">My Profit</h1>
+        <p className="page-subtitle">
+          Commission earned on signed owner requests you brought in.
+        </p>
+      </div>
+
+      <div className="card p-3 flex flex-wrap items-end gap-3">
+        <div>
+          <label className="label text-xs">From Date</label>
+          <input
+            type="date"
+            className="input w-40"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="label text-xs">To Date</label>
+          <input
+            type="date"
+            className="input w-40"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+          />
+        </div>
+        {(fromDate || toDate) && (
+          <button
+            className="btn-secondary text-sm"
+            onClick={() => {
+              setFromDate(FINANCIAL_EPOCH);
+              setToDate('');
+            }}
+          >
+            Reset
+          </button>
+        )}
+      </div>
+
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
+        {cards.map(({ label, value, subtitle, format }) => (
+          <div key={label} className="card p-4 bg-amber-50 border-amber-200">
+            <p className="text-xs font-medium text-amber-700">{label}</p>
+            <p className="text-lg font-bold tabular-nums text-amber-800 mt-1">
+              {format === 'count' ? value : currency(value)}
+            </p>
+            {subtitle ? <p className="text-xs text-gray-400 mt-1">{subtitle}</p> : null}
+          </div>
+        ))}
+      </div>
+
+      {isLoading ? (
+        <LoadingSpinner />
+      ) : rows.length === 0 ? (
+        <EmptyState
+          icon={DollarSign}
+          title="No signed deals yet"
+          subtitle="Mark owner requests as Signed to track your commission here"
+        />
+      ) : (
+        <div className="card p-0 overflow-x-auto">
+          <table className="table text-sm">
+            <thead>
+              <tr>
+                <SortTh col="title" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>
+                  Request
+                </SortTh>
+                <SortTh col="owner_name" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>
+                  Owner
+                </SortTh>
+                <SortTh col="project" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>
+                  Project
+                </SortTh>
+                <SortTh col="signed_at" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>
+                  Signed
+                </SortTh>
+                <SortTh col="sale_value" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="text-right">
+                  Sale value
+                </SortTh>
+                <SortTh col="agent_commission" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="text-right">
+                  My commission
+                </SortTh>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((r) => (
+                <tr key={r.id}>
+                  <td>
+                    <div className="font-medium text-gray-900">{r.title}</div>
+                    {r.property_type ? (
+                      <div className="text-xs text-gray-400">{r.property_type}</div>
+                    ) : null}
+                  </td>
+                  <td className="text-gray-800">{r.owner_name || '—'}</td>
+                  <td>{r.project || r.destination || '—'}</td>
+                  <td className="whitespace-nowrap text-gray-500">{formatDate(r.signed_at)}</td>
+                  <td className="text-right tabular-nums">{currency(r.sale_value)}</td>
+                  <td className="text-right tabular-nums text-amber-700 font-bold">
+                    {currency(r.agent_commission || 0)}
+                    {r.agent_commission_pct != null ? (
+                      <div className="text-[10px] font-normal text-gray-400">{r.agent_commission_pct}%</div>
+                    ) : null}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold text-sm">
+                <td colSpan={4} className="text-right text-gray-600 pr-4">
+                  Totals
+                </td>
+                <td className="text-right tabular-nums">{currency(totals.totalSaleValue)}</td>
+                <td className="text-right tabular-nums text-amber-800">{currency(myCommission)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Commissions() {
-  const { isAdmin, isReservations } = usePermissions();
+  const { isAdmin, isReservations, isResale } = usePermissions();
+  const resaleMode = isResale && !isAdmin;
   const agentOnly = isReservations && !isAdmin;
   const [fromDate, setFromDate] = useState(FINANCIAL_EPOCH);
   const [toDate, setToDate] = useState('');
+
+  if (resaleMode) {
+    return (
+      <ResaleCommissions
+        fromDate={fromDate}
+        setFromDate={setFromDate}
+        toDate={toDate}
+        setToDate={setToDate}
+      />
+    );
+  }
 
   const { data, isLoading } = useQuery({
     queryKey: ['commissions-breakdown', fromDate, toDate, agentOnly],

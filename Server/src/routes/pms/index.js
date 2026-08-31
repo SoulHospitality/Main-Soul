@@ -264,6 +264,7 @@ function assertCanAssignRole(actorRole, targetRole) {
     'housekeeping',
     'housekeeping_supervisor',
     'resale',
+    'finance',
     'hr',
     'hr_supervisor',
     'owners_relations',
@@ -271,7 +272,7 @@ function assertCanAssignRole(actorRole, targetRole) {
   ];
   if (!allowed.includes(targetRole)) {
     const err = new Error(
-      'Invalid role. Use admin, reservations_web, reservations_manual, operations, operations_supervisor, housekeeping, housekeeping_supervisor, resale, hr, hr_supervisor, owners_relations, or owner.'
+      'Invalid role. Use admin, reservations_web, reservations_manual, operations, operations_supervisor, housekeeping, housekeeping_supervisor, resale, finance, hr, hr_supervisor, owners_relations, or owner.'
     );
     err.status = 400;
     throw err;
@@ -302,6 +303,10 @@ function isReservationAgentRole(role) {
   return ['reservations_web', 'reservations_manual', 'reservations'].includes(String(role || ''));
 }
 
+function usesCommissionPct(role) {
+  return isReservationAgentRole(role) || role === 'resale';
+}
+
 async function parseManagerId(raw, selfId) {
   if (raw === undefined) return undefined;
   if (raw === '' || raw == null) return null;
@@ -326,13 +331,13 @@ async function parseManagerId(raw, selfId) {
 }
 
 function parseAgentCommissionPct(b, role) {
-  if (!isReservationAgentRole(role)) {
+  if (!usesCommissionPct(role)) {
     return b.sales_commission_pct != null && b.sales_commission_pct !== ''
       ? parseFloat(b.sales_commission_pct)
       : 0;
   }
   if (b.sales_commission_pct === '' || b.sales_commission_pct == null) {
-    const err = new Error('Commission % is required for reservation agents');
+    const err = new Error('Commission % is required for this role');
     err.status = 400;
     throw err;
   }
@@ -496,7 +501,7 @@ router.patch('/users/:id', requireRoles(...HR_ROUTE_ROLES), async (req, res, nex
     if (b.role != null) assertCanAssignRole(req.user.role, nextRole);
 
     let nextCommissionPct = existing.sales_commission_pct;
-    if (b.sales_commission_pct != null || isReservationAgentRole(nextRole)) {
+    if (b.sales_commission_pct != null || usesCommissionPct(nextRole)) {
       try {
         
         const payload =

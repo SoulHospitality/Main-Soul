@@ -13,6 +13,7 @@ const ROLE_PREFIX = {
   housekeeping: 'K',
   housekeeping_supervisor: 'L',
   resale: 'S',
+  finance: 'F',
   hr: 'H',
   owner: 'O',
 };

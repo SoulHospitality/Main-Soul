@@ -233,7 +233,8 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
                       : item.agentLabel &&
                           (user?.role === 'reservations_web' ||
                             user?.role === 'reservations_manual' ||
-                            user?.role === 'reservations')
+                            user?.role === 'reservations' ||
+                            user?.role === 'resale')
                         ? item.agentLabel
                         : item.label;
                   const pendingCount =

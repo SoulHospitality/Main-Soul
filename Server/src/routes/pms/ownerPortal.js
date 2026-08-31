@@ -671,7 +671,7 @@ router.patch('/owner/settlements/:id', requireRoles('admin'), async (req, res, n
   }
 });
 
-router.post('/owner/payout-requests/:id/review', requireRoles('admin'), async (req, res, next) => {
+router.post('/owner/payout-requests/:id/review', requireRoles('admin', 'finance'), async (req, res, next) => {
   try {
     const status = String(req.body.status || '').toLowerCase();
     if (!['approved', 'rejected', 'paid'].includes(status)) {
