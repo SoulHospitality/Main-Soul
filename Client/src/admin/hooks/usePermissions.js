@@ -20,6 +20,8 @@ import {
   isUnitAcquisitionRole,
   isUnitAcquisitionManager,
   canManageOwners,
+  isTaskAssigneeRole,
+  canAssignStaffTasks,
 } from '../utils/permissions';
 
 export function usePermissions() {
@@ -52,6 +54,8 @@ export function usePermissions() {
     isOwnersRelations,
     isUnitAcquisition: isUnitAcquisitionRole(user),
     isUnitAcquisitionManager: isUnitAcquisitionManager(user),
+    isTaskAssignee: isTaskAssigneeRole(user),
+    canAssignStaffTasks: canAssignStaffTasks(user),
     isResale: user?.role === 'resale',
     isFinanceRole: user?.role === 'finance',
     isHr: user?.role === 'hr' || user?.role === 'hr_supervisor',

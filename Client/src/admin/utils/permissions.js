@@ -16,6 +16,8 @@ export const ROLES = {
   HR_SUPERVISOR: 'hr_supervisor',
   OWNERS_RELATIONS: 'owners_relations',
   OWNER: 'owner',
+  MARKETING_PR: 'marketing_pr',
+  WEB_DEVELOPER: 'web_developer',
 };
 
 const RESERVATIONS_TEAM = new Set([
@@ -241,6 +243,8 @@ const PERMISSIONS = {
     'notifications:read',
     'profile:read',
   ],
+  marketing_pr: ['tasks:read', 'notifications:read', 'profile:read'],
+  web_developer: ['tasks:read', 'notifications:read', 'profile:read'],
 };
 
 
@@ -261,6 +265,8 @@ const PAGE_ACCESS = {
   hr_supervisor: HR_SUPERVISOR_PAGE_ACCESS,
   owners_relations: new Set(['reservations', 'profile', 'holiday_requests', 'loans', 'payslip']),
   finance: new Set(['financial_system', 'profile']),
+  marketing_pr: new Set(['tasks', 'profile']),
+  web_developer: new Set(['tasks', 'profile']),
   owner: new Set([
     'owner',
     'owner_reservations',
@@ -315,10 +321,21 @@ export function hasPermission(user, permission) {
   return (PERMISSIONS[user.role] || []).includes(permission);
 }
 
+export function isTaskAssigneeRole(user) {
+  return !!user && (user.role === 'marketing_pr' || user.role === 'web_developer');
+}
+
+export function canAssignStaffTasks(user) {
+  return !!user && (user.role === 'admin' || isLineManagerRole(user.role));
+}
+
 export function canAccess(user, page) {
   if (!user) return false;
   if (user.role === 'admin') return true;
   if (page === 'profile' || page === 'change-password') return true;
+  if (page === 'tasks' && (isTaskAssigneeRole(user) || isLineManagerRole(user.role))) {
+    return true;
+  }
   if (
     (page === 'loans' || page === 'payslip' || page === 'holiday_requests') &&
     user.role !== 'owner' &&
@@ -481,7 +498,7 @@ export function creatableRoles(actorRole) {
     'housekeeping_supervisor',
     'housekeeping',
   ];
-  const hrCreatable = [...reservationRoles, ...fieldRoles, 'resale', 'unit_acquisition_agent', 'unit_acquisition_manager', 'hr'];
+  const hrCreatable = [...reservationRoles, ...fieldRoles, 'resale', 'unit_acquisition_agent', 'unit_acquisition_manager', 'marketing_pr', 'web_developer', 'hr'];
   if (actorRole === 'admin') {
     return [
       'admin',
@@ -494,6 +511,8 @@ export function creatableRoles(actorRole) {
       'hr',
       'hr_supervisor',
       'owners_relations',
+      'marketing_pr',
+      'web_developer',
       'owner',
     ];
   }
@@ -521,6 +540,8 @@ export const ROLE_LABELS = {
   hr: 'HR',
   hr_supervisor: 'HR Manager',
   owners_relations: 'Owner Experience',
+  marketing_pr: 'Marketing and PR',
+  web_developer: 'Web Developer',
   owner: 'Owner',
 };
 
@@ -541,6 +562,8 @@ export const ROLE_COLORS = {
   hr: 'badge-soul-slate',
   hr_supervisor: 'badge-soul-slate',
   owners_relations: 'badge-soul-teal',
+  marketing_pr: 'badge-soul-orange',
+  web_developer: 'badge-soul-slate',
   owner: 'badge-soul-teal',
 };
 
@@ -561,5 +584,7 @@ export const PMS_LABELS = {
   hr: 'HR PMS',
   hr_supervisor: 'HR Manager PMS',
   owners_relations: 'Owner Experience PMS',
+  marketing_pr: 'Marketing and PR PMS',
+  web_developer: 'Web Developer PMS',
   owner: 'Owner Portal',
 };

@@ -71,6 +71,7 @@ router.use(compat);
 router.use(require('./reportsAnalytics'));
 router.use(require('./reservationsPerformance'));
 router.use(require('./acquisitionAudit'));
+router.use(require('./staffTasks'));
 router.use(require('./financialSystem'));
 router.use(housekeepingOps);
 router.use(require('./opsCheckins'));
@@ -290,10 +291,12 @@ function assertCanAssignRole(actorRole, targetRole) {
     'hr_supervisor',
     'owners_relations',
     'owner',
+    'marketing_pr',
+    'web_developer',
   ];
   if (!allowed.includes(targetRole)) {
     const err = new Error(
-      'Invalid role. Use admin, reservations_web, reservations_manual, reservations_manager, unit_acquisition_agent, unit_acquisition_manager, operations, operations_supervisor, housekeeping, housekeeping_supervisor, resale, finance, hr, hr_supervisor, owners_relations, or owner.'
+      'Invalid role. Use admin, reservations_web, reservations_manual, reservations_manager, unit_acquisition_agent, unit_acquisition_manager, operations, operations_supervisor, housekeeping, housekeeping_supervisor, resale, finance, hr, hr_supervisor, owners_relations, marketing_pr, web_developer, or owner.'
     );
     err.status = 400;
     throw err;
@@ -312,11 +315,13 @@ function assertCanAssignRole(actorRole, targetRole) {
       'resale',
       'unit_acquisition_agent',
       'unit_acquisition_manager',
+      'marketing_pr',
+      'web_developer',
       'hr',
     ].includes(targetRole)
   ) {
     const err = new Error(
-      'HR can only create reservation, operations, housekeeping, resale, unit acquisition, or HR users'
+      'HR can only create reservation, operations, housekeeping, resale, unit acquisition, marketing, web developer, or HR users'
     );
     err.status = 403;
     throw err;

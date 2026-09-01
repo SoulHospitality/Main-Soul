@@ -584,6 +584,8 @@ function departmentManagerRole(role) {
     case 'hr_supervisor':
     case 'operations_supervisor':
     case 'housekeeping_supervisor':
+    case 'marketing_pr':
+    case 'web_developer':
       return 'admin';
     default:
       return null;

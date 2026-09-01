@@ -23,6 +23,7 @@ import {
   Receipt,
   FileBarChart2,
   Trophy,
+  ListTodo,
 } from 'lucide-react';
 
 const NAV_SECTIONS = [
@@ -31,6 +32,7 @@ const NAV_SECTIONS = [
     label: 'Overview',
     items: [
       { path: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard, page: 'dashboard' },
+      { path: '/admin/tasks', label: 'Tasks', icon: ListTodo, page: 'tasks' },
     ],
   },
   {

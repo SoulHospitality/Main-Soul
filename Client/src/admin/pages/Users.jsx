@@ -995,6 +995,8 @@ export default function Users() {
         'hr',
         'hr_supervisor',
         'owners_relations',
+        'marketing_pr',
+        'web_developer',
       ]
     : [
         'reservations_web',
@@ -1011,6 +1013,8 @@ export default function Users() {
         'finance',
         'hr',
         'hr_supervisor',
+        'marketing_pr',
+        'web_developer',
       ];
 
   const showAddButton = isOwnersTab ? canCreateOwners : staffRoleOptions.length > 0;
@@ -1462,6 +1466,8 @@ export default function Users() {
                   'hr',
                   'hr_supervisor',
                   'owners_relations',
+                  'marketing_pr',
+                  'web_developer',
                 ]
               : staffRoleOptions
           }

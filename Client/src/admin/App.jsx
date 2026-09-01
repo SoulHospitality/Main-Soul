@@ -46,6 +46,7 @@ const OwnerDateBlocks = lazy(() => import('./pages/OwnerDateBlocks'));
 const PromoCodes = lazy(() => import('./pages/PromoCodes'));
 const Reports = lazy(() => import('./pages/Reports'));
 const Performance = lazy(() => import('./pages/Performance'));
+const Tasks = lazy(() => import('./pages/Tasks'));
 
 function PageFallback() {
   return (
@@ -127,6 +128,7 @@ function AppRoutes() {
       <Route path="schedule" element={<ProtectedRoute page="schedule"><Schedule /></ProtectedRoute>} />
       <Route path="calendar-sync" element={<ProtectedRoute page="calendar_sync"><CalendarSync /></ProtectedRoute>} />
       <Route path="performance" element={<ProtectedRoute page="performance"><Performance /></ProtectedRoute>} />
+      <Route path="tasks" element={<ProtectedRoute page="tasks"><Tasks /></ProtectedRoute>} />
 
       
       <Route path="financial-system" element={<ProtectedRoute page="financial_system"><FinancialSystem /></ProtectedRoute>} />

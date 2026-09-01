@@ -6,6 +6,8 @@ const PERMS = {
   reservations_manager: ['reservations', 'schedule', 'calendar_sync', 'performance'],
   unit_acquisition_agent: ['units', 'acquisition'],
   unit_acquisition_manager: ['units', 'acquisition', 'acquisition_audit'],
+  marketing_pr: ['tasks'],
+  web_developer: ['tasks'],
   resale: ['units', 'projects', 'dashboard'],
 };
 

@@ -21,6 +21,8 @@ const ROLE_PREFIX = {
   hr_supervisor: 'U',
   owners_relations: 'N',
   owner: 'O',
+  marketing_pr: 'B',
+  web_developer: 'D',
 };
 
 function randomDigitString(length) {
