@@ -76,7 +76,7 @@ export default function Attendance() {
   const days = data?.days || [];
   const staff = (data?.staff || []).filter(
     (s) =>
-      !['admin', 'owner', 'hr_supervisor', 'operations', 'operations_supervisor'].includes(
+      !['admin', 'owner', 'hr_supervisor', 'operations', 'operations_supervisor', 'web_developer'].includes(
         String(s.role || '')
       )
   );
@@ -187,7 +187,7 @@ export default function Attendance() {
           <h1 className="page-title mt-1">Attendance</h1>
           <p className="page-subtitle">
             Upload the door report (Person ID, Time, Attendance Status). Person ID is the Staff ID.
-            Admin and operations are not on this sheet.
+            Admin, operations, and web developers are not on this sheet.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

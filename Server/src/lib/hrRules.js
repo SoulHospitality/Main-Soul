@@ -543,6 +543,7 @@ const NO_OFFICE_ATTENDANCE_ROLES = new Set([
   'hr_supervisor',
   'operations',
   'operations_supervisor',
+  'web_developer',
 ]);
 const NO_STAFF_BENEFIT_ROLES = new Set(['admin', 'owner']);
 

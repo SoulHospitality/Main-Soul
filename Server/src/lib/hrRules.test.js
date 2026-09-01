@@ -217,7 +217,7 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.equal(split.deductions_total, 450);
   });
 
-  it('does not apply office attendance to admins, HR supervisors, or operations', () => {
+  it('does not apply office attendance to admins, HR supervisors, operations, or web developers', () => {
     assert.equal(hasOfficeAttendance('operations'), false);
     assert.equal(hasOfficeAttendance('operations_supervisor'), false);
     assert.equal(hasOfficeAttendance('hr'), true);
@@ -225,6 +225,7 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.equal(hasOfficeAttendance('reservations_web'), true);
     assert.equal(hasOfficeAttendance('admin'), false);
     assert.equal(hasOfficeAttendance('owner'), false);
+    assert.equal(hasOfficeAttendance('web_developer'), false);
     assert.equal(canRequestStaffBenefits('admin'), false);
     assert.equal(canRequestStaffBenefits('reservations_web'), true);
   });
