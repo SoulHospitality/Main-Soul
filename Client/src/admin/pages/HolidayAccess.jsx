@@ -55,8 +55,8 @@ export default function HolidayAccess() {
         <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-soul-muted">HR</p>
         <h1 className="page-title mt-1">Holidays access</h1>
         <p className="page-subtitle">
-          Choose who can request holidays. Auto allows requests once the staff account is 6 months old.
-          Only an HR Manager or CEO can change access, and they cannot change their own.
+          Choose who can request paid holidays. Auto allows casual, annual, and early leave after 6 months.
+          Unpaid leave is always requestable. Only an HR Manager or CEO can change access, and they cannot change their own.
         </p>
       </div>
 
@@ -76,7 +76,7 @@ export default function HolidayAccess() {
                   <th>Joined</th>
                   <th>Tenure</th>
                   <th>Setting</th>
-                  <th>Can request</th>
+                  <th>Paid holidays</th>
                 </tr>
               </thead>
               <tbody>

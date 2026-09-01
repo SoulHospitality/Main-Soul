@@ -51,6 +51,7 @@ const EMPTY_STAFF_FORM = {
   sales_commission_pct: '',
   leave_casual_days: '0',
   leave_annual_days: '0',
+  leave_unpaid_days: '0',
   staff_code: '',
   manager_id: '',
 };
@@ -421,6 +422,21 @@ function StaffForm({
             onChange={(e) => setForm((f) => ({ ...f, leave_annual_days: e.target.value }))}
           />
           <p className="mt-1 text-[11px] text-slate-400">Paid annual balance. Must be requested 7 days ahead.</p>
+        </div>
+        <div>
+          <label className="label">Unpaid days</label>
+          <input
+            type="number"
+            min="0"
+            step="1"
+            className="input"
+            value={form.leave_unpaid_days}
+            disabled={lockPayAndLeave}
+            onChange={(e) => setForm((f) => ({ ...f, leave_unpaid_days: e.target.value }))}
+          />
+          <p className="mt-1 text-[11px] text-slate-400">
+            Unpaid balance. Requestable from day one, even without holiday access.
+          </p>
         </div>
         {showCommission && (
           <div>
@@ -873,6 +889,7 @@ export default function Users() {
             : '',
         leave_casual_days: String(u.leave_casual_days ?? 0),
         leave_annual_days: String(u.leave_annual_days ?? 0),
+        leave_unpaid_days: String(u.leave_unpaid_days ?? 0),
         staff_code: u.staff_code || '',
         manager_id: u.manager_id ? String(u.manager_id) : '',
       });
@@ -925,6 +942,7 @@ export default function Users() {
       base_salary: Number(staffForm.base_salary),
       leave_casual_days: Number(staffForm.leave_casual_days) || 0,
       leave_annual_days: Number(staffForm.leave_annual_days) || 0,
+      leave_unpaid_days: Number(staffForm.leave_unpaid_days) || 0,
       staff_code: String(staffForm.staff_code || '').trim(),
       manager_id:
         staffForm.role === 'admin' || staffForm.role === 'owner'
@@ -1309,7 +1327,8 @@ export default function Users() {
                     <td>
                       <div>{currency(u.base_salary || 0)}</div>
                       <div className="mt-0.5 text-[11px] text-soul-muted">
-                        Casual {u.leave_casual_days ?? 0} · Annual {u.leave_annual_days ?? 0}
+                        Casual {u.leave_casual_days ?? 0} · Annual {u.leave_annual_days ?? 0} · Unpaid{' '}
+                        {u.leave_unpaid_days ?? 0}
                       </div>
                       {u.salary_change_status === 'pending' && (
                         <div className="mt-1 text-[11px] text-amber-700">

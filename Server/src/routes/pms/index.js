@@ -250,6 +250,7 @@ const STAFF_SELECT = `
   salary_change_status, is_first_login, created_at, updated_at,
   COALESCE(leave_casual_days, 0) AS leave_casual_days,
   COALESCE(leave_annual_days, 0) AS leave_annual_days,
+  COALESCE(leave_unpaid_days, 0) AS leave_unpaid_days,
   COALESCE(holiday_access, 'auto') AS holiday_access,
   manager_id
 `;
@@ -489,8 +490,8 @@ router.post('/users', requireRoles(...USER_ACCOUNT_ROLES), async (req, res, next
       `INSERT INTO staff_users (
          username, password_hash, email, full_name, role, staff_code,
          base_salary, salary_change_status, is_first_login, is_active,
-         sales_commission_pct, leave_casual_days, leave_annual_days, manager_id
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,'none',1,1,$8,COALESCE($9,0),COALESCE($10,0),$11)
+         sales_commission_pct, leave_casual_days, leave_annual_days, leave_unpaid_days, manager_id
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,'none',1,1,$8,COALESCE($9,0),COALESCE($10,0),COALESCE($11,0),$12)
        RETURNING ${STAFF_SELECT}`,
       [
         username,
@@ -503,6 +504,7 @@ router.post('/users', requireRoles(...USER_ACCOUNT_ROLES), async (req, res, next
         agentCommissionPct,
         b.leave_casual_days != null && b.leave_casual_days !== '' ? parseInt(b.leave_casual_days, 10) || 0 : 0,
         b.leave_annual_days != null && b.leave_annual_days !== '' ? parseInt(b.leave_annual_days, 10) || 0 : 0,
+        b.leave_unpaid_days != null && b.leave_unpaid_days !== '' ? parseInt(b.leave_unpaid_days, 10) || 0 : 0,
         managerId ?? null,
       ]
     );
@@ -565,7 +567,11 @@ router.patch('/users/:id', requireRoles(...USER_ACCOUNT_ROLES), async (req, res,
       b.leave_annual_days != null &&
       b.leave_annual_days !== '' &&
       parseInt(b.leave_annual_days, 10) !== Number(existing.leave_annual_days || 0);
-    if (salaryChanged || casualChanged || annualChanged) {
+    const unpaidChanged =
+      b.leave_unpaid_days != null &&
+      b.leave_unpaid_days !== '' &&
+      parseInt(b.leave_unpaid_days, 10) !== Number(existing.leave_unpaid_days || 0);
+    if (salaryChanged || casualChanged || annualChanged || unpaidChanged) {
       assertCanEditStaffCompensation(req.user, existing.id, 'salary or holiday balances');
     }
 
@@ -607,6 +613,7 @@ router.patch('/users/:id', requireRoles(...USER_ACCOUNT_ROLES), async (req, res,
 
     let casualDays = existing.leave_casual_days ?? 0;
     let annualDays = existing.leave_annual_days ?? 0;
+    let unpaidDays = existing.leave_unpaid_days ?? 0;
     if (b.leave_casual_days != null && b.leave_casual_days !== '') {
       const n = parseInt(b.leave_casual_days, 10);
       if (Number.isNaN(n) || n < 0) return res.status(400).json({ error: 'Invalid casual leave balance' });
@@ -616,6 +623,11 @@ router.patch('/users/:id', requireRoles(...USER_ACCOUNT_ROLES), async (req, res,
       const n = parseInt(b.leave_annual_days, 10);
       if (Number.isNaN(n) || n < 0) return res.status(400).json({ error: 'Invalid annual leave balance' });
       annualDays = n;
+    }
+    if (b.leave_unpaid_days != null && b.leave_unpaid_days !== '') {
+      const n = parseInt(b.leave_unpaid_days, 10);
+      if (Number.isNaN(n) || n < 0) return res.status(400).json({ error: 'Invalid unpaid leave balance' });
+      unpaidDays = n;
     }
 
     let staffCode = existing.staff_code || null;
@@ -650,10 +662,11 @@ router.patch('/users/:id', requireRoles(...USER_ACCOUNT_ROLES), async (req, res,
          salary_change_status = $12,
          leave_casual_days = $13,
          leave_annual_days = $14,
-         staff_code = $15,
-         manager_id = $16,
+         leave_unpaid_days = $15,
+         staff_code = $16,
+         manager_id = $17,
          updated_at = now()
-       WHERE id = $17
+       WHERE id = $18
        RETURNING ${STAFF_SELECT}`,
       [
         b.full_name ?? null,
@@ -670,6 +683,7 @@ router.patch('/users/:id', requireRoles(...USER_ACCOUNT_ROLES), async (req, res,
         salaryStatus,
         casualDays,
         annualDays,
+        unpaidDays,
         staffCode,
         nextManagerId,
         req.params.id,

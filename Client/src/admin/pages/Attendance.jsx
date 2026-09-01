@@ -7,13 +7,14 @@ import Modal from '../components/ui/Modal';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import { ROLE_LABELS } from '../utils/permissions';
 import { currency } from '../utils/formatters';
-import { computeAttendanceAmount } from '../utils/hrPolicy';
+import { computeAttendanceAmount, LEAVE_TYPE_LABELS } from '../utils/hrPolicy';
 
 const CELL_W = 36;
 const STATUS_META = {
   on_time: { label: 'On time', className: 'bg-emerald-500 hover:bg-emerald-600' },
   late: { label: 'Late', className: 'bg-amber-400 hover:bg-amber-500' },
   no_show: { label: 'No show', className: 'bg-red-500 hover:bg-red-600' },
+  holiday: { label: 'Holiday', className: 'bg-blue-500 cursor-default' },
 };
 
 function currentMonthIso() {
@@ -144,6 +145,7 @@ export default function Attendance() {
 
   function openCell(person, date) {
     const cell = cells[cellKey(person.id, date)];
+    if (cell?.status === 'holiday') return;
     setDeductionTouched(false);
     setForm(emptyForm(person, date, cell));
     setTip(null);
@@ -234,6 +236,9 @@ export default function Attendance() {
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="h-3 w-3 rounded-sm bg-red-500" /> No show
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-3 w-3 rounded-sm bg-blue-500" /> Holiday
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="h-3 w-3 rounded-sm border border-slate-200 bg-white" /> Empty
@@ -328,9 +333,20 @@ export default function Attendance() {
                 Status:{' '}
                 <span className="font-medium">{STATUS_META[tip.cell.status]?.label || tip.cell.status}</span>
               </div>
-              <div>Check-in: {tip.cell.check_in || '—'}</div>
-              <div>Check-out: {tip.cell.check_out || '—'}</div>
-              <div>Deduction: {currency(tip.cell.deduction_amount || 0)}</div>
+              {tip.cell.status === 'holiday' ? (
+                <div>
+                  {LEAVE_TYPE_LABELS[tip.cell.leave_type] || tip.cell.leave_type || 'Approved holiday'}
+                  {tip.cell.start_date && tip.cell.end_date && tip.cell.start_date !== tip.cell.end_date
+                    ? ` · ${tip.cell.start_date} → ${tip.cell.end_date}`
+                    : ''}
+                </div>
+              ) : (
+                <>
+                  <div>Check-in: {tip.cell.check_in || '—'}</div>
+                  <div>Check-out: {tip.cell.check_out || '—'}</div>
+                  <div>Deduction: {currency(tip.cell.deduction_amount || 0)}</div>
+                </>
+              )}
             </div>
           ) : (
             <div className="mt-2 text-soul-muted">No attendance recorded. Click to edit.</div>
@@ -363,7 +379,9 @@ export default function Attendance() {
             <div>
               <label className="label">Status</label>
               <div className="grid grid-cols-3 gap-2">
-                {Object.entries(STATUS_META).map(([value, meta]) => (
+                {Object.entries(STATUS_META)
+                  .filter(([value]) => value !== 'holiday')
+                  .map(([value, meta]) => (
                   <button
                     key={value}
                     type="button"

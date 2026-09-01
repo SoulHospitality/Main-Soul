@@ -9,6 +9,7 @@ import { getRoleTheme } from '../utils/roleTheme';
 import { formatDate, formatDateTime } from '../utils/formatters';
 import { getPasswordRuleChecks, passwordPolicyMessage } from '../utils/passwordRules';
 import PasswordChecklist from '../../components/auth/PasswordChecklist';
+import { LEAVE_TYPE_LABELS, requestableLeaveTypes } from '../utils/hrPolicy';
 
 export default function Profile() {
   const { user, refreshUser } = useAuth();
@@ -61,7 +62,12 @@ export default function Profile() {
       qc.invalidateQueries({ queryKey: ['hr-leave-requests'] });
       qc.invalidateQueries({ queryKey: ['hr-my-leave'] });
       toast.success('Holiday request sent');
-      setLeaveForm({ leave_type: 'casual', start_date: '', end_date: '', reason: '' });
+      setLeaveForm({
+        leave_type: leaveSnap?.can_request_holidays === false ? 'unpaid' : 'casual',
+        start_date: '',
+        end_date: '',
+        reason: '',
+      });
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Could not submit request'),
   });
@@ -87,12 +93,13 @@ export default function Profile() {
   });
 
   const submitLeave = () => {
+    const leaveType = leaveSnap?.can_request_holidays === false ? 'unpaid' : leaveForm.leave_type;
     if (!leaveForm.start_date) {
       toast.error('Choose a date');
       return;
     }
-    if (leaveForm.leave_type === 'early_leave') {
-      leaveMutation.mutate({ ...leaveForm, end_date: leaveForm.start_date });
+    if (leaveType === 'early_leave') {
+      leaveMutation.mutate({ ...leaveForm, leave_type: leaveType, end_date: leaveForm.start_date });
       return;
     }
     if (!leaveForm.end_date) {
@@ -103,7 +110,7 @@ export default function Profile() {
       toast.error('End date must be on or after the start date');
       return;
     }
-    leaveMutation.mutate(leaveForm);
+    leaveMutation.mutate({ ...leaveForm, leave_type: leaveType });
   };
 
   const changePwMutation = useMutation({
@@ -188,15 +195,17 @@ export default function Profile() {
           </div>
           <p className="text-sm text-soul-muted mb-4">
             Casual: before the 11:00 shift. Annual: at least 7 days ahead. Early leave: max 2 per year.
+            Unpaid leave is available from day one and does not need holiday access.
           </p>
           {leaveSnap && !leaveSnap.can_request_holidays ? (
             <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mb-4">
-              Holiday requests open automatically after 6 months in the system, or when HR grants access.
+              Paid holidays (casual, annual, early leave) open after 6 months, or when HR grants access.
+              You can still request unpaid leave.
               {leaveSnap.tenure_months != null ? ` Current tenure: ${leaveSnap.tenure_months} months.` : ''}
             </p>
           ) : null}
           {leaveSnap && (
-            <div className="mb-4 grid grid-cols-3 gap-2 text-center">
+            <div className="mb-4 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
               <div className="rounded-xl border border-soul-line px-2 py-2">
                 <div className="text-[10px] uppercase text-soul-muted">Casual</div>
                 <div className="font-semibold text-soul-blue">{leaveSnap.casual_available}</div>
@@ -206,6 +215,10 @@ export default function Profile() {
                 <div className="font-semibold text-soul-blue">{leaveSnap.annual_available}</div>
               </div>
               <div className="rounded-xl border border-soul-line px-2 py-2">
+                <div className="text-[10px] uppercase text-soul-muted">Unpaid</div>
+                <div className="font-semibold text-soul-blue">{leaveSnap.unpaid_available}</div>
+              </div>
+              <div className="rounded-xl border border-soul-line px-2 py-2">
                 <div className="text-[10px] uppercase text-soul-muted">Early leave</div>
                 <div className="font-semibold text-soul-blue">
                   {leaveSnap.early_leave_remaining}/{leaveSnap.early_leave_max}
@@ -213,19 +226,20 @@ export default function Profile() {
               </div>
             </div>
           )}
-          {leaveSnap?.can_request_holidays !== false && (
           <div className="space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="label">Type</label>
                 <select
                   className="input"
-                  value={leaveForm.leave_type}
+                  value={leaveSnap?.can_request_holidays === false ? 'unpaid' : leaveForm.leave_type}
                   onChange={(e) => setLeaveForm((f) => ({ ...f, leave_type: e.target.value }))}
                 >
-                  <option value="casual">Casual</option>
-                  <option value="annual">Annual</option>
-                  <option value="early_leave">Early leave</option>
+                  {requestableLeaveTypes(leaveSnap?.can_request_holidays !== false).map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div className="sm:col-span-2 grid grid-cols-2 gap-3">
@@ -278,7 +292,6 @@ export default function Profile() {
               {leaveMutation.isPending ? 'Sending…' : 'Send request'}
             </button>
           </div>
-          )}
           {Array.isArray(myLeave) && myLeave.length > 0 && (
             <div className="mt-5 border-t border-soul-line pt-4 space-y-2">
               {myLeave.slice(0, 8).map((r) => (
@@ -289,7 +302,7 @@ export default function Profile() {
                       {r.start_date !== r.end_date ? ` → ${formatDate(r.end_date)}` : ''}
                     </div>
                     <div className="text-xs text-soul-muted capitalize">
-                      {String(r.leave_type || '').replace('_', ' ')}
+                      {LEAVE_TYPE_LABELS[r.leave_type] || String(r.leave_type || '').replace('_', ' ')}
                       {r.reason ? ` · ${r.reason}` : ''}
                     </div>
                   </div>

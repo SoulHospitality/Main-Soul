@@ -177,6 +177,10 @@ function canRequestHolidays({ holiday_access, created_at }, now = new Date()) {
   return monthsBetween(created_at, now) >= HOLIDAY_ACCESS_MONTHS;
 }
 
+function leaveTypeRequiresHolidayAccess(leaveType) {
+  return String(leaveType || '').toLowerCase() !== 'unpaid';
+}
+
 const HR_TEAM_ROLES = ['hr', 'hr_supervisor'];
 
 function isHrTeamRole(role) {
@@ -729,6 +733,7 @@ module.exports = {
   HOLIDAY_ACCESS_MONTHS,
   monthsBetween,
   canRequestHolidays,
+  leaveTypeRequiresHolidayAccess,
   HR_TEAM_ROLES,
   isHrTeamRole,
   isHrActingOnSelf,

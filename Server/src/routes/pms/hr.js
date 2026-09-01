@@ -14,6 +14,7 @@ const {
   assertEarlyLeaveTiming,
   EARLY_LEAVE_MAX_PER_YEAR,
   canRequestHolidays,
+  leaveTypeRequiresHolidayAccess,
   monthsBetween,
   HR_TEAM_ROLES,
   assertCanEditStaffCompensation,
@@ -245,6 +246,7 @@ async function loadStaffForHr(staffUserId) {
     `SELECT id, role, full_name, staff_code, base_salary, created_at, manager_id,
             COALESCE(leave_casual_days, 0)::int AS leave_casual_days,
             COALESCE(leave_annual_days, 0)::int AS leave_annual_days,
+            COALESCE(leave_unpaid_days, 0)::int AS leave_unpaid_days,
             COALESCE(holiday_access, 'auto') AS holiday_access
      FROM staff_users WHERE id = $1`,
     [staffUserId]
@@ -288,6 +290,7 @@ async function leaveSnapshot(staffUserId) {
   const year = Number(cairoParts().date.slice(0, 4));
   const pendingCasual = await pendingLeaveDays(staffUserId, 'casual');
   const pendingAnnual = await pendingLeaveDays(staffUserId, 'annual');
+  const pendingUnpaid = await pendingLeaveDays(staffUserId, 'unpaid');
   const earlyUsed = await earlyLeaveUsed(staffUserId, year);
   return {
     staff_user_id: staff.id,
@@ -296,8 +299,10 @@ async function leaveSnapshot(staffUserId) {
     daily_rate: dailyRate(staff.base_salary),
     casual_balance: Number(staff.leave_casual_days) || 0,
     annual_balance: Number(staff.leave_annual_days) || 0,
+    unpaid_balance: Number(staff.leave_unpaid_days) || 0,
     casual_available: Math.max(0, (Number(staff.leave_casual_days) || 0) - pendingCasual),
     annual_available: Math.max(0, (Number(staff.leave_annual_days) || 0) - pendingAnnual),
+    unpaid_available: Math.max(0, (Number(staff.leave_unpaid_days) || 0) - pendingUnpaid),
     early_leave_used: earlyUsed,
     early_leave_remaining: Math.max(0, EARLY_LEAVE_MAX_PER_YEAR - earlyUsed),
     early_leave_max: EARLY_LEAVE_MAX_PER_YEAR,
@@ -1079,7 +1084,7 @@ router.post('/hr/leave-requests', async (req, res, next) => {
     const start = String(b.start_date || '').slice(0, 10);
     const end = String(b.end_date || start).slice(0, 10);
     const reason = String(b.reason || '').trim();
-    const allowed = new Set(['casual', 'annual', 'early_leave', 'sick']);
+    const allowed = new Set(['casual', 'annual', 'early_leave', 'sick', 'unpaid']);
     if (!allowed.has(leaveType)) {
       return res.status(400).json({ error: 'Invalid leave type' });
     }
@@ -1100,10 +1105,10 @@ router.post('/hr/leave-requests', async (req, res, next) => {
 
     const targetStaff = await loadStaffForHr(staffUserId);
     assertCanTargetBenefits(targetStaff);
-    if (!canRequestHolidays(targetStaff)) {
+    if (leaveTypeRequiresHolidayAccess(leaveType) && !canRequestHolidays(targetStaff)) {
       return res.status(403).json({
         error:
-          'Holiday requests are not enabled for this account yet. Access opens automatically after 6 months, or HR can grant it earlier.',
+          'Paid holiday requests are not enabled for this account yet. Access opens automatically after 6 months, or HR can grant it earlier. Unpaid leave can be requested now.',
       });
     }
 
@@ -1111,6 +1116,9 @@ router.post('/hr/leave-requests', async (req, res, next) => {
     if (leaveType === 'casual') assertCasualTiming(start, now);
     if (leaveType === 'annual') assertAnnualNotice(start, now);
     if (leaveType === 'early_leave') assertEarlyLeaveTiming(start, now);
+    if (leaveType === 'unpaid' && start < cairoParts(now).date) {
+      return res.status(400).json({ error: 'Unpaid leave cannot be requested for a past date' });
+    }
 
     const snap = await leaveSnapshot(staffUserId);
     if (leaveType === 'casual' && days > snap.casual_available) {
@@ -1121,6 +1129,11 @@ router.post('/hr/leave-requests', async (req, res, next) => {
     if (leaveType === 'annual' && days > snap.annual_available) {
       return res.status(400).json({
         error: `Not enough annual leave (${snap.annual_available} day${snap.annual_available === 1 ? '' : 's'} left)`,
+      });
+    }
+    if (leaveType === 'unpaid' && days > snap.unpaid_available) {
+      return res.status(400).json({
+        error: `Not enough unpaid leave (${snap.unpaid_available} day${snap.unpaid_available === 1 ? '' : 's'} left)`,
       });
     }
     if (leaveType === 'early_leave' && days > snap.early_leave_remaining) {
@@ -1172,8 +1185,13 @@ router.post('/hr/leave-requests/:id/review', async (req, res, next) => {
       actor: req.user,
       body: req.body,
       onApprove: async (client, row) => {
-        if (row.leave_type === 'casual' || row.leave_type === 'annual') {
-          const col = row.leave_type === 'casual' ? 'leave_casual_days' : 'leave_annual_days';
+        if (row.leave_type === 'casual' || row.leave_type === 'annual' || row.leave_type === 'unpaid') {
+          const col =
+            row.leave_type === 'casual'
+              ? 'leave_casual_days'
+              : row.leave_type === 'annual'
+                ? 'leave_annual_days'
+                : 'leave_unpaid_days';
           const { rows: staffRows } = await client.query(
             `SELECT ${col} AS balance FROM staff_users WHERE id = $1 FOR UPDATE`,
             [row.staff_user_id]
@@ -1502,6 +1520,15 @@ router.get('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
        ORDER BY id`,
       [from, to]
     );
+    const { rows: leaveRows } = await query(
+      `SELECT staff_user_id, leave_type,
+              start_date::text AS start_date, end_date::text AS end_date
+       FROM staff_leave_requests
+       WHERE status = 'approved'
+         AND start_date < $2::date
+         AND end_date >= $1::date`,
+      [from, to]
+    );
 
     const cells = {};
     for (const row of deductionRows) {
@@ -1509,6 +1536,24 @@ router.get('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
     }
     for (const row of attendanceRows) {
       cells[cellKey(row.staff_user_id, row.work_date)] = mapAttendanceRow(row);
+    }
+    for (const leave of leaveRows) {
+      for (const date of days) {
+        if (!dateCoveredByRanges(date, [leave])) continue;
+        cells[cellKey(leave.staff_user_id, date)] = {
+          staff_user_id: leave.staff_user_id,
+          work_date: date,
+          status: 'holiday',
+          leave_type: leave.leave_type,
+          start_date: leave.start_date,
+          end_date: leave.end_date,
+          check_in: null,
+          check_out: null,
+          deduction_amount: 0,
+          notified: false,
+          notes: '',
+        };
+      }
     }
 
     res.json({
@@ -1539,6 +1584,16 @@ router.put('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
     const staff = await loadStaffForHr(staffUserId);
     if (!hasOfficeAttendance(staff.role)) {
       return res.status(400).json({ error: 'This role does not use office attendance' });
+    }
+    const { rows: holidayRows } = await query(
+      `SELECT id FROM staff_leave_requests
+       WHERE staff_user_id = $1 AND status = 'approved'
+         AND start_date <= $2::date AND end_date >= $2::date
+       LIMIT 1`,
+      [staff.id, date]
+    );
+    if (holidayRows[0]) {
+      return res.status(400).json({ error: 'This day is an approved holiday' });
     }
     if (b.clear === true || b.status === '' || b.status === 'clear') {
       await deleteAttendanceRecord(staff.id, date);

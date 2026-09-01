@@ -11,6 +11,7 @@ const {
   addDaysIso,
   EARLY_LEAVE_MAX_PER_YEAR,
   canRequestHolidays,
+  leaveTypeRequiresHolidayAccess,
   nextPayrollPeriod,
   dateCoveredByRanges,
   parseAttendanceRows,
@@ -80,6 +81,13 @@ describe('HR daily-rate deductions and leave rules', () => {
     );
     assert.equal(canRequestHolidays({ holiday_access: 'granted', created_at: now }, now), true);
     assert.equal(canRequestHolidays({ holiday_access: 'denied', created_at: created }, now), false);
+  });
+
+  it('lets staff request unpaid leave without holiday access', () => {
+    assert.equal(leaveTypeRequiresHolidayAccess('unpaid'), false);
+    assert.equal(leaveTypeRequiresHolidayAccess('casual'), true);
+    assert.equal(leaveTypeRequiresHolidayAccess('annual'), true);
+    assert.equal(leaveTypeRequiresHolidayAccess('early_leave'), true);
   });
 
   it('schedules approved loans on the first of next month', () => {

@@ -13,7 +13,21 @@ export const LEAVE_TYPE_LABELS = {
   sick: 'Sick leave',
   holiday: 'Holiday',
   day_off: 'Day off',
+  unpaid: 'Unpaid',
 };
+
+export function requestableLeaveTypes(canRequestHolidays) {
+  const unpaid = { value: 'unpaid', label: 'Unpaid' };
+  if (canRequestHolidays) {
+    return [
+      { value: 'casual', label: 'Casual' },
+      { value: 'annual', label: 'Annual' },
+      { value: 'early_leave', label: 'Early leave' },
+      unpaid,
+    ];
+  }
+  return [unpaid];
+}
 
 export function computeAttendanceAmount(baseSalary, { status, check_in, notified } = {}) {
   const rate = dailyRate(baseSalary);
