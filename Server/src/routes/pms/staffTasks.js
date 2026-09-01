@@ -1,7 +1,7 @@
 const express = require('express');
 const { query } = require('../../config/db');
 const { TASK_ASSIGNEE_ROLES, isTaskAssigneeRole } = require('../../lib/staffTasks');
-const { sendStaffTaskAssignedEmail } = require('../../services/staffTaskEmails');
+const { sendStaffTaskAssignedEmail, staffEmailFromUser } = require('../../services/staffTaskEmails');
 const { logAudit } = require('../../lib/audit');
 
 const router = express.Router();
@@ -79,7 +79,7 @@ router.post('/staff-tasks', async (req, res, next) => {
     }
 
     const { rows: assignees } = await query(
-      `SELECT id, full_name, email, role, manager_id, is_active
+      `SELECT id, full_name, email, username, role, manager_id, is_active
        FROM staff_users WHERE id = $1`,
       [assigneeId]
     );
@@ -92,6 +92,12 @@ router.post('/staff-tasks', async (req, res, next) => {
     }
     if (String(assignee.manager_id) !== String(req.user.id)) {
       return res.status(403).json({ error: 'Only this person\'s direct manager can add a task' });
+    }
+    const assigneeEmail = staffEmailFromUser(assignee);
+    if (!assigneeEmail) {
+      return res.status(400).json({
+        error: 'This person has no email on Users. Add the email there, then send the task.',
+      });
     }
 
     const { rows } = await query(
@@ -110,17 +116,21 @@ router.post('/staff-tasks', async (req, res, next) => {
       details: { assignee_id: assigneeId, title, deadline },
     });
 
+    let emailSent = false;
+    let emailError = null;
     try {
       await sendStaffTaskAssignedEmail({
-        to: assignee.email,
+        to: assigneeEmail,
         assigneeName: assignee.full_name,
         managerName: req.user.full_name,
         title,
         description,
         deadline,
       });
+      emailSent = true;
     } catch (mailErr) {
-      console.error('[staff-tasks] email failed', mailErr.message);
+      emailError = mailErr.message || 'Could not send email';
+      console.error('[staff-tasks] email failed', emailError);
     }
 
     res.status(201).json({
@@ -128,6 +138,9 @@ router.post('/staff-tasks', async (req, res, next) => {
       assignee_name: assignee.full_name,
       assignee_role: assignee.role,
       created_by_name: req.user.full_name,
+      email_to: assigneeEmail,
+      email_sent: emailSent,
+      email_error: emailError,
     });
   } catch (e) {
     next(e);

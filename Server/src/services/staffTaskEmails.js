@@ -1,4 +1,4 @@
-const { sendEmail } = require('./email');
+const { sendEmail, getResendClient } = require('./email');
 
 function escapeHtml(value) {
   return String(value || '')
@@ -16,17 +16,39 @@ function formatDeadline(value) {
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+function isUsableStaffEmail(value) {
+  const email = String(value || '').trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return '';
+  if (email.endsWith('.local')) return '';
+  return email;
+}
+
+function staffEmailFromUser(user) {
+  return isUsableStaffEmail(user?.email) || isUsableStaffEmail(user?.username) || '';
+}
+
+function tasksPageUrl() {
+  const base = String(process.env.ADMIN_URL || process.env.FRONTEND_URL || 'https://soulhospitality.co/admin').replace(
+    /\/$/,
+    ''
+  );
+  if (base.endsWith('/admin')) return `${base}/tasks`;
+  return `${base}/admin/tasks`;
+}
+
 async function sendStaffTaskAssignedEmail({ to, assigneeName, managerName, title, description, deadline }) {
-  const email = String(to || '').trim();
+  const email = staffEmailFromUser({ email: to }) || isUsableStaffEmail(to);
   if (!email) {
-    console.warn('[email] No staff email on task — skip task email');
-    return null;
+    const err = new Error('This person has no email on Users');
+    err.status = 400;
+    throw err;
   }
 
   const name = assigneeName || 'there';
   const subject = `New task: ${title}`;
   const deadlineLabel = formatDeadline(deadline);
   const body = String(description || '').trim() || 'No description provided.';
+  const openUrl = tasksPageUrl();
 
   const text = [
     `Hi ${name},`,
@@ -38,7 +60,7 @@ async function sendStaffTaskAssignedEmail({ to, assigneeName, managerName, title
     '',
     body,
     '',
-    'Open Tasks in the Soul PMS to review it.',
+    `Open it here: ${openUrl}`,
     'Soul Hospitality',
   ].join('\n');
 
@@ -59,11 +81,20 @@ async function sendStaffTaskAssignedEmail({ to, assigneeName, managerName, title
         </tr>
       </table>
       <p style="margin:16px 0 0;white-space:pre-wrap;line-height:1.5">${escapeHtml(body)}</p>
-      <p style="margin:24px 0 0;color:#5c6b83;font-size:13px">Soul Hospitality — open Tasks in the PMS to review it.</p>
+      <p style="margin:24px 0 0">
+        <a href="${escapeHtml(openUrl)}" style="display:inline-block;background:#283f5e;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-size:14px">
+          Open Tasks
+        </a>
+      </p>
+      <p style="margin:24px 0 0;color:#5c6b83;font-size:13px">Soul Hospitality</p>
     </div>
   `;
 
-  return sendEmail({ to: email, subject, html, text });
+  const result = await sendEmail({ to: email, subject, html, text });
+  if (result?.id === 'dev-log' && !getResendClient() && !process.env.SMTP_HOST && process.env.NODE_ENV === 'production') {
+    throw new Error('Email is not configured. Set RESEND_API_KEY or SMTP_HOST.');
+  }
+  return { ...result, to: email };
 }
 
-module.exports = { sendStaffTaskAssignedEmail };
+module.exports = { sendStaffTaskAssignedEmail, staffEmailFromUser, isUsableStaffEmail };

@@ -41,9 +41,17 @@ export default function Tasks() {
 
   const createMutation = useMutation({
     mutationFn: (payload) => api.post('/staff-tasks', payload).then((r) => r.data),
-    onSuccess: () => {
+    onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['staff-tasks'] });
-      toast.success('Task sent');
+      if (data?.email_sent) {
+        toast.success(`Task sent · emailed ${data.email_to}`);
+      } else {
+        toast.success('Task saved');
+        toast.error(
+          data?.email_error ||
+            'Could not email the assignee. Check the email on their Users record.'
+        );
+      }
       setModalOpen(false);
       setForm(EMPTY_FORM);
     },
@@ -90,7 +98,7 @@ export default function Tasks() {
             {isTaskAssignee
               ? 'Tasks assigned to you by your manager. You will also receive them by email.'
               : canAdd
-                ? 'Assign a title, description, and deadline. Only you can add tasks for people who report to you.'
+                ? 'Assign a title, description, and deadline. They get an email at the address on their Users record.'
                 : 'You can add tasks only for Marketing and PR or Web Developer staff who report to you.'}
           </p>
         </div>
@@ -191,6 +199,9 @@ export default function Tasks() {
                 label: `${u.full_name} (${ROLE_LABELS[u.role] || u.role})`,
               }))}
             />
+            <p className="mt-1 text-[11px] text-slate-400">
+              The task email goes to the address saved on their Users record.
+            </p>
           </div>
           <div>
             <label className="label">Title *</label>
