@@ -147,4 +147,45 @@ router.post('/staff-tasks', async (req, res, next) => {
   }
 });
 
+router.delete('/staff-tasks/:id', async (req, res, next) => {
+  try {
+    if (isTaskAssigneeRole(req.user) && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only the manager who assigned this task can delete it' });
+    }
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id < 1) {
+      return res.status(400).json({ error: 'Invalid task' });
+    }
+
+    const { rows } = await query(
+      `SELECT t.id, t.title, t.assignee_id, t.created_by, a.manager_id, a.full_name AS assignee_name
+       FROM staff_tasks t
+       JOIN staff_users a ON a.id = t.assignee_id
+       WHERE t.id = $1`,
+      [id]
+    );
+    const task = rows[0];
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+
+    const isAdmin = req.user.role === 'admin';
+    const isManager = String(task.manager_id) === String(req.user.id);
+    const isCreator = String(task.created_by) === String(req.user.id);
+    if (!isAdmin && !isManager && !isCreator) {
+      return res.status(403).json({ error: 'Only this person\'s direct manager can delete this task' });
+    }
+
+    await query(`DELETE FROM staff_tasks WHERE id = $1`, [id]);
+    await logAudit({
+      userId: req.user.id,
+      action: 'DELETE_STAFF_TASK',
+      entityType: 'staff_task',
+      entityId: task.id,
+      details: { assignee_id: task.assignee_id, title: task.title },
+    });
+    res.json({ ok: true, id: task.id });
+  } catch (e) {
+    next(e);
+  }
+});
+
 module.exports = router;

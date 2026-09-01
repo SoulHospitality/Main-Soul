@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarDays, ListTodo, Plus } from 'lucide-react';
+import { CalendarDays, ListTodo, Plus, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import { usePermissions } from '../hooks/usePermissions';
 import { ROLE_LABELS } from '../utils/permissions';
 import Modal from '../components/ui/Modal';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
 import SearchableSelect from '../components/ui/SearchableSelect';
@@ -25,6 +26,7 @@ export default function Tasks() {
   const { canAssignStaffTasks, isTaskAssignee } = usePermissions();
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [deleteTask, setDeleteTask] = useState(null);
 
   const { data: tasks = [], isLoading } = useQuery({
     queryKey: ['staff-tasks'],
@@ -56,6 +58,16 @@ export default function Tasks() {
       setForm(EMPTY_FORM);
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Could not add task'),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id) => api.delete(`/staff-tasks/${id}`).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['staff-tasks'] });
+      toast.success('Task deleted');
+      setDeleteTask(null);
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Could not delete task'),
   });
 
   const openAdd = () => {
@@ -146,15 +158,27 @@ export default function Tasks() {
                       <p className="text-xs text-soul-muted mt-0.5">From {task.created_by_name}</p>
                     )}
                   </div>
-                  <span
-                    className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg ${
-                      overdue ? 'bg-rose-50 text-rose-800' : 'bg-slate-100 text-slate-700'
-                    }`}
-                  >
-                    <CalendarDays className="w-3.5 h-3.5" />
-                    {formatDate(task.deadline)}
-                    {overdue ? ' · overdue' : ''}
-                  </span>
+                  <div className="flex items-start gap-2 shrink-0">
+                    <span
+                      className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg ${
+                        overdue ? 'bg-rose-50 text-rose-800' : 'bg-slate-100 text-slate-700'
+                      }`}
+                    >
+                      <CalendarDays className="w-3.5 h-3.5" />
+                      {formatDate(task.deadline)}
+                      {overdue ? ' · overdue' : ''}
+                    </span>
+                    {canAssignStaffTasks ? (
+                      <button
+                        type="button"
+                        className="rounded-lg p-1.5 text-soul-muted hover:bg-rose-50 hover:text-rose-700"
+                        title="Delete task"
+                        onClick={() => setDeleteTask(task)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
                 {task.description ? (
                   <p className="mt-3 text-sm text-slate-600 whitespace-pre-wrap">{task.description}</p>
@@ -232,6 +256,21 @@ export default function Tasks() {
           </div>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={!!deleteTask}
+        onClose={() => setDeleteTask(null)}
+        title="Delete task"
+        danger
+        confirmText="Delete"
+        loading={deleteMutation.isPending}
+        message={
+          deleteTask
+            ? `Remove “${deleteTask.title}”${deleteTask.assignee_name ? ` for ${deleteTask.assignee_name}` : ''}? This cannot be undone.`
+            : ''
+        }
+        onConfirm={() => deleteMutation.mutate(deleteTask.id)}
+      />
     </div>
   );
 }
