@@ -17,6 +17,7 @@ function initSocket(server) {
       (role === 'reservations' ||
         role === 'reservations_web' ||
         role === 'reservations_manual' ||
+        role === 'reservations_manager' ||
         role === 'admin' ||
         role === 'finance' ||
         role === 'sales' ||

@@ -3,8 +3,11 @@ const { query } = require('../../config/db');
 const { requireRoles } = require('../../middleware/auth');
 const { logAudit } = require('../../lib/audit');
 const { buildPricingRecommendation } = require('../../lib/pricingRecommend');
+const { UNIT_ACQUISITION_ROLES } = require('../../lib/unitAcquisition');
 
 const router = express.Router();
+
+const ACQUISITION_LEAD_ROLES = ['resale', ...UNIT_ACQUISITION_ROLES];
 
 const ACQUISITION_STATUSES = ['pending', 'signed', 'rejected'];
 
@@ -20,7 +23,7 @@ function normalizeLeadStatus(value, fallback = 'pending') {
 }
 
 
-router.get('/acquisition-leads', requireRoles('admin', 'resale'), async (_req, res, next) => {
+router.get('/acquisition-leads', requireRoles(...ACQUISITION_LEAD_ROLES), async (_req, res, next) => {
   try {
     const { rows } = await query(
       `SELECT * FROM acquisition_leads ORDER BY created_at DESC LIMIT 200`
@@ -31,7 +34,7 @@ router.get('/acquisition-leads', requireRoles('admin', 'resale'), async (_req, r
   }
 });
 
-router.post('/acquisition-leads', requireRoles('admin', 'resale'), async (req, res, next) => {
+router.post('/acquisition-leads', requireRoles(...ACQUISITION_LEAD_ROLES), async (req, res, next) => {
   try {
     const b = req.body;
     if (!b.title) return res.status(400).json({ error: 'title required' });
@@ -76,7 +79,7 @@ router.post('/acquisition-leads', requireRoles('admin', 'resale'), async (req, r
   }
 });
 
-router.patch('/acquisition-leads/:id', requireRoles('admin', 'resale'), async (req, res, next) => {
+router.patch('/acquisition-leads/:id', requireRoles(...ACQUISITION_LEAD_ROLES), async (req, res, next) => {
   try {
     const b = req.body;
     const requestedStatus = b.status ?? b.stage;
@@ -141,7 +144,7 @@ router.patch('/acquisition-leads/:id', requireRoles('admin', 'resale'), async (r
   }
 });
 
-router.delete('/acquisition-leads/:id', requireRoles('admin', 'resale'), async (req, res, next) => {
+router.delete('/acquisition-leads/:id', requireRoles(...ACQUISITION_LEAD_ROLES), async (req, res, next) => {
   try {
     const { rows } = await query(
       `DELETE FROM acquisition_leads WHERE id = $1 RETURNING id, owner_name, owner_email`,
@@ -163,7 +166,7 @@ router.delete('/acquisition-leads/:id', requireRoles('admin', 'resale'), async (
 
 router.post(
   '/acquisition-leads/:id/create-unit',
-  requireRoles('admin', 'resale'),
+  requireRoles(...ACQUISITION_LEAD_ROLES),
   async (req, res, next) => {
     try {
       const { createDraftUnitFromLead } = require('../../lib/leadToUnit');
@@ -195,7 +198,7 @@ router.post(
 
 router.get(
   '/acquisition-leads/:id/negotiations',
-  requireRoles('admin', 'resale'),
+  requireRoles(...ACQUISITION_LEAD_ROLES),
   async (req, res, next) => {
     try {
       const { rows } = await query(
@@ -212,7 +215,7 @@ router.get(
 
 router.post(
   '/acquisition-leads/:id/negotiations',
-  requireRoles('admin', 'resale'),
+  requireRoles(...ACQUISITION_LEAD_ROLES),
   async (req, res, next) => {
     try {
       const b = req.body;
@@ -251,7 +254,7 @@ router.post(
 
 router.get(
   '/acquisition-leads/:id/contracts',
-  requireRoles('admin', 'resale'),
+  requireRoles(...ACQUISITION_LEAD_ROLES),
   async (req, res, next) => {
     try {
       const { rows } = await query(
@@ -267,7 +270,7 @@ router.get(
 
 router.post(
   '/acquisition-leads/:id/contracts',
-  requireRoles('admin', 'resale'),
+  requireRoles(...ACQUISITION_LEAD_ROLES),
   async (req, res, next) => {
     try {
       const b = req.body;

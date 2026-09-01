@@ -5,6 +5,7 @@ export function defaultAdminPage(role) {
     case 'reservations':
     case 'reservations_web':
     case 'reservations_manual':
+    case 'reservations_manager':
       return `${A}/reservations`;
     case 'operations':
     case 'operations_supervisor':
@@ -14,6 +15,9 @@ export function defaultAdminPage(role) {
       return `${A}/housekeeping`;
     case 'resale':
       return `${A}/units-for-sale`;
+    case 'unit_acquisition_agent':
+    case 'unit_acquisition_manager':
+      return `${A}/units`;
     case 'finance':
       return `${A}/financial-system`;
     case 'hr':

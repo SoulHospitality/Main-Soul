@@ -9,6 +9,7 @@ import Badge from '../components/ui/Badge';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { currency, formatDate, nightsText, BOOKING_SOURCES, unitDisplay, unitSelectLabel } from '../utils/formatters';
 import { usePermissions } from '../hooks/usePermissions';
+import { salesUsersForActor } from '../utils/permissions';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import AdminReservationDrawer from '../components/AdminReservationDrawer';
 import ManualReservationForm, {
@@ -857,7 +858,7 @@ function BulkPriceModal({ open, onClose, unitCount, onSave, saving }) {
 export default function Schedule() {
   const qc = useQueryClient();
   const { user } = useAuth();
-  const { canEditSchedulePricing, canManageReservations, isManualReservations, isWebsiteReservations, isAdmin } = usePermissions();
+  const { canEditSchedulePricing, canManageReservations, isManualReservations, isWebsiteReservations, isReservationsManager, isAdmin } = usePermissions();
   const TODAY = todayStr();
   const TOMORROW = addDays(TODAY, 1);
   const now = new Date();
@@ -1036,6 +1037,7 @@ export default function Schedule() {
   const { data: projectsList = [] } = useQuery({ queryKey: ['projects'], queryFn: () => api.get('/units/projects').then(r => r.data) });
   const { data: unitsList     = [] } = useQuery({ queryKey: ['units'],    queryFn: () => api.get('/units').then(r => r.data) });
   const { data: usersList     = [] } = useQuery({ queryKey: ['users-sales'], queryFn: () => api.get('/users/sales').then(r => r.data) });
+  const salesUsers = useMemo(() => salesUsersForActor(usersList, user), [usersList, user]);
 
   
   const priceMutation = useMutation({
@@ -1142,7 +1144,7 @@ export default function Schedule() {
   const openCreateDrawer = () => {
     setCreateForm({
       ...EMPTY_MANUAL_RESERVATION_FORM,
-      sales_person_id: (isManualReservations || isWebsiteReservations) && !isAdmin && user?.id ? String(user.id) : '',
+      sales_person_id: (isManualReservations || isWebsiteReservations || isReservationsManager) && !isAdmin && user?.id ? String(user.id) : '',
       payment_method: 'cash',
     });
     setCreateProof(null);
@@ -2237,7 +2239,7 @@ export default function Schedule() {
         editForm={editForm}
         setEditForm={setEditForm}
         unitsList={unitsList}
-        usersList={usersList}
+        usersList={salesUsers}
         saving={editMutation.isPending}
         onSave={() => editMutation.mutate()}
       />
@@ -2278,7 +2280,7 @@ export default function Schedule() {
           form={createForm}
           setForm={setCreateForm}
           units={unitsList}
-          users={usersList}
+          users={salesUsers}
           transferProof={createProof}
           onTransferProofChange={setCreateProof}
           lockSalesPerson={(isManualReservations || isWebsiteReservations) && !isAdmin}

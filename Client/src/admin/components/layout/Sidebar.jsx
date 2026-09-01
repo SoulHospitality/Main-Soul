@@ -22,6 +22,7 @@ import {
   ShieldCheck,
   Receipt,
   FileBarChart2,
+  Trophy,
 } from 'lucide-react';
 
 const NAV_SECTIONS = [
@@ -40,16 +41,19 @@ const NAV_SECTIONS = [
       { path: '/admin/units-for-sale', label: 'Units for Sale', icon: Building2, page: 'units_sale', resaleLabel: 'Units' },
       { path: '/admin/projects', label: 'Destinations', icon: Building, page: 'projects' },
       { path: '/admin/acquisition', label: 'Owner leads', icon: Briefcase, page: 'acquisition', resaleLabel: 'Owners requests' },
+      { path: '/admin/acquisition-audit', label: 'Audit', icon: ClipboardList, page: 'acquisition_audit' },
+      { path: '/admin/users', label: 'Owners', icon: UserCircle, page: 'owners', roles: ['unit_acquisition_agent', 'unit_acquisition_manager'] },
     ],
   },
   {
     id: 'bookings',
     label: 'Bookings',
     items: [
-      { path: '/admin/reservations', label: 'Reservations', icon: CalendarDays, page: 'reservations', agentLabel: 'My Reservations' },
+      { path: '/admin/reservations', label: 'Reservations', icon: CalendarDays, page: 'reservations', agentLabel: 'My Reservations', managerLabel: 'Team Reservations' },
       { path: '/admin/website-bookings', label: 'Website Requests', icon: Globe, page: 'website_bookings', badge: 'website_pending' },
       { path: '/admin/schedule', label: 'Schedule', icon: CalendarRange, page: 'schedule' },
       { path: '/admin/calendar-sync', label: 'Calendar sync', icon: Link2, page: 'calendar_sync' },
+      { path: '/admin/performance', label: 'Performance', icon: Trophy, page: 'performance' },
     ],
   },
   {
@@ -174,7 +178,11 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
 
   const visibleSections = NAV_SECTIONS.map((section) => ({
     ...section,
-    items: section.items.filter((item) => canAccess(item.page)),
+    items: section.items.filter(
+      (item) =>
+        canAccess(item.page) &&
+        (!item.roles || item.roles.includes(user?.role))
+    ),
   })).filter((section) => section.items.length);
 
   const handleNavClick = () => {
@@ -230,6 +238,8 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
                   const label =
                     user?.role === 'resale' && item.resaleLabel
                       ? item.resaleLabel
+                      : item.managerLabel && user?.role === 'reservations_manager'
+                        ? item.managerLabel
                       : item.agentLabel &&
                           (user?.role === 'reservations_web' ||
                             user?.role === 'reservations_manual' ||

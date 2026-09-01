@@ -41,9 +41,11 @@ const OwnerPayoutsPage = lazy(() =>
   import('./pages/OwnerPortalPages').then((m) => ({ default: m.OwnerPayoutsPage }))
 );
 const AcquisitionPipeline = lazy(() => import('./pages/AcquisitionPipeline'));
+const AcquisitionAudit = lazy(() => import('./pages/AcquisitionAudit'));
 const OwnerDateBlocks = lazy(() => import('./pages/OwnerDateBlocks'));
 const PromoCodes = lazy(() => import('./pages/PromoCodes'));
 const Reports = lazy(() => import('./pages/Reports'));
+const Performance = lazy(() => import('./pages/Performance'));
 
 function PageFallback() {
   return (
@@ -62,7 +64,10 @@ function ProtectedRoute({ children, page, allowFirstLogin }) {
     return <Navigate to={ADMIN_CHANGE_PASSWORD} replace />;
   }
 
-  if (page && !canAccess(user, page)) return <Navigate to={defaultAdminPage(user.role)} replace />;
+  const pages = Array.isArray(page) ? page : page ? [page] : [];
+  if (pages.length && !pages.some((p) => canAccess(user, p))) {
+    return <Navigate to={defaultAdminPage(user.role)} replace />;
+  }
 
   const body = <Suspense fallback={<PageFallback />}>{children}</Suspense>;
   if (allowFirstLogin) return body;
@@ -121,6 +126,7 @@ function AppRoutes() {
       <Route path="website-bookings/history" element={<ProtectedRoute page="website_bookings"><WebsiteBookingHistoryPage /></ProtectedRoute>} />
       <Route path="schedule" element={<ProtectedRoute page="schedule"><Schedule /></ProtectedRoute>} />
       <Route path="calendar-sync" element={<ProtectedRoute page="calendar_sync"><CalendarSync /></ProtectedRoute>} />
+      <Route path="performance" element={<ProtectedRoute page="performance"><Performance /></ProtectedRoute>} />
 
       
       <Route path="financial-system" element={<ProtectedRoute page="financial_system"><FinancialSystem /></ProtectedRoute>} />
@@ -152,7 +158,7 @@ function AppRoutes() {
       <Route path="ops/checkins-today" element={<LegacyOpsRedirect tab="today" />} />
       <Route path="ops/checkins-history" element={<LegacyOpsRedirect tab="history" />} />
       <Route path="ops/checkin-comments" element={<LegacyOpsRedirect tab="comments" />} />
-      <Route path="users" element={<ProtectedRoute page="users"><Users /></ProtectedRoute>} />
+      <Route path="users" element={<ProtectedRoute page={['users', 'owners']}><Users /></ProtectedRoute>} />
       <Route path="payroll" element={<ProtectedRoute page="payroll"><Payrolls /></ProtectedRoute>} />
       <Route path="deductions" element={<ProtectedRoute page="deductions"><Deductions /></ProtectedRoute>} />
       <Route path="holiday-requests" element={<ProtectedRoute page="holiday_requests"><HolidayRequests /></ProtectedRoute>} />
@@ -164,6 +170,7 @@ function AppRoutes() {
       <Route path="payslip" element={<ProtectedRoute page="payslip"><Payslip /></ProtectedRoute>} />
       <Route path="promo-codes" element={<ProtectedRoute page="promo_codes"><PromoCodes /></ProtectedRoute>} />
       <Route path="acquisition" element={<ProtectedRoute page="acquisition"><AcquisitionPipeline /></ProtectedRoute>} />
+      <Route path="acquisition-audit" element={<ProtectedRoute page="acquisition_audit"><AcquisitionAudit /></ProtectedRoute>} />
       <Route path="owner" element={<ProtectedRoute page="owner"><OwnerDashboard /></ProtectedRoute>} />
       <Route path="owner/reservations" element={<ProtectedRoute page="owner_reservations"><OwnerReservations /></ProtectedRoute>} />
       <Route path="owner/statement" element={<ProtectedRoute page="owner_statement"><OwnerStatement /></ProtectedRoute>} />

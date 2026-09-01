@@ -322,7 +322,7 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.equal(isHrActingOnSelf(supervisor, 10), true);
     assert.equal(isHrActingOnSelf(hr, 11), true);
     assert.doesNotThrow(() => assertCanEditStaffCompensation(supervisor, 11));
-    assert.throws(() => assertCanEditStaffCompensation(supervisor, 10), /Only an admin/);
-    assert.throws(() => assertCanEditStaffCompensation(hr, 12), /HR Supervisor or admin/);
+    assert.throws(() => assertCanEditStaffCompensation(supervisor, 10), /Only a CEO/);
+    assert.throws(() => assertCanEditStaffCompensation(hr, 12), /HR Manager or CEO/);
   });
 });

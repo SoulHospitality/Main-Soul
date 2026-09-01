@@ -118,8 +118,8 @@ export default function HolidayRequests() {
         <h1 className="page-title mt-1">Holiday requests</h1>
         <p className="page-subtitle">
           {canQueue
-            ? 'Agents need their manager and the HR Supervisor. HR needs the HR Supervisor. HR Supervisor requests go to their manager. Admins can accept or reject any request.'
-            : 'Request casual, annual, or early leave. Your manager and the HR Supervisor review it.'}
+            ? 'Agents need their manager and the HR Manager. HR needs the HR Manager. HR Manager requests go to their manager. The CEO can accept or reject any request.'
+            : 'Request casual, annual, or early leave. Your manager and the HR Manager review it.'}
         </p>
       </div>
 

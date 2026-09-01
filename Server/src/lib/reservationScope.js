@@ -16,6 +16,10 @@ function isReservationsAgent(user) {
   return isReservationsTeam(user);
 }
 
+function isReservationsManager(user) {
+  return user?.role === 'reservations_manager';
+}
+
 function isWebsiteReservationsAgent(user) {
   return user?.role === 'reservations_web' || user?.role === 'reservations';
 }
@@ -81,6 +85,28 @@ async function pickLeastLoadedReservationsAgent() {
 
 
 function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
+  if (isReservationsManager(user)) {
+    return {
+      clause: ` AND (
+        ${alias}.sales_person_id = $${paramIndex}
+        OR ${alias}.created_by = $${paramIndex}
+        OR ${alias}.sales_person_id IN (SELECT id FROM staff_users WHERE manager_id = $${paramIndex})
+        OR ${alias}.created_by IN (SELECT id FROM staff_users WHERE manager_id = $${paramIndex})
+        OR EXISTS (
+          SELECT 1 FROM staff_users s
+          WHERE s.manager_id = $${paramIndex}
+            AND s.role IN ('reservations', 'reservations_web', 'reservations_manual')
+            AND ${alias}.sales_label IS NOT NULL
+            AND btrim(${alias}.sales_label) <> ''
+            AND lower(regexp_replace(btrim(${alias}.sales_label), '\\s+', ' ', 'g'))
+              = lower(regexp_replace(btrim(s.full_name), '\\s+', ' ', 'g'))
+        )
+      )`,
+      params: [user.id],
+      nextIndex: paramIndex + 1,
+    };
+  }
+
   if (!isReservationsTeam(user)) {
     return { clause: '', params: [], nextIndex: paramIndex };
   }
@@ -156,6 +182,17 @@ function bookingAssigneeClause(user, alias = 'b', paramIndex = 1) {
   if (user?.role === 'reservations_manual') {
     return { clause: ' AND FALSE', params: [], nextIndex: paramIndex };
   }
+  if (isReservationsManager(user)) {
+    const col = alias ? `${alias}.assigned_sales_id` : 'assigned_sales_id';
+    return {
+      clause: ` AND (
+        ${col} = $${paramIndex}
+        OR ${col} IN (SELECT id FROM staff_users WHERE manager_id = $${paramIndex})
+      )`,
+      params: [user.id],
+      nextIndex: paramIndex + 1,
+    };
+  }
   if (isAdmin(user) || !isWebsiteReservationsAgent(user)) {
     return { clause: '', params: [], nextIndex: paramIndex };
   }
@@ -184,21 +221,59 @@ async function loadBookingAccess(id) {
   return rows[0] || null;
 }
 
-function assertReservationOwned(user, reservation) {
-  if (isAdmin(user)) return;
-  if (!isReservationsTeam(user)) return;
-  const mine =
+function isOwnReservation(user, reservation) {
+  return Boolean(
     reservation &&
-    (Number(reservation.sales_person_id) === Number(user.id) ||
-      Number(reservation.created_by) === Number(user.id) ||
-      salesLabelBelongsToUser(reservation.sales_label, user));
-  if (!mine) {
+      (Number(reservation.sales_person_id) === Number(user.id) ||
+        Number(reservation.created_by) === Number(user.id) ||
+        salesLabelBelongsToUser(reservation.sales_label, user))
+  );
+}
+
+async function assertReservationOwned(user, reservation) {
+  if (isAdmin(user)) return;
+  if (isReservationsManager(user)) {
+    if (isOwnReservation(user, reservation)) return;
+    const ids = [reservation?.sales_person_id, reservation?.created_by]
+      .map((id) => Number(id))
+      .filter((id) => Number.isFinite(id) && id > 0);
+    if (ids.length) {
+      const { rows } = await query(
+        `SELECT 1 FROM staff_users WHERE manager_id = $1 AND id = ANY($2::int[]) LIMIT 1`,
+        [user.id, ids]
+      );
+      if (rows[0]) return;
+    }
+    const err = new Error('You can only access reservations for yourself and your team');
+    err.status = 403;
+    throw err;
+  }
+  if (!isReservationsTeam(user)) return;
+  if (!isOwnReservation(user, reservation)) {
     const err = new Error('You can only access your own reservations');
     err.status = 403;
     throw err;
   }
   if (user.role === 'reservations_manual' && isWebsiteOriginReservation(reservation)) {
     const err = new Error('Manual agents can only access manual reservations');
+    err.status = 403;
+    throw err;
+  }
+}
+
+async function assertAssignableSalesPerson(user, salesPersonId) {
+  if (isAdmin(user) || !isReservationsManager(user) || salesPersonId == null || salesPersonId === '') {
+    return;
+  }
+  const id = Number(salesPersonId);
+  if (!Number.isFinite(id) || id < 1) return;
+  if (Number(user.id) === id) return;
+  const { rows } = await query(
+    `SELECT 1 FROM staff_users WHERE id = $1 AND manager_id = $2 LIMIT 1`,
+    [id, user.id]
+  );
+  if (!rows[0]) {
+    const err = new Error('You can only assign reservations to agents you manage');
     err.status = 403;
     throw err;
   }
@@ -232,6 +307,7 @@ module.exports = {
   RESERVATIONS_TEAM_ROLES,
   isReservationsTeam,
   isReservationsAgent,
+  isReservationsManager,
   isWebsiteReservationsAgent,
   isManualReservationsAgent,
   isAdmin,
@@ -242,6 +318,7 @@ module.exports = {
   loadReservationAccess,
   loadBookingAccess,
   assertReservationOwned,
+  assertAssignableSalesPerson,
   assertBookingAssigned,
   assertNotAdminReservationHandler,
 };

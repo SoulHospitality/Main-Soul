@@ -56,7 +56,7 @@ export default function HolidayAccess() {
         <h1 className="page-title mt-1">Holidays access</h1>
         <p className="page-subtitle">
           Choose who can request holidays. Auto allows requests once the staff account is 6 months old.
-          Only an HR Supervisor or admin can change access, and they cannot change their own.
+          Only an HR Manager or CEO can change access, and they cannot change their own.
         </p>
       </div>
 
@@ -101,8 +101,8 @@ export default function HolidayAccess() {
                         title={
                           !canEditRow
                             ? String(user?.id) === String(r.id)
-                              ? 'Only an admin can change your holiday access'
-                              : 'Only an HR Supervisor or admin can change holiday access'
+                              ? 'Only a CEO can change your holiday access'
+                              : 'Only an HR Manager or CEO can change holiday access'
                             : undefined
                         }
                         onChange={(e) =>

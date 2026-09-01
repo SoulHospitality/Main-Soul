@@ -207,11 +207,11 @@ function assertCanEditStaffCompensation(
 ) {
   if (canEditStaffCompensation(actor, targetUserId)) return;
   if (isHrActingOnSelf(actor, targetUserId)) {
-    const err = new Error(`Only an admin can change your ${label}`);
+    const err = new Error(`Only a CEO can change your ${label}`);
     err.status = 403;
     throw err;
   }
-  const err = new Error(`Only an HR Supervisor or admin can change ${label}`);
+  const err = new Error(`Only an HR Manager or CEO can change ${label}`);
   err.status = 403;
   throw err;
 }
@@ -222,7 +222,7 @@ function assertHrNotEditingOwnCompensation(
   label = 'salary, holiday balances, or holiday access'
 ) {
   if (!isHrActingOnSelf(actor, targetUserId)) return;
-  const err = new Error(`Only an admin can change your ${label}`);
+  const err = new Error(`Only a CEO can change your ${label}`);
   err.status = 403;
   throw err;
 }
@@ -573,6 +573,14 @@ function departmentManagerRole(role) {
       return 'housekeeping_supervisor';
     case 'hr':
       return 'hr_supervisor';
+    case 'reservations':
+    case 'reservations_web':
+    case 'reservations_manual':
+      return 'reservations_manager';
+    case 'unit_acquisition_agent':
+      return 'unit_acquisition_manager';
+    case 'reservations_manager':
+    case 'unit_acquisition_manager':
     case 'hr_supervisor':
     case 'operations_supervisor':
     case 'housekeeping_supervisor':
@@ -622,7 +630,7 @@ function applyRequestReview(request, actor, decision, staff) {
   const slots = eligibleReviewSlots(actor, request, staff);
   if (!slots.length) {
     const err = new Error(
-      'Only the staff manager, HR Supervisor, or an admin can review this request'
+      'Only the staff manager, HR Manager, or a CEO can review this request'
     );
     err.status = 403;
     throw err;
@@ -670,7 +678,7 @@ function describeRequestApproval(request) {
   if (request.status === 'rejected') return 'Rejected';
   const waiting = [];
   if (request.needs_manager_approval && !request.manager_reviewed_by) waiting.push('manager');
-  if (request.needs_hr_approval && !request.hr_reviewed_by) waiting.push('HR Supervisor');
+  if (request.needs_hr_approval && !request.hr_reviewed_by) waiting.push('HR Manager');
   if (!waiting.length) return 'Pending';
   return `Waiting for ${waiting.join(' & ')}`;
 }

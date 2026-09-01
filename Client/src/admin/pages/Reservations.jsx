@@ -6,6 +6,7 @@ import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import { usePermissions } from '../hooks/usePermissions';
+import { salesUsersForActor } from '../utils/permissions';
 import { useSortableTable } from '../hooks/useSortableTable';
 import Modal from '../components/ui/Modal';
 import Badge from '../components/ui/Badge';
@@ -922,6 +923,7 @@ export default function Reservations() {
     isWebsiteReservations,
     isManualReservations,
     isOwnersRelations,
+    isReservationsManager,
     canManageReservations,
     canAccessFinance,
     user,
@@ -994,6 +996,7 @@ export default function Reservations() {
 
   const { data: units = [] } = useQuery({ queryKey: ['units'], queryFn: () => api.get('/units').then(r => r.data) });
   const { data: users = [] } = useQuery({ queryKey: ['users-sales'], queryFn: () => api.get('/users/sales').then(r => r.data) });
+  const salesUsers = useMemo(() => salesUsersForActor(users, user), [users, user]);
 
   const { data: viewDetail } = useQuery({
     queryKey: ['reservation', viewRes],
@@ -1144,7 +1147,7 @@ export default function Reservations() {
   const openAdd = () => {
     setForm({
       ...EMPTY_FORM,
-      sales_person_id: (isManualReservations || isWebsiteReservations) && !isAdmin && user?.id ? String(user.id) : '',
+      sales_person_id: (isManualReservations || isWebsiteReservations || isReservationsManager) && !isAdmin && user?.id ? String(user.id) : '',
       payment_method: 'cash',
     });
     setEditId(null);
@@ -1721,7 +1724,7 @@ export default function Reservations() {
           form={form}
           setForm={setForm}
           units={units}
-          users={users}
+          users={salesUsers}
           transferProof={transferProof}
           onTransferProofChange={setTransferProof}
           lockSalesPerson={(isManualReservations || isWebsiteReservations) && !isAdmin}
@@ -1744,7 +1747,7 @@ export default function Reservations() {
           </button>
         </>}
       >
-        <ReservationForm form={form} setForm={setForm} units={units} users={users}
+        <ReservationForm form={form} setForm={setForm} units={units} users={salesUsers}
           isNew={false} editId={editId} transferProof={transferProof} onTransferProofChange={setTransferProof}
           allowPastDates={allowPastDates}
           lockSalesPerson={(isManualReservations || isWebsiteReservations) && !isAdmin}
@@ -1773,7 +1776,7 @@ export default function Reservations() {
       >
         <ReservationDetail
           reservation={viewDetail}
-          users={users}
+          users={salesUsers}
           onAddPayment={handleAddPayment}
           canPay={canPay}
           canApprove={canApprove}

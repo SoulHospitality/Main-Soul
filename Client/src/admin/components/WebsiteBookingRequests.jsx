@@ -301,7 +301,7 @@ export default function WebsiteBookingRequests() {
           <p className="text-xs text-gray-500">
             Review guest contact, party size, stay dates, ID photos, and full payment breakdown. For
             InstaPay/Cash, collect at least 50% with evidence before accepting.
-            {isAdmin ? ' Admins can reassign any request to another website agent.' : ''}
+            {isAdmin ? ' The CEO can reassign any request to another website agent.' : ''}
           </p>
         </div>
         <div className="overflow-x-auto">

@@ -11,6 +11,10 @@ const {
   FOLDER_PAYMENTS,
 } = require('../../config/cloudinary');
 const { setOwnerUnits, listLinkableUnits } = require('../../lib/ownerUnits');
+const { UNIT_ACQUISITION_ROLES } = require('../../lib/unitAcquisition');
+
+const OWNER_ACCOUNT_ROLES = ['finance', ...UNIT_ACQUISITION_ROLES];
+const OWNER_LINK_ROLES = [...UNIT_ACQUISITION_ROLES];
 
 
 const router = express.Router();
@@ -68,8 +72,8 @@ router.get('/id-documents/view', async (req, res, next) => {
 router.get('/users/sales', async (_req, res, next) => {
   try {
     const { rows } = await query(
-      `SELECT id, full_name, username, role, sales_commission_pct FROM staff_users
-       WHERE is_active = 1 AND role IN ('reservations_manual','reservations_web','reservations','admin')`
+      `SELECT id, full_name, username, role, sales_commission_pct, manager_id FROM staff_users
+       WHERE is_active = 1 AND role IN ('reservations_manual','reservations_web','reservations','reservations_manager','admin')`
     );
     res.json(rows);
   } catch (e) {
@@ -78,7 +82,7 @@ router.get('/users/sales', async (_req, res, next) => {
 });
 
 
-router.get('/users/owners', requireRoles('admin', 'finance', 'hr', 'hr_supervisor'), async (_req, res, next) => {
+router.get('/users/owners', requireRoles(...OWNER_ACCOUNT_ROLES), async (_req, res, next) => {
   try {
     const { rows } = await query(
       `SELECT s.id, s.full_name, s.email, s.username, s.is_active, s.created_at,
@@ -105,7 +109,7 @@ router.get('/users/owners', requireRoles('admin', 'finance', 'hr', 'hr_superviso
 });
 
 /** Rent units that are unlinked, or already linked to owner_id (for editing). */
-router.get('/users/owners/linkable-units', requireRoles('admin'), async (req, res, next) => {
+router.get('/users/owners/linkable-units', requireRoles(...OWNER_LINK_ROLES), async (req, res, next) => {
   try {
     const units = await listLinkableUnits(req.query.owner_id);
     res.json(units);
@@ -114,7 +118,7 @@ router.get('/users/owners/linkable-units', requireRoles('admin'), async (req, re
   }
 });
 
-router.get('/users/owners/:id/units', requireRoles('admin', 'hr', 'hr_supervisor'), async (req, res, next) => {
+router.get('/users/owners/:id/units', requireRoles(...UNIT_ACQUISITION_ROLES), async (req, res, next) => {
   try {
     const { rows } = await query(
       `SELECT u.id, u.title, u.unit_number, u.project, u.compound, u.area,
@@ -141,7 +145,7 @@ router.get('/users/owners/:id/units', requireRoles('admin', 'hr', 'hr_supervisor
 });
 
 /** Replace owner ↔ unit portal links (ignores unit owner_name / owner_phone). */
-router.put('/users/owners/:id/units', requireRoles('admin'), async (req, res, next) => {
+router.put('/users/owners/:id/units', requireRoles(...OWNER_LINK_ROLES), async (req, res, next) => {
   try {
     const units = await setOwnerUnits(req.params.id, req.body?.unit_ids);
     res.json({ ok: true, units, unit_count: units.length });
@@ -761,7 +765,7 @@ router.post('/daily-prices/batch', requireRoles('admin'), async (req, res, next)
   }
 });
 
-const RESERVATIONS_CALENDAR_ROLES = ['admin', 'reservations', 'reservations_web', 'reservations_manual'];
+const RESERVATIONS_CALENDAR_ROLES = ['admin', 'reservations', 'reservations_web', 'reservations_manual', 'reservations_manager'];
 
 router.get('/ota-calendar', async (_req, res, next) => {
   try {
@@ -1811,6 +1815,7 @@ router.put('/tasks/:id', async (req, res, next) => {
 router.put(
   '/reservations/:id',
   requireRoles(
+    'reservations_manager',
     'reservations_manual',
     'reservations_web',
     'reservations',
@@ -1823,14 +1828,15 @@ router.put(
   try {
     const existing = await loadReservationAccess(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Not found' });
-    assertReservationOwned(req.user, existing);
+    await assertReservationOwned(req.user, existing);
 
     const b = req.body;
-    const { isAdmin, isReservationsTeam } = require('../../lib/reservationScope');
+    const { isAdmin, isReservationsTeam, assertAssignableSalesPerson } = require('../../lib/reservationScope');
     
     if (isReservationsTeam(req.user) && !isAdmin(req.user)) {
       b.sales_person_id = req.user.id;
     }
+    await assertAssignableSalesPerson(req.user, b.sales_person_id);
     const checkIn = b.check_in || existing.check_in;
     const checkOut = b.check_out || existing.check_out;
     const ci = new Date(checkIn);

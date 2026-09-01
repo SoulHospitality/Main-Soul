@@ -3,6 +3,9 @@ export const ROLES = {
   RESERVATIONS: 'reservations',
   RESERVATIONS_WEB: 'reservations_web',
   RESERVATIONS_MANUAL: 'reservations_manual',
+  RESERVATIONS_MANAGER: 'reservations_manager',
+  UNIT_ACQUISITION_AGENT: 'unit_acquisition_agent',
+  UNIT_ACQUISITION_MANAGER: 'unit_acquisition_manager',
   OPERATIONS: 'operations',
   OPERATIONS_SUPERVISOR: 'operations_supervisor',
   HOUSEKEEPING: 'housekeeping',
@@ -45,6 +48,15 @@ const RESERVATIONS_WEB_PAGE_ACCESS = new Set([
   ...RESERVATIONS_PAGE_ACCESS,
   'website_bookings',
   'units',
+]);
+
+const RESERVATIONS_MANAGER_PAGE_ACCESS = new Set([
+  'reservations',
+  'schedule',
+  'calendar_sync',
+  'performance',
+  'holiday_requests',
+  'profile',
 ]);
 
 const RESERVATIONS_PERMISSIONS = [
@@ -122,6 +134,42 @@ const PERMISSIONS = {
   reservations: RESERVATIONS_WEB_PERMISSIONS,
   reservations_web: RESERVATIONS_WEB_PERMISSIONS,
   reservations_manual: RESERVATIONS_MANUAL_PERMISSIONS,
+  reservations_manager: [
+    'units:read',
+    'reservations:read',
+    'reservations:write',
+    'reservations:confirm',
+    'reservations:delete',
+    'schedule:read',
+    'calendar_sync:write',
+    'performance:read',
+    'notifications:read',
+    'documents:read',
+    'documents:write',
+  ],
+  unit_acquisition_agent: [
+    'units:read',
+    'units:write',
+    'acquisition:read',
+    'acquisition:write',
+    'owners:read',
+    'owners:write',
+    'notifications:read',
+    'documents:read',
+    'documents:write',
+  ],
+  unit_acquisition_manager: [
+    'units:read',
+    'units:write',
+    'acquisition:read',
+    'acquisition:write',
+    'acquisition_audit:read',
+    'owners:read',
+    'owners:write',
+    'notifications:read',
+    'documents:read',
+    'documents:write',
+  ],
   resale: [
     'units:read',
     'units:write',
@@ -201,6 +249,9 @@ const PAGE_ACCESS = {
   reservations: RESERVATIONS_WEB_PAGE_ACCESS,
   reservations_web: RESERVATIONS_WEB_PAGE_ACCESS,
   reservations_manual: RESERVATIONS_MANUAL_PAGE_ACCESS,
+  reservations_manager: RESERVATIONS_MANAGER_PAGE_ACCESS,
+  unit_acquisition_agent: new Set(['units', 'acquisition', 'owners', 'profile']),
+  unit_acquisition_manager: new Set(['units', 'acquisition', 'acquisition_audit', 'owners', 'profile']),
   operations: new Set(['operations', 'ops_checkins', 'reservations', 'schedule', 'profile']),
   operations_supervisor: new Set(['operations', 'ops_checkins', 'ops_comments', 'reservations', 'schedule', 'profile']),
   housekeeping: new Set(['housekeeping', 'hk_today', 'profile']),
@@ -230,6 +281,32 @@ export function isWebsiteReservationsRole(user) {
 
 export function isManualReservationsRole(user) {
   return !!user && (user.role === 'reservations_manual' || user.role === 'reservations');
+}
+
+export function isReservationsManager(user) {
+  return !!user && user.role === 'reservations_manager';
+}
+
+export function isUnitAcquisitionRole(user) {
+  return (
+    !!user &&
+    (user.role === 'unit_acquisition_agent' || user.role === 'unit_acquisition_manager')
+  );
+}
+
+export function isUnitAcquisitionManager(user) {
+  return !!user && user.role === 'unit_acquisition_manager';
+}
+
+export function isUnitAcquisitionAgent(user) {
+  return !!user && user.role === 'unit_acquisition_agent';
+}
+
+export function salesUsersForActor(users, actor) {
+  if (!actor || actor.role === 'admin' || !isReservationsManager(actor)) return users || [];
+  return (users || []).filter(
+    (u) => String(u.id) === String(actor.id) || String(u.manager_id) === String(actor.id)
+  );
 }
 
 export function hasPermission(user, permission) {
@@ -271,7 +348,8 @@ export function canManageUnits(user) {
     (user.role === 'admin' ||
       user.role === 'resale' ||
       user.role === 'reservations_web' ||
-      user.role === 'reservations')
+      user.role === 'reservations' ||
+      isUnitAcquisitionRole(user))
   );
 }
 
@@ -290,6 +368,7 @@ export function canManageReservations(user) {
     (user.role === 'admin' ||
       isManualReservationsRole(user) ||
       isWebsiteReservationsRole(user) ||
+      isReservationsManager(user) ||
       isOperationsRole(user))
   );
 }
@@ -345,6 +424,10 @@ export function canManageUsers(user) {
   return !!user && (user.role === 'admin' || isHrTeamRole(user.role));
 }
 
+export function canManageOwners(user) {
+  return !!user && (user.role === 'admin' || isUnitAcquisitionRole(user));
+}
+
 export function isHrTeamRole(role) {
   return role === 'hr' || role === 'hr_supervisor';
 }
@@ -355,7 +438,9 @@ export function canSeeRequestQueue(user) {
     (user.role === 'admin' ||
       isHrTeamRole(user.role) ||
       user.role === 'operations_supervisor' ||
-      user.role === 'housekeeping_supervisor')
+      user.role === 'housekeeping_supervisor' ||
+      user.role === 'reservations_manager' ||
+      user.role === 'unit_acquisition_manager')
   );
 }
 
@@ -376,21 +461,35 @@ export function isOwnerRole(user) {
   return !!user && user.role === 'owner';
 }
 
+export const LINE_MANAGER_ROLES = [
+  'admin',
+  'hr_supervisor',
+  'reservations_manager',
+  'unit_acquisition_manager',
+  'operations_supervisor',
+];
+
+export function isLineManagerRole(role) {
+  return LINE_MANAGER_ROLES.includes(String(role || ''));
+}
+
 export function creatableRoles(actorRole) {
-  const reservationRoles = ['reservations_web', 'reservations_manual'];
+  const reservationRoles = ['reservations_web', 'reservations_manual', 'reservations_manager'];
   const fieldRoles = [
     'operations_supervisor',
     'operations',
     'housekeeping_supervisor',
     'housekeeping',
   ];
-  const hrCreatable = [...reservationRoles, ...fieldRoles, 'resale', 'hr'];
+  const hrCreatable = [...reservationRoles, ...fieldRoles, 'resale', 'unit_acquisition_agent', 'unit_acquisition_manager', 'hr'];
   if (actorRole === 'admin') {
     return [
       'admin',
       ...reservationRoles,
       ...fieldRoles,
       'resale',
+      'unit_acquisition_agent',
+      'unit_acquisition_manager',
       'finance',
       'hr',
       'hr_supervisor',
@@ -399,14 +498,20 @@ export function creatableRoles(actorRole) {
     ];
   }
   if (isHrTeamRole(actorRole)) return hrCreatable;
+  if (actorRole === 'unit_acquisition_agent' || actorRole === 'unit_acquisition_manager') {
+    return ['owner'];
+  }
   return [];
 }
 
 export const ROLE_LABELS = {
-  admin: 'Admin',
+  admin: 'CEO',
   reservations: 'Reservations (legacy)',
   reservations_web: 'Website Reservations',
   reservations_manual: 'Manual Reservations',
+  reservations_manager: 'Reservations Manager',
+  unit_acquisition_agent: 'Unit Acquisition Agent',
+  unit_acquisition_manager: 'Unit Acquisition Manager',
   operations: 'Operations',
   operations_supervisor: 'Operations Supervisor',
   housekeeping: 'Housekeeping',
@@ -414,8 +519,8 @@ export const ROLE_LABELS = {
   resale: 'Resale',
   finance: 'Finance',
   hr: 'HR',
-  hr_supervisor: 'HR Supervisor',
-  owners_relations: 'Owners Relations',
+  hr_supervisor: 'HR Manager',
+  owners_relations: 'Owner Experience',
   owner: 'Owner',
 };
 
@@ -424,6 +529,9 @@ export const ROLE_COLORS = {
   reservations: 'badge-soul-orange',
   reservations_web: 'badge-soul-orange',
   reservations_manual: 'badge-soul-orange',
+  reservations_manager: 'badge-soul-orange',
+  unit_acquisition_agent: 'badge-soul-teal',
+  unit_acquisition_manager: 'badge-soul-teal',
   operations: 'badge-soul-teal',
   operations_supervisor: 'badge-soul-teal',
   housekeeping: 'badge-soul-slate',
@@ -437,10 +545,13 @@ export const ROLE_COLORS = {
 };
 
 export const PMS_LABELS = {
-  admin: 'Admin PMS',
+  admin: 'CEO PMS',
   reservations: 'Reservations PMS',
   reservations_web: 'Website Reservations PMS',
   reservations_manual: 'Manual Reservations PMS',
+  reservations_manager: 'Reservations Manager PMS',
+  unit_acquisition_agent: 'Unit Acquisition PMS',
+  unit_acquisition_manager: 'Unit Acquisition Manager PMS',
   operations: 'Operations PMS',
   operations_supervisor: 'Operations Supervisor PMS',
   housekeeping: 'Housekeeping PMS',
@@ -448,7 +559,7 @@ export const PMS_LABELS = {
   resale: 'Resale PMS',
   finance: 'Finance PMS',
   hr: 'HR PMS',
-  hr_supervisor: 'HR Supervisor PMS',
-  owners_relations: 'Owners Relations PMS',
+  hr_supervisor: 'HR Manager PMS',
+  owners_relations: 'Owner Experience PMS',
   owner: 'Owner Portal',
 };

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -28,7 +28,7 @@ import EmptyState from '../components/ui/EmptyState';
 import SearchFilter from '../components/ui/SearchFilter';
 import SortTh from '../components/ui/SortTh';
 import SearchableSelect from '../components/ui/SearchableSelect';
-import { ROLE_LABELS, ROLE_COLORS, creatableRoles, canEditStaffCompensation } from '../utils/permissions';
+import { ROLE_LABELS, ROLE_COLORS, creatableRoles, canEditStaffCompensation, isLineManagerRole } from '../utils/permissions';
 import { getRoleTheme } from '../utils/roleTheme';
 import { currency, formatDate } from '../utils/formatters';
 import { TEMP_STAFF_PASSWORD } from '../utils/passwordRules';
@@ -254,6 +254,10 @@ function isReservationAgentRole(role) {
   return ['reservations_web', 'reservations_manual', 'reservations'].includes(role);
 }
 
+function isUnitAcquisitionAgentRole(role) {
+  return role === 'unit_acquisition_agent';
+}
+
 function usesCommissionPct(role) {
   return isReservationAgentRole(role) || role === 'resale';
 }
@@ -270,8 +274,8 @@ function StaffForm({
 }) {
   const showCommission = usesCommissionPct(form.role);
   const lockHint = editingSelf
-    ? 'Only an admin can change your salary and holiday balances.'
-    : 'Only an HR Supervisor or admin can change salary and holiday balances.';
+    ? 'Only a CEO can change your salary and holiday balances.'
+    : 'Only an HR Manager or CEO can change salary and holiday balances.';
   return (
     <div className="space-y-4">
       <p className="text-xs text-slate-500">
@@ -280,7 +284,7 @@ function StaffForm({
           : isEdit
             ? applySalaryImmediately
               ? 'Salary and holiday-balance changes apply immediately.'
-              : 'Salary edits require HR Supervisor or admin approval before they apply.'
+              : 'Salary edits require HR Manager or CEO approval before they apply.'
             : `Creates login with the Staff ID you enter and temporary password ${TEMP_STAFF_PASSWORD}. User must change password on first login.`}
       </p>
       <div className="form-grid">
@@ -331,13 +335,32 @@ function StaffForm({
         </div>
         {form.role !== 'admin' && form.role !== 'owner' ? (
           <div>
-            <label className="label">Line manager</label>
+            <label className="label">
+              {isReservationAgentRole(form.role)
+                ? 'Reservations manager'
+                : isUnitAcquisitionAgentRole(form.role)
+                  ? 'Unit Acquisition Manager'
+                  : 'Line manager'}
+            </label>
             <SearchableSelect
               value={form.manager_id ? String(form.manager_id) : ''}
               onChange={(v) => setForm((f) => ({ ...f, manager_id: v }))}
-              placeholder="Department default"
+              placeholder={
+                isReservationAgentRole(form.role)
+                  ? 'Reservations manager'
+                  : isUnitAcquisitionAgentRole(form.role)
+                    ? 'Unit Acquisition Manager'
+                    : 'Department default'
+              }
               options={[
-                { value: '', label: 'Department default' },
+                {
+                  value: '',
+                  label: isReservationAgentRole(form.role)
+                    ? 'Department default (Reservations Manager)'
+                    : isUnitAcquisitionAgentRole(form.role)
+                      ? 'Department default (Unit Acquisition Manager)'
+                      : 'Department default',
+                },
                 ...managerOptions.map((u) => ({
                   value: String(u.id),
                   label: `${u.full_name} (${ROLE_LABELS[u.role] || u.role})`,
@@ -345,7 +368,11 @@ function StaffForm({
               ]}
             />
             <p className="mt-1 text-[11px] text-slate-400">
-              Must accept holiday, loan, and WFH requests (with the HR Supervisor, except for HR staff).
+              {isReservationAgentRole(form.role)
+                ? 'This manager sees the agent\'s reservations and must accept holiday, loan, and WFH requests (with the HR Manager).'
+                : isUnitAcquisitionAgentRole(form.role)
+                  ? 'This manager sees the agent\'s daily audit and must accept holiday, loan, and WFH requests (with the HR Manager).'
+                  : 'Must accept holiday, loan, and WFH requests (with the HR Manager, except for HR staff).'}
             </p>
           </div>
         ) : null}
@@ -364,8 +391,8 @@ function StaffForm({
           {lockPayAndLeave ? (
             <p className="mt-1 text-[11px] text-amber-700">
               {editingSelf
-                ? 'Ask an admin to update your salary.'
-                : 'Ask an HR Supervisor or admin to update this salary.'}
+                ? 'Ask a CEO to update your salary.'
+                : 'Ask an HR Manager or CEO to update this salary.'}
             </p>
           ) : null}
         </div>
@@ -601,18 +628,26 @@ function OwnerDetailsView({ owner, units, loading }) {
 
 export default function Users() {
   const qc = useQueryClient();
-  const { isAdmin, isHrSupervisor, role, user } = usePermissions();
+  const { isAdmin, isHr, isHrSupervisor, isUnitAcquisition, role, user } = usePermissions();
   const staffRoleOptions = creatableRoles(role).filter((r) => r !== 'owner');
-  const canCreateOwners = isAdmin;
+  const canCreateOwners = isAdmin || isUnitAcquisition;
+  const canLinkUnits = isAdmin || isUnitAcquisition;
+  const canSeeStaffTab = isAdmin || isHr;
+  const canSeeOwnersTab = isAdmin || isUnitAcquisition;
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const rawTab = searchParams.get('tab') || 'staff';
+  const rawTab = searchParams.get('tab') || (canSeeStaffTab ? 'staff' : 'owners');
   const activeTab = rawTab === 'owners' ? 'owners' : 'staff';
   const isOwnersTab = activeTab === 'owners';
 
   function setTab(id) {
     setSearchParams({ tab: id }, { replace: true });
   }
+
+  useEffect(() => {
+    if (!canSeeStaffTab && activeTab !== 'owners') setTab('owners');
+    if (!canSeeOwnersTab && activeTab !== 'staff') setTab('staff');
+  }, [canSeeStaffTab, canSeeOwnersTab, activeTab]);
 
   const [search, setSearch] = useState('');
   const [filterRole, setFilterRole] = useState('');
@@ -919,7 +954,7 @@ export default function Users() {
         is_active: ownerForm.is_active,
         role: 'owner',
         base_salary: 0,
-        ...(isAdmin ? { unit_ids: ownerForm.unit_ids || [] } : {}),
+        ...(canLinkUnits ? { unit_ids: ownerForm.unit_ids || [] } : {}),
       });
     } else {
       saveOwnerMutation.mutate({
@@ -929,7 +964,7 @@ export default function Users() {
         email: ownerForm.email?.trim() || '',
         role: 'owner',
         base_salary: 0,
-        unit_ids: isAdmin ? ownerForm.unit_ids || [] : [],
+        unit_ids: canLinkUnits ? ownerForm.unit_ids || [] : [],
       });
     }
   };
@@ -947,12 +982,15 @@ export default function Users() {
         'admin',
         'reservations_web',
         'reservations_manual',
+        'reservations_manager',
         'reservations',
         'operations_supervisor',
         'operations',
         'housekeeping_supervisor',
         'housekeeping',
         'resale',
+        'unit_acquisition_agent',
+        'unit_acquisition_manager',
         'finance',
         'hr',
         'hr_supervisor',
@@ -961,12 +999,15 @@ export default function Users() {
     : [
         'reservations_web',
         'reservations_manual',
+        'reservations_manager',
         'reservations',
         'operations_supervisor',
         'operations',
         'housekeeping_supervisor',
         'housekeeping',
         'resale',
+        'unit_acquisition_agent',
+        'unit_acquisition_manager',
         'finance',
         'hr',
         'hr_supervisor',
@@ -982,14 +1023,18 @@ export default function Users() {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="page-header mb-0">
-          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-soul-muted">HR</p>
-          <h1 className="page-title mt-1">User Management</h1>
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-soul-muted">
+            {isUnitAcquisition && !isAdmin ? 'Unit acquisition' : 'HR'}
+          </p>
+          <h1 className="page-title mt-1">
+            {isUnitAcquisition && !isAdmin ? 'Owners' : 'User Management'}
+          </h1>
           <p className="page-subtitle">
             {isOwnersTab
-              ? 'Owner portal accounts'
+              ? 'Owner portal accounts and unit linking'
               : isAdmin
                 ? 'Admin & HR staff accounts'
-                : 'Create Reservations, Resale, and HR users'}
+                : 'Create staff accounts'}
             {' · '}
             {filtered.length} {isOwnersTab ? 'owner' : 'user'}
             {filtered.length !== 1 ? 's' : ''}
@@ -1009,6 +1054,7 @@ export default function Users() {
         </div>
       </div>
 
+      {canSeeStaffTab && canSeeOwnersTab ? (
       <div className="flex flex-wrap gap-1 p-1 bg-gray-100 rounded-xl w-fit">
         {TABS.map((tab) => {
           const Icon = tab.icon;
@@ -1040,6 +1086,7 @@ export default function Users() {
           );
         })}
       </div>
+      ) : null}
 
       <SearchFilter
         value={search}
@@ -1159,7 +1206,7 @@ export default function Users() {
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
-                        {isAdmin && (
+                        {canLinkUnits && (
                           <button
                             onClick={() => openLinkUnits(u)}
                             className="p-1.5 rounded text-gray-400 hover:text-emerald-600 hover:bg-emerald-50"
@@ -1175,13 +1222,15 @@ export default function Users() {
                         >
                           <Key className="w-3.5 h-3.5" />
                         </button>
-                        <button
-                          onClick={() => setDeleteId(u.id)}
-                          className="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {isAdmin && (
+                          <button
+                            onClick={() => setDeleteId(u.id)}
+                            className="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -1355,7 +1404,7 @@ export default function Users() {
                 Edit
               </button>
             )}
-            {viewOwner && isAdmin && (
+            {viewOwner && canLinkUnits && (
               <button
                 type="button"
                 className="btn-primary"
@@ -1400,12 +1449,15 @@ export default function Users() {
                   'admin',
                   'reservations_web',
                   'reservations_manual',
+                  'reservations_manager',
                   'reservations',
                   'operations_supervisor',
                   'operations',
                   'housekeeping_supervisor',
                   'housekeeping',
                   'resale',
+                  'unit_acquisition_agent',
+                  'unit_acquisition_manager',
                   'finance',
                   'hr',
                   'hr_supervisor',
@@ -1420,12 +1472,11 @@ export default function Users() {
             modal === 'edit-staff' && String(user?.id) === String(editId)
           }
           applySalaryImmediately={isAdmin || isHrSupervisor}
-          managerOptions={users.filter(
-            (u) =>
-              u.role !== 'owner' &&
-              u.role !== 'admin' &&
-              (!editId || String(u.id) !== String(editId))
-          )}
+          managerOptions={users.filter((u) => {
+            if (editId && String(u.id) === String(editId)) return false;
+            if (isLineManagerRole(u.role)) return true;
+            return staffForm.manager_id && String(u.id) === String(staffForm.manager_id);
+          })}
         />
       </Modal>
 
@@ -1450,7 +1501,7 @@ export default function Users() {
           setForm={setOwnerForm}
           isEdit={modal === 'edit-owner'}
           ownerId={modal === 'edit-owner' ? editId : null}
-          showUnits={isAdmin}
+          showUnits={canLinkUnits}
         />
       </Modal>
 
@@ -1488,7 +1539,7 @@ export default function Users() {
         size="sm"
         footer={
           <>
-            {createdInfo?.role === 'owner' && isAdmin && (
+            {createdInfo?.role === 'owner' && canLinkUnits && (
               <button
                 onClick={() => {
                   const id = createdInfo.id;

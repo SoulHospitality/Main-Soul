@@ -34,6 +34,7 @@ const {
   bookingAssigneeClause,
   loadReservationAccess,
   assertReservationOwned,
+  assertAssignableSalesPerson,
   isReservationsAgent,
   isAdmin,
 } = require('../../lib/reservationScope');
@@ -52,8 +53,15 @@ const {
   detachStaffUserReferences,
   asStaffDeleteError,
 } = require('../../lib/staffUserCleanup');
+const {
+  isUnitAcquisitionRole,
+  isRentOnlyUnitEditor,
+  UNIT_ACQUISITION_ROLES,
+} = require('../../lib/unitAcquisition');
+const UNIT_EDITOR_ROLES = ['admin', 'resale', 'reservations_web', 'reservations', ...UNIT_ACQUISITION_ROLES];
 
 const HR_ROUTE_ROLES = ['admin', 'hr', 'hr_supervisor'];
+const USER_ACCOUNT_ROLES = ['hr', 'hr_supervisor', ...UNIT_ACQUISITION_ROLES];
 const { normalizePropertyType } = require('../../lib/propertyType');
 
 const router = express.Router();
@@ -61,6 +69,8 @@ router.use(authStaff);
 router.use(requirePasswordChanged);
 router.use(compat);
 router.use(require('./reportsAnalytics'));
+router.use(require('./reservationsPerformance'));
+router.use(require('./acquisitionAudit'));
 router.use(require('./financialSystem'));
 router.use(housekeepingOps);
 router.use(require('./opsCheckins'));
@@ -244,13 +254,21 @@ const STAFF_SELECT = `
 `;
 
 function assertCanAssignRole(actorRole, targetRole) {
+  if (isUnitAcquisitionRole(actorRole)) {
+    if (targetRole !== 'owner') {
+      const err = new Error('Unit acquisition can only create owner accounts');
+      err.status = 403;
+      throw err;
+    }
+    return;
+  }
   if (targetRole === 'admin' && actorRole !== 'admin') {
-    const err = new Error('Only admins can create or assign the admin role');
+    const err = new Error('Only a CEO can create or assign the CEO role');
     err.status = 403;
     throw err;
   }
   if (targetRole === 'hr_supervisor' && actorRole !== 'admin') {
-    const err = new Error('Only admins can create or assign the HR Supervisor role');
+    const err = new Error('Only a CEO can create or assign the HR Manager role');
     err.status = 403;
     throw err;
   }
@@ -259,11 +277,14 @@ function assertCanAssignRole(actorRole, targetRole) {
     'reservations_web',
     'reservations_manual',
     'reservations',
+    'reservations_manager',
     'operations',
     'operations_supervisor',
     'housekeeping',
     'housekeeping_supervisor',
     'resale',
+    'unit_acquisition_agent',
+    'unit_acquisition_manager',
     'finance',
     'hr',
     'hr_supervisor',
@@ -272,7 +293,7 @@ function assertCanAssignRole(actorRole, targetRole) {
   ];
   if (!allowed.includes(targetRole)) {
     const err = new Error(
-      'Invalid role. Use admin, reservations_web, reservations_manual, operations, operations_supervisor, housekeeping, housekeeping_supervisor, resale, finance, hr, hr_supervisor, owners_relations, or owner.'
+      'Invalid role. Use admin, reservations_web, reservations_manual, reservations_manager, unit_acquisition_agent, unit_acquisition_manager, operations, operations_supervisor, housekeeping, housekeeping_supervisor, resale, finance, hr, hr_supervisor, owners_relations, or owner.'
     );
     err.status = 400;
     throw err;
@@ -283,17 +304,25 @@ function assertCanAssignRole(actorRole, targetRole) {
       'reservations_web',
       'reservations_manual',
       'reservations',
+      'reservations_manager',
       'operations',
       'operations_supervisor',
       'housekeeping',
       'housekeeping_supervisor',
       'resale',
+      'unit_acquisition_agent',
+      'unit_acquisition_manager',
       'hr',
     ].includes(targetRole)
   ) {
     const err = new Error(
-      'HR can only create reservation, operations, housekeeping, resale, or HR users'
+      'HR can only create reservation, operations, housekeeping, resale, unit acquisition, or HR users'
     );
+    err.status = 403;
+    throw err;
+  }
+  if (isHrTeamRole(actorRole) && targetRole === 'owner') {
+    const err = new Error('HR can only create staff accounts');
     err.status = 403;
     throw err;
   }
@@ -322,8 +351,26 @@ async function parseManagerId(raw, selfId) {
     throw err;
   }
   const { rows } = await query(`SELECT id, role FROM staff_users WHERE id = $1`, [id]);
+  const lineManagerRoles = [
+    'admin',
+    'hr_supervisor',
+    'reservations_manager',
+    'unit_acquisition_manager',
+    'operations_supervisor',
+  ];
   if (!rows[0] || rows[0].role === 'owner') {
     const err = new Error('Manager not found');
+    err.status = 400;
+    throw err;
+  }
+  if (!lineManagerRoles.includes(rows[0].role)) {
+    if (selfId != null) {
+      const { rows: existing } = await query(`SELECT manager_id FROM staff_users WHERE id = $1`, [selfId]);
+      if (existing[0] && String(existing[0].manager_id) === String(id)) return id;
+    }
+    const err = new Error(
+      'Manager must be a CEO, HR Manager, Reservations Manager, Unit Acquisition Manager, or Operations Supervisor'
+    );
     err.status = 400;
     throw err;
   }
@@ -350,11 +397,26 @@ function parseAgentCommissionPct(b, role) {
   return pct;
 }
 
-router.get('/users', requireRoles(...HR_ROUTE_ROLES), async (_req, res, next) => {
+function assertCanMutateAccount(actor, existingRole) {
+  if (isUnitAcquisitionRole(actor) && existingRole !== 'owner') {
+    const err = new Error('Unit acquisition can only manage owner accounts');
+    err.status = 403;
+    throw err;
+  }
+  if (isHrTeamRole(actor?.role) && existingRole === 'owner') {
+    const err = new Error('HR can only manage staff accounts');
+    err.status = 403;
+    throw err;
+  }
+}
+
+router.get('/users', requireRoles(...USER_ACCOUNT_ROLES), async (req, res, next) => {
   try {
-    const { rows } = await query(
-      `SELECT ${STAFF_SELECT} FROM staff_users ORDER BY id`
-    );
+    let sql = `SELECT ${STAFF_SELECT} FROM staff_users`;
+    if (isUnitAcquisitionRole(req.user)) sql += ` WHERE role = 'owner'`;
+    else if (isHrTeamRole(req.user.role)) sql += ` WHERE role <> 'owner'`;
+    sql += ` ORDER BY id`;
+    const { rows } = await query(sql);
     sendList(
       res,
       rows.map((r) => ({ ...r, is_first_login: Boolean(Number(r.is_first_login)) }))
@@ -364,7 +426,7 @@ router.get('/users', requireRoles(...HR_ROUTE_ROLES), async (_req, res, next) =>
   }
 });
 
-router.post('/users', requireRoles(...HR_ROUTE_ROLES), async (req, res, next) => {
+router.post('/users', requireRoles(...USER_ACCOUNT_ROLES), async (req, res, next) => {
   try {
     const b = req.body || {};
     const full_name = String(b.full_name || b.name || '').trim();
@@ -467,7 +529,7 @@ router.post('/users', requireRoles(...HR_ROUTE_ROLES), async (req, res, next) =>
   }
 });
 
-router.patch('/users/:id', requireRoles(...HR_ROUTE_ROLES), async (req, res, next) => {
+router.patch('/users/:id', requireRoles(...USER_ACCOUNT_ROLES), async (req, res, next) => {
   try {
     const b = req.body || {};
     const { rows: existingRows } = await query(
@@ -476,6 +538,11 @@ router.patch('/users/:id', requireRoles(...HR_ROUTE_ROLES), async (req, res, nex
     );
     const existing = existingRows[0];
     if (!existing) return res.status(404).json({ error: 'Not found' });
+    try {
+      assertCanMutateAccount(req.user, existing.role);
+    } catch (err) {
+      return res.status(err.status || 403).json({ error: err.message });
+    }
 
     if (isHrTeamRole(req.user.role) && existing.role === 'admin') {
       return res.status(403).json({ error: 'HR cannot edit admin accounts' });
@@ -613,7 +680,7 @@ router.patch('/users/:id', requireRoles(...HR_ROUTE_ROLES), async (req, res, nex
   }
 });
 
-router.put('/users/:id', requireRoles(...HR_ROUTE_ROLES), async (req, res, next) => {
+router.put('/users/:id', requireRoles(...USER_ACCOUNT_ROLES), async (req, res, next) => {
   const patchLayer = router.stack.find(
     (l) => l.route && l.route.path === '/users/:id' && l.route.methods.patch
   );
@@ -658,14 +725,19 @@ router.post('/users/:id/reject-salary', requireRoles('admin'), async (req, res, 
   }
 });
 
-router.put('/users/:id/reset-password', requireRoles(...HR_ROUTE_ROLES), async (req, res, next) => {
+router.put('/users/:id/reset-password', requireRoles(...USER_ACCOUNT_ROLES), async (req, res, next) => {
   try {
     const { rows: existingRows } = await query(`SELECT role, email FROM staff_users WHERE id = $1`, [
       req.params.id,
     ]);
     if (!existingRows[0]) return res.status(404).json({ error: 'Not found' });
+    try {
+      assertCanMutateAccount(req.user, existingRows[0].role);
+    } catch (err) {
+      return res.status(err.status || 403).json({ error: err.message });
+    }
     if (isHrTeamRole(req.user.role) && existingRows[0].role === 'admin') {
-      return res.status(403).json({ error: 'HR cannot reset admin passwords' });
+      return res.status(403).json({ error: 'HR cannot reset CEO passwords' });
     }
 
     const newPassword = req.body?.new_password || TEMP_PASSWORD;
@@ -697,8 +769,11 @@ router.delete('/users/:id', requireRoles(...HR_ROUTE_ROLES), async (req, res, ne
       [targetId]
     );
     if (!existingRows[0]) return res.status(404).json({ error: 'Not found' });
+    if (isHrTeamRole(req.user.role) && existingRows[0].role === 'owner') {
+      return res.status(403).json({ error: 'HR can only delete staff accounts' });
+    }
     if (isHrTeamRole(req.user.role) && existingRows[0].role === 'admin') {
-      return res.status(403).json({ error: 'HR cannot delete admin accounts' });
+      return res.status(403).json({ error: 'HR cannot delete CEO accounts' });
     }
 
     const client = await pool.connect();
@@ -765,9 +840,11 @@ router.get('/units', async (req, res, next) => {
     const listingType =
       req.user?.role === 'resale'
         ? 'sale'
-        : String(listing_type || 'rent').toLowerCase() === 'sale'
-          ? 'sale'
-          : 'rent';
+        : isUnitAcquisitionRole(req.user)
+          ? 'rent'
+          : String(listing_type || 'rent').toLowerCase() === 'sale'
+            ? 'sale'
+            : 'rent';
     where.push(`COALESCE(listing_type, 'rent') = $${i++}`);
     params.push(listingType);
 
@@ -802,7 +879,7 @@ router.get('/units/projects', async (_req, res, next) => {
   }
 });
 
-router.post('/units', requireRoles('admin', 'resale', 'reservations_web', 'reservations'), async (req, res, next) => {
+router.post('/units', requireRoles(...UNIT_EDITOR_ROLES), async (req, res, next) => {
   try {
     const b = req.body;
     const title = toText(b.title || b.name);
@@ -818,7 +895,7 @@ router.post('/units', requireRoles('admin', 'resale', 'reservations_web', 'reser
     if (req.user?.role === 'resale') {
       listingType = 'sale';
     }
-    if (req.user?.role === 'reservations_web' || req.user?.role === 'reservations') {
+    if (isRentOnlyUnitEditor(req.user)) {
       listingType = 'rent';
     }
     const sizeM2 = toNum(b.size_m2 || b.area_sqft || b.unit_area, { int: true });
@@ -1049,11 +1126,8 @@ async function updateUnitHandler(req, res, next) {
     if (req.user?.role === 'resale' && existingListingType !== 'sale') {
       return res.status(403).json({ error: 'Resale can only manage for-sale units' });
     }
-    if (
-      (req.user?.role === 'reservations_web' || req.user?.role === 'reservations') &&
-      existingListingType !== 'rent'
-    ) {
-      return res.status(403).json({ error: 'Website reservation agents can only manage rental units' });
+    if (isRentOnlyUnitEditor(req.user) && existingListingType !== 'rent') {
+      return res.status(403).json({ error: 'This role can only manage rental units' });
     }
 
     let listingType =
@@ -1063,7 +1137,7 @@ async function updateUnitHandler(req, res, next) {
     if (req.user?.role === 'resale') {
       listingType = 'sale';
     }
-    if (req.user?.role === 'reservations_web' || req.user?.role === 'reservations') {
+    if (isRentOnlyUnitEditor(req.user)) {
       listingType = 'rent';
     }
 
@@ -1266,16 +1340,23 @@ async function updateUnitHandler(req, res, next) {
         status: synced.status,
       };
     }
+    await logAudit({
+      userId: req.user.id,
+      action: 'UPDATE_UNIT',
+      entityType: 'unit',
+      entityId: req.params.id,
+      details: { listing_type: listingType, title: payload.title || payload.name },
+    });
     res.json(payload);
   } catch (e) {
     next(e);
   }
 }
 
-router.patch('/units/:id', requireRoles('admin', 'resale', 'reservations_web', 'reservations'), updateUnitHandler);
-router.put('/units/:id', requireRoles('admin', 'resale', 'reservations_web', 'reservations'), updateUnitHandler);
+router.patch('/units/:id', requireRoles(...UNIT_EDITOR_ROLES), updateUnitHandler);
+router.put('/units/:id', requireRoles(...UNIT_EDITOR_ROLES), updateUnitHandler);
 
-router.patch('/units/:id/unpublish', requireRoles('admin', 'resale', 'reservations_web', 'reservations'), async (req, res, next) => {
+router.patch('/units/:id/unpublish', requireRoles(...UNIT_EDITOR_ROLES), async (req, res, next) => {
   try {
     const { rows: existing } = await query(
       `SELECT id, listing_type, status, other_details FROM units WHERE id = $1`,
@@ -1288,11 +1369,8 @@ router.patch('/units/:id/unpublish', requireRoles('admin', 'resale', 'reservatio
     if (req.user?.role === 'resale' && listingType !== 'sale') {
       return res.status(403).json({ error: 'Resale can only manage for-sale units' });
     }
-    if (
-      (req.user?.role === 'reservations_web' || req.user?.role === 'reservations') &&
-      listingType !== 'rent'
-    ) {
-      return res.status(403).json({ error: 'Website reservation agents can only manage rental units' });
+    if (isRentOnlyUnitEditor(req.user) && listingType !== 'rent') {
+      return res.status(403).json({ error: 'This role can only manage rental units' });
     }
 
     const otherDetails = setListingUnpublishedFlag(existing[0].other_details, true);
@@ -1300,13 +1378,19 @@ router.patch('/units/:id/unpublish', requireRoles('admin', 'resale', 'reservatio
       `UPDATE units SET status = 'draft', other_details = $1, updated_at = now() WHERE id = $2 RETURNING *`,
       [otherDetails, req.params.id]
     );
+    await logAudit({
+      userId: req.user.id,
+      action: 'UNPUBLISH_UNIT',
+      entityType: 'unit',
+      entityId: req.params.id,
+    });
     res.json(mapUnitRow(rows[0]));
   } catch (e) {
     next(e);
   }
 });
 
-router.patch('/units/:id/publish', requireRoles('admin', 'resale', 'reservations_web', 'reservations'), async (req, res, next) => {
+router.patch('/units/:id/publish', requireRoles(...UNIT_EDITOR_ROLES), async (req, res, next) => {
   try {
     const { rows: existing } = await query(
       `SELECT id, listing_type, other_details FROM units WHERE id = $1`,
@@ -1319,11 +1403,8 @@ router.patch('/units/:id/publish', requireRoles('admin', 'resale', 'reservations
     if (req.user?.role === 'resale' && listingType !== 'sale') {
       return res.status(403).json({ error: 'Resale can only manage for-sale units' });
     }
-    if (
-      (req.user?.role === 'reservations_web' || req.user?.role === 'reservations') &&
-      listingType !== 'rent'
-    ) {
-      return res.status(403).json({ error: 'Website reservation agents can only manage rental units' });
+    if (isRentOnlyUnitEditor(req.user) && listingType !== 'rent') {
+      return res.status(403).json({ error: 'This role can only manage rental units' });
     }
 
     const otherDetails = setListingUnpublishedFlag(existing[0].other_details, false);
@@ -1340,6 +1421,12 @@ router.patch('/units/:id/publish', requireRoles('admin', 'resale', 'reservations
         status: synced.status,
       };
     }
+    await logAudit({
+      userId: req.user.id,
+      action: 'PUBLISH_UNIT',
+      entityType: 'unit',
+      entityId: req.params.id,
+    });
     res.json(payload);
   } catch (e) {
     next(e);
@@ -1432,7 +1519,7 @@ router.delete('/units/:id', requireRoles('admin', 'resale'), async (req, res, ne
 
 router.post(
   '/units/:id/photos',
-  requireRoles('admin', 'resale', 'reservations_web', 'reservations'),
+  requireRoles(...UNIT_EDITOR_ROLES),
   upload.array('photos', 20),
   setCloudinaryFolder(FOLDER_UNITS),
   attachCloudinaryUrls,
@@ -1448,6 +1535,13 @@ router.post(
       [urls, urls[0] || null, req.params.id]
     );
     const synced = await syncUnitListingStatus(req.params.id);
+    await logAudit({
+      userId: req.user.id,
+      action: 'UPDATE_UNIT',
+      entityType: 'unit',
+      entityId: req.params.id,
+      details: { photos_added: urls.length },
+    });
     res.json({
       ...(rows[0] || {}),
       status: synced?.status,
@@ -1607,6 +1701,7 @@ router.get('/reservations', async (req, res, next) => {
 router.post(
   '/reservations',
   requireRoles(
+    'reservations_manager',
     'reservations_manual',
     'reservations_web',
     'reservations',
@@ -1628,6 +1723,7 @@ router.post(
       isReservationsAgent(req.user) && !isAdmin(req.user)
         ? req.user.id
         : (b.sales_person_id || req.user.id);
+    await assertAssignableSalesPerson(req.user, salesPersonId);
     const checkIn = new Date(b.check_in);
     const checkOut = new Date(b.check_out);
     if (!b.unit_id || !b.check_in || !b.check_out || Number.isNaN(checkIn) || Number.isNaN(checkOut) || checkOut <= checkIn) {
@@ -1923,6 +2019,7 @@ function truthyFlag(v) {
 router.patch(
   '/reservations/:id',
   requireRoles(
+    'reservations_manager',
     'reservations_manual',
     'reservations_web',
     'reservations',
@@ -1935,12 +2032,13 @@ router.patch(
   try {
     const existing = await loadReservationAccess(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Not found' });
-    assertReservationOwned(req.user, existing);
+    await assertReservationOwned(req.user, existing);
 
     const b = req.body;
     if (isReservationsAgent(req.user) && !isAdmin(req.user)) {
       b.sales_person_id = req.user.id;
     }
+    await assertAssignableSalesPerson(req.user, b.sales_person_id);
     const checkIn = b.check_in || existing.check_in;
     const checkOut = b.check_out || existing.check_out;
     const ci = new Date(checkIn);
@@ -2057,6 +2155,7 @@ router.patch(
 router.post(
   '/reservations/:id/id-documents',
   requireRoles(
+    'reservations_manager',
     'reservations_manual',
     'reservations_web',
     'reservations',
@@ -2071,7 +2170,7 @@ router.post(
     try {
       const existing = await loadReservationAccess(req.params.id);
       if (!existing) return res.status(404).json({ error: 'Not found' });
-      assertReservationOwned(req.user, existing);
+      await assertReservationOwned(req.user, existing);
 
       const urls = (req.files || [])
         .map((f) => f.path || f.secure_url)
@@ -2099,6 +2198,7 @@ router.post(
 router.delete(
   '/reservations/:id/id-documents',
   requireRoles(
+    'reservations_manager',
     'reservations_manual',
     'reservations_web',
     'reservations',
@@ -2110,7 +2210,7 @@ router.delete(
     try {
       const existing = await loadReservationAccess(req.params.id);
       if (!existing) return res.status(404).json({ error: 'Not found' });
-      assertReservationOwned(req.user, existing);
+      await assertReservationOwned(req.user, existing);
 
       const url = String(req.body?.url || req.query?.url || '').trim();
       if (!url) return res.status(400).json({ error: 'url is required' });
@@ -2133,6 +2233,7 @@ router.delete(
 router.post(
   '/reservations/:id/transfer/preview',
   requireRoles(
+    'reservations_manager',
     'reservations_manual',
     'reservations_web',
     'reservations',
@@ -2144,7 +2245,7 @@ router.post(
     try {
       const existing = await loadReservationAccess(req.params.id);
       if (!existing) return res.status(404).json({ error: 'Not found' });
-      assertReservationOwned(req.user, existing);
+      await assertReservationOwned(req.user, existing);
       const { previewTransfer } = require('../../lib/transferReservation');
       const preview = await previewTransfer(req.params.id, req.body || {});
       res.json(preview);
@@ -2157,6 +2258,7 @@ router.post(
 router.post(
   '/reservations/:id/transfer',
   requireRoles(
+    'reservations_manager',
     'reservations_manual',
     'reservations_web',
     'reservations',
@@ -2168,7 +2270,7 @@ router.post(
     try {
       const existing = await loadReservationAccess(req.params.id);
       if (!existing) return res.status(404).json({ error: 'Not found' });
-      assertReservationOwned(req.user, existing);
+      await assertReservationOwned(req.user, existing);
       const { executeTransfer } = require('../../lib/transferReservation');
       const result = await executeTransfer(req.params.id, req.body || {}, req.user);
       res.status(201).json(result);
@@ -2181,6 +2283,7 @@ router.post(
 router.delete(
   '/reservations/:id',
   requireRoles(
+    'reservations_manager',
     'reservations_manual',
     'reservations_web',
     'reservations',
@@ -2194,7 +2297,7 @@ router.delete(
     const id = req.params.id;
     const existing = await loadReservationAccess(id);
     if (!existing) return res.status(404).json({ error: 'Reservation not found' });
-    assertReservationOwned(req.user, existing);
+    await assertReservationOwned(req.user, existing);
 
     const bookingId = existing.booking_id;
 
@@ -2232,6 +2335,7 @@ router.delete(
 router.post(
   '/reservations/:id/cancel-request',
   requireRoles(
+    'reservations_manager',
     'reservations_manual',
     'reservations_web',
     'reservations',
@@ -2244,7 +2348,7 @@ router.post(
   try {
     const existing = await loadReservationAccess(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Not found' });
-    assertReservationOwned(req.user, existing);
+    await assertReservationOwned(req.user, existing);
 
     const { reason } = req.body || {};
     const { rows } = await query(
@@ -2508,7 +2612,7 @@ router.get('/reservations/:id', async (req, res, next) => {
     }
     const existing = await loadReservationAccess(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Reservation not found' });
-    assertReservationOwned(req.user, existing);
+    await assertReservationOwned(req.user, existing);
 
     const { rows } = await query(
       `SELECT r.*,
@@ -2636,7 +2740,7 @@ router.get('/payments', requireRoles('admin'), async (req, res, next) => {
 
 router.post(
   '/payments',
-  requireRoles('admin', 'reservations', 'reservations_manual', 'reservations_web'),
+  requireRoles('admin', 'reservations', 'reservations_manual', 'reservations_web', 'reservations_manager'),
   upload.single('document'),
   setCloudinaryFolder(FOLDER_PAYMENTS),
   attachCloudinaryUrls,

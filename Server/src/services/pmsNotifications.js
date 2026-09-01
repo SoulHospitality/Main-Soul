@@ -4,7 +4,7 @@ const { emitSalesNotification } = require('../config/socket');
 
 const WEB_TEAM_ROLES = ['admin', 'reservations_web', 'reservations'];
 
-const OPS_ROLES = ['admin', 'reservations_web', 'reservations_manual', 'reservations'];
+const OPS_ROLES = ['admin', 'reservations_web', 'reservations_manual', 'reservations', 'reservations_manager'];
 const ADMIN_ROLES = ['admin'];
 const FINANCE_ROLES = ['admin', 'finance'];
 
