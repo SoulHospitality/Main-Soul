@@ -608,8 +608,18 @@ export const HR_STAFF_FILTER_ROLES = [
   'hr_supervisor',
 ];
 
+/** Roles only a CEO can assign in User Management */
+export const ADMIN_ONLY_CREATABLE_ROLES = ['admin', 'hr_supervisor', 'finance_manager'];
+
+/** Full role list a CEO can assign in User Management */
+export const ADMIN_CREATABLE_ROLES = [...ADMIN_ONLY_CREATABLE_ROLES, ...HR_MANAGED_STAFF_ROLES];
+
+/** Staff list role filter for CEO (includes CEO accounts) */
+export const ADMIN_STAFF_FILTER_ROLES = ['admin', ...HR_STAFF_FILTER_ROLES];
+
 export function creatableRoles(actorRole) {
-  if (actorRole === 'admin' || isHrTeamRole(actorRole)) return HR_MANAGED_STAFF_ROLES;
+  if (actorRole === 'admin') return ADMIN_CREATABLE_ROLES;
+  if (isHrTeamRole(actorRole)) return HR_MANAGED_STAFF_ROLES;
   if (actorRole === 'unit_acquisition_agent' || actorRole === 'unit_acquisition_manager') {
     return ['owner'];
   }

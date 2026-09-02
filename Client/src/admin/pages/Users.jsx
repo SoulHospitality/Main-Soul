@@ -28,7 +28,15 @@ import EmptyState from '../components/ui/EmptyState';
 import SearchFilter from '../components/ui/SearchFilter';
 import SortTh from '../components/ui/SortTh';
 import SearchableSelect from '../components/ui/SearchableSelect';
-import { ROLE_LABELS, ROLE_COLORS, creatableRoles, canEditStaffCompensation, isLineManagerRole, HR_STAFF_FILTER_ROLES } from '../utils/permissions';
+import {
+  ROLE_LABELS,
+  ROLE_COLORS,
+  creatableRoles,
+  canEditStaffCompensation,
+  isLineManagerRole,
+  HR_STAFF_FILTER_ROLES,
+  ADMIN_STAFF_FILTER_ROLES,
+} from '../utils/permissions';
 import { getRoleTheme } from '../utils/roleTheme';
 import { currency, formatDate } from '../utils/formatters';
 import { TEMP_STAFF_PASSWORD } from '../utils/passwordRules';
@@ -1010,7 +1018,7 @@ export default function Users() {
     });
   };
 
-  const filterRoleOptions = HR_STAFF_FILTER_ROLES;
+  const filterRoleOptions = isAdmin ? ADMIN_STAFF_FILTER_ROLES : HR_STAFF_FILTER_ROLES;
 
   const showAddButton = isOwnersTab ? canCreateOwners : staffRoleOptions.length > 0;
   const saving =
