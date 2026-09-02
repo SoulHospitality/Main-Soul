@@ -14,6 +14,7 @@ const {
   EARLY_LEAVE_MAX_PER_YEAR,
   canRequestHolidays,
   leaveTypeRequiresHolidayAccess,
+  isUnpaidLeaveUnlimited,
   nextPayrollPeriod,
   dateCoveredByRanges,
   parseAttendanceRows,
@@ -100,7 +101,8 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.equal(canRequestHolidays({ holiday_access: 'denied', created_at: created }, now), false);
   });
 
-  it('lets staff request unpaid leave without holiday access', () => {
+  it('treats unpaid leave as unlimited and open without holiday access', () => {
+    assert.equal(isUnpaidLeaveUnlimited(), true);
     assert.equal(leaveTypeRequiresHolidayAccess('unpaid'), false);
     assert.equal(leaveTypeRequiresHolidayAccess('casual'), true);
     assert.equal(leaveTypeRequiresHolidayAccess('annual'), true);
@@ -352,6 +354,6 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.equal(isHrActingOnSelf(hr, 11), true);
     assert.doesNotThrow(() => assertCanEditStaffCompensation(supervisor, 11));
     assert.throws(() => assertCanEditStaffCompensation(supervisor, 10), /Only a CEO/);
-    assert.throws(() => assertCanEditStaffCompensation(hr, 12), /HR Manager or CEO/);
+    assert.throws(() => assertCanEditStaffCompensation(hr, 12), /HR Supervisor or CEO/);
   });
 });

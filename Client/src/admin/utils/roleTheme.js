@@ -255,7 +255,7 @@ export const ROLE_THEMES = {
   },
   hr_supervisor: {
     id: 'hr_supervisor',
-    eyebrow: 'HR manager',
+    eyebrow: 'HR Supervisor',
     sidebarFrom: '#162033',
     sidebarVia: '#24344c',
     sidebarTo: '#334862',

@@ -9,7 +9,7 @@ import { getRoleTheme } from '../utils/roleTheme';
 import { formatDate, formatDateTime } from '../utils/formatters';
 import { getPasswordRuleChecks, passwordPolicyMessage } from '../utils/passwordRules';
 import PasswordChecklist from '../../components/auth/PasswordChecklist';
-import { LEAVE_TYPE_LABELS, requestableLeaveTypes } from '../utils/hrPolicy';
+import { LEAVE_TYPE_LABELS, requestableLeaveTypes, formatUnpaidLeaveAvailable } from '../utils/hrPolicy';
 
 export default function Profile() {
   const { user, refreshUser } = useAuth();
@@ -196,8 +196,7 @@ export default function Profile() {
           <p className="text-sm text-soul-muted mb-4">
             Casual: same-day requests and approvals before the 11:00 shift (no deduction).
             Annual: request before the shift day (by 11:59 PM the day before). 3+ days need 7 days notice (no deduction).
-            Unpaid: 1× daily rate deduction for each day. No show: 2× daily rate.
-            Daily rate = base salary ÷ 30. Early leave: max 2 per year.
+            Unpaid: unlimited for everyone (1× daily rate per approved day). Daily rate = base salary ÷ 30. Early leave: max 2 per year.
           </p>
           {leaveSnap && !leaveSnap.can_request_holidays ? (
             <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mb-4">
@@ -218,7 +217,7 @@ export default function Profile() {
               </div>
               <div className="rounded-xl border border-soul-line px-2 py-2">
                 <div className="text-[10px] uppercase text-soul-muted">Unpaid</div>
-                <div className="font-semibold text-soul-blue">{leaveSnap.unpaid_available}</div>
+                <div className="font-semibold text-soul-blue">{formatUnpaidLeaveAvailable(leaveSnap)}</div>
               </div>
               <div className="rounded-xl border border-soul-line px-2 py-2">
                 <div className="text-[10px] uppercase text-soul-muted">Early leave</div>

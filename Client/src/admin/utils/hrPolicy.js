@@ -15,6 +15,12 @@ export const LEAVE_TYPE_LABELS = {
   unpaid: 'Unpaid',
 };
 
+export function formatUnpaidLeaveAvailable(leaveSnap) {
+  if (leaveSnap?.unpaid_unlimited) return 'Unlimited';
+  const n = Number(leaveSnap?.unpaid_available);
+  return Number.isFinite(n) ? n : 'Unlimited';
+}
+
 export function requestableLeaveTypes(canRequestHolidays) {
   const unpaid = { value: 'unpaid', label: 'Unpaid' };
   if (canRequestHolidays) {

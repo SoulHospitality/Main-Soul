@@ -284,7 +284,7 @@ function StaffForm({
   const showCommission = usesCommissionPct(form.role);
   const lockHint = editingSelf
     ? 'Only a CEO can change your salary and holiday balances.'
-    : 'Only an HR Manager or CEO can change salary and holiday balances.';
+    : 'Only an HR Supervisor or CEO can change salary and holiday balances.';
   return (
     <div className="space-y-4">
       <p className="text-xs text-slate-500">
@@ -293,7 +293,7 @@ function StaffForm({
           : isEdit
             ? applySalaryImmediately
               ? 'Salary and holiday-balance changes apply immediately.'
-              : 'Salary edits require HR Manager or CEO approval before they apply.'
+              : 'Salary edits require HR Supervisor or CEO approval before they apply.'
             : `Creates login with the Staff ID you enter and temporary password ${TEMP_STAFF_PASSWORD}. User must change password on first login.`}
       </p>
       <div className="form-grid">
@@ -390,14 +390,14 @@ function StaffForm({
             />
             <p className="mt-1 text-[11px] text-slate-400">
               {isReservationAgentRole(form.role)
-                ? 'This manager sees the agent\'s reservations and must accept holiday, loan, and WFH requests (with the HR Manager).'
+                ? 'This manager sees the agent\'s reservations and must accept holiday, loan, and WFH requests (with the HR Supervisor).'
                 : isUnitAcquisitionAgentRole(form.role)
-                  ? 'This manager sees the agent\'s daily audit and must accept holiday, loan, and WFH requests (with the HR Manager).'
+                  ? 'This manager sees the agent\'s daily audit and must accept holiday, loan, and WFH requests (with the HR Supervisor).'
                   : isResaleAgentRole(form.role)
                     ? 'This manager tracks units added and signed sales for this agent on the Performance page.'
                     : isFinanceAgentRole(form.role)
                       ? 'This manager tracks finance desk activity for this agent on the Audit page.'
-                      : 'Must accept holiday, loan, and WFH requests (with the HR Manager, except for HR staff).'}
+                      : 'Must accept holiday, loan, and WFH requests (with the HR Supervisor, except for HR staff).'}
             </p>
           </div>
         ) : null}
@@ -417,7 +417,7 @@ function StaffForm({
             <p className="mt-1 text-[11px] text-amber-700">
               {editingSelf
                 ? 'Ask a CEO to update your salary.'
-                : 'Ask an HR Manager or CEO to update this salary.'}
+                : 'Ask an HR Supervisor or CEO to update this salary.'}
             </p>
           ) : null}
         </div>
@@ -447,20 +447,8 @@ function StaffForm({
           />
           <p className="mt-1 text-[11px] text-slate-400">Paid annual balance. Before the shift day; 3+ days need 7 days notice. No deduction.</p>
         </div>
-        <div>
-          <label className="label">Unpaid days</label>
-          <input
-            type="number"
-            min="0"
-            step="1"
-            className="input"
-            value={form.leave_unpaid_days}
-            disabled={lockPayAndLeave}
-            onChange={(e) => setForm((f) => ({ ...f, leave_unpaid_days: e.target.value }))}
-          />
-          <p className="mt-1 text-[11px] text-slate-400">
-            Unpaid balance. Requestable from day one. Each approved day deducts 1× daily rate (salary ÷ 30).
-          </p>
+        <div className="sm:col-span-2 rounded-xl border border-soul-line bg-slate-50 px-3 py-2 text-sm text-soul-muted">
+          Unpaid leave is unlimited for all staff. Each approved day deducts 1× daily rate (salary ÷ 30).
         </div>
         {showCommission && (
           <div>
@@ -970,7 +958,6 @@ export default function Users() {
       base_salary: Number(staffForm.base_salary),
       leave_casual_days: Number(staffForm.leave_casual_days) || 0,
       leave_annual_days: Number(staffForm.leave_annual_days) || 0,
-      leave_unpaid_days: Number(staffForm.leave_unpaid_days) || 0,
       staff_code: String(staffForm.staff_code || '').trim(),
       manager_id:
         staffForm.role === 'admin' || staffForm.role === 'owner'
@@ -1317,8 +1304,7 @@ export default function Users() {
                     <td>
                       <div>{currency(u.base_salary || 0)}</div>
                       <div className="mt-0.5 text-[11px] text-soul-muted">
-                        Casual {u.leave_casual_days ?? 0} · Annual {u.leave_annual_days ?? 0} · Unpaid{' '}
-                        {u.leave_unpaid_days ?? 0}
+                        Casual {u.leave_casual_days ?? 0} · Annual {u.leave_annual_days ?? 0} · Unpaid Unlimited
                       </div>
                       {u.salary_change_status === 'pending' && (
                         <div className="mt-1 text-[11px] text-amber-700">

@@ -40,6 +40,7 @@ const {
   eligibleReviewSlots,
   applyRequestReview,
   describeRequestApproval,
+  isUnpaidLeaveUnlimited,
 } = require('../../lib/hrRules');
 
 const router = express.Router();
@@ -293,8 +294,8 @@ async function leaveSnapshot(staffUserId) {
   const year = Number(cairoParts().date.slice(0, 4));
   const pendingCasual = await pendingLeaveDays(staffUserId, 'casual');
   const pendingAnnual = await pendingLeaveDays(staffUserId, 'annual');
-  const pendingUnpaid = await pendingLeaveDays(staffUserId, 'unpaid');
   const earlyUsed = await earlyLeaveUsed(staffUserId, year);
+  const unpaidUnlimited = isUnpaidLeaveUnlimited();
   return {
     staff_user_id: staff.id,
     full_name: staff.full_name,
@@ -302,10 +303,11 @@ async function leaveSnapshot(staffUserId) {
     daily_rate: dailyRate(staff.base_salary),
     casual_balance: Number(staff.leave_casual_days) || 0,
     annual_balance: Number(staff.leave_annual_days) || 0,
-    unpaid_balance: Number(staff.leave_unpaid_days) || 0,
+    unpaid_balance: unpaidUnlimited ? null : Number(staff.leave_unpaid_days) || 0,
     casual_available: Math.max(0, (Number(staff.leave_casual_days) || 0) - pendingCasual),
     annual_available: Math.max(0, (Number(staff.leave_annual_days) || 0) - pendingAnnual),
-    unpaid_available: Math.max(0, (Number(staff.leave_unpaid_days) || 0) - pendingUnpaid),
+    unpaid_available: unpaidUnlimited ? null : Math.max(0, (Number(staff.leave_unpaid_days) || 0) - (await pendingLeaveDays(staffUserId, 'unpaid'))),
+    unpaid_unlimited: unpaidUnlimited,
     early_leave_used: earlyUsed,
     early_leave_remaining: Math.max(0, EARLY_LEAVE_MAX_PER_YEAR - earlyUsed),
     early_leave_max: EARLY_LEAVE_MAX_PER_YEAR,
@@ -1134,11 +1136,6 @@ router.post('/hr/leave-requests', async (req, res, next) => {
         error: `Not enough annual leave (${snap.annual_available} day${snap.annual_available === 1 ? '' : 's'} left)`,
       });
     }
-    if (leaveType === 'unpaid' && days > snap.unpaid_available) {
-      return res.status(400).json({
-        error: `Not enough unpaid leave (${snap.unpaid_available} day${snap.unpaid_available === 1 ? '' : 's'} left)`,
-      });
-    }
     if (leaveType === 'early_leave' && days > snap.early_leave_remaining) {
       return res.status(400).json({
         error: `Early leave limit reached (maximum ${EARLY_LEAVE_MAX_PER_YEAR} per year)`,
@@ -1191,13 +1188,8 @@ router.post('/hr/leave-requests/:id/review', async (req, res, next) => {
         const now = new Date();
         if (row.leave_type === 'casual') assertCasualTiming(row.start_date, now);
         if (row.leave_type === 'annual') assertAnnualNotice(row.start_date, now, row.days);
-        if (row.leave_type === 'casual' || row.leave_type === 'annual' || row.leave_type === 'unpaid') {
-          const col =
-            row.leave_type === 'casual'
-              ? 'leave_casual_days'
-              : row.leave_type === 'annual'
-                ? 'leave_annual_days'
-                : 'leave_unpaid_days';
+        if (row.leave_type === 'casual' || row.leave_type === 'annual') {
+          const col = row.leave_type === 'casual' ? 'leave_casual_days' : 'leave_annual_days';
           const { rows: staffRows } = await client.query(
             `SELECT ${col} AS balance FROM staff_users WHERE id = $1 FOR UPDATE`,
             [row.staff_user_id]

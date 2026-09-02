@@ -9,7 +9,7 @@ import EmptyState from '../components/ui/EmptyState';
 import SearchFilter from '../components/ui/SearchFilter';
 import { ROLE_LABELS, canRequestStaffBenefits, canSeeRequestQueue } from '../utils/permissions';
 import { formatDate } from '../utils/formatters';
-import { LEAVE_TYPE_LABELS, requestableLeaveTypes } from '../utils/hrPolicy';
+import { LEAVE_TYPE_LABELS, requestableLeaveTypes, formatUnpaidLeaveAvailable } from '../utils/hrPolicy';
 import { useAuth } from '../context/AuthContext';
 import { RequestReviewActions, approvalStatusClass } from '../components/RequestReviewActions';
 
@@ -125,8 +125,8 @@ export default function HolidayRequests() {
         <h1 className="page-title mt-1">Holiday requests</h1>
         <p className="page-subtitle">
           {canQueue
-            ? 'Agents need their manager and the HR Manager. HR needs the HR Manager. HR Manager requests go to their manager. The CEO can accept or reject any request.'
-            : 'Casual: same day before 11:00 AM (no deduction). Annual: before the shift day; 3+ days need 7 days notice. Unpaid: 1× daily rate. No show: 2× daily rate.'}
+            ? 'Agents need their manager and the HR Supervisor. HR needs the HR Supervisor. HR Supervisor requests go to their manager. The CEO can accept or reject any request.'
+            : 'Casual: same day before 11:00 AM (no deduction). Annual: before the shift day; 3+ days need 7 days notice. Unpaid: unlimited (1× daily rate). No show: 2× daily rate.'}
         </p>
       </div>
 
@@ -152,7 +152,7 @@ export default function HolidayRequests() {
             </div>
             <div className="rounded-xl border border-soul-line px-2 py-2">
               <div className="text-[10px] uppercase text-soul-muted">Unpaid</div>
-              <div className="font-semibold text-soul-blue">{leaveSnap.unpaid_available}</div>
+              <div className="font-semibold text-soul-blue">{formatUnpaidLeaveAvailable(leaveSnap)}</div>
             </div>
             <div className="rounded-xl border border-soul-line px-2 py-2">
               <div className="text-[10px] uppercase text-soul-muted">Early leave</div>

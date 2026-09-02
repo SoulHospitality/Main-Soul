@@ -84,7 +84,7 @@ export default function WorkFromHome() {
         <p className="page-subtitle">
           {canQueue
             ? 'WFH needs the same dual acceptance as holidays. The CEO can accept or reject any request.'
-            : 'Request a WFH day. Your manager and the HR Manager must accept it. If approved, it counts as a half day on payroll.'}
+            : 'Request a WFH day. Your manager and the HR Supervisor must accept it. If approved, it counts as a half day on payroll.'}
         </p>
       </div>
 

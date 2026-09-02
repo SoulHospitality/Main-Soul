@@ -255,7 +255,7 @@ function assertCanEditStaffCompensation(
     err.status = 403;
     throw err;
   }
-  const err = new Error(`Only an HR Manager or CEO can change ${label}`);
+  const err = new Error(`Only an HR Supervisor or CEO can change ${label}`);
   err.status = 403;
   throw err;
 }
@@ -593,6 +593,11 @@ const NO_OFFICE_ATTENDANCE_ROLES = new Set([
   'web_developer',
 ]);
 const NO_STAFF_BENEFIT_ROLES = new Set(['admin', 'owner']);
+const UNPAID_LEAVE_UNLIMITED = true;
+
+function isUnpaidLeaveUnlimited() {
+  return UNPAID_LEAVE_UNLIMITED;
+}
 
 function hasOfficeAttendance(role) {
   return !NO_OFFICE_ATTENDANCE_ROLES.has(String(role || ''));
@@ -690,7 +695,7 @@ function applyRequestReview(request, actor, decision, staff) {
   const slots = eligibleReviewSlots(actor, request, staff);
   if (!slots.length) {
     const err = new Error(
-      'Only the staff manager, HR Manager, or a CEO can review this request'
+      'Only the staff manager, HR Supervisor, or a CEO can review this request'
     );
     err.status = 403;
     throw err;
@@ -738,7 +743,7 @@ function describeRequestApproval(request) {
   if (request.status === 'rejected') return 'Rejected';
   const waiting = [];
   if (request.needs_manager_approval && !request.manager_reviewed_by) waiting.push('manager');
-  if (request.needs_hr_approval && !request.hr_reviewed_by) waiting.push('HR Manager');
+  if (request.needs_hr_approval && !request.hr_reviewed_by) waiting.push('HR Supervisor');
   if (!waiting.length) return 'Pending';
   return `Waiting for ${waiting.join(' & ')}`;
 }
@@ -814,6 +819,8 @@ module.exports = {
   NO_OFFICE_ATTENDANCE_ROLES,
   LINE_MANAGER_ROLES,
   NO_STAFF_BENEFIT_ROLES,
+  UNPAID_LEAVE_UNLIMITED,
+  isUnpaidLeaveUnlimited,
   hasOfficeAttendance,
   isFieldOperationsRole,
   canRequestStaffBenefits,

@@ -18,8 +18,8 @@ function stepLine(row) {
   if (row.needs_hr_approval) {
     parts.push(
       row.hr_reviewed_by
-        ? `HR Manager: ${row.hr_reviewed_by_name || 'accepted'}`
-        : 'HR Manager: waiting'
+        ? `HR Supervisor: ${row.hr_reviewed_by_name || 'accepted'}`
+        : 'HR Supervisor: waiting'
     );
   }
   return parts.join(' · ');
@@ -30,9 +30,9 @@ export function RequestReviewActions({ row, onApprove, onReject, pending }) {
   const acceptHint = slots.includes('admin')
     ? 'Accept and finalize'
     : slots.includes('manager') && slots.includes('hr')
-      ? 'Accept as manager & HR Manager'
+      ? 'Accept as manager & HR Supervisor'
       : slots.includes('hr')
-        ? 'Accept as HR Manager'
+        ? 'Accept as HR Supervisor'
         : 'Accept as manager';
 
   if (row.status !== 'pending') {

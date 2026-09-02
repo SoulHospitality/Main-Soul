@@ -273,7 +273,7 @@ function assertCanAssignRole(actorRole, targetRole) {
     throw err;
   }
   if (targetRole === 'hr_supervisor' && actorRole !== 'admin') {
-    const err = new Error('Only a CEO can create or assign the HR Manager role');
+    const err = new Error('Only a CEO can create or assign the HR Supervisor role');
     err.status = 403;
     throw err;
   }
@@ -388,7 +388,7 @@ async function parseManagerId(raw, selfId) {
       if (existing[0] && String(existing[0].manager_id) === String(id)) return id;
     }
     const err = new Error(
-      'Manager must be a CEO, HR Manager, Reservations Manager, Resale Manager, Unit Acquisition Manager, or Operations Supervisor'
+      'Manager must be a CEO, HR Supervisor, Reservations Manager, Resale Manager, Unit Acquisition Manager, or Operations Supervisor'
     );
     err.status = 400;
     throw err;
