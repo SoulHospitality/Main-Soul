@@ -95,7 +95,7 @@ router.post('/staff-tasks', async (req, res, next) => {
       return res.status(404).json({ error: 'Staff member not found' });
     }
     if (!isTaskAssigneeRole(assignee.role)) {
-      return res.status(403).json({ error: 'Tasks can only be assigned to Marketing and PR or Web Developer' });
+      return res.status(403).json({ error: 'Tasks can only be assigned to Marketing and PR, Web Developer, or HR staff' });
     }
     const managerIds = new Set([
       ...(Array.isArray(assignee.manager_ids) ? assignee.manager_ids.map(String) : []),

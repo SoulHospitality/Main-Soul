@@ -595,7 +595,7 @@ const NO_OFFICE_ATTENDANCE_ROLES = new Set([
 const NO_STAFF_BENEFIT_ROLES = new Set(['admin', 'owner']);
 const UNPAID_LEAVE_UNLIMITED = true;
 
-const { staffManagerIds } = require('./staffManagers');
+const { staffManagerIds, supportsMultipleManagers } = require('./staffManagers');
 
 function isUnpaidLeaveUnlimited() {
   return UNPAID_LEAVE_UNLIMITED;
@@ -666,10 +666,20 @@ function departmentManagerRole(role) {
   }
 }
 
+function isDirectStaffManager(actor, staff) {
+  if (!actor || !staff) return false;
+  if (String(actor.id) === String(staff.id)) return false;
+  return staffManagerIds(staff).includes(String(actor.id));
+}
+
 function isLineManager(actor, staff) {
   if (!actor || !staff) return false;
   if (String(actor.id) === String(staff.id)) return false;
-  if (staffManagerIds(staff).includes(String(actor.id))) return true;
+  if (supportsMultipleManagers(staff.role)) {
+    if (staff.manager_id != null && String(actor.id) === String(staff.manager_id)) return true;
+  } else if (isDirectStaffManager(actor, staff)) {
+    return true;
+  }
   const dept = departmentManagerRole(staff.role);
   return Boolean(dept) && actor.role === dept;
 }

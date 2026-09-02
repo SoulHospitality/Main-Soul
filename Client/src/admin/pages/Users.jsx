@@ -406,8 +406,9 @@ function StaffForm({
                 )}
               </div>
               <p className="mt-1 text-[11px] text-slate-400">
-                Web developers can have more than one manager. Each selected manager can assign tasks
-                and accept holiday, loan, and WFH requests (with the HR Supervisor).
+                Web developers can have more than one manager. Each selected manager can assign tasks.
+                Only the primary manager (first selected) approves holiday, loan, and WFH requests,
+                with the HR Supervisor.
               </p>
             </div>
           ) : (

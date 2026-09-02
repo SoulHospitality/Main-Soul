@@ -1,4 +1,4 @@
-const TASK_ASSIGNEE_ROLES = ['marketing_pr', 'web_developer'];
+const TASK_ASSIGNEE_ROLES = ['marketing_pr', 'web_developer', 'hr'];
 
 function isTaskAssigneeRole(userOrRole) {
   const role = typeof userOrRole === 'string' ? userOrRole : userOrRole?.role;

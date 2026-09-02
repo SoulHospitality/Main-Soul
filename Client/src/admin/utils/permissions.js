@@ -126,6 +126,8 @@ const HR_PERMISSIONS = [
   'loans:write',
   'wfh:read',
   'wfh:write',
+  'tasks:read',
+  'tasks:write',
   'notifications:read',
   'documents:read',
   'documents:write',
@@ -142,10 +144,11 @@ const HR_PAGE_ACCESS = new Set([
   'loans',
   'wfh',
   'payslip',
+  'tasks',
   'profile',
 ]);
 
-const HR_SUPERVISOR_PAGE_ACCESS = new Set([...HR_PAGE_ACCESS, 'tasks']);
+const HR_SUPERVISOR_PAGE_ACCESS = new Set([...HR_PAGE_ACCESS]);
 
 const PERMISSIONS = {
   admin: ['*'],
@@ -212,7 +215,7 @@ const PERMISSIONS = {
     'documents:write',
   ],
   hr: HR_PERMISSIONS,
-  hr_supervisor: [...HR_PERMISSIONS, 'holiday_access:write', 'tasks:read', 'tasks:write'],
+  hr_supervisor: [...HR_PERMISSIONS, 'holiday_access:write'],
   operations: [
     'ops_checkins:read',
     'ops_checkins:write',
@@ -397,7 +400,7 @@ export function hasPermission(user, permission) {
 }
 
 export function isTaskAssigneeRole(user) {
-  return !!user && (user.role === 'marketing_pr' || user.role === 'web_developer');
+  return !!user && (user.role === 'marketing_pr' || user.role === 'web_developer' || user.role === 'hr');
 }
 
 export function canAssignStaffTasks(user) {

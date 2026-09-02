@@ -260,12 +260,33 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.equal(canRequestWfh('reservations_web'), true);
   });
 
-  it('treats any assigned web developer manager as a line manager', () => {
+  it('treats only the primary web developer manager as a request approver', () => {
     const { isLineManager } = require('./hrRules');
     const webDev = { id: 20, role: 'web_developer', manager_id: 5, manager_ids: [5, 8] };
     assert.equal(isLineManager({ id: 5, role: 'admin' }, webDev), true);
-    assert.equal(isLineManager({ id: 8, role: 'hr_supervisor' }, webDev), true);
+    assert.equal(isLineManager({ id: 8, role: 'hr_supervisor' }, webDev), false);
     assert.equal(isLineManager({ id: 9, role: 'hr_supervisor' }, webDev), false);
+  });
+
+  it('lets every web developer manager review slots only for the primary manager', () => {
+    const webDevReq = {
+      status: 'pending',
+      staff_user_id: 20,
+      role: 'web_developer',
+      manager_id: 5,
+      needs_manager_approval: true,
+      needs_hr_approval: true,
+    };
+    const webDev = { id: 20, role: 'web_developer', manager_id: 5, manager_ids: [5, 8] };
+    assert.deepEqual(
+      eligibleReviewSlots({ id: 5, role: 'reservations_manager' }, webDevReq, webDev),
+      ['manager']
+    );
+    assert.deepEqual(eligibleReviewSlots({ id: 8, role: 'hr_supervisor' }, webDevReq, webDev), ['hr']);
+    assert.deepEqual(
+      eligibleReviewSlots({ id: 8, role: 'reservations_manager' }, webDevReq, webDev),
+      []
+    );
   });
 
   it('matches door-report Person ID to staff user id first', () => {
