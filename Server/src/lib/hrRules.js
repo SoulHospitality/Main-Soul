@@ -537,12 +537,18 @@ function computeHalfDayDeduction(baseSalary) {
 }
 
 const PENALTY_CATEGORIES = ['lateness', 'absence', 'delay', 'performance', 'penalty'];
-const NO_OFFICE_ATTENDANCE_ROLES = new Set([
+const LINE_MANAGER_ROLES = new Set([
   'admin',
-  'owner',
   'hr_supervisor',
-  'operations',
+  'reservations_manager',
+  'resale_manager',
+  'unit_acquisition_manager',
   'operations_supervisor',
+]);
+const NO_OFFICE_ATTENDANCE_ROLES = new Set([
+  ...LINE_MANAGER_ROLES,
+  'owner',
+  'operations',
   'web_developer',
 ]);
 const NO_STAFF_BENEFIT_ROLES = new Set(['admin', 'owner']);
@@ -758,6 +764,7 @@ module.exports = {
   computeHalfDayDeduction,
   PENALTY_CATEGORIES,
   NO_OFFICE_ATTENDANCE_ROLES,
+  LINE_MANAGER_ROLES,
   NO_STAFF_BENEFIT_ROLES,
   hasOfficeAttendance,
   isFieldOperationsRole,

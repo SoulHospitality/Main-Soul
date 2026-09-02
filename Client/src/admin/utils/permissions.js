@@ -535,6 +535,13 @@ export function isLineManagerRole(role) {
   return LINE_MANAGER_ROLES.includes(String(role || ''));
 }
 
+export function hasOfficeAttendance(role) {
+  const r = String(role || '');
+  if (['owner', 'operations', 'web_developer'].includes(r)) return false;
+  if (isLineManagerRole(r)) return false;
+  return true;
+}
+
 export function creatableRoles(actorRole) {
   const reservationRoles = ['reservations_web', 'reservations_manual', 'reservations_manager'];
   const fieldRoles = [

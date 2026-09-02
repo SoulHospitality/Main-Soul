@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import api from '../api/axios';
 import Modal from '../components/ui/Modal';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
-import { ROLE_LABELS } from '../utils/permissions';
+import { ROLE_LABELS, hasOfficeAttendance } from '../utils/permissions';
 import { currency } from '../utils/formatters';
 import { computeAttendanceAmount, LEAVE_TYPE_LABELS } from '../utils/hrPolicy';
 
@@ -74,12 +74,7 @@ export default function Attendance() {
   });
 
   const days = data?.days || [];
-  const staff = (data?.staff || []).filter(
-    (s) =>
-      !['admin', 'owner', 'hr_supervisor', 'operations', 'operations_supervisor', 'web_developer'].includes(
-        String(s.role || '')
-      )
-  );
+  const staff = (data?.staff || []).filter((s) => hasOfficeAttendance(s.role));
   const cells = data?.cells || {};
   const today = currentMonthIso() === month
     ? `${year}-${String(monthNum).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`
