@@ -52,7 +52,7 @@ export default function Tasks() {
       return 'Tasks assigned to you by your manager. You will also receive them by email.';
     }
     if (canAdd) {
-      return 'Assign a title, description, and deadline. Only non-manager staff can receive tasks.';
+      return 'Assign a title, description, and deadline.';
     }
     if (canAssignStaffTasks && assigneesLoading) {
       return 'Loading team members you can assign tasks to…';
