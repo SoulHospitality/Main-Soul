@@ -7,6 +7,7 @@ const {
   canReceiveStaffTasks,
   isTaskAssigneeRole,
   sqlTaskRecipientRoles,
+  staffTaskScopeParams,
 } = require('./staffTasks');
 
 describe('staff task access', () => {
@@ -73,5 +74,10 @@ describe('staff task access', () => {
     assert.match(sql, /u\.role IN \(/);
     assert.match(sql, /'web_developer'/);
     assert.doesNotMatch(sql, /ESCAPE/);
+  });
+
+  it('omits manager bind params for CEO task scope', () => {
+    assert.deepEqual(staffTaskScopeParams('admin', 1), []);
+    assert.deepEqual(staffTaskScopeParams('hr_supervisor', 8), [8]);
   });
 });

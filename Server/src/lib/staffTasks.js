@@ -93,6 +93,10 @@ function staffTaskScopeSql(managerParam, staffAlias, actorRole) {
   )`;
 }
 
+function staffTaskScopeParams(actorRole, managerId) {
+  return actorRole === 'admin' ? [] : [managerId];
+}
+
 module.exports = {
   STAFF_TASK_RECIPIENT_ROLES,
   canReceiveStaffTasks,
@@ -103,5 +107,6 @@ module.exports = {
   sqlStaffTaskManagedBy,
   sqlLineManagerTaskScope,
   staffTaskScopeSql,
+  staffTaskScopeParams,
   isStaffTaskManagerRole,
 };

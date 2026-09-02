@@ -5,6 +5,7 @@ const {
   canManageStaffTasks,
   canAssignTaskTo,
   staffTaskScopeSql,
+  staffTaskScopeParams,
 } = require('../../lib/staffTasks');
 const { sendStaffTaskAssignedEmail, staffEmailFromUser } = require('../../services/staffTaskEmails');
 const { logAudit } = require('../../lib/audit');
@@ -69,7 +70,7 @@ router.get('/staff-tasks/assignees', async (req, res, next) => {
        WHERE u.is_active = 1
          AND ${staffTaskScopeSql('$1', 'u', req.user.role)}
        ORDER BY u.full_name`,
-      [req.user.id]
+      staffTaskScopeParams(req.user.role, req.user.id)
     );
     res.json(rows);
   } catch (e) {
@@ -97,7 +98,10 @@ router.get('/staff-tasks', async (req, res, next) => {
          JOIN staff_users m ON m.id = t.created_by
          WHERE t.assignee_id = $1
          ORDER BY t.deadline ASC, t.created_at DESC`;
-    const { rows } = await query(sql, [me]);
+    const params = canManageStaffTasks(req.user)
+      ? staffTaskScopeParams(req.user.role, me)
+      : [me];
+    const { rows } = await query(sql, params);
     res.json(rows);
   } catch (e) {
     return taskDbError(res, next, e);
