@@ -542,34 +542,37 @@ export function hasOfficeAttendance(role) {
   return true;
 }
 
+const RESERVATION_ROLES = ['reservations_web', 'reservations_manual', 'reservations_manager'];
+const FIELD_ROLES = [
+  'operations_supervisor',
+  'operations',
+  'housekeeping_supervisor',
+  'housekeeping',
+];
+
+/** Roles CEO / HR Manager can assign in User Management */
+export const HR_MANAGED_STAFF_ROLES = [
+  ...RESERVATION_ROLES,
+  ...FIELD_ROLES,
+  'resale',
+  'resale_manager',
+  'unit_acquisition_agent',
+  'unit_acquisition_manager',
+  'marketing_pr',
+  'web_developer',
+  'hr',
+];
+
+/** Staff list role filter (includes legacy / view-only roles) */
+export const HR_STAFF_FILTER_ROLES = [
+  ...HR_MANAGED_STAFF_ROLES,
+  'reservations',
+  'finance',
+  'hr_supervisor',
+];
+
 export function creatableRoles(actorRole) {
-  const reservationRoles = ['reservations_web', 'reservations_manual', 'reservations_manager'];
-  const fieldRoles = [
-    'operations_supervisor',
-    'operations',
-    'housekeeping_supervisor',
-    'housekeeping',
-  ];
-  const hrCreatable = [...reservationRoles, ...fieldRoles, 'resale', 'resale_manager', 'unit_acquisition_agent', 'unit_acquisition_manager', 'marketing_pr', 'web_developer', 'hr'];
-  if (actorRole === 'admin') {
-    return [
-      'admin',
-      ...reservationRoles,
-      ...fieldRoles,
-      'resale',
-      'resale_manager',
-      'unit_acquisition_agent',
-      'unit_acquisition_manager',
-      'finance',
-      'hr',
-      'hr_supervisor',
-      'owners_relations',
-      'marketing_pr',
-      'web_developer',
-      'owner',
-    ];
-  }
-  if (isHrTeamRole(actorRole)) return hrCreatable;
+  if (actorRole === 'admin' || isHrTeamRole(actorRole)) return HR_MANAGED_STAFF_ROLES;
   if (actorRole === 'unit_acquisition_agent' || actorRole === 'unit_acquisition_manager') {
     return ['owner'];
   }

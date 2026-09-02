@@ -28,7 +28,7 @@ import EmptyState from '../components/ui/EmptyState';
 import SearchFilter from '../components/ui/SearchFilter';
 import SortTh from '../components/ui/SortTh';
 import SearchableSelect from '../components/ui/SearchableSelect';
-import { ROLE_LABELS, ROLE_COLORS, creatableRoles, canEditStaffCompensation, isLineManagerRole } from '../utils/permissions';
+import { ROLE_LABELS, ROLE_COLORS, creatableRoles, canEditStaffCompensation, isLineManagerRole, HR_STAFF_FILTER_ROLES } from '../utils/permissions';
 import { getRoleTheme } from '../utils/roleTheme';
 import { currency, formatDate } from '../utils/formatters';
 import { TEMP_STAFF_PASSWORD } from '../utils/passwordRules';
@@ -681,6 +681,10 @@ export default function Users() {
   const [filterRole, setFilterRole] = useState('');
   const [modal, setModal] = useState(null);
   const [staffForm, setStaffForm] = useState(EMPTY_STAFF_FORM);
+  const formRoleOptions =
+    modal === 'edit-staff' && staffForm.role && !staffRoleOptions.includes(staffForm.role)
+      ? [staffForm.role, ...staffRoleOptions]
+      : staffRoleOptions;
   const [ownerForm, setOwnerForm] = useState(EMPTY_OWNER_FORM);
   const [editId, setEditId] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
@@ -1007,47 +1011,7 @@ export default function Users() {
     });
   };
 
-  const filterRoleOptions = isAdmin
-    ? [
-        'admin',
-        'reservations_web',
-        'reservations_manual',
-        'reservations_manager',
-        'reservations',
-        'operations_supervisor',
-        'operations',
-        'housekeeping_supervisor',
-        'housekeeping',
-        'resale',
-        'resale_manager',
-        'unit_acquisition_agent',
-        'unit_acquisition_manager',
-        'finance',
-        'hr',
-        'hr_supervisor',
-        'owners_relations',
-        'marketing_pr',
-        'web_developer',
-      ]
-    : [
-        'reservations_web',
-        'reservations_manual',
-        'reservations_manager',
-        'reservations',
-        'operations_supervisor',
-        'operations',
-        'housekeeping_supervisor',
-        'housekeeping',
-        'resale',
-        'resale_manager',
-        'unit_acquisition_agent',
-        'unit_acquisition_manager',
-        'finance',
-        'hr',
-        'hr_supervisor',
-        'marketing_pr',
-        'web_developer',
-      ];
+  const filterRoleOptions = HR_STAFF_FILTER_ROLES;
 
   const showAddButton = isOwnersTab ? canCreateOwners : staffRoleOptions.length > 0;
   const saving =
@@ -1480,31 +1444,7 @@ export default function Users() {
           form={staffForm}
           setForm={setStaffForm}
           isEdit={modal === 'edit-staff'}
-          roleOptions={
-            modal === 'edit-staff' && isAdmin
-              ? [
-                  'admin',
-                  'reservations_web',
-                  'reservations_manual',
-                  'reservations_manager',
-                  'reservations',
-                  'operations_supervisor',
-                  'operations',
-                  'housekeeping_supervisor',
-                  'housekeeping',
-                  'resale',
-        'resale_manager',
-                  'unit_acquisition_agent',
-                  'unit_acquisition_manager',
-                  'finance',
-                  'hr',
-                  'hr_supervisor',
-                  'owners_relations',
-                  'marketing_pr',
-                  'web_developer',
-                ]
-              : staffRoleOptions
-          }
+          roleOptions={formRoleOptions}
           lockPayAndLeave={
             modal === 'edit-staff' && !canEditStaffCompensation(user, editId)
           }
