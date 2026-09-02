@@ -33,8 +33,8 @@ function canAssignTaskTo(actor, assignee) {
 function sqlTaskRecipientRoles(staffAlias = 'u') {
   return `(
     ${staffAlias}.role NOT IN ('owner', 'admin')
-    AND ${staffAlias}.role NOT LIKE '%\_manager' ESCAPE '\'
-    AND ${staffAlias}.role NOT LIKE '%\_supervisor' ESCAPE '\'
+    AND right(${staffAlias}.role, 8) <> '_manager'
+    AND right(${staffAlias}.role, 11) <> '_supervisor'
   )`;
 }
 

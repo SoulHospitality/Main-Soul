@@ -6,6 +6,7 @@ const {
   canManageStaffTasks,
   canReceiveStaffTasks,
   isTaskAssigneeRole,
+  sqlTaskRecipientRoles,
 } = require('./staffTasks');
 
 describe('staff task access', () => {
@@ -65,5 +66,12 @@ describe('staff task access', () => {
       canAssignTaskTo(reservationsManager, { id: 20, role: 'web_developer', manager_id: 5 }),
       false
     );
+  });
+
+  it('generates valid SQL for task recipient roles', () => {
+    const sql = sqlTaskRecipientRoles('u');
+    assert.match(sql, /right\(u\.role, 8\) <> '_manager'/);
+    assert.match(sql, /right\(u\.role, 11\) <> '_supervisor'/);
+    assert.doesNotMatch(sql, /ESCAPE ''/);
   });
 });
