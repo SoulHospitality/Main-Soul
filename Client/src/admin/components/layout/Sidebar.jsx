@@ -36,7 +36,7 @@ const NAV_SECTIONS = [
     label: 'Overview',
     items: [
       { path: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard, page: 'dashboard' },
-      { path: '/admin/tasks', label: 'Tasks', icon: ListTodo, page: 'tasks' },
+      { path: '/admin/tasks', label: 'Tasks', icon: ListTodo, page: 'tasks', excludeRoles: ['hr_supervisor'] },
     ],
   },
   {
@@ -90,6 +90,7 @@ const NAV_SECTIONS = [
       { path: '/admin/attendance', label: 'Attendance', icon: Clock, page: 'attendance' },
       { path: '/admin/holiday-requests', label: 'Holiday requests', icon: Palmtree, page: 'holiday_requests', badge: 'leave_pending', agentLabel: 'Request holiday' },
       { path: '/admin/holiday-access', label: 'Holidays access', icon: ShieldCheck, page: 'holiday_access' },
+      { path: '/admin/tasks', label: 'Tasks', icon: ListTodo, page: 'tasks', roles: ['hr_supervisor'] },
       { path: '/admin/wfh', label: 'Work from home', icon: Home, page: 'wfh', badge: 'wfh_pending' },
       { path: '/admin/loans', label: 'Loans', icon: Banknote, page: 'loans', badge: 'loan_pending' },
       { path: '/admin/deductions', label: 'Deductions/Bonus', icon: MinusCircle, page: 'deductions' },

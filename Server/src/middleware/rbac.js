@@ -8,6 +8,7 @@ const PERMS = {
   unit_acquisition_manager: ['units', 'acquisition', 'acquisition_audit'],
   marketing_pr: ['tasks'],
   web_developer: ['tasks'],
+  hr_supervisor: ['tasks'],
   resale: ['units', 'projects', 'dashboard'],
   resale_manager: ['units', 'projects', 'dashboard', 'performance'],
   finance_manager: ['financial_system', 'finance_audit'],

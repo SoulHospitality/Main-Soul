@@ -145,7 +145,7 @@ const HR_PAGE_ACCESS = new Set([
   'profile',
 ]);
 
-const HR_SUPERVISOR_PAGE_ACCESS = new Set([...HR_PAGE_ACCESS]);
+const HR_SUPERVISOR_PAGE_ACCESS = new Set([...HR_PAGE_ACCESS, 'tasks']);
 
 const PERMISSIONS = {
   admin: ['*'],
@@ -212,7 +212,7 @@ const PERMISSIONS = {
     'documents:write',
   ],
   hr: HR_PERMISSIONS,
-  hr_supervisor: [...HR_PERMISSIONS, 'holiday_access:write'],
+  hr_supervisor: [...HR_PERMISSIONS, 'holiday_access:write', 'tasks:read', 'tasks:write'],
   operations: [
     'ops_checkins:read',
     'ops_checkins:write',
