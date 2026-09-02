@@ -611,6 +611,14 @@ function isFieldOperationsRole(role) {
   return r === 'operations' || r === 'operations_supervisor';
 }
 
+function canRequestWfh(role) {
+  const r = String(role || '');
+  if (!canRequestStaffBenefits(r)) return false;
+  if (isFieldOperationsRole(r)) return false;
+  if (r === 'web_developer') return false;
+  return true;
+}
+
 function canRequestStaffBenefits(role) {
   return !NO_STAFF_BENEFIT_ROLES.has(String(role || ''));
 }
@@ -826,6 +834,7 @@ module.exports = {
   isUnpaidLeaveUnlimited,
   hasOfficeAttendance,
   isFieldOperationsRole,
+  canRequestWfh,
   canRequestStaffBenefits,
   staffRequestPolicy,
   departmentManagerRole,

@@ -25,6 +25,7 @@ const {
   fillMissingOfficeAbsences,
   splitSalaryAdjustments,
   hasOfficeAttendance,
+  canRequestWfh,
   canRequestStaffBenefits,
   staffRequestPolicy,
   eligibleReviewSlots,
@@ -254,6 +255,9 @@ describe('HR daily-rate deductions and leave rules', () => {
     );
     assert.equal(canRequestStaffBenefits('admin'), false);
     assert.equal(canRequestStaffBenefits('reservations_web'), true);
+    assert.equal(canRequestWfh('web_developer'), false);
+    assert.equal(canRequestWfh('operations_supervisor'), false);
+    assert.equal(canRequestWfh('reservations_web'), true);
   });
 
   it('treats any assigned web developer manager as a line manager', () => {

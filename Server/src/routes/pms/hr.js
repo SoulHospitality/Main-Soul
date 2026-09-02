@@ -34,6 +34,7 @@ const {
   splitSalaryAdjustments,
   hasOfficeAttendance,
   isFieldOperationsRole,
+  canRequestWfh,
   canRequestStaffBenefits,
   staffRequestPolicy,
   canViewAllStaffRequests,
@@ -1391,10 +1392,13 @@ router.post('/hr/wfh', async (req, res, next) => {
     }
     const target = await loadStaffForHr(staffUserId);
     assertCanTargetBenefits(target);
-    if (isFieldOperationsRole(target.role)) {
-      return res.status(400).json({
-        error: 'Operations staff work in the field and do not use office attendance or work-from-home days',
-      });
+    if (!canRequestWfh(target.role)) {
+      const error = isFieldOperationsRole(target.role)
+        ? 'Operations staff work in the field and do not use office attendance or work-from-home days'
+        : target.role === 'web_developer'
+          ? 'Web developers work remotely and do not submit work-from-home requests'
+          : 'Your role does not use work-from-home requests';
+      return res.status(400).json({ error });
     }
     const { rows: existing } = await query(
       `SELECT id FROM staff_wfh_requests

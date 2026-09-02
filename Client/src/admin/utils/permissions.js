@@ -425,8 +425,7 @@ export function canAccess(user, page) {
     user.role !== 'admin' &&
     user.role !== 'finance' &&
     user.role !== 'finance_manager' &&
-    user.role !== 'operations' &&
-    user.role !== 'operations_supervisor'
+    canRequestWfh(user)
   ) {
     return true;
   }
@@ -535,6 +534,15 @@ export function canSeeRequestQueue(user) {
 
 export function canRequestStaffBenefits(user) {
   return !!user && user.role !== 'admin' && user.role !== 'owner';
+}
+
+export function canRequestWfh(user) {
+  if (!canRequestStaffBenefits(user)) return false;
+  const role = user.role;
+  if (role === 'operations' || role === 'operations_supervisor' || role === 'web_developer') {
+    return false;
+  }
+  return true;
 }
 
 export function canEditStaffCompensation(user, targetUserId) {

@@ -4,7 +4,7 @@ import { Lock, CheckCircle, Palmtree, Banknote, Home } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import { useAuth } from '../context/AuthContext';
-import { ROLE_LABELS, ROLE_COLORS, PMS_LABELS, canRequestStaffBenefits } from '../utils/permissions';
+import { ROLE_LABELS, ROLE_COLORS, PMS_LABELS, canRequestStaffBenefits, canRequestWfh } from '../utils/permissions';
 import { getRoleTheme } from '../utils/roleTheme';
 import { formatDate, formatDateTime } from '../utils/formatters';
 import { getPasswordRuleChecks, passwordPolicyMessage } from '../utils/passwordRules';
@@ -34,8 +34,7 @@ export default function Profile() {
     Boolean(pwForm.confirm_password);
 
   const canRequestLeave = canRequestStaffBenefits(user);
-  const canRequestWfh =
-    canRequestLeave && user.role !== 'operations' && user.role !== 'operations_supervisor';
+  const showWfhRequest = canRequestWfh(user);
   const [leaveForm, setLeaveForm] = useState({
     leave_type: 'casual',
     start_date: '',
@@ -368,7 +367,7 @@ export default function Profile() {
         </div>
       )}
 
-      {canRequestWfh && (
+      {showWfhRequest && (
         <div className="card space-y-3">
           <div className="flex items-center gap-2">
             <Home className="w-5 h-5 text-soul-muted" />

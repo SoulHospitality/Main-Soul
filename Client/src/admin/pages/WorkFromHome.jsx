@@ -7,7 +7,7 @@ import Modal from '../components/ui/Modal';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
 import SearchFilter from '../components/ui/SearchFilter';
-import { ROLE_LABELS, canRequestStaffBenefits, canSeeRequestQueue } from '../utils/permissions';
+import { ROLE_LABELS, canRequestWfh, canSeeRequestQueue } from '../utils/permissions';
 import { formatDate } from '../utils/formatters';
 import { useAuth } from '../context/AuthContext';
 import { RequestReviewActions, approvalStatusClass } from '../components/RequestReviewActions';
@@ -15,10 +15,7 @@ import { RequestReviewActions, approvalStatusClass } from '../components/Request
 export default function WorkFromHome() {
   const { user } = useAuth();
   const canQueue = canSeeRequestQueue(user);
-  const canRequest =
-    canRequestStaffBenefits(user) &&
-    user?.role !== 'operations' &&
-    user?.role !== 'operations_supervisor';
+  const canRequest = canRequestWfh(user);
   const qc = useQueryClient();
   const [status, setStatus] = useState('pending');
   const [search, setSearch] = useState('');
