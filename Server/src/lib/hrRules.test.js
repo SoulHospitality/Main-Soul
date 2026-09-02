@@ -256,6 +256,14 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.equal(canRequestStaffBenefits('reservations_web'), true);
   });
 
+  it('treats any assigned web developer manager as a line manager', () => {
+    const { isLineManager } = require('./hrRules');
+    const webDev = { id: 20, role: 'web_developer', manager_id: 5, manager_ids: [5, 8] };
+    assert.equal(isLineManager({ id: 5, role: 'admin' }, webDev), true);
+    assert.equal(isLineManager({ id: 8, role: 'hr_supervisor' }, webDev), true);
+    assert.equal(isLineManager({ id: 9, role: 'hr_supervisor' }, webDev), false);
+  });
+
   it('matches door-report Person ID to staff user id first', () => {
     const staff = [
       { id: 15, staff_code: 'SH15', full_name: 'Hana Kamal' },

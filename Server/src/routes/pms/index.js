@@ -50,6 +50,14 @@ const {
   appliesSalaryImmediately,
 } = require('../../lib/hrRules');
 const {
+  attachManagerIds,
+  resolveStaffManagers,
+  syncStaffManagers,
+  loadManagerIds,
+  supportsMultipleManagers,
+  parseSingleManagerId,
+} = require('../../lib/staffManagers');
+const {
   detachStaffUserReferences,
   asStaffDeleteError,
 } = require('../../lib/staffUserCleanup');
@@ -354,46 +362,7 @@ function usesCommissionPct(role) {
 }
 
 async function parseManagerId(raw, selfId) {
-  if (raw === undefined) return undefined;
-  if (raw === '' || raw == null) return null;
-  const id = Number(raw);
-  if (!Number.isFinite(id) || id < 1) {
-    const err = new Error('Invalid manager');
-    err.status = 400;
-    throw err;
-  }
-  if (selfId != null && String(id) === String(selfId)) {
-    const err = new Error('A staff member cannot manage themselves');
-    err.status = 400;
-    throw err;
-  }
-  const { rows } = await query(`SELECT id, role FROM staff_users WHERE id = $1`, [id]);
-  const lineManagerRoles = [
-    'admin',
-    'hr_supervisor',
-    'reservations_manager',
-    'resale_manager',
-    'unit_acquisition_manager',
-    'finance_manager',
-    'operations_supervisor',
-  ];
-  if (!rows[0] || rows[0].role === 'owner') {
-    const err = new Error('Manager not found');
-    err.status = 400;
-    throw err;
-  }
-  if (!lineManagerRoles.includes(rows[0].role)) {
-    if (selfId != null) {
-      const { rows: existing } = await query(`SELECT manager_id FROM staff_users WHERE id = $1`, [selfId]);
-      if (existing[0] && String(existing[0].manager_id) === String(id)) return id;
-    }
-    const err = new Error(
-      'Manager must be a CEO, HR Supervisor, Reservations Manager, Resale Manager, Unit Acquisition Manager, or Operations Supervisor'
-    );
-    err.status = 400;
-    throw err;
-  }
-  return id;
+  return parseSingleManagerId(raw, selfId);
 }
 
 function parseAgentCommissionPct(b, role) {
@@ -438,7 +407,10 @@ router.get('/users', requireRoles(...USER_ACCOUNT_ROLES), async (req, res, next)
     const { rows } = await query(sql);
     sendList(
       res,
-      rows.map((r) => ({ ...r, is_first_login: Boolean(Number(r.is_first_login)) }))
+      (await attachManagerIds(rows)).map((r) => ({
+        ...r,
+        is_first_login: Boolean(Number(r.is_first_login)),
+      }))
     );
   } catch (e) {
     next(e);
@@ -497,7 +469,7 @@ router.post('/users', requireRoles(...USER_ACCOUNT_ROLES), async (req, res, next
     }
     const tempPassword = TEMP_PASSWORD;
     const hash = await bcrypt.hash(tempPassword, 10);
-    const managerId = isOwner ? null : await parseManagerId(b.manager_id);
+    const { managerId, managerIds } = await resolveStaffManagers(b, role);
 
     const { rows } = await query(
       `INSERT INTO staff_users (
@@ -522,7 +494,11 @@ router.post('/users', requireRoles(...USER_ACCOUNT_ROLES), async (req, res, next
       ]
     );
 
-    const user = { ...rows[0], is_first_login: true };
+    if (!isOwner) {
+      await syncStaffManagers(rows[0].id, role, managerIds);
+    }
+
+    const user = { ...(await attachManagerIds([rows[0]]))[0], is_first_login: true };
     let linkedUnits = [];
     let unitLinkError = null;
     if (isOwner && Array.isArray(b.unit_ids) && b.unit_ids.length) {
@@ -652,12 +628,24 @@ router.patch('/users/:id', requireRoles(...USER_ACCOUNT_ROLES), async (req, res,
       await assertStaffCodeAvailable(staffCode, existing.id);
     }
 
-    const nextManagerId =
-      nextRole === 'owner'
-        ? null
-        : b.manager_id !== undefined
-          ? await parseManagerId(b.manager_id, existing.id)
-          : existing.manager_id;
+    const managerPayloadProvided = b.manager_id !== undefined || b.manager_ids !== undefined;
+    const roleChanged = nextRole !== existing.role;
+    let nextManagerId = existing.manager_id;
+    let managerIdsToSync = null;
+
+    if (nextRole === 'owner') {
+      nextManagerId = null;
+      managerIdsToSync = [];
+    } else if (managerPayloadProvided || roleChanged) {
+      const bodyForManagers = managerPayloadProvided
+        ? b
+        : supportsMultipleManagers(nextRole)
+          ? { manager_ids: await loadManagerIds(existing.id) }
+          : { manager_id: existing.manager_id };
+      const resolved = await resolveStaffManagers(bodyForManagers, nextRole, existing.id);
+      nextManagerId = resolved.managerId ?? null;
+      managerIdsToSync = resolved.managerIds;
+    }
 
     const { rows } = await query(
       `UPDATE staff_users SET
@@ -702,7 +690,13 @@ router.patch('/users/:id', requireRoles(...USER_ACCOUNT_ROLES), async (req, res,
         req.params.id,
       ]
     );
-    res.json({ ...rows[0], is_first_login: Boolean(Number(rows[0].is_first_login)) });
+    if (nextRole !== 'owner' && managerIdsToSync !== null) {
+      await syncStaffManagers(existing.id, nextRole, managerIdsToSync);
+    } else if (nextRole !== 'owner' && !supportsMultipleManagers(nextRole)) {
+      await syncStaffManagers(existing.id, nextRole, nextManagerId ? [nextManagerId] : []);
+    }
+    const enriched = (await attachManagerIds([rows[0]]))[0];
+    res.json({ ...enriched, is_first_login: Boolean(Number(enriched.is_first_login)) });
   } catch (e) {
     if (e.status) return res.status(e.status).json({ error: e.message });
     if (e.code === '23505') {

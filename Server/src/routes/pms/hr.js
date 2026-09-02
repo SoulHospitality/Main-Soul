@@ -42,6 +42,7 @@ const {
   describeRequestApproval,
   isUnpaidLeaveUnlimited,
 } = require('../../lib/hrRules');
+const { loadManagerIds, sqlStaffManagedBy } = require('../../lib/staffManagers');
 
 const router = express.Router();
 
@@ -69,7 +70,7 @@ function requestListScope(actor, { mine, alias = 'r', staffAlias = 'u' } = {}) {
     if (wantMine) {
       where.push(`${alias}.staff_user_id = ${me}`);
     } else {
-      const parts = [`${alias}.staff_user_id = ${me}`, `${staffAlias}.manager_id = ${me}`];
+      const parts = [`${alias}.staff_user_id = ${me}`, sqlStaffManagedBy(me, staffAlias)];
       if (actor.role === 'operations_supervisor') parts.push(`${staffAlias}.role = 'operations'`);
       if (actor.role === 'housekeeping_supervisor') parts.push(`${staffAlias}.role = 'housekeeping'`);
       where.push(`(${parts.join(' OR ')})`);
@@ -79,9 +80,20 @@ function requestListScope(actor, { mine, alias = 'r', staffAlias = 'u' } = {}) {
 }
 
 function presentStaffRequest(row, actor) {
-  const staff = { id: row.staff_user_id, role: row.role, manager_id: row.manager_id };
+  const managerIds = Array.isArray(row.manager_ids)
+    ? row.manager_ids.map(Number).filter((id) => Number.isFinite(id))
+    : row.manager_id != null
+      ? [Number(row.manager_id)]
+      : [];
+  const staff = {
+    id: row.staff_user_id,
+    role: row.role,
+    manager_id: row.manager_id,
+    manager_ids: managerIds,
+  };
   return {
     ...row,
+    manager_ids: managerIds,
     can_review_slots: eligibleReviewSlots(actor, row, staff),
     approval_label: describeRequestApproval(row),
   };
@@ -101,6 +113,12 @@ const REQUEST_LIST_SELECT = `
       u.role,
       u.staff_code,
       u.manager_id,
+      COALESCE(
+        (SELECT array_agg(sum.manager_id ORDER BY sum.manager_id)
+         FROM staff_user_managers sum
+         WHERE sum.staff_user_id = u.id),
+        ARRAY[]::int[]
+      ) AS manager_ids,
       mgr.full_name AS manager_name,
       reviewer.full_name AS reviewed_by_name,
       mgr_rev.full_name AS manager_reviewed_by_name,
@@ -133,7 +151,13 @@ async function reviewStaffRequest({ table, id, actor, body, onApprove }) {
   try {
     await client.query('BEGIN');
     const { rows: existingRows } = await client.query(
-      `SELECT r.*, u.role, u.manager_id, u.base_salary, u.full_name
+      `SELECT r.*, u.role, u.manager_id, u.base_salary, u.full_name,
+              COALESCE(
+                (SELECT array_agg(sum.manager_id ORDER BY sum.manager_id)
+                 FROM staff_user_managers sum
+                 WHERE sum.staff_user_id = u.id),
+                ARRAY[]::int[]
+              ) AS manager_ids
        FROM ${table} r
        JOIN staff_users u ON u.id = r.staff_user_id
        WHERE r.id = $1
@@ -151,6 +175,9 @@ async function reviewStaffRequest({ table, id, actor, body, onApprove }) {
       id: row.staff_user_id,
       role: row.role,
       manager_id: row.manager_id,
+      manager_ids: Array.isArray(row.manager_ids)
+        ? row.manager_ids.map(Number).filter((id) => Number.isFinite(id))
+        : await loadManagerIds(row.staff_user_id),
       base_salary: row.base_salary,
       full_name: row.full_name,
     };

@@ -62,6 +62,7 @@ const EMPTY_STAFF_FORM = {
   leave_unpaid_days: '0',
   staff_code: '',
   manager_id: '',
+  manager_ids: [],
 };
 
 const EMPTY_OWNER_FORM = {
@@ -275,6 +276,10 @@ function isFinanceAgentRole(role) {
   return role === 'finance';
 }
 
+function isWebDeveloperRole(role) {
+  return role === 'web_developer';
+}
+
 function usesCommissionPct(role) {
   return isReservationAgentRole(role) || isResaleAgentRole(role);
 }
@@ -338,19 +343,74 @@ function StaffForm({
           <SearchableSelect
             value={form.role}
             onChange={(v) =>
-              setForm((f) => ({
-                ...f,
-                role: v,
-                sales_commission_pct: usesCommissionPct(v)
-                  ? f.sales_commission_pct
-                  : '',
-              }))
+              setForm((f) => {
+                const next = {
+                  ...f,
+                  role: v,
+                  sales_commission_pct: usesCommissionPct(v) ? f.sales_commission_pct : '',
+                };
+                if (v === 'web_developer' && f.manager_id) {
+                  next.manager_ids = [
+                    ...new Set([...(f.manager_ids || []), String(f.manager_id)]),
+                  ];
+                  next.manager_id = '';
+                }
+                if (v !== 'web_developer') {
+                  next.manager_ids = [];
+                }
+                return next;
+              })
             }
             placeholder="Select role…"
             options={roleOptions.map((r) => ({ value: r, label: ROLE_LABELS[r] }))}
           />
         </div>
         {form.role !== 'admin' && form.role !== 'owner' ? (
+          isWebDeveloperRole(form.role) ? (
+            <div className="sm:col-span-2">
+              <label className="label">Line managers</label>
+              <div className="max-h-52 overflow-y-auto rounded-xl border border-soul-line divide-y bg-white">
+                {managerOptions.filter((u) => isLineManagerRole(u.role)).length === 0 ? (
+                  <p className="px-3 py-3 text-sm text-soul-muted">No line managers available.</p>
+                ) : (
+                  managerOptions
+                    .filter((u) => isLineManagerRole(u.role))
+                    .map((u) => {
+                      const selected = new Set((form.manager_ids || []).map(String));
+                      const checked = selected.has(String(u.id));
+                      return (
+                        <label
+                          key={u.id}
+                          className="flex items-center gap-3 px-3 py-2.5 text-sm cursor-pointer hover:bg-soul-surface/70"
+                        >
+                          <input
+                            type="checkbox"
+                            className="rounded border-soul-line"
+                            checked={checked}
+                            onChange={() =>
+                              setForm((f) => {
+                                const ids = new Set((f.manager_ids || []).map(String));
+                                if (ids.has(String(u.id))) ids.delete(String(u.id));
+                                else ids.add(String(u.id));
+                                return { ...f, manager_ids: [...ids], manager_id: '' };
+                              })
+                            }
+                          />
+                          <span className="text-soul-blue">{u.full_name}</span>
+                          <span className="text-[11px] text-soul-muted">
+                            {ROLE_LABELS[u.role] || u.role}
+                          </span>
+                        </label>
+                      );
+                    })
+                )}
+              </div>
+              <p className="mt-1 text-[11px] text-slate-400">
+                Web developers can have more than one manager. Each selected manager can assign tasks
+                and accept holiday, loan, and WFH requests (with the HR Supervisor).
+              </p>
+            </div>
+          ) : (
           <div>
             <label className="label">
               {isReservationAgentRole(form.role)
@@ -408,6 +468,7 @@ function StaffForm({
                       : 'Must accept holiday, loan, and WFH requests (with the HR Supervisor, except for HR staff).'}
             </p>
           </div>
+          )
         ) : null}
         <div>
           <label className="label">Base Salary (EGP) *</label>
@@ -916,6 +977,12 @@ export default function Users() {
         leave_unpaid_days: String(u.leave_unpaid_days ?? 0),
         staff_code: u.staff_code || '',
         manager_id: u.manager_id ? String(u.manager_id) : '',
+        manager_ids: (Array.isArray(u.manager_ids) && u.manager_ids.length
+          ? u.manager_ids
+          : u.manager_id
+            ? [u.manager_id]
+            : []
+        ).map(String),
       });
       setModal('edit-staff');
     }
@@ -967,12 +1034,14 @@ export default function Users() {
       leave_casual_days: Number(staffForm.leave_casual_days) || 0,
       leave_annual_days: Number(staffForm.leave_annual_days) || 0,
       staff_code: String(staffForm.staff_code || '').trim(),
-      manager_id:
-        staffForm.role === 'admin' || staffForm.role === 'owner'
-          ? null
-          : staffForm.manager_id
-            ? Number(staffForm.manager_id)
-            : null,
+      manager_id: isWebDeveloperRole(staffForm.role)
+        ? null
+        : staffForm.manager_id
+          ? Number(staffForm.manager_id)
+          : null,
+      manager_ids: isWebDeveloperRole(staffForm.role)
+        ? (staffForm.manager_ids || []).map(Number).filter(Boolean)
+        : undefined,
       sales_commission_pct: usesCommissionPct(staffForm.role)
         ? Number(staffForm.sales_commission_pct)
         : Number(staffForm.sales_commission_pct) || 0,
@@ -1461,6 +1530,9 @@ export default function Users() {
           managerOptions={users.filter((u) => {
             if (editId && String(u.id) === String(editId)) return false;
             if (isLineManagerRole(u.role)) return true;
+            if (isWebDeveloperRole(staffForm.role)) {
+              return (staffForm.manager_ids || []).some((id) => String(id) === String(u.id));
+            }
             return staffForm.manager_id && String(u.id) === String(staffForm.manager_id);
           })}
         />

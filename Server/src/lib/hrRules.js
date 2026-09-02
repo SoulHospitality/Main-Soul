@@ -595,6 +595,8 @@ const NO_OFFICE_ATTENDANCE_ROLES = new Set([
 const NO_STAFF_BENEFIT_ROLES = new Set(['admin', 'owner']);
 const UNPAID_LEAVE_UNLIMITED = true;
 
+const { staffManagerIds } = require('./staffManagers');
+
 function isUnpaidLeaveUnlimited() {
   return UNPAID_LEAVE_UNLIMITED;
 }
@@ -659,7 +661,7 @@ function departmentManagerRole(role) {
 function isLineManager(actor, staff) {
   if (!actor || !staff) return false;
   if (String(actor.id) === String(staff.id)) return false;
-  if (staff.manager_id != null && String(actor.id) === String(staff.manager_id)) return true;
+  if (staffManagerIds(staff).includes(String(actor.id))) return true;
   const dept = departmentManagerRole(staff.role);
   return Boolean(dept) && actor.role === dept;
 }
@@ -677,7 +679,7 @@ function eligibleReviewSlots(actor, request, staff) {
   const needsHr = request.needs_hr_approval !== false;
   const managerDone = Boolean(request.manager_reviewed_by);
   const hrDone = Boolean(request.hr_reviewed_by);
-  if (needsManager && !managerDone && isLineManager(actor, staff || { id: request.staff_user_id, role: request.role, manager_id: request.manager_id })) {
+  if (needsManager && !managerDone && isLineManager(actor, staff || { id: request.staff_user_id, role: request.role, manager_id: request.manager_id, manager_ids: request.manager_ids })) {
     slots.push('manager');
   }
   if (needsHr && !hrDone && actor.role === 'hr_supervisor') {
