@@ -5,6 +5,7 @@ const http = require('http');
 const bcrypt = require('bcryptjs');
 const { createApp } = require('./app');
 const { runMigrations, query } = require('./config/db');
+const { ensureStaffTaskTables } = require('./lib/staffTaskSchema');
 const { applyExemptUserPasswords } = require('./lib/staffIdentity');
 const { initSocket } = require('./config/socket');
 const { startBookingHoldExpiryJob } = require('./jobs/bookingHoldExpiry');
@@ -45,6 +46,11 @@ async function main() {
     console.warn('[boot] DATABASE_URL not set — migrations/API will fail until configured');
   } else {
     await runMigrations();
+    try {
+      await ensureStaffTaskTables();
+    } catch (err) {
+      console.error('[boot] staff task tables ensure failed:', err.message);
+    }
     await seedAdmin();
     await applyExemptUserPasswords();
     try {

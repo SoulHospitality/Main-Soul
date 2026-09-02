@@ -70,6 +70,10 @@ function createApp() {
     try {
       migrations = await require('./config/db').listAppliedMigrations();
     } catch {}
+    let staffTasks = { ready: false };
+    try {
+      staffTasks = await require('./lib/staffTaskSchema').staffTaskTablesReady();
+    } catch {}
     res.json({
       ok: true,
       service: 'main-soul-backend',
@@ -82,6 +86,7 @@ function createApp() {
       unitCounts,
       migrationsApplied: migrations.map((m) => m.id),
       latestMigration: migrations.length ? migrations[migrations.length - 1].id : null,
+      staffTasks,
     });
   });
 

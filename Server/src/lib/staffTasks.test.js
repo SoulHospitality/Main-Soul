@@ -70,8 +70,8 @@ describe('staff task access', () => {
 
   it('generates valid SQL for task recipient roles', () => {
     const sql = sqlTaskRecipientRoles('u');
-    assert.match(sql, /right\(u\.role, 8\) <> '_manager'/);
-    assert.match(sql, /right\(u\.role, 11\) <> '_supervisor'/);
-    assert.doesNotMatch(sql, /ESCAPE ''/);
+    assert.match(sql, /u\.role IN \(/);
+    assert.match(sql, /'web_developer'/);
+    assert.doesNotMatch(sql, /ESCAPE/);
   });
 });

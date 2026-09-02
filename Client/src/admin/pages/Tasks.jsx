@@ -30,9 +30,16 @@ export default function Tasks() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [deleteTask, setDeleteTask] = useState(null);
 
-  const { data: tasks = [], isLoading, isError } = useQuery({
+  const {
+    data: tasks = [],
+    isLoading,
+    isError,
+    error: tasksError,
+    refetch: refetchTasks,
+  } = useQuery({
     queryKey: ['staff-tasks'],
     queryFn: () => api.get('/staff-tasks').then((r) => r.data),
+    retry: 2,
   });
 
   const {
@@ -141,11 +148,17 @@ export default function Tasks() {
   if (isLoading) return <LoadingSpinner />;
 
   if (isError) {
+    const message = tasksError?.response?.data?.error || 'Refresh the page or try again in a moment.';
     return (
       <EmptyState
         icon={ListTodo}
         title="Could not load tasks"
-        subtitle="Refresh the page or try again in a moment."
+        subtitle={message}
+        action={
+          <button type="button" onClick={() => refetchTasks()} className="btn-primary">
+            Try again
+          </button>
+        }
       />
     );
   }

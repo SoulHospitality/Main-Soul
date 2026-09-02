@@ -5,10 +5,30 @@ const {
   isStaffTaskManagerRole,
 } = require('./staffManagers');
 
+const STAFF_TASK_RECIPIENT_ROLES = [
+  'reservations',
+  'reservations_web',
+  'reservations_manual',
+  'unit_acquisition_agent',
+  'operations',
+  'housekeeping',
+  'resale',
+  'finance',
+  'hr',
+  'owners_relations',
+  'marketing_pr',
+  'web_developer',
+];
+
+function sqlTaskRecipientRoles(staffAlias = 'u') {
+  const list = STAFF_TASK_RECIPIENT_ROLES.map((role) => `'${role}'`).join(', ');
+  return `${staffAlias}.role IN (${list})`;
+}
+
 function canReceiveStaffTasks(role) {
   const r = String(role || '');
   if (r === 'owner' || r === 'admin') return false;
-  return !isStaffTaskManagerRole(r);
+  return STAFF_TASK_RECIPIENT_ROLES.includes(r);
 }
 
 function isTaskAssigneeRole(userOrRole) {
@@ -28,14 +48,6 @@ function canAssignTaskTo(actor, assignee) {
   if (isDirectStaffManager(actor.id, assignee)) return true;
   const dept = departmentManagerRole(assignee.role);
   return Boolean(dept) && actor.role === dept;
-}
-
-function sqlTaskRecipientRoles(staffAlias = 'u') {
-  return `(
-    ${staffAlias}.role NOT IN ('owner', 'admin')
-    AND right(${staffAlias}.role, 8) <> '_manager'
-    AND right(${staffAlias}.role, 11) <> '_supervisor'
-  )`;
 }
 
 function sqlStaffTaskManagedBy(managerParam, staffAlias = 'u') {
@@ -75,10 +87,14 @@ function staffTaskScopeSql(managerParam, staffAlias, actorRole) {
   if (actorRole === 'admin') {
     return sqlTaskRecipientRoles(staffAlias);
   }
-  return sqlLineManagerTaskScope(managerParam, staffAlias);
+  return `(
+    ${sqlLineManagerTaskScope(managerParam, staffAlias)}
+    AND ${sqlTaskRecipientRoles(staffAlias)}
+  )`;
 }
 
 module.exports = {
+  STAFF_TASK_RECIPIENT_ROLES,
   canReceiveStaffTasks,
   isTaskAssigneeRole,
   canManageStaffTasks,

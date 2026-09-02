@@ -8,6 +8,7 @@ const {
 } = require('../../lib/staffTasks');
 const { sendStaffTaskAssignedEmail, staffEmailFromUser } = require('../../services/staffTaskEmails');
 const { logAudit } = require('../../lib/audit');
+const { staffTaskTablesReady } = require('../../lib/staffTaskSchema');
 
 const router = express.Router();
 
@@ -45,10 +46,22 @@ function assigneeAuthShape(row) {
   };
 }
 
+function taskDbError(res, next, err) {
+  if (err?.code === '42P01') {
+    return res.status(503).json({ error: 'Tasks are not set up yet. Restart the API server and try again.' });
+  }
+  console.error('[staff-tasks]', err?.message || err);
+  return next(err);
+}
+
 router.get('/staff-tasks/assignees', async (req, res, next) => {
   try {
     if (!canManageStaffTasks(req.user)) {
       return res.status(403).json({ error: 'You cannot assign tasks' });
+    }
+    const ready = await staffTaskTablesReady();
+    if (!ready.ready) {
+      return res.status(503).json({ error: 'Tasks are not set up yet. Restart the API server and try again.' });
     }
     const { rows } = await query(
       `SELECT u.id, u.full_name, u.role, u.email
@@ -60,12 +73,16 @@ router.get('/staff-tasks/assignees', async (req, res, next) => {
     );
     res.json(rows);
   } catch (e) {
-    next(e);
+    return taskDbError(res, next, e);
   }
 });
 
 router.get('/staff-tasks', async (req, res, next) => {
   try {
+    const ready = await staffTaskTablesReady();
+    if (!ready.staff_tasks) {
+      return res.status(503).json({ error: 'Tasks are not set up yet. Restart the API server and try again.' });
+    }
     const me = req.user.id;
     const sql = canManageStaffTasks(req.user)
       ? `SELECT ${TASK_SELECT}
@@ -83,7 +100,7 @@ router.get('/staff-tasks', async (req, res, next) => {
     const { rows } = await query(sql, [me]);
     res.json(rows);
   } catch (e) {
-    next(e);
+    return taskDbError(res, next, e);
   }
 });
 
@@ -174,7 +191,7 @@ router.post('/staff-tasks', async (req, res, next) => {
       email_error: emailError,
     });
   } catch (e) {
-    next(e);
+    return taskDbError(res, next, e);
   }
 });
 
@@ -227,7 +244,7 @@ router.delete('/staff-tasks/:id', async (req, res, next) => {
     });
     res.json({ ok: true, id: task.id });
   } catch (e) {
-    next(e);
+    return taskDbError(res, next, e);
   }
 });
 
