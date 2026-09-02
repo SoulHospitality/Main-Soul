@@ -420,7 +420,7 @@ function StaffForm({
             disabled={lockPayAndLeave}
             onChange={(e) => setForm((f) => ({ ...f, leave_casual_days: e.target.value }))}
           />
-          <p className="mt-1 text-[11px] text-slate-400">Paid casual balance. Requestable before the 11:00 shift.</p>
+          <p className="mt-1 text-[11px] text-slate-400">Paid casual balance. Same-day request and approval before 11:00 AM. No deduction.</p>
         </div>
         <div>
           <label className="label">Annual days</label>
@@ -433,7 +433,7 @@ function StaffForm({
             disabled={lockPayAndLeave}
             onChange={(e) => setForm((f) => ({ ...f, leave_annual_days: e.target.value }))}
           />
-          <p className="mt-1 text-[11px] text-slate-400">Paid annual balance. Must be requested 7 days ahead.</p>
+          <p className="mt-1 text-[11px] text-slate-400">Paid annual balance. Before the shift day; 3+ days need 7 days notice. No deduction.</p>
         </div>
         <div>
           <label className="label">Unpaid days</label>
@@ -447,7 +447,7 @@ function StaffForm({
             onChange={(e) => setForm((f) => ({ ...f, leave_unpaid_days: e.target.value }))}
           />
           <p className="mt-1 text-[11px] text-slate-400">
-            Unpaid balance. Requestable from day one, even without holiday access.
+            Unpaid balance. Requestable from day one. Each approved day deducts 1× daily rate (salary ÷ 30).
           </p>
         </div>
         {showCommission && (

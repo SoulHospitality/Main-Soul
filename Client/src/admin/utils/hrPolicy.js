@@ -1,5 +1,4 @@
 export const DAYS_IN_MONTH = 30;
-export const ANNUAL_MIN_NOTICE_DAYS = 7;
 export const EARLY_LEAVE_MAX_PER_YEAR = 2;
 
 export function dailyRate(baseSalary) {
@@ -29,11 +28,11 @@ export function requestableLeaveTypes(canRequestHolidays) {
   return [unpaid];
 }
 
-export function computeAttendanceAmount(baseSalary, { status, check_in, notified } = {}) {
+export function computeAttendanceAmount(baseSalary, { status, check_in } = {}) {
   const rate = dailyRate(baseSalary);
   const st = String(status || '').toLowerCase();
   if (st === 'on_time') return 0;
-  if (st === 'no_show') return Math.round((rate * (notified ? 1 : 2) + Number.EPSILON) * 100) / 100;
+  if (st === 'no_show') return Math.round((rate * 2 + Number.EPSILON) * 100) / 100;
   if (st !== 'late') return 0;
   const text = String(check_in || '').trim();
   const m = text.match(/^(\d{1,2}):(\d{2})/);

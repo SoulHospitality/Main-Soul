@@ -6,6 +6,8 @@ const {
   parseHhMm,
   computeLatenessDeduction,
   computeAbsenceDeduction,
+  computeUnpaidLeaveDeduction,
+  leaveDayDeductionAmount,
   assertCasualTiming,
   assertAnnualNotice,
   addDaysIso,
@@ -49,9 +51,16 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.equal(computeLatenessDeduction(9000, '12:10').amount, 300);
   });
 
-  it('deducts 2 days for unnotified absence and 1 day with notice', () => {
-    assert.equal(computeAbsenceDeduction(9000, false).amount, 600);
-    assert.equal(computeAbsenceDeduction(9000, true).amount, 300);
+  it('deducts 2x daily rate for no show', () => {
+    assert.equal(computeAbsenceDeduction(9000).amount, 600);
+    assert.equal(computeAbsenceDeduction(9000).factor, 2);
+  });
+
+  it('deducts 1x daily rate for unpaid leave days', () => {
+    assert.equal(computeUnpaidLeaveDeduction(9000).amount, 300);
+    assert.equal(leaveDayDeductionAmount('unpaid', 9000), 300);
+    assert.equal(leaveDayDeductionAmount('casual', 9000), 0);
+    assert.equal(leaveDayDeductionAmount('annual', 9000), 0);
   });
 
   it('blocks casual leave after the 11:00 shift on the same day', () => {
@@ -61,10 +70,18 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.doesNotThrow(() => assertCasualTiming('2026-08-19', beforeShift));
   });
 
-  it('requires a week of notice for annual leave', () => {
+  it('requires annual leave before the shift day', () => {
     const now = new Date('2026-08-19T08:00:00Z');
-    assert.throws(() => assertAnnualNotice('2026-08-24', now), /7 days/);
-    assert.doesNotThrow(() => assertAnnualNotice(addDaysIso('2026-08-19', 7), now));
+    assert.throws(() => assertAnnualNotice('2026-08-19', now), /before the shift day/);
+    assert.doesNotThrow(() => assertAnnualNotice('2026-08-20', now, 1));
+    assert.doesNotThrow(() => assertAnnualNotice('2026-08-20', now, 2));
+  });
+
+  it('requires a week of notice for annual leave of 3 days or more', () => {
+    const now = new Date('2026-08-19T08:00:00Z');
+    assert.throws(() => assertAnnualNotice('2026-08-24', now, 3), /7 days/);
+    assert.doesNotThrow(() => assertAnnualNotice(addDaysIso('2026-08-19', 7), now, 3));
+    assert.doesNotThrow(() => assertAnnualNotice('2026-08-20', now, 2));
   });
 
   it('caps early leaves at two per year', () => {

@@ -126,7 +126,7 @@ export default function HolidayRequests() {
         <p className="page-subtitle">
           {canQueue
             ? 'Agents need their manager and the HR Manager. HR needs the HR Manager. HR Manager requests go to their manager. The CEO can accept or reject any request.'
-            : 'Request casual, annual, early, or unpaid leave. Your manager and the HR Manager review it.'}
+            : 'Casual: same day before 11:00 AM (no deduction). Annual: before the shift day; 3+ days need 7 days notice. Unpaid: 1× daily rate. No show: 2× daily rate.'}
         </p>
       </div>
 

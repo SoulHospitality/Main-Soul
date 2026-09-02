@@ -5,8 +5,9 @@ const SHIFT_START_MINUTES = 11 * 60;
 const GRACE_END_MINUTES = 11 * 60 + 15;
 const LATE_QUARTER_END = 11 * 60 + 30;
 const LATE_HALF_END = 12 * 60;
-const ANNUAL_MIN_NOTICE_DAYS = 7;
 const EARLY_LEAVE_MAX_PER_YEAR = 2;
+const ANNUAL_EXTENDED_NOTICE_DAYS = 7;
+const ANNUAL_EXTENDED_MIN_DURATION = 3;
 const TIMEZONE = 'Africa/Cairo';
 
 function roundMoney(n) {
@@ -63,8 +64,8 @@ function latenessFactor(arrivalMinutes) {
   };
 }
 
-function absenceFactor(notified) {
-  return notified ? 1 : 2;
+function absenceFactor() {
+  return 2;
 }
 
 function computeLatenessDeduction(baseSalary, arrivalTime) {
@@ -84,18 +85,45 @@ function computeLatenessDeduction(baseSalary, arrivalTime) {
   };
 }
 
-function computeAbsenceDeduction(baseSalary, notified) {
+function computeAbsenceDeduction(baseSalary) {
   const rate = dailyRate(baseSalary);
-  const factor = absenceFactor(!!notified);
+  const factor = absenceFactor();
   return {
     factor,
     daily_rate: rate,
     amount: roundMoney(rate * factor),
-    notified: !!notified,
-    label: notified
-      ? 'Absence with notice · 1 × daily rate'
-      : 'Absence without notice · 2 × daily rate',
+    notified: false,
+    label: 'No show · 2 × daily rate',
   };
+}
+
+function computeUnpaidLeaveDeduction(baseSalary) {
+  const rate = dailyRate(baseSalary);
+  return {
+    factor: 1,
+    daily_rate: rate,
+    amount: rate,
+    label: 'Unpaid leave · 1 × daily rate',
+  };
+}
+
+function leaveDayDeductionAmount(leaveType, baseSalary) {
+  if (String(leaveType || '').toLowerCase() === 'unpaid') {
+    return computeUnpaidLeaveDeduction(baseSalary).amount;
+  }
+  return 0;
+}
+
+function enumerateDateRange(start, end) {
+  const dates = [];
+  let cur = String(start || '').slice(0, 10);
+  const last = String(end || '').slice(0, 10);
+  if (!cur || !last || cur > last) return dates;
+  while (cur <= last) {
+    dates.push(cur);
+    cur = addDaysIso(cur, 1);
+  }
+  return dates;
 }
 
 function cairoParts(now = new Date()) {
@@ -138,13 +166,25 @@ function assertCasualTiming(startDate, now = new Date()) {
   }
 }
 
-function assertAnnualNotice(startDate, now = new Date()) {
+function assertAnnualNotice(startDate, now = new Date(), days = 1) {
   const cairo = cairoParts(now);
-  const minDate = addDaysIso(cairo.date, ANNUAL_MIN_NOTICE_DAYS);
-  if (startDate < minDate) {
-    const err = new Error(`Annual leave must be requested at least ${ANNUAL_MIN_NOTICE_DAYS} days in advance`);
+  if (startDate <= cairo.date) {
+    const err = new Error(
+      'Annual leave must be requested before the shift day (by 11:59 PM the day before)'
+    );
     err.status = 400;
     throw err;
+  }
+  const duration = Number(days) || 1;
+  if (duration >= ANNUAL_EXTENDED_MIN_DURATION) {
+    const minDate = addDaysIso(cairo.date, ANNUAL_EXTENDED_NOTICE_DAYS);
+    if (startDate < minDate) {
+      const err = new Error(
+        `Annual leave of ${duration} days or more must be requested at least ${ANNUAL_EXTENDED_NOTICE_DAYS} days in advance`
+      );
+      err.status = 400;
+      throw err;
+    }
   }
 }
 
@@ -725,8 +765,9 @@ module.exports = {
   GRACE_END_MINUTES,
   LATE_QUARTER_END,
   LATE_HALF_END,
-  ANNUAL_MIN_NOTICE_DAYS,
   EARLY_LEAVE_MAX_PER_YEAR,
+  ANNUAL_EXTENDED_NOTICE_DAYS,
+  ANNUAL_EXTENDED_MIN_DURATION,
   TIMEZONE,
   roundMoney,
   dailyRate,
@@ -735,6 +776,9 @@ module.exports = {
   absenceFactor,
   computeLatenessDeduction,
   computeAbsenceDeduction,
+  computeUnpaidLeaveDeduction,
+  leaveDayDeductionAmount,
+  enumerateDateRange,
   cairoParts,
   addDaysIso,
   assertCasualTiming,

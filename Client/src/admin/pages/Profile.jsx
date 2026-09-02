@@ -194,8 +194,10 @@ export default function Profile() {
             <h3 className="font-semibold text-soul-blue">Time off</h3>
           </div>
           <p className="text-sm text-soul-muted mb-4">
-            Casual: before the 11:00 shift. Annual: at least 7 days ahead. Early leave: max 2 per year.
-            Unpaid leave is available from day one and does not need holiday access.
+            Casual: same-day requests and approvals before the 11:00 shift (no deduction).
+            Annual: request before the shift day (by 11:59 PM the day before). 3+ days need 7 days notice (no deduction).
+            Unpaid: 1× daily rate deduction for each day. No show: 2× daily rate.
+            Daily rate = base salary ÷ 30. Early leave: max 2 per year.
           </p>
           {leaveSnap && !leaveSnap.can_request_holidays ? (
             <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mb-4">

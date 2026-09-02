@@ -15,6 +15,9 @@ const {
   EARLY_LEAVE_MAX_PER_YEAR,
   canRequestHolidays,
   leaveTypeRequiresHolidayAccess,
+  leaveDayDeductionAmount,
+  enumerateDateRange,
+  computeUnpaidLeaveDeduction,
   monthsBetween,
   HR_TEAM_ROLES,
   assertCanEditStaffCompensation,
@@ -362,7 +365,7 @@ function buildAttendanceWrite({ staff, date, status, checkIn, checkOut, amount, 
       lateComputed = computeLatenessDeduction(staff.base_salary, inTime);
       deductionAmount = lateComputed.amount;
     } else {
-      absenceComputed = computeAbsenceDeduction(staff.base_salary, !!notified);
+      absenceComputed = computeAbsenceDeduction(staff.base_salary);
       deductionAmount = absenceComputed.amount;
     }
   }
@@ -373,7 +376,7 @@ function buildAttendanceWrite({ staff, date, status, checkIn, checkOut, amount, 
     lateComputed = computeLatenessDeduction(staff.base_salary, inTime);
   }
   if (st === 'no_show' && !absenceComputed) {
-    absenceComputed = computeAbsenceDeduction(staff.base_salary, !!notified);
+    absenceComputed = computeAbsenceDeduction(staff.base_salary);
   }
 
   const notifiedFlag = st === 'no_show' ? !!notified : null;
@@ -584,7 +587,7 @@ async function upsertAttendanceRecord({
     else if (st === 'late') {
       deductionAmount = computeLatenessDeduction(staff.base_salary, inTime).amount;
     } else {
-      deductionAmount = computeAbsenceDeduction(staff.base_salary, !!notified).amount;
+      deductionAmount = computeAbsenceDeduction(staff.base_salary).amount;
     }
   }
   deductionAmount = roundMoney(Number(deductionAmount) || 0);
@@ -622,7 +625,7 @@ async function upsertAttendanceRecord({
         computed.factor,
       ]);
     } else {
-      const computed = computeAbsenceDeduction(staff.base_salary, !!notified);
+      const computed = computeAbsenceDeduction(staff.base_salary);
       await insertDeduction(null, [
         staff.id,
         deductionAmount,
@@ -1114,7 +1117,7 @@ router.post('/hr/leave-requests', async (req, res, next) => {
 
     const now = new Date();
     if (leaveType === 'casual') assertCasualTiming(start, now);
-    if (leaveType === 'annual') assertAnnualNotice(start, now);
+    if (leaveType === 'annual') assertAnnualNotice(start, now, days);
     if (leaveType === 'early_leave') assertEarlyLeaveTiming(start, now);
     if (leaveType === 'unpaid' && start < cairoParts(now).date) {
       return res.status(400).json({ error: 'Unpaid leave cannot be requested for a past date' });
@@ -1184,7 +1187,10 @@ router.post('/hr/leave-requests/:id/review', async (req, res, next) => {
       id: req.params.id,
       actor: req.user,
       body: req.body,
-      onApprove: async (client, row) => {
+      onApprove: async (client, row, staff) => {
+        const now = new Date();
+        if (row.leave_type === 'casual') assertCasualTiming(row.start_date, now);
+        if (row.leave_type === 'annual') assertAnnualNotice(row.start_date, now, row.days);
         if (row.leave_type === 'casual' || row.leave_type === 'annual' || row.leave_type === 'unpaid') {
           const col =
             row.leave_type === 'casual'
@@ -1208,6 +1214,23 @@ router.post('/hr/leave-requests/:id/review', async (req, res, next) => {
             `UPDATE staff_users SET ${col} = ${col} - $1, updated_at = now() WHERE id = $2`,
             [row.days, row.staff_user_id]
           );
+        }
+        if (row.leave_type === 'unpaid') {
+          const unpaid = computeUnpaidLeaveDeduction(staff.base_salary);
+          for (const date of enumerateDateRange(row.start_date, row.end_date)) {
+            await insertDeduction(client, [
+              row.staff_user_id,
+              unpaid.amount,
+              'Unpaid leave',
+              date,
+              'other',
+              req.user.id,
+              null,
+              null,
+              unpaid.daily_rate,
+              unpaid.factor,
+            ]);
+          }
         }
         if (row.leave_type === 'early_leave') {
           const year = String(row.start_date).slice(0, 4);
@@ -1537,9 +1560,11 @@ router.get('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
     for (const row of attendanceRows) {
       cells[cellKey(row.staff_user_id, row.work_date)] = mapAttendanceRow(row);
     }
+    const salaryByStaff = Object.fromEntries(staff.map((s) => [s.id, Number(s.base_salary) || 0]));
     for (const leave of leaveRows) {
       for (const date of days) {
         if (!dateCoveredByRanges(date, [leave])) continue;
+        const baseSalary = salaryByStaff[leave.staff_user_id] || 0;
         cells[cellKey(leave.staff_user_id, date)] = {
           staff_user_id: leave.staff_user_id,
           work_date: date,
@@ -1549,7 +1574,7 @@ router.get('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
           end_date: leave.end_date,
           check_in: null,
           check_out: null,
-          deduction_amount: 0,
+          deduction_amount: leaveDayDeductionAmount(leave.leave_type, baseSalary),
           notified: false,
           notes: '',
         };

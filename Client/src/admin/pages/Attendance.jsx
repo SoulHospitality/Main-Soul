@@ -52,7 +52,6 @@ function emptyForm(staff, date, cell) {
     check_in: String(cell?.check_in || '').slice(0, 5),
     check_out: String(cell?.check_out || '').slice(0, 5),
     deduction_amount: cell ? String(cell.deduction_amount ?? 0) : '',
-    notified: !!cell?.notified,
   };
 }
 
@@ -136,7 +135,7 @@ export default function Attendance() {
     const amount = String(computeAttendanceAmount(selectedStaff.base_salary, form));
     if (String(form.deduction_amount) === amount) return;
     setForm((f) => (f ? { ...f, deduction_amount: amount } : f));
-  }, [form?.status, form?.check_in, form?.notified, selectedStaff, deductionTouched]);
+  }, [form?.status, form?.check_in, selectedStaff, deductionTouched]);
 
   function openCell(person, date) {
     const cell = cells[cellKey(person.id, date)];
@@ -162,7 +161,6 @@ export default function Attendance() {
       check_in: form.check_in,
       check_out: form.check_out,
       deduction_amount: form.deduction_amount === '' ? null : Number(form.deduction_amount),
-      notified: form.notified,
     });
   }
 
@@ -417,19 +415,6 @@ export default function Attendance() {
                 />
               </div>
             </div>
-            {form.status === 'no_show' ? (
-              <label className="flex items-center gap-2 text-sm text-soul-blue">
-                <input
-                  type="checkbox"
-                  checked={form.notified}
-                  onChange={(e) => {
-                    setDeductionTouched(false);
-                    setForm((f) => ({ ...f, notified: e.target.checked }));
-                  }}
-                />
-                Absence with notice (1× daily rate instead of 2×)
-              </label>
-            ) : null}
             <div>
               <label className="label">Deduction</label>
               <input
