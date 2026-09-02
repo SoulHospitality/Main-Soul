@@ -88,7 +88,7 @@ const NAV_SECTIONS = [
       { path: '/admin/holiday-access', label: 'Holidays access', icon: ShieldCheck, page: 'holiday_access' },
       { path: '/admin/wfh', label: 'Work from home', icon: Home, page: 'wfh', badge: 'wfh_pending' },
       { path: '/admin/loans', label: 'Loans', icon: Banknote, page: 'loans', badge: 'loan_pending' },
-      { path: '/admin/deductions', label: 'Deductions', icon: MinusCircle, page: 'deductions' },
+      { path: '/admin/deductions', label: 'Deductions/Bonus', icon: MinusCircle, page: 'deductions' },
       { path: '/admin/payslip', label: 'Payslip', icon: Receipt, page: 'payslip' },
       { path: '/admin/payroll', label: 'Payrolls', icon: Wallet, page: 'payroll' },
       { path: '/admin/job-offers', label: 'Job offers', icon: ClipboardList, page: 'job_offers', badge: 'job_pending' },
