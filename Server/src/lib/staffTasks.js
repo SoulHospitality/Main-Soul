@@ -18,6 +18,7 @@ function canAssignTaskTo(actor, assignee) {
   if (!actor || !assignee) return false;
   if (String(actor.id) === String(assignee.id)) return false;
   if (isDirectStaffManager(actor.id, assignee)) return true;
+  if (actor.role !== 'admin') return false;
   const dept = departmentManagerRole(assignee.role);
   return Boolean(dept) && actor.role === dept;
 }
@@ -29,12 +30,17 @@ function sqlStaffTaskManagedBy(managerParam, staffAlias = 'u') {
       SELECT 1 FROM staff_users mgr
       WHERE mgr.id = ${managerParam}
         AND mgr.is_active = 1
-        AND (
-          (${staffAlias}.role = 'hr' AND mgr.role = 'hr_supervisor')
-          OR (${staffAlias}.role IN ('marketing_pr', 'web_developer') AND mgr.role = 'admin')
-        )
+        AND mgr.role = 'admin'
+        AND ${staffAlias}.role IN ('marketing_pr', 'web_developer')
     )
   )`;
+}
+
+function staffTaskScopeSql(managerParam, staffAlias, actorRole) {
+  if (actorRole === 'admin') {
+    return sqlStaffTaskManagedBy(managerParam, staffAlias);
+  }
+  return sqlStaffManagedBy(managerParam, staffAlias);
 }
 
 module.exports = {
@@ -43,4 +49,5 @@ module.exports = {
   canManageStaffTasks,
   canAssignTaskTo,
   sqlStaffTaskManagedBy,
+  staffTaskScopeSql,
 };

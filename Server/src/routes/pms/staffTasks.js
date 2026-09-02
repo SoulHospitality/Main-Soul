@@ -5,7 +5,7 @@ const {
   isTaskAssigneeRole,
   canManageStaffTasks,
   canAssignTaskTo,
-  sqlStaffTaskManagedBy,
+  staffTaskScopeSql,
 } = require('../../lib/staffTasks');
 const { sendStaffTaskAssignedEmail, staffEmailFromUser } = require('../../services/staffTaskEmails');
 const { logAudit } = require('../../lib/audit');
@@ -49,7 +49,7 @@ router.get('/staff-tasks/assignees', async (req, res, next) => {
       `SELECT id, full_name, role, email
        FROM staff_users
        WHERE is_active = 1
-         AND ${sqlStaffTaskManagedBy('$1')}
+         AND ${staffTaskScopeSql('$1', 'u', req.user.role)}
          AND role = ANY($2::text[])
        ORDER BY full_name`,
       [req.user.id, TASK_ASSIGNEE_ROLES]
@@ -74,7 +74,7 @@ router.get('/staff-tasks', async (req, res, next) => {
          FROM staff_tasks t
          JOIN staff_users a ON a.id = t.assignee_id
          JOIN staff_users m ON m.id = t.created_by
-         WHERE ${sqlStaffTaskManagedBy('$1', 'a')}
+         WHERE ${staffTaskScopeSql('$1', 'a', req.user.role)}
          ORDER BY t.deadline ASC, t.created_at DESC`;
     const { rows } = await query(sql, [me]);
     res.json(rows);

@@ -9,10 +9,12 @@ describe('staff task access', () => {
     assert.equal(isTaskAssigneeRole('hr_supervisor'), false);
   });
 
-  it('lets HR Supervisor assign tasks to HR staff without a direct manager', () => {
+  it('lets HR Supervisor assign tasks only to direct reports', () => {
     const hrSuper = { id: 8, role: 'hr_supervisor' };
-    const hrStaff = { id: 11, role: 'hr', manager_id: null, manager_ids: [] };
+    const hrStaff = { id: 11, role: 'hr', manager_id: 8, manager_ids: [8] };
+    const unassignedHr = { id: 12, role: 'hr', manager_id: null, manager_ids: [] };
     assert.equal(canAssignTaskTo(hrSuper, hrStaff), true);
+    assert.equal(canAssignTaskTo(hrSuper, unassignedHr), false);
   });
 
   it('lets any assigned web developer manager assign tasks', () => {

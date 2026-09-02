@@ -59,7 +59,7 @@ export default function Tasks() {
     }
     if (canAssignStaffTasks) {
       if (user?.role === 'hr_supervisor') {
-        return 'Add active HR staff in User Management, then assign tasks to them here.';
+        return 'Assign tasks to HR, Marketing and PR, or Web Developer staff who report to you in User Management.';
       }
       return 'Assign Marketing and PR, Web Developer, or HR staff to yourself in User Management first.';
     }
@@ -75,7 +75,7 @@ export default function Tasks() {
     }
     if (canAssignStaffTasks) {
       if (user?.role === 'hr_supervisor') {
-        return 'No active HR staff are available to assign yet.';
+        return 'Set yourself as line manager on User Management first, then assign tasks here.';
       }
       return 'No eligible team members report to you yet.';
     }
