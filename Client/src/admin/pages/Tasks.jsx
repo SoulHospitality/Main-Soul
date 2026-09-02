@@ -45,7 +45,7 @@ export default function Tasks() {
     enabled: canAssignStaffTasks,
   });
 
-  const canAdd = canAssignStaffTasks && assignees.length > 0;
+  const canAdd = canAssignStaffTasks;
 
   const pageSubtitle = (() => {
     if (isTaskAssignee) {
@@ -58,7 +58,7 @@ export default function Tasks() {
       return 'Loading team members you can assign tasks to…';
     }
     if (canAssignStaffTasks) {
-      return 'Managers assign tasks. Choose staff you manage in User Management, or your department team where that applies.';
+      return 'Assign tasks to employees on your team. CEOs can assign to any non-manager staff.';
     }
     return 'Tasks assigned to your team appear here.';
   })();
@@ -106,6 +106,10 @@ export default function Tasks() {
   });
 
   const openAdd = () => {
+    if (!assignees.length) {
+      toast.error('No eligible staff to assign yet. Add active non-manager employees in User Management.');
+      return;
+    }
     setForm({
       ...EMPTY_FORM,
       assignee_id: assignees.length === 1 ? String(assignees[0].id) : '',

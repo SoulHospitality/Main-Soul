@@ -24,11 +24,8 @@ function canAssignTaskTo(actor, assignee) {
   if (!actor || !assignee) return false;
   if (String(actor.id) === String(assignee.id)) return false;
   if (!canReceiveStaffTasks(assignee.role)) return false;
+  if (actor.role === 'admin') return true;
   if (isDirectStaffManager(actor.id, assignee)) return true;
-  if (actor.role === 'admin') {
-    const dept = departmentManagerRole(assignee.role);
-    return Boolean(dept) && actor.role === dept;
-  }
   const dept = departmentManagerRole(assignee.role);
   return Boolean(dept) && actor.role === dept;
 }
@@ -76,7 +73,7 @@ function sqlLineManagerTaskScope(managerParam, staffAlias = 'u') {
 
 function staffTaskScopeSql(managerParam, staffAlias, actorRole) {
   if (actorRole === 'admin') {
-    return sqlStaffTaskManagedBy(managerParam, staffAlias);
+    return sqlTaskRecipientRoles(staffAlias);
   }
   return sqlLineManagerTaskScope(managerParam, staffAlias);
 }

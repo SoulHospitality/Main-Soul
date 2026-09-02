@@ -45,6 +45,12 @@ describe('staff task access', () => {
     assert.equal(canAssignTaskTo(reservationsManager, agent), true);
   });
 
+  it('lets CEO assign tasks to any non-manager staff', () => {
+    const admin = { id: 1, role: 'admin' };
+    assert.equal(canAssignTaskTo(admin, { id: 21, role: 'reservations_web', manager_id: null }), true);
+    assert.equal(canAssignTaskTo(admin, { id: 11, role: 'hr', manager_id: null }), true);
+  });
+
   it('lets CEO assign tasks to marketing and web developer staff', () => {
     const admin = { id: 1, role: 'admin' };
     assert.equal(canAssignTaskTo(admin, { id: 30, role: 'marketing_pr', manager_id: null }), true);
