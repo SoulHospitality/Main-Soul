@@ -115,9 +115,9 @@ const REQUEST_LIST_SELECT = `
       u.staff_code,
       u.manager_id,
       COALESCE(
-        (SELECT array_agg(sum.manager_id ORDER BY sum.manager_id)
-         FROM staff_user_managers sum
-         WHERE sum.staff_user_id = u.id),
+        (SELECT array_agg(sm.manager_id ORDER BY sm.manager_id)
+         FROM staff_user_managers sm
+         WHERE sm.staff_user_id = u.id),
         ARRAY[]::int[]
       ) AS manager_ids,
       mgr.full_name AS manager_name,
@@ -154,9 +154,9 @@ async function reviewStaffRequest({ table, id, actor, body, onApprove }) {
     const { rows: existingRows } = await client.query(
       `SELECT r.*, u.role, u.manager_id, u.base_salary, u.full_name,
               COALESCE(
-                (SELECT array_agg(sum.manager_id ORDER BY sum.manager_id)
-                 FROM staff_user_managers sum
-                 WHERE sum.staff_user_id = u.id),
+                (SELECT array_agg(sm.manager_id ORDER BY sm.manager_id)
+                 FROM staff_user_managers sm
+                 WHERE sm.staff_user_id = u.id),
                 ARRAY[]::int[]
               ) AS manager_ids
        FROM ${table} r

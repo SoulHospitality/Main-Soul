@@ -5,7 +5,6 @@ const {
   canManageStaffTasks,
   canAssignTaskTo,
   staffTaskScopeSql,
-  sqlTaskRecipientRoles,
 } = require('../../lib/staffTasks');
 const { sendStaffTaskAssignedEmail, staffEmailFromUser } = require('../../services/staffTaskEmails');
 const { logAudit } = require('../../lib/audit');
@@ -52,12 +51,11 @@ router.get('/staff-tasks/assignees', async (req, res, next) => {
       return res.status(403).json({ error: 'You cannot assign tasks' });
     }
     const { rows } = await query(
-      `SELECT id, full_name, role, email
-       FROM staff_users
-       WHERE is_active = 1
-         AND ${sqlTaskRecipientRoles('u')}
+      `SELECT u.id, u.full_name, u.role, u.email
+       FROM staff_users u
+       WHERE u.is_active = 1
          AND ${staffTaskScopeSql('$1', 'u', req.user.role)}
-       ORDER BY full_name`,
+       ORDER BY u.full_name`,
       [req.user.id]
     );
     res.json(rows);
@@ -108,9 +106,9 @@ router.post('/staff-tasks', async (req, res, next) => {
     const { rows: assignees } = await query(
       `SELECT id, full_name, email, username, role, manager_id, is_active,
               COALESCE(
-                (SELECT array_agg(sum.manager_id ORDER BY sum.manager_id)
-                 FROM staff_user_managers sum
-                 WHERE sum.staff_user_id = staff_users.id),
+                (SELECT array_agg(sm.manager_id ORDER BY sm.manager_id)
+                 FROM staff_user_managers sm
+                 WHERE sm.staff_user_id = staff_users.id),
                 ARRAY[]::int[]
               ) AS manager_ids
        FROM staff_users WHERE id = $1`,
@@ -194,9 +192,9 @@ router.delete('/staff-tasks/:id', async (req, res, next) => {
       `SELECT t.id, t.title, t.assignee_id, t.created_by, a.role AS assignee_role,
               a.manager_id, a.full_name AS assignee_name,
               COALESCE(
-                (SELECT array_agg(sum.manager_id ORDER BY sum.manager_id)
-                 FROM staff_user_managers sum
-                 WHERE sum.staff_user_id = a.id),
+                (SELECT array_agg(sm.manager_id ORDER BY sm.manager_id)
+                 FROM staff_user_managers sm
+                 WHERE sm.staff_user_id = a.id),
                 ARRAY[]::int[]
               ) AS manager_ids
        FROM staff_tasks t

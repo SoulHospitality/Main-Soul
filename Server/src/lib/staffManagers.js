@@ -168,9 +168,9 @@ function sqlStaffManagedBy(managerParam, staffAlias = 'u') {
   return `(
     ${staffAlias}.manager_id = ${managerParam}
     OR EXISTS (
-      SELECT 1 FROM staff_user_managers sum
-      WHERE sum.staff_user_id = ${staffAlias}.id
-        AND sum.manager_id = ${managerParam}
+      SELECT 1 FROM staff_user_managers sm
+      WHERE sm.staff_user_id = ${staffAlias}.id
+        AND sm.manager_id = ${managerParam}
     )
   )`;
 }
