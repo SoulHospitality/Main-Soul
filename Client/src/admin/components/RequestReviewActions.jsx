@@ -25,6 +25,13 @@ function stepLine(row) {
   return parts.join(' · ');
 }
 
+export function requestApprovalSummary(row) {
+  if (row.status === 'pending') {
+    return row.approval_label || stepLine(row) || 'Waiting for review';
+  }
+  return stepLine(row) || row.reviewed_by_name || '—';
+}
+
 export function RequestReviewActions({ row, onApprove, onReject, pending }) {
   const slots = row.can_review_slots || [];
   const acceptHint = slots.includes('admin')
@@ -55,7 +62,10 @@ export function RequestReviewActions({ row, onApprove, onReject, pending }) {
         className="btn-secondary text-xs px-2 py-1 text-emerald-700"
         disabled={pending}
         title={acceptHint}
-        onClick={() => onApprove(row)}
+        onClick={(e) => {
+          e.stopPropagation();
+          onApprove(row);
+        }}
       >
         <Check className="h-3.5 w-3.5" />
         Accept
@@ -64,7 +74,10 @@ export function RequestReviewActions({ row, onApprove, onReject, pending }) {
         type="button"
         className="btn-secondary text-xs px-2 py-1 text-rose-700"
         disabled={pending}
-        onClick={() => onReject(row)}
+        onClick={(e) => {
+          e.stopPropagation();
+          onReject(row);
+        }}
       >
         <X className="h-3.5 w-3.5" />
         Reject

@@ -9,10 +9,10 @@ import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
 import SearchFilter from '../components/ui/SearchFilter';
 import { ROLE_LABELS, canRequestStaffBenefits, canSeeRequestQueue } from '../utils/permissions';
-import { formatDate } from '../utils/formatters';
+import { formatDate, formatDateTime } from '../utils/formatters';
 import { LEAVE_TYPE_LABELS, requestableLeaveTypes, formatUnpaidLeaveAvailable } from '../utils/hrPolicy';
 import { useAuth } from '../context/AuthContext';
-import { RequestReviewActions, approvalStatusClass } from '../components/RequestReviewActions';
+import { RequestReviewActions, approvalStatusClass, requestApprovalSummary } from '../components/RequestReviewActions';
 
 const EMPTY_FORM = {
   leave_type: 'casual',
@@ -148,7 +148,105 @@ function RequestForm({ leaveSnap, form, setForm, createMutation, onSubmit }) {
   );
 }
 
-function RequestsTable({ rows, incoming, reviewMutation, onReject }) {
+function DetailField({ label, children }) {
+  return (
+    <div>
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-soul-muted">{label}</div>
+      <div className="mt-1 text-sm text-soul-blue">{children}</div>
+    </div>
+  );
+}
+
+function HolidayRequestDetailModal({
+  row,
+  incoming,
+  onClose,
+  reviewMutation,
+  onReject,
+}) {
+  if (!row) return null;
+
+  const dateLabel =
+    row.start_date === row.end_date
+      ? formatDate(row.start_date)
+      : `${formatDate(row.start_date)} → ${formatDate(row.end_date)}`;
+
+  return (
+    <Modal
+      open={!!row}
+      onClose={onClose}
+      title="Holiday request details"
+      size="md"
+      footer={
+        incoming && row.status === 'pending' && (row.can_review_slots || []).length ? (
+          <div className="flex w-full justify-end gap-2">
+            <button type="button" className="btn-secondary" onClick={onClose}>
+              Close
+            </button>
+            <RequestReviewActions
+              row={row}
+              pending={reviewMutation.isPending}
+              onApprove={(item) => reviewMutation.mutate({ id: item.id, status: 'approved' })}
+              onReject={onReject}
+            />
+          </div>
+        ) : (
+          <button type="button" className="btn-secondary" onClick={onClose}>
+            Close
+          </button>
+        )
+      }
+    >
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-lg font-semibold text-soul-blue">{row.full_name || 'Staff member'}</div>
+            <div className="text-sm text-soul-muted">
+              {row.staff_code ? `${row.staff_code} · ` : ''}
+              {ROLE_LABELS[row.role] || row.role}
+            </div>
+          </div>
+          <span
+            className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${approvalStatusClass(row.status)}`}
+          >
+            {row.approval_label || row.status}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <DetailField label="Leave type">
+            {LEAVE_TYPE_LABELS[row.leave_type] || row.leave_type}
+          </DetailField>
+          <DetailField label="Duration">
+            {row.days} day{Number(row.days) === 1 ? '' : 's'}
+          </DetailField>
+          <DetailField label="Dates">{dateLabel}</DetailField>
+          <DetailField label="Submitted">
+            {row.created_at ? formatDateTime(row.created_at) : '—'}
+          </DetailField>
+          {row.manager_name ? (
+            <DetailField label="Line manager">{row.manager_name}</DetailField>
+          ) : null}
+          <DetailField label="Approval">{requestApprovalSummary(row)}</DetailField>
+        </div>
+
+        <DetailField label="Reason">{row.reason?.trim() ? row.reason : '—'}</DetailField>
+
+        {row.review_note ? (
+          <DetailField label="Review note">{row.review_note}</DetailField>
+        ) : null}
+
+        {!incoming && row.status === 'pending' ? (
+          <p className="text-sm text-soul-muted bg-soul-surface rounded-xl px-3 py-2">
+            {requestApprovalSummary(row)}
+          </p>
+        ) : null}
+      </div>
+    </Modal>
+  );
+}
+
+function RequestsTable({ rows, incoming, reviewMutation, onReject, onSelect }) {
   return (
     <div className="card p-0">
       <div className="table-wrapper">
@@ -165,7 +263,11 @@ function RequestsTable({ rows, incoming, reviewMutation, onReject }) {
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.id}>
+              <tr
+                key={r.id}
+                className="cursor-pointer hover:bg-soul-surface/70"
+                onClick={() => onSelect(r)}
+              >
                 {incoming ? (
                   <td>
                     <div className="font-semibold text-soul-blue">{r.full_name}</div>
@@ -197,7 +299,7 @@ function RequestsTable({ rows, incoming, reviewMutation, onReject }) {
                   </span>
                 </td>
                 {incoming ? (
-                  <td>
+                  <td onClick={(e) => e.stopPropagation()}>
                     <RequestReviewActions
                       row={r}
                       pending={reviewMutation.isPending}
@@ -234,6 +336,7 @@ export default function HolidayRequests() {
   const [status, setStatus] = useState('pending');
   const [search, setSearch] = useState('');
   const [rejectRow, setRejectRow] = useState(null);
+  const [detailRow, setDetailRow] = useState(null);
   const [note, setNote] = useState('');
   const [form, setForm] = useState(EMPTY_FORM);
 
@@ -299,6 +402,7 @@ export default function HolidayRequests() {
       qc.invalidateQueries({ queryKey: ['hr-attendance'] });
       toast.success(vars.status === 'approved' ? 'Acceptance recorded' : 'Request rejected');
       setRejectRow(null);
+      setDetailRow(null);
       setNote('');
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Could not update request'),
@@ -417,12 +521,25 @@ export default function HolidayRequests() {
           rows={filtered}
           incoming={activeView === 'incoming'}
           reviewMutation={reviewMutation}
+          onSelect={setDetailRow}
           onReject={(row) => {
             setRejectRow(row);
             setNote('');
           }}
         />
       )}
+
+      <HolidayRequestDetailModal
+        row={detailRow}
+        incoming={activeView === 'incoming'}
+        onClose={() => setDetailRow(null)}
+        reviewMutation={reviewMutation}
+        onReject={(row) => {
+          setDetailRow(null);
+          setRejectRow(row);
+          setNote('');
+        }}
+      />
 
       <Modal
         open={!!rejectRow}
