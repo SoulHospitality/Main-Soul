@@ -1,7 +1,12 @@
 const express = require('express');
 const { query } = require('../../config/db');
-const { TASK_ASSIGNEE_ROLES, isTaskAssigneeRole } = require('../../lib/staffTasks');
-const { sqlStaffManagedBy } = require('../../lib/staffManagers');
+const {
+  TASK_ASSIGNEE_ROLES,
+  isTaskAssigneeRole,
+  canManageStaffTasks,
+  canAssignTaskTo,
+  sqlStaffTaskManagedBy,
+} = require('../../lib/staffTasks');
 const { sendStaffTaskAssignedEmail, staffEmailFromUser } = require('../../services/staffTaskEmails');
 const { logAudit } = require('../../lib/audit');
 
@@ -26,13 +31,25 @@ function isoDate(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null;
 }
 
+function assigneeAuthShape(row) {
+  return {
+    id: row.id,
+    role: row.role,
+    manager_id: row.manager_id,
+    manager_ids: Array.isArray(row.manager_ids) ? row.manager_ids : [],
+  };
+}
+
 router.get('/staff-tasks/assignees', async (req, res, next) => {
   try {
+    if (!canManageStaffTasks(req.user)) {
+      return res.status(403).json({ error: 'You cannot assign tasks' });
+    }
     const { rows } = await query(
       `SELECT id, full_name, role, email
        FROM staff_users
        WHERE is_active = 1
-         AND ${sqlStaffManagedBy('$1')}
+         AND ${sqlStaffTaskManagedBy('$1')}
          AND role = ANY($2::text[])
        ORDER BY full_name`,
       [req.user.id, TASK_ASSIGNEE_ROLES]
@@ -57,7 +74,7 @@ router.get('/staff-tasks', async (req, res, next) => {
          FROM staff_tasks t
          JOIN staff_users a ON a.id = t.assignee_id
          JOIN staff_users m ON m.id = t.created_by
-         WHERE ${sqlStaffManagedBy('$1', 'a')}
+         WHERE ${sqlStaffTaskManagedBy('$1', 'a')}
          ORDER BY t.deadline ASC, t.created_at DESC`;
     const { rows } = await query(sql, [me]);
     res.json(rows);
@@ -68,6 +85,9 @@ router.get('/staff-tasks', async (req, res, next) => {
 
 router.post('/staff-tasks', async (req, res, next) => {
   try {
+    if (!canManageStaffTasks(req.user)) {
+      return res.status(403).json({ error: 'You cannot assign tasks' });
+    }
     const b = req.body || {};
     const title = String(b.title || '').trim();
     const description = String(b.description || '').trim();
@@ -97,12 +117,8 @@ router.post('/staff-tasks', async (req, res, next) => {
     if (!isTaskAssigneeRole(assignee.role)) {
       return res.status(403).json({ error: 'Tasks can only be assigned to Marketing and PR, Web Developer, or HR staff' });
     }
-    const managerIds = new Set([
-      ...(Array.isArray(assignee.manager_ids) ? assignee.manager_ids.map(String) : []),
-      assignee.manager_id != null ? String(assignee.manager_id) : null,
-    ].filter(Boolean));
-    if (!managerIds.has(String(req.user.id))) {
-      return res.status(403).json({ error: 'Only one of this person\'s managers can add a task' });
+    if (!canAssignTaskTo(req.user, assigneeAuthShape(assignee))) {
+      return res.status(403).json({ error: 'You can only assign tasks to staff you manage' });
     }
     const assigneeEmail = staffEmailFromUser(assignee);
     if (!assigneeEmail) {
@@ -161,7 +177,7 @@ router.post('/staff-tasks', async (req, res, next) => {
 router.delete('/staff-tasks/:id', async (req, res, next) => {
   try {
     if (isTaskAssigneeRole(req.user) && req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Only the manager who assigned this task can delete it' });
+      return res.status(403).json({ error: 'Only a manager can delete this task' });
     }
     const id = Number(req.params.id);
     if (!Number.isFinite(id) || id < 1) {
@@ -169,7 +185,8 @@ router.delete('/staff-tasks/:id', async (req, res, next) => {
     }
 
     const { rows } = await query(
-      `SELECT t.id, t.title, t.assignee_id, t.created_by, a.manager_id, a.full_name AS assignee_name,
+      `SELECT t.id, t.title, t.assignee_id, t.created_by, a.role AS assignee_role,
+              a.manager_id, a.full_name AS assignee_name,
               COALESCE(
                 (SELECT array_agg(sum.manager_id ORDER BY sum.manager_id)
                  FROM staff_user_managers sum
@@ -184,15 +201,16 @@ router.delete('/staff-tasks/:id', async (req, res, next) => {
     const task = rows[0];
     if (!task) return res.status(404).json({ error: 'Task not found' });
 
-    const taskManagerIds = new Set([
-      ...(Array.isArray(task.manager_ids) ? task.manager_ids.map(String) : []),
-      task.manager_id != null ? String(task.manager_id) : null,
-    ].filter(Boolean));
     const isAdmin = req.user.role === 'admin';
-    const isManager = taskManagerIds.has(String(req.user.id));
     const isCreator = String(task.created_by) === String(req.user.id);
-    if (!isAdmin && !isManager && !isCreator) {
-      return res.status(403).json({ error: 'Only one of this person\'s managers can delete this task' });
+    const assignee = assigneeAuthShape({
+      id: task.assignee_id,
+      role: task.assignee_role,
+      manager_id: task.manager_id,
+      manager_ids: task.manager_ids,
+    });
+    if (!isAdmin && !isCreator && !canAssignTaskTo(req.user, assignee)) {
+      return res.status(403).json({ error: 'You can only delete tasks for staff you manage' });
     }
 
     await query(`DELETE FROM staff_tasks WHERE id = $1`, [id]);

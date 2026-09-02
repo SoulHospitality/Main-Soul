@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CalendarDays, ListTodo, Plus, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
+import { useAuth } from '../context/AuthContext';
 import { usePermissions } from '../hooks/usePermissions';
 import { ROLE_LABELS } from '../utils/permissions';
 import Modal from '../components/ui/Modal';
@@ -23,23 +24,63 @@ function isOverdue(deadline) {
 
 export default function Tasks() {
   const qc = useQueryClient();
+  const { user } = useAuth();
   const { canAssignStaffTasks, isTaskAssignee } = usePermissions();
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [deleteTask, setDeleteTask] = useState(null);
 
-  const { data: tasks = [], isLoading } = useQuery({
+  const { data: tasks = [], isLoading, isError } = useQuery({
     queryKey: ['staff-tasks'],
     queryFn: () => api.get('/staff-tasks').then((r) => r.data),
   });
 
-  const { data: assignees = [] } = useQuery({
+  const {
+    data: assignees = [],
+    isLoading: assigneesLoading,
+    isError: assigneesError,
+  } = useQuery({
     queryKey: ['staff-task-assignees'],
     queryFn: () => api.get('/staff-tasks/assignees').then((r) => r.data),
     enabled: canAssignStaffTasks,
   });
 
   const canAdd = canAssignStaffTasks && assignees.length > 0;
+
+  const pageSubtitle = (() => {
+    if (isTaskAssignee) {
+      return 'Tasks assigned to you by your manager. You will also receive them by email.';
+    }
+    if (canAdd) {
+      return 'Assign a title, description, and deadline. The assignee gets an email at the address on their Users record.';
+    }
+    if (canAssignStaffTasks && assigneesLoading) {
+      return 'Loading team members you can assign tasks to…';
+    }
+    if (canAssignStaffTasks) {
+      if (user?.role === 'hr_supervisor') {
+        return 'Add active HR staff in User Management, then assign tasks to them here.';
+      }
+      return 'Assign Marketing and PR, Web Developer, or HR staff to yourself in User Management first.';
+    }
+    return 'Tasks assigned to your team appear here.';
+  })();
+
+  const emptySubtitle = (() => {
+    if (isTaskAssignee) {
+      return 'When your manager adds a task, it will show up here and in your email.';
+    }
+    if (canAdd) {
+      return 'Add a task for someone on your team.';
+    }
+    if (canAssignStaffTasks) {
+      if (user?.role === 'hr_supervisor') {
+        return 'No active HR staff are available to assign yet.';
+      }
+      return 'No eligible team members report to you yet.';
+    }
+    return 'No tasks to show.';
+  })();
 
   const createMutation = useMutation({
     mutationFn: (payload) => api.post('/staff-tasks', payload).then((r) => r.data),
@@ -101,18 +142,22 @@ export default function Tasks() {
 
   if (isLoading) return <LoadingSpinner />;
 
+  if (isError) {
+    return (
+      <EmptyState
+        icon={ListTodo}
+        title="Could not load tasks"
+        subtitle="Refresh the page or try again in a moment."
+      />
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="page-header mb-0">
           <h1 className="page-title">Tasks</h1>
-          <p className="page-subtitle">
-            {isTaskAssignee
-              ? 'Tasks assigned to you by your manager. You will also receive them by email.'
-              : canAdd
-                ? 'Assign a title, description, and deadline. They get an email at the address on their Users record.'
-                : 'You can add tasks only for Marketing and PR or Web Developer staff who report to you.'}
-          </p>
+          <p className="page-subtitle">{pageSubtitle}</p>
         </div>
         {canAdd && (
           <button type="button" onClick={openAdd} className="btn-primary">
@@ -125,13 +170,7 @@ export default function Tasks() {
         <EmptyState
           icon={ListTodo}
           title={isTaskAssignee ? 'No tasks yet' : 'No tasks assigned'}
-          subtitle={
-            isTaskAssignee
-              ? 'When your manager adds a task, it will show up here and in your email.'
-              : canAdd
-                ? 'Add a task for someone on your team.'
-                : 'Assign Marketing and PR or Web Developer staff to yourself in Users first.'
-          }
+          subtitle={emptySubtitle}
           action={
             canAdd ? (
               <button type="button" onClick={openAdd} className="btn-primary">
@@ -217,7 +256,13 @@ export default function Tasks() {
             <SearchableSelect
               value={form.assignee_id}
               onChange={(v) => setForm((f) => ({ ...f, assignee_id: v }))}
-              placeholder="Choose a team member…"
+              placeholder={
+                assigneesLoading
+                  ? 'Loading team members…'
+                  : assigneesError
+                    ? 'Could not load team members'
+                    : 'Choose a team member…'
+              }
               options={assignees.map((u) => ({
                 value: String(u.id),
                 label: `${u.full_name} (${ROLE_LABELS[u.role] || u.role})`,
