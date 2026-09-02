@@ -263,6 +263,10 @@ function isResaleAgentRole(role) {
   return role === 'resale';
 }
 
+function isFinanceAgentRole(role) {
+  return role === 'finance';
+}
+
 function usesCommissionPct(role) {
   return isReservationAgentRole(role) || isResaleAgentRole(role);
 }
@@ -347,7 +351,9 @@ function StaffForm({
                   ? 'Unit Acquisition Manager'
                   : isResaleAgentRole(form.role)
                     ? 'Resale Manager'
-                    : 'Line manager'}
+                    : isFinanceAgentRole(form.role)
+                      ? 'Financial Manager'
+                      : 'Line manager'}
             </label>
             <SearchableSelect
               value={form.manager_id ? String(form.manager_id) : ''}
@@ -359,7 +365,9 @@ function StaffForm({
                     ? 'Unit Acquisition Manager'
                     : isResaleAgentRole(form.role)
                       ? 'Resale Manager'
-                      : 'Department default'
+                      : isFinanceAgentRole(form.role)
+                        ? 'Financial Manager'
+                        : 'Department default'
               }
               options={[
                 {
@@ -370,7 +378,9 @@ function StaffForm({
                       ? 'Department default (Unit Acquisition Manager)'
                       : isResaleAgentRole(form.role)
                         ? 'Department default (Resale Manager)'
-                        : 'Department default',
+                        : isFinanceAgentRole(form.role)
+                          ? 'Department default (Financial Manager)'
+                          : 'Department default',
                 },
                 ...managerOptions.map((u) => ({
                   value: String(u.id),
@@ -385,7 +395,9 @@ function StaffForm({
                   ? 'This manager sees the agent\'s daily audit and must accept holiday, loan, and WFH requests (with the HR Manager).'
                   : isResaleAgentRole(form.role)
                     ? 'This manager tracks units added and signed sales for this agent on the Performance page.'
-                    : 'Must accept holiday, loan, and WFH requests (with the HR Manager, except for HR staff).'}
+                    : isFinanceAgentRole(form.role)
+                      ? 'This manager tracks finance desk activity for this agent on the Audit page.'
+                      : 'Must accept holiday, loan, and WFH requests (with the HR Manager, except for HR staff).'}
             </p>
           </div>
         ) : null}

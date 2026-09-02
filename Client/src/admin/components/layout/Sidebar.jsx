@@ -72,6 +72,7 @@ const NAV_SECTIONS = [
     label: 'Finance',
     items: [
       { path: '/admin/financial-system', label: 'Financial System', icon: Landmark, page: 'financial_system' },
+      { path: '/admin/finance-audit', label: 'Audit', icon: ClipboardList, page: 'finance_audit' },
       { path: '/admin/reports', label: 'Reports', icon: FileBarChart2, page: 'reports' },
       { path: '/admin/commissions', label: 'Commissions', icon: BadgeDollarSign, page: 'commissions', agentLabel: 'My Profit', managerLabel: 'Team profit' },
       { path: '/admin/promo-codes', label: 'Promo Codes', icon: Tag, page: 'promo_codes' },

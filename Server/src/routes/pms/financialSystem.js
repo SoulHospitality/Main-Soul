@@ -529,7 +529,7 @@ function reservationJournalEntry(r, fin, split) {
 }
 
 
-router.get('/financial-system/overview', requireRoles('admin', 'finance'), async (req, res, next) => {
+router.get('/financial-system/overview', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const { from, to } = dateRange(req);
     const rows = await loadReservations(req);
@@ -666,7 +666,7 @@ router.get('/financial-system/overview', requireRoles('admin', 'finance'), async
 });
 
 
-router.get('/financial-system/booking-splits', requireRoles('admin', 'finance'), async (req, res, next) => {
+router.get('/financial-system/booking-splits', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const rows = await loadReservations(req);
     const splits = rows.map((r) => {
@@ -690,7 +690,7 @@ router.get('/financial-system/booking-splits', requireRoles('admin', 'finance'),
 });
 
 
-router.get('/financial-system/owner-statements', requireRoles('admin', 'finance'), async (req, res, next) => {
+router.get('/financial-system/owner-statements', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const { from, to } = dateRange(req);
     const unitId = req.query.unit_id || null;
@@ -720,7 +720,7 @@ router.get('/financial-system/owner-statements', requireRoles('admin', 'finance'
 });
 
 
-router.post('/financial-system/payouts/:id/settle', requireRoles('admin', 'finance'), async (req, res, next) => {
+router.post('/financial-system/payouts/:id/settle', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const id = req.params.id;
     const { rows } = await query(`SELECT * FROM owner_payout_requests WHERE id = $1`, [id]);
@@ -756,7 +756,7 @@ router.post('/financial-system/payouts/:id/settle', requireRoles('admin', 'finan
  * Admin marks an owner's balance settled without an owner withdrawal request.
  * Creates a paid payout (and optional settlement) immediately.
  */
-router.post('/financial-system/owners/:ownerId/settle', requireRoles('admin', 'finance'), async (req, res, next) => {
+router.post('/financial-system/owners/:ownerId/settle', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const ownerId = parseInt(req.params.ownerId, 10);
     if (!Number.isInteger(ownerId) || ownerId <= 0) {
@@ -850,7 +850,7 @@ router.post('/financial-system/owners/:ownerId/settle', requireRoles('admin', 'f
 });
 
 
-router.get('/financial-system/ledger', requireRoles('admin', 'finance'), async (req, res, next) => {
+router.get('/financial-system/ledger', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const { from, to } = dateRange(req);
     const rows = await loadReservations(req);
@@ -936,7 +936,7 @@ router.get('/financial-system/ledger', requireRoles('admin', 'finance'), async (
 });
 
 
-router.get('/financial-system/tax', requireRoles('admin', 'finance'), async (req, res, next) => {
+router.get('/financial-system/tax', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const { from, to } = dateRange(req);
     const built = await buildFinancialPortal(from, to);
@@ -993,7 +993,7 @@ router.get('/financial-system/tax', requireRoles('admin', 'finance'), async (req
 });
 
 
-router.get('/financial-system/export', requireRoles('admin', 'finance'), async (req, res, next) => {
+router.get('/financial-system/export', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const { from, to } = dateRange(req);
     const rows = await loadReservations(req);
@@ -1052,7 +1052,7 @@ router.get('/financial-system/export', requireRoles('admin', 'finance'), async (
 });
 
 
-router.get('/financial-system/units', requireRoles('admin', 'finance'), async (_req, res, next) => {
+router.get('/financial-system/units', requireRoles('admin', 'finance', 'finance_manager'), async (_req, res, next) => {
   try {
     const { rows } = await query(
       `SELECT id, COALESCE(unit_number, title) AS unit_name,
@@ -1066,7 +1066,7 @@ router.get('/financial-system/units', requireRoles('admin', 'finance'), async (_
 });
 
 
-router.get('/financial-system/manual-entries', requireRoles('admin', 'finance'), async (req, res, next) => {
+router.get('/financial-system/manual-entries', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const { from, to } = dateRange(req);
     const entries = await loadManualEntries(from, to);
@@ -1077,7 +1077,7 @@ router.get('/financial-system/manual-entries', requireRoles('admin', 'finance'),
 });
 
 
-router.post('/financial-system/manual-entries', requireRoles('admin', 'finance'), async (req, res, next) => {
+router.post('/financial-system/manual-entries', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const entryType = String(req.body.entry_type || '').toLowerCase();
     if (!MANUAL_ENTRY_TYPES.has(entryType)) {
@@ -1118,7 +1118,7 @@ router.post('/financial-system/manual-entries', requireRoles('admin', 'finance')
 });
 
 
-router.get('/financial-system/portal', requireRoles('admin', 'finance'), async (req, res, next) => {
+router.get('/financial-system/portal', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const { from, to } = dateRange(req);
     const built = await buildFinancialPortal(from, to);
@@ -1141,7 +1141,7 @@ router.get('/financial-system/portal', requireRoles('admin', 'finance'), async (
   }
 });
 
-router.get('/financial-system/accounts/:code', requireRoles('admin', 'finance'), async (req, res, next) => {
+router.get('/financial-system/accounts/:code', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const { from, to } = dateRange(req);
     const code = String(req.params.code || '').trim();
@@ -1170,7 +1170,7 @@ router.get('/financial-system/accounts/:code', requireRoles('admin', 'finance'),
   }
 });
 
-router.get('/financial-system/transactions/:id', requireRoles('admin', 'finance'), async (req, res, next) => {
+router.get('/financial-system/transactions/:id', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const { from, to } = dateRange(req);
     const id = decodeURIComponent(req.params.id || '');
@@ -1193,7 +1193,7 @@ router.get('/financial-system/transactions/:id', requireRoles('admin', 'finance'
   }
 });
 
-router.get('/financial-system/recurring', requireRoles('admin', 'finance'), async (_req, res, next) => {
+router.get('/financial-system/recurring', requireRoles('admin', 'finance', 'finance_manager'), async (_req, res, next) => {
   try {
     const { rows } = await query(
       `SELECT kind, label, account_code, amount_egp, day_of_month, is_active
@@ -1206,7 +1206,7 @@ router.get('/financial-system/recurring', requireRoles('admin', 'finance'), asyn
   }
 });
 
-router.put('/financial-system/recurring/:kind', requireRoles('admin', 'finance'), async (req, res, next) => {
+router.put('/financial-system/recurring/:kind', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const kind = String(req.params.kind || '').toLowerCase();
     if (!['rent', 'utilities', 'buffet'].includes(kind)) {
@@ -1230,7 +1230,7 @@ router.put('/financial-system/recurring/:kind', requireRoles('admin', 'finance')
   }
 });
 
-router.delete('/financial-system/manual-entries/:id', requireRoles('admin', 'finance'), async (req, res, next) => {
+router.delete('/financial-system/manual-entries/:id', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const { rows: existing } = await query(
       `SELECT id, entry_date FROM financial_manual_entries WHERE id = $1`,
@@ -1245,7 +1245,7 @@ router.delete('/financial-system/manual-entries/:id', requireRoles('admin', 'fin
   }
 });
 
-router.get('/financial-system/reports', requireRoles('admin', 'finance'), async (req, res, next) => {
+router.get('/financial-system/reports', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const { from, to } = dateRange(req);
     const built = await buildYtdStatements(to, from);
@@ -1263,7 +1263,7 @@ router.get('/financial-system/reports', requireRoles('admin', 'finance'), async 
   }
 });
 
-router.get('/financial-system/aging', requireRoles('admin', 'finance'), async (req, res, next) => {
+router.get('/financial-system/aging', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const { from, to } = dateRange(req);
     const built = await buildFinancialPortal(from, to);
@@ -1279,7 +1279,7 @@ router.get('/financial-system/aging', requireRoles('admin', 'finance'), async (r
   }
 });
 
-router.get('/financial-system/owner-trust', requireRoles('admin', 'finance'), async (req, res, next) => {
+router.get('/financial-system/owner-trust', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const { to } = dateRange(req);
     const built = await buildYtdStatements(to);
@@ -1296,7 +1296,7 @@ router.get('/financial-system/owner-trust', requireRoles('admin', 'finance'), as
   }
 });
 
-router.post('/financial-system/holdbacks', requireRoles('admin', 'finance'), async (req, res, next) => {
+router.post('/financial-system/holdbacks', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const ownerId = parseInt(req.body.owner_id, 10);
     const amount = parseFloat(req.body.amount);
@@ -1316,7 +1316,7 @@ router.post('/financial-system/holdbacks', requireRoles('admin', 'finance'), asy
   }
 });
 
-router.post('/financial-system/holdbacks/:id/release', requireRoles('admin', 'finance'), async (req, res, next) => {
+router.post('/financial-system/holdbacks/:id/release', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     await assertPeriodOpen(new Date().toISOString().slice(0, 10));
     const { rows } = await query(
@@ -1330,7 +1330,7 @@ router.post('/financial-system/holdbacks/:id/release', requireRoles('admin', 'fi
   }
 });
 
-router.get('/financial-system/gateway', requireRoles('admin', 'finance'), async (req, res, next) => {
+router.get('/financial-system/gateway', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const { from, to } = dateRange(req);
     const built = await buildFinancialPortal(from, to);
@@ -1355,7 +1355,7 @@ router.get('/financial-system/gateway', requireRoles('admin', 'finance'), async 
   }
 });
 
-router.get('/financial-system/settings', requireRoles('admin', 'finance'), async (_req, res, next) => {
+router.get('/financial-system/settings', requireRoles('admin', 'finance', 'finance_manager'), async (_req, res, next) => {
   try {
     const { rows } = await query(`SELECT key, value_num, value_text FROM financial_settings`);
     res.json(Object.fromEntries(rows.map((r) => [r.key, r.value_num != null ? r.value_num : r.value_text])));
@@ -1365,7 +1365,7 @@ router.get('/financial-system/settings', requireRoles('admin', 'finance'), async
   }
 });
 
-router.put('/financial-system/settings/:key', requireRoles('admin', 'finance'), async (req, res, next) => {
+router.put('/financial-system/settings/:key', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const key = String(req.params.key || '').trim();
     if (key !== 'gateway_mdr_pct') return res.status(400).json({ error: 'Unknown setting' });
@@ -1383,7 +1383,7 @@ router.put('/financial-system/settings/:key', requireRoles('admin', 'finance'), 
   }
 });
 
-router.get('/financial-system/periods', requireRoles('admin', 'finance'), async (_req, res, next) => {
+router.get('/financial-system/periods', requireRoles('admin', 'finance', 'finance_manager'), async (_req, res, next) => {
   try {
     const { rows } = await query(
       `SELECT c.*, su.full_name AS closed_by_name
@@ -1398,7 +1398,7 @@ router.get('/financial-system/periods', requireRoles('admin', 'finance'), async 
   }
 });
 
-router.post('/financial-system/periods/:yearMonth/close', requireRoles('admin', 'finance'), async (req, res, next) => {
+router.post('/financial-system/periods/:yearMonth/close', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const yearMonth = String(req.params.yearMonth || '');
     if (!/^\d{4}-\d{2}$/.test(yearMonth)) {
@@ -1424,7 +1424,7 @@ router.post('/financial-system/periods/:yearMonth/close', requireRoles('admin', 
   }
 });
 
-router.delete('/financial-system/periods/:yearMonth/close', requireRoles('admin', 'finance'), async (req, res, next) => {
+router.delete('/financial-system/periods/:yearMonth/close', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const { rows } = await query(
       `DELETE FROM financial_period_closes WHERE year_month = $1 RETURNING year_month`,
@@ -1437,7 +1437,7 @@ router.delete('/financial-system/periods/:yearMonth/close', requireRoles('admin'
   }
 });
 
-router.get('/financial-system/bank-rec', requireRoles('admin', 'finance'), async (req, res, next) => {
+router.get('/financial-system/bank-rec', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const { from, to } = dateRange(req);
     const code = String(req.query.account || '101000');
@@ -1470,7 +1470,7 @@ router.get('/financial-system/bank-rec', requireRoles('admin', 'finance'), async
   }
 });
 
-router.post('/financial-system/bank-rec/toggle', requireRoles('admin', 'finance'), async (req, res, next) => {
+router.post('/financial-system/bank-rec/toggle', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const entryId = String(req.body.entry_id || '').trim();
     const accountCode = String(req.body.account_code || '101000');
@@ -1494,7 +1494,7 @@ router.post('/financial-system/bank-rec/toggle', requireRoles('admin', 'finance'
   }
 });
 
-router.post('/financial-system/bank-rec/snapshot', requireRoles('admin', 'finance'), async (req, res, next) => {
+router.post('/financial-system/bank-rec/snapshot', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const accountCode = String(req.body.account_code || '101000');
     const statementDate = req.body.statement_date || new Date().toISOString().slice(0, 10);
@@ -1545,7 +1545,7 @@ function mapInsuranceRow(r) {
 const INSURANCE_REFUND_TRACKING_START = '2026-08-24';
 
 /** Insurance collected at check-in (204000); due for refund on checkout. */
-router.get('/financial-system/insurance-refunds', requireRoles('admin', 'finance'), async (req, res, next) => {
+router.get('/financial-system/insurance-refunds', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const today = new Date().toISOString().slice(0, 10);
     const filter = String(req.query.filter || 'due').toLowerCase();
@@ -1633,7 +1633,7 @@ router.get('/financial-system/insurance-refunds', requireRoles('admin', 'finance
   }
 });
 
-router.post('/financial-system/insurance-refunds/:id/settle', requireRoles('admin', 'finance'), async (req, res, next) => {
+router.post('/financial-system/insurance-refunds/:id/settle', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (!id) return res.status(400).json({ error: 'Invalid reservation id' });

@@ -584,6 +584,7 @@ const LINE_MANAGER_ROLES = new Set([
   'resale_manager',
   'unit_acquisition_manager',
   'operations_supervisor',
+  'finance_manager',
 ]);
 const NO_OFFICE_ATTENDANCE_ROLES = new Set([
   ...LINE_MANAGER_ROLES,
@@ -632,9 +633,12 @@ function departmentManagerRole(role) {
       return 'unit_acquisition_manager';
     case 'resale':
       return 'resale_manager';
+    case 'finance':
+      return 'finance_manager';
     case 'reservations_manager':
     case 'resale_manager':
     case 'unit_acquisition_manager':
+    case 'finance_manager':
     case 'hr_supervisor':
     case 'operations_supervisor':
     case 'housekeeping_supervisor':

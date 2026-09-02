@@ -6,7 +6,7 @@ const WEB_TEAM_ROLES = ['admin', 'reservations_web', 'reservations'];
 
 const OPS_ROLES = ['admin', 'reservations_web', 'reservations_manual', 'reservations', 'reservations_manager'];
 const ADMIN_ROLES = ['admin'];
-const FINANCE_ROLES = ['admin', 'finance'];
+const FINANCE_ROLES = ['admin', 'finance', 'finance_manager'];
 
 async function resolveUserIds({ roles, userIds, excludeUserIds = [] } = {}) {
   const exclude = new Set(
@@ -185,7 +185,7 @@ async function notifyCancelRequest(reservation, actor, reason) {
 async function notifyPaymentRecorded(payment, reservation, actor) {
   if (!payment?.id || !reservation?.id) return [];
   
-  if (['admin', 'finance'].includes(actor?.role)) return [];
+  if (['admin', 'finance', 'finance_manager'].includes(actor?.role)) return [];
   const amount = Number(payment.amount) || 0;
   const guest = reservation.guest_name || 'Guest';
   const actorName = actor?.full_name || actor?.username || 'Staff';

@@ -73,6 +73,7 @@ router.use(require('./reportsAnalytics'));
 router.use(require('./reservationsPerformance'));
 router.use(require('./resalePerformance'));
 router.use(require('./acquisitionAudit'));
+router.use(require('./financeAudit'));
 router.use(require('./staffTasks'));
 router.use(require('./financialSystem'));
 router.use(housekeepingOps);
@@ -276,6 +277,11 @@ function assertCanAssignRole(actorRole, targetRole) {
     err.status = 403;
     throw err;
   }
+  if (targetRole === 'finance_manager' && actorRole !== 'admin') {
+    const err = new Error('Only a CEO can create or assign the Financial Manager role');
+    err.status = 403;
+    throw err;
+  }
   const allowed = [
     'admin',
     'reservations_web',
@@ -291,6 +297,7 @@ function assertCanAssignRole(actorRole, targetRole) {
     'unit_acquisition_agent',
     'unit_acquisition_manager',
     'finance',
+    'finance_manager',
     'hr',
     'hr_supervisor',
     'owners_relations',
@@ -300,7 +307,7 @@ function assertCanAssignRole(actorRole, targetRole) {
   ];
   if (!allowed.includes(targetRole)) {
     const err = new Error(
-      'Invalid role. Use admin, reservations_web, reservations_manual, reservations_manager, unit_acquisition_agent, unit_acquisition_manager, operations, operations_supervisor, housekeeping, housekeeping_supervisor, resale, resale_manager, finance, hr, hr_supervisor, owners_relations, marketing_pr, web_developer, or owner.'
+      'Invalid role. Use admin, reservations_web, reservations_manual, reservations_manager, unit_acquisition_agent, unit_acquisition_manager, operations, operations_supervisor, housekeeping, housekeeping_supervisor, resale, resale_manager, finance, finance_manager, hr, hr_supervisor, owners_relations, marketing_pr, web_developer, or owner.'
     );
     err.status = 400;
     throw err;
@@ -367,6 +374,7 @@ async function parseManagerId(raw, selfId) {
     'reservations_manager',
     'resale_manager',
     'unit_acquisition_manager',
+    'finance_manager',
     'operations_supervisor',
   ];
   if (!rows[0] || rows[0].role === 'owner') {
@@ -2775,7 +2783,7 @@ router.post(
     const method = String(b.payment_method || 'cash').toLowerCase();
     const { syncReservationPaymentStatus } = require('../../lib/syncReservationPayment');
 
-    const autoApprove = ['admin', 'finance'].includes(req.user.role);
+    const autoApprove = ['admin', 'finance', 'finance_manager'].includes(req.user.role);
     const { rows } = await query(
       `INSERT INTO payments (
          reservation_id, booking_id, amount, payment_date, payment_method,

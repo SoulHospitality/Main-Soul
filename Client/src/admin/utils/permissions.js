@@ -13,6 +13,7 @@ export const ROLES = {
   RESALE: 'resale',
   RESALE_MANAGER: 'resale_manager',
   FINANCE: 'finance',
+  FINANCE_MANAGER: 'finance_manager',
   HR: 'hr',
   HR_SUPERVISOR: 'hr_supervisor',
   OWNERS_RELATIONS: 'owners_relations',
@@ -62,6 +63,10 @@ const RESALE_MANAGER_PAGE_ACCESS = new Set([
   'performance',
   'profile',
 ]);
+
+const FINANCE_PAGE_ACCESS = new Set(['financial_system', 'profile']);
+
+const FINANCE_MANAGER_PAGE_ACCESS = new Set(['financial_system', 'finance_audit', 'profile']);
 
 const RESERVATIONS_MANAGER_PAGE_ACCESS = new Set([
   'reservations',
@@ -266,6 +271,13 @@ const PERMISSIONS = {
     'notifications:read',
     'profile:read',
   ],
+  finance_manager: [
+    'financial_system:read',
+    'financial_system:write',
+    'finance_audit:read',
+    'notifications:read',
+    'profile:read',
+  ],
   marketing_pr: ['tasks:read', 'notifications:read', 'profile:read'],
   web_developer: ['tasks:read', 'notifications:read', 'profile:read'],
 };
@@ -288,7 +300,8 @@ const PAGE_ACCESS = {
   hr: HR_PAGE_ACCESS,
   hr_supervisor: HR_SUPERVISOR_PAGE_ACCESS,
   owners_relations: new Set(['reservations', 'profile', 'holiday_requests', 'loans', 'payslip']),
-  finance: new Set(['financial_system', 'profile']),
+  finance: FINANCE_PAGE_ACCESS,
+  finance_manager: FINANCE_MANAGER_PAGE_ACCESS,
   marketing_pr: new Set(['tasks', 'profile']),
   web_developer: new Set(['tasks', 'profile']),
   owner: new Set([
@@ -315,6 +328,25 @@ export function isManualReservationsRole(user) {
 
 export function isReservationsManager(user) {
   return !!user && user.role === 'reservations_manager';
+}
+
+export function isFinanceAgent(user) {
+  return !!user && user.role === 'finance';
+}
+
+export function isFinanceManager(user) {
+  return !!user && user.role === 'finance_manager';
+}
+
+export function isFinanceStaff(user) {
+  return isFinanceAgent(user) || isFinanceManager(user);
+}
+
+export function financeUsersForActor(users, actor) {
+  if (!actor || actor.role === 'admin' || !isFinanceManager(actor)) return users || [];
+  return (users || []).filter(
+    (u) => String(u.id) === String(actor.id) || String(u.manager_id) === String(actor.id)
+  );
 }
 
 export function isResaleAgent(user) {
@@ -382,7 +414,8 @@ export function canAccess(user, page) {
   if (
     (page === 'loans' || page === 'payslip' || page === 'holiday_requests') &&
     user.role !== 'owner' &&
-    user.role !== 'finance'
+    user.role !== 'finance' &&
+    user.role !== 'finance_manager'
   ) {
     return true;
   }
@@ -391,6 +424,7 @@ export function canAccess(user, page) {
     user.role !== 'owner' &&
     user.role !== 'admin' &&
     user.role !== 'finance' &&
+    user.role !== 'finance_manager' &&
     user.role !== 'operations' &&
     user.role !== 'operations_supervisor'
   ) {
@@ -460,7 +494,7 @@ export function isResaleRole(user) {
 }
 
 export function isFinanceRole(user) {
-  return !!user && user.role === 'finance';
+  return isFinanceAgent(user);
 }
 
 export function canEditSchedulePricing(user) {
@@ -473,7 +507,7 @@ export function canAccessFinance(user) {
 
 
 export function canAccessFinancialSystem(user) {
-  return !!user && (user.role === 'admin' || user.role === 'finance');
+  return !!user && (user.role === 'admin' || isFinanceStaff(user));
 }
 
 export function canAccessReports(user) {
@@ -501,7 +535,8 @@ export function canSeeRequestQueue(user) {
       user.role === 'housekeeping_supervisor' ||
       user.role === 'reservations_manager' ||
       user.role === 'unit_acquisition_manager' ||
-      user.role === 'resale_manager')
+      user.role === 'resale_manager' ||
+      user.role === 'finance_manager')
   );
 }
 
@@ -527,6 +562,7 @@ export const LINE_MANAGER_ROLES = [
   'hr_supervisor',
   'reservations_manager',
   'resale_manager',
+  'finance_manager',
   'unit_acquisition_manager',
   'operations_supervisor',
 ];
@@ -568,6 +604,7 @@ export const HR_STAFF_FILTER_ROLES = [
   ...HR_MANAGED_STAFF_ROLES,
   'reservations',
   'finance',
+  'finance_manager',
   'hr_supervisor',
 ];
 
@@ -594,6 +631,7 @@ export const ROLE_LABELS = {
   resale: 'Resale',
   resale_manager: 'Resale Manager',
   finance: 'Finance',
+  finance_manager: 'Financial Manager',
   hr: 'HR',
   hr_supervisor: 'HR Manager',
   owners_relations: 'Owner Experience',
@@ -617,6 +655,7 @@ export const ROLE_COLORS = {
   resale: 'badge-soul-teal',
   resale_manager: 'badge-soul-teal',
   finance: 'badge-soul-slate',
+  finance_manager: 'badge-soul-slate',
   hr: 'badge-soul-slate',
   hr_supervisor: 'badge-soul-slate',
   owners_relations: 'badge-soul-teal',
@@ -640,6 +679,7 @@ export const PMS_LABELS = {
   resale: 'Resale PMS',
   resale_manager: 'Resale Manager PMS',
   finance: 'Finance PMS',
+  finance_manager: 'Finance Manager PMS',
   hr: 'HR PMS',
   hr_supervisor: 'HR Manager PMS',
   owners_relations: 'Owner Experience PMS',

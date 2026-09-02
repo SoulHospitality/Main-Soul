@@ -20,6 +20,7 @@ export function defaultAdminPage(role) {
     case 'unit_acquisition_manager':
       return `${A}/units`;
     case 'finance':
+    case 'finance_manager':
       return `${A}/financial-system`;
     case 'hr':
     case 'hr_supervisor':
