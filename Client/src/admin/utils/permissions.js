@@ -400,7 +400,7 @@ export function hasPermission(user, permission) {
 }
 
 export function isTaskAssigneeRole(user) {
-  return !!user && (user.role === 'marketing_pr' || user.role === 'web_developer' || user.role === 'hr');
+  return !!user && user.role !== 'owner' && !canAssignStaffTasks(user);
 }
 
 export function canAssignStaffTasks(user) {
@@ -411,7 +411,7 @@ export function canAccess(user, page) {
   if (!user) return false;
   if (user.role === 'admin') return true;
   if (page === 'profile' || page === 'change-password') return true;
-  if (page === 'tasks' && (isTaskAssigneeRole(user) || isLineManagerRole(user.role))) {
+  if (page === 'tasks' && user.role !== 'owner') {
     return true;
   }
   if (
@@ -569,6 +569,7 @@ export const LINE_MANAGER_ROLES = [
   'finance_manager',
   'unit_acquisition_manager',
   'operations_supervisor',
+  'housekeeping_supervisor',
 ];
 
 export function isLineManagerRole(role) {

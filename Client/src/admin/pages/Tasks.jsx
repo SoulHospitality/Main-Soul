@@ -58,10 +58,7 @@ export default function Tasks() {
       return 'Loading team members you can assign tasks to…';
     }
     if (canAssignStaffTasks) {
-      if (user?.role === 'hr_supervisor') {
-        return 'Assign tasks to HR, Marketing and PR, or Web Developer staff who report to you in User Management.';
-      }
-      return 'Assign Marketing and PR, Web Developer, or HR staff to yourself in User Management first.';
+      return 'Assign tasks to employees you manage in User Management, or to your department team where that applies.';
     }
     return 'Tasks assigned to your team appear here.';
   })();
@@ -74,10 +71,7 @@ export default function Tasks() {
       return 'Add a task for someone on your team.';
     }
     if (canAssignStaffTasks) {
-      if (user?.role === 'hr_supervisor') {
-        return 'Set yourself as line manager on User Management first, then assign tasks here.';
-      }
-      return 'No eligible team members report to you yet.';
+      return 'Set line managers in User Management, then assign tasks to staff who report to you.';
     }
     return 'No tasks to show.';
   })();

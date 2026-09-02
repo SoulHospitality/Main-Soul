@@ -1,8 +1,7 @@
 const express = require('express');
 const { query } = require('../../config/db');
 const {
-  TASK_ASSIGNEE_ROLES,
-  isTaskAssigneeRole,
+  canReceiveStaffTasks,
   canManageStaffTasks,
   canAssignTaskTo,
   staffTaskScopeSql,
@@ -32,11 +31,17 @@ function isoDate(value) {
 }
 
 function assigneeAuthShape(row) {
+  const managerIds = Array.isArray(row.manager_ids)
+    ? row.manager_ids.map(Number).filter((id) => Number.isFinite(id))
+    : [];
+  const merged = [
+    ...new Set([...managerIds, ...(row.manager_id != null ? [Number(row.manager_id)] : [])]),
+  ];
   return {
     id: row.id,
     role: row.role,
     manager_id: row.manager_id,
-    manager_ids: Array.isArray(row.manager_ids) ? row.manager_ids : [],
+    manager_ids: merged,
   };
 }
 
@@ -49,10 +54,10 @@ router.get('/staff-tasks/assignees', async (req, res, next) => {
       `SELECT id, full_name, role, email
        FROM staff_users
        WHERE is_active = 1
+         AND role NOT IN ('owner', 'admin')
          AND ${staffTaskScopeSql('$1', 'u', req.user.role)}
-         AND role = ANY($2::text[])
        ORDER BY full_name`,
-      [req.user.id, TASK_ASSIGNEE_ROLES]
+      [req.user.id]
     );
     res.json(rows);
   } catch (e) {
@@ -63,18 +68,18 @@ router.get('/staff-tasks/assignees', async (req, res, next) => {
 router.get('/staff-tasks', async (req, res, next) => {
   try {
     const me = req.user.id;
-    const sql = isTaskAssigneeRole(req.user)
+    const sql = canManageStaffTasks(req.user)
       ? `SELECT ${TASK_SELECT}
          FROM staff_tasks t
          JOIN staff_users a ON a.id = t.assignee_id
          JOIN staff_users m ON m.id = t.created_by
-         WHERE t.assignee_id = $1
+         WHERE ${staffTaskScopeSql('$1', 'a', req.user.role)}
          ORDER BY t.deadline ASC, t.created_at DESC`
       : `SELECT ${TASK_SELECT}
          FROM staff_tasks t
          JOIN staff_users a ON a.id = t.assignee_id
          JOIN staff_users m ON m.id = t.created_by
-         WHERE ${staffTaskScopeSql('$1', 'a', req.user.role)}
+         WHERE t.assignee_id = $1
          ORDER BY t.deadline ASC, t.created_at DESC`;
     const { rows } = await query(sql, [me]);
     res.json(rows);
@@ -114,8 +119,8 @@ router.post('/staff-tasks', async (req, res, next) => {
     if (!assignee || !Number(assignee.is_active)) {
       return res.status(404).json({ error: 'Staff member not found' });
     }
-    if (!isTaskAssigneeRole(assignee.role)) {
-      return res.status(403).json({ error: 'Tasks can only be assigned to Marketing and PR, Web Developer, or HR staff' });
+    if (!canReceiveStaffTasks(assignee.role)) {
+      return res.status(403).json({ error: 'Tasks cannot be assigned to this role' });
     }
     if (!canAssignTaskTo(req.user, assigneeAuthShape(assignee))) {
       return res.status(403).json({ error: 'You can only assign tasks to staff you manage' });
@@ -176,7 +181,7 @@ router.post('/staff-tasks', async (req, res, next) => {
 
 router.delete('/staff-tasks/:id', async (req, res, next) => {
   try {
-    if (isTaskAssigneeRole(req.user) && req.user.role !== 'admin') {
+    if (!canManageStaffTasks(req.user)) {
       return res.status(403).json({ error: 'Only a manager can delete this task' });
     }
     const id = Number(req.params.id);

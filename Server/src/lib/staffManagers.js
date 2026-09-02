@@ -10,6 +10,7 @@ const LINE_MANAGER_ROLES = [
   'unit_acquisition_manager',
   'finance_manager',
   'operations_supervisor',
+  'housekeeping_supervisor',
 ];
 
 function supportsMultipleManagers(role) {
@@ -71,8 +72,8 @@ async function syncStaffManagers(staffUserId, role, managerIds, client = null) {
   const run = client ? client.query.bind(client) : query;
   const ids = normalizeManagerIds(managerIds);
   await run(`DELETE FROM staff_user_managers WHERE staff_user_id = $1`, [staffUserId]);
-  if (!supportsMultipleManagers(role) || !ids.length) return ids;
-  for (const managerId of ids) {
+  const managersToStore = supportsMultipleManagers(role) ? ids : ids.slice(0, 1);
+  for (const managerId of managersToStore) {
     await run(
       `INSERT INTO staff_user_managers (staff_user_id, manager_id)
        VALUES ($1, $2)
