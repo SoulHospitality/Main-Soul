@@ -3,6 +3,10 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../context/AuthContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import { ROLE_LABELS, PMS_LABELS, canSeeRequestQueue } from '../../utils/permissions';
+import {
+  countActionableRequests,
+  useAcknowledgedRequestIds,
+} from '../../utils/requestAcknowledgements';
 import { getRoleTheme } from '../../utils/roleTheme';
 import api from '../../api/axios';
 import {
@@ -121,10 +125,11 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
   const theme = getRoleTheme(user?.role);
 
   const showWebsitePending = canAccess('website_bookings');
-  const showLeavePending = canSeeRequestQueue(user) || canAccess('holiday_access');
-  const showLoanPending = canSeeRequestQueue(user) || canAccess('payroll');
-  const showWfhPending = canSeeRequestQueue(user) || canAccess('payroll');
+  const showReviewPending = canSeeRequestQueue(user);
   const showJobPending = canAccess('job_offers');
+  const acknowledgedLeave = useAcknowledgedRequestIds('leave', user?.id);
+  const acknowledgedLoans = useAcknowledgedRequestIds('loan', user?.id);
+  const acknowledgedWfh = useAcknowledgedRequestIds('wfh', user?.id);
   const { data: pendingBookings = [] } = useQuery({
     queryKey: ['website-bookings-pending'],
     queryFn: () =>
@@ -146,24 +151,36 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
     queryKey: ['hr-leave-requests', 'pending'],
     queryFn: () =>
       api.get('/hr/leave-requests', { params: { status: 'pending' } }).then((r) => r.data),
-    enabled: showLeavePending,
+    enabled: showReviewPending,
     refetchInterval: 30000,
   });
-  const pendingLeaveCount = Array.isArray(pendingLeave) ? pendingLeave.length : 0;
+  const pendingLeaveCount = countActionableRequests(pendingLeave, {
+    kind: 'leave',
+    userId: user?.id,
+    acknowledged: acknowledgedLeave,
+  });
   const { data: pendingLoans = [] } = useQuery({
     queryKey: ['hr-loans', 'pending'],
     queryFn: () => api.get('/hr/loans', { params: { status: 'pending' } }).then((r) => r.data),
-    enabled: showLoanPending,
+    enabled: showReviewPending,
     refetchInterval: 30000,
   });
   const { data: pendingWfh = [] } = useQuery({
     queryKey: ['hr-wfh', 'pending'],
     queryFn: () => api.get('/hr/wfh', { params: { status: 'pending' } }).then((r) => r.data),
-    enabled: showWfhPending,
+    enabled: showReviewPending,
     refetchInterval: 30000,
   });
-  const pendingLoanCount = Array.isArray(pendingLoans) ? pendingLoans.length : 0;
-  const pendingWfhCount = Array.isArray(pendingWfh) ? pendingWfh.length : 0;
+  const pendingLoanCount = countActionableRequests(pendingLoans, {
+    kind: 'loan',
+    userId: user?.id,
+    acknowledged: acknowledgedLoans,
+  });
+  const pendingWfhCount = countActionableRequests(pendingWfh, {
+    kind: 'wfh',
+    userId: user?.id,
+    acknowledged: acknowledgedWfh,
+  });
   const { data: jobSummary } = useQuery({
     queryKey: ['recruitment-summary'],
     queryFn: () => api.get('/recruitment/summary').then((r) => r.data),

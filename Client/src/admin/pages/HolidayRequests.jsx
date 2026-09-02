@@ -13,6 +13,7 @@ import { formatDate, formatDateTime } from '../utils/formatters';
 import { LEAVE_TYPE_LABELS, requestableLeaveTypes, formatUnpaidLeaveAvailable } from '../utils/hrPolicy';
 import { useAuth } from '../context/AuthContext';
 import { RequestReviewActions, approvalStatusClass, requestApprovalSummary } from '../components/RequestReviewActions';
+import { acknowledgeRequest } from '../utils/requestAcknowledgements';
 
 const EMPTY_FORM = {
   leave_type: 'casual',
@@ -397,6 +398,7 @@ export default function HolidayRequests() {
     mutationFn: ({ id, status: next, review_note }) =>
       api.post(`/hr/leave-requests/${id}/review`, { status: next, review_note }),
     onSuccess: (_, vars) => {
+      if (user?.id && vars?.id) acknowledgeRequest('leave', vars.id, user.id);
       qc.invalidateQueries({ queryKey: ['hr-leave-requests'] });
       qc.invalidateQueries({ queryKey: ['users'] });
       qc.invalidateQueries({ queryKey: ['hr-attendance'] });
@@ -422,6 +424,13 @@ export default function HolidayRequests() {
     });
     return list;
   }, [activeRows, activeView, q, user?.id]);
+
+  const openLeaveDetail = (row) => {
+    if (activeView === 'incoming' && row?.id && user?.id && (row.can_review_slots || []).length) {
+      acknowledgeRequest('leave', row.id, user.id);
+    }
+    setDetailRow(row);
+  };
 
   const submitLeave = () => {
     const leaveType = leaveSnap?.can_request_holidays === false ? 'unpaid' : form.leave_type;
@@ -521,7 +530,7 @@ export default function HolidayRequests() {
           rows={filtered}
           incoming={activeView === 'incoming'}
           reviewMutation={reviewMutation}
-          onSelect={setDetailRow}
+          onSelect={openLeaveDetail}
           onReject={(row) => {
             setRejectRow(row);
             setNote('');
