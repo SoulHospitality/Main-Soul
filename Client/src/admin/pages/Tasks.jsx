@@ -52,13 +52,13 @@ export default function Tasks() {
       return 'Tasks assigned to you by your manager. You will also receive them by email.';
     }
     if (canAdd) {
-      return 'Assign a title, description, and deadline. The assignee gets an email at the address on their Users record.';
+      return 'Assign a title, description, and deadline. Only non-manager staff can receive tasks.';
     }
     if (canAssignStaffTasks && assigneesLoading) {
       return 'Loading team members you can assign tasks to…';
     }
     if (canAssignStaffTasks) {
-      return 'Assign tasks to employees you manage in User Management, or to your department team where that applies.';
+      return 'Managers assign tasks. Choose staff you manage in User Management, or your department team where that applies.';
     }
     return 'Tasks assigned to your team appear here.';
   })();

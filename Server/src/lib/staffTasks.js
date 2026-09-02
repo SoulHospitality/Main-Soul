@@ -1,24 +1,23 @@
 const { departmentManagerRole } = require('./hrRules');
-const { sqlStaffManagedBy, isDirectStaffManager, LINE_MANAGER_ROLES } = require('./staffManagers');
-
-const TASK_RECIPIENT_EXCLUDED_ROLES = new Set(['owner', 'admin']);
+const {
+  sqlStaffManagedBy,
+  isDirectStaffManager,
+  isStaffTaskManagerRole,
+} = require('./staffManagers');
 
 function canReceiveStaffTasks(role) {
-  return !TASK_RECIPIENT_EXCLUDED_ROLES.has(String(role || ''));
+  const r = String(role || '');
+  if (r === 'owner' || r === 'admin') return false;
+  return !isStaffTaskManagerRole(r);
 }
 
-/** @deprecated use canReceiveStaffTasks / canManageStaffTasks for task views */
 function isTaskAssigneeRole(userOrRole) {
   const role = typeof userOrRole === 'string' ? userOrRole : userOrRole?.role;
-  if (!role) return false;
-  if (canManageStaffTasks(typeof userOrRole === 'string' ? { role } : userOrRole)) return false;
   return canReceiveStaffTasks(role);
 }
 
 function canManageStaffTasks(actor) {
-  if (!actor) return false;
-  if (actor.role === 'admin') return true;
-  return LINE_MANAGER_ROLES.includes(String(actor.role || ''));
+  return !!actor && isStaffTaskManagerRole(actor.role);
 }
 
 function canAssignTaskTo(actor, assignee) {
@@ -32,6 +31,14 @@ function canAssignTaskTo(actor, assignee) {
   }
   const dept = departmentManagerRole(assignee.role);
   return Boolean(dept) && actor.role === dept;
+}
+
+function sqlTaskRecipientRoles(staffAlias = 'u') {
+  return `(
+    ${staffAlias}.role NOT IN ('owner', 'admin')
+    AND ${staffAlias}.role !~ '_manager$'
+    AND ${staffAlias}.role !~ '_supervisor$'
+  )`;
 }
 
 function sqlStaffTaskManagedBy(managerParam, staffAlias = 'u') {
@@ -75,12 +82,13 @@ function staffTaskScopeSql(managerParam, staffAlias, actorRole) {
 }
 
 module.exports = {
-  TASK_RECIPIENT_EXCLUDED_ROLES,
   canReceiveStaffTasks,
   isTaskAssigneeRole,
   canManageStaffTasks,
   canAssignTaskTo,
+  sqlTaskRecipientRoles,
   sqlStaffTaskManagedBy,
   sqlLineManagerTaskScope,
   staffTaskScopeSql,
+  isStaffTaskManagerRole,
 };

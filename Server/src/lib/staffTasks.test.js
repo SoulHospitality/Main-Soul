@@ -1,5 +1,6 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
+const { isStaffTaskManagerRole } = require('./staffManagers');
 const {
   canAssignTaskTo,
   canManageStaffTasks,
@@ -8,18 +9,26 @@ const {
 } = require('./staffTasks');
 
 describe('staff task access', () => {
-  it('lets any staff except owner/admin receive tasks', () => {
-    assert.equal(canReceiveStaffTasks('reservations_web'), true);
-    assert.equal(canReceiveStaffTasks('web_developer'), true);
-    assert.equal(canReceiveStaffTasks('owner'), false);
-    assert.equal(canReceiveStaffTasks('admin'), false);
+  it('treats CEOs and every manager role as task assigners', () => {
+    assert.equal(isStaffTaskManagerRole('admin'), true);
+    assert.equal(isStaffTaskManagerRole('hr_supervisor'), true);
+    assert.equal(isStaffTaskManagerRole('reservations_manager'), true);
+    assert.equal(isStaffTaskManagerRole('finance_manager'), true);
+    assert.equal(isStaffTaskManagerRole('operations_supervisor'), true);
+    assert.equal(isStaffTaskManagerRole('housekeeping_supervisor'), true);
+    assert.equal(canManageStaffTasks({ role: 'resale_manager' }), true);
   });
 
-  it('uses assignee view for staff and manager view for line managers', () => {
-    assert.equal(isTaskAssigneeRole({ role: 'hr' }), true);
-    assert.equal(isTaskAssigneeRole({ role: 'reservations_web' }), true);
-    assert.equal(isTaskAssigneeRole({ role: 'hr_supervisor' }), false);
-    assert.equal(isTaskAssigneeRole({ role: 'admin' }), false);
+  it('lets staff receive tasks but not managers or owners', () => {
+    assert.equal(canReceiveStaffTasks('reservations_web'), true);
+    assert.equal(canReceiveStaffTasks('web_developer'), true);
+    assert.equal(canReceiveStaffTasks('hr'), true);
+    assert.equal(canReceiveStaffTasks('hr_supervisor'), false);
+    assert.equal(canReceiveStaffTasks('reservations_manager'), false);
+    assert.equal(canReceiveStaffTasks('owner'), false);
+    assert.equal(canReceiveStaffTasks('admin'), false);
+    assert.equal(isTaskAssigneeRole({ role: 'marketing_pr' }), true);
+    assert.equal(isTaskAssigneeRole({ role: 'finance_manager' }), false);
   });
 
   it('lets HR Supervisor assign tasks to direct reports including web developers', () => {
@@ -42,12 +51,13 @@ describe('staff task access', () => {
     assert.equal(canAssignTaskTo(admin, { id: 31, role: 'web_developer', manager_id: null }), true);
   });
 
-  it('blocks managers from staff outside their scope', () => {
+  it('blocks assigning tasks to other managers', () => {
+    const admin = { id: 1, role: 'admin' };
     const reservationsManager = { id: 12, role: 'reservations_manager' };
-    const webDev = { id: 20, role: 'web_developer', manager_id: 5, manager_ids: [5] };
-    assert.equal(canAssignTaskTo(reservationsManager, webDev), false);
-    assert.equal(canManageStaffTasks({ role: 'hr' }), false);
-    assert.equal(canManageStaffTasks({ role: 'hr_supervisor' }), true);
-    assert.equal(canManageStaffTasks({ role: 'housekeeping_supervisor' }), true);
+    assert.equal(canAssignTaskTo(admin, { id: 12, role: 'reservations_manager' }), false);
+    assert.equal(
+      canAssignTaskTo(reservationsManager, { id: 20, role: 'web_developer', manager_id: 5 }),
+      false
+    );
   });
 });

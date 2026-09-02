@@ -158,6 +158,12 @@ function isDirectStaffManager(actorId, staff) {
   return staffManagerIds(staff).includes(String(actorId));
 }
 
+function isStaffTaskManagerRole(role) {
+  const r = String(role || '');
+  if (r === 'admin') return true;
+  return r.endsWith('_manager') || r.endsWith('_supervisor');
+}
+
 function sqlStaffManagedBy(managerParam, staffAlias = 'u') {
   return `(
     ${staffAlias}.manager_id = ${managerParam}
@@ -182,5 +188,6 @@ module.exports = {
   parseSingleManagerId,
   staffManagerIds,
   isDirectStaffManager,
+  isStaffTaskManagerRole,
   sqlStaffManagedBy,
 };

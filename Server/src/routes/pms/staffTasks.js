@@ -5,6 +5,7 @@ const {
   canManageStaffTasks,
   canAssignTaskTo,
   staffTaskScopeSql,
+  sqlTaskRecipientRoles,
 } = require('../../lib/staffTasks');
 const { sendStaffTaskAssignedEmail, staffEmailFromUser } = require('../../services/staffTaskEmails');
 const { logAudit } = require('../../lib/audit');
@@ -54,7 +55,7 @@ router.get('/staff-tasks/assignees', async (req, res, next) => {
       `SELECT id, full_name, role, email
        FROM staff_users
        WHERE is_active = 1
-         AND role NOT IN ('owner', 'admin')
+         AND ${sqlTaskRecipientRoles('u')}
          AND ${staffTaskScopeSql('$1', 'u', req.user.role)}
        ORDER BY full_name`,
       [req.user.id]

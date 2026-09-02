@@ -399,12 +399,24 @@ export function hasPermission(user, permission) {
   return (PERMISSIONS[user.role] || []).includes(permission);
 }
 
+export function isStaffTaskManagerRole(role) {
+  const r = String(role || '');
+  if (r === 'admin') return true;
+  return r.endsWith('_manager') || r.endsWith('_supervisor');
+}
+
+export function canReceiveStaffTasks(role) {
+  const r = String(role || '');
+  if (r === 'owner' || r === 'admin') return false;
+  return !isStaffTaskManagerRole(r);
+}
+
 export function isTaskAssigneeRole(user) {
-  return !!user && user.role !== 'owner' && !canAssignStaffTasks(user);
+  return !!user && canReceiveStaffTasks(user.role);
 }
 
 export function canAssignStaffTasks(user) {
-  return !!user && (user.role === 'admin' || isLineManagerRole(user.role));
+  return !!user && isStaffTaskManagerRole(user.role);
 }
 
 export function canAccess(user, page) {
