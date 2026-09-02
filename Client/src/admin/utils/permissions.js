@@ -571,7 +571,8 @@ export function isLineManagerRole(role) {
   return LINE_MANAGER_ROLES.includes(String(role || ''));
 }
 
-export function hasOfficeAttendance(role) {
+export function hasOfficeAttendance(role, staff) {
+  if (staff?.office_attendance_exempt) return false;
   const r = String(role || '');
   if (['owner', 'operations', 'web_developer'].includes(r)) return false;
   if (isLineManagerRole(r)) return false;

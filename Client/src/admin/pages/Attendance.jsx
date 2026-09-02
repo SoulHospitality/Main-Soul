@@ -73,7 +73,7 @@ export default function Attendance() {
   });
 
   const days = data?.days || [];
-  const staff = (data?.staff || []).filter((s) => hasOfficeAttendance(s.role));
+  const staff = (data?.staff || []).filter((s) => hasOfficeAttendance(s.role, s));
   const cells = data?.cells || {};
   const today = currentMonthIso() === month
     ? `${year}-${String(monthNum).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`

@@ -541,13 +541,13 @@ function fillMissingOfficeAbsences(dailyRows, staffList) {
   const present = new Set();
   for (const row of dailyRows || []) {
     const staff = matchAttendanceStaff(row, staffList);
-    if (!staff || !hasOfficeAttendance(staff.role) || !row.date) continue;
+    if (!staff || !hasOfficeAttendance(staff.role, staff) || !row.date) continue;
     present.add(`${staff.id}|${row.date}`);
     if (!row.absent) workDates.add(row.date);
   }
   const extra = [];
   for (const staff of staffList || []) {
-    if (!hasOfficeAttendance(staff.role)) continue;
+    if (!hasOfficeAttendance(staff.role, staff)) continue;
     for (const date of workDates) {
       const key = `${staff.id}|${date}`;
       if (present.has(key)) continue;
@@ -599,7 +599,8 @@ function isUnpaidLeaveUnlimited() {
   return UNPAID_LEAVE_UNLIMITED;
 }
 
-function hasOfficeAttendance(role) {
+function hasOfficeAttendance(role, staff) {
+  if (staff && staff.office_attendance_exempt) return false;
   return !NO_OFFICE_ATTENDANCE_ROLES.has(String(role || ''));
 }
 

@@ -251,7 +251,8 @@ async function loadStaffForHr(staffUserId) {
             COALESCE(leave_casual_days, 0)::int AS leave_casual_days,
             COALESCE(leave_annual_days, 0)::int AS leave_annual_days,
             COALESCE(leave_unpaid_days, 0)::int AS leave_unpaid_days,
-            COALESCE(holiday_access, 'auto') AS holiday_access
+            COALESCE(holiday_access, 'auto') AS holiday_access,
+            COALESCE(office_attendance_exempt, false) AS office_attendance_exempt
      FROM staff_users WHERE id = $1`,
     [staffUserId]
   );
@@ -1512,12 +1513,13 @@ router.get('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
 
     const { rows: staffRows } = await query(
       `SELECT id, full_name, role, staff_code, is_active,
-              COALESCE(base_salary, 0)::float AS base_salary
+              COALESCE(base_salary, 0)::float AS base_salary,
+              COALESCE(office_attendance_exempt, false) AS office_attendance_exempt
        FROM staff_users
        WHERE COALESCE(is_active, 1)::int = 1
        ORDER BY full_name ASC, id ASC`
     );
-    const staff = staffRows.filter((s) => hasOfficeAttendance(s.role));
+    const staff = staffRows.filter((s) => hasOfficeAttendance(s.role, s));
 
     const { rows: attendanceRows } = await query(
       `SELECT staff_user_id, work_date::text AS work_date, status, check_in, check_out,
@@ -1599,7 +1601,7 @@ router.put('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
       return res.status(400).json({ error: 'Staff and date are required' });
     }
     const staff = await loadStaffForHr(staffUserId);
-    if (!hasOfficeAttendance(staff.role)) {
+    if (!hasOfficeAttendance(staff.role, staff)) {
       return res.status(400).json({ error: 'This role does not use office attendance' });
     }
     const { rows: holidayRows } = await query(
@@ -1657,7 +1659,9 @@ router.post(
       }
 
       const { rows: staffRows } = await query(
-        `SELECT id, staff_code, full_name, base_salary, role FROM staff_users WHERE role <> 'owner'`
+        `SELECT id, staff_code, full_name, base_salary, role,
+                COALESCE(office_attendance_exempt, false) AS office_attendance_exempt
+         FROM staff_users WHERE role <> 'owner'`
       );
 
       if (isDoorPunchLog(punches)) {
@@ -1725,7 +1729,7 @@ router.post(
           });
           continue;
         }
-        if (!hasOfficeAttendance(staff.role)) {
+        if (!hasOfficeAttendance(staff.role, staff)) {
           skipped.push({ row: row.row, staff_user_id: staff.id, reason: 'no_office_attendance' });
           continue;
         }

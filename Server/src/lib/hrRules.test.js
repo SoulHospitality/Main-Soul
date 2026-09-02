@@ -248,6 +248,10 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.equal(hasOfficeAttendance('admin'), false);
     assert.equal(hasOfficeAttendance('owner'), false);
     assert.equal(hasOfficeAttendance('web_developer'), false);
+    assert.equal(
+      hasOfficeAttendance('reservations_web', { office_attendance_exempt: true }),
+      false
+    );
     assert.equal(canRequestStaffBenefits('admin'), false);
     assert.equal(canRequestStaffBenefits('reservations_web'), true);
   });
