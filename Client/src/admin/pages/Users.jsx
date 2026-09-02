@@ -259,8 +259,12 @@ function isUnitAcquisitionAgentRole(role) {
   return role === 'unit_acquisition_agent';
 }
 
+function isResaleAgentRole(role) {
+  return role === 'resale';
+}
+
 function usesCommissionPct(role) {
-  return isReservationAgentRole(role) || role === 'resale';
+  return isReservationAgentRole(role) || isResaleAgentRole(role);
 }
 
 function StaffForm({
@@ -341,7 +345,9 @@ function StaffForm({
                 ? 'Reservations manager'
                 : isUnitAcquisitionAgentRole(form.role)
                   ? 'Unit Acquisition Manager'
-                  : 'Line manager'}
+                  : isResaleAgentRole(form.role)
+                    ? 'Resale Manager'
+                    : 'Line manager'}
             </label>
             <SearchableSelect
               value={form.manager_id ? String(form.manager_id) : ''}
@@ -351,7 +357,9 @@ function StaffForm({
                   ? 'Reservations manager'
                   : isUnitAcquisitionAgentRole(form.role)
                     ? 'Unit Acquisition Manager'
-                    : 'Department default'
+                    : isResaleAgentRole(form.role)
+                      ? 'Resale Manager'
+                      : 'Department default'
               }
               options={[
                 {
@@ -360,7 +368,9 @@ function StaffForm({
                     ? 'Department default (Reservations Manager)'
                     : isUnitAcquisitionAgentRole(form.role)
                       ? 'Department default (Unit Acquisition Manager)'
-                      : 'Department default',
+                      : isResaleAgentRole(form.role)
+                        ? 'Department default (Resale Manager)'
+                        : 'Department default',
                 },
                 ...managerOptions.map((u) => ({
                   value: String(u.id),
@@ -373,7 +383,9 @@ function StaffForm({
                 ? 'This manager sees the agent\'s reservations and must accept holiday, loan, and WFH requests (with the HR Manager).'
                 : isUnitAcquisitionAgentRole(form.role)
                   ? 'This manager sees the agent\'s daily audit and must accept holiday, loan, and WFH requests (with the HR Manager).'
-                  : 'Must accept holiday, loan, and WFH requests (with the HR Manager, except for HR staff).'}
+                  : isResaleAgentRole(form.role)
+                    ? 'This manager tracks units added and signed sales for this agent on the Performance page.'
+                    : 'Must accept holiday, loan, and WFH requests (with the HR Manager, except for HR staff).'}
             </p>
           </div>
         ) : null}
@@ -452,7 +464,7 @@ function StaffForm({
               placeholder="e.g. 1.5"
             />
             <p className="mt-1 text-[11px] text-slate-400">
-              {form.role === 'resale'
+              {isResaleAgentRole(form.role)
                 ? 'Of expected sale value on signed owner requests'
                 : 'Of company commission on reservations assigned to this agent'}
             </p>
@@ -1007,6 +1019,7 @@ export default function Users() {
         'housekeeping_supervisor',
         'housekeeping',
         'resale',
+        'resale_manager',
         'unit_acquisition_agent',
         'unit_acquisition_manager',
         'finance',
@@ -1026,6 +1039,7 @@ export default function Users() {
         'housekeeping_supervisor',
         'housekeeping',
         'resale',
+        'resale_manager',
         'unit_acquisition_agent',
         'unit_acquisition_manager',
         'finance',
@@ -1479,6 +1493,7 @@ export default function Users() {
                   'housekeeping_supervisor',
                   'housekeeping',
                   'resale',
+        'resale_manager',
                   'unit_acquisition_agent',
                   'unit_acquisition_manager',
                   'finance',

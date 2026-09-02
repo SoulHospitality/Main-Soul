@@ -7,7 +7,7 @@ const { UNIT_ACQUISITION_ROLES } = require('../../lib/unitAcquisition');
 
 const router = express.Router();
 
-const ACQUISITION_LEAD_ROLES = ['resale', ...UNIT_ACQUISITION_ROLES];
+const ACQUISITION_LEAD_ROLES = ['resale', 'resale_manager', ...UNIT_ACQUISITION_ROLES];
 
 const ACQUISITION_STATUSES = ['pending', 'signed', 'rejected'];
 
@@ -323,7 +323,7 @@ router.post(
 );
 
 
-router.get('/pricing-recommendations', requireRoles('admin', 'resale'), async (req, res, next) => {
+router.get('/pricing-recommendations', requireRoles('admin', 'resale', 'resale_manager'), async (req, res, next) => {
   try {
     const params = [];
     let where = '1=1';
@@ -345,7 +345,7 @@ router.get('/pricing-recommendations', requireRoles('admin', 'resale'), async (r
   }
 });
 
-router.post('/pricing-recommendations', requireRoles('admin', 'resale'), async (req, res, next) => {
+router.post('/pricing-recommendations', requireRoles('admin', 'resale', 'resale_manager'), async (req, res, next) => {
   try {
     const b = req.body;
     if (!b.unit_id && !b.lead_id) {
@@ -380,7 +380,7 @@ router.post('/pricing-recommendations', requireRoles('admin', 'resale'), async (
 
 router.post(
   '/pricing-recommendations/generate',
-  requireRoles('admin', 'resale'),
+  requireRoles('admin', 'resale', 'resale_manager'),
   async (req, res, next) => {
     try {
       const unitId = req.body.unit_id;
@@ -415,7 +415,7 @@ router.post(
 
 router.patch(
   '/pricing-recommendations/:id',
-  requireRoles('admin', 'resale'),
+  requireRoles('admin', 'resale', 'resale_manager'),
   async (req, res, next) => {
     try {
       const { applyAcceptedRecommendation } = require('../../lib/pricingRecommend');
@@ -499,7 +499,7 @@ router.patch(
   }
 );
 
-router.patch('/units/:unitId/comparable', requireRoles('admin', 'resale'), async (req, res, next) => {
+router.patch('/units/:unitId/comparable', requireRoles('admin', 'resale', 'resale_manager'), async (req, res, next) => {
   try {
     const flag = Boolean(req.body.is_comparable);
     const { rows } = await query(

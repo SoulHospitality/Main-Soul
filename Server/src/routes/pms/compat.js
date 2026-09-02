@@ -352,12 +352,13 @@ router.get(
 
 router.get(
   '/commissions/resale-breakdown',
-  requireRoles('admin', 'resale'),
+  requireRoles('admin', 'resale', 'resale_manager'),
   async (req, res, next) => {
     try {
       const from_date = clampFromDate(req.query.from_date);
       const { to_date } = req.query;
       const agentScoped = req.user.role === 'resale';
+      const managerScoped = req.user.role === 'resale_manager';
       const params = [from_date];
       let where = `al.stage = 'signed' AND al.updated_at >= $1::timestamptz`;
       if (to_date) {
@@ -367,6 +368,18 @@ router.get(
       if (agentScoped) {
         params.push(req.user.id);
         where += ` AND al.created_by = $${params.length}`;
+      } else if (managerScoped) {
+        const { rows: team } = await query(
+          `SELECT id FROM staff_users
+           WHERE is_active = 1 AND (id = $1 OR manager_id = $1) AND role IN ('resale', 'resale_manager')`,
+          [req.user.id]
+        );
+        const teamIds = team.map((row) => row.id);
+        if (!teamIds.length) {
+          return res.json({ breakdown: [], totals: { sale_value: 0, commission: 0, count: 0 } });
+        }
+        params.push(teamIds);
+        where += ` AND al.created_by = ANY($${params.length}::int[])`;
       }
 
       const { rows } = await query(

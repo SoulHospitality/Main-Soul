@@ -584,7 +584,10 @@ function departmentManagerRole(role) {
       return 'reservations_manager';
     case 'unit_acquisition_agent':
       return 'unit_acquisition_manager';
+    case 'resale':
+      return 'resale_manager';
     case 'reservations_manager':
+    case 'resale_manager':
     case 'unit_acquisition_manager':
     case 'hr_supervisor':
     case 'operations_supervisor':

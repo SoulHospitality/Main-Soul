@@ -9,6 +9,7 @@ const PERMS = {
   marketing_pr: ['tasks'],
   web_developer: ['tasks'],
   resale: ['units', 'projects', 'dashboard'],
+  resale_manager: ['units', 'projects', 'dashboard', 'performance'],
 };
 
 function can(user, permission) {

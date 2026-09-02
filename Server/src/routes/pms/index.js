@@ -58,7 +58,8 @@ const {
   isRentOnlyUnitEditor,
   UNIT_ACQUISITION_ROLES,
 } = require('../../lib/unitAcquisition');
-const UNIT_EDITOR_ROLES = ['admin', 'resale', 'reservations_web', 'reservations', ...UNIT_ACQUISITION_ROLES];
+const { isResaleStaff } = require('../../lib/resaleScope');
+const UNIT_EDITOR_ROLES = ['admin', 'resale', 'resale_manager', 'reservations_web', 'reservations', ...UNIT_ACQUISITION_ROLES];
 
 const HR_ROUTE_ROLES = ['admin', 'hr', 'hr_supervisor'];
 const USER_ACCOUNT_ROLES = ['hr', 'hr_supervisor', ...UNIT_ACQUISITION_ROLES];
@@ -70,6 +71,7 @@ router.use(requirePasswordChanged);
 router.use(compat);
 router.use(require('./reportsAnalytics'));
 router.use(require('./reservationsPerformance'));
+router.use(require('./resalePerformance'));
 router.use(require('./acquisitionAudit'));
 router.use(require('./staffTasks'));
 router.use(require('./financialSystem'));
@@ -285,6 +287,7 @@ function assertCanAssignRole(actorRole, targetRole) {
     'housekeeping',
     'housekeeping_supervisor',
     'resale',
+    'resale_manager',
     'unit_acquisition_agent',
     'unit_acquisition_manager',
     'finance',
@@ -297,7 +300,7 @@ function assertCanAssignRole(actorRole, targetRole) {
   ];
   if (!allowed.includes(targetRole)) {
     const err = new Error(
-      'Invalid role. Use admin, reservations_web, reservations_manual, reservations_manager, unit_acquisition_agent, unit_acquisition_manager, operations, operations_supervisor, housekeeping, housekeeping_supervisor, resale, finance, hr, hr_supervisor, owners_relations, marketing_pr, web_developer, or owner.'
+      'Invalid role. Use admin, reservations_web, reservations_manual, reservations_manager, unit_acquisition_agent, unit_acquisition_manager, operations, operations_supervisor, housekeeping, housekeeping_supervisor, resale, resale_manager, finance, hr, hr_supervisor, owners_relations, marketing_pr, web_developer, or owner.'
     );
     err.status = 400;
     throw err;
@@ -314,6 +317,7 @@ function assertCanAssignRole(actorRole, targetRole) {
       'housekeeping',
       'housekeeping_supervisor',
       'resale',
+    'resale_manager',
       'unit_acquisition_agent',
       'unit_acquisition_manager',
       'marketing_pr',
@@ -361,6 +365,7 @@ async function parseManagerId(raw, selfId) {
     'admin',
     'hr_supervisor',
     'reservations_manager',
+    'resale_manager',
     'unit_acquisition_manager',
     'operations_supervisor',
   ];
@@ -375,7 +380,7 @@ async function parseManagerId(raw, selfId) {
       if (existing[0] && String(existing[0].manager_id) === String(id)) return id;
     }
     const err = new Error(
-      'Manager must be a CEO, HR Manager, Reservations Manager, Unit Acquisition Manager, or Operations Supervisor'
+      'Manager must be a CEO, HR Manager, Reservations Manager, Resale Manager, Unit Acquisition Manager, or Operations Supervisor'
     );
     err.status = 400;
     throw err;
@@ -857,7 +862,7 @@ router.get('/units', async (req, res, next) => {
     }
     
     const listingType =
-      req.user?.role === 'resale'
+      isResaleStaff(req.user)
         ? 'sale'
         : isUnitAcquisitionRole(req.user)
           ? 'rent'
@@ -911,7 +916,7 @@ router.post('/units', requireRoles(...UNIT_EDITOR_ROLES), async (req, res, next)
     const propertyType = normalizePropertyType(toText(b.property_type || b.type));
     const cleaningFee = housekeepingFeeForType(propertyType);
     let listingType = String(b.listing_type || 'rent').toLowerCase() === 'sale' ? 'sale' : 'rent';
-    if (req.user?.role === 'resale') {
+    if (isResaleStaff(req.user)) {
       listingType = 'sale';
     }
     if (isRentOnlyUnitEditor(req.user)) {
@@ -1142,7 +1147,7 @@ async function updateUnitHandler(req, res, next) {
 
     const existingListingType =
       String(existingRows[0].listing_type || 'rent').toLowerCase() === 'sale' ? 'sale' : 'rent';
-    if (req.user?.role === 'resale' && existingListingType !== 'sale') {
+    if (isResaleStaff(req.user) && existingListingType !== 'sale') {
       return res.status(403).json({ error: 'Resale can only manage for-sale units' });
     }
     if (isRentOnlyUnitEditor(req.user) && existingListingType !== 'rent') {
@@ -1153,7 +1158,7 @@ async function updateUnitHandler(req, res, next) {
       String(b.listing_type || existingRows[0].listing_type || 'rent').toLowerCase() === 'sale'
         ? 'sale'
         : 'rent';
-    if (req.user?.role === 'resale') {
+    if (isResaleStaff(req.user)) {
       listingType = 'sale';
     }
     if (isRentOnlyUnitEditor(req.user)) {
@@ -1385,7 +1390,7 @@ router.patch('/units/:id/unpublish', requireRoles(...UNIT_EDITOR_ROLES), async (
 
     const listingType =
       String(existing[0].listing_type || 'rent').toLowerCase() === 'sale' ? 'sale' : 'rent';
-    if (req.user?.role === 'resale' && listingType !== 'sale') {
+    if (isResaleStaff(req.user) && listingType !== 'sale') {
       return res.status(403).json({ error: 'Resale can only manage for-sale units' });
     }
     if (isRentOnlyUnitEditor(req.user) && listingType !== 'rent') {
@@ -1419,7 +1424,7 @@ router.patch('/units/:id/publish', requireRoles(...UNIT_EDITOR_ROLES), async (re
 
     const listingType =
       String(existing[0].listing_type || 'rent').toLowerCase() === 'sale' ? 'sale' : 'rent';
-    if (req.user?.role === 'resale' && listingType !== 'sale') {
+    if (isResaleStaff(req.user) && listingType !== 'sale') {
       return res.status(403).json({ error: 'Resale can only manage for-sale units' });
     }
     if (isRentOnlyUnitEditor(req.user) && listingType !== 'rent') {
@@ -1452,7 +1457,7 @@ router.patch('/units/:id/publish', requireRoles(...UNIT_EDITOR_ROLES), async (re
   }
 });
 
-router.delete('/units/:id', requireRoles('admin', 'resale'), async (req, res, next) => {
+router.delete('/units/:id', requireRoles('admin', 'resale', 'resale_manager'), async (req, res, next) => {
   try {
     const unitId = req.params.id;
     const deleteReservations =
@@ -1468,7 +1473,7 @@ router.delete('/units/:id', requireRoles('admin', 'resale'), async (req, res, ne
       [unitId]
     );
     if (!existing[0]) return res.status(404).json({ error: 'Not found' });
-    if (req.user?.role === 'resale' && existing[0].listing_type !== 'sale') {
+    if (isResaleStaff(req.user) && existing[0].listing_type !== 'sale') {
       return res.status(403).json({ error: 'Resale can only delete for-sale units' });
     }
 

@@ -43,6 +43,7 @@ const NAV_SECTIONS = [
       { path: '/admin/units-for-sale', label: 'Units for Sale', icon: Building2, page: 'units_sale', resaleLabel: 'Units' },
       { path: '/admin/projects', label: 'Destinations', icon: Building, page: 'projects' },
       { path: '/admin/acquisition', label: 'Owner leads', icon: Briefcase, page: 'acquisition', resaleLabel: 'Owners requests' },
+      { path: '/admin/performance', label: 'Performance', icon: Trophy, page: 'performance', roles: ['resale_manager'] },
       { path: '/admin/acquisition-audit', label: 'Audit', icon: ClipboardList, page: 'acquisition_audit' },
       { path: '/admin/users', label: 'Owners', icon: UserCircle, page: 'owners', roles: ['unit_acquisition_agent', 'unit_acquisition_manager'] },
     ],
@@ -55,7 +56,7 @@ const NAV_SECTIONS = [
       { path: '/admin/website-bookings', label: 'Website Requests', icon: Globe, page: 'website_bookings', badge: 'website_pending' },
       { path: '/admin/schedule', label: 'Schedule', icon: CalendarRange, page: 'schedule' },
       { path: '/admin/calendar-sync', label: 'Calendar sync', icon: Link2, page: 'calendar_sync' },
-      { path: '/admin/performance', label: 'Performance', icon: Trophy, page: 'performance' },
+      { path: '/admin/performance', label: 'Performance', icon: Trophy, page: 'performance', excludeRoles: ['resale_manager'] },
     ],
   },
   {
@@ -72,7 +73,7 @@ const NAV_SECTIONS = [
     items: [
       { path: '/admin/financial-system', label: 'Financial System', icon: Landmark, page: 'financial_system' },
       { path: '/admin/reports', label: 'Reports', icon: FileBarChart2, page: 'reports' },
-      { path: '/admin/commissions', label: 'Commissions', icon: BadgeDollarSign, page: 'commissions', agentLabel: 'My Profit' },
+      { path: '/admin/commissions', label: 'Commissions', icon: BadgeDollarSign, page: 'commissions', agentLabel: 'My Profit', managerLabel: 'Team profit' },
       { path: '/admin/promo-codes', label: 'Promo Codes', icon: Tag, page: 'promo_codes' },
     ],
   },
@@ -183,7 +184,8 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
     items: section.items.filter(
       (item) =>
         canAccess(item.page) &&
-        (!item.roles || item.roles.includes(user?.role))
+        (!item.roles || item.roles.includes(user?.role)) &&
+        (!item.excludeRoles || !item.excludeRoles.includes(user?.role))
     ),
   })).filter((section) => section.items.length);
 
@@ -238,7 +240,7 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
               <div className="space-y-0.5">
                 {section.items.map((item) => {
                   const label =
-                    user?.role === 'resale' && item.resaleLabel
+                    (user?.role === 'resale' || user?.role === 'resale_manager') && item.resaleLabel
                       ? item.resaleLabel
                       : item.managerLabel && user?.role === 'reservations_manager'
                         ? item.managerLabel
@@ -246,8 +248,11 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
                           (user?.role === 'reservations_web' ||
                             user?.role === 'reservations_manual' ||
                             user?.role === 'reservations' ||
-                            user?.role === 'resale')
-                        ? item.agentLabel
+                            user?.role === 'resale' ||
+                            user?.role === 'resale_manager')
+                        ? user?.role === 'resale_manager' && item.managerLabel
+                          ? item.managerLabel
+                          : item.agentLabel
                         : item.label;
                   const pendingCount =
                     item.badge === 'website_pending'

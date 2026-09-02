@@ -11,6 +11,7 @@ export const ROLES = {
   HOUSEKEEPING: 'housekeeping',
   HOUSEKEEPING_SUPERVISOR: 'housekeeping_supervisor',
   RESALE: 'resale',
+  RESALE_MANAGER: 'resale_manager',
   FINANCE: 'finance',
   HR: 'hr',
   HR_SUPERVISOR: 'hr_supervisor',
@@ -50,6 +51,16 @@ const RESERVATIONS_WEB_PAGE_ACCESS = new Set([
   ...RESERVATIONS_PAGE_ACCESS,
   'website_bookings',
   'units',
+]);
+
+const RESALE_PAGE_ACCESS = new Set(['units_sale', 'acquisition', 'commissions', 'profile']);
+
+const RESALE_MANAGER_PAGE_ACCESS = new Set([
+  'units_sale',
+  'acquisition',
+  'commissions',
+  'performance',
+  'profile',
 ]);
 
 const RESERVATIONS_MANAGER_PAGE_ACCESS = new Set([
@@ -183,6 +194,18 @@ const PERMISSIONS = {
     'documents:read',
     'documents:write',
   ],
+  resale_manager: [
+    'units:read',
+    'units:write',
+    'units:delete',
+    'acquisition:read',
+    'acquisition:write',
+    'commissions:read',
+    'performance:read',
+    'notifications:read',
+    'documents:read',
+    'documents:write',
+  ],
   hr: HR_PERMISSIONS,
   hr_supervisor: [...HR_PERMISSIONS, 'holiday_access:write'],
   operations: [
@@ -260,7 +283,8 @@ const PAGE_ACCESS = {
   operations_supervisor: new Set(['operations', 'ops_checkins', 'ops_comments', 'reservations', 'schedule', 'profile']),
   housekeeping: new Set(['housekeeping', 'hk_today', 'profile']),
   housekeeping_supervisor: new Set(['housekeeping', 'hk_today', 'profile']),
-  resale: new Set(['units_sale', 'acquisition', 'commissions', 'profile']),
+  resale: RESALE_PAGE_ACCESS,
+  resale_manager: RESALE_MANAGER_PAGE_ACCESS,
   hr: HR_PAGE_ACCESS,
   hr_supervisor: HR_SUPERVISOR_PAGE_ACCESS,
   owners_relations: new Set(['reservations', 'profile', 'holiday_requests', 'loans', 'payslip']),
@@ -291,6 +315,25 @@ export function isManualReservationsRole(user) {
 
 export function isReservationsManager(user) {
   return !!user && user.role === 'reservations_manager';
+}
+
+export function isResaleAgent(user) {
+  return !!user && user.role === 'resale';
+}
+
+export function isResaleManager(user) {
+  return !!user && user.role === 'resale_manager';
+}
+
+export function isResaleStaff(user) {
+  return isResaleAgent(user) || isResaleManager(user);
+}
+
+export function resaleUsersForActor(users, actor) {
+  if (!actor || actor.role === 'admin' || !isResaleManager(actor)) return users || [];
+  return (users || []).filter(
+    (u) => String(u.id) === String(actor.id) || String(u.manager_id) === String(actor.id)
+  );
 }
 
 export function isUnitAcquisitionRole(user) {
@@ -363,7 +406,7 @@ export function canManageUnits(user) {
   return (
     !!user &&
     (user.role === 'admin' ||
-      user.role === 'resale' ||
+      isResaleStaff(user) ||
       user.role === 'reservations_web' ||
       user.role === 'reservations' ||
       isUnitAcquisitionRole(user))
@@ -371,7 +414,7 @@ export function canManageUnits(user) {
 }
 
 export function canDeleteUnits(user) {
-  return !!user && (user.role === 'admin' || user.role === 'resale');
+  return !!user && (user.role === 'admin' || isResaleStaff(user));
 }
 
 function isOperationsRole(user) {
@@ -409,11 +452,11 @@ export function isOwnersRelationsRole(user) {
 
 
 export function canViewOwnCommissions(user) {
-  return !!user && (user.role === 'admin' || isReservationsTeam(user) || user.role === 'resale');
+  return !!user && (user.role === 'admin' || isReservationsTeam(user) || isResaleStaff(user));
 }
 
 export function isResaleRole(user) {
-  return !!user && user.role === 'resale';
+  return isResaleStaff(user);
 }
 
 export function isFinanceRole(user) {
@@ -457,7 +500,8 @@ export function canSeeRequestQueue(user) {
       user.role === 'operations_supervisor' ||
       user.role === 'housekeeping_supervisor' ||
       user.role === 'reservations_manager' ||
-      user.role === 'unit_acquisition_manager')
+      user.role === 'unit_acquisition_manager' ||
+      user.role === 'resale_manager')
   );
 }
 
@@ -482,6 +526,7 @@ export const LINE_MANAGER_ROLES = [
   'admin',
   'hr_supervisor',
   'reservations_manager',
+  'resale_manager',
   'unit_acquisition_manager',
   'operations_supervisor',
 ];
@@ -498,13 +543,14 @@ export function creatableRoles(actorRole) {
     'housekeeping_supervisor',
     'housekeeping',
   ];
-  const hrCreatable = [...reservationRoles, ...fieldRoles, 'resale', 'unit_acquisition_agent', 'unit_acquisition_manager', 'marketing_pr', 'web_developer', 'hr'];
+  const hrCreatable = [...reservationRoles, ...fieldRoles, 'resale', 'resale_manager', 'unit_acquisition_agent', 'unit_acquisition_manager', 'marketing_pr', 'web_developer', 'hr'];
   if (actorRole === 'admin') {
     return [
       'admin',
       ...reservationRoles,
       ...fieldRoles,
       'resale',
+      'resale_manager',
       'unit_acquisition_agent',
       'unit_acquisition_manager',
       'finance',
@@ -536,6 +582,7 @@ export const ROLE_LABELS = {
   housekeeping: 'Housekeeping',
   housekeeping_supervisor: 'Housekeeping Supervisor',
   resale: 'Resale',
+  resale_manager: 'Resale Manager',
   finance: 'Finance',
   hr: 'HR',
   hr_supervisor: 'HR Manager',
@@ -558,6 +605,7 @@ export const ROLE_COLORS = {
   housekeeping: 'badge-soul-slate',
   housekeeping_supervisor: 'badge-soul-slate',
   resale: 'badge-soul-teal',
+  resale_manager: 'badge-soul-teal',
   finance: 'badge-soul-slate',
   hr: 'badge-soul-slate',
   hr_supervisor: 'badge-soul-slate',
@@ -580,6 +628,7 @@ export const PMS_LABELS = {
   housekeeping: 'Housekeeping PMS',
   housekeeping_supervisor: 'Housekeeping Supervisor PMS',
   resale: 'Resale PMS',
+  resale_manager: 'Resale Manager PMS',
   finance: 'Finance PMS',
   hr: 'HR PMS',
   hr_supervisor: 'HR Manager PMS',

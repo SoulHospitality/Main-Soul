@@ -122,7 +122,7 @@ router.get('/catalog', async (_req, res, next) => {
 router.post(
   '/',
   authStaff,
-  requireRoles('admin', 'resale'),
+  requireRoles('admin', 'resale', 'resale_manager'),
   setCloudinaryFolder(FOLDER_PROJECTS),
   upload.single('image'),
   attachCloudinaryUrls,
@@ -183,7 +183,7 @@ router.post(
 router.put(
   '/:id',
   authStaff,
-  requireRoles('admin', 'resale'),
+  requireRoles('admin', 'resale', 'resale_manager'),
   setCloudinaryFolder(FOLDER_PROJECTS),
   upload.single('image'),
   attachCloudinaryUrls,
@@ -262,7 +262,7 @@ router.put(
 router.delete(
   '/destination/:destination',
   authStaff,
-  requireRoles('admin', 'resale'),
+  requireRoles('admin', 'resale', 'resale_manager'),
   async (req, res, next) => {
     try {
       const destination = normalizeText(decodeURIComponent(req.params.destination));
@@ -313,7 +313,7 @@ router.delete(
 );
 
 
-router.delete('/:id', authStaff, requireRoles('admin', 'resale'), async (req, res, next) => {
+router.delete('/:id', authStaff, requireRoles('admin', 'resale', 'resale_manager'), async (req, res, next) => {
   try {
     const { rows } = await query(
       `DELETE FROM location_projects WHERE id = $1 RETURNING image_url`,

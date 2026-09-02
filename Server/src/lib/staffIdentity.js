@@ -16,6 +16,7 @@ const ROLE_PREFIX = {
   housekeeping: 'K',
   housekeeping_supervisor: 'L',
   resale: 'S',
+  resale_manager: 'J',
   finance: 'F',
   hr: 'H',
   hr_supervisor: 'U',
