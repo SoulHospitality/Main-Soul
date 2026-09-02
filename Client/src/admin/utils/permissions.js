@@ -527,17 +527,10 @@ export function isHrTeamRole(role) {
 }
 
 export function canSeeRequestQueue(user) {
-  return (
-    !!user &&
-    (user.role === 'admin' ||
-      isHrTeamRole(user.role) ||
-      user.role === 'operations_supervisor' ||
-      user.role === 'housekeeping_supervisor' ||
-      user.role === 'reservations_manager' ||
-      user.role === 'unit_acquisition_manager' ||
-      user.role === 'resale_manager' ||
-      user.role === 'finance_manager')
-  );
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  if (isLineManagerRole(user.role)) return true;
+  return user.role === 'housekeeping_supervisor';
 }
 
 export function canRequestStaffBenefits(user) {
