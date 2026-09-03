@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarDays, ListTodo, Plus, Trash2 } from 'lucide-react';
+import { CalendarDays, Check, ListTodo, Plus, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import { useAuth } from '../context/AuthContext';
@@ -112,6 +112,15 @@ export default function Tasks() {
     onError: (e) => toast.error(e.response?.data?.error || 'Could not delete task'),
   });
 
+  const completeMutation = useMutation({
+    mutationFn: (id) => api.post(`/staff-tasks/${id}/complete`).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['staff-tasks'] });
+      toast.success('Task marked as done');
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Could not mark task done'),
+  });
+
   const openAdd = () => {
     if (!assignees.length) {
       toast.error('No eligible staff to assign yet. Add active non-manager employees in User Management.');
@@ -193,12 +202,23 @@ export default function Tasks() {
       ) : (
         <ul className="space-y-3">
           {tasks.map((task) => {
-            const overdue = isOverdue(task.deadline);
+            const overdue = isOverdue(task.deadline) && !task.completed_at;
+            const isMine = String(task.assignee_id) === String(user?.id);
+            const canMarkDone = isMine && !task.completed_at;
             return (
-              <li key={task.id} className="card p-5">
+              <li
+                key={task.id}
+                className={`card p-5 ${task.completed_at ? 'opacity-75' : ''}`}
+              >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <h2 className="font-semibold text-soul-blue">{task.title}</h2>
+                    <h2
+                      className={`font-semibold text-soul-blue ${
+                        task.completed_at ? 'line-through decoration-slate-400' : ''
+                      }`}
+                    >
+                      {task.title}
+                    </h2>
                     {!isTaskAssignee && (
                       <p className="text-xs text-soul-muted mt-0.5">
                         For {task.assignee_name} ({ROLE_LABELS[task.assignee_role] || task.assignee_role})
@@ -209,15 +229,33 @@ export default function Tasks() {
                     )}
                   </div>
                   <div className="flex items-start gap-2 shrink-0">
-                    <span
-                      className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg ${
-                        overdue ? 'bg-rose-50 text-rose-800' : 'bg-slate-100 text-slate-700'
-                      }`}
-                    >
-                      <CalendarDays className="w-3.5 h-3.5" />
-                      {formatDate(task.deadline)}
-                      {overdue ? ' · overdue' : ''}
-                    </span>
+                    {task.completed_at ? (
+                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800">
+                        <Check className="w-3.5 h-3.5" />
+                        Done
+                      </span>
+                    ) : (
+                      <span
+                        className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg ${
+                          overdue ? 'bg-rose-50 text-rose-800' : 'bg-slate-100 text-slate-700'
+                        }`}
+                      >
+                        <CalendarDays className="w-3.5 h-3.5" />
+                        {formatDate(task.deadline)}
+                        {overdue ? ' · overdue' : ''}
+                      </span>
+                    )}
+                    {canMarkDone ? (
+                      <button
+                        type="button"
+                        className="btn-secondary text-xs px-2.5 py-1.5 text-emerald-700"
+                        disabled={completeMutation.isPending}
+                        onClick={() => completeMutation.mutate(task.id)}
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        Done
+                      </button>
+                    ) : null}
                     {canAssignStaffTasks ? (
                       <button
                         type="button"

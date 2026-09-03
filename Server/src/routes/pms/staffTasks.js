@@ -21,6 +21,8 @@ const TASK_SELECT = `
   t.description,
   t.deadline::text AS deadline,
   t.created_at,
+  t.completed_at,
+  t.completed_by,
   a.full_name AS assignee_name,
   a.role AS assignee_role,
   a.email AS assignee_email,
@@ -91,12 +93,13 @@ router.get('/staff-tasks', async (req, res, next) => {
          JOIN staff_users a ON a.id = t.assignee_id
          JOIN staff_users m ON m.id = t.created_by
          WHERE ${staffTaskScopeSql('$1', 'a', req.user.role)}
-         ORDER BY t.deadline ASC, t.created_at DESC`
+         ORDER BY (t.completed_at IS NULL) DESC, t.deadline ASC, t.created_at DESC`
       : `SELECT ${TASK_SELECT}
          FROM staff_tasks t
          JOIN staff_users a ON a.id = t.assignee_id
          JOIN staff_users m ON m.id = t.created_by
          WHERE t.assignee_id = $1
+           AND t.completed_at IS NULL
          ORDER BY t.deadline ASC, t.created_at DESC`;
     const params = canManageStaffTasks(req.user)
       ? staffTaskScopeParams(req.user.role, me)
@@ -194,6 +197,48 @@ router.post('/staff-tasks', async (req, res, next) => {
       email_sent: emailSent,
       email_error: emailError,
     });
+  } catch (e) {
+    return taskDbError(res, next, e);
+  }
+});
+
+router.post('/staff-tasks/:id/complete', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id < 1) {
+      return res.status(400).json({ error: 'Invalid task' });
+    }
+
+    const { rows } = await query(
+      `SELECT id, title, assignee_id, completed_at
+       FROM staff_tasks
+       WHERE id = $1`,
+      [id]
+    );
+    const task = rows[0];
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+    if (String(task.assignee_id) !== String(req.user.id)) {
+      return res.status(403).json({ error: 'Only the person assigned this task can mark it done' });
+    }
+    if (task.completed_at) {
+      return res.json({ ok: true, id: task.id, already_done: true });
+    }
+
+    const { rows: updated } = await query(
+      `UPDATE staff_tasks
+       SET completed_at = now(), completed_by = $2
+       WHERE id = $1 AND assignee_id = $2 AND completed_at IS NULL
+       RETURNING id, assignee_id, completed_at, completed_by`,
+      [id, req.user.id]
+    );
+    await logAudit({
+      userId: req.user.id,
+      action: 'COMPLETE_STAFF_TASK',
+      entityType: 'staff_task',
+      entityId: task.id,
+      details: { title: task.title },
+    });
+    res.json({ ok: true, ...updated[0] });
   } catch (e) {
     return taskDbError(res, next, e);
   }

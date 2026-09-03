@@ -21,6 +21,14 @@ async function ensureStaffTaskTables() {
       ON public.staff_tasks (created_by)
   `);
   await query(`
+    ALTER TABLE public.staff_tasks
+      ADD COLUMN IF NOT EXISTS completed_at timestamptz
+  `);
+  await query(`
+    ALTER TABLE public.staff_tasks
+      ADD COLUMN IF NOT EXISTS completed_by integer REFERENCES public.staff_users(id) ON DELETE SET NULL
+  `);
+  await query(`
     CREATE TABLE IF NOT EXISTS public.staff_user_managers (
       staff_user_id integer NOT NULL REFERENCES public.staff_users(id) ON DELETE CASCADE,
       manager_id integer NOT NULL REFERENCES public.staff_users(id) ON DELETE CASCADE,
