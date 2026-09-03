@@ -205,10 +205,15 @@ export default function Tasks() {
             const overdue = isOverdue(task.deadline) && !task.completed_at;
             const isMine = String(task.assignee_id) === String(user?.id);
             const canMarkDone = isMine && !task.completed_at;
+            const cardStateClass = task.completed_at
+              ? 'border border-emerald-200 bg-emerald-50/60'
+              : overdue
+                ? 'border border-rose-200 bg-rose-50/70'
+                : '';
             return (
               <li
                 key={task.id}
-                className={`card p-5 ${task.completed_at ? 'opacity-75' : ''}`}
+                className={`card p-5 ${cardStateClass}`}
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">

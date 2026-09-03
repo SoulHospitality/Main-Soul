@@ -99,8 +99,7 @@ router.get('/staff-tasks', async (req, res, next) => {
          JOIN staff_users a ON a.id = t.assignee_id
          JOIN staff_users m ON m.id = t.created_by
          WHERE t.assignee_id = $1
-           AND t.completed_at IS NULL
-         ORDER BY t.deadline ASC, t.created_at DESC`;
+         ORDER BY (t.completed_at IS NULL) DESC, t.deadline ASC, t.created_at DESC`;
     const params = canManageStaffTasks(req.user)
       ? staffTaskScopeParams(req.user.role, me)
       : [me];
