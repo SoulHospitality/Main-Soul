@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Menu, Bell, Search, X } from 'lucide-react';
+import { Menu, Bell, Search, X, Globe } from 'lucide-react';
 import { io } from 'socket.io-client';
 import { useAuth } from '../../context/AuthContext';
+import { useLocale } from '../../../context/LocaleContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../api/axios';
 import { formatDateTime } from '../../utils/formatters';
@@ -36,6 +37,7 @@ function notificationHref(n) {
 
 export default function Header({ onToggleSidebar, sidebarWidth = 256 }) {
   const { user } = useAuth();
+  const { locale, toggleLocale, isRtl } = useLocale();
   const theme = getRoleTheme(user?.role);
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -104,7 +106,7 @@ export default function Header({ onToggleSidebar, sidebarWidth = 256 }) {
   return (
     <header
       className="pms-header fixed top-0 right-0 left-0 z-30 h-16 flex items-center justify-between px-4"
-      style={{ marginLeft: sidebarWidth }}
+      style={isRtl ? { marginRight: sidebarWidth } : { marginLeft: sidebarWidth }}
     >
       <div className="absolute inset-x-0 top-0 h-0.5" style={{ background: 'var(--pms-accent)' }} />
 
@@ -166,6 +168,15 @@ export default function Header({ onToggleSidebar, sidebarWidth = 256 }) {
       </div>
 
       <div className="flex items-center gap-2" ref={notifsRef}>
+        <button
+          type="button"
+          onClick={toggleLocale}
+          className="p-2 rounded-xl text-soul-muted hover:bg-black/[0.04] transition-colors flex items-center gap-1.5"
+          aria-label={locale === 'en' ? 'العربية' : 'English'}
+        >
+          <Globe className="w-4 h-4" />
+          <span className="text-xs font-medium hidden sm:inline">{locale === 'en' ? 'العربية' : 'EN'}</span>
+        </button>
         <div className="relative">
           <button
             type="button"
@@ -184,7 +195,7 @@ export default function Header({ onToggleSidebar, sidebarWidth = 256 }) {
           </button>
 
           {showNotifs && (
-            <div className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-24px)] bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-soul-line overflow-hidden animate-slide-in">
+            <div className={`absolute mt-2 w-80 max-w-[calc(100vw-24px)] bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-soul-line overflow-hidden animate-slide-in ${isRtl ? 'left-0' : 'right-0'}`}>
               <div className="flex items-center justify-between px-4 py-3 border-b border-soul-line bg-[var(--pms-header-tint)]">
                 <span className="font-semibold text-soul-blue text-sm">Notifications</span>
                 {unread > 0 && (

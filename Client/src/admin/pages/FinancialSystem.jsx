@@ -45,6 +45,7 @@ import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
 import { ACCOUNT_GROUPS, getAccount } from '../../lib/finance/chartOfAccounts';
 import { VAT_OUTPUT_PCT, WHT_STANDARD_PCT, WHT_REDUCED_PCT } from '../../lib/finance/taxEngine';
 import { PettyCashSection } from './PettyCash';
+import { useLocale } from '../../context/LocaleContext';
 
 const GROUP_META = {
   assets: {
@@ -116,10 +117,11 @@ function IconFor({ code, group, className = 'w-5 h-5' }) {
 }
 
 function DateFilters({ fromDate, toDate, onFrom, onTo }) {
+  const { t } = useLocale();
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="text-xs text-gray-500 mr-1">By booking date</span>
-      <label className="text-xs text-gray-500">From</label>
+      <span className="text-xs text-gray-500 mr-1">{t('pms.fin.byBookingDate')}</span>
+      <label className="text-xs text-gray-500">{t('pms.fin.dateFrom')}</label>
       <input
         type="date"
         className="input w-36 text-sm"
@@ -127,7 +129,7 @@ function DateFilters({ fromDate, toDate, onFrom, onTo }) {
         value={fromDate}
         onChange={(e) => onFrom(e.target.value)}
       />
-      <label className="text-xs text-gray-500">To</label>
+      <label className="text-xs text-gray-500">{t('pms.fin.dateTo')}</label>
       <input
         type="date"
         className="input w-36 text-sm"
@@ -183,6 +185,7 @@ function rangeParams(fromDate, toDate) {
 }
 
 function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool, onExport, exporting }) {
+  const { t } = useLocale();
   const groups = data?.groups || [];
   const treasury = data?.treasury || [];
   const kpis = data?.kpis || {};
@@ -193,21 +196,22 @@ function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool
     <div className="space-y-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-gray-500">
-          Period {data?.from_date}
-          {data?.to_date ? ` → ${data.to_date}` : ' → open'} · reservations by booking (created) date · collected money only hits treasury
+          {data?.to_date
+            ? t('pms.fin.home.periodRange', { from: data?.from_date, to: data.to_date })
+            : t('pms.fin.home.periodOpen', { from: data?.from_date })}
         </p>
         <button type="button" className="btn-secondary text-sm" onClick={onExport} disabled={exporting}>
           <Download className="w-4 h-4" />
-          {exporting ? 'Exporting…' : 'Export Excel'}
+          {exporting ? t('pms.fin.exporting') : t('pms.fin.exportExcel')}
         </button>
       </div>
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
         {[
-          ['Collected in treasury', kpis.collected, 'Cash that actually landed'],
-          ['Outstanding', outstanding.amount, `${outstanding.count} stays unpaid`],
-          ['Gross revenue', kpis.gross_revenue ?? kpis.revenue, `${currency(receipts.stays)} reservations + ${currency(receipts.custom)} custom`],
-          ['Owner trust', kpis.owner_trust, 'Still held for owners'],
+          [t('pms.fin.home.collectedInTreasury'), kpis.collected, t('pms.fin.home.collectedHint')],
+          [t('pms.fin.home.outstanding'), outstanding.amount, t('pms.fin.home.outstandingHint', { count: outstanding.count })],
+          [t('pms.fin.home.grossRevenue'), kpis.gross_revenue ?? kpis.revenue, t('pms.fin.home.grossRevenueHint', { stays: currency(receipts.stays), custom: currency(receipts.custom) })],
+          [t('pms.fin.home.ownerTrust'), kpis.owner_trust, t('pms.fin.home.ownerTrustHint')],
         ].map(([label, amount, sub]) => (
           <div key={label} className="rounded-2xl border border-soul-line bg-white px-4 py-4">
             <p className="text-[11px] uppercase tracking-wider text-gray-400">{label}</p>
@@ -235,10 +239,10 @@ function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool
             <TrendingUp className="w-6 h-6" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-xs uppercase tracking-wider text-gray-500">Net profit</p>
-            <p className="font-semibold text-soul-blue">Gross revenue − owner share − direct costs − operating expenses</p>
+            <p className="text-xs uppercase tracking-wider text-gray-500">{t('pms.fin.home.netProfit')}</p>
+            <p className="font-semibold text-soul-blue">{t('pms.fin.home.netProfitFormula')}</p>
             <p className="text-xs text-gray-500 mt-0.5">
-              {currency(kpis.gross_revenue ?? kpis.revenue)} revenue · {currency(kpis.owner_share)} to owners · {currency(kpis.cogs)} other direct · {currency(kpis.opex)} opex
+              {t('pms.fin.home.netProfitDetail', { revenue: currency(kpis.gross_revenue ?? kpis.revenue), ownerShare: currency(kpis.owner_share), cogs: currency(kpis.cogs), opex: currency(kpis.opex) })}
             </p>
           </div>
           <p
@@ -252,35 +256,35 @@ function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool
       <section>
         <div className="flex items-end justify-between mb-3">
           <div>
-            <h2 className="text-lg font-semibold text-soul-blue">Treasury</h2>
+            <h2 className="text-lg font-semibold text-soul-blue">{t('pms.fin.home.treasury')}</h2>
             <p className="text-xs text-gray-500">
-              Cash still on hand. Guest collections land here, including money that belongs to owners until payout.
+              {t('pms.fin.home.treasuryHint')}
             </p>
           </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          {treasury.map((t) => {
-            const Icon = t.kind === 'cash' ? Banknote : Coins;
+          {treasury.map((t2) => {
+            const Icon = t2.kind === 'cash' ? Banknote : Coins;
             return (
               <button
-                key={t.code}
+                key={t2.code}
                 type="button"
-                onClick={() => onOpenTreasury(t.code)}
+                onClick={() => onOpenTreasury(t2.code)}
                 className="rounded-2xl border border-soul-line bg-white p-5 text-left hover:border-soul-blue/40 hover:bg-soul-blue-50/40 transition-colors"
               >
                 <div className="flex items-center justify-between mb-4">
-                  <div className={`w-11 h-11 rounded-2xl flex items-center justify-center text-white ${t.kind === 'cash' ? 'bg-emerald-600' : 'bg-soul-blue'}`}>
+                  <div className={`w-11 h-11 rounded-2xl flex items-center justify-center text-white ${t2.kind === 'cash' ? 'bg-emerald-600' : 'bg-soul-blue'}`}>
                     <Icon className="w-5 h-5" />
                   </div>
-                  <span className="text-[11px] font-mono text-gray-400">{t.currency}</span>
+                  <span className="text-[11px] font-mono text-gray-400">{t2.currency}</span>
                 </div>
                 <p className="text-xs uppercase tracking-wider text-gray-400">
-                  {t.kind === 'cash' ? 'Cash' : 'Bank'} · {t.currency}
+                  {t2.kind === 'cash' ? t('pms.fin.home.cash') : t('pms.fin.home.bank')} · {t2.currency}
                 </p>
-                <p className="font-semibold text-soul-blue mt-1 leading-snug">{t.name.replace(/^Bank - |^Cash - /, '')}</p>
-                <p className="text-2xl font-bold tabular-nums mt-3">{currency(t.balance, t.currency)}</p>
+                <p className="font-semibold text-soul-blue mt-1 leading-snug">{t2.name.replace(/^Bank - |^Cash - /, '')}</p>
+                <p className="text-2xl font-bold tabular-nums mt-3">{currency(t2.balance, t2.currency)}</p>
                 <p className="text-xs text-gray-500 mt-2">
-                  In {currency(t.inflow, t.currency)} · Out {currency(t.outflow, t.currency)}
+                  {t('pms.fin.home.inOut', { inflow: currency(t2.inflow, t2.currency), outflow: currency(t2.outflow, t2.currency) })}
                 </p>
               </button>
             );
@@ -289,8 +293,8 @@ function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool
       </section>
 
       <section>
-        <h2 className="text-lg font-semibold text-soul-blue mb-1">Chart of accounts</h2>
-        <p className="text-xs text-gray-500 mb-3">Open a book, then a sub-account. The log lives on the account page.</p>
+        <h2 className="text-lg font-semibold text-soul-blue mb-1">{t('pms.fin.home.chartOfAccounts')}</h2>
+        <p className="text-xs text-gray-500 mb-3">{t('pms.fin.home.chartHint')}</p>
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {groups.map((g) => {
             const meta = GROUP_META[g.id] || GROUP_META.assets;
@@ -311,9 +315,9 @@ function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool
                       <p className="font-semibold text-soul-blue">{meta.label}</p>
                       <ChevronRight className="w-4 h-4 text-gray-300" />
                     </div>
-                    <p className="text-xs text-gray-500 mt-0.5">{meta.hint}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">{t(`pms.fin.groupMeta.${g.id}Hint`) || meta.hint}</p>
                     <p className="text-xl font-bold tabular-nums mt-3">{currency(g.balance)}</p>
-                    <p className="text-xs text-gray-400 mt-1">{g.account_count} sub-accounts</p>
+                    <p className="text-xs text-gray-400 mt-1">{t('pms.fin.subAccounts', { count: g.account_count })}</p>
                   </div>
                 </div>
               </button>
@@ -332,10 +336,10 @@ function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool
             <AlertCircle className="w-6 h-6" />
           </div>
           <div className="flex-1">
-            <p className="text-xs uppercase tracking-wider text-amber-800">Assets · Guest accounts receivable 105000</p>
-            <p className="font-semibold text-soul-blue">Outstanding guest balances</p>
+            <p className="text-xs uppercase tracking-wider text-amber-800">{t('pms.fin.home.arTitle')}</p>
+            <p className="font-semibold text-soul-blue">{t('pms.fin.home.arSubtitle')}</p>
             <p className="text-xs text-gray-500 mt-0.5">
-              {outstanding.count} stays still owe Soul · this is AR, not revenue
+              {t('pms.fin.home.arHint', { count: outstanding.count })}
             </p>
           </div>
           <p className="text-2xl font-bold tabular-nums text-amber-900">{currency(outstanding.amount)}</p>
@@ -352,10 +356,10 @@ function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool
             <Shield className="w-6 h-6" />
           </div>
           <div className="flex-1">
-            <p className="text-xs uppercase tracking-wider text-sky-800">Liabilities · Guest insurance 204000</p>
-            <p className="font-semibold text-soul-blue">Insurance refunds due at checkout</p>
+            <p className="text-xs uppercase tracking-wider text-sky-800">{t('pms.fin.home.insuranceTitle')}</p>
+            <p className="font-semibold text-soul-blue">{t('pms.fin.home.insuranceSubtitle')}</p>
             <p className="text-xs text-gray-500 mt-0.5">
-              Collected at check-in · refund (or keep damage) on checkout
+              {t('pms.fin.home.insuranceHint')}
             </p>
           </div>
           <ChevronRight className="w-5 h-5 text-sky-400" />
@@ -363,37 +367,37 @@ function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool
       </button>
 
       <section>
-        <h2 className="text-lg font-semibold text-soul-blue mb-3">Workspace</h2>
+        <h2 className="text-lg font-semibold text-soul-blue mb-3">{t('pms.fin.home.workspace')}</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { id: 'assets', label: 'Fixed assets', icon: Landmark },
-            { id: 'owners', label: 'Owner payouts', icon: Users },
-            { id: 'insurance', label: 'Insurance refunds', icon: Shield },
-            { id: 'trust', label: 'Owner trust', icon: Building2 },
-            { id: 'reports', label: 'Month-end reports', icon: FileSpreadsheet },
-            { id: 'aging', label: 'AR aging', icon: AlertCircle },
-            { id: 'close', label: 'Close month', icon: Lock },
-            { id: 'gateway', label: 'Gateway settle', icon: CreditCard },
-            { id: 'bank', label: 'Bank rec', icon: Landmark },
-            { id: 'manual', label: 'Manual entries', icon: PenLine },
-            { id: 'petty', label: 'Petty cash', icon: Wallet },
-            { id: 'tax', label: 'Tax desk', icon: Scale },
-            { id: 'segment', label: 'Segment P&L', icon: FileSpreadsheet },
-            { id: 'forecast', label: 'Cash forecast', icon: TrendingUp },
-            { id: 'vendors', label: 'AP / Vendors', icon: Users },
-            { id: 'recurring', label: 'Monthly charges', icon: Settings2 },
-            { id: 'ar', label: 'AR controls', icon: AlertCircle },
-          ].map((t) => {
-            const Icon = t.icon;
+            { id: 'assets', labelKey: 'fixedAssets', icon: Landmark },
+            { id: 'owners', labelKey: 'ownerPayouts', icon: Users },
+            { id: 'insurance', labelKey: 'insuranceRefunds', icon: Shield },
+            { id: 'trust', labelKey: 'ownerTrust', icon: Building2 },
+            { id: 'reports', labelKey: 'monthEndReports', icon: FileSpreadsheet },
+            { id: 'aging', labelKey: 'arAging', icon: AlertCircle },
+            { id: 'close', labelKey: 'closeMonth', icon: Lock },
+            { id: 'gateway', labelKey: 'gatewaySettle', icon: CreditCard },
+            { id: 'bank', labelKey: 'bankRec', icon: Landmark },
+            { id: 'manual', labelKey: 'manualEntries', icon: PenLine },
+            { id: 'petty', labelKey: 'pettyCash', icon: Wallet },
+            { id: 'tax', labelKey: 'taxDesk', icon: Scale },
+            { id: 'segment', labelKey: 'segmentPnl', icon: FileSpreadsheet },
+            { id: 'forecast', labelKey: 'cashForecast', icon: TrendingUp },
+            { id: 'vendors', labelKey: 'apVendors', icon: Users },
+            { id: 'recurring', labelKey: 'monthlyCharges', icon: Settings2 },
+            { id: 'ar', labelKey: 'arControls', icon: AlertCircle },
+          ].map((tool) => {
+            const Icon = tool.icon;
             return (
               <button
-                key={t.id}
+                key={tool.id}
                 type="button"
-                onClick={() => onOpenTool(t.id)}
+                onClick={() => onOpenTool(tool.id)}
                 className="rounded-2xl border border-soul-line bg-white px-4 py-4 text-left hover:bg-soul-blue-50/40"
               >
                 <Icon className="w-5 h-5 text-soul-blue mb-2" />
-                <p className="text-sm font-semibold">{t.label}</p>
+                <p className="text-sm font-semibold">{t(`pms.fin.tools.${tool.labelKey}`)}</p>
               </button>
             );
           })}
@@ -404,6 +408,7 @@ function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool
 }
 
 function GroupView({ groupId, data, onOpenAccount }) {
+  const { t } = useLocale();
   const meta = GROUP_META[groupId] || GROUP_META.assets;
   const group = (data?.groups || []).find((g) => g.id === groupId);
   const Icon = meta.icon;
@@ -418,7 +423,7 @@ function GroupView({ groupId, data, onOpenAccount }) {
         <div>
           <p className="text-xs uppercase tracking-wider text-gray-400">{groupId}</p>
           <h2 className="text-2xl font-semibold text-soul-blue">{meta.label}</h2>
-          <p className="text-sm text-gray-500">{meta.hint} · {accounts.length} sub-accounts</p>
+          <p className="text-sm text-gray-500">{t(`pms.fin.groupMeta.${groupId}Hint`) || meta.hint} · {t('pms.fin.subAccounts', { count: accounts.length })}</p>
         </div>
         <p className="ml-auto text-2xl font-bold tabular-nums">{currency(group?.balance)}</p>
       </div>
@@ -439,16 +444,16 @@ function GroupView({ groupId, data, onOpenAccount }) {
                 <p className="text-[11px] font-mono text-gray-400">{a.code}</p>
                 <p className="font-semibold text-soul-blue leading-snug">{a.name}</p>
                 {a.virtual ? (
-                  <p className="text-[11px] text-amber-700 mt-1">Management view</p>
+                  <p className="text-[11px] text-amber-700 mt-1">{t('pms.fin.group.managementView')}</p>
                 ) : a.recurring ? (
-                  <p className="text-[11px] text-violet-700 mt-1">Monthly auto-deduct</p>
+                  <p className="text-[11px] text-violet-700 mt-1">{t('pms.fin.group.monthlyAutoDeduct')}</p>
                 ) : null}
               </div>
               <ChevronRight className="w-4 h-4 text-gray-300 mt-1" />
             </div>
             <div className="mt-4 flex items-end justify-between">
               <p className="text-xl font-bold tabular-nums">{currency(a.balance)}</p>
-              <p className="text-xs text-gray-400">{a.txn_count} entries</p>
+              <p className="text-xs text-gray-400">{t('pms.fin.entries', { count: a.txn_count })}</p>
             </div>
           </button>
         ))}
@@ -458,6 +463,7 @@ function GroupView({ groupId, data, onOpenAccount }) {
 }
 
 function AccountView({ code, fromDate, toDate, onOpenTxn }) {
+  const { t } = useLocale();
   const params = rangeParams(fromDate, toDate);
   const { data, isLoading } = useQuery({
     queryKey: ['financial-system-account', code, params],
@@ -482,12 +488,12 @@ function AccountView({ code, fromDate, toDate, onOpenTxn }) {
             <h2 className="text-2xl font-semibold text-soul-blue">{account.name}</h2>
             <p className="text-sm text-gray-500 capitalize">
               {ACCOUNT_GROUPS[account.group] || account.group}
-              {account.virtual ? ' · management view' : ''}
-              {account.recurring ? ' · monthly automatic' : ''}
+              {account.virtual ? ` · ${t('pms.fin.account.managementView')}` : ''}
+              {account.recurring ? ` · ${t('pms.fin.account.monthlyAutomatic')}` : ''}
             </p>
           </div>
           <div className="text-right">
-            <p className="text-xs text-gray-400">Balance</p>
+            <p className="text-xs text-gray-400">{t('pms.fin.balance')}</p>
             <p className="text-3xl font-bold tabular-nums text-soul-blue">{currency(account.balance)}</p>
           </div>
         </div>
@@ -495,11 +501,11 @@ function AccountView({ code, fromDate, toDate, onOpenTxn }) {
 
       <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
         <div className="px-6 py-4 border-b border-soul-line">
-          <h3 className="font-semibold">Transaction log</h3>
-          <p className="text-xs text-gray-500">Open a line to see how it moved between accounts</p>
+          <h3 className="font-semibold">{t('pms.fin.account.transactionLog')}</h3>
+          <p className="text-xs text-gray-500">{t('pms.fin.account.transactionLogHint')}</p>
         </div>
         {rows.length === 0 ? (
-          <p className="text-sm text-gray-400 text-center py-12">No movements in this period</p>
+          <p className="text-sm text-gray-400 text-center py-12">{t('pms.fin.account.noMovements')}</p>
         ) : (
           <div className="divide-y divide-soul-line">
             {rows.map((row) => (
@@ -529,6 +535,7 @@ function AccountView({ code, fromDate, toDate, onOpenTxn }) {
 }
 
 function TransactionView({ txnId, fromDate, toDate }) {
+  const { t } = useLocale();
   const params = rangeParams(fromDate, toDate);
   const { data, isLoading, error } = useQuery({
     queryKey: ['financial-system-txn', txnId, params],
@@ -541,7 +548,7 @@ function TransactionView({ txnId, fromDate, toDate }) {
   if (error || !data) {
     return (
       <div className="rounded-2xl border border-soul-line bg-white p-10 text-center text-gray-500">
-        This entry is not in the selected period.
+        {t('pms.fin.txn.notInPeriod')}
       </div>
     );
   }
@@ -558,14 +565,14 @@ function TransactionView({ txnId, fromDate, toDate }) {
           <span className="text-xs px-2 py-1 rounded-full bg-slate-100 capitalize">{data.type.replace('_', ' ')}</span>
           <span className="text-xs px-2 py-1 rounded-full bg-slate-100">{formatDate(data.date)}</span>
           <span className={`text-xs px-2 py-1 rounded-full ${data.balanced ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
-            {data.balanced ? 'Balanced' : 'Check lines'}
+            {data.balanced ? t('pms.fin.txn.balanced') : t('pms.fin.txn.checkLines')}
           </span>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-3 items-center">
         <div className="rounded-2xl border border-rose-100 bg-rose-50/50 p-5">
-          <p className="text-[11px] uppercase tracking-wider text-rose-700">From</p>
+          <p className="text-[11px] uppercase tracking-wider text-rose-700">{t('pms.fin.txn.from')}</p>
           <p className="font-mono text-xs text-gray-400 mt-2">{flow.from_account || '—'}</p>
           <p className="font-semibold text-soul-blue">{flow.from_name || '—'}</p>
         </div>
@@ -574,21 +581,21 @@ function TransactionView({ txnId, fromDate, toDate }) {
           <p className="text-lg font-bold tabular-nums">{currency(data.debit || data.credit)}</p>
         </div>
         <div className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-5">
-          <p className="text-[11px] uppercase tracking-wider text-emerald-700">To</p>
+          <p className="text-[11px] uppercase tracking-wider text-emerald-700">{t('pms.fin.txn.to')}</p>
           <p className="font-mono text-xs text-gray-400 mt-2">{flow.to_account || '—'}</p>
           <p className="font-semibold text-soul-blue">{flow.to_name || '—'}</p>
         </div>
       </div>
 
       <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
-        <div className="px-6 py-4 border-b font-semibold">Journal lines</div>
+        <div className="px-6 py-4 border-b font-semibold">{t('pms.fin.txn.journalLines')}</div>
         <table className="table text-sm">
           <thead>
             <tr>
-              <th>Account</th>
-              <th>Memo</th>
-              <th className="text-right">Debit</th>
-              <th className="text-right">Credit</th>
+              <th>{t('pms.fin.txn.thAccount')}</th>
+              <th>{t('pms.fin.txn.thMemo')}</th>
+              <th className="text-right">{t('pms.fin.txn.thDebit')}</th>
+              <th className="text-right">{t('pms.fin.txn.thCredit')}</th>
             </tr>
           </thead>
           <tbody>
@@ -610,37 +617,37 @@ function TransactionView({ txnId, fromDate, toDate }) {
       <div className="rounded-2xl border border-soul-line bg-white p-6 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
         {meta.guest_name && (
           <div>
-            <p className="text-xs text-gray-400">Guest</p>
+            <p className="text-xs text-gray-400">{t('pms.fin.txn.guest')}</p>
             <p className="font-medium">{meta.guest_name}</p>
           </div>
         )}
         {meta.unit_name && (
           <div>
-            <p className="text-xs text-gray-400">Unit</p>
+            <p className="text-xs text-gray-400">{t('pms.fin.txn.unit')}</p>
             <p className="font-medium">{meta.unit_name}{meta.project ? ` · ${meta.project}` : ''}</p>
           </div>
         )}
         {meta.payment_method && (
           <div>
-            <p className="text-xs text-gray-400">Payment method</p>
+            <p className="text-xs text-gray-400">{t('pms.fin.txn.paymentMethod')}</p>
             <p className="font-medium capitalize">{String(meta.payment_method).replace('_', ' ')}</p>
           </div>
         )}
         {meta.channel && (
           <div>
-            <p className="text-xs text-gray-400">Channel</p>
+            <p className="text-xs text-gray-400">{t('pms.fin.txn.channel')}</p>
             <p className="font-medium">{meta.channel}</p>
           </div>
         )}
         {meta.created_at && (
           <div>
-            <p className="text-xs text-gray-400">Booked</p>
+            <p className="text-xs text-gray-400">{t('pms.fin.txn.booked')}</p>
             <p className="font-medium">{formatDate(meta.created_at)}</p>
           </div>
         )}
         {meta.check_in && (
           <div>
-            <p className="text-xs text-gray-400">Stay</p>
+            <p className="text-xs text-gray-400">{t('pms.fin.txn.stay')}</p>
             <p className="font-medium">
               {formatDate(meta.check_in)} → {formatDate(meta.check_out)}
             </p>
@@ -648,7 +655,7 @@ function TransactionView({ txnId, fromDate, toDate }) {
         )}
         {meta.total_amount != null && (
           <div>
-            <p className="text-xs text-gray-400">Guest total / collected / outstanding</p>
+            <p className="text-xs text-gray-400">{t('pms.fin.txn.guestTotalCollectedOutstanding')}</p>
             <p className="font-medium tabular-nums">
               {currency(meta.total_amount)} · {currency(meta.amount_paid)} · {currency(meta.outstanding)}
             </p>
@@ -656,13 +663,13 @@ function TransactionView({ txnId, fromDate, toDate }) {
         )}
         {meta.automatic && (
           <div>
-            <p className="text-xs text-gray-400">Posting</p>
-            <p className="font-medium">Monthly automatic deduction</p>
+            <p className="text-xs text-gray-400">{t('pms.fin.txn.posting')}</p>
+            <p className="font-medium">{t('pms.fin.txn.monthlyAutoDeduction')}</p>
           </div>
         )}
         {meta.notes && (
           <div className="sm:col-span-2">
-            <p className="text-xs text-gray-400">Notes</p>
+            <p className="text-xs text-gray-400">{t('pms.fin.txn.notes')}</p>
             <p>{meta.notes}</p>
           </div>
         )}
@@ -672,6 +679,7 @@ function TransactionView({ txnId, fromDate, toDate }) {
 }
 
 function RecurringTool() {
+  const { t } = useLocale();
   const qc = useQueryClient();
   const { data = [], isLoading } = useQuery({
     queryKey: ['financial-system-recurring'],
@@ -683,11 +691,11 @@ function RecurringTool() {
     mutationFn: ({ kind, amount_egp, day_of_month }) =>
       api.put(`/financial-system/recurring/${kind}`, { amount_egp, day_of_month }),
     onSuccess: () => {
-      toast.success('Monthly charge saved');
+      toast.success(t('pms.fin.recurring.saved'));
       qc.invalidateQueries({ queryKey: ['financial-system-recurring'] });
       qc.invalidateQueries({ queryKey: ['financial-system-portal'] });
     },
-    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
 
   if (isLoading) return <LoadingSpinner />;
@@ -697,8 +705,7 @@ function RecurringTool() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-500">
-        Each month these accrue to vendor payable, then pay from Bank EGP. Rent and campus utilities pull 14/114 input VAT.
-        Set 0 to skip a month. Owner money is computed from stays — it is not typed here.
+        {t('pms.fin.recurring.description')}
       </p>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {(Array.isArray(data) ? data : []).map((row) => {
@@ -718,7 +725,7 @@ function RecurringTool() {
                   <p className="text-[11px] font-mono text-gray-400">{row.account_code}</p>
                 </div>
               </div>
-              <label className="label">Monthly amount (EGP)</label>
+              <label className="label">{t('pms.fin.recurring.monthlyAmount')}</label>
               <input
                 type="number"
                 min="0"
@@ -728,7 +735,7 @@ function RecurringTool() {
                   setDrafts((d) => ({ ...d, [row.kind]: { ...draft, amount_egp: e.target.value } }))
                 }
               />
-              <label className="label">Day of month</label>
+              <label className="label">{t('pms.fin.recurring.dayOfMonth')}</label>
               <input
                 type="number"
                 min="1"
@@ -751,7 +758,7 @@ function RecurringTool() {
                   })
                 }
               >
-                Save
+                {t('pms.fin.save')}
               </button>
             </div>
           );
@@ -762,6 +769,7 @@ function RecurringTool() {
 }
 
 function TaxTab({ rangeParams: params }) {
+  const { t } = useLocale();
   const [showPack, setShowPack] = useState(false);
   const toDate = params.to_date || new Date().toISOString().slice(0, 10);
   const packMonth = toDate.slice(0, 7);
@@ -783,25 +791,25 @@ function TaxTab({ rangeParams: params }) {
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="rounded-2xl border border-amber-200 bg-white p-5">
-          <p className="text-xs text-gray-500">Output VAT ({VAT_OUTPUT_PCT}% exclusive on commission + cleaning)</p>
+          <p className="text-xs text-gray-500">{t('pms.fin.tax.outputVat', { pct: VAT_OUTPUT_PCT })}</p>
           <p className="text-2xl font-bold mt-2 tabular-nums">{currency(vatReturn.output_vat ?? vat.vat_amount)}</p>
         </div>
         <div className="rounded-2xl border border-sky-200 bg-white p-5">
-          <p className="text-xs text-gray-500">Input VAT (14/114 on rent, software, professional, utilities)</p>
+          <p className="text-xs text-gray-500">{t('pms.fin.tax.inputVat')}</p>
           <p className="text-2xl font-bold mt-2 tabular-nums">{currency(vatReturn.input_vat)}</p>
         </div>
         <div className="rounded-2xl border border-emerald-200 bg-white p-5">
-          <p className="text-xs text-gray-500">VAT return (output − input)</p>
+          <p className="text-xs text-gray-500">{t('pms.fin.tax.vatReturn')}</p>
           <p className="text-2xl font-bold mt-2 tabular-nums">{currency(vatReturn.net_vat_payable)}</p>
         </div>
         <div className="rounded-2xl border border-violet-200 bg-white p-5">
-          <p className="text-xs text-gray-500">Withholding ({WHT_STANDARD_PCT}% / {WHT_REDUCED_PCT}% professional)</p>
+          <p className="text-xs text-gray-500">{t('pms.fin.tax.withholding', { std: WHT_STANDARD_PCT, reduced: WHT_REDUCED_PCT })}</p>
           <p className="text-2xl font-bold mt-2 tabular-nums">{currency(wht.total_wht)}</p>
         </div>
       </div>
 
       <button type="button" className="btn-secondary" onClick={() => setShowPack(!showPack)}>
-        <FileSpreadsheet className="w-4 h-4" /> {showPack ? 'Hide' : 'Show'} filing pack — {packMonth}
+        <FileSpreadsheet className="w-4 h-4" /> {showPack ? t('pms.fin.tax.hideFilingPack') : t('pms.fin.tax.showFilingPack')} {t('pms.fin.tax.filingPack', { month: packMonth })}
       </button>
 
       {showPack && (
@@ -809,24 +817,24 @@ function TaxTab({ rangeParams: params }) {
           <div className="space-y-4">
             {/* VAT Output detail */}
             <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
-              <div className="px-6 py-3 border-b font-semibold">VAT output detail</div>
+              <div className="px-6 py-3 border-b font-semibold">{t('pms.fin.tax.vatOutputDetail')}</div>
               <table className="table text-sm">
-                <thead><tr><th>Category</th><th className="text-right">Taxable base</th><th className="text-right">VAT ({VAT_OUTPUT_PCT}%)</th></tr></thead>
+                <thead><tr><th>{t('pms.fin.tax.category')}</th><th className="text-right">{t('pms.fin.tax.taxableBase')}</th><th className="text-right">{t('pms.fin.tax.vatPct', { pct: VAT_OUTPUT_PCT })}</th></tr></thead>
                 <tbody>
                   <tr>
-                    <td>Commission revenue</td>
+                    <td>{t('pms.fin.tax.commissionRevenue')}</td>
                     <td className="text-right tabular-nums">{currency(packData?.vat_output?.commission_base)}</td>
                     <td className="text-right tabular-nums">{currency(packData?.vat_output?.commission_vat)}</td>
                   </tr>
                   <tr>
-                    <td>Cleaning revenue</td>
+                    <td>{t('pms.fin.tax.cleaningRevenue')}</td>
                     <td className="text-right tabular-nums">{currency(packData?.vat_output?.cleaning_base)}</td>
                     <td className="text-right tabular-nums">{currency(packData?.vat_output?.cleaning_vat)}</td>
                   </tr>
                 </tbody>
                 <tfoot>
                   <tr className="font-semibold">
-                    <td>Total output VAT</td>
+                    <td>{t('pms.fin.tax.totalOutputVat')}</td>
                     <td />
                     <td className="text-right tabular-nums">{currency(packData?.vat_output?.total)}</td>
                   </tr>
@@ -836,39 +844,39 @@ function TaxTab({ rangeParams: params }) {
 
             {/* VAT Input detail */}
             <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
-              <div className="px-6 py-3 border-b font-semibold">VAT input detail</div>
+              <div className="px-6 py-3 border-b font-semibold">{t('pms.fin.tax.vatInputDetail')}</div>
               <table className="table text-sm">
-                <thead><tr><th>Category</th><th className="text-right">Input VAT (14/114)</th></tr></thead>
+                <thead><tr><th>{t('pms.fin.tax.category')}</th><th className="text-right">{t('pms.fin.tax.inputVatLabel')}</th></tr></thead>
                 <tbody>
                   {Object.entries(packData?.vat_input?.by_category || {}).map(([cat, amt]) => (
                     <tr key={cat}><td className="capitalize">{cat}</td><td className="text-right tabular-nums">{currency(amt)}</td></tr>
                   ))}
                 </tbody>
                 <tfoot>
-                  <tr className="font-semibold"><td>Total input VAT</td><td className="text-right tabular-nums">{currency(packData?.vat_input?.total)}</td></tr>
+                  <tr className="font-semibold"><td>{t('pms.fin.tax.totalInputVat')}</td><td className="text-right tabular-nums">{currency(packData?.vat_input?.total)}</td></tr>
                 </tfoot>
               </table>
             </div>
 
             {/* Net VAT reconciliation */}
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-5 space-y-2">
-              <h4 className="font-semibold">Net VAT reconciliation</h4>
-              <div className="flex justify-between text-sm"><span>Output VAT</span><span className="tabular-nums">{currency(packData?.vat_output?.total)}</span></div>
-              <div className="flex justify-between text-sm"><span>Input VAT</span><span className="tabular-nums">−{currency(packData?.vat_input?.total)}</span></div>
-              <div className="flex justify-between font-bold border-t pt-2"><span>Net VAT payable</span><span className="tabular-nums">{currency(packData?.net_vat_payable)}</span></div>
+              <h4 className="font-semibold">{t('pms.fin.tax.netVatReconciliation')}</h4>
+              <div className="flex justify-between text-sm"><span>{t('pms.fin.tax.outputVatLabel')}</span><span className="tabular-nums">{currency(packData?.vat_output?.total)}</span></div>
+              <div className="flex justify-between text-sm"><span>{t('pms.fin.tax.inputVatShort')}</span><span className="tabular-nums">−{currency(packData?.vat_input?.total)}</span></div>
+              <div className="flex justify-between font-bold border-t pt-2"><span>{t('pms.fin.tax.netVatPayable')}</span><span className="tabular-nums">{currency(packData?.net_vat_payable)}</span></div>
               {packData?.reconciliation && (
                 <div className="pt-2 border-t text-xs text-gray-500 space-y-1">
-                  <p>Book output 205000: {currency(packData.reconciliation.book_output_vat)} · Computed: {currency(packData.reconciliation.computed_output_vat)} · Diff: {currency(packData.reconciliation.output_diff)}</p>
-                  <p>Book input 107000: {currency(packData.reconciliation.book_input_vat)} · Computed: {currency(packData.reconciliation.computed_input_vat)} · Diff: {currency(packData.reconciliation.input_diff)}</p>
+                  <p>{t('pms.fin.tax.bookOutput', { book: currency(packData.reconciliation.book_output_vat), computed: currency(packData.reconciliation.computed_output_vat), diff: currency(packData.reconciliation.output_diff) })}</p>
+                  <p>{t('pms.fin.tax.bookInput', { book: currency(packData.reconciliation.book_input_vat), computed: currency(packData.reconciliation.computed_input_vat), diff: currency(packData.reconciliation.input_diff) })}</p>
                 </div>
               )}
             </div>
 
             {/* WHT detail by vendor */}
             <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
-              <div className="px-6 py-3 border-b font-semibold">WHT detail by vendor</div>
+              <div className="px-6 py-3 border-b font-semibold">{t('pms.fin.tax.whtDetailByVendor')}</div>
               <table className="table text-sm">
-                <thead><tr><th>Vendor</th><th>Category</th><th className="text-right">Amount</th><th className="text-right">Rate</th><th className="text-right">WHT</th></tr></thead>
+                <thead><tr><th>{t('pms.fin.tax.vendor')}</th><th>{t('pms.fin.tax.category')}</th><th className="text-right">{t('pms.fin.amount')}</th><th className="text-right">{t('pms.fin.tax.rate')}</th><th className="text-right">{t('pms.fin.tax.wht')}</th></tr></thead>
                 <tbody>
                   {(packData?.wht?.lines || []).map((l) => (
                     <tr key={l.expense_id}>
@@ -881,7 +889,7 @@ function TaxTab({ rangeParams: params }) {
                   ))}
                 </tbody>
                 <tfoot>
-                  <tr className="font-semibold"><td colSpan={4}>Total WHT payable</td><td className="text-right tabular-nums">{currency(packData?.wht?.total)}</td></tr>
+                  <tr className="font-semibold"><td colSpan={4}>{t('pms.fin.tax.totalWhtPayable')}</td><td className="text-right tabular-nums">{currency(packData?.wht?.total)}</td></tr>
                 </tfoot>
               </table>
             </div>
@@ -893,6 +901,7 @@ function TaxTab({ rangeParams: params }) {
 }
 
 function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
+  const { t } = useLocale();
   const [unitId, setUnitId] = useState('');
   const [settleOwner, setSettleOwner] = useState(null);
   const [settleAmount, setSettleAmount] = useState('');
@@ -910,12 +919,12 @@ function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
   const settle = useMutation({
     mutationFn: (id) => api.post(`/financial-system/payouts/${id}/settle`),
     onSuccess: () => {
-      toast.success('Payout marked settled');
+      toast.success(t('pms.fin.owners.markSettled'));
       qc.invalidateQueries({ queryKey: ['financial-system-owners'] });
       qc.invalidateQueries({ queryKey: ['financial-system-portal'] });
       qc.invalidateQueries({ queryKey: ['financial-system-trust'] });
     },
-    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
   const settleOwnerMutation = useMutation({
     mutationFn: ({ ownerId, amount, notes }) =>
@@ -925,7 +934,7 @@ function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
         { params: { from_date: fromDate || undefined, to_date: toDate || undefined } }
       ),
     onSuccess: (res) => {
-      toast.success(`Settled ${currency(res.data?.amount)} for ${res.data?.owner?.full_name || 'owner'}`);
+      toast.success(t('pms.fin.owners.settledFor', { amount: currency(res.data?.amount), name: res.data?.owner?.full_name || t('pms.fin.owners.ownerFallback') }));
       setSettleOwner(null);
       setSettleAmount('');
       setSettleNotes('');
@@ -933,15 +942,15 @@ function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
       qc.invalidateQueries({ queryKey: ['financial-system-portal'] });
       qc.invalidateQueries({ queryKey: ['financial-system-trust'] });
     },
-    onError: (e) => toast.error(e.response?.data?.error || 'Failed to settle'),
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.owners.failedToSettle')),
   });
   const reviewPayout = useMutation({
     mutationFn: ({ id, status }) => api.post(`/owner/payout-requests/${id}/review`, { status }),
     onSuccess: () => {
-      toast.success('Payout updated');
+      toast.success(t('pms.fin.owners.payoutUpdated'));
       qc.invalidateQueries({ queryKey: ['financial-system-owners'] });
     },
-    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
   if (isLoading) return <LoadingSpinner />;
   const statements = data?.statements || [];
@@ -959,16 +968,15 @@ function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
   return (
     <div className="space-y-6">
       <p className="text-sm text-gray-500">
-        You can settle an owner&apos;s balance yourself — no withdrawal request required. Paid
-        amounts post against owner trust (202000).
+        {t('pms.fin.owners.description')}
       </p>
       <SearchableSelect
         className="w-72"
         value={unitId}
         onChange={setUnitId}
-        placeholder="All units"
+        placeholder={t('pms.fin.owners.allUnits')}
         options={[
-          { value: '', label: 'All units' },
+          { value: '', label: t('pms.fin.owners.allUnits') },
           ...units.map((u) => ({
             value: String(u.id),
             label: `${u.project ? `${u.project} — ` : ''}${u.unit_name}`,
@@ -978,19 +986,19 @@ function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
 
       <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
         <div className="px-6 py-4 border-b">
-          <h3 className="font-semibold">Settle by owner</h3>
+          <h3 className="font-semibold">{t('pms.fin.owners.settleByOwner')}</h3>
           <p className="text-xs text-gray-500 mt-1">
-            Period earnings minus maintenance and amounts already marked paid
+            {t('pms.fin.owners.settleByOwnerHint')}
           </p>
         </div>
         <div className="overflow-x-auto">
           <table className="table text-sm">
             <thead>
               <tr>
-                <th>Owner</th>
-                <th className="text-right">Earned</th>
-                <th className="text-right">Already paid</th>
-                <th className="text-right">Remaining</th>
+                <th>{t('pms.fin.owners.owner')}</th>
+                <th className="text-right">{t('pms.fin.owners.earned')}</th>
+                <th className="text-right">{t('pms.fin.owners.alreadyPaid')}</th>
+                <th className="text-right">{t('pms.fin.owners.remaining')}</th>
                 <th />
               </tr>
             </thead>
@@ -998,7 +1006,7 @@ function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
               {ownerBalances.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="text-center text-sm text-gray-400 py-8">
-                    No owner balances for this period
+                    {t('pms.fin.owners.noOwnerBalances')}
                   </td>
                 </tr>
               ) : (
@@ -1018,10 +1026,10 @@ function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
                           onClick={() => openSettle(o)}
                         >
                           <CheckCircle2 className="w-3 h-3 inline mr-1" />
-                          Mark settled
+                          {t('pms.fin.owners.markSettled')}
                         </button>
                       ) : (
-                        <span className="text-xs text-emerald-600 font-medium">Settled</span>
+                        <span className="text-xs text-emerald-600 font-medium">{t('pms.fin.owners.settled')}</span>
                       )}
                     </td>
                   </tr>
@@ -1034,17 +1042,17 @@ function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
 
       <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
         <div className="px-6 py-4 border-b">
-          <h3 className="font-semibold">Owner balances by unit</h3>
+          <h3 className="font-semibold">{t('pms.fin.owners.ownerBalancesByUnit')}</h3>
         </div>
         <div className="overflow-x-auto">
           <table className="table text-sm">
             <thead>
               <tr>
-                <th>Unit</th>
-                <th>Owner</th>
-                <th className="text-right">Credits</th>
-                <th className="text-right">Maintenance</th>
-                <th className="text-right">Net due</th>
+                <th>{t('pms.fin.owners.unitCol')}</th>
+                <th>{t('pms.fin.owners.owner')}</th>
+                <th className="text-right">{t('pms.fin.owners.credits')}</th>
+                <th className="text-right">{t('pms.fin.owners.maintenance')}</th>
+                <th className="text-right">{t('pms.fin.owners.netDue')}</th>
               </tr>
             </thead>
             <tbody>
@@ -1064,13 +1072,13 @@ function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
         </div>
       </div>
       <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
-        <div className="px-6 py-4 border-b font-semibold">Withdrawal requests</div>
+        <div className="px-6 py-4 border-b font-semibold">{t('pms.fin.owners.withdrawalRequests')}</div>
         <table className="table text-sm">
           <thead>
             <tr>
-              <th>Owner</th>
-              <th className="text-right">Amount</th>
-              <th>Status</th>
+              <th>{t('pms.fin.owners.owner')}</th>
+              <th className="text-right">{t('pms.fin.amount')}</th>
+              <th>{t('pms.fin.owners.status')}</th>
               <th />
             </tr>
           </thead>
@@ -1078,7 +1086,7 @@ function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
             {payouts.length === 0 ? (
               <tr>
                 <td colSpan={4} className="text-center text-sm text-gray-400 py-6">
-                  No withdrawal requests — use Mark settled above when you pay an owner directly
+                  {t('pms.fin.owners.noWithdrawals')}
                 </td>
               </tr>
             ) : (
@@ -1095,21 +1103,21 @@ function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
                           className="text-xs text-emerald-700"
                           onClick={() => reviewPayout.mutate({ id: p.id, status: 'approved' })}
                         >
-                          Approve
+                          {t('pms.fin.approve')}
                         </button>
                         <button
                           type="button"
                           className="text-xs text-red-600"
                           onClick={() => reviewPayout.mutate({ id: p.id, status: 'rejected' })}
                         >
-                          Reject
+                          {t('pms.fin.reject')}
                         </button>
                         <button
                           type="button"
                           className="btn-secondary text-xs py-1 px-2"
                           onClick={() => settle.mutate(p.id)}
                         >
-                          Mark settled
+                          {t('pms.fin.owners.markSettled')}
                         </button>
                       </>
                     )}
@@ -1120,11 +1128,11 @@ function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
                         onClick={() => settle.mutate(p.id)}
                       >
                         <CheckCircle2 className="w-3 h-3 inline mr-1" />
-                        Mark settled
+                        {t('pms.fin.owners.markSettled')}
                       </button>
                     )}
                     {p.status === 'paid' && (
-                      <span className="text-xs text-emerald-600 font-medium">Paid</span>
+                      <span className="text-xs text-emerald-600 font-medium">{t('pms.fin.owners.paid')}</span>
                     )}
                   </td>
                 </tr>
@@ -1137,12 +1145,12 @@ function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
       <Modal
         open={Boolean(settleOwner)}
         onClose={() => setSettleOwner(null)}
-        title={settleOwner ? `Settle — ${settleOwner.full_name}` : 'Settle owner'}
+        title={settleOwner ? t('pms.fin.owners.settleModalTitle', { name: settleOwner.full_name }) : t('pms.fin.owners.settleOwnerFallback')}
         size="sm"
         footer={
           <>
             <button type="button" className="btn-secondary" onClick={() => setSettleOwner(null)}>
-              Cancel
+              {t('pms.fin.cancel')}
             </button>
             <button
               type="button"
@@ -1156,7 +1164,7 @@ function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
                 })
               }
             >
-              {settleOwnerMutation.isPending ? 'Saving…' : 'Confirm settled'}
+              {settleOwnerMutation.isPending ? t('pms.fin.owners.saving') : t('pms.fin.owners.confirmSettled')}
             </button>
           </>
         }
@@ -1164,11 +1172,10 @@ function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
         {settleOwner && (
           <div className="space-y-4 text-sm">
             <p className="text-gray-600">
-              Marks this amount as paid to the owner without a portal withdrawal request. Remaining
-              in period: <span className="font-semibold tabular-nums">{currency(settleOwner.remaining)}</span>
+              {t('pms.fin.owners.settleDescription', { remaining: currency(settleOwner.remaining) })}
             </p>
             <div>
-              <label className="label">Amount (EGP)</label>
+              <label className="label">{t('pms.fin.amountEgp')}</label>
               <input
                 type="number"
                 min="0"
@@ -1179,12 +1186,12 @@ function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
               />
             </div>
             <div>
-              <label className="label">Notes (optional)</label>
+              <label className="label">{t('pms.fin.notesOptional')}</label>
               <input
                 className="input w-full"
                 value={settleNotes}
                 onChange={(e) => setSettleNotes(e.target.value)}
-                placeholder="e.g. Cash handover / bank transfer ref"
+                placeholder={t('pms.fin.owners.notesPlaceholder')}
               />
             </div>
           </div>
@@ -1195,6 +1202,7 @@ function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
 }
 
 function ManualEntriesTab({ fromDate, toDate, rangeParams: params }) {
+  const { t } = useLocale();
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
@@ -1217,41 +1225,41 @@ function ManualEntriesTab({ fromDate, toDate, rangeParams: params }) {
   const createEntry = useMutation({
     mutationFn: (payload) => api.post('/financial-system/manual-entries', payload),
     onSuccess: () => {
-      toast.success('Entry added');
+      toast.success(t('pms.fin.manual.entryAdded'));
       qc.invalidateQueries({ queryKey: ['financial-system-manual'] });
       qc.invalidateQueries({ queryKey: ['financial-system-portal'] });
       setShowForm(false);
     },
-    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
   const removeEntry = useMutation({
     mutationFn: (id) => api.delete(`/financial-system/manual-entries/${id}`),
     onSuccess: () => {
-      toast.success('Entry removed');
+      toast.success(t('pms.fin.manual.entryRemoved'));
       qc.invalidateQueries({ queryKey: ['financial-system-manual'] });
       qc.invalidateQueries({ queryKey: ['financial-system-portal'] });
       setDeleteId(null);
     },
-    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
   if (isLoading) return <LoadingSpinner />;
   const entries = data?.entries || [];
   return (
     <div className="space-y-4">
       <div className="flex justify-between">
-        <p className="text-sm text-gray-500">One-off lines that are not a booking and not a monthly charge.</p>
+        <p className="text-sm text-gray-500">{t('pms.fin.manual.description')}</p>
         <button type="button" className="btn-primary text-sm" onClick={() => setShowForm(true)}>
-          <Plus className="w-4 h-4" /> Add entry
+          <Plus className="w-4 h-4" /> {t('pms.fin.manual.addEntry')}
         </button>
       </div>
       <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
         <table className="table text-sm">
           <thead>
             <tr>
-              <th>Date</th>
-              <th>Type</th>
-              <th>Description</th>
-              <th className="text-right">Amount</th>
+              <th>{t('pms.fin.manual.date')}</th>
+              <th>{t('pms.fin.manual.type')}</th>
+              <th>{t('pms.fin.description')}</th>
+              <th className="text-right">{t('pms.fin.amount')}</th>
               <th />
             </tr>
           </thead>
@@ -1275,17 +1283,17 @@ function ManualEntriesTab({ fromDate, toDate, rangeParams: params }) {
       <Modal
         open={showForm}
         onClose={() => setShowForm(false)}
-        title="Add entry"
+        title={t('pms.fin.manual.addEntryTitle')}
         footer={
           <>
-            <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>Cancel</button>
+            <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>{t('pms.fin.cancel')}</button>
             <button
               type="submit"
               form="manual-entry-form"
               className="btn-primary"
               disabled={createEntry.isPending}
             >
-              Save
+              {t('pms.fin.save')}
             </button>
           </>
         }
@@ -1306,19 +1314,19 @@ function ManualEntriesTab({ fromDate, toDate, rangeParams: params }) {
           }}
         >
           <select className="input w-full" value={form.entry_type} onChange={(e) => setForm((f) => ({ ...f, entry_type: e.target.value }))}>
-            <option value="revenue">Custom revenue</option>
-            <option value="expense">Custom expense</option>
+            <option value="revenue">{t('pms.fin.manual.customRevenue')}</option>
+            <option value="expense">{t('pms.fin.manual.customExpense')}</option>
           </select>
-          <input className="input w-full" placeholder="Description" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} required />
-          <input type="number" min="0.01" step="0.01" className="input w-full" placeholder="Amount" value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} required />
+          <input className="input w-full" placeholder={t('pms.fin.description')} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} required />
+          <input type="number" min="0.01" step="0.01" className="input w-full" placeholder={t('pms.fin.amount')} value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} required />
           <input type="date" min={FINANCIAL_EPOCH} className="input w-full" value={form.entry_date} onChange={(e) => setForm((f) => ({ ...f, entry_date: e.target.value }))} />
           <SearchableSelect
             className="w-full"
             value={form.unit_id}
             onChange={(v) => setForm((f) => ({ ...f, unit_id: v }))}
-            placeholder="Not linked to a unit"
+            placeholder={t('pms.fin.manual.notLinked')}
             options={[
-              { value: '', label: 'Not linked to a unit' },
+              { value: '', label: t('pms.fin.manual.notLinked') },
               ...units.map((u) => ({ value: String(u.id), label: u.unit_name })),
             ]}
           />
@@ -1327,9 +1335,9 @@ function ManualEntriesTab({ fromDate, toDate, rangeParams: params }) {
       <ConfirmDialog
         open={!!deleteId}
         onClose={() => setDeleteId(null)}
-        title="Delete manual entry?"
-        message="This removes the line from the books for this period."
-        confirmText="Delete"
+        title={t('pms.fin.manual.deleteTitle')}
+        message={t('pms.fin.manual.deleteMessage')}
+        confirmText={t('pms.fin.delete')}
         danger
         onConfirm={() => removeEntry.mutate(deleteId)}
         loading={removeEntry.isPending}
@@ -1339,13 +1347,14 @@ function ManualEntriesTab({ fromDate, toDate, rangeParams: params }) {
 }
 
 function AccountLines({ rows, amountKey = 'balance' }) {
-  if (!rows?.length) return <p className="text-sm text-gray-400 py-6 text-center">No balances</p>;
+  const { t } = useLocale();
+  if (!rows?.length) return <p className="text-sm text-gray-400 py-6 text-center">{t('pms.fin.reports.noBalances')}</p>;
   return (
     <table className="table text-sm">
       <thead>
         <tr>
-          <th>Account</th>
-          <th className="text-right">Amount</th>
+          <th>{t('pms.fin.reports.thAccount')}</th>
+          <th className="text-right">{t('pms.fin.amount')}</th>
         </tr>
       </thead>
       <tbody>
@@ -1364,6 +1373,7 @@ function AccountLines({ rows, amountKey = 'balance' }) {
 }
 
 function ReportsTool({ rangeParams: params }) {
+  const { t } = useLocale();
   const [tab, setTab] = useState('pnl');
   const { data, isLoading } = useQuery({
     queryKey: ['financial-system-reports', params],
@@ -1377,14 +1387,14 @@ function ReportsTool({ rangeParams: params }) {
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-500">
-        From {data?.from_date} → {data?.to_date}. Revenue is reservation totals (by booking / created date) plus custom revenue. Owner share (each unit’s % of nightly rate × nights) is an expense deducted from that revenue.
+        {t('pms.fin.reports.description', { from: data?.from_date, to: data?.to_date })}
       </p>
       <div className="flex flex-wrap gap-2">
         {[
-          ['pnl', 'Profit & loss'],
-          ['tb', 'Trial balance'],
-          ['bs', 'Balance sheet'],
-          ['cf', 'Cash flow'],
+          ['pnl', t('pms.fin.reports.pnl')],
+          ['tb', t('pms.fin.reports.tb')],
+          ['bs', t('pms.fin.reports.bs')],
+          ['cf', t('pms.fin.reports.cf')],
         ].map(([id, label]) => (
           <button
             key={id}
@@ -1399,37 +1409,37 @@ function ReportsTool({ rangeParams: params }) {
       {tab === 'pnl' && (
         <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
           <div className="px-6 py-4 border-b">
-            <h3 className="font-semibold">Profit & loss</h3>
-            <p className="text-xs text-gray-500">Reservation totals plus custom revenue, less owner share (unit % of nightly × nights), then other costs</p>
+            <h3 className="font-semibold">{t('pms.fin.reports.pnlTitle')}</h3>
+            <p className="text-xs text-gray-500">{t('pms.fin.reports.pnlHint')}</p>
           </div>
           <div className="px-6 py-3 bg-emerald-50 text-sm flex justify-between font-semibold">
-            <span>Gross revenue (reservation totals + custom)</span>
+            <span>{t('pms.fin.reports.grossRevenueLabel')}</span>
             <span className="tabular-nums">{currency(pnl.totals?.gross_revenue ?? pnl.receipts?.total)}</span>
           </div>
           <div className="px-6 py-1.5 text-sm flex justify-between text-gray-600">
-            <span>Reservation totals</span>
+            <span>{t('pms.fin.reports.reservationTotals')}</span>
             <span className="tabular-nums">{currency(pnl.receipts?.stays)}</span>
           </div>
           <div className="px-6 py-1.5 text-sm flex justify-between text-gray-600">
-            <span>Custom revenue</span>
+            <span>{t('pms.fin.reports.customRevenue')}</span>
             <span className="tabular-nums">{currency(pnl.receipts?.custom)}</span>
           </div>
           <div className="px-6 py-2 text-sm flex justify-between text-rose-800 bg-rose-50/70">
-            <span>Owner share (unit % of nightly rate × nights)</span>
+            <span>{t('pms.fin.reports.ownerShareLabel')}</span>
             <span className="tabular-nums">−{currency(pnl.totals?.owner_share ?? pnl.receipts?.owner_share)}</span>
           </div>
           <div className="px-6 py-2 text-sm flex justify-between font-semibold">
-            <span>Revenue after owners</span>
+            <span>{t('pms.fin.reports.revenueAfterOwners')}</span>
             <span className="tabular-nums">{currency(pnl.totals?.net_revenue)}</span>
           </div>
           <AccountLines rows={(pnl.cogs || []).filter((a) => a.code !== '506000')} />
           <div className="px-6 py-2 bg-slate-50 text-sm flex justify-between">
-            <span>Gross after direct costs</span>
+            <span>{t('pms.fin.reports.grossAfterDirect')}</span>
             <span className="tabular-nums font-semibold">{currency(pnl.totals?.gross)}</span>
           </div>
           <AccountLines rows={pnl.opex} />
           <div className="px-6 py-3 bg-soul-blue text-white flex justify-between">
-            <span>Net profit / loss</span>
+            <span>{t('pms.fin.reports.netProfitLoss')}</span>
             <span className="tabular-nums font-bold">{currency(pnl.totals?.net)}</span>
           </div>
         </div>
@@ -1439,9 +1449,9 @@ function ReportsTool({ rangeParams: params }) {
           <table className="table text-sm">
             <thead>
               <tr>
-                <th>Account</th>
-                <th className="text-right">Debit</th>
-                <th className="text-right">Credit</th>
+                <th>{t('pms.fin.reports.thAccount')}</th>
+                <th className="text-right">{t('pms.fin.reports.thDebit')}</th>
+                <th className="text-right">{t('pms.fin.reports.thCredit')}</th>
               </tr>
             </thead>
             <tbody>
@@ -1458,7 +1468,7 @@ function ReportsTool({ rangeParams: params }) {
             </tbody>
             <tfoot>
               <tr className="font-semibold">
-                <td>Total</td>
+                <td>{t('pms.fin.reports.total')}</td>
                 <td className="text-right tabular-nums">{currency(tb.debit)}</td>
                 <td className="text-right tabular-nums">{currency(tb.credit)}</td>
               </tr>
@@ -1469,19 +1479,19 @@ function ReportsTool({ rangeParams: params }) {
       {tab === 'bs' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
-            <div className="px-6 py-3 border-b font-semibold">Assets</div>
+            <div className="px-6 py-3 border-b font-semibold">{t('pms.fin.reports.assets')}</div>
             <AccountLines rows={bs.assets} />
             <div className="px-6 py-3 bg-slate-50 flex justify-between font-semibold">
-              <span>Total assets</span>
+              <span>{t('pms.fin.reports.totalAssets')}</span>
               <span className="tabular-nums">{currency(bs.totals?.assets)}</span>
             </div>
           </div>
           <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
-            <div className="px-6 py-3 border-b font-semibold">Liabilities & equity</div>
+            <div className="px-6 py-3 border-b font-semibold">{t('pms.fin.reports.liabilitiesEquity')}</div>
             <AccountLines rows={bs.liabilities} />
             <AccountLines rows={bs.equity} />
             <div className="px-6 py-3 bg-slate-50 flex justify-between font-semibold">
-              <span>Liabilities + equity</span>
+              <span>{t('pms.fin.reports.liabilitiesPlusEquity')}</span>
               <span className="tabular-nums">{currency(bs.totals?.liabilities_and_equity)}</span>
             </div>
           </div>
@@ -1490,23 +1500,23 @@ function ReportsTool({ rangeParams: params }) {
       {tab === 'cf' && (
         <div className="rounded-2xl border border-soul-line bg-white p-6 space-y-3">
           <div className="flex justify-between text-sm">
-            <span>Operating inflows</span>
+            <span>{t('pms.fin.reports.operatingInflows')}</span>
             <span className="tabular-nums">{currency(cf.operating_in)}</span>
           </div>
           <div className="flex justify-between text-sm">
-            <span>Operating outflows</span>
+            <span>{t('pms.fin.reports.operatingOutflows')}</span>
             <span className="tabular-nums">{currency(cf.operating_out)}</span>
           </div>
           <div className="flex justify-between font-semibold">
-            <span>Operating net</span>
+            <span>{t('pms.fin.reports.operatingNet')}</span>
             <span className="tabular-nums">{currency(cf.operating_net)}</span>
           </div>
           <div className="flex justify-between text-sm">
-            <span>Owner payouts (financing)</span>
+            <span>{t('pms.fin.reports.ownerPayoutsFinancing')}</span>
             <span className="tabular-nums">{currency(cf.financing_out)}</span>
           </div>
           <div className="flex justify-between text-lg font-bold text-soul-blue pt-2 border-t">
-            <span>Net treasury change</span>
+            <span>{t('pms.fin.reports.netTreasuryChange')}</span>
             <span className="tabular-nums">{currency(cf.net_change)}</span>
           </div>
           <p className="text-xs text-gray-500">{cf.note}</p>
@@ -1517,6 +1527,7 @@ function ReportsTool({ rangeParams: params }) {
 }
 
 function AgingTool({ rangeParams: params, onOpenAccount }) {
+  const { t } = useLocale();
   const { data, isLoading } = useQuery({
     queryKey: ['financial-system-aging', params],
     queryFn: () => api.get('/financial-system/aging', { params }).then((r) => r.data),
@@ -1527,10 +1538,10 @@ function AgingTool({ rangeParams: params, onOpenAccount }) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="text-sm text-gray-500">
-          Guest invoices aged from check-in. Book balance on 105000 is {currency(data?.ar_balance)}.
+          {t('pms.fin.aging.description', { balance: currency(data?.ar_balance) })}
         </p>
         <button type="button" className="btn-secondary text-sm" onClick={() => onOpenAccount('105000')}>
-          Open 105000
+          {t('pms.fin.aging.openAccount')}
         </button>
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -1538,7 +1549,7 @@ function AgingTool({ rangeParams: params, onOpenAccount }) {
           <div key={key} className="rounded-2xl border border-soul-line bg-white p-4">
             <p className="text-xs text-gray-400">{b.label}</p>
             <p className="text-xl font-bold tabular-nums mt-1">{currency(b.amount)}</p>
-            <p className="text-xs text-gray-500">{b.count} stays</p>
+            <p className="text-xs text-gray-500">{t('pms.fin.stays', { count: b.count })}</p>
           </div>
         ))}
       </div>
@@ -1549,11 +1560,11 @@ function AgingTool({ rangeParams: params, onOpenAccount }) {
             <table className="table text-sm">
               <thead>
                 <tr>
-                  <th>Guest</th>
-                  <th>Unit</th>
-                  <th>Check-in</th>
-                  <th className="text-right">Days</th>
-                  <th className="text-right">Due</th>
+                  <th>{t('pms.fin.aging.guest')}</th>
+                  <th>{t('pms.fin.aging.unit')}</th>
+                  <th>{t('pms.fin.aging.checkIn')}</th>
+                  <th className="text-right">{t('pms.fin.aging.days')}</th>
+                  <th className="text-right">{t('pms.fin.aging.due')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1576,6 +1587,7 @@ function AgingTool({ rangeParams: params, onOpenAccount }) {
 }
 
 function InsuranceRefundsTool({ onOpenAccount }) {
+  const { t } = useLocale();
   const qc = useQueryClient();
   const [filter, setFilter] = useState('due');
   const [settleRow, setSettleRow] = useState(null);
@@ -1594,12 +1606,12 @@ function InsuranceRefundsTool({ onOpenAccount }) {
   const settle = useMutation({
     mutationFn: ({ id, body }) => api.post(`/financial-system/insurance-refunds/${id}/settle`, body),
     onSuccess: () => {
-      toast.success('Insurance settled');
+      toast.success(t('pms.fin.insurance.settledToast'));
       setSettleRow(null);
       qc.invalidateQueries({ queryKey: ['financial-system-insurance'] });
       qc.invalidateQueries({ queryKey: ['financial-system-portal'] });
     },
-    onError: (e) => toast.error(e.response?.data?.error || 'Failed to settle'),
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.owners.failedToSettle')),
   });
 
   function openSettle(row) {
@@ -1632,43 +1644,42 @@ function InsuranceRefundsTool({ onOpenAccount }) {
   const summary = data?.summary || {};
   const rows = data?.rows || [];
   const filters = [
-    { id: 'due', label: 'Due now' },
-    { id: 'upcoming', label: 'Upcoming' },
-    { id: 'settled', label: 'Settled' },
+    { id: 'due', label: t('pms.fin.insurance.dueNow') },
+    { id: 'upcoming', label: t('pms.fin.insurance.upcoming') },
+    { id: 'settled', label: t('pms.fin.insurance.settledFilter') },
   ];
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="text-sm text-gray-500 max-w-2xl">
-          Guest insurance is held on account {data?.account?.code || '204000'} at check-in and refunded on
-          checkout. Retain a damage amount to keep part of the escrow as revenue ({data?.damage_account?.code || '410000'}).
+          {t('pms.fin.insurance.description', { code: data?.account?.code || '204000', damageCode: data?.damage_account?.code || '410000' })}
         </p>
         <button type="button" className="btn-secondary text-sm" onClick={() => onOpenAccount('204000')}>
-          Open 204000
+          {t('pms.fin.insurance.openAccount')}
         </button>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
-          <p className="text-xs text-amber-800">Due to refund</p>
+          <p className="text-xs text-amber-800">{t('pms.fin.insurance.dueToRefund')}</p>
           <p className="text-xl font-bold tabular-nums mt-1">{currency(summary.due_amount)}</p>
-          <p className="text-xs text-gray-500">{summary.due_count || 0} stays</p>
+          <p className="text-xs text-gray-500">{t('pms.fin.stays', { count: summary.due_count || 0 })}</p>
         </div>
         <div className="rounded-2xl border border-soul-line bg-white p-4">
-          <p className="text-xs text-gray-400">Upcoming checkouts</p>
+          <p className="text-xs text-gray-400">{t('pms.fin.insurance.upcomingCheckouts')}</p>
           <p className="text-xl font-bold tabular-nums mt-1">{currency(summary.upcoming_amount)}</p>
-          <p className="text-xs text-gray-500">{summary.upcoming_count || 0} stays</p>
+          <p className="text-xs text-gray-500">{t('pms.fin.stays', { count: summary.upcoming_count || 0 })}</p>
         </div>
         <div className="rounded-2xl border border-soul-line bg-white p-4">
-          <p className="text-xs text-gray-400">Open escrow (204000)</p>
+          <p className="text-xs text-gray-400">{t('pms.fin.insurance.openEscrow')}</p>
           <p className="text-xl font-bold tabular-nums mt-1">{currency(summary.escrow_open)}</p>
-          <p className="text-xs text-gray-500">Held after check-in</p>
+          <p className="text-xs text-gray-500">{t('pms.fin.insurance.heldAfterCheckIn')}</p>
         </div>
         <div className="rounded-2xl border border-soul-line bg-white p-4">
-          <p className="text-xs text-gray-400">Settled records</p>
+          <p className="text-xs text-gray-400">{t('pms.fin.insurance.settledRecords')}</p>
           <p className="text-xl font-bold tabular-nums mt-1">{summary.settled_count || 0}</p>
-          <p className="text-xs text-gray-500">Full / partial / forfeited</p>
+          <p className="text-xs text-gray-500">{t('pms.fin.insurance.fullPartialForfeited')}</p>
         </div>
       </div>
 
@@ -1694,12 +1705,12 @@ function InsuranceRefundsTool({ onOpenAccount }) {
           <table className="table text-sm">
             <thead>
               <tr>
-                <th>Guest</th>
-                <th>Unit</th>
-                <th>Check-in</th>
-                <th>Checkout</th>
-                <th className="text-right">Insurance</th>
-                <th>Status</th>
+                <th>{t('pms.fin.aging.guest')}</th>
+                <th>{t('pms.fin.aging.unit')}</th>
+                <th>{t('pms.fin.aging.checkIn')}</th>
+                <th>{t('pms.fin.insurance.checkout')}</th>
+                <th className="text-right">{t('pms.fin.insurance.insuranceCol')}</th>
+                <th>{t('pms.fin.insurance.statusCol')}</th>
                 <th />
               </tr>
             </thead>
@@ -1707,7 +1718,7 @@ function InsuranceRefundsTool({ onOpenAccount }) {
               {rows.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="text-center text-gray-400 py-8">
-                    No insurance rows in this view
+                    {t('pms.fin.insurance.noRows')}
                   </td>
                 </tr>
               ) : (
@@ -1726,15 +1737,15 @@ function InsuranceRefundsTool({ onOpenAccount }) {
                     <td className="text-right tabular-nums font-medium">{currency(r.insurance)}</td>
                     <td className="capitalize">
                       {r.insurance_refund_status === 'pending' ? (
-                        <span className="text-amber-700">Pending refund</span>
+                        <span className="text-amber-700">{t('pms.fin.insurance.pendingRefund')}</span>
                       ) : r.insurance_refund_status === 'partial' ? (
                         <span className="text-sky-700">
-                          Partial · refunded {currency(r.insurance_refunded_amount)}
+                          {t('pms.fin.insurance.partial', { amount: currency(r.insurance_refunded_amount) })}
                         </span>
                       ) : r.insurance_refund_status === 'forfeited' ? (
-                        <span className="text-rose-700">Forfeited (damage)</span>
+                        <span className="text-rose-700">{t('pms.fin.insurance.forfeited')}</span>
                       ) : (
-                        <span className="text-emerald-700">Refunded</span>
+                        <span className="text-emerald-700">{t('pms.fin.insurance.refunded')}</span>
                       )}
                     </td>
                     <td className="text-right">
@@ -1744,12 +1755,12 @@ function InsuranceRefundsTool({ onOpenAccount }) {
                           className="btn-secondary text-xs py-1 px-2"
                           onClick={() => openSettle(r)}
                         >
-                          Settle refund
+                          {t('pms.fin.insurance.settleRefund')}
                         </button>
                       ) : (
                         <span className="text-xs text-gray-400">
                           {r.insurance_damage_amount > 0
-                            ? `Damage ${currency(r.insurance_damage_amount)}`
+                            ? t('pms.fin.insurance.damage', { amount: currency(r.insurance_damage_amount) })
                             : '—'}
                         </span>
                       )}
@@ -1765,19 +1776,19 @@ function InsuranceRefundsTool({ onOpenAccount }) {
       <Modal
         open={Boolean(settleRow)}
         onClose={() => setSettleRow(null)}
-        title="Settle insurance refund"
+        title={t('pms.fin.insurance.settleModalTitle')}
       >
         {settleRow ? (
           <div className="space-y-4">
             <p className="text-sm text-gray-600">
-              {settleRow.guest_name} · {settleRow.unit_name} · checkout {formatDate(settleRow.check_out)}
+              {t('pms.fin.insurance.guestStayCheckout', { guest: settleRow.guest_name, unit: settleRow.unit_name, date: formatDate(settleRow.check_out) })}
             </p>
             <p className="text-sm">
-              Held insurance: <span className="font-semibold tabular-nums">{currency(settleRow.insurance)}</span>
+              {t('pms.fin.insurance.heldInsurance', { amount: currency(settleRow.insurance) })}
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="label">Refund to guest (EGP)</label>
+                <label className="label">{t('pms.fin.insurance.refundToGuest')}</label>
                 <input
                   type="number"
                   min="0"
@@ -1788,7 +1799,7 @@ function InsuranceRefundsTool({ onOpenAccount }) {
                 />
               </div>
               <div>
-                <label className="label">Damage retained (EGP)</label>
+                <label className="label">{t('pms.fin.insurance.damageRetained')}</label>
                 <input
                   type="number"
                   min="0"
@@ -1799,16 +1810,16 @@ function InsuranceRefundsTool({ onOpenAccount }) {
                 />
               </div>
               <div>
-                <label className="label">Refund method</label>
+                <label className="label">{t('pms.fin.insurance.refundMethod')}</label>
                 <select className="input" value={method} onChange={(e) => setMethod(e.target.value)}>
-                  <option value="cash">Cash</option>
-                  <option value="instapay">InstaPay</option>
-                  <option value="bank_transfer">Bank transfer</option>
-                  <option value="credit_card">Card</option>
+                  <option value="cash">{t('pms.fin.insurance.cashMethod')}</option>
+                  <option value="instapay">{t('pms.fin.insurance.instapayMethod')}</option>
+                  <option value="bank_transfer">{t('pms.fin.insurance.bankTransferMethod')}</option>
+                  <option value="credit_card">{t('pms.fin.insurance.cardMethod')}</option>
                 </select>
               </div>
               <div>
-                <label className="label">Refund date</label>
+                <label className="label">{t('pms.fin.insurance.refundDate')}</label>
                 <input
                   type="date"
                   className="input"
@@ -1818,17 +1829,17 @@ function InsuranceRefundsTool({ onOpenAccount }) {
               </div>
             </div>
             <div>
-              <label className="label">Notes (optional)</label>
+              <label className="label">{t('pms.fin.notesOptional')}</label>
               <textarea
                 className="input min-h-[80px]"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Damage description, unit inspection notes…"
+                placeholder={t('pms.fin.insurance.damagePlaceholder')}
               />
             </div>
             <div className="flex justify-end gap-2">
               <button type="button" className="btn-secondary" onClick={() => setSettleRow(null)}>
-                Cancel
+                {t('pms.fin.cancel')}
               </button>
               <button
                 type="button"
@@ -1847,7 +1858,7 @@ function InsuranceRefundsTool({ onOpenAccount }) {
                   })
                 }
               >
-                Confirm settle
+                {t('pms.fin.insurance.confirmSettle')}
               </button>
             </div>
           </div>
@@ -1858,6 +1869,7 @@ function InsuranceRefundsTool({ onOpenAccount }) {
 }
 
 function CloseTool({ toDate }) {
+  const { t } = useLocale();
   const qc = useQueryClient();
   const defaultMonth = (toDate || new Date().toISOString().slice(0, 10)).slice(0, 7);
   const [month, setMonth] = useState(defaultMonth);
@@ -1875,26 +1887,26 @@ function CloseTool({ toDate }) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['financial-system-checklist', month] });
     },
-    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
   const close = useMutation({
     mutationFn: (yearMonth) => api.post(`/financial-system/periods/${yearMonth}/close`),
     onSuccess: () => {
-      toast.success('Month closed');
+      toast.success(t('pms.fin.close.monthClosed'));
       qc.invalidateQueries({ queryKey: ['financial-system-periods'] });
       qc.invalidateQueries({ queryKey: ['financial-system-portal'] });
       qc.invalidateQueries({ queryKey: ['financial-system-reports'] });
     },
-    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
   const reopen = useMutation({
     mutationFn: (yearMonth) => api.delete(`/financial-system/periods/${yearMonth}/close`),
     onSuccess: () => {
-      toast.success('Month reopened');
+      toast.success(t('pms.fin.close.monthReopened'));
       qc.invalidateQueries({ queryKey: ['financial-system-periods'] });
       qc.invalidateQueries({ queryKey: ['financial-system-portal'] });
     },
-    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
 
   const [notesItem, setNotesItem] = useState(null);
@@ -1924,11 +1936,11 @@ function CloseTool({ toDate }) {
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-500">
-        Closing zeros Soul revenue and expense into retained earnings (302000) and locks manual entries for that month.
+        {t('pms.fin.close.description')}
       </p>
       <div className="rounded-2xl border border-soul-line bg-white p-5 flex flex-wrap items-end gap-3">
         <div>
-          <label className="label">Month</label>
+          <label className="label">{t('pms.fin.close.month')}</label>
           <input type="month" className="input" value={month} onChange={(e) => setMonth(e.target.value)} />
         </div>
       </div>
@@ -1938,8 +1950,8 @@ function CloseTool({ toDate }) {
         <div className="px-6 py-4 border-b">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="font-semibold">Close checklist — {month}</h3>
-              <p className="text-xs text-gray-500 mt-1">Complete all required tasks before closing</p>
+              <h3 className="font-semibold">{t('pms.fin.close.checklist', { month })}</h3>
+              <p className="text-xs text-gray-500 mt-1">{t('pms.fin.close.checklistHint')}</p>
             </div>
             <span className="text-sm font-semibold tabular-nums">{progress}%</span>
           </div>
@@ -1972,7 +1984,7 @@ function CloseTool({ toDate }) {
                     <span className="text-[11px] text-gray-400 tabular-nums w-5">{item.task_order || ''}</span>
                     <p className={`text-sm font-medium ${item.status === 'done' ? 'line-through text-gray-400' : ''}`}>{item.title}</p>
                     <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${statusColors[item.status]}`}>{item.status}</span>
-                    {item.required_before_close && <span className="text-[10px] text-rose-500">required</span>}
+                    {item.required_before_close && <span className="text-[10px] text-rose-500">{t('pms.fin.close.required')}</span>}
                   </div>
                   {item.description && <p className="text-xs text-gray-500 mt-0.5">{item.description}</p>}
                   {item.owner_role && <p className={`text-[11px] mt-0.5 ${roleColors[item.owner_role] || 'text-gray-500'}`}>{item.owner_role}</p>}
@@ -1983,7 +1995,7 @@ function CloseTool({ toDate }) {
                   className="text-xs text-soul-blue hover:underline flex-shrink-0"
                   onClick={() => { setNotesItem(item); setNotesText(item.evidence_notes || ''); }}
                 >
-                  Notes
+                  {t('pms.fin.close.evidenceNotes')}
                 </button>
               </div>
             ))}
@@ -1991,18 +2003,17 @@ function CloseTool({ toDate }) {
         )}
       </div>
 
-      {/* Close / reopen buttons */}
       <div className="rounded-2xl border border-soul-line bg-white p-5 flex flex-wrap items-center gap-3">
         <button
           type="button"
           className="btn-primary"
           disabled={close.isPending || !allRequiredDone}
           onClick={() => close.mutate(month)}
-          title={!allRequiredDone ? 'Complete all required checklist items first' : ''}
+          title={!allRequiredDone ? t('pms.fin.close.completeRequiredTooltip') : ''}
         >
-          <Lock className="w-4 h-4" /> Close month
+          <Lock className="w-4 h-4" /> {t('pms.fin.close.closeMonth')}
         </button>
-        {!allRequiredDone && <span className="text-xs text-amber-700">Complete all required tasks to enable close</span>}
+        {!allRequiredDone && <span className="text-xs text-amber-700">{t('pms.fin.close.completeRequired')}</span>}
       </div>
 
       {/* Closed periods table */}
@@ -2010,9 +2021,9 @@ function CloseTool({ toDate }) {
         <table className="table text-sm">
           <thead>
             <tr>
-              <th>Month</th>
-              <th className="text-right">P&amp;L transferred</th>
-              <th>Closed by</th>
+              <th>{t('pms.fin.close.thMonth')}</th>
+              <th className="text-right">{t('pms.fin.close.thPnlTransferred')}</th>
+              <th>{t('pms.fin.close.thClosedBy')}</th>
               <th />
             </tr>
           </thead>
@@ -2024,7 +2035,7 @@ function CloseTool({ toDate }) {
                 <td>{row.closed_by_name || '—'}</td>
                 <td className="text-right">
                   <button type="button" className="text-xs text-amber-700 inline-flex items-center gap-1" onClick={() => reopen.mutate(row.year_month)}>
-                    <Unlock className="w-3 h-3" /> Reopen
+                    <Unlock className="w-3 h-3" /> {t('pms.fin.close.reopen')}
                   </button>
                 </td>
               </tr>
@@ -2034,25 +2045,26 @@ function CloseTool({ toDate }) {
       </div>
 
       {/* Evidence notes modal */}
-      <Modal open={Boolean(notesItem)} onClose={() => setNotesItem(null)} title="Evidence notes" size="sm"
+      <Modal open={Boolean(notesItem)} onClose={() => setNotesItem(null)} title={t('pms.fin.close.evidenceNotesTitle')} size="sm"
         footer={
           <>
-            <button type="button" className="btn-secondary" onClick={() => setNotesItem(null)}>Cancel</button>
+            <button type="button" className="btn-secondary" onClick={() => setNotesItem(null)}>{t('pms.fin.cancel')}</button>
             <button type="button" className="btn-primary" disabled={updateItem.isPending}
               onClick={() => { updateItem.mutate({ itemId: notesItem.id, body: { evidence_notes: notesText } }); setNotesItem(null); }}>
-              Save
+              {t('pms.fin.save')}
             </button>
           </>
         }
       >
         <textarea className="input w-full min-h-[120px]" value={notesText} onChange={(e) => setNotesText(e.target.value)}
-          placeholder="Describe what was done, attach reference numbers…" />
+          placeholder={t('pms.fin.close.evidencePlaceholder')} />
       </Modal>
     </div>
   );
 }
 
 function SegmentPnlTool({ rangeParams: params }) {
+  const { t } = useLocale();
   const { data, isLoading } = useQuery({
     queryKey: ['financial-system-segment-pnl', params],
     queryFn: () => api.get('/financial-system/segment-pnl', { params }).then((r) => r.data),
@@ -2064,20 +2076,20 @@ function SegmentPnlTool({ rangeParams: params }) {
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-500">
-        Profit &amp; loss broken down by project. OpEx is allocated proportionally to gross revenue.
+        {t('pms.fin.segment.description')}
       </p>
       <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
         <div className="overflow-x-auto">
           <table className="table text-sm">
             <thead>
               <tr>
-                <th>Project</th>
-                <th className="text-right">Gross revenue</th>
-                <th className="text-right">Owner share</th>
-                <th className="text-right">Net revenue</th>
-                <th className="text-right">Direct costs</th>
-                <th className="text-right">OpEx alloc.</th>
-                <th className="text-right">Net profit</th>
+                <th>{t('pms.fin.segment.project')}</th>
+                <th className="text-right">{t('pms.fin.segment.grossRevenue')}</th>
+                <th className="text-right">{t('pms.fin.segment.ownerShare')}</th>
+                <th className="text-right">{t('pms.fin.segment.netRevenue')}</th>
+                <th className="text-right">{t('pms.fin.segment.directCosts')}</th>
+                <th className="text-right">{t('pms.fin.segment.opexAlloc')}</th>
+                <th className="text-right">{t('pms.fin.segment.netProfit')}</th>
               </tr>
             </thead>
             <tbody>
@@ -2116,6 +2128,7 @@ function SegmentPnlTool({ rangeParams: params }) {
 }
 
 function CashForecastTool({ rangeParams: params }) {
+  const { t } = useLocale();
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({
     queryKey: ['financial-system-cash-forecast', params],
@@ -2127,19 +2140,19 @@ function CashForecastTool({ rangeParams: params }) {
   const addEntry = useMutation({
     mutationFn: (payload) => api.post('/financial-system/cash-forecast', payload),
     onSuccess: () => {
-      toast.success('Forecast entry added');
+      toast.success(t('pms.fin.forecast.entryAdded'));
       qc.invalidateQueries({ queryKey: ['financial-system-cash-forecast'] });
       setEditWeek(null);
     },
-    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
   const removeEntry = useMutation({
     mutationFn: (id) => api.delete(`/financial-system/cash-forecast/${id}`),
     onSuccess: () => {
-      toast.success('Entry removed');
+      toast.success(t('pms.fin.forecast.entryRemoved'));
       qc.invalidateQueries({ queryKey: ['financial-system-cash-forecast'] });
     },
-    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
 
   if (isLoading) return <LoadingSpinner />;
@@ -2147,22 +2160,21 @@ function CashForecastTool({ rangeParams: params }) {
   const startingBalance = data?.starting_balance || 0;
 
   const categories = [
-    { value: 'collections', label: 'Collections' },
-    { value: 'owner_payouts', label: 'Owner payouts' },
-    { value: 'vendor_payments', label: 'Vendor payments' },
-    { value: 'recurring', label: 'Recurring' },
-    { value: 'payroll', label: 'Payroll' },
-    { value: 'tax', label: 'Tax' },
-    { value: 'other_in', label: 'Other in' },
-    { value: 'other_out', label: 'Other out' },
+    { value: 'collections', label: t('pms.fin.forecast.collections') },
+    { value: 'owner_payouts', label: t('pms.fin.forecast.ownerPayouts') },
+    { value: 'vendor_payments', label: t('pms.fin.forecast.vendorPayments') },
+    { value: 'recurring', label: t('pms.fin.forecast.recurring') },
+    { value: 'payroll', label: t('pms.fin.forecast.payroll') },
+    { value: 'tax', label: t('pms.fin.forecast.taxCol') },
+    { value: 'other_in', label: t('pms.fin.forecast.otherIn') },
+    { value: 'other_out', label: t('pms.fin.forecast.otherOut') },
   ];
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="text-sm text-gray-500">
-          13-week rolling forecast. Starting balance: <span className="font-semibold tabular-nums">{currency(startingBalance)}</span> (current treasury).
-          Click a week to add manual overrides.
+          {t('pms.fin.forecast.description', { balance: currency(startingBalance) })}
         </p>
       </div>
       <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
@@ -2170,16 +2182,16 @@ function CashForecastTool({ rangeParams: params }) {
           <table className="table text-sm">
             <thead>
               <tr>
-                <th>Week</th>
-                <th className="text-right">Collections</th>
-                <th className="text-right">Owner payouts</th>
-                <th className="text-right">Vendor</th>
-                <th className="text-right">Recurring</th>
-                <th className="text-right">Payroll</th>
-                <th className="text-right">Tax</th>
-                <th className="text-right">Other</th>
-                <th className="text-right">Net flow</th>
-                <th className="text-right">Cumulative</th>
+                <th>{t('pms.fin.forecast.week')}</th>
+                <th className="text-right">{t('pms.fin.forecast.collections')}</th>
+                <th className="text-right">{t('pms.fin.forecast.ownerPayouts')}</th>
+                <th className="text-right">{t('pms.fin.forecast.vendor')}</th>
+                <th className="text-right">{t('pms.fin.forecast.recurring')}</th>
+                <th className="text-right">{t('pms.fin.forecast.payroll')}</th>
+                <th className="text-right">{t('pms.fin.forecast.taxCol')}</th>
+                <th className="text-right">{t('pms.fin.forecast.other')}</th>
+                <th className="text-right">{t('pms.fin.forecast.netFlow')}</th>
+                <th className="text-right">{t('pms.fin.forecast.cumulative')}</th>
                 <th />
               </tr>
             </thead>
@@ -2212,13 +2224,13 @@ function CashForecastTool({ rangeParams: params }) {
         </div>
       </div>
 
-      <Modal open={Boolean(editWeek)} onClose={() => setEditWeek(null)} title={`Add forecast — week ${editWeek}`} size="sm"
+      <Modal open={Boolean(editWeek)} onClose={() => setEditWeek(null)} title={t('pms.fin.forecast.addForecast', { week: editWeek })} size="sm"
         footer={
           <>
-            <button type="button" className="btn-secondary" onClick={() => setEditWeek(null)}>Cancel</button>
+            <button type="button" className="btn-secondary" onClick={() => setEditWeek(null)}>{t('pms.fin.cancel')}</button>
             <button type="button" className="btn-primary" disabled={addEntry.isPending}
               onClick={() => addEntry.mutate({ week_start: editWeek, category: editForm.category, amount: parseFloat(editForm.amount), notes: editForm.notes || undefined })}>
-              Add
+              {t('pms.fin.forecast.add')}
             </button>
           </>
         }
@@ -2227,8 +2239,8 @@ function CashForecastTool({ rangeParams: params }) {
           <select className="input w-full" value={editForm.category} onChange={(e) => setEditForm((f) => ({ ...f, category: e.target.value }))}>
             {categories.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
           </select>
-          <input type="number" className="input w-full" placeholder="Amount" value={editForm.amount} onChange={(e) => setEditForm((f) => ({ ...f, amount: e.target.value }))} />
-          <input className="input w-full" placeholder="Notes" value={editForm.notes} onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))} />
+          <input type="number" className="input w-full" placeholder={t('pms.fin.amount')} value={editForm.amount} onChange={(e) => setEditForm((f) => ({ ...f, amount: e.target.value }))} />
+          <input className="input w-full" placeholder={t('pms.fin.notes')} value={editForm.notes} onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))} />
         </div>
       </Modal>
     </div>
@@ -2236,6 +2248,7 @@ function CashForecastTool({ rangeParams: params }) {
 }
 
 function GatewayTool({ rangeParams: params }) {
+  const { t } = useLocale();
   const qc = useQueryClient();
   const [mdr, setMdr] = useState('');
   const { data, isLoading } = useQuery({
@@ -2245,25 +2258,25 @@ function GatewayTool({ rangeParams: params }) {
   const save = useMutation({
     mutationFn: (value_num) => api.put('/financial-system/settings/gateway_mdr_pct', { value_num }),
     onSuccess: () => {
-      toast.success('MDR saved');
+      toast.success(t('pms.fin.gateway.mdrSaved'));
       qc.invalidateQueries({ queryKey: ['financial-system-gateway'] });
       qc.invalidateQueries({ queryKey: ['financial-system-portal'] });
     },
-    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
   if (isLoading) return <LoadingSpinner />;
   const pct = mdr === '' ? data?.mdr_pct : mdr;
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-500">
-        Card / Paymob collections sit on 106000, then settle to Bank EGP net of merchant discount.
+        {t('pms.fin.gateway.description')}
       </p>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          ['Clearing in', data?.clearing_in],
-          ['Settled to bank', data?.settled_net],
-          ['MDR expense', data?.mdr_expense],
-          ['Still uncleared', data?.uncleared],
+          [t('pms.fin.gateway.clearingIn'), data?.clearing_in],
+          [t('pms.fin.gateway.settledToBank'), data?.settled_net],
+          [t('pms.fin.gateway.mdrExpense'), data?.mdr_expense],
+          [t('pms.fin.gateway.stillUncleared'), data?.uncleared],
         ].map(([label, amt]) => (
           <div key={label} className="rounded-2xl border border-soul-line bg-white p-4">
             <p className="text-xs text-gray-400">{label}</p>
@@ -2273,11 +2286,11 @@ function GatewayTool({ rangeParams: params }) {
       </div>
       <div className="rounded-2xl border border-soul-line bg-white p-5 flex flex-wrap items-end gap-3">
         <div>
-          <label className="label">Gateway MDR %</label>
+          <label className="label">{t('pms.fin.gateway.gatewayMdr')}</label>
           <input type="number" min="0" step="0.1" className="input w-32" value={pct} onChange={(e) => setMdr(e.target.value)} />
         </div>
         <button type="button" className="btn-primary" disabled={save.isPending} onClick={() => save.mutate(pct)}>
-          Save MDR
+          {t('pms.fin.gateway.saveMdr')}
         </button>
       </div>
     </div>
@@ -2285,6 +2298,7 @@ function GatewayTool({ rangeParams: params }) {
 }
 
 function BankRecTool({ rangeParams: params }) {
+  const { t } = useLocale();
   const qc = useQueryClient();
   const [account, setAccount] = useState('101000');
   const [snap, setSnap] = useState({ statement_date: new Date().toISOString().slice(0, 10), statement_balance: '' });
@@ -2305,10 +2319,10 @@ function BankRecTool({ rangeParams: params }) {
         statement_balance: parseFloat(snap.statement_balance),
       }),
     onSuccess: () => {
-      toast.success('Statement saved');
+      toast.success(t('pms.fin.bank.statementSaved'));
       qc.invalidateQueries({ queryKey: ['financial-system-bank'] });
     },
-    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
   if (isLoading) return <LoadingSpinner />;
   return (
@@ -2327,18 +2341,18 @@ function BankRecTool({ rangeParams: params }) {
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div className="rounded-2xl border bg-white p-4">
-          <p className="text-xs text-gray-400">Book balance</p>
+          <p className="text-xs text-gray-400">{t('pms.fin.bank.bookBalance')}</p>
           <p className="text-xl font-bold tabular-nums">{currency(data?.account?.balance)}</p>
         </div>
         <div className="rounded-2xl border bg-white p-4">
-          <p className="text-xs text-gray-400">Unreconciled movement</p>
+          <p className="text-xs text-gray-400">{t('pms.fin.bank.unreconciledMovement')}</p>
           <p className="text-xl font-bold tabular-nums">{currency(data?.unreconciled)}</p>
         </div>
         <div className="rounded-2xl border bg-white p-4 space-y-2">
-          <p className="text-xs text-gray-400">Bank statement snapshot</p>
+          <p className="text-xs text-gray-400">{t('pms.fin.bank.bankStatementSnapshot')}</p>
           <input type="date" className="input w-full" value={snap.statement_date} onChange={(e) => setSnap((s) => ({ ...s, statement_date: e.target.value }))} />
-          <input type="number" className="input w-full" placeholder="Statement balance" value={snap.statement_balance} onChange={(e) => setSnap((s) => ({ ...s, statement_balance: e.target.value }))} />
-          <button type="button" className="btn-secondary w-full text-sm" onClick={() => saveSnap.mutate()}>Save snapshot</button>
+          <input type="number" className="input w-full" placeholder={t('pms.fin.bank.statementBalance')} value={snap.statement_balance} onChange={(e) => setSnap((s) => ({ ...s, statement_balance: e.target.value }))} />
+          <button type="button" className="btn-secondary w-full text-sm" onClick={() => saveSnap.mutate()}>{t('pms.fin.bank.saveSnapshot')}</button>
         </div>
       </div>
       <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
@@ -2346,9 +2360,9 @@ function BankRecTool({ rangeParams: params }) {
           <thead>
             <tr>
               <th />
-              <th>Date</th>
-              <th>Description</th>
-              <th className="text-right">Amount</th>
+              <th>{t('pms.fin.bank.date')}</th>
+              <th>{t('pms.fin.description')}</th>
+              <th className="text-right">{t('pms.fin.amount')}</th>
             </tr>
           </thead>
           <tbody>
@@ -2373,6 +2387,7 @@ function BankRecTool({ rangeParams: params }) {
 }
 
 function OwnerTrustTool({ rangeParams: params }) {
+  const { t } = useLocale();
   const qc = useQueryClient();
   const [form, setForm] = useState({ owner_id: '', amount: '', reason: '' });
   const { data, isLoading } = useQuery({
@@ -2386,16 +2401,16 @@ function OwnerTrustTool({ rangeParams: params }) {
   const addHb = useMutation({
     mutationFn: (payload) => api.post('/financial-system/holdbacks', payload),
     onSuccess: () => {
-      toast.success('Holdback recorded');
+      toast.success(t('pms.fin.trust.holdbackRecorded'));
       qc.invalidateQueries({ queryKey: ['financial-system-trust'] });
       qc.invalidateQueries({ queryKey: ['financial-system-portal'] });
     },
-    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
   const release = useMutation({
     mutationFn: (id) => api.post(`/financial-system/holdbacks/${id}/release`),
     onSuccess: () => {
-      toast.success('Holdback released');
+      toast.success(t('pms.fin.trust.holdbackReleased'));
       qc.invalidateQueries({ queryKey: ['financial-system-trust'] });
       qc.invalidateQueries({ queryKey: ['financial-system-portal'] });
     },
@@ -2405,25 +2420,25 @@ function OwnerTrustTool({ rangeParams: params }) {
     <div className="space-y-6">
       <div className="rounded-2xl border border-soul-line bg-white p-5 flex flex-wrap gap-6">
         <div>
-          <p className="text-xs text-gray-400">Control account 202000</p>
+          <p className="text-xs text-gray-400">{t('pms.fin.trust.controlAccount')}</p>
           <p className="text-2xl font-bold tabular-nums">{currency(data?.control_202000)}</p>
         </div>
         <div>
-          <p className="text-xs text-gray-400">Sub-ledger tied</p>
-          <p className="text-2xl font-bold">{data?.tied ? 'Yes' : 'Check'}</p>
+          <p className="text-xs text-gray-400">{t('pms.fin.trust.subLedgerTied')}</p>
+          <p className="text-2xl font-bold">{data?.tied ? t('pms.fin.trust.yes') : t('pms.fin.trust.check')}</p>
         </div>
       </div>
       <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
-        <div className="px-6 py-3 border-b font-semibold">Owner trust sub-ledger</div>
+        <div className="px-6 py-3 border-b font-semibold">{t('pms.fin.trust.ownerTrustSubLedger')}</div>
         <table className="table text-sm">
           <thead>
             <tr>
-              <th>Owner</th>
-              <th className="text-right">Credits</th>
-              <th className="text-right">Payouts</th>
-              <th className="text-right">Holdbacks</th>
-              <th className="text-right">Charges</th>
-              <th className="text-right">Balance</th>
+              <th>{t('pms.fin.trust.owner')}</th>
+              <th className="text-right">{t('pms.fin.trust.credits')}</th>
+              <th className="text-right">{t('pms.fin.trust.payouts')}</th>
+              <th className="text-right">{t('pms.fin.trust.holdbacks')}</th>
+              <th className="text-right">{t('pms.fin.trust.charges')}</th>
+              <th className="text-right">{t('pms.fin.balance')}</th>
             </tr>
           </thead>
           <tbody>
@@ -2441,35 +2456,35 @@ function OwnerTrustTool({ rangeParams: params }) {
         </table>
       </div>
       <div className="rounded-2xl border border-soul-line bg-white p-5 space-y-3">
-        <h3 className="font-semibold">Hold back from an owner</h3>
+        <h3 className="font-semibold">{t('pms.fin.trust.holdBackTitle')}</h3>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <SearchableSelect
             className="w-full"
             value={form.owner_id}
             onChange={(v) => setForm((f) => ({ ...f, owner_id: v }))}
-            placeholder="Owner"
+            placeholder={t('pms.fin.trust.ownerPlaceholder')}
             options={(Array.isArray(owners) ? owners : []).map((o) => ({
               value: String(o.id),
               label: o.full_name || o.name,
             }))}
           />
-          <input type="number" className="input" placeholder="Amount" value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} />
-          <input className="input" placeholder="Reason" value={form.reason} onChange={(e) => setForm((f) => ({ ...f, reason: e.target.value }))} />
+          <input type="number" className="input" placeholder={t('pms.fin.amount')} value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} />
+          <input className="input" placeholder={t('pms.fin.trust.reason')} value={form.reason} onChange={(e) => setForm((f) => ({ ...f, reason: e.target.value }))} />
           <button
             type="button"
             className="btn-primary"
             disabled={addHb.isPending}
             onClick={() => addHb.mutate({ owner_id: parseInt(form.owner_id, 10), amount: parseFloat(form.amount), reason: form.reason })}
           >
-            Hold back
+            {t('pms.fin.trust.holdBack')}
           </button>
         </div>
         <table className="table text-sm">
           <thead>
             <tr>
-              <th>Owner</th>
-              <th className="text-right">Amount</th>
-              <th>Reason</th>
+              <th>{t('pms.fin.trust.owner')}</th>
+              <th className="text-right">{t('pms.fin.amount')}</th>
+              <th>{t('pms.fin.trust.reason')}</th>
               <th />
             </tr>
           </thead>
@@ -2478,11 +2493,11 @@ function OwnerTrustTool({ rangeParams: params }) {
               <tr key={h.id}>
                 <td>{h.owner_name}</td>
                 <td className="text-right tabular-nums">{currency(h.amount)}</td>
-                <td>{h.reason || '—'} {Number(h.is_released) === 1 ? '(released)' : ''}</td>
+                <td>{h.reason || '—'} {Number(h.is_released) === 1 ? t('pms.fin.trust.released') : ''}</td>
                 <td className="text-right">
                   {Number(h.is_released) !== 1 && (
                     <button type="button" className="text-xs text-emerald-700" onClick={() => release.mutate(h.id)}>
-                      Release
+                      {t('pms.fin.trust.release')}
                     </button>
                   )}
                 </td>
@@ -2496,6 +2511,7 @@ function OwnerTrustTool({ rangeParams: params }) {
 }
 
 function VendorsTool({ rangeParams: params }) {
+  const { t } = useLocale();
   const qc = useQueryClient();
   const [tab, setTab] = useState('vendors');
   const [vendorModal, setVendorModal] = useState(null);
@@ -2516,11 +2532,11 @@ function VendorsTool({ rangeParams: params }) {
         ? api.put(`/financial-system/vendors/${vendorModal.id}`, payload)
         : api.post('/financial-system/vendors', payload),
     onSuccess: () => {
-      toast.success(vendorModal?.id ? 'Vendor updated' : 'Vendor created');
+      toast.success(vendorModal?.id ? t('pms.fin.vendors.vendorUpdated') : t('pms.fin.vendors.vendorCreated'));
       qc.invalidateQueries({ queryKey: ['financial-system-vendors'] });
       setVendorModal(null);
     },
-    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
 
   function openVendorEdit(v) {
@@ -2548,27 +2564,27 @@ function VendorsTool({ rangeParams: params }) {
   const createInvoice = useMutation({
     mutationFn: (payload) => api.post('/financial-system/vendor-invoices', payload),
     onSuccess: () => {
-      toast.success('Invoice created');
+      toast.success(t('pms.fin.vendors.invoiceCreated'));
       qc.invalidateQueries({ queryKey: ['financial-system-vendor-invoices'] });
       qc.invalidateQueries({ queryKey: ['financial-system-vendors'] });
       setInvoiceModal(false);
     },
-    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
   const approveInv = useMutation({
     mutationFn: (id) => api.post(`/financial-system/vendor-invoices/${id}/approve`),
-    onSuccess: () => { toast.success('Approved'); qc.invalidateQueries({ queryKey: ['financial-system-vendor-invoices'] }); qc.invalidateQueries({ queryKey: ['financial-system-vendors'] }); },
-    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+    onSuccess: () => { toast.success(t('pms.fin.vendors.approvedToast')); qc.invalidateQueries({ queryKey: ['financial-system-vendor-invoices'] }); qc.invalidateQueries({ queryKey: ['financial-system-vendors'] }); },
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
   const rejectInv = useMutation({
     mutationFn: (id) => api.post(`/financial-system/vendor-invoices/${id}/reject`),
-    onSuccess: () => { toast.success('Rejected'); qc.invalidateQueries({ queryKey: ['financial-system-vendor-invoices'] }); qc.invalidateQueries({ queryKey: ['financial-system-vendors'] }); },
-    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+    onSuccess: () => { toast.success(t('pms.fin.vendors.rejectedToast')); qc.invalidateQueries({ queryKey: ['financial-system-vendor-invoices'] }); qc.invalidateQueries({ queryKey: ['financial-system-vendors'] }); },
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
   const payInv = useMutation({
     mutationFn: (id) => api.post(`/financial-system/vendor-invoices/${id}/pay`, { payment_method: 'bank_transfer' }),
-    onSuccess: () => { toast.success('Marked paid'); qc.invalidateQueries({ queryKey: ['financial-system-vendor-invoices'] }); qc.invalidateQueries({ queryKey: ['financial-system-vendors'] }); },
-    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+    onSuccess: () => { toast.success(t('pms.fin.vendors.markedPaid')); qc.invalidateQueries({ queryKey: ['financial-system-vendor-invoices'] }); qc.invalidateQueries({ queryKey: ['financial-system-vendors'] }); },
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
 
   // Aging
@@ -2587,21 +2603,21 @@ function VendorsTool({ rangeParams: params }) {
   const createRun = useMutation({
     mutationFn: (invoice_ids) => api.post('/financial-system/payment-runs', { invoice_ids }),
     onSuccess: () => {
-      toast.success('Payment run created');
+      toast.success(t('pms.fin.vendors.paymentRunCreated'));
       setSelectedInvoices([]);
       qc.invalidateQueries({ queryKey: ['financial-system-payment-runs'] });
     },
-    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
   const confirmRun = useMutation({
     mutationFn: (id) => api.post(`/financial-system/payment-runs/${id}/confirm`),
     onSuccess: () => {
-      toast.success('Run confirmed & invoices paid');
+      toast.success(t('pms.fin.vendors.runConfirmed'));
       qc.invalidateQueries({ queryKey: ['financial-system-payment-runs'] });
       qc.invalidateQueries({ queryKey: ['financial-system-vendor-invoices'] });
       qc.invalidateQueries({ queryKey: ['financial-system-vendors'] });
     },
-    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
 
   // Approved invoices for payment run selection
@@ -2612,32 +2628,32 @@ function VendorsTool({ rangeParams: params }) {
   }
 
   const tabs = [
-    { id: 'vendors', label: 'Vendors' },
-    { id: 'invoices', label: 'Invoices' },
-    { id: 'aging', label: 'Aging' },
-    { id: 'runs', label: 'Payment runs' },
+    { id: 'vendors', label: t('pms.fin.vendors.tabs.vendors') },
+    { id: 'invoices', label: t('pms.fin.vendors.tabs.invoices') },
+    { id: 'aging', label: t('pms.fin.vendors.tabs.aging') },
+    { id: 'runs', label: t('pms.fin.vendors.tabs.runs') },
   ];
 
   const VENDOR_CATEGORIES = [
-    { value: 'general', label: 'General' },
-    { value: 'professional', label: 'Professional' },
-    { value: 'utilities', label: 'Utilities' },
-    { value: 'rent', label: 'Rent' },
-    { value: 'maintenance', label: 'Maintenance' },
-    { value: 'software', label: 'Software' },
+    { value: 'general', label: t('pms.fin.vendors.general') },
+    { value: 'professional', label: t('pms.fin.vendors.professional') },
+    { value: 'utilities', label: t('pms.fin.vendors.utilities') },
+    { value: 'rent', label: t('pms.fin.vendors.rent') },
+    { value: 'maintenance', label: t('pms.fin.vendors.maintenanceCat') },
+    { value: 'software', label: t('pms.fin.vendors.software') },
   ];
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
-        {tabs.map((t) => (
+        {tabs.map((tabItem) => (
           <button
-            key={t.id}
+            key={tabItem.id}
             type="button"
-            className={`px-3 py-1.5 rounded-full text-sm ${tab === t.id ? 'bg-soul-blue text-white' : 'bg-white border border-soul-line'}`}
-            onClick={() => setTab(t.id)}
+            className={`px-3 py-1.5 rounded-full text-sm ${tab === tabItem.id ? 'bg-soul-blue text-white' : 'bg-white border border-soul-line'}`}
+            onClick={() => setTab(tabItem.id)}
           >
-            {t.label}
+            {tabItem.label}
           </button>
         ))}
       </div>
@@ -2645,9 +2661,9 @@ function VendorsTool({ rangeParams: params }) {
       {tab === 'vendors' && (
         <div className="space-y-4">
           <div className="flex justify-between items-center">
-            <p className="text-sm text-gray-500">Vendor master list with outstanding AP balances.</p>
+            <p className="text-sm text-gray-500">{t('pms.fin.vendors.vendorMasterHint')}</p>
             <button type="button" className="btn-primary text-sm" onClick={openVendorNew}>
-              <Plus className="w-4 h-4" /> Add vendor
+              <Plus className="w-4 h-4" /> {t('pms.fin.vendors.addVendor')}
             </button>
           </div>
           {vendorsLoading ? <LoadingSpinner /> : (
@@ -2655,17 +2671,17 @@ function VendorsTool({ rangeParams: params }) {
               <table className="table text-sm">
                 <thead>
                   <tr>
-                    <th>Name</th>
-                    <th>Category</th>
-                    <th>WHT %</th>
-                    <th>Terms</th>
-                    <th className="text-right">Outstanding</th>
+                    <th>{t('pms.fin.vendors.name')}</th>
+                    <th>{t('pms.fin.vendors.category')}</th>
+                    <th>{t('pms.fin.vendors.whtPct')}</th>
+                    <th>{t('pms.fin.vendors.terms')}</th>
+                    <th className="text-right">{t('pms.fin.vendors.outstandingCol')}</th>
                     <th />
                   </tr>
                 </thead>
                 <tbody>
                   {vendors.length === 0 ? (
-                    <tr><td colSpan={6} className="text-center text-gray-400 py-8">No vendors yet</td></tr>
+                    <tr><td colSpan={6} className="text-center text-gray-400 py-8">{t('pms.fin.vendors.noVendors')}</td></tr>
                   ) : vendors.map((v) => (
                     <tr key={v.id} className={v.is_active === false ? 'opacity-50' : ''}>
                       <td className="font-medium">{v.name}</td>
@@ -2674,7 +2690,7 @@ function VendorsTool({ rangeParams: params }) {
                       <td className="tabular-nums">{v.payment_terms_days}d</td>
                       <td className="text-right tabular-nums font-semibold">{currency(v.outstanding)}</td>
                       <td className="text-right">
-                        <button type="button" className="text-xs text-soul-blue" onClick={() => openVendorEdit(v)}>Edit</button>
+                        <button type="button" className="text-xs text-soul-blue" onClick={() => openVendorEdit(v)}>{t('pms.fin.vendors.edit')}</button>
                       </td>
                     </tr>
                   ))}
@@ -2685,42 +2701,42 @@ function VendorsTool({ rangeParams: params }) {
           <Modal
             open={Boolean(vendorModal)}
             onClose={() => setVendorModal(null)}
-            title={vendorModal?.id ? 'Edit vendor' : 'New vendor'}
+            title={vendorModal?.id ? t('pms.fin.vendors.editVendor') : t('pms.fin.vendors.newVendor')}
             footer={
               <>
-                <button type="button" className="btn-secondary" onClick={() => setVendorModal(null)}>Cancel</button>
-                <button type="submit" form="vendor-form" className="btn-primary" disabled={saveVendor.isPending}>Save</button>
+                <button type="button" className="btn-secondary" onClick={() => setVendorModal(null)}>{t('pms.fin.cancel')}</button>
+                <button type="submit" form="vendor-form" className="btn-primary" disabled={saveVendor.isPending}>{t('pms.fin.save')}</button>
               </>
             }
           >
             <form id="vendor-form" className="space-y-3" onSubmit={(e) => { e.preventDefault(); saveVendor.mutate(vendorForm); }}>
-              <input className="input w-full" placeholder="Vendor name *" value={vendorForm.name} onChange={(e) => setVendorForm((f) => ({ ...f, name: e.target.value }))} required />
+              <input className="input w-full" placeholder={t('pms.fin.vendors.vendorName')} value={vendorForm.name} onChange={(e) => setVendorForm((f) => ({ ...f, name: e.target.value }))} required />
               <div className="grid grid-cols-2 gap-3">
-                <input className="input" placeholder="Tax ID" value={vendorForm.tax_id} onChange={(e) => setVendorForm((f) => ({ ...f, tax_id: e.target.value }))} />
+                <input className="input" placeholder={t('pms.fin.vendors.taxId')} value={vendorForm.tax_id} onChange={(e) => setVendorForm((f) => ({ ...f, tax_id: e.target.value }))} />
                 <select className="input" value={vendorForm.category} onChange={(e) => setVendorForm((f) => ({ ...f, category: e.target.value }))}>
                   {VENDOR_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="label">Payment terms (days)</label>
+                  <label className="label">{t('pms.fin.vendors.paymentTermsDays')}</label>
                   <input type="number" min="0" className="input w-full" value={vendorForm.payment_terms_days} onChange={(e) => setVendorForm((f) => ({ ...f, payment_terms_days: e.target.value }))} />
                 </div>
                 <div>
-                  <label className="label">WHT rate %</label>
+                  <label className="label">{t('pms.fin.vendors.whtRate')}</label>
                   <input type="number" min="0" step="0.01" className="input w-full" value={vendorForm.wht_rate_pct} onChange={(e) => setVendorForm((f) => ({ ...f, wht_rate_pct: e.target.value }))} />
                 </div>
               </div>
-              <input className="input w-full" placeholder="Contact name" value={vendorForm.contact_name} onChange={(e) => setVendorForm((f) => ({ ...f, contact_name: e.target.value }))} />
+              <input className="input w-full" placeholder={t('pms.fin.vendors.contactName')} value={vendorForm.contact_name} onChange={(e) => setVendorForm((f) => ({ ...f, contact_name: e.target.value }))} />
               <div className="grid grid-cols-2 gap-3">
-                <input className="input" placeholder="Phone" value={vendorForm.contact_phone} onChange={(e) => setVendorForm((f) => ({ ...f, contact_phone: e.target.value }))} />
-                <input className="input" placeholder="Email" value={vendorForm.contact_email} onChange={(e) => setVendorForm((f) => ({ ...f, contact_email: e.target.value }))} />
+                <input className="input" placeholder={t('pms.fin.vendors.phone')} value={vendorForm.contact_phone} onChange={(e) => setVendorForm((f) => ({ ...f, contact_phone: e.target.value }))} />
+                <input className="input" placeholder={t('pms.fin.vendors.email')} value={vendorForm.contact_email} onChange={(e) => setVendorForm((f) => ({ ...f, contact_email: e.target.value }))} />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <input className="input" placeholder="Bank name" value={vendorForm.bank_name} onChange={(e) => setVendorForm((f) => ({ ...f, bank_name: e.target.value }))} />
-                <input className="input" placeholder="Bank account" value={vendorForm.bank_account} onChange={(e) => setVendorForm((f) => ({ ...f, bank_account: e.target.value }))} />
+                <input className="input" placeholder={t('pms.fin.vendors.bankName')} value={vendorForm.bank_name} onChange={(e) => setVendorForm((f) => ({ ...f, bank_name: e.target.value }))} />
+                <input className="input" placeholder={t('pms.fin.vendors.bankAccount')} value={vendorForm.bank_account} onChange={(e) => setVendorForm((f) => ({ ...f, bank_account: e.target.value }))} />
               </div>
-              <textarea className="input w-full min-h-[60px]" placeholder="Notes" value={vendorForm.notes} onChange={(e) => setVendorForm((f) => ({ ...f, notes: e.target.value }))} />
+              <textarea className="input w-full min-h-[60px]" placeholder={t('pms.fin.notes')} value={vendorForm.notes} onChange={(e) => setVendorForm((f) => ({ ...f, notes: e.target.value }))} />
             </form>
           </Modal>
         </div>
@@ -2731,25 +2747,25 @@ function VendorsTool({ rangeParams: params }) {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap gap-2">
               <select className="input text-sm w-36" value={invStatus} onChange={(e) => setInvStatus(e.target.value)}>
-                <option value="">All statuses</option>
-                <option value="pending">Pending</option>
-                <option value="approved">Approved</option>
-                <option value="paid">Paid</option>
-                <option value="rejected">Rejected</option>
+                <option value="">{t('pms.fin.vendors.allStatuses')}</option>
+                <option value="pending">{t('pms.fin.vendors.pending')}</option>
+                <option value="approved">{t('pms.fin.vendors.approved')}</option>
+                <option value="paid">{t('pms.fin.vendors.paidStatus')}</option>
+                <option value="rejected">{t('pms.fin.vendors.rejected')}</option>
               </select>
               <SearchableSelect
                 className="w-48"
                 value={invVendor}
                 onChange={setInvVendor}
-                placeholder="All vendors"
+                placeholder={t('pms.fin.vendors.allVendors')}
                 options={[
-                  { value: '', label: 'All vendors' },
+                  { value: '', label: t('pms.fin.vendors.allVendors') },
                   ...vendors.map((v) => ({ value: String(v.id), label: v.name })),
                 ]}
               />
             </div>
             <button type="button" className="btn-primary text-sm" onClick={() => setInvoiceModal(true)}>
-              <Plus className="w-4 h-4" /> New invoice
+              <Plus className="w-4 h-4" /> {t('pms.fin.vendors.newInvoice')}
             </button>
           </div>
           {invoicesLoading ? <LoadingSpinner /> : (
@@ -2757,20 +2773,20 @@ function VendorsTool({ rangeParams: params }) {
               <table className="table text-sm">
                 <thead>
                   <tr>
-                    <th>Vendor</th>
-                    <th>Invoice #</th>
-                    <th>Date</th>
-                    <th>Due</th>
-                    <th className="text-right">Amount</th>
-                    <th className="text-right">WHT</th>
-                    <th className="text-right">Net</th>
-                    <th>Status</th>
+                    <th>{t('pms.fin.vendors.vendorCol')}</th>
+                    <th>{t('pms.fin.vendors.invoiceNum')}</th>
+                    <th>{t('pms.fin.vendors.dateCol')}</th>
+                    <th>{t('pms.fin.vendors.dueCol')}</th>
+                    <th className="text-right">{t('pms.fin.vendors.amountCol')}</th>
+                    <th className="text-right">{t('pms.fin.vendors.whtCol')}</th>
+                    <th className="text-right">{t('pms.fin.vendors.netCol')}</th>
+                    <th>{t('pms.fin.vendors.statusCol')}</th>
                     <th />
                   </tr>
                 </thead>
                 <tbody>
                   {invoices.length === 0 ? (
-                    <tr><td colSpan={9} className="text-center text-gray-400 py-8">No invoices</td></tr>
+                    <tr><td colSpan={9} className="text-center text-gray-400 py-8">{t('pms.fin.vendors.noInvoices')}</td></tr>
                   ) : invoices.map((inv) => (
                     <tr key={inv.id}>
                       <td className="font-medium">{inv.vendor_name}</td>
@@ -2793,12 +2809,12 @@ function VendorsTool({ rangeParams: params }) {
                       <td className="text-right space-x-1">
                         {inv.status === 'pending' && (
                           <>
-                            <button type="button" className="text-xs text-emerald-700" onClick={() => approveInv.mutate(inv.id)}>Approve</button>
-                            <button type="button" className="text-xs text-rose-600" onClick={() => rejectInv.mutate(inv.id)}>Reject</button>
+                            <button type="button" className="text-xs text-emerald-700" onClick={() => approveInv.mutate(inv.id)}>{t('pms.fin.approve')}</button>
+                            <button type="button" className="text-xs text-rose-600" onClick={() => rejectInv.mutate(inv.id)}>{t('pms.fin.reject')}</button>
                           </>
                         )}
                         {inv.status === 'approved' && (
-                          <button type="button" className="text-xs text-soul-blue" onClick={() => payInv.mutate(inv.id)}>Pay</button>
+                          <button type="button" className="text-xs text-soul-blue" onClick={() => payInv.mutate(inv.id)}>{t('pms.fin.vendors.pay')}</button>
                         )}
                       </td>
                     </tr>
@@ -2810,11 +2826,11 @@ function VendorsTool({ rangeParams: params }) {
           <Modal
             open={invoiceModal}
             onClose={() => setInvoiceModal(false)}
-            title="New vendor invoice"
+            title={t('pms.fin.vendors.newVendorInvoice')}
             footer={
               <>
-                <button type="button" className="btn-secondary" onClick={() => setInvoiceModal(false)}>Cancel</button>
-                <button type="submit" form="invoice-form" className="btn-primary" disabled={createInvoice.isPending}>Save</button>
+                <button type="button" className="btn-secondary" onClick={() => setInvoiceModal(false)}>{t('pms.fin.cancel')}</button>
+                <button type="submit" form="invoice-form" className="btn-primary" disabled={createInvoice.isPending}>{t('pms.fin.save')}</button>
               </>
             }
           >
@@ -2834,17 +2850,17 @@ function VendorsTool({ rangeParams: params }) {
                 className="w-full"
                 value={invForm.vendor_id}
                 onChange={(v) => setInvForm((f) => ({ ...f, vendor_id: v }))}
-                placeholder="Select vendor *"
+                placeholder={t('pms.fin.vendors.selectVendor')}
                 options={vendors.filter((v) => v.is_active !== false).map((v) => ({ value: String(v.id), label: v.name }))}
               />
-              <input className="input w-full" placeholder="Invoice number" value={invForm.invoice_number} onChange={(e) => setInvForm((f) => ({ ...f, invoice_number: e.target.value }))} />
+              <input className="input w-full" placeholder={t('pms.fin.vendors.invoiceNumber')} value={invForm.invoice_number} onChange={(e) => setInvForm((f) => ({ ...f, invoice_number: e.target.value }))} />
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="label">Invoice date</label>
+                  <label className="label">{t('pms.fin.vendors.invoiceDate')}</label>
                   <input type="date" className="input w-full" value={invForm.invoice_date} onChange={(e) => setInvForm((f) => ({ ...f, invoice_date: e.target.value }))} />
                 </div>
                 <div>
-                  <label className="label">Amount *</label>
+                  <label className="label">{t('pms.fin.vendors.amountRequired')}</label>
                   <input type="number" min="0.01" step="0.01" className="input w-full" value={invForm.amount} onChange={(e) => setInvForm((f) => ({ ...f, amount: e.target.value }))} required />
                 </div>
               </div>
@@ -2855,14 +2871,14 @@ function VendorsTool({ rangeParams: params }) {
                 const net = Math.round((parseFloat(invForm.amount) - wht) * 100) / 100;
                 return (
                   <div className="rounded-xl bg-slate-50 p-3 text-sm flex gap-4">
-                    <span>WHT ({v.wht_rate_pct}%): <strong className="tabular-nums">{currency(wht)}</strong></span>
-                    <span>Net payable: <strong className="tabular-nums">{currency(net)}</strong></span>
-                    <span>Due in {v.payment_terms_days}d</span>
+                    <span>{t('pms.fin.vendors.whtCalc', { pct: v.wht_rate_pct, wht: currency(wht) })}</span>
+                    <span>{t('pms.fin.vendors.netPayable', { net: currency(net) })}</span>
+                    <span>{t('pms.fin.vendors.dueIn', { days: v.payment_terms_days })}</span>
                   </div>
                 );
               })()}
-              <input className="input w-full" placeholder="Description" value={invForm.description} onChange={(e) => setInvForm((f) => ({ ...f, description: e.target.value }))} />
-              <textarea className="input w-full min-h-[60px]" placeholder="Notes" value={invForm.notes} onChange={(e) => setInvForm((f) => ({ ...f, notes: e.target.value }))} />
+              <input className="input w-full" placeholder={t('pms.fin.description')} value={invForm.description} onChange={(e) => setInvForm((f) => ({ ...f, description: e.target.value }))} />
+              <textarea className="input w-full min-h-[60px]" placeholder={t('pms.fin.notes')} value={invForm.notes} onChange={(e) => setInvForm((f) => ({ ...f, notes: e.target.value }))} />
             </form>
           </Modal>
         </div>
@@ -2870,7 +2886,7 @@ function VendorsTool({ rangeParams: params }) {
 
       {tab === 'aging' && (
         <div className="space-y-4">
-          <p className="text-sm text-gray-500">Vendor AP aging by due date. Total outstanding: {currency(agingData?.total_outstanding)}.</p>
+          <p className="text-sm text-gray-500">{t('pms.fin.vendors.agingHint', { total: currency(agingData?.total_outstanding) })}</p>
           {agingLoading ? <LoadingSpinner /> : (
             <>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -2878,7 +2894,7 @@ function VendorsTool({ rangeParams: params }) {
                   <div key={key} className="rounded-2xl border border-soul-line bg-white p-4">
                     <p className="text-xs text-gray-400">{b.label}</p>
                     <p className="text-xl font-bold tabular-nums mt-1">{currency(b.amount)}</p>
-                    <p className="text-xs text-gray-500">{b.count} invoices</p>
+                    <p className="text-xs text-gray-500">{t('pms.fin.vendors.invoicesCount', { count: b.count })}</p>
                   </div>
                 ))}
               </div>
@@ -2889,11 +2905,11 @@ function VendorsTool({ rangeParams: params }) {
                     <table className="table text-sm">
                       <thead>
                         <tr>
-                          <th>Vendor</th>
-                          <th>Invoice #</th>
-                          <th>Due</th>
-                          <th className="text-right">Days</th>
-                          <th className="text-right">Amount</th>
+                          <th>{t('pms.fin.vendors.vendorCol')}</th>
+                          <th>{t('pms.fin.vendors.invoiceNum')}</th>
+                          <th>{t('pms.fin.vendors.dueCol')}</th>
+                          <th className="text-right">{t('pms.fin.vendors.daysCol')}</th>
+                          <th className="text-right">{t('pms.fin.vendors.amountCol')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -2919,28 +2935,28 @@ function VendorsTool({ rangeParams: params }) {
       {tab === 'runs' && (
         <div className="space-y-4">
           <p className="text-sm text-gray-500">
-            Select approved invoices to batch into a payment run, then confirm to mark them paid.
+            {t('pms.fin.vendors.selectApproved')}
           </p>
           {approvedInvoices.length > 0 && (
             <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
               <div className="px-6 py-3 border-b font-semibold flex justify-between items-center">
-                <span>Approved invoices ({approvedInvoices.length})</span>
+                <span>{t('pms.fin.vendors.approvedInvoices', { count: approvedInvoices.length })}</span>
                 <button
                   type="button"
                   className="btn-primary text-sm"
                   disabled={!selectedInvoices.length || createRun.isPending}
                   onClick={() => createRun.mutate(selectedInvoices)}
                 >
-                  Create run ({selectedInvoices.length})
+                  {t('pms.fin.vendors.createRun', { count: selectedInvoices.length })}
                 </button>
               </div>
               <table className="table text-sm">
                 <thead>
                   <tr>
                     <th />
-                    <th>Vendor</th>
-                    <th>Invoice #</th>
-                    <th className="text-right">Net</th>
+                    <th>{t('pms.fin.vendors.vendorCol')}</th>
+                    <th>{t('pms.fin.vendors.invoiceNum')}</th>
+                    <th className="text-right">{t('pms.fin.vendors.netCol')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2964,23 +2980,23 @@ function VendorsTool({ rangeParams: params }) {
           )}
           {runsLoading ? <LoadingSpinner /> : (
             <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
-              <div className="px-6 py-3 border-b font-semibold">Payment runs</div>
+              <div className="px-6 py-3 border-b font-semibold">{t('pms.fin.vendors.paymentRuns')}</div>
               <table className="table text-sm">
                 <thead>
                   <tr>
-                    <th>ID</th>
-                    <th>Date</th>
-                    <th className="text-right">Amount</th>
-                    <th className="text-right">WHT</th>
-                    <th className="text-right">Net</th>
-                    <th>Invoices</th>
-                    <th>Status</th>
+                    <th>{t('pms.fin.vendors.id')}</th>
+                    <th>{t('pms.fin.vendors.dateCol')}</th>
+                    <th className="text-right">{t('pms.fin.vendors.amountCol')}</th>
+                    <th className="text-right">{t('pms.fin.vendors.whtCol')}</th>
+                    <th className="text-right">{t('pms.fin.vendors.netCol')}</th>
+                    <th>{t('pms.fin.vendors.invoicesCol')}</th>
+                    <th>{t('pms.fin.vendors.statusCol')}</th>
                     <th />
                   </tr>
                 </thead>
                 <tbody>
                   {runs.length === 0 ? (
-                    <tr><td colSpan={8} className="text-center text-gray-400 py-8">No payment runs</td></tr>
+                    <tr><td colSpan={8} className="text-center text-gray-400 py-8">{t('pms.fin.vendors.noPaymentRuns')}</td></tr>
                   ) : runs.map((r) => (
                     <tr key={r.id}>
                       <td className="font-mono text-xs">#{r.id}</td>
@@ -3001,7 +3017,7 @@ function VendorsTool({ rangeParams: params }) {
                       <td className="text-right">
                         {r.status === 'draft' && (
                           <button type="button" className="btn-secondary text-xs py-1 px-2" onClick={() => confirmRun.mutate(r.id)} disabled={confirmRun.isPending}>
-                            <CheckCircle2 className="w-3 h-3 inline mr-1" /> Confirm
+                            <CheckCircle2 className="w-3 h-3 inline mr-1" /> {t('pms.fin.confirm')}
                           </button>
                         )}
                       </td>
@@ -3017,18 +3033,26 @@ function VendorsTool({ rangeParams: params }) {
   );
 }
 
-const ACTION_TYPES = [
-  { value: 'reminder_sent', label: 'Reminder sent' },
-  { value: 'phone_call', label: 'Phone call' },
-  { value: 'final_notice', label: 'Final notice' },
-  { value: 'write_off_proposed', label: 'Write-off proposed' },
-  { value: 'dispute', label: 'Dispute' },
-  { value: 'payment_plan', label: 'Payment plan' },
+const ACTION_TYPE_KEYS = [
+  { value: 'reminder_sent', labelKey: 'reminderSent' },
+  { value: 'phone_call', labelKey: 'phoneCall' },
+  { value: 'final_notice', labelKey: 'finalNotice' },
+  { value: 'write_off_proposed', labelKey: 'writeOffProposed' },
+  { value: 'dispute', labelKey: 'dispute' },
+  { value: 'payment_plan', labelKey: 'paymentPlan' },
 ];
 
 function ArControlsTool({ rangeParams: params }) {
+  const { t } = useLocale();
   const [tab, setTab] = useState('dashboard');
   const qc = useQueryClient();
+
+  const actionTypes = ACTION_TYPE_KEYS.map((at) => ({
+    value: at.value,
+    label: t(`pms.fin.ar.${at.labelKey}`),
+  }));
+  const actionTypeLabel = (type) =>
+    actionTypes.find((at) => at.value === type)?.label || String(type || '').replace(/_/g, ' ');
 
   // ── Dashboard ──
   const { data: dash, isLoading: dashLoading } = useQuery({
@@ -3048,13 +3072,13 @@ function ArControlsTool({ rangeParams: params }) {
   const createAction = useMutation({
     mutationFn: (payload) => api.post('/financial-system/ar-actions', payload),
     onSuccess: () => {
-      toast.success('Action logged');
+      toast.success(t('pms.fin.ar.actionLogged'));
       qc.invalidateQueries({ queryKey: ['ar-actions'] });
       qc.invalidateQueries({ queryKey: ['ar-dashboard'] });
       setShowActionForm(false);
       setActionForm({ reservation_id: '', action_type: 'reminder_sent', notes: '', next_action_date: '', amount_disputed: '' });
     },
-    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
 
   // ── Provisions ──
@@ -3068,12 +3092,12 @@ function ArControlsTool({ rangeParams: params }) {
   const calcProvision = useMutation({
     mutationFn: (payload) => api.post('/financial-system/ar-provisions', payload),
     onSuccess: () => {
-      toast.success('Provision calculated');
+      toast.success(t('pms.fin.ar.provisionCalculated'));
       qc.invalidateQueries({ queryKey: ['ar-provisions'] });
       qc.invalidateQueries({ queryKey: ['ar-dashboard'] });
       setShowProvForm(false);
     },
-    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
 
   // ── Write-offs ──
@@ -3087,44 +3111,44 @@ function ArControlsTool({ rangeParams: params }) {
   const createWo = useMutation({
     mutationFn: (payload) => api.post('/financial-system/ar-write-offs', payload),
     onSuccess: () => {
-      toast.success('Write-off proposed');
+      toast.success(t('pms.fin.ar.writeOffProposedToast'));
       qc.invalidateQueries({ queryKey: ['ar-write-offs'] });
       qc.invalidateQueries({ queryKey: ['ar-dashboard'] });
       setShowWoForm(false);
       setWoForm({ reservation_id: '', amount: '', reason: '' });
     },
-    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
   const approveWo = useMutation({
     mutationFn: (id) => api.post(`/financial-system/ar-write-offs/${id}/approve`),
     onSuccess: () => {
-      toast.success('Write-off approved');
+      toast.success(t('pms.fin.ar.writeOffApproved'));
       qc.invalidateQueries({ queryKey: ['ar-write-offs'] });
       qc.invalidateQueries({ queryKey: ['ar-dashboard'] });
     },
-    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
   const rejectWo = useMutation({
     mutationFn: (id) => api.post(`/financial-system/ar-write-offs/${id}/reject`),
     onSuccess: () => {
-      toast.success('Write-off rejected');
+      toast.success(t('pms.fin.ar.writeOffRejected'));
       qc.invalidateQueries({ queryKey: ['ar-write-offs'] });
       qc.invalidateQueries({ queryKey: ['ar-dashboard'] });
     },
-    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
 
   const tabs = [
-    ['dashboard', 'Dashboard'],
-    ['log', 'Collection log'],
-    ['provisions', 'Provisions'],
-    ['writeoffs', 'Write-offs'],
+    ['dashboard', t('pms.fin.ar.tabs.dashboard')],
+    ['log', t('pms.fin.ar.tabs.log')],
+    ['provisions', t('pms.fin.ar.tabs.provisions')],
+    ['writeoffs', t('pms.fin.ar.tabs.writeoffs')],
   ];
 
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-500">
-        Track collection efforts, provision for bad debts, and manage write-offs against guest receivable (105000).
+        {t('pms.fin.ar.description')}
       </p>
       <div className="flex flex-wrap gap-2">
         {tabs.map(([id, label]) => (
@@ -3144,21 +3168,21 @@ function ArControlsTool({ rangeParams: params }) {
         <div className="space-y-4">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <div className="rounded-2xl border border-soul-line bg-white p-4">
-              <p className="text-xs text-gray-400">Total AR</p>
+              <p className="text-xs text-gray-400">{t('pms.fin.ar.totalAr')}</p>
               <p className="text-xl font-bold tabular-nums mt-1">{currency(dash?.total_ar)}</p>
             </div>
             <div className="rounded-2xl border border-soul-line bg-white p-4">
-              <p className="text-xs text-gray-400">Bad debt provision</p>
+              <p className="text-xs text-gray-400">{t('pms.fin.ar.badDebtProvision')}</p>
               <p className="text-xl font-bold tabular-nums mt-1">{currency(dash?.total_provision)}</p>
               {dash?.latest_provision && <p className="text-xs text-gray-500">{dash.latest_provision.period_month}</p>}
             </div>
             <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
-              <p className="text-xs text-amber-800">Overdue (&gt;30 days)</p>
-              <p className="text-xl font-bold tabular-nums mt-1">{dash?.overdue_count || 0} stays</p>
-              <p className="text-xs text-gray-500">{dash?.overdue_pct || 0}% of AR</p>
+              <p className="text-xs text-amber-800">{t('pms.fin.ar.overdue')}</p>
+              <p className="text-xl font-bold tabular-nums mt-1">{t('pms.fin.ar.overdueStays', { count: dash?.overdue_count || 0 })}</p>
+              <p className="text-xs text-gray-500">{t('pms.fin.ar.overduePct', { pct: dash?.overdue_pct || 0 })}</p>
             </div>
             <div className="rounded-2xl border border-soul-line bg-white p-4">
-              <p className="text-xs text-gray-400">Actions this month</p>
+              <p className="text-xs text-gray-400">{t('pms.fin.ar.actionsThisMonth')}</p>
               <p className="text-xl font-bold tabular-nums mt-1">{dash?.actions_this_month || 0}</p>
             </div>
           </div>
@@ -3167,20 +3191,20 @@ function ArControlsTool({ rangeParams: params }) {
               <div key={key} className="rounded-2xl border border-soul-line bg-white p-4">
                 <p className="text-xs text-gray-400">{b.label}</p>
                 <p className="text-xl font-bold tabular-nums mt-1">{currency(b.amount)}</p>
-                <p className="text-xs text-gray-500">{b.count} stays</p>
+                <p className="text-xs text-gray-500">{t('pms.fin.stays', { count: b.count })}</p>
               </div>
             ))}
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="rounded-2xl border border-soul-line bg-white p-5">
-              <h3 className="font-semibold mb-3">Collection actions by type</h3>
+              <h3 className="font-semibold mb-3">{t('pms.fin.ar.collectionActionsByType')}</h3>
               {Object.entries(dash?.action_counts || {}).length === 0 ? (
-                <p className="text-sm text-gray-400">No collection actions yet</p>
+                <p className="text-sm text-gray-400">{t('pms.fin.ar.noCollectionActions')}</p>
               ) : (
                 <div className="space-y-2">
                   {Object.entries(dash?.action_counts || {}).map(([type, cnt]) => (
                     <div key={type} className="flex justify-between text-sm">
-                      <span className="capitalize">{type.replace(/_/g, ' ')}</span>
+                      <span>{actionTypeLabel(type)}</span>
                       <span className="font-semibold tabular-nums">{cnt}</span>
                     </div>
                   ))}
@@ -3188,14 +3212,14 @@ function ArControlsTool({ rangeParams: params }) {
               )}
             </div>
             <div className="rounded-2xl border border-soul-line bg-white p-5">
-              <h3 className="font-semibold mb-3">Write-off summary</h3>
+              <h3 className="font-semibold mb-3">{t('pms.fin.ar.writeOffSummary')}</h3>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <span>Pending</span>
+                  <span>{t('pms.fin.ar.pendingWo')}</span>
                   <span className="font-semibold tabular-nums">{currency(dash?.write_offs?.pending)} ({dash?.write_offs?.pending_count || 0})</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Approved</span>
+                  <span>{t('pms.fin.ar.approvedWo')}</span>
                   <span className="font-semibold tabular-nums text-emerald-700">{currency(dash?.write_offs?.approved)} ({dash?.write_offs?.approved_count || 0})</span>
                 </div>
               </div>
@@ -3209,29 +3233,29 @@ function ArControlsTool({ rangeParams: params }) {
         <div className="space-y-4">
           <div className="flex justify-end">
             <button type="button" className="btn-primary text-sm" onClick={() => setShowActionForm(true)}>
-              <Plus className="w-4 h-4" /> Log action
+              <Plus className="w-4 h-4" /> {t('pms.fin.ar.logAction')}
             </button>
           </div>
           <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
             <table className="table text-sm">
               <thead>
                 <tr>
-                  <th>Date</th>
-                  <th>Reservation</th>
-                  <th>Type</th>
-                  <th>Notes</th>
-                  <th>Next action</th>
-                  <th>By</th>
+                  <th>{t('pms.fin.manual.date')}</th>
+                  <th>{t('pms.fin.ar.reservation')}</th>
+                  <th>{t('pms.fin.ar.typeCol')}</th>
+                  <th>{t('pms.fin.notes')}</th>
+                  <th>{t('pms.fin.ar.nextAction')}</th>
+                  <th>{t('pms.fin.ar.by')}</th>
                 </tr>
               </thead>
               <tbody>
                 {actions.length === 0 ? (
-                  <tr><td colSpan={6} className="text-center text-gray-400 py-8">No collection actions</td></tr>
+                  <tr><td colSpan={6} className="text-center text-gray-400 py-8">{t('pms.fin.ar.noCollectionLog')}</td></tr>
                 ) : actions.map((a) => (
                   <tr key={a.id}>
                     <td>{formatDate(a.created_at)}</td>
                     <td className="tabular-nums">#{a.reservation_id}</td>
-                    <td className="capitalize">{a.action_type.replace(/_/g, ' ')}</td>
+                    <td>{actionTypeLabel(a.action_type)}</td>
                     <td className="max-w-xs truncate">{a.notes || '—'}</td>
                     <td>{a.next_action_date ? formatDate(a.next_action_date) : '—'}</td>
                     <td>{a.created_by_name || '—'}</td>
@@ -3240,10 +3264,10 @@ function ArControlsTool({ rangeParams: params }) {
               </tbody>
             </table>
           </div>
-          <Modal open={showActionForm} onClose={() => setShowActionForm(false)} title="Log collection action" footer={
+          <Modal open={showActionForm} onClose={() => setShowActionForm(false)} title={t('pms.fin.ar.logActionTitle')} footer={
             <>
-              <button type="button" className="btn-secondary" onClick={() => setShowActionForm(false)}>Cancel</button>
-              <button type="submit" form="ar-action-form" className="btn-primary" disabled={createAction.isPending}>Save</button>
+              <button type="button" className="btn-secondary" onClick={() => setShowActionForm(false)}>{t('pms.fin.cancel')}</button>
+              <button type="submit" form="ar-action-form" className="btn-primary" disabled={createAction.isPending}>{t('pms.fin.save')}</button>
             </>
           }>
             <form id="ar-action-form" className="space-y-4" onSubmit={(e) => {
@@ -3257,26 +3281,26 @@ function ArControlsTool({ rangeParams: params }) {
               });
             }}>
               <div>
-                <label className="label">Reservation ID</label>
+                <label className="label">{t('pms.fin.ar.reservationId')}</label>
                 <input type="number" className="input w-full" required value={actionForm.reservation_id} onChange={(e) => setActionForm((f) => ({ ...f, reservation_id: e.target.value }))} />
               </div>
               <div>
-                <label className="label">Action type</label>
+                <label className="label">{t('pms.fin.ar.actionType')}</label>
                 <select className="input w-full" value={actionForm.action_type} onChange={(e) => setActionForm((f) => ({ ...f, action_type: e.target.value }))}>
-                  {ACTION_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  {actionTypes.map((at) => <option key={at.value} value={at.value}>{at.label}</option>)}
                 </select>
               </div>
               <div>
-                <label className="label">Notes</label>
+                <label className="label">{t('pms.fin.notes')}</label>
                 <textarea className="input w-full min-h-[80px]" value={actionForm.notes} onChange={(e) => setActionForm((f) => ({ ...f, notes: e.target.value }))} />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="label">Next action date</label>
+                  <label className="label">{t('pms.fin.ar.nextActionDate')}</label>
                   <input type="date" className="input w-full" value={actionForm.next_action_date} onChange={(e) => setActionForm((f) => ({ ...f, next_action_date: e.target.value }))} />
                 </div>
                 <div>
-                  <label className="label">Amount disputed</label>
+                  <label className="label">{t('pms.fin.ar.amountDisputed')}</label>
                   <input type="number" min="0" step="0.01" className="input w-full" value={actionForm.amount_disputed} onChange={(e) => setActionForm((f) => ({ ...f, amount_disputed: e.target.value }))} />
                 </div>
               </div>
@@ -3290,26 +3314,26 @@ function ArControlsTool({ rangeParams: params }) {
         <div className="space-y-4">
           <div className="flex justify-end">
             <button type="button" className="btn-primary text-sm" onClick={() => setShowProvForm(true)}>
-              <Plus className="w-4 h-4" /> Calculate provision
+              <Plus className="w-4 h-4" /> {t('pms.fin.ar.calculateProvision')}
             </button>
           </div>
           <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
             <table className="table text-sm">
               <thead>
                 <tr>
-                  <th>Month</th>
-                  <th className="text-right">Total AR</th>
-                  <th className="text-right">0–30 %</th>
-                  <th className="text-right">31–60 %</th>
-                  <th className="text-right">61–90 %</th>
-                  <th className="text-right">90+ %</th>
-                  <th className="text-right">Provision</th>
-                  <th>By</th>
+                  <th>{t('pms.fin.ar.monthCol')}</th>
+                  <th className="text-right">{t('pms.fin.ar.totalArCol')}</th>
+                  <th className="text-right">{t('pms.fin.ar.bucket0_30')}</th>
+                  <th className="text-right">{t('pms.fin.ar.bucket31_60')}</th>
+                  <th className="text-right">{t('pms.fin.ar.bucket61_90')}</th>
+                  <th className="text-right">{t('pms.fin.ar.bucket90plus')}</th>
+                  <th className="text-right">{t('pms.fin.ar.provisionCol')}</th>
+                  <th>{t('pms.fin.ar.by')}</th>
                 </tr>
               </thead>
               <tbody>
                 {provisions.length === 0 ? (
-                  <tr><td colSpan={8} className="text-center text-gray-400 py-8">No provisions yet</td></tr>
+                  <tr><td colSpan={8} className="text-center text-gray-400 py-8">{t('pms.fin.ar.noProvisions')}</td></tr>
                 ) : provisions.map((p) => (
                   <tr key={p.id}>
                     <td className="font-medium">{p.period_month}</td>
@@ -3325,10 +3349,10 @@ function ArControlsTool({ rangeParams: params }) {
               </tbody>
             </table>
           </div>
-          <Modal open={showProvForm} onClose={() => setShowProvForm(false)} title="Calculate bad debt provision" footer={
+          <Modal open={showProvForm} onClose={() => setShowProvForm(false)} title={t('pms.fin.ar.calcProvisionTitle')} footer={
             <>
-              <button type="button" className="btn-secondary" onClick={() => setShowProvForm(false)}>Cancel</button>
-              <button type="submit" form="ar-prov-form" className="btn-primary" disabled={calcProvision.isPending}>Calculate</button>
+              <button type="button" className="btn-secondary" onClick={() => setShowProvForm(false)}>{t('pms.fin.cancel')}</button>
+              <button type="submit" form="ar-prov-form" className="btn-primary" disabled={calcProvision.isPending}>{t('pms.fin.ar.calculate')}</button>
             </>
           }>
             <form id="ar-prov-form" className="space-y-4" onSubmit={(e) => {
@@ -3343,29 +3367,29 @@ function ArControlsTool({ rangeParams: params }) {
               });
             }}>
               <div>
-                <label className="label">Period month</label>
+                <label className="label">{t('pms.fin.ar.periodMonth')}</label>
                 <input type="month" className="input w-full" required value={provForm.period_month} onChange={(e) => setProvForm((f) => ({ ...f, period_month: e.target.value }))} />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="label">0–30 days loss %</label>
+                  <label className="label">{t('pms.fin.ar.bucket0_30loss')}</label>
                   <input type="number" min="0" max="100" step="0.1" className="input w-full" value={provForm.bucket_0_30_pct} onChange={(e) => setProvForm((f) => ({ ...f, bucket_0_30_pct: e.target.value }))} />
                 </div>
                 <div>
-                  <label className="label">31–60 days loss %</label>
+                  <label className="label">{t('pms.fin.ar.bucket31_60loss')}</label>
                   <input type="number" min="0" max="100" step="0.1" className="input w-full" value={provForm.bucket_31_60_pct} onChange={(e) => setProvForm((f) => ({ ...f, bucket_31_60_pct: e.target.value }))} />
                 </div>
                 <div>
-                  <label className="label">61–90 days loss %</label>
+                  <label className="label">{t('pms.fin.ar.bucket61_90loss')}</label>
                   <input type="number" min="0" max="100" step="0.1" className="input w-full" value={provForm.bucket_61_90_pct} onChange={(e) => setProvForm((f) => ({ ...f, bucket_61_90_pct: e.target.value }))} />
                 </div>
                 <div>
-                  <label className="label">90+ days loss %</label>
+                  <label className="label">{t('pms.fin.ar.bucket90plusLoss')}</label>
                   <input type="number" min="0" max="100" step="0.1" className="input w-full" value={provForm.bucket_90_plus_pct} onChange={(e) => setProvForm((f) => ({ ...f, bucket_90_plus_pct: e.target.value }))} />
                 </div>
               </div>
               <div>
-                <label className="label">Notes</label>
+                <label className="label">{t('pms.fin.notes')}</label>
                 <textarea className="input w-full min-h-[60px]" value={provForm.notes} onChange={(e) => setProvForm((f) => ({ ...f, notes: e.target.value }))} />
               </div>
             </form>
@@ -3378,24 +3402,24 @@ function ArControlsTool({ rangeParams: params }) {
         <div className="space-y-4">
           <div className="flex justify-end">
             <button type="button" className="btn-primary text-sm" onClick={() => setShowWoForm(true)}>
-              <Plus className="w-4 h-4" /> Propose write-off
+              <Plus className="w-4 h-4" /> {t('pms.fin.ar.proposeWriteOff')}
             </button>
           </div>
           <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
             <table className="table text-sm">
               <thead>
                 <tr>
-                  <th>Reservation</th>
-                  <th className="text-right">Amount</th>
-                  <th>Reason</th>
-                  <th>Status</th>
-                  <th>By</th>
+                  <th>{t('pms.fin.ar.reservation')}</th>
+                  <th className="text-right">{t('pms.fin.amount')}</th>
+                  <th>{t('pms.fin.ar.reasonCol')}</th>
+                  <th>{t('pms.fin.ar.statusCol')}</th>
+                  <th>{t('pms.fin.ar.by')}</th>
                   <th />
                 </tr>
               </thead>
               <tbody>
                 {writeOffs.length === 0 ? (
-                  <tr><td colSpan={6} className="text-center text-gray-400 py-8">No write-offs</td></tr>
+                  <tr><td colSpan={6} className="text-center text-gray-400 py-8">{t('pms.fin.ar.noWriteOffs')}</td></tr>
                 ) : writeOffs.map((w) => (
                   <tr key={w.id}>
                     <td className="tabular-nums">#{w.reservation_id}</td>
@@ -3414,12 +3438,12 @@ function ArControlsTool({ rangeParams: params }) {
                     <td className="text-right space-x-2">
                       {w.status === 'pending' && (
                         <>
-                          <button type="button" className="text-xs text-emerald-700" onClick={() => approveWo.mutate(w.id)}>Approve</button>
-                          <button type="button" className="text-xs text-rose-600" onClick={() => rejectWo.mutate(w.id)}>Reject</button>
+                          <button type="button" className="text-xs text-emerald-700" onClick={() => approveWo.mutate(w.id)}>{t('pms.fin.approve')}</button>
+                          <button type="button" className="text-xs text-rose-600" onClick={() => rejectWo.mutate(w.id)}>{t('pms.fin.reject')}</button>
                         </>
                       )}
                       {w.status === 'approved' && w.approved_by_name && (
-                        <span className="text-xs text-gray-400">by {w.approved_by_name}</span>
+                        <span className="text-xs text-gray-400">{t('pms.fin.ar.approvedBy', { name: w.approved_by_name })}</span>
                       )}
                     </td>
                   </tr>
@@ -3427,10 +3451,10 @@ function ArControlsTool({ rangeParams: params }) {
               </tbody>
             </table>
           </div>
-          <Modal open={showWoForm} onClose={() => setShowWoForm(false)} title="Propose write-off" footer={
+          <Modal open={showWoForm} onClose={() => setShowWoForm(false)} title={t('pms.fin.ar.proposeWriteOffTitle')} footer={
             <>
-              <button type="button" className="btn-secondary" onClick={() => setShowWoForm(false)}>Cancel</button>
-              <button type="submit" form="ar-wo-form" className="btn-primary" disabled={createWo.isPending}>Propose</button>
+              <button type="button" className="btn-secondary" onClick={() => setShowWoForm(false)}>{t('pms.fin.cancel')}</button>
+              <button type="submit" form="ar-wo-form" className="btn-primary" disabled={createWo.isPending}>{t('pms.fin.ar.propose')}</button>
             </>
           }>
             <form id="ar-wo-form" className="space-y-4" onSubmit={(e) => {
@@ -3442,16 +3466,16 @@ function ArControlsTool({ rangeParams: params }) {
               });
             }}>
               <div>
-                <label className="label">Reservation ID</label>
+                <label className="label">{t('pms.fin.ar.reservationId')}</label>
                 <input type="number" className="input w-full" required value={woForm.reservation_id} onChange={(e) => setWoForm((f) => ({ ...f, reservation_id: e.target.value }))} />
               </div>
               <div>
-                <label className="label">Amount (EGP)</label>
+                <label className="label">{t('pms.fin.amountEgp')}</label>
                 <input type="number" min="0.01" step="0.01" className="input w-full" required value={woForm.amount} onChange={(e) => setWoForm((f) => ({ ...f, amount: e.target.value }))} />
               </div>
               <div>
-                <label className="label">Reason</label>
-                <textarea className="input w-full min-h-[80px]" value={woForm.reason} onChange={(e) => setWoForm((f) => ({ ...f, reason: e.target.value }))} placeholder="Why is this receivable uncollectible?" />
+                <label className="label">{t('pms.fin.ar.reasonCol')}</label>
+                <textarea className="input w-full min-h-[80px]" value={woForm.reason} onChange={(e) => setWoForm((f) => ({ ...f, reason: e.target.value }))} placeholder={t('pms.fin.ar.reasonPlaceholder')} />
               </div>
             </form>
           </Modal>
@@ -3461,7 +3485,358 @@ function ArControlsTool({ rangeParams: params }) {
   );
 }
 
+function FixedAssetsTool() {
+  const { t } = useLocale();
+  const qc = useQueryClient();
+  const [showForm, setShowForm] = useState(false);
+  const [showRun, setShowRun] = useState(false);
+  const [runMonth, setRunMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [scheduleAsset, setScheduleAsset] = useState(null);
+  const [disposeId, setDisposeId] = useState(null);
+  const [form, setForm] = useState({
+    name: '',
+    category: 'equipment',
+    purchase_date: new Date().toISOString().slice(0, 10),
+    purchase_cost: '',
+    salvage_value: '0',
+    useful_life_months: '36',
+    notes: '',
+  });
+
+  const { data: assets = [], isLoading } = useQuery({
+    queryKey: ['financial-system-fixed-assets'],
+    queryFn: () => api.get('/financial-system/fixed-assets').then((r) => r.data),
+  });
+
+  const { data: scheduleRows = [], isLoading: scheduleLoading } = useQuery({
+    queryKey: ['financial-system-fixed-asset-schedule', scheduleAsset?.id],
+    queryFn: () =>
+      api.get(`/financial-system/fixed-assets/${scheduleAsset.id}/schedule`).then((r) => r.data),
+    enabled: Boolean(scheduleAsset?.id),
+  });
+
+  const createAsset = useMutation({
+    mutationFn: (payload) => api.post('/financial-system/fixed-assets', payload),
+    onSuccess: () => {
+      toast.success(t('pms.fin.assets.assetCreated'));
+      setShowForm(false);
+      qc.invalidateQueries({ queryKey: ['financial-system-fixed-assets'] });
+    },
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
+  });
+
+  const disposeAsset = useMutation({
+    mutationFn: (id) => api.post(`/financial-system/fixed-assets/${id}/dispose`),
+    onSuccess: () => {
+      toast.success(t('pms.fin.assets.assetDisposed'));
+      setDisposeId(null);
+      qc.invalidateQueries({ queryKey: ['financial-system-fixed-assets'] });
+    },
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
+  });
+
+  const runDep = useMutation({
+    mutationFn: (month) => api.post('/financial-system/fixed-assets/run-depreciation', { month }),
+    onSuccess: (_res, month) => {
+      toast.success(t('pms.fin.assets.depreciationRun', { month }));
+      setShowRun(false);
+      qc.invalidateQueries({ queryKey: ['financial-system-fixed-assets'] });
+      qc.invalidateQueries({ queryKey: ['financial-system-portal'] });
+    },
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
+  });
+
+  const categoryLabel = (c) =>
+    t(`pms.fin.assets.${c}`) !== `pms.fin.assets.${c}` ? t(`pms.fin.assets.${c}`) : c;
+
+  const statusLabel = (s) => {
+    if (s === 'active') return t('pms.fin.assets.active');
+    if (s === 'disposed') return t('pms.fin.assets.disposed');
+    if (s === 'fully_depreciated') return t('pms.fin.assets.fullyDepreciated');
+    return s;
+  };
+
+  if (isLoading) return <LoadingSpinner />;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <p className="text-sm text-gray-500 max-w-2xl">{t('pms.fin.assets.hint')}</p>
+        <div className="flex gap-2">
+          <button type="button" className="btn-secondary text-sm" onClick={() => setShowRun(true)}>
+            {t('pms.fin.assets.runDepreciation')}
+          </button>
+          <button type="button" className="btn-primary text-sm" onClick={() => setShowForm(true)}>
+            <Plus className="w-4 h-4" /> {t('pms.fin.assets.addAsset')}
+          </button>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="table text-sm">
+            <thead>
+              <tr>
+                <th>{t('pms.fin.assets.code')}</th>
+                <th>{t('pms.fin.assets.name')}</th>
+                <th>{t('pms.fin.assets.category')}</th>
+                <th>{t('pms.fin.assets.purchaseDate')}</th>
+                <th className="text-right">{t('pms.fin.assets.cost')}</th>
+                <th className="text-right">{t('pms.fin.assets.accumulated')}</th>
+                <th className="text-right">{t('pms.fin.assets.bookValue')}</th>
+                <th>{t('pms.fin.assets.status')}</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {(Array.isArray(assets) ? assets : []).length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="text-center text-gray-400 py-8">
+                    {t('pms.fin.assets.noAssets')}
+                  </td>
+                </tr>
+              ) : (
+                (Array.isArray(assets) ? assets : []).map((a) => {
+                  const cost = Number(a.purchase_cost) || 0;
+                  const accum = Number(a.accumulated_depreciation) || 0;
+                  const book =
+                    a.current_book_value != null
+                      ? Number(a.current_book_value)
+                      : Math.max(0, cost - accum);
+                  return (
+                    <tr key={a.id}>
+                      <td className="font-mono text-xs">{a.asset_code}</td>
+                      <td className="font-medium">{a.name}</td>
+                      <td>{categoryLabel(a.category)}</td>
+                      <td>{formatDate(a.purchase_date)}</td>
+                      <td className="text-right tabular-nums">{currency(cost)}</td>
+                      <td className="text-right tabular-nums">{currency(accum)}</td>
+                      <td className="text-right tabular-nums font-semibold">{currency(book)}</td>
+                      <td className="capitalize">{statusLabel(a.status)}</td>
+                      <td className="text-right space-x-2 rtl:space-x-reverse">
+                        <button
+                          type="button"
+                          className="text-xs text-soul-blue"
+                          onClick={() => setScheduleAsset(a)}
+                        >
+                          {t('pms.fin.assets.schedule')}
+                        </button>
+                        {a.status === 'active' && (
+                          <button
+                            type="button"
+                            className="text-xs text-rose-600"
+                            onClick={() => setDisposeId(a.id)}
+                          >
+                            {t('pms.fin.assets.dispose')}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <Modal
+        open={showForm}
+        onClose={() => setShowForm(false)}
+        title={t('pms.fin.assets.addAsset')}
+        footer={
+          <>
+            <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>
+              {t('pms.fin.cancel')}
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={createAsset.isPending || !(form.name && parseFloat(form.purchase_cost) > 0)}
+              onClick={() =>
+                createAsset.mutate({
+                  name: form.name.trim(),
+                  category: form.category,
+                  purchase_date: form.purchase_date,
+                  purchase_cost: parseFloat(form.purchase_cost),
+                  salvage_value: parseFloat(form.salvage_value) || 0,
+                  useful_life_months: parseInt(form.useful_life_months, 10) || 36,
+                  notes: form.notes.trim() || undefined,
+                })
+              }
+            >
+              {t('pms.fin.save')}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="label">{t('pms.fin.assets.name')}</label>
+            <input
+              className="input w-full"
+              value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="label">{t('pms.fin.assets.category')}</label>
+            <select
+              className="input w-full"
+              value={form.category}
+              onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
+            >
+              {['equipment', 'furniture', 'technology', 'vehicle', 'other'].map((c) => (
+                <option key={c} value={c}>
+                  {categoryLabel(c)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="label">{t('pms.fin.assets.purchaseDate')}</label>
+              <input
+                type="date"
+                className="input w-full"
+                value={form.purchase_date}
+                onChange={(e) => setForm((f) => ({ ...f, purchase_date: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="label">{t('pms.fin.assets.purchaseCost')}</label>
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                className="input w-full"
+                value={form.purchase_cost}
+                onChange={(e) => setForm((f) => ({ ...f, purchase_cost: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="label">{t('pms.fin.assets.salvageValue')}</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className="input w-full"
+                value={form.salvage_value}
+                onChange={(e) => setForm((f) => ({ ...f, salvage_value: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="label">{t('pms.fin.assets.usefulLifeMonths')}</label>
+              <input
+                type="number"
+                min="1"
+                className="input w-full"
+                value={form.useful_life_months}
+                onChange={(e) => setForm((f) => ({ ...f, useful_life_months: e.target.value }))}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="label">{t('pms.fin.assets.notesOptional')}</label>
+            <input
+              className="input w-full"
+              value={form.notes}
+              onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+            />
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={showRun}
+        onClose={() => setShowRun(false)}
+        title={t('pms.fin.assets.runDepreciation')}
+        footer={
+          <>
+            <button type="button" className="btn-secondary" onClick={() => setShowRun(false)}>
+              {t('pms.fin.cancel')}
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={runDep.isPending}
+              onClick={() => runDep.mutate(runMonth)}
+            >
+              {t('pms.fin.assets.run')}
+            </button>
+          </>
+        }
+      >
+        <div>
+          <label className="label">{t('pms.fin.assets.runMonth')}</label>
+          <input
+            type="month"
+            className="input w-full"
+            value={runMonth}
+            onChange={(e) => setRunMonth(e.target.value)}
+          />
+        </div>
+      </Modal>
+
+      <Modal
+        open={Boolean(scheduleAsset)}
+        onClose={() => setScheduleAsset(null)}
+        title={
+          scheduleAsset
+            ? `${t('pms.fin.assets.schedule')} — ${scheduleAsset.asset_code}`
+            : t('pms.fin.assets.schedule')
+        }
+      >
+        {scheduleLoading ? (
+          <LoadingSpinner />
+        ) : (
+          <table className="table text-sm">
+            <thead>
+              <tr>
+                <th>{t('pms.fin.assets.period')}</th>
+                <th className="text-right">{t('pms.fin.assets.amount')}</th>
+                <th className="text-right">{t('pms.fin.assets.accumulated')}</th>
+                <th className="text-right">{t('pms.fin.assets.bookValue')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(Array.isArray(scheduleRows) ? scheduleRows : []).length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="text-center text-gray-400 py-6">
+                    {t('pms.fin.assets.noSchedule')}
+                  </td>
+                </tr>
+              ) : (
+                (Array.isArray(scheduleRows) ? scheduleRows : []).map((row) => (
+                  <tr key={row.id || row.period_month}>
+                    <td>{row.period_month}</td>
+                    <td className="text-right tabular-nums">{currency(row.amount)}</td>
+                    <td className="text-right tabular-nums">{currency(row.accumulated)}</td>
+                    <td className="text-right tabular-nums">{currency(row.book_value)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        )}
+      </Modal>
+
+      <ConfirmDialog
+        open={Boolean(disposeId)}
+        onClose={() => setDisposeId(null)}
+        title={t('pms.fin.assets.dispose')}
+        message={t('pms.fin.assets.disposeConfirm')}
+        confirmText={t('pms.fin.assets.confirmDispose')}
+        danger
+        onConfirm={() => disposeAsset.mutate(disposeId)}
+        loading={disposeAsset.isPending}
+      />
+    </div>
+  );
+}
+
 export default function FinancialSystem() {
+  const { t } = useLocale();
   const { view, group, code, txn, tool, go } = useFinanceNav();
   const [fromDate, setFromDate] = useState(FINANCIAL_EPOCH);
   const [toDate, setToDate] = useState('');
@@ -3485,34 +3860,34 @@ export default function FinancialSystem() {
       a.click();
       window.URL.revokeObjectURL(url);
     } catch {
-      toast.error('Export failed');
+      toast.error(t('pms.fin.exportFailed'));
     } finally {
       setExporting(false);
     }
   }
 
   const crumbs = useMemo(() => {
-    const items = [{ label: 'Financial System', onClick: () => go({ view: 'home', group: '', code: '', txn: '', tool: '' }) }];
+    const items = [{ label: t('pms.fin.title'), onClick: () => go({ view: 'home', group: '', code: '', txn: '', tool: '' }) }];
     if (tool) {
       const labels = {
-        assets: 'Fixed assets',
-        owners: 'Owner payouts',
-        insurance: 'Insurance refunds',
-        trust: 'Owner trust',
-        manual: 'Manual entries',
-        petty: 'Petty cash',
-        tax: 'Tax desk',
-        recurring: 'Monthly charges',
-        reports: 'Month-end reports',
-        aging: 'AR aging',
-        close: 'Close month',
-    gateway: 'Gateway settle',
-    bank: 'Bank rec',
-    vendors: 'AP / Vendors',
-    ar: 'AR Controls',
-    segment: 'Segment P&L',
-    forecast: 'Cash forecast',
-  };
+        assets: t('pms.fin.tools.fixedAssets'),
+        owners: t('pms.fin.tools.ownerPayouts'),
+        insurance: t('pms.fin.tools.insuranceRefunds'),
+        trust: t('pms.fin.tools.ownerTrust'),
+        manual: t('pms.fin.tools.manualEntries'),
+        petty: t('pms.fin.tools.pettyCash'),
+        tax: t('pms.fin.tools.taxDesk'),
+        recurring: t('pms.fin.tools.monthlyCharges'),
+        reports: t('pms.fin.tools.monthEndReports'),
+        aging: t('pms.fin.tools.arAging'),
+        close: t('pms.fin.tools.closeMonth'),
+        gateway: t('pms.fin.tools.gatewaySettle'),
+        bank: t('pms.fin.tools.bankRec'),
+        vendors: t('pms.fin.tools.apVendors'),
+        ar: t('pms.fin.tools.arControls'),
+        segment: t('pms.fin.tools.segmentPnl'),
+        forecast: t('pms.fin.tools.cashForecast'),
+      };
       items.push({ label: labels[tool] || tool });
       return items;
     }
@@ -3520,7 +3895,7 @@ export default function FinancialSystem() {
     if (code) items.push({ label: getAccount(code)?.name || code, onClick: () => go({ view: 'account', group: getAccount(code)?.group || group, code, txn: '', tool: '' }) });
     if (txn) items.push({ label: txn });
     return items;
-  }, [tool, group, code, txn]);
+  }, [tool, group, code, txn, t, go]);
 
   const showHome = view === 'home' && !tool && !code && !txn;
   const showGroup = view === 'group' && group && !code && !txn && !tool;
@@ -3531,10 +3906,10 @@ export default function FinancialSystem() {
     <div className="space-y-6">
       <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
         <div>
-          <p className="text-[11px] uppercase tracking-[0.18em] text-gray-400 mb-1">Soul books</p>
+          <p className="text-[11px] uppercase tracking-[0.18em] text-gray-400 mb-1">{t('pms.fin.soulBooks')}</p>
           <h1 className="page-title flex items-center gap-2">
             <Landmark className="w-7 h-7 text-soul-blue" />
-            Financial System
+            {t('pms.fin.title')}
           </h1>
           <nav className="flex flex-wrap items-center gap-1 text-sm mt-2">
             {crumbs.map((c, i) => (
@@ -3565,7 +3940,7 @@ export default function FinancialSystem() {
             go({ view: 'home', group: '', code: '', txn: '', tool: '' });
           }}
         >
-          <ArrowLeft className="w-4 h-4" /> Back
+          <ArrowLeft className="w-4 h-4" /> {t('pms.fin.back')}
         </button>
       )}
 

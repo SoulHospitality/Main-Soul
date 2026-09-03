@@ -6,7 +6,6 @@ import {
   useMemo,
   useState,
 } from 'react';
-import { useLocation } from 'react-router-dom';
 import en from '../i18n/en.json';
 import ar from '../i18n/ar.json';
 
@@ -29,12 +28,7 @@ function interpolate(template, vars = {}) {
   );
 }
 
-function isStaffPath(pathname = '') {
-  return pathname.startsWith('/admin') || pathname.startsWith('/sales');
-}
-
 export function LocaleProvider({ children }) {
-  const { pathname } = useLocation();
   const [locale, setLocaleState] = useState(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
@@ -58,7 +52,7 @@ export function LocaleProvider({ children }) {
     } catch {}
   }, [locale]);
 
-  const effectiveLocale = isStaffPath(pathname) ? 'en' : locale;
+  const effectiveLocale = locale;
 
   useEffect(() => {
     const root = document.documentElement;

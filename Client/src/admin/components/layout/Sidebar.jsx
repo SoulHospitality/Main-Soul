@@ -8,6 +8,7 @@ import {
   useAcknowledgedRequestIds,
 } from '../../utils/requestAcknowledgements';
 import { getRoleTheme } from '../../utils/roleTheme';
+import { useLocale } from '../../../context/LocaleContext';
 import api from '../../api/axios';
 import {
   LayoutDashboard, Building2, CalendarDays,
@@ -122,6 +123,7 @@ function PendingCountBadge({ count, compact = false }) {
 export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile }) {
   const { user, logout } = useAuth();
   const { canAccess } = usePermissions();
+  const { locale, toggleLocale, isRtl } = useLocale();
   const navigate = useNavigate();
   const theme = getRoleTheme(user?.role);
 
@@ -214,10 +216,12 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
 
   return (
     <aside
-      className="pms-sidebar fixed top-0 left-0 h-full flex flex-col z-40"
+      className={`pms-sidebar fixed top-0 h-full flex flex-col z-40 ${isRtl ? 'right-0' : 'left-0'}`}
       style={{
         width: sidebarW,
-        transform: isMobile && !mobileOpen ? 'translateX(-100%)' : 'translateX(0)',
+        transform: isMobile && !mobileOpen
+          ? (isRtl ? 'translateX(100%)' : 'translateX(-100%)')
+          : 'translateX(0)',
         transition: 'transform 0.3s ease, width 0.3s ease',
       }}
     >
@@ -339,6 +343,15 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
             </div>
           </div>
         )}
+
+        <button
+          type="button"
+          onClick={toggleLocale}
+          className={`sidebar-link sidebar-link-inactive w-full ${!showLabels ? 'justify-center px-2' : ''}`}
+        >
+          <Globe className="w-5 h-5 flex-shrink-0" strokeWidth={1.75} />
+          {showLabels && <span>{locale === 'en' ? 'العربية' : 'English'}</span>}
+        </button>
 
         <button
           type="button"
