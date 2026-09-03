@@ -1,133 +1,117 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronRight, Link2, RefreshCw } from 'lucide-react';
+import { Link2, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
 import SearchFilter from '../components/ui/SearchFilter';
 import Modal from '../components/ui/Modal';
-import { unitDisplay } from '../utils/formatters';
+
+const PLATFORMS = [
+  { id: 'airbnb', label: 'Airbnb' },
+  { id: 'booking', label: 'Booking' },
+  { id: 'travigo', label: 'Travigo' },
+  { id: 'other', label: 'Other' },
+];
 
 function unitCode(unit) {
   return unit.unit_number || unit.slug || unit.title || '—';
 }
 
-function isLinked(unit) {
-  return (unit.feeds || []).some((f) => Boolean(f?.ical_url));
+function feedFor(unit, platformId) {
+  return (unit.feeds || []).find((f) => f.platform === platformId && f.ical_url) || null;
 }
 
-function primaryFeed(unit) {
-  const feeds = unit.feeds || [];
-  return feeds.find((f) => f?.ical_url) || feeds[0] || null;
+function platformLinked(unit, platformId) {
+  return Boolean(feedFor(unit, platformId));
 }
 
-function UnitLinkModal({ unit, open, onClose }) {
+function StatusDot({ linked }) {
+  return (
+    <span
+      className={`inline-block w-2.5 h-2.5 rounded-full ${linked ? 'bg-emerald-500' : 'bg-rose-500'}`}
+      title={linked ? 'Linked' : 'Unlinked'}
+      aria-label={linked ? 'Linked' : 'Unlinked'}
+    />
+  );
+}
+
+function UnitLinkModal({ unit, open, onClose, focusPlatform }) {
   const qc = useQueryClient();
-  const feed = primaryFeed(unit);
-  const platform = feed?.platform || 'other';
-  const [url, setUrl] = useState(feed?.ical_url || '');
+  const [urls, setUrls] = useState({});
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    setUrl(feed?.ical_url || '');
-  }, [feed?.ical_url, unit?.id, open]);
+    if (!open) return;
+    const next = {};
+    for (const p of PLATFORMS) {
+      next[p.id] = feedFor(unit, p.id)?.ical_url || '';
+    }
+    setUrls(next);
+  }, [open, unit]);
 
-  const saveMutation = useMutation({
-    mutationFn: (payload) => api.put(`/ota-calendar/${unit.id}/${platform}`, payload),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['ota-calendar'] });
-      qc.invalidateQueries({ queryKey: ['calendar-blocks'] });
-      toast.success('Calendar link saved');
-      onClose();
-    },
-    onError: (e) => toast.error(e.response?.data?.error || 'Could not save calendar'),
-  });
-
-  const clearMutation = useMutation({
-    mutationFn: async () => {
-      const feeds = (unit.feeds || []).filter((f) => f?.ical_url && f?.platform);
-      if (!feeds.length) {
-        await api.delete(`/ota-calendar/${unit.id}/${platform}`);
-        return;
+  async function saveAll() {
+    setSaving(true);
+    try {
+      for (const p of PLATFORMS) {
+        const next = (urls[p.id] || '').trim();
+        const current = feedFor(unit, p.id)?.ical_url || '';
+        if (next === current) continue;
+        if (!next) {
+          if (current) await api.delete(`/ota-calendar/${unit.id}/${p.id}`);
+          continue;
+        }
+        await api.put(`/ota-calendar/${unit.id}/${p.id}`, { ical_url: next });
       }
-      await Promise.all(feeds.map((f) => api.delete(`/ota-calendar/${unit.id}/${f.platform}`)));
-    },
-    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['ota-calendar'] });
       qc.invalidateQueries({ queryKey: ['calendar-blocks'] });
-      setUrl('');
-      toast.success('Calendar link removed');
+      toast.success('Calendar links saved');
       onClose();
-    },
-    onError: (e) => toast.error(e.response?.data?.error || 'Could not remove calendar'),
-  });
-
-  const busy = saveMutation.isPending || clearMutation.isPending;
-  const linked = isLinked(unit);
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Could not save calendar');
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <Modal
       open={open}
       onClose={onClose}
       title={unitCode(unit)}
-      size="sm"
+      size="md"
       footer={
         <>
-          {linked && (
-            <button
-              type="button"
-              className="btn-secondary text-rose-700 border-rose-200 hover:bg-rose-50"
-              disabled={busy}
-              onClick={() => clearMutation.mutate()}
-            >
-              Remove
-            </button>
-          )}
-          <button type="button" className="btn-secondary" onClick={onClose} disabled={busy}>
+          <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>
             Cancel
           </button>
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={busy || !url.trim()}
-            onClick={() => saveMutation.mutate({ ical_url: url.trim() })}
-          >
-            {saveMutation.isPending ? 'Saving…' : 'Save'}
+          <button type="button" className="btn-primary" disabled={saving} onClick={saveAll}>
+            {saving ? 'Saving…' : 'Save'}
           </button>
         </>
       }
     >
       <div className="space-y-4">
-        <div className="flex items-center gap-2 text-sm text-soul-muted">
-          <span
-            className={`inline-block w-2.5 h-2.5 rounded-full ${linked ? 'bg-emerald-500' : 'bg-rose-500'}`}
-          />
-          {linked ? 'Linked' : 'Not linked'}
-          {unit.title && unit.unit_number ? (
-            <span className="truncate">· {unit.title}</span>
-          ) : null}
-        </div>
-
-        <div>
-          <label className="label">Calendar link</label>
-          <input
-            className="input font-mono text-xs"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://…"
-            disabled={busy}
-            autoFocus
-          />
-          <p className="text-[11px] text-soul-muted mt-1">
-            Paste the export calendar URL from Airbnb, Booking.com, or another channel.
-          </p>
-        </div>
-
-        {feed?.last_sync_error && (
-          <p className="text-xs text-rose-600 rounded-lg bg-rose-50 border border-rose-100 px-3 py-2">
-            {feed.last_sync_error}
-          </p>
-        )}
+        {PLATFORMS.map((p) => {
+          const linked = Boolean((urls[p.id] || '').trim());
+          return (
+            <div key={p.id}>
+              <label className="label flex items-center gap-2">
+                {p.label}
+                <StatusDot linked={linked} />
+              </label>
+              <input
+                className="input font-mono text-xs"
+                value={urls[p.id] || ''}
+                onChange={(e) => setUrls((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                placeholder="https://…"
+                disabled={saving}
+                autoFocus={focusPlatform === p.id}
+              />
+            </div>
+          );
+        })}
       </div>
     </Modal>
   );
@@ -137,6 +121,7 @@ export default function CalendarSync() {
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(null);
+  const [focusPlatform, setFocusPlatform] = useState(null);
 
   const { data: units = [], isLoading } = useQuery({
     queryKey: ['ota-calendar'],
@@ -168,18 +153,20 @@ export default function CalendarSync() {
     [units, q]
   );
 
-  const linkedCount = filtered.filter(isLinked).length;
+  function openUnit(unit, platformId = null) {
+    setFocusPlatform(platformId);
+    setSelected(unit);
+  }
+
+  const liveSelected =
+    selected && (Array.isArray(units) ? units : []).find((u) => u.id === selected.id);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="page-title">Calendar sync</h1>
-          <p className="page-subtitle">
-            {filtered.length
-              ? `${linkedCount} linked · ${filtered.length - linkedCount} unlinked`
-              : 'Link unit calendars to Airbnb, Booking.com, and other channels.'}
-          </p>
+          <p className="page-subtitle">Green = linked · Red = no calendar URL</p>
         </div>
         <button
           type="button"
@@ -206,46 +193,52 @@ export default function CalendarSync() {
         />
       ) : (
         <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
+          <div className="grid grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(0,1fr))] gap-2 px-4 py-2.5 border-b border-soul-line bg-[#f7f9fc] text-[11px] uppercase tracking-wider text-soul-muted font-semibold">
+            <div>Unit code</div>
+            {PLATFORMS.map((p) => (
+              <div key={p.id} className="text-center">
+                {p.label}
+              </div>
+            ))}
+          </div>
           <ul className="divide-y divide-soul-line">
-            {filtered.map((unit) => {
-              const linked = isLinked(unit);
-              return (
-                <li key={unit.id}>
+            {filtered.map((unit) => (
+              <li key={unit.id}>
+                <div className="grid grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(0,1fr))] gap-2 items-center px-4 py-3 hover:bg-soul-blue-50/40">
                   <button
                     type="button"
-                    onClick={() => setSelected(unit)}
-                    className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-soul-blue-50/40 transition-colors"
+                    onClick={() => openUnit(unit)}
+                    className="text-left min-w-0"
                   >
-                    <span
-                      className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
-                        linked ? 'bg-emerald-500' : 'bg-rose-500'
-                      }`}
-                      title={linked ? 'Linked' : 'Unlinked'}
-                      aria-label={linked ? 'Linked' : 'Unlinked'}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="font-medium text-soul-blue truncate">{unitCode(unit)}</p>
-                      {unit.title && unit.unit_number ? (
-                        <p className="text-xs text-soul-muted truncate">{unitDisplay(unit)}</p>
-                      ) : null}
-                    </div>
-                    <span className={`text-xs ${linked ? 'text-emerald-700' : 'text-rose-600'}`}>
-                      {linked ? 'Linked' : 'Unlinked'}
-                    </span>
-                    <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0" />
+                    <p className="font-medium text-soul-blue truncate">{unitCode(unit)}</p>
                   </button>
-                </li>
-              );
-            })}
+                  {PLATFORMS.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => openUnit(unit, p.id)}
+                      className="flex flex-col items-center gap-1.5 py-1"
+                    >
+                      <span className="sr-only">{p.label}</span>
+                      <StatusDot linked={platformLinked(unit, p.id)} />
+                    </button>
+                  ))}
+                </div>
+              </li>
+            ))}
           </ul>
         </div>
       )}
 
-      {selected && (
+      {liveSelected && (
         <UnitLinkModal
-          unit={(Array.isArray(units) ? units : []).find((u) => u.id === selected.id) || selected}
-          open={Boolean(selected)}
-          onClose={() => setSelected(null)}
+          unit={liveSelected}
+          open
+          focusPlatform={focusPlatform}
+          onClose={() => {
+            setSelected(null);
+            setFocusPlatform(null);
+          }}
         />
       )}
     </div>
