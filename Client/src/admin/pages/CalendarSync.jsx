@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link2, RefreshCw } from 'lucide-react';
+import { Check, Copy, Link2, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
@@ -11,8 +11,6 @@ import Modal from '../components/ui/Modal';
 const PLATFORMS = [
   { id: 'airbnb', label: 'Airbnb' },
   { id: 'booking', label: 'Booking' },
-  { id: 'travigo', label: 'Travigo' },
-  { id: 'other', label: 'Other' },
 ];
 
 function unitCode(unit) {
@@ -37,10 +35,11 @@ function StatusDot({ linked }) {
   );
 }
 
-function UnitLinkModal({ unit, open, onClose, focusPlatform }) {
+function UnitDetailsModal({ unit, open, onClose, focusPlatform }) {
   const qc = useQueryClient();
   const [urls, setUrls] = useState({});
   const [saving, setSaving] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -49,7 +48,23 @@ function UnitLinkModal({ unit, open, onClose, focusPlatform }) {
       next[p.id] = feedFor(unit, p.id)?.ical_url || '';
     }
     setUrls(next);
+    setCopied(false);
   }, [open, unit]);
+
+  async function copySoulLink() {
+    if (!unit.export_url) {
+      toast.error('Publish this unit to generate a calendar link');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(unit.export_url);
+      setCopied(true);
+      toast.success('Soul calendar link copied — paste it into Airbnb');
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error('Could not copy link');
+    }
+  }
 
   async function saveAll() {
     setSaving(true);
@@ -84,7 +99,7 @@ function UnitLinkModal({ unit, open, onClose, focusPlatform }) {
       footer={
         <>
           <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>
-            Cancel
+            Close
           </button>
           <button type="button" className="btn-primary" disabled={saving} onClick={saveAll}>
             {saving ? 'Saving…' : 'Save'}
@@ -92,26 +107,63 @@ function UnitLinkModal({ unit, open, onClose, focusPlatform }) {
         </>
       }
     >
-      <div className="space-y-4">
-        {PLATFORMS.map((p) => {
-          const linked = Boolean((urls[p.id] || '').trim());
-          return (
-            <div key={p.id}>
-              <label className="label flex items-center gap-2">
-                {p.label}
-                <StatusDot linked={linked} />
-              </label>
-              <input
-                className="input font-mono text-xs"
-                value={urls[p.id] || ''}
-                onChange={(e) => setUrls((prev) => ({ ...prev, [p.id]: e.target.value }))}
-                placeholder="https://…"
-                disabled={saving}
-                autoFocus={focusPlatform === p.id}
-              />
-            </div>
-          );
-        })}
+      <div className="space-y-5">
+        {unit.title ? (
+          <p className="text-sm text-soul-muted">{unit.title}</p>
+        ) : null}
+
+        <div className="rounded-2xl border border-dashed border-soul-line bg-[#f7f9fc] p-4 space-y-2">
+          <div className="flex items-center gap-2 text-sm font-semibold text-soul-blue">
+            <Link2 className="w-4 h-4" />
+            Soul calendar link
+          </div>
+          <p className="text-xs text-soul-muted">
+            Copy this link and paste it into Airbnb (Calendar sync → Import calendar) so Airbnb
+            blocks when Soul has a booking.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              className="input font-mono text-xs flex-1"
+              readOnly
+              value={unit.export_url || 'Publish this unit to generate a link'}
+            />
+            <button
+              type="button"
+              className="btn-primary shrink-0"
+              disabled={!unit.export_url}
+              onClick={copySoulLink}
+            >
+              {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <p className="text-sm font-semibold text-soul-blue">Import from channels</p>
+          <p className="text-xs text-soul-muted -mt-2">
+            Paste each site’s export calendar URL so their bookings block Soul.
+          </p>
+          {PLATFORMS.map((p) => {
+            const linked = Boolean((urls[p.id] || '').trim());
+            return (
+              <div key={p.id}>
+                <label className="label flex items-center gap-2">
+                  {p.label}
+                  <StatusDot linked={linked} />
+                </label>
+                <input
+                  className="input font-mono text-xs"
+                  value={urls[p.id] || ''}
+                  onChange={(e) => setUrls((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                  placeholder={`${p.label} calendar URL`}
+                  disabled={saving}
+                  autoFocus={focusPlatform === p.id}
+                />
+              </div>
+            );
+          })}
+        </div>
       </div>
     </Modal>
   );
@@ -166,7 +218,7 @@ export default function CalendarSync() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="page-title">Calendar sync</h1>
-          <p className="page-subtitle">Green = linked · Red = no calendar URL</p>
+          <p className="page-subtitle">Green = linked · Red = unlinked. Click a unit for its Soul calendar link.</p>
         </div>
         <button
           type="button"
@@ -193,7 +245,7 @@ export default function CalendarSync() {
         />
       ) : (
         <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
-          <div className="grid grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(0,1fr))] gap-2 px-4 py-2.5 border-b border-soul-line bg-[#f7f9fc] text-[11px] uppercase tracking-wider text-soul-muted font-semibold">
+          <div className="grid grid-cols-[minmax(0,1.6fr)_repeat(2,minmax(0,1fr))] gap-2 px-4 py-2.5 border-b border-soul-line bg-[#f7f9fc] text-[11px] uppercase tracking-wider text-soul-muted font-semibold">
             <div>Unit code</div>
             {PLATFORMS.map((p) => (
               <div key={p.id} className="text-center">
@@ -204,7 +256,7 @@ export default function CalendarSync() {
           <ul className="divide-y divide-soul-line">
             {filtered.map((unit) => (
               <li key={unit.id}>
-                <div className="grid grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(0,1fr))] gap-2 items-center px-4 py-3 hover:bg-soul-blue-50/40">
+                <div className="grid grid-cols-[minmax(0,1.6fr)_repeat(2,minmax(0,1fr))] gap-2 items-center px-4 py-3 hover:bg-soul-blue-50/40">
                   <button
                     type="button"
                     onClick={() => openUnit(unit)}
@@ -231,7 +283,7 @@ export default function CalendarSync() {
       )}
 
       {liveSelected && (
-        <UnitLinkModal
+        <UnitDetailsModal
           unit={liveSelected}
           open
           focusPlatform={focusPlatform}
