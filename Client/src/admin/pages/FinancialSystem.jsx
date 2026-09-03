@@ -33,6 +33,7 @@ import {
   Lock,
   Unlock,
   Building2,
+  Globe,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
@@ -45,7 +46,7 @@ import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
 import { ACCOUNT_GROUPS, getAccount } from '../../lib/finance/chartOfAccounts';
 import { VAT_OUTPUT_PCT, WHT_STANDARD_PCT, WHT_REDUCED_PCT } from '../../lib/finance/taxEngine';
 import { PettyCashSection } from './PettyCash';
-import { useLocale } from '../../context/LocaleContext';
+import { FinLocaleProvider, useFinLocale } from '../context/FinLocaleContext';
 
 const GROUP_META = {
   assets: {
@@ -117,7 +118,7 @@ function IconFor({ code, group, className = 'w-5 h-5' }) {
 }
 
 function DateFilters({ fromDate, toDate, onFrom, onTo }) {
-  const { t } = useLocale();
+  const { t } = useFinLocale();
   return (
     <div className="flex flex-wrap items-center gap-2">
       <span className="text-xs text-gray-500 mr-1">{t('pms.fin.byBookingDate')}</span>
@@ -185,7 +186,7 @@ function rangeParams(fromDate, toDate) {
 }
 
 function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool, onExport, exporting }) {
-  const { t } = useLocale();
+  const { t } = useFinLocale();
   const groups = data?.groups || [];
   const treasury = data?.treasury || [];
   const kpis = data?.kpis || {};
@@ -408,7 +409,7 @@ function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool
 }
 
 function GroupView({ groupId, data, onOpenAccount }) {
-  const { t } = useLocale();
+  const { t } = useFinLocale();
   const meta = GROUP_META[groupId] || GROUP_META.assets;
   const group = (data?.groups || []).find((g) => g.id === groupId);
   const Icon = meta.icon;
@@ -463,7 +464,7 @@ function GroupView({ groupId, data, onOpenAccount }) {
 }
 
 function AccountView({ code, fromDate, toDate, onOpenTxn }) {
-  const { t } = useLocale();
+  const { t } = useFinLocale();
   const params = rangeParams(fromDate, toDate);
   const { data, isLoading } = useQuery({
     queryKey: ['financial-system-account', code, params],
@@ -535,7 +536,7 @@ function AccountView({ code, fromDate, toDate, onOpenTxn }) {
 }
 
 function TransactionView({ txnId, fromDate, toDate }) {
-  const { t } = useLocale();
+  const { t } = useFinLocale();
   const params = rangeParams(fromDate, toDate);
   const { data, isLoading, error } = useQuery({
     queryKey: ['financial-system-txn', txnId, params],
@@ -679,7 +680,7 @@ function TransactionView({ txnId, fromDate, toDate }) {
 }
 
 function RecurringTool() {
-  const { t } = useLocale();
+  const { t } = useFinLocale();
   const qc = useQueryClient();
   const { data = [], isLoading } = useQuery({
     queryKey: ['financial-system-recurring'],
@@ -769,7 +770,7 @@ function RecurringTool() {
 }
 
 function TaxTab({ rangeParams: params }) {
-  const { t } = useLocale();
+  const { t } = useFinLocale();
   const [showPack, setShowPack] = useState(false);
   const toDate = params.to_date || new Date().toISOString().slice(0, 10);
   const packMonth = toDate.slice(0, 7);
@@ -901,7 +902,7 @@ function TaxTab({ rangeParams: params }) {
 }
 
 function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
-  const { t } = useLocale();
+  const { t } = useFinLocale();
   const [unitId, setUnitId] = useState('');
   const [settleOwner, setSettleOwner] = useState(null);
   const [settleAmount, setSettleAmount] = useState('');
@@ -1202,7 +1203,7 @@ function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
 }
 
 function ManualEntriesTab({ fromDate, toDate, rangeParams: params }) {
-  const { t } = useLocale();
+  const { t } = useFinLocale();
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
@@ -1347,7 +1348,7 @@ function ManualEntriesTab({ fromDate, toDate, rangeParams: params }) {
 }
 
 function AccountLines({ rows, amountKey = 'balance' }) {
-  const { t } = useLocale();
+  const { t } = useFinLocale();
   if (!rows?.length) return <p className="text-sm text-gray-400 py-6 text-center">{t('pms.fin.reports.noBalances')}</p>;
   return (
     <table className="table text-sm">
@@ -1373,7 +1374,7 @@ function AccountLines({ rows, amountKey = 'balance' }) {
 }
 
 function ReportsTool({ rangeParams: params }) {
-  const { t } = useLocale();
+  const { t } = useFinLocale();
   const [tab, setTab] = useState('pnl');
   const { data, isLoading } = useQuery({
     queryKey: ['financial-system-reports', params],
@@ -1527,7 +1528,7 @@ function ReportsTool({ rangeParams: params }) {
 }
 
 function AgingTool({ rangeParams: params, onOpenAccount }) {
-  const { t } = useLocale();
+  const { t } = useFinLocale();
   const { data, isLoading } = useQuery({
     queryKey: ['financial-system-aging', params],
     queryFn: () => api.get('/financial-system/aging', { params }).then((r) => r.data),
@@ -1587,7 +1588,7 @@ function AgingTool({ rangeParams: params, onOpenAccount }) {
 }
 
 function InsuranceRefundsTool({ onOpenAccount }) {
-  const { t } = useLocale();
+  const { t } = useFinLocale();
   const qc = useQueryClient();
   const [filter, setFilter] = useState('due');
   const [settleRow, setSettleRow] = useState(null);
@@ -1869,7 +1870,7 @@ function InsuranceRefundsTool({ onOpenAccount }) {
 }
 
 function CloseTool({ toDate }) {
-  const { t } = useLocale();
+  const { t } = useFinLocale();
   const qc = useQueryClient();
   const defaultMonth = (toDate || new Date().toISOString().slice(0, 10)).slice(0, 7);
   const [month, setMonth] = useState(defaultMonth);
@@ -2064,7 +2065,7 @@ function CloseTool({ toDate }) {
 }
 
 function SegmentPnlTool({ rangeParams: params }) {
-  const { t } = useLocale();
+  const { t } = useFinLocale();
   const { data, isLoading } = useQuery({
     queryKey: ['financial-system-segment-pnl', params],
     queryFn: () => api.get('/financial-system/segment-pnl', { params }).then((r) => r.data),
@@ -2128,7 +2129,7 @@ function SegmentPnlTool({ rangeParams: params }) {
 }
 
 function CashForecastTool({ rangeParams: params }) {
-  const { t } = useLocale();
+  const { t } = useFinLocale();
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({
     queryKey: ['financial-system-cash-forecast', params],
@@ -2248,7 +2249,7 @@ function CashForecastTool({ rangeParams: params }) {
 }
 
 function GatewayTool({ rangeParams: params }) {
-  const { t } = useLocale();
+  const { t } = useFinLocale();
   const qc = useQueryClient();
   const [mdr, setMdr] = useState('');
   const { data, isLoading } = useQuery({
@@ -2298,7 +2299,7 @@ function GatewayTool({ rangeParams: params }) {
 }
 
 function BankRecTool({ rangeParams: params }) {
-  const { t } = useLocale();
+  const { t } = useFinLocale();
   const qc = useQueryClient();
   const [account, setAccount] = useState('101000');
   const [snap, setSnap] = useState({ statement_date: new Date().toISOString().slice(0, 10), statement_balance: '' });
@@ -2387,7 +2388,7 @@ function BankRecTool({ rangeParams: params }) {
 }
 
 function OwnerTrustTool({ rangeParams: params }) {
-  const { t } = useLocale();
+  const { t } = useFinLocale();
   const qc = useQueryClient();
   const [form, setForm] = useState({ owner_id: '', amount: '', reason: '' });
   const { data, isLoading } = useQuery({
@@ -2511,7 +2512,7 @@ function OwnerTrustTool({ rangeParams: params }) {
 }
 
 function VendorsTool({ rangeParams: params }) {
-  const { t } = useLocale();
+  const { t } = useFinLocale();
   const qc = useQueryClient();
   const [tab, setTab] = useState('vendors');
   const [vendorModal, setVendorModal] = useState(null);
@@ -3043,7 +3044,7 @@ const ACTION_TYPE_KEYS = [
 ];
 
 function ArControlsTool({ rangeParams: params }) {
-  const { t } = useLocale();
+  const { t } = useFinLocale();
   const [tab, setTab] = useState('dashboard');
   const qc = useQueryClient();
 
@@ -3486,7 +3487,7 @@ function ArControlsTool({ rangeParams: params }) {
 }
 
 function FixedAssetsTool() {
-  const { t } = useLocale();
+  const { t } = useFinLocale();
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [showRun, setShowRun] = useState(false);
@@ -3835,8 +3836,8 @@ function FixedAssetsTool() {
   );
 }
 
-export default function FinancialSystem() {
-  const { t } = useLocale();
+function FinancialSystemInner() {
+  const { t, locale, toggleLocale, isRtl } = useFinLocale();
   const { view, group, code, txn, tool, go } = useFinanceNav();
   const [fromDate, setFromDate] = useState(FINANCIAL_EPOCH);
   const [toDate, setToDate] = useState('');
@@ -3903,7 +3904,7 @@ export default function FinancialSystem() {
   const showTxn = Boolean(txn) && !tool;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" dir={isRtl ? 'rtl' : 'ltr'}>
       <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
         <div>
           <p className="text-[11px] uppercase tracking-[0.18em] text-gray-400 mb-1">{t('pms.fin.soulBooks')}</p>
@@ -3926,7 +3927,18 @@ export default function FinancialSystem() {
             ))}
           </nav>
         </div>
-        <DateFilters fromDate={fromDate} toDate={toDate} onFrom={setFromDate} onTo={setToDate} />
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={toggleLocale}
+            className="btn-secondary text-sm inline-flex items-center gap-1.5"
+            aria-label={locale === 'en' ? 'العربية' : 'English'}
+          >
+            <Globe className="w-4 h-4" />
+            {locale === 'en' ? 'العربية' : 'English'}
+          </button>
+          <DateFilters fromDate={fromDate} toDate={toDate} onFrom={setFromDate} onTo={setToDate} />
+        </div>
       </div>
 
       {!showHome && (
@@ -4014,5 +4026,13 @@ export default function FinancialSystem() {
         <LoadingSpinner />
       )}
     </div>
+  );
+}
+
+export default function FinancialSystem() {
+  return (
+    <FinLocaleProvider>
+      <FinancialSystemInner />
+    </FinLocaleProvider>
   );
 }

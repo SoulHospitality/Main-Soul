@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import { useAuth } from '../../context/AuthContext';
-import { useLocale } from '../../../context/LocaleContext';
 import { roleThemeVars } from '../../utils/roleTheme';
 
 function useIsMobile() {
@@ -17,7 +16,6 @@ function useIsMobile() {
 
 export default function Layout({ children }) {
   const { user } = useAuth();
-  const { isRtl } = useLocale();
   const isMobile = useIsMobile();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -52,7 +50,7 @@ export default function Layout({ children }) {
 
       <main
         className="pms-main pt-16 min-h-screen transition-all duration-300"
-        style={isRtl ? { marginRight: sidebarWidth } : { marginLeft: sidebarWidth }}
+        style={{ marginLeft: sidebarWidth }}
       >
         <div className={isMobile ? 'p-3 sm:p-4' : 'p-6 lg:p-8'}>
           <div className="pms-content soul-fade-up">{children}</div>
