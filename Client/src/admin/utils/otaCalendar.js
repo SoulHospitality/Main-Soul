@@ -1,8 +1,6 @@
 const OTA_PLATFORM_LABELS = {
   airbnb: 'Airbnb',
   booking: 'Booking.com',
-  travigo: 'Travigo',
-  other: 'OTA',
 };
 
 const OTA_LOOK = {
@@ -22,22 +20,6 @@ const OTA_LOOK = {
     ringClass: 'ring-1 ring-inset ring-[#003580]',
     cellBg: 'bg-[#e8eef8]',
   },
-  travigo: {
-    badge: 'TV',
-    label: 'Travigo · outside booking',
-    hatch: 'repeating-linear-gradient(135deg, #6d28d9 0 3px, #f5f3ff 3px 7px)',
-    badgeClass: 'bg-[#6d28d9] text-white shadow-sm',
-    ringClass: 'ring-1 ring-inset ring-[#6d28d9]',
-    cellBg: 'bg-[#f3e8ff]',
-  },
-  other: {
-    badge: 'OTA',
-    label: 'OTA · outside booking',
-    hatch: 'repeating-linear-gradient(135deg, #4338ca 0 3px, #eef2ff 3px 7px)',
-    badgeClass: 'bg-[#4338ca] text-white shadow-sm',
-    ringClass: 'ring-1 ring-inset ring-[#4338ca]',
-    cellBg: 'bg-[#eef2ff]',
-  },
 };
 
 export function isOtaBlockSource(source) {
@@ -56,7 +38,9 @@ export function otaPlatformFromSource(source) {
 
 export function otaBlockLook(source) {
   if (!isOtaBlockSource(source)) return null;
-  return OTA_LOOK[otaPlatformFromSource(source)] || OTA_LOOK.other;
+  const platform = otaPlatformFromSource(source);
+  if (platform === 'airbnb' || platform === 'booking') return OTA_LOOK[platform];
+  return null;
 }
 
 export function otaBlockLabel(source) {

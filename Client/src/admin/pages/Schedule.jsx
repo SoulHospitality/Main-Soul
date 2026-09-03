@@ -1515,8 +1515,6 @@ export default function Schedule() {
         {[
           { badge: 'AB', className: 'bg-[#FF5A5F] text-white', label: 'Airbnb outside' },
           { badge: 'BK', className: 'bg-[#003580] text-white', label: 'Booking.com outside' },
-          { badge: 'TV', className: 'bg-[#6d28d9] text-white', label: 'Travigo outside' },
-          { badge: 'OTA', className: 'bg-[#4338ca] text-white', label: 'Other OTA' },
         ].map((item) => (
           <div key={item.badge} className="inline-flex items-center gap-1.5 text-[11px] font-medium text-soul-muted">
             <span className={`rounded px-1 py-px text-[8px] font-black tracking-widest ${item.className}`}>{item.badge}</span>
