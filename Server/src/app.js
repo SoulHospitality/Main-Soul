@@ -138,6 +138,23 @@ function createApp() {
     }
   });
 
+  app.post('/api/cron/monthly-salary-expenses', async (req, res, next) => {
+    try {
+      const auth = req.headers.authorization || '';
+      if (process.env.CRON_SECRET && auth !== `Bearer ${process.env.CRON_SECRET}`) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      const { postMonthlySalaryExpenses, ensureCurrentMonthSalaryExpenses } = require('./jobs/monthlySalaryExpenses');
+      const periodMonth = req.body?.period_month || req.query?.period_month;
+      const result = periodMonth
+        ? await postMonthlySalaryExpenses(String(periodMonth))
+        : await ensureCurrentMonthSalaryExpenses();
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  });
+
   app.use(errorHandler);
   return app;
 }
