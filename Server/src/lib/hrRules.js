@@ -303,13 +303,82 @@ function canRequestHolidays({ holiday_access, created_at }, now = new Date()) {
 
 function leaveTypeRequiresHolidayAccess(leaveType) {
   const t = normalizeExcuseLeaveType(leaveType);
-  // Unpaid leave and excuses do not need holiday-access eligibility.
-  return t !== 'unpaid' && !isExcuseLeaveType(t);
+  // Annual and casual need holiday access. Unpaid leave and excuses do not.
+  return t === 'annual' || t === 'casual';
 }
 
 function leaveTypeRequiresApproval(leaveType) {
-  // Excuses are logged by the employee; no manager/HR permission needed.
-  return !isExcuseLeaveType(leaveType);
+  // All holiday and excuse types need permission (none are auto-approved).
+  return true;
+}
+
+/** @returns {'all' | 'any'} */
+function leaveTypeApprovalMode(leaveType) {
+  const t = normalizeExcuseLeaveType(leaveType);
+  if (t === 'unpaid' || t === 'paid_excuse' || t === 'unpaid_excuse') return 'any';
+  return 'all';
+}
+
+/**
+ * Approval requirements for a leave/excuse type, adjusted for the requester's role.
+ * - annual: manager AND HR Supervisor
+ * - casual: manager only
+ * - unpaid / paid_excuse / unpaid_excuse: manager OR HR Supervisor
+ */
+function leaveApprovalPolicy(leaveType, role) {
+  const rolePolicy = staffRequestPolicy(role);
+  if (!rolePolicy.canRequest) {
+    return { canRequest: false, needsManager: false, needsHr: false, approvalMode: 'all' };
+  }
+
+  const t = normalizeExcuseLeaveType(leaveType);
+  let needsManager = true;
+  let needsHr = true;
+  let approvalMode = 'all';
+
+  if (t === 'annual') {
+    needsManager = true;
+    needsHr = true;
+    approvalMode = 'all';
+  } else if (t === 'casual') {
+    needsManager = true;
+    needsHr = false;
+    approvalMode = 'all';
+  } else if (t === 'unpaid' || t === 'paid_excuse' || t === 'unpaid_excuse') {
+    needsManager = true;
+    needsHr = true;
+    approvalMode = 'any';
+  } else {
+    needsManager = rolePolicy.needsManager;
+    needsHr = rolePolicy.needsHr;
+    approvalMode = 'all';
+  }
+
+  const r = String(role || '');
+  if (r === 'hr') {
+    // HR staff: HR Supervisor is their approver (no separate manager path for most).
+    if (approvalMode === 'all') {
+      needsManager = false;
+      needsHr = true;
+    } else {
+      // OR: HR Supervisor can finalize; manager slot still allowed if they have one.
+      needsHr = true;
+    }
+  } else if (r === 'hr_supervisor') {
+    // HR Supervisor cannot self-approve the HR slot — their line manager (CEO) reviews.
+    needsHr = false;
+    needsManager = true;
+    if (approvalMode === 'any') approvalMode = 'all';
+  }
+
+  return { canRequest: true, needsManager, needsHr, approvalMode };
+}
+
+function requestApprovalMode(request) {
+  const raw = String(request?.approval_mode || '').toLowerCase();
+  if (raw === 'any' || raw === 'all') return raw;
+  if (request?.leave_type) return leaveTypeApprovalMode(request.leave_type);
+  return 'all';
 }
 
 const HR_TEAM_ROLES = ['hr', 'hr_supervisor'];
@@ -841,11 +910,19 @@ function applyRequestReview(request, actor, decision, staff) {
   if (slots.includes('manager')) next.manager_reviewed_by = actor.id;
   if (slots.includes('hr')) next.hr_reviewed_by = actor.id;
 
-  const managerOk = request.needs_manager_approval === false || next.manager_reviewed_by;
-  const hrOk = request.needs_hr_approval === false || next.hr_reviewed_by;
-  if (managerOk && hrOk) {
-    next.status = 'approved';
-    next.finalized = true;
+  const mode = requestApprovalMode(request);
+  if (mode === 'any') {
+    if (next.manager_reviewed_by || next.hr_reviewed_by) {
+      next.status = 'approved';
+      next.finalized = true;
+    }
+  } else {
+    const managerOk = request.needs_manager_approval === false || next.manager_reviewed_by;
+    const hrOk = request.needs_hr_approval === false || next.hr_reviewed_by;
+    if (managerOk && hrOk) {
+      next.status = 'approved';
+      next.finalized = true;
+    }
   }
   return next;
 }
@@ -857,6 +934,10 @@ function describeRequestApproval(request) {
   if (request.needs_manager_approval && !request.manager_reviewed_by) waiting.push('manager');
   if (request.needs_hr_approval && !request.hr_reviewed_by) waiting.push('HR Supervisor');
   if (!waiting.length) return 'Pending';
+  const mode = requestApprovalMode(request);
+  if (mode === 'any' && waiting.length > 1) {
+    return `Waiting for ${waiting.join(' or ')}`;
+  }
   return `Waiting for ${waiting.join(' & ')}`;
 }
 
@@ -922,6 +1003,9 @@ module.exports = {
   canRequestHolidays,
   leaveTypeRequiresHolidayAccess,
   leaveTypeRequiresApproval,
+  leaveTypeApprovalMode,
+  leaveApprovalPolicy,
+  requestApprovalMode,
   HR_TEAM_ROLES,
   isHrTeamRole,
   isHrActingOnSelf,

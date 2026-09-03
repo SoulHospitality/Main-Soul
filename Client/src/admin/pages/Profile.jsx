@@ -63,9 +63,7 @@ export default function Profile() {
       qc.invalidateQueries({ queryKey: ['hr-leave-requests'] });
       qc.invalidateQueries({ queryKey: ['hr-my-leave'] });
       toast.success(
-        isExcuseLeaveType(vars?.leave_type)
-          ? 'Excuse recorded (no approval needed)'
-          : 'Holiday request sent'
+        isExcuseLeaveType(vars?.leave_type) ? 'Excuse request sent' : 'Holiday request sent'
       );
       setLeaveForm({
         leave_type: leaveSnap?.can_request_holidays === false ? 'paid_excuse' : 'casual',
@@ -215,13 +213,13 @@ export default function Profile() {
             Casual: same-day requests and approvals before the 11:00 shift (no deduction).
             Annual: request before the shift day (by 11:59 PM the day before). 3+ days need 7 days notice (no deduction).
             Unpaid leave: unlimited (1× daily rate per approved day). Daily rate = base salary ÷ 30.
-            Paid excuses: 2/month, max 2 hours each, no approval/deduction.
-            Unpaid excuses: unlimited, deducted hours × hourly rate (daily rate ÷ 24).
+            Paid excuses: 2/month, max 2 hours each (manager or HR approval, no deduction).
+            Unpaid excuses: unlimited, manager or HR approval, deducted hours × hourly rate (daily rate ÷ 24).
           </p>
           {leaveSnap && !leaveSnap.can_request_holidays ? (
             <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mb-4">
               Paid holidays (casual, annual) open after 6 months, or when HR grants access.
-              You can still request unpaid leave and excuses (no approval).
+              You can still request unpaid leave and excuses (manager or HR approval).
               {leaveSnap.tenure_months != null ? ` Current tenure: ${leaveSnap.tenure_months} months.` : ''}
             </p>
           ) : null}
@@ -315,8 +313,8 @@ export default function Profile() {
                       />
                       <p className="mt-1 text-[11px] text-slate-400">
                         {leaveForm.leave_type === 'paid_excuse'
-                          ? 'Paid excuse: max 2 hours, 2 per month.'
-                          : 'Unpaid excuse: hours × (daily rate ÷ 24).'}
+                          ? 'Paid excuse: max 2 hours, 2 per month. Needs manager or HR approval.'
+                          : 'Unpaid excuse: hours × (daily rate ÷ 24). Needs manager or HR approval.'}
                       </p>
                     </div>
                   </>
@@ -338,7 +336,7 @@ export default function Profile() {
               disabled={leaveMutation.isPending}
               onClick={submitLeave}
             >
-              {leaveMutation.isPending ? 'Sending…' : isExcuseLeaveType(leaveForm.leave_type) ? 'Record excuse' : 'Send request'}
+              {leaveMutation.isPending ? 'Sending…' : 'Send request'}
             </button>
           </div>
           {Array.isArray(myLeave) && myLeave.length > 0 && (

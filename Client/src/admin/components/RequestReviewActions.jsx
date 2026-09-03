@@ -22,7 +22,9 @@ function stepLine(row) {
         : 'HR Supervisor: waiting'
     );
   }
-  return parts.join(' · ');
+  if (!parts.length) return '';
+  const joiner = row.approval_mode === 'any' ? ' or ' : ' · ';
+  return parts.join(joiner);
 }
 
 export function requestApprovalSummary(row) {

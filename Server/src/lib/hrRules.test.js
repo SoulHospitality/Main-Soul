@@ -20,6 +20,7 @@ const {
   isExcuseLeaveType,
   normalizeExcuseLeaveType,
   leaveTypeRequiresApproval,
+  leaveApprovalPolicy,
   canRequestHolidays,
   leaveTypeRequiresHolidayAccess,
   isUnpaidLeaveUnlimited,
@@ -118,7 +119,7 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.equal(canRequestHolidays({ holiday_access: 'denied', created_at: created }, now), false);
   });
 
-  it('treats unpaid leave and excuses as open without holiday access or approval', () => {
+  it('treats unpaid leave and excuses as open without holiday access, but all need approval', () => {
     assert.equal(isUnpaidLeaveUnlimited(), true);
     assert.equal(leaveTypeRequiresHolidayAccess('unpaid'), false);
     assert.equal(leaveTypeRequiresHolidayAccess('paid_excuse'), false);
@@ -126,11 +127,82 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.equal(leaveTypeRequiresHolidayAccess('early_leave'), false);
     assert.equal(leaveTypeRequiresHolidayAccess('casual'), true);
     assert.equal(leaveTypeRequiresHolidayAccess('annual'), true);
-    assert.equal(leaveTypeRequiresApproval('paid_excuse'), false);
-    assert.equal(leaveTypeRequiresApproval('unpaid_excuse'), false);
+    assert.equal(leaveTypeRequiresApproval('paid_excuse'), true);
+    assert.equal(leaveTypeRequiresApproval('unpaid_excuse'), true);
     assert.equal(leaveTypeRequiresApproval('casual'), true);
+    assert.equal(leaveTypeRequiresApproval('annual'), true);
     assert.equal(isExcuseLeaveType('paid_excuse'), true);
     assert.equal(normalizeExcuseLeaveType('early_leave'), 'paid_excuse');
+  });
+
+  it('sets leave approval rules by type: annual AND, casual manager-only, unpaid/excuse OR', () => {
+    assert.deepEqual(leaveApprovalPolicy('annual', 'reservations_web'), {
+      canRequest: true,
+      needsManager: true,
+      needsHr: true,
+      approvalMode: 'all',
+    });
+    assert.deepEqual(leaveApprovalPolicy('casual', 'reservations_web'), {
+      canRequest: true,
+      needsManager: true,
+      needsHr: false,
+      approvalMode: 'all',
+    });
+    assert.deepEqual(leaveApprovalPolicy('unpaid', 'reservations_web'), {
+      canRequest: true,
+      needsManager: true,
+      needsHr: true,
+      approvalMode: 'any',
+    });
+    assert.deepEqual(leaveApprovalPolicy('paid_excuse', 'reservations_web'), {
+      canRequest: true,
+      needsManager: true,
+      needsHr: true,
+      approvalMode: 'any',
+    });
+    assert.deepEqual(leaveApprovalPolicy('unpaid_excuse', 'reservations_web'), {
+      canRequest: true,
+      needsManager: true,
+      needsHr: true,
+      approvalMode: 'any',
+    });
+
+    const unpaidReq = {
+      status: 'pending',
+      leave_type: 'unpaid',
+      needs_manager_approval: true,
+      needs_hr_approval: true,
+      manager_reviewed_by: null,
+      hr_reviewed_by: null,
+      staff_user_id: 21,
+    };
+    const staff = { id: 21, role: 'reservations_web', manager_id: 12 };
+    const managerApprove = applyRequestReview(
+      unpaidReq,
+      { id: 12, role: 'reservations_manager' },
+      'approved',
+      staff
+    );
+    assert.equal(managerApprove.finalized, true);
+    assert.equal(managerApprove.status, 'approved');
+
+    const annualReq = {
+      status: 'pending',
+      leave_type: 'annual',
+      needs_manager_approval: true,
+      needs_hr_approval: true,
+      manager_reviewed_by: null,
+      hr_reviewed_by: null,
+      staff_user_id: 21,
+    };
+    const annualManagerOnly = applyRequestReview(
+      annualReq,
+      { id: 12, role: 'reservations_manager' },
+      'approved',
+      staff
+    );
+    assert.equal(annualManagerOnly.finalized, false);
+    assert.equal(annualManagerOnly.status, 'pending');
   });
 
   it('schedules approved loans on the first of next month', () => {

@@ -60,7 +60,7 @@ function RequestForm({ leaveSnap, form, setForm, createMutation, onSubmit }) {
       {leaveSnap && !leaveSnap.can_request_holidays ? (
         <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
           Paid holidays (casual, annual) open after 6 months, or when HR grants access.
-          Unpaid leave and excuses (no approval) can be requested now.
+          Unpaid leave and excuses can be requested now (manager or HR approval).
           {leaveSnap.tenure_months != null ? ` Current tenure: ${leaveSnap.tenure_months} months.` : ''}
         </p>
       ) : null}
@@ -141,8 +141,8 @@ function RequestForm({ leaveSnap, form, setForm, createMutation, onSubmit }) {
               />
               <p className="mt-1 text-[11px] text-slate-400">
                 {form.leave_type === 'paid_excuse'
-                  ? 'Paid excuse: max 2 hours, 2 per month, no deduction.'
-                  : 'Unpaid excuse: hours × hourly rate (daily rate ÷ 24).'}
+                  ? 'Paid excuse: max 2 hours, 2 per month. Needs manager or HR approval.'
+                  : 'Unpaid excuse: hours × hourly rate (daily rate ÷ 24). Needs manager or HR approval.'}
               </p>
             </div>
           </>
@@ -173,7 +173,7 @@ function RequestForm({ leaveSnap, form, setForm, createMutation, onSubmit }) {
         disabled={createMutation.isPending}
         onClick={onSubmit}
       >
-        {createMutation.isPending ? 'Sending…' : isExcuse ? 'Record excuse' : 'Send request'}
+        {createMutation.isPending ? 'Sending…' : 'Send request'}
       </button>
     </div>
   );
@@ -426,9 +426,7 @@ export default function HolidayRequests() {
       qc.invalidateQueries({ queryKey: ['hr-leave-requests'] });
       qc.invalidateQueries({ queryKey: ['hr-my-leave'] });
       toast.success(
-        isExcuseLeaveType(vars?.leave_type)
-          ? 'Excuse recorded (no approval needed)'
-          : 'Holiday request sent'
+        isExcuseLeaveType(vars?.leave_type) ? 'Excuse request sent' : 'Holiday request sent'
       );
       setForm({
         leave_type: leaveSnap?.can_request_holidays === false ? 'paid_excuse' : 'casual',

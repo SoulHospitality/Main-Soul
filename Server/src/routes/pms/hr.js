@@ -17,6 +17,8 @@ const {
   canRequestHolidays,
   leaveTypeRequiresHolidayAccess,
   leaveTypeRequiresApproval,
+  leaveApprovalPolicy,
+  leaveTypeApprovalMode,
   leaveDayDeductionAmount,
   enumerateDateRange,
   computeUnpaidLeaveDeduction,
@@ -99,11 +101,15 @@ function presentStaffRequest(row, actor) {
     manager_id: row.manager_id,
     manager_ids: managerIds,
   };
-  return {
+  const shaped = {
     ...row,
     manager_ids: managerIds,
-    can_review_slots: eligibleReviewSlots(actor, row, staff),
-    approval_label: describeRequestApproval(row),
+    approval_mode: row.approval_mode || (row.leave_type ? leaveTypeApprovalMode(row.leave_type) : 'all'),
+  };
+  return {
+    ...shaped,
+    can_review_slots: eligibleReviewSlots(actor, shaped, staff),
+    approval_label: describeRequestApproval(shaped),
   };
 }
 
@@ -1198,8 +1204,10 @@ router.post('/hr/leave-requests', async (req, res, next) => {
       });
     }
 
-    const policy = staffRequestPolicy(targetStaff.role);
-    const autoApprove = !leaveTypeRequiresApproval(leaveType);
+    const policy = leaveApprovalPolicy(leaveType, targetStaff.role);
+    if (!policy.canRequest) {
+      return res.status(403).json({ error: 'This role cannot request holidays' });
+    }
     const client = await pool.connect();
     let created;
     try {
@@ -1208,7 +1216,7 @@ router.post('/hr/leave-requests', async (req, res, next) => {
         `INSERT INTO staff_leave_requests
            (staff_user_id, leave_type, start_date, end_date, days, reason, status,
             needs_manager_approval, needs_hr_approval, start_time, end_time, hours)
-         VALUES ($1,$2,$3::date,$4::date,$5,$6,$7,$8,$9,$10::time,$11::time,$12)
+         VALUES ($1,$2,$3::date,$4::date,$5,$6,'pending',$7,$8,$9::time,$10::time,$11)
          RETURNING *`,
         [
           staffUserId,
@@ -1217,34 +1225,14 @@ router.post('/hr/leave-requests', async (req, res, next) => {
           isExcuse ? start : end,
           days,
           reason || null,
-          autoApprove ? 'approved' : 'pending',
-          autoApprove ? false : policy.needsManager,
-          autoApprove ? false : policy.needsHr,
+          policy.needsManager,
+          policy.needsHr,
           excuseWindow?.start_time || null,
           excuseWindow?.end_time || null,
           excuseWindow?.hours ?? null,
         ]
       );
       created = rows[0];
-
-      if (leaveType === 'unpaid_excuse' && autoApprove) {
-        const unpaid = computeUnpaidExcuseDeduction(targetStaff.base_salary, excuseWindow.hours);
-        if (unpaid.amount > 0) {
-          await insertDeduction(client, [
-            staffUserId,
-            unpaid.amount,
-            `Unpaid excuse (${excuseWindow.start_time}–${excuseWindow.end_time}, ${excuseWindow.hours}h)`,
-            start,
-            'other',
-            req.user.id,
-            null,
-            null,
-            unpaid.daily_rate,
-            unpaid.hours,
-          ]);
-        }
-      }
-
       await client.query('COMMIT');
     } catch (err) {
       await client.query('ROLLBACK');
@@ -1261,6 +1249,7 @@ router.post('/hr/leave-requests', async (req, res, next) => {
           role: targetStaff.role,
           staff_code: targetStaff.staff_code,
           manager_id: targetStaff.manager_id,
+          approval_mode: policy.approvalMode,
         },
         req.user
       )
