@@ -9,7 +9,7 @@ import { getRoleTheme } from '../utils/roleTheme';
 import { formatDate, formatDateTime } from '../utils/formatters';
 import { getPasswordRuleChecks, passwordPolicyMessage } from '../utils/passwordRules';
 import PasswordChecklist from '../../components/auth/PasswordChecklist';
-import { LEAVE_TYPE_LABELS, requestableLeaveTypes, formatUnpaidLeaveAvailable } from '../utils/hrPolicy';
+import { LEAVE_TYPE_LABELS, requestableLeaveTypes, formatUnpaidLeaveAvailable, isExcuseLeaveType } from '../utils/hrPolicy';
 
 export default function Profile() {
   const { user, refreshUser } = useAuth();
@@ -39,6 +39,8 @@ export default function Profile() {
     leave_type: 'casual',
     start_date: '',
     end_date: '',
+    start_time: '',
+    end_time: '',
     reason: '',
   });
   const [loanForm, setLoanForm] = useState({ amount: '', reason: '' });
@@ -57,14 +59,20 @@ export default function Profile() {
 
   const leaveMutation = useMutation({
     mutationFn: (payload) => api.post('/hr/leave-requests', payload),
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ['hr-leave-requests'] });
       qc.invalidateQueries({ queryKey: ['hr-my-leave'] });
-      toast.success('Holiday request sent');
+      toast.success(
+        isExcuseLeaveType(vars?.leave_type)
+          ? 'Excuse recorded (no approval needed)'
+          : 'Holiday request sent'
+      );
       setLeaveForm({
-        leave_type: leaveSnap?.can_request_holidays === false ? 'unpaid' : 'casual',
+        leave_type: leaveSnap?.can_request_holidays === false ? 'paid_excuse' : 'casual',
         start_date: '',
         end_date: '',
+        start_time: '',
+        end_time: '',
         reason: '',
       });
     },
@@ -92,13 +100,24 @@ export default function Profile() {
   });
 
   const submitLeave = () => {
-    const leaveType = leaveSnap?.can_request_holidays === false ? 'unpaid' : leaveForm.leave_type;
+    const leaveType =
+      leaveSnap?.can_request_holidays === false && !isExcuseLeaveType(leaveForm.leave_type)
+        ? 'unpaid'
+        : leaveForm.leave_type;
     if (!leaveForm.start_date) {
       toast.error('Choose a date');
       return;
     }
-    if (leaveType === 'early_leave') {
-      leaveMutation.mutate({ ...leaveForm, leave_type: leaveType, end_date: leaveForm.start_date });
+    if (isExcuseLeaveType(leaveType)) {
+      if (!leaveForm.start_time || !leaveForm.end_time) {
+        toast.error('Choose start and end times');
+        return;
+      }
+      leaveMutation.mutate({
+        ...leaveForm,
+        leave_type: leaveType,
+        end_date: leaveForm.start_date,
+      });
       return;
     }
     if (!leaveForm.end_date) {
@@ -195,12 +214,14 @@ export default function Profile() {
           <p className="text-sm text-soul-muted mb-4">
             Casual: same-day requests and approvals before the 11:00 shift (no deduction).
             Annual: request before the shift day (by 11:59 PM the day before). 3+ days need 7 days notice (no deduction).
-            Unpaid: unlimited for everyone (1× daily rate per approved day). Daily rate = base salary ÷ 30. Early leave: max 2 per year.
+            Unpaid leave: unlimited (1× daily rate per approved day). Daily rate = base salary ÷ 30.
+            Paid excuses: 2/month, max 2 hours each, no approval/deduction.
+            Unpaid excuses: unlimited, deducted hours × hourly rate (daily rate ÷ 24).
           </p>
           {leaveSnap && !leaveSnap.can_request_holidays ? (
             <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mb-4">
-              Paid holidays (casual, annual, early leave) open after 6 months, or when HR grants access.
-              You can still request unpaid leave.
+              Paid holidays (casual, annual) open after 6 months, or when HR grants access.
+              You can still request unpaid leave and excuses (no approval).
               {leaveSnap.tenure_months != null ? ` Current tenure: ${leaveSnap.tenure_months} months.` : ''}
             </p>
           ) : null}
@@ -219,9 +240,10 @@ export default function Profile() {
                 <div className="font-semibold text-soul-blue">{formatUnpaidLeaveAvailable(leaveSnap)}</div>
               </div>
               <div className="rounded-xl border border-soul-line px-2 py-2">
-                <div className="text-[10px] uppercase text-soul-muted">Early leave</div>
+                <div className="text-[10px] uppercase text-soul-muted">Paid excuses</div>
                 <div className="font-semibold text-soul-blue">
-                  {leaveSnap.early_leave_remaining}/{leaveSnap.early_leave_max}
+                  {leaveSnap.paid_excuse_remaining ?? leaveSnap.early_leave_remaining}/
+                  {leaveSnap.paid_excuse_max ?? leaveSnap.early_leave_max}
                 </div>
               </div>
             </div>
@@ -232,7 +254,7 @@ export default function Profile() {
                 <label className="label">Type</label>
                 <select
                   className="input"
-                  value={leaveSnap?.can_request_holidays === false ? 'unpaid' : leaveForm.leave_type}
+                  value={leaveForm.leave_type}
                   onChange={(e) => setLeaveForm((f) => ({ ...f, leave_type: e.target.value }))}
                 >
                   {requestableLeaveTypes(leaveSnap?.can_request_holidays !== false).map((opt) => (
@@ -244,7 +266,7 @@ export default function Profile() {
               </div>
               <div className="sm:col-span-2 grid grid-cols-2 gap-3">
                 <div>
-                  <label className="label">{leaveForm.leave_type === 'early_leave' ? 'Day' : 'From'}</label>
+                  <label className="label">{isExcuseLeaveType(leaveForm.leave_type) ? 'Day' : 'From'}</label>
                   <input
                     type="date"
                     className="input"
@@ -254,14 +276,14 @@ export default function Profile() {
                         ...f,
                         start_date: e.target.value,
                         end_date:
-                          f.leave_type === 'early_leave' || !f.end_date || f.end_date < e.target.value
+                          isExcuseLeaveType(f.leave_type) || !f.end_date || f.end_date < e.target.value
                             ? e.target.value
                             : f.end_date,
                       }))
                     }
                   />
                 </div>
-                {leaveForm.leave_type !== 'early_leave' && (
+                {!isExcuseLeaveType(leaveForm.leave_type) && (
                 <div>
                   <label className="label">To</label>
                   <input
@@ -271,6 +293,33 @@ export default function Profile() {
                     onChange={(e) => setLeaveForm((f) => ({ ...f, end_date: e.target.value }))}
                   />
                 </div>
+                )}
+                {isExcuseLeaveType(leaveForm.leave_type) && (
+                  <>
+                    <div>
+                      <label className="label">From time *</label>
+                      <input
+                        type="time"
+                        className="input"
+                        value={leaveForm.start_time}
+                        onChange={(e) => setLeaveForm((f) => ({ ...f, start_time: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="label">To time *</label>
+                      <input
+                        type="time"
+                        className="input"
+                        value={leaveForm.end_time}
+                        onChange={(e) => setLeaveForm((f) => ({ ...f, end_time: e.target.value }))}
+                      />
+                      <p className="mt-1 text-[11px] text-slate-400">
+                        {leaveForm.leave_type === 'paid_excuse'
+                          ? 'Paid excuse: max 2 hours, 2 per month.'
+                          : 'Unpaid excuse: hours × (daily rate ÷ 24).'}
+                      </p>
+                    </div>
+                  </>
                 )}
               </div>
               <div className="sm:col-span-2">
@@ -289,7 +338,7 @@ export default function Profile() {
               disabled={leaveMutation.isPending}
               onClick={submitLeave}
             >
-              {leaveMutation.isPending ? 'Sending…' : 'Send request'}
+              {leaveMutation.isPending ? 'Sending…' : isExcuseLeaveType(leaveForm.leave_type) ? 'Record excuse' : 'Send request'}
             </button>
           </div>
           {Array.isArray(myLeave) && myLeave.length > 0 && (
@@ -303,6 +352,9 @@ export default function Profile() {
                     </div>
                     <div className="text-xs text-soul-muted capitalize">
                       {LEAVE_TYPE_LABELS[r.leave_type] || String(r.leave_type || '').replace('_', ' ')}
+                      {isExcuseLeaveType(r.leave_type) && r.start_time
+                        ? ` · ${String(r.start_time).slice(0, 5)}–${String(r.end_time || '').slice(0, 5)}`
+                        : ''}
                       {r.reason ? ` · ${r.reason}` : ''}
                     </div>
                   </div>

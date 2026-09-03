@@ -12,6 +12,14 @@ const {
   assertAnnualNotice,
   addDaysIso,
   EARLY_LEAVE_MAX_PER_YEAR,
+  PAID_EXCUSE_MAX_PER_MONTH,
+  PAID_EXCUSE_MAX_HOURS,
+  hourlyRate,
+  computeUnpaidExcuseDeduction,
+  assertExcuseWindow,
+  isExcuseLeaveType,
+  normalizeExcuseLeaveType,
+  leaveTypeRequiresApproval,
   canRequestHolidays,
   leaveTypeRequiresHolidayAccess,
   isUnpaidLeaveUnlimited,
@@ -37,8 +45,9 @@ const {
 } = require('./hrRules');
 
 describe('HR daily-rate deductions and leave rules', () => {
-  it('uses salary / 30 as the daily rate', () => {
+  it('uses salary / 30 as the daily rate and / 24 as hourly', () => {
     assert.equal(dailyRate(9000), 300);
+    assert.equal(hourlyRate(9000), Math.round((300 / 24 + Number.EPSILON) * 100) / 100);
   });
 
   it('applies lateness bands after the 11:00–11:15 grace', () => {
@@ -86,8 +95,15 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.doesNotThrow(() => assertAnnualNotice('2026-08-20', now, 2));
   });
 
-  it('caps early leaves at two per year', () => {
+  it('caps paid excuses at two per month and two hours each', () => {
+    assert.equal(PAID_EXCUSE_MAX_PER_MONTH, 2);
+    assert.equal(PAID_EXCUSE_MAX_HOURS, 2);
     assert.equal(EARLY_LEAVE_MAX_PER_YEAR, 2);
+    assert.equal(assertExcuseWindow('paid_excuse', '15:00', '17:00').hours, 2);
+    assert.throws(() => assertExcuseWindow('paid_excuse', '15:00', '17:30'), /2 hours/);
+    assert.equal(assertExcuseWindow('unpaid_excuse', '12:00', '17:00').hours, 5);
+    const unpaid = computeUnpaidExcuseDeduction(3000, 5);
+    assert.equal(unpaid.amount, Math.round((hourlyRate(3000) * 5 + Number.EPSILON) * 100) / 100);
   });
 
   it('enables holiday access after 6 months unless HR denies or grants', () => {
@@ -102,12 +118,19 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.equal(canRequestHolidays({ holiday_access: 'denied', created_at: created }, now), false);
   });
 
-  it('treats unpaid leave as unlimited and open without holiday access', () => {
+  it('treats unpaid leave and excuses as open without holiday access or approval', () => {
     assert.equal(isUnpaidLeaveUnlimited(), true);
     assert.equal(leaveTypeRequiresHolidayAccess('unpaid'), false);
+    assert.equal(leaveTypeRequiresHolidayAccess('paid_excuse'), false);
+    assert.equal(leaveTypeRequiresHolidayAccess('unpaid_excuse'), false);
+    assert.equal(leaveTypeRequiresHolidayAccess('early_leave'), false);
     assert.equal(leaveTypeRequiresHolidayAccess('casual'), true);
     assert.equal(leaveTypeRequiresHolidayAccess('annual'), true);
-    assert.equal(leaveTypeRequiresHolidayAccess('early_leave'), true);
+    assert.equal(leaveTypeRequiresApproval('paid_excuse'), false);
+    assert.equal(leaveTypeRequiresApproval('unpaid_excuse'), false);
+    assert.equal(leaveTypeRequiresApproval('casual'), true);
+    assert.equal(isExcuseLeaveType('paid_excuse'), true);
+    assert.equal(normalizeExcuseLeaveType('early_leave'), 'paid_excuse');
   });
 
   it('schedules approved loans on the first of next month', () => {

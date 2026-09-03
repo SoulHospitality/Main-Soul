@@ -55,8 +55,10 @@ export default function HolidayAccess() {
         <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-soul-muted">HR</p>
         <h1 className="page-title mt-1">Holidays access</h1>
         <p className="page-subtitle">
-          Choose who can request paid holidays. Auto allows casual, annual, and early leave after 6 months.
-          Unpaid leave is unlimited for everyone. Only an HR Supervisor or CEO can change access, and they cannot change their own.
+          Choose who can request paid holidays. Auto allows casual and annual after 6 months.
+          Paid excuses (2/month, max 2h) and unpaid excuses need no approval.
+          Unpaid leave is unlimited for everyone.
+          Only an HR Supervisor or CEO can change access, and they cannot change their own.
         </p>
       </div>
 

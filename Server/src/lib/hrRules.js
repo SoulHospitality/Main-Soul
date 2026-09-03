@@ -1,14 +1,20 @@
 const { namesAreAliases } = require('./salesNameMatch');
 
 const DAYS_IN_MONTH = 30;
+const HOURS_IN_DAY = 24;
 const SHIFT_START_MINUTES = 11 * 60;
 const GRACE_END_MINUTES = 11 * 60 + 15;
 const LATE_QUARTER_END = 11 * 60 + 30;
 const LATE_HALF_END = 12 * 60;
-const EARLY_LEAVE_MAX_PER_YEAR = 2;
+const PAID_EXCUSE_MAX_PER_MONTH = 2;
+const PAID_EXCUSE_MAX_HOURS = 2;
+/** @deprecated use PAID_EXCUSE_MAX_PER_MONTH */
+const EARLY_LEAVE_MAX_PER_YEAR = PAID_EXCUSE_MAX_PER_MONTH;
 const ANNUAL_EXTENDED_NOTICE_DAYS = 7;
 const ANNUAL_EXTENDED_MIN_DURATION = 3;
 const TIMEZONE = 'Africa/Cairo';
+
+const EXCUSE_LEAVE_TYPES = new Set(['paid_excuse', 'unpaid_excuse', 'early_leave']);
 
 function roundMoney(n) {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -17,6 +23,20 @@ function roundMoney(n) {
 function dailyRate(baseSalary) {
   const salary = Number(baseSalary) || 0;
   return roundMoney(salary / DAYS_IN_MONTH);
+}
+
+function hourlyRate(baseSalary) {
+  return roundMoney(dailyRate(baseSalary) / HOURS_IN_DAY);
+}
+
+function isExcuseLeaveType(leaveType) {
+  return EXCUSE_LEAVE_TYPES.has(String(leaveType || '').toLowerCase());
+}
+
+function normalizeExcuseLeaveType(leaveType) {
+  const t = String(leaveType || '').toLowerCase();
+  if (t === 'early_leave') return 'paid_excuse';
+  return t;
 }
 
 function parseHhMm(value) {
@@ -107,11 +127,71 @@ function computeUnpaidLeaveDeduction(baseSalary) {
   };
 }
 
-function leaveDayDeductionAmount(leaveType, baseSalary) {
-  if (String(leaveType || '').toLowerCase() === 'unpaid') {
+function computeUnpaidExcuseDeduction(baseSalary, hours) {
+  const hrs = Number(hours) || 0;
+  const rate = hourlyRate(baseSalary);
+  return {
+    hours: hrs,
+    hourly_rate: rate,
+    daily_rate: dailyRate(baseSalary),
+    amount: roundMoney(rate * hrs),
+    label: `Unpaid excuse · ${hrs}h × hourly rate`,
+  };
+}
+
+function leaveDayDeductionAmount(leaveType, baseSalary, hours = 0) {
+  const t = String(leaveType || '').toLowerCase();
+  if (t === 'unpaid') {
     return computeUnpaidLeaveDeduction(baseSalary).amount;
   }
+  if (t === 'unpaid_excuse') {
+    return computeUnpaidExcuseDeduction(baseSalary, hours).amount;
+  }
   return 0;
+}
+
+function formatExcuseTime(value) {
+  const mins = parseHhMm(value);
+  if (mins == null) return null;
+  const hh = Math.floor(mins / 60);
+  const mm = mins % 60;
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
+function excuseHoursFromTimes(startTime, endTime) {
+  const start = parseHhMm(startTime);
+  const end = parseHhMm(endTime);
+  if (start == null || end == null) {
+    const err = new Error('Start and end times are required (HH:MM)');
+    err.status = 400;
+    throw err;
+  }
+  if (end <= start) {
+    const err = new Error('End time must be after start time');
+    err.status = 400;
+    throw err;
+  }
+  return roundMoney((end - start) / 60);
+}
+
+function assertExcuseWindow(leaveType, startTime, endTime) {
+  const hours = excuseHoursFromTimes(startTime, endTime);
+  const type = normalizeExcuseLeaveType(leaveType);
+  if (type === 'paid_excuse' && hours > PAID_EXCUSE_MAX_HOURS + 1e-9) {
+    const err = new Error(`Paid excuses are limited to ${PAID_EXCUSE_MAX_HOURS} hours each`);
+    err.status = 400;
+    throw err;
+  }
+  if (hours <= 0) {
+    const err = new Error('Excuse duration must be greater than 0');
+    err.status = 400;
+    throw err;
+  }
+  return {
+    hours,
+    start_time: formatExcuseTime(startTime),
+    end_time: formatExcuseTime(endTime),
+  };
 }
 
 function enumerateDateRange(start, end) {
@@ -189,9 +269,13 @@ function assertAnnualNotice(startDate, now = new Date(), days = 1) {
 }
 
 function assertEarlyLeaveTiming(startDate, now = new Date()) {
+  return assertExcuseTiming(startDate, now);
+}
+
+function assertExcuseTiming(startDate, now = new Date()) {
   const cairo = cairoParts(now);
   if (startDate < cairo.date) {
-    const err = new Error('Early leave cannot be requested for a past date');
+    const err = new Error('Excuses cannot be requested for a past date');
     err.status = 400;
     throw err;
   }
@@ -218,7 +302,14 @@ function canRequestHolidays({ holiday_access, created_at }, now = new Date()) {
 }
 
 function leaveTypeRequiresHolidayAccess(leaveType) {
-  return String(leaveType || '').toLowerCase() !== 'unpaid';
+  const t = normalizeExcuseLeaveType(leaveType);
+  // Unpaid leave and excuses do not need holiday-access eligibility.
+  return t !== 'unpaid' && !isExcuseLeaveType(t);
+}
+
+function leaveTypeRequiresApproval(leaveType) {
+  // Excuses are logged by the employee; no manager/HR permission needed.
+  return !isExcuseLeaveType(leaveType);
 }
 
 const HR_TEAM_ROLES = ['hr', 'hr_supervisor'];
@@ -791,33 +882,46 @@ function splitSalaryAdjustments(deductionRows = []) {
 
 module.exports = {
   DAYS_IN_MONTH,
+  HOURS_IN_DAY,
   SHIFT_START_MINUTES,
   GRACE_END_MINUTES,
   LATE_QUARTER_END,
   LATE_HALF_END,
+  PAID_EXCUSE_MAX_PER_MONTH,
+  PAID_EXCUSE_MAX_HOURS,
   EARLY_LEAVE_MAX_PER_YEAR,
   ANNUAL_EXTENDED_NOTICE_DAYS,
   ANNUAL_EXTENDED_MIN_DURATION,
   TIMEZONE,
+  EXCUSE_LEAVE_TYPES,
   roundMoney,
   dailyRate,
+  hourlyRate,
+  isExcuseLeaveType,
+  normalizeExcuseLeaveType,
   parseHhMm,
   latenessFactor,
   absenceFactor,
   computeLatenessDeduction,
   computeAbsenceDeduction,
   computeUnpaidLeaveDeduction,
+  computeUnpaidExcuseDeduction,
   leaveDayDeductionAmount,
+  formatExcuseTime,
+  excuseHoursFromTimes,
+  assertExcuseWindow,
   enumerateDateRange,
   cairoParts,
   addDaysIso,
   assertCasualTiming,
   assertAnnualNotice,
   assertEarlyLeaveTiming,
+  assertExcuseTiming,
   HOLIDAY_ACCESS_MONTHS,
   monthsBetween,
   canRequestHolidays,
   leaveTypeRequiresHolidayAccess,
+  leaveTypeRequiresApproval,
   HR_TEAM_ROLES,
   isHrTeamRole,
   isHrActingOnSelf,

@@ -10,7 +10,7 @@ import EmptyState from '../components/ui/EmptyState';
 import SearchFilter from '../components/ui/SearchFilter';
 import { ROLE_LABELS, canRequestStaffBenefits, canSeeRequestQueue } from '../utils/permissions';
 import { formatDate, formatDateTime } from '../utils/formatters';
-import { LEAVE_TYPE_LABELS, requestableLeaveTypes, formatUnpaidLeaveAvailable } from '../utils/hrPolicy';
+import { LEAVE_TYPE_LABELS, requestableLeaveTypes, formatUnpaidLeaveAvailable, isExcuseLeaveType } from '../utils/hrPolicy';
 import { useAuth } from '../context/AuthContext';
 import { RequestReviewActions, approvalStatusClass, requestApprovalSummary } from '../components/RequestReviewActions';
 import { acknowledgeRequest } from '../utils/requestAcknowledgements';
@@ -19,6 +19,8 @@ const EMPTY_FORM = {
   leave_type: 'casual',
   start_date: '',
   end_date: '',
+  start_time: '',
+  end_time: '',
   reason: '',
 };
 
@@ -51,13 +53,14 @@ function StatusFilter({ status, onChange }) {
 }
 
 function RequestForm({ leaveSnap, form, setForm, createMutation, onSubmit }) {
+  const isExcuse = isExcuseLeaveType(form.leave_type);
   return (
     <div className="card space-y-3">
       <h3 className="font-semibold text-soul-blue">Request a holiday</h3>
       {leaveSnap && !leaveSnap.can_request_holidays ? (
         <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
-          Paid holidays (casual, annual, early leave) open after 6 months, or when HR grants access.
-          Unpaid leave can be requested now.
+          Paid holidays (casual, annual) open after 6 months, or when HR grants access.
+          Unpaid leave and excuses (no approval) can be requested now.
           {leaveSnap.tenure_months != null ? ` Current tenure: ${leaveSnap.tenure_months} months.` : ''}
         </p>
       ) : null}
@@ -76,9 +79,10 @@ function RequestForm({ leaveSnap, form, setForm, createMutation, onSubmit }) {
             <div className="font-semibold text-soul-blue">{formatUnpaidLeaveAvailable(leaveSnap)}</div>
           </div>
           <div className="rounded-xl border border-soul-line px-2 py-2">
-            <div className="text-[10px] uppercase text-soul-muted">Early leave</div>
+            <div className="text-[10px] uppercase text-soul-muted">Paid excuses</div>
             <div className="font-semibold text-soul-blue">
-              {leaveSnap.early_leave_remaining}/{leaveSnap.early_leave_max}
+              {leaveSnap.paid_excuse_remaining ?? leaveSnap.early_leave_remaining}/
+              {leaveSnap.paid_excuse_max ?? leaveSnap.early_leave_max}
             </div>
           </div>
         </div>
@@ -88,7 +92,7 @@ function RequestForm({ leaveSnap, form, setForm, createMutation, onSubmit }) {
           <label className="label">Type</label>
           <select
             className="input"
-            value={leaveSnap?.can_request_holidays === false ? 'unpaid' : form.leave_type}
+            value={form.leave_type}
             onChange={(e) => setForm((f) => ({ ...f, leave_type: e.target.value }))}
           >
             {requestableLeaveTypes(leaveSnap?.can_request_holidays !== false).map((opt) => (
@@ -99,7 +103,7 @@ function RequestForm({ leaveSnap, form, setForm, createMutation, onSubmit }) {
           </select>
         </div>
         <div>
-          <label className="label">{form.leave_type === 'early_leave' ? 'Day' : 'From'}</label>
+          <label className="label">{isExcuse ? 'Day' : 'From'}</label>
           <input
             type="date"
             className="input"
@@ -109,14 +113,40 @@ function RequestForm({ leaveSnap, form, setForm, createMutation, onSubmit }) {
                 ...f,
                 start_date: e.target.value,
                 end_date:
-                  f.leave_type === 'early_leave' || !f.end_date || f.end_date < e.target.value
+                  isExcuseLeaveType(f.leave_type) || !f.end_date || f.end_date < e.target.value
                     ? e.target.value
                     : f.end_date,
               }))
             }
           />
         </div>
-        {form.leave_type !== 'early_leave' ? (
+        {isExcuse ? (
+          <>
+            <div>
+              <label className="label">From time *</label>
+              <input
+                type="time"
+                className="input"
+                value={form.start_time}
+                onChange={(e) => setForm((f) => ({ ...f, start_time: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="label">To time *</label>
+              <input
+                type="time"
+                className="input"
+                value={form.end_time}
+                onChange={(e) => setForm((f) => ({ ...f, end_time: e.target.value }))}
+              />
+              <p className="mt-1 text-[11px] text-slate-400">
+                {form.leave_type === 'paid_excuse'
+                  ? 'Paid excuse: max 2 hours, 2 per month, no deduction.'
+                  : 'Unpaid excuse: hours × hourly rate (daily rate ÷ 24).'}
+              </p>
+            </div>
+          </>
+        ) : (
           <div>
             <label className="label">To</label>
             <input
@@ -126,7 +156,7 @@ function RequestForm({ leaveSnap, form, setForm, createMutation, onSubmit }) {
               onChange={(e) => setForm((f) => ({ ...f, end_date: e.target.value }))}
             />
           </div>
-        ) : null}
+        )}
         <div className="sm:col-span-2">
           <label className="label">Note</label>
           <textarea
@@ -143,7 +173,7 @@ function RequestForm({ leaveSnap, form, setForm, createMutation, onSubmit }) {
         disabled={createMutation.isPending}
         onClick={onSubmit}
       >
-        {createMutation.isPending ? 'Sending…' : 'Send request'}
+        {createMutation.isPending ? 'Sending…' : isExcuse ? 'Record excuse' : 'Send request'}
       </button>
     </div>
   );
@@ -171,6 +201,11 @@ function HolidayRequestDetailModal({
     row.start_date === row.end_date
       ? formatDate(row.start_date)
       : `${formatDate(row.start_date)} → ${formatDate(row.end_date)}`;
+  const isExcuse = isExcuseLeaveType(row.leave_type);
+  const timeLabel =
+    row.start_time && row.end_time
+      ? `${String(row.start_time).slice(0, 5)} – ${String(row.end_time).slice(0, 5)}`
+      : null;
 
   return (
     <Modal
@@ -219,9 +254,12 @@ function HolidayRequestDetailModal({
             {LEAVE_TYPE_LABELS[row.leave_type] || row.leave_type}
           </DetailField>
           <DetailField label="Duration">
-            {row.days} day{Number(row.days) === 1 ? '' : 's'}
+            {isExcuse
+              ? `${Number(row.hours) || '—'} hour${Number(row.hours) === 1 ? '' : 's'}`
+              : `${row.days} day${Number(row.days) === 1 ? '' : 's'}`}
           </DetailField>
           <DetailField label="Dates">{dateLabel}</DetailField>
+          {timeLabel ? <DetailField label="Time">{timeLabel}</DetailField> : null}
           <DetailField label="Submitted">
             {row.created_at ? formatDateTime(row.created_at) : '—'}
           </DetailField>
@@ -283,7 +321,11 @@ function RequestsTable({ rows, incoming, reviewMutation, onReject, onSelect }) {
                   {formatDate(r.start_date)}
                   {r.start_date !== r.end_date ? ` → ${formatDate(r.end_date)}` : ''}
                   <div className="text-[11px] text-soul-muted">
-                    {r.days} day{Number(r.days) === 1 ? '' : 's'}
+                    {isExcuseLeaveType(r.leave_type)
+                      ? `${r.start_time ? String(r.start_time).slice(0, 5) : '—'}–${
+                          r.end_time ? String(r.end_time).slice(0, 5) : '—'
+                        } · ${Number(r.hours) || '—'}h`
+                      : `${r.days} day${Number(r.days) === 1 ? '' : 's'}`}
                   </div>
                 </td>
                 <td className="max-w-[16rem]">
@@ -380,14 +422,20 @@ export default function HolidayRequests() {
 
   const createMutation = useMutation({
     mutationFn: (payload) => api.post('/hr/leave-requests', payload),
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ['hr-leave-requests'] });
       qc.invalidateQueries({ queryKey: ['hr-my-leave'] });
-      toast.success('Holiday request sent');
+      toast.success(
+        isExcuseLeaveType(vars?.leave_type)
+          ? 'Excuse recorded (no approval needed)'
+          : 'Holiday request sent'
+      );
       setForm({
-        leave_type: leaveSnap?.can_request_holidays === false ? 'unpaid' : 'casual',
+        leave_type: leaveSnap?.can_request_holidays === false ? 'paid_excuse' : 'casual',
         start_date: '',
         end_date: '',
+        start_time: '',
+        end_time: '',
         reason: '',
       });
     },
@@ -433,13 +481,26 @@ export default function HolidayRequests() {
   };
 
   const submitLeave = () => {
-    const leaveType = leaveSnap?.can_request_holidays === false ? 'unpaid' : form.leave_type;
+    const leaveType =
+      leaveSnap?.can_request_holidays === false && !isExcuseLeaveType(form.leave_type)
+        ? 'unpaid'
+        : form.leave_type;
     if (!form.start_date) {
       toast.error('Choose a date');
       return;
     }
-    if (leaveType === 'early_leave') {
-      createMutation.mutate({ ...form, leave_type: leaveType, end_date: form.start_date });
+    if (isExcuseLeaveType(leaveType)) {
+      if (!form.start_time || !form.end_time) {
+        toast.error('Choose start and end times');
+        return;
+      }
+      createMutation.mutate({
+        ...form,
+        leave_type: leaveType,
+        end_date: form.start_date,
+        start_time: form.start_time,
+        end_time: form.end_time,
+      });
       return;
     }
     if (!form.end_date) {

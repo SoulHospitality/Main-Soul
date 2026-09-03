@@ -1,14 +1,24 @@
 export const DAYS_IN_MONTH = 30;
-export const EARLY_LEAVE_MAX_PER_YEAR = 2;
+export const HOURS_IN_DAY = 24;
+export const PAID_EXCUSE_MAX_PER_MONTH = 2;
+export const PAID_EXCUSE_MAX_HOURS = 2;
+/** @deprecated */
+export const EARLY_LEAVE_MAX_PER_YEAR = PAID_EXCUSE_MAX_PER_MONTH;
 
 export function dailyRate(baseSalary) {
   return Math.round(((Number(baseSalary) || 0) / DAYS_IN_MONTH + Number.EPSILON) * 100) / 100;
 }
 
+export function hourlyRate(baseSalary) {
+  return Math.round((dailyRate(baseSalary) / HOURS_IN_DAY + Number.EPSILON) * 100) / 100;
+}
+
 export const LEAVE_TYPE_LABELS = {
   casual: 'Casual',
   annual: 'Annual',
-  early_leave: 'Early leave',
+  early_leave: 'Paid excuse',
+  paid_excuse: 'Paid excuse',
+  unpaid_excuse: 'Unpaid excuse',
   sick: 'Sick leave',
   holiday: 'Holiday',
   day_off: 'Day off',
@@ -21,17 +31,25 @@ export function formatUnpaidLeaveAvailable(leaveSnap) {
   return Number.isFinite(n) ? n : 'Unlimited';
 }
 
+export function isExcuseLeaveType(leaveType) {
+  const t = String(leaveType || '');
+  return t === 'paid_excuse' || t === 'unpaid_excuse' || t === 'early_leave';
+}
+
 export function requestableLeaveTypes(canRequestHolidays) {
-  const unpaid = { value: 'unpaid', label: 'Unpaid' };
+  const unpaid = { value: 'unpaid', label: 'Unpaid leave' };
+  const paidExcuse = { value: 'paid_excuse', label: 'Paid excuse (2/month, max 2h)' };
+  const unpaidExcuse = { value: 'unpaid_excuse', label: 'Unpaid excuse (hourly deduction)' };
   if (canRequestHolidays) {
     return [
       { value: 'casual', label: 'Casual' },
       { value: 'annual', label: 'Annual' },
-      { value: 'early_leave', label: 'Early leave' },
+      paidExcuse,
+      unpaidExcuse,
       unpaid,
     ];
   }
-  return [unpaid];
+  return [paidExcuse, unpaidExcuse, unpaid];
 }
 
 export function computeAttendanceAmount(baseSalary, { status, check_in } = {}) {
