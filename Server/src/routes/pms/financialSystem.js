@@ -1732,4 +1732,1275 @@ router.post('/financial-system/insurance-refunds/:id/settle', requireRoles('admi
   }
 });
 
+// ─── Fixed Assets & Depreciation ───────────────────────────────────
+
+router.get('/financial-system/fixed-assets', requireRoles('admin', 'finance', 'finance_manager'), async (_req, res, next) => {
+  try {
+    const { rows } = await query(
+      `SELECT fa.*,
+              (SELECT d.accumulated FROM fixed_asset_depreciation d WHERE d.asset_id = fa.id ORDER BY d.period_month DESC LIMIT 1) AS accumulated_depreciation,
+              (SELECT d.book_value FROM fixed_asset_depreciation d WHERE d.asset_id = fa.id ORDER BY d.period_month DESC LIMIT 1) AS current_book_value
+       FROM fixed_assets fa
+       ORDER BY fa.created_at DESC`
+    );
+    res.json(rows);
+  } catch (e) {
+    if (e.code === '42P01') return res.json([]);
+    next(e);
+  }
+});
+
+router.post('/financial-system/fixed-assets', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const { name, description, category, account_code, depreciation_account, expense_account, purchase_date, purchase_cost, salvage_value, useful_life_months, depreciation_method, notes, unit_id } = req.body;
+    if (!name || !purchase_date || !(parseFloat(purchase_cost) > 0)) {
+      return res.status(400).json({ error: 'name, purchase_date, and a positive purchase_cost are required' });
+    }
+    const { rows: countRows } = await query(`SELECT COUNT(*)::int AS c FROM fixed_assets`);
+    const seq = (countRows[0]?.c || 0) + 1;
+    const asset_code = `FA-${String(seq).padStart(3, '0')}`;
+    const { rows } = await query(
+      `INSERT INTO fixed_assets (asset_code, name, description, category, account_code, depreciation_account, expense_account, purchase_date, purchase_cost, salvage_value, useful_life_months, depreciation_method, notes, unit_id, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+       RETURNING *`,
+      [
+        asset_code,
+        name,
+        description || null,
+        category || 'equipment',
+        account_code || '150000',
+        depreciation_account || '159000',
+        expense_account || '606000',
+        purchase_date,
+        round2(parseFloat(purchase_cost)),
+        round2(parseFloat(salvage_value) || 0),
+        parseInt(useful_life_months, 10) || 36,
+        depreciation_method || 'straight_line',
+        notes || null,
+        unit_id || null,
+        req.user.id,
+      ]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.put('/financial-system/fixed-assets/:id', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const { name, description, category, account_code, depreciation_account, expense_account, purchase_date, purchase_cost, salvage_value, useful_life_months, depreciation_method, notes, unit_id } = req.body;
+    const { rows } = await query(
+      `UPDATE fixed_assets SET
+         name = COALESCE($2, name),
+         description = $3,
+         category = COALESCE($4, category),
+         account_code = COALESCE($5, account_code),
+         depreciation_account = COALESCE($6, depreciation_account),
+         expense_account = COALESCE($7, expense_account),
+         purchase_date = COALESCE($8, purchase_date),
+         purchase_cost = COALESCE($9, purchase_cost),
+         salvage_value = COALESCE($10, salvage_value),
+         useful_life_months = COALESCE($11, useful_life_months),
+         depreciation_method = COALESCE($12, depreciation_method),
+         notes = $13,
+         unit_id = $14,
+         updated_at = NOW()
+       WHERE id = $1
+       RETURNING *`,
+      [
+        req.params.id,
+        name || null,
+        description ?? null,
+        category || null,
+        account_code || null,
+        depreciation_account || null,
+        expense_account || null,
+        purchase_date || null,
+        purchase_cost ? round2(parseFloat(purchase_cost)) : null,
+        salvage_value != null ? round2(parseFloat(salvage_value)) : null,
+        useful_life_months ? parseInt(useful_life_months, 10) : null,
+        depreciation_method || null,
+        notes ?? null,
+        unit_id || null,
+      ]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Asset not found' });
+    res.json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/financial-system/fixed-assets/:id/dispose', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const { disposed_date, disposed_amount } = req.body;
+    const date = disposed_date || new Date().toISOString().slice(0, 10);
+    await assertPeriodOpen(date);
+    const { rows } = await query(
+      `UPDATE fixed_assets SET
+         status = 'disposed',
+         disposed_date = $2,
+         disposed_amount = $3,
+         updated_at = NOW()
+       WHERE id = $1 AND status = 'active'
+       RETURNING *`,
+      [req.params.id, date, disposed_amount != null ? round2(parseFloat(disposed_amount)) : null]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Asset not found or already disposed' });
+    res.json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/financial-system/fixed-assets/:id/schedule', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const { rows: assetRows } = await query(`SELECT * FROM fixed_assets WHERE id = $1`, [req.params.id]);
+    if (!assetRows[0]) return res.status(404).json({ error: 'Asset not found' });
+    const { rows } = await query(
+      `SELECT * FROM fixed_asset_depreciation WHERE asset_id = $1 ORDER BY period_month`,
+      [req.params.id]
+    );
+    res.json({ asset: assetRows[0], schedule: rows });
+  } catch (e) {
+    if (e.code === '42P01') return res.json({ asset: null, schedule: [] });
+    next(e);
+  }
+});
+
+router.post('/financial-system/fixed-assets/run-depreciation', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const period = String(req.body.period || '').trim();
+    if (!/^\d{4}-\d{2}$/.test(period)) {
+      return res.status(400).json({ error: 'period must be YYYY-MM' });
+    }
+    await assertPeriodOpen(`${period}-01`);
+
+    const { rows: assets } = await query(
+      `SELECT * FROM fixed_assets WHERE status = 'active'`
+    );
+
+    const results = [];
+    for (const asset of assets) {
+      const monthly = round2((parseFloat(asset.purchase_cost) - parseFloat(asset.salvage_value)) / asset.useful_life_months);
+      if (!(monthly > 0.009)) continue;
+
+      // Check if already posted
+      const { rows: existing } = await query(
+        `SELECT id FROM fixed_asset_depreciation WHERE asset_id = $1 AND period_month = $2`,
+        [asset.id, period]
+      );
+      if (existing.length) continue;
+
+      // Get prior accumulated
+      const { rows: prior } = await query(
+        `SELECT accumulated FROM fixed_asset_depreciation WHERE asset_id = $1 ORDER BY period_month DESC LIMIT 1`,
+        [asset.id]
+      );
+      const prevAccum = round2(parseFloat(prior[0]?.accumulated) || 0);
+      const maxDepreciable = round2(parseFloat(asset.purchase_cost) - parseFloat(asset.salvage_value));
+      const remaining = round2(maxDepreciable - prevAccum);
+      if (remaining <= 0.009) {
+        // Fully depreciated — mark it
+        await query(`UPDATE fixed_assets SET status = 'fully_depreciated', updated_at = NOW() WHERE id = $1 AND status = 'active'`, [asset.id]);
+        continue;
+      }
+      const amount = round2(Math.min(monthly, remaining));
+      const accumulated = round2(prevAccum + amount);
+      const book_value = round2(parseFloat(asset.purchase_cost) - accumulated);
+
+      const { rows: inserted } = await query(
+        `INSERT INTO fixed_asset_depreciation (asset_id, period_month, amount, accumulated, book_value)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING *`,
+        [asset.id, period, amount, accumulated, book_value]
+      );
+      results.push({ asset_code: asset.asset_code, name: asset.name, amount, accumulated, book_value, entry: inserted[0] });
+    }
+
+    res.json({ period, processed: results.length, skipped: assets.length - results.length, results });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── AP / Vendor routes ───────────────────────────────────────────
+
+router.get('/financial-system/vendors', requireRoles('admin', 'finance', 'finance_manager'), async (_req, res, next) => {
+  try {
+    const { rows } = await query(
+      `SELECT v.*,
+              COALESCE(ap.outstanding, 0)::float AS outstanding
+       FROM vendors v
+       LEFT JOIN LATERAL (
+         SELECT SUM(net_payable)::float AS outstanding
+         FROM vendor_invoices
+         WHERE vendor_id = v.id AND status IN ('pending', 'approved')
+       ) ap ON TRUE
+       ORDER BY v.name`
+    );
+    res.json(rows);
+  } catch (e) {
+    if (e.code === '42P01') return res.json([]);
+    next(e);
+  }
+});
+
+router.post('/financial-system/vendors', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const { name, tax_id, category, payment_terms_days, contact_name, contact_phone, contact_email, bank_name, bank_account, notes, wht_rate_pct } = req.body;
+    if (!name || !String(name).trim()) return res.status(400).json({ error: 'name is required' });
+    const { rows } = await query(
+      `INSERT INTO vendors (name, tax_id, category, payment_terms_days, contact_name, contact_phone, contact_email, bank_name, bank_account, notes, wht_rate_pct, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       RETURNING *`,
+      [
+        String(name).trim(),
+        tax_id || null,
+        category || 'general',
+        parseInt(payment_terms_days, 10) || 30,
+        contact_name || null,
+        contact_phone || null,
+        contact_email || null,
+        bank_name || null,
+        bank_account || null,
+        notes || null,
+        parseFloat(wht_rate_pct) >= 0 ? parseFloat(wht_rate_pct) : 3,
+        req.user.id,
+      ]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.put('/financial-system/vendors/:id', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const { name, tax_id, category, payment_terms_days, contact_name, contact_phone, contact_email, bank_name, bank_account, notes, wht_rate_pct, is_active } = req.body;
+    const { rows } = await query(
+      `UPDATE vendors SET
+         name = COALESCE($2, name),
+         tax_id = COALESCE($3, tax_id),
+         category = COALESCE($4, category),
+         payment_terms_days = COALESCE($5, payment_terms_days),
+         contact_name = COALESCE($6, contact_name),
+         contact_phone = COALESCE($7, contact_phone),
+         contact_email = COALESCE($8, contact_email),
+         bank_name = COALESCE($9, bank_name),
+         bank_account = COALESCE($10, bank_account),
+         notes = COALESCE($11, notes),
+         wht_rate_pct = COALESCE($12, wht_rate_pct),
+         is_active = COALESCE($13, is_active),
+         updated_at = NOW()
+       WHERE id = $1
+       RETURNING *`,
+      [
+        req.params.id,
+        name || null,
+        tax_id !== undefined ? tax_id : null,
+        category || null,
+        payment_terms_days != null ? parseInt(payment_terms_days, 10) : null,
+        contact_name !== undefined ? contact_name : null,
+        contact_phone !== undefined ? contact_phone : null,
+        contact_email !== undefined ? contact_email : null,
+        bank_name !== undefined ? bank_name : null,
+        bank_account !== undefined ? bank_account : null,
+        notes !== undefined ? notes : null,
+        wht_rate_pct != null ? parseFloat(wht_rate_pct) : null,
+        is_active != null ? is_active : null,
+      ]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Vendor not found' });
+    res.json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/financial-system/vendor-invoices', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const params = [];
+    let where = 'TRUE';
+    if (req.query.status) {
+      params.push(req.query.status);
+      where += ` AND vi.status = $${params.length}`;
+    }
+    if (req.query.vendor_id) {
+      params.push(req.query.vendor_id);
+      where += ` AND vi.vendor_id = $${params.length}`;
+    }
+    const { rows } = await query(
+      `SELECT vi.*, v.name AS vendor_name
+       FROM vendor_invoices vi
+       JOIN vendors v ON v.id = vi.vendor_id
+       WHERE ${where}
+       ORDER BY vi.created_at DESC
+       LIMIT 500`,
+      params
+    );
+    res.json(rows);
+  } catch (e) {
+    if (e.code === '42P01') return res.json([]);
+    next(e);
+  }
+});
+
+router.post('/financial-system/vendor-invoices', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const { vendor_id, invoice_number, invoice_date, amount, description, category, unit_id, notes } = req.body;
+    if (!vendor_id) return res.status(400).json({ error: 'vendor_id is required' });
+    const amt = parseFloat(amount);
+    if (!(amt > 0)) return res.status(400).json({ error: 'amount must be positive' });
+    const date = invoice_date || new Date().toISOString().slice(0, 10);
+    await assertPeriodOpen(date);
+
+    const { rows: vendorRows } = await query(`SELECT * FROM vendors WHERE id = $1`, [vendor_id]);
+    if (!vendorRows[0]) return res.status(404).json({ error: 'Vendor not found' });
+    const vendor = vendorRows[0];
+
+    const whtPct = parseFloat(vendor.wht_rate_pct) || 0;
+    const whtAmount = round2(amt * whtPct / 100);
+    const netPayable = round2(amt - whtAmount);
+    const termsDays = parseInt(vendor.payment_terms_days, 10) || 30;
+    const dueDate = new Date(new Date(date).getTime() + termsDays * 86400000).toISOString().slice(0, 10);
+
+    const { rows } = await query(
+      `INSERT INTO vendor_invoices
+         (vendor_id, invoice_number, invoice_date, due_date, amount, wht_amount, net_payable, description, category, unit_id, notes, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       RETURNING *`,
+      [vendor_id, invoice_number || null, date, dueDate, amt, whtAmount, netPayable, description || null, category || vendor.category, unit_id || null, notes || null, req.user.id]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
+    next(e);
+  }
+});
+
+router.post('/financial-system/vendor-invoices/:id/approve', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const { rows } = await query(
+      `UPDATE vendor_invoices SET status = 'approved', approved_by = $2, approved_at = NOW(), updated_at = NOW()
+       WHERE id = $1 AND status = 'pending'
+       RETURNING *`,
+      [req.params.id, req.user.id]
+    );
+    if (!rows[0]) return res.status(400).json({ error: 'Invoice not found or not pending' });
+    res.json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/financial-system/vendor-invoices/:id/reject', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const { rows } = await query(
+      `UPDATE vendor_invoices SET status = 'rejected', updated_at = NOW()
+       WHERE id = $1 AND status = 'pending'
+       RETURNING *`,
+      [req.params.id, req.user.id]
+    );
+    if (!rows[0]) return res.status(400).json({ error: 'Invoice not found or not pending' });
+    res.json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/financial-system/vendor-invoices/:id/pay', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const { payment_method, payment_reference } = req.body;
+    const { rows: existing } = await query(`SELECT * FROM vendor_invoices WHERE id = $1`, [req.params.id]);
+    if (!existing[0]) return res.status(404).json({ error: 'Invoice not found' });
+    if (existing[0].status === 'paid') return res.json(existing[0]);
+    if (existing[0].status !== 'approved') return res.status(400).json({ error: 'Invoice must be approved before paying' });
+    await assertPeriodOpen(existing[0].invoice_date);
+    const { rows } = await query(
+      `UPDATE vendor_invoices SET
+         status = 'paid', paid_at = NOW(), paid_by = $2,
+         payment_method = $3, payment_reference = $4, updated_at = NOW()
+       WHERE id = $1
+       RETURNING *`,
+      [req.params.id, req.user.id, payment_method || null, payment_reference || null]
+    );
+    res.json(rows[0]);
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
+    next(e);
+  }
+});
+
+router.get('/financial-system/vendor-aging', requireRoles('admin', 'finance', 'finance_manager'), async (_req, res, next) => {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const { rows } = await query(
+      `SELECT vi.*, v.name AS vendor_name
+       FROM vendor_invoices vi
+       JOIN vendors v ON v.id = vi.vendor_id
+       WHERE vi.status IN ('pending', 'approved')
+       ORDER BY vi.due_date`
+    );
+
+    const buckets = {
+      current: { label: 'Current (0-30)', amount: 0, count: 0, rows: [] },
+      '31_60': { label: '31-60 days', amount: 0, count: 0, rows: [] },
+      '61_90': { label: '61-90 days', amount: 0, count: 0, rows: [] },
+      '90_plus': { label: '90+ days', amount: 0, count: 0, rows: [] },
+    };
+
+    for (const inv of rows) {
+      const due = new Date(inv.due_date);
+      const diffDays = Math.floor((new Date(today) - due) / 86400000);
+      const amt = parseFloat(inv.net_payable) || 0;
+      const row = {
+        invoice_id: inv.id,
+        vendor_name: inv.vendor_name,
+        invoice_number: inv.invoice_number,
+        due_date: inv.due_date,
+        days: Math.max(0, diffDays),
+        amount: round2(amt),
+        status: inv.status,
+      };
+      let bucket;
+      if (diffDays <= 30) bucket = 'current';
+      else if (diffDays <= 60) bucket = '31_60';
+      else if (diffDays <= 90) bucket = '61_90';
+      else bucket = '90_plus';
+      buckets[bucket].amount = round2(buckets[bucket].amount + amt);
+      buckets[bucket].count += 1;
+      buckets[bucket].rows.push(row);
+    }
+
+    const totalOutstanding = round2(rows.reduce((s, r) => s + (parseFloat(r.net_payable) || 0), 0));
+    res.json({ as_of: today, total_outstanding: totalOutstanding, buckets });
+  } catch (e) {
+    if (e.code === '42P01') return res.json({ as_of: new Date().toISOString().slice(0, 10), total_outstanding: 0, buckets: {} });
+    next(e);
+  }
+});
+
+router.get('/financial-system/payment-runs', requireRoles('admin', 'finance', 'finance_manager'), async (_req, res, next) => {
+  try {
+    const { rows } = await query(
+      `SELECT pr.*,
+              su.full_name AS created_by_name
+       FROM payment_runs pr
+       LEFT JOIN staff_users su ON su.id = pr.created_by
+       ORDER BY pr.created_at DESC
+       LIMIT 100`
+    );
+    res.json(rows);
+  } catch (e) {
+    if (e.code === '42P01') return res.json([]);
+    next(e);
+  }
+});
+
+router.post('/financial-system/payment-runs', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const { invoice_ids, notes } = req.body;
+    if (!Array.isArray(invoice_ids) || !invoice_ids.length) {
+      return res.status(400).json({ error: 'invoice_ids array is required' });
+    }
+    const { rows: invoices } = await query(
+      `SELECT * FROM vendor_invoices WHERE id = ANY($1::int[]) AND status = 'approved'`,
+      [invoice_ids]
+    );
+    if (!invoices.length) return res.status(400).json({ error: 'No approved invoices found' });
+
+    let totalAmount = 0, totalWht = 0, totalNet = 0;
+    for (const inv of invoices) {
+      totalAmount += parseFloat(inv.amount) || 0;
+      totalWht += parseFloat(inv.wht_amount) || 0;
+      totalNet += parseFloat(inv.net_payable) || 0;
+    }
+
+    const runDate = new Date().toISOString().slice(0, 10);
+    await assertPeriodOpen(runDate);
+
+    const { rows: runRows } = await query(
+      `INSERT INTO payment_runs (run_date, total_amount, total_wht, total_net, invoice_count, notes, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       RETURNING *`,
+      [runDate, round2(totalAmount), round2(totalWht), round2(totalNet), invoices.length, notes || null, req.user.id]
+    );
+    const run = runRows[0];
+
+    for (const inv of invoices) {
+      await query(
+        `INSERT INTO payment_run_items (run_id, invoice_id, amount, wht_amount, net_payable)
+         VALUES ($1,$2,$3,$4,$5)`,
+        [run.id, inv.id, inv.amount, inv.wht_amount, inv.net_payable]
+      );
+    }
+
+    res.status(201).json(run);
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
+    next(e);
+  }
+});
+
+router.post('/financial-system/payment-runs/:id/confirm', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const { rows: runRows } = await query(`SELECT * FROM payment_runs WHERE id = $1`, [req.params.id]);
+    if (!runRows[0]) return res.status(404).json({ error: 'Payment run not found' });
+    if (runRows[0].status === 'completed') return res.json(runRows[0]);
+    if (runRows[0].status !== 'draft') return res.status(400).json({ error: 'Run must be in draft status' });
+
+    await assertPeriodOpen(runRows[0].run_date);
+
+    const { rows: items } = await query(
+      `SELECT invoice_id FROM payment_run_items WHERE run_id = $1`,
+      [req.params.id]
+    );
+    const invoiceIds = items.map((i) => i.invoice_id);
+    if (invoiceIds.length) {
+      await query(
+        `UPDATE vendor_invoices SET status = 'paid', paid_at = NOW(), paid_by = $2, updated_at = NOW()
+         WHERE id = ANY($1::int[]) AND status = 'approved'`,
+        [invoiceIds, req.user.id]
+      );
+    }
+
+    const { rows } = await query(
+      `UPDATE payment_runs SET status = 'completed' WHERE id = $1 RETURNING *`,
+      [req.params.id]
+    );
+    res.json(rows[0]);
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
+    next(e);
+  }
+});
+
+// ─── AR Controls ───────────────────────────────────────────────────
+
+router.get('/financial-system/ar-actions', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const reservationId = req.query.reservation_id ? parseInt(req.query.reservation_id, 10) : null;
+    const params = [];
+    let where = '1=1';
+    if (reservationId) {
+      params.push(reservationId);
+      where = `a.reservation_id = $${params.length}`;
+    }
+    const { rows } = await query(
+      `SELECT a.*, su.full_name AS created_by_name
+       FROM ar_collection_actions a
+       LEFT JOIN staff_users su ON su.id = a.created_by
+       WHERE ${where}
+       ORDER BY a.created_at DESC
+       LIMIT 500`,
+      params
+    );
+    res.json(rows);
+  } catch (e) {
+    if (e.code === '42P01') return res.json([]);
+    next(e);
+  }
+});
+
+router.post('/financial-system/ar-actions', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const { reservation_id, action_type, notes, next_action_date, amount_disputed } = req.body;
+    if (!reservation_id || !action_type) {
+      return res.status(400).json({ error: 'reservation_id and action_type are required' });
+    }
+    const { rows } = await query(
+      `INSERT INTO ar_collection_actions (reservation_id, action_type, notes, next_action_date, amount_disputed, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING *`,
+      [
+        reservation_id,
+        action_type,
+        notes || null,
+        next_action_date || null,
+        parseFloat(amount_disputed) || 0,
+        req.user.id,
+      ]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/financial-system/ar-provisions', requireRoles('admin', 'finance', 'finance_manager'), async (_req, res, next) => {
+  try {
+    const { rows } = await query(
+      `SELECT p.*, su.full_name AS created_by_name
+       FROM ar_bad_debt_provisions p
+       LEFT JOIN staff_users su ON su.id = p.created_by
+       ORDER BY p.period_month DESC`
+    );
+    res.json(rows);
+  } catch (e) {
+    if (e.code === '42P01') return res.json([]);
+    next(e);
+  }
+});
+
+router.post('/financial-system/ar-provisions', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const { period_month, bucket_0_30_pct, bucket_31_60_pct, bucket_61_90_pct, bucket_90_plus_pct, notes } = req.body;
+    if (!period_month || !/^\d{4}-\d{2}$/.test(period_month)) {
+      return res.status(400).json({ error: 'period_month must be YYYY-MM' });
+    }
+    const pct030 = parseFloat(bucket_0_30_pct) || 0;
+    const pct3160 = parseFloat(bucket_31_60_pct) || 1;
+    const pct6190 = parseFloat(bucket_61_90_pct) || 5;
+    const pct90 = parseFloat(bucket_90_plus_pct) || 20;
+
+    // Load aging data for the period
+    const to = `${period_month}-${new Date(Number(period_month.slice(0, 4)), Number(period_month.slice(5, 7)), 0).getDate()}`;
+    const built = await buildFinancialPortal(FINANCIAL_EPOCH, to);
+    const aging = agingFromReservations(built.reservations, to);
+    const buckets = aging.buckets || {};
+
+    const b030 = buckets.current?.amount || 0;
+    const b3160 = buckets.d31?.amount || 0;
+    const b6190 = buckets.d61?.amount || 0;
+    const b90 = buckets.d90?.amount || 0;
+    const totalAr = round2(b030 + b3160 + b6190 + b90);
+    const totalProvision = round2(
+      (b030 * pct030 / 100) +
+      (b3160 * pct3160 / 100) +
+      (b6190 * pct6190 / 100) +
+      (b90 * pct90 / 100)
+    );
+
+    const { rows } = await query(
+      `INSERT INTO ar_bad_debt_provisions
+         (period_month, bucket_0_30_pct, bucket_31_60_pct, bucket_61_90_pct, bucket_90_plus_pct, total_ar, total_provision, notes, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       ON CONFLICT (period_month) DO UPDATE SET
+         bucket_0_30_pct = $2, bucket_31_60_pct = $3, bucket_61_90_pct = $4, bucket_90_plus_pct = $5,
+         total_ar = $6, total_provision = $7, notes = $8, created_by = $9
+       RETURNING *`,
+      [period_month, pct030, pct3160, pct6190, pct90, totalAr, totalProvision, notes || null, req.user.id]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/financial-system/ar-provisions/:month', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const { rows } = await query(
+      `SELECT p.*, su.full_name AS created_by_name
+       FROM ar_bad_debt_provisions p
+       LEFT JOIN staff_users su ON su.id = p.created_by
+       WHERE p.period_month = $1`,
+      [req.params.month]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Provision not found for this month' });
+    res.json(rows[0]);
+  } catch (e) {
+    if (e.code === '42P01') return res.status(404).json({ error: 'Provision not found' });
+    next(e);
+  }
+});
+
+router.get('/financial-system/ar-write-offs', requireRoles('admin', 'finance', 'finance_manager'), async (_req, res, next) => {
+  try {
+    const { rows } = await query(
+      `SELECT w.*,
+              su.full_name AS created_by_name,
+              ap.full_name AS approved_by_name
+       FROM ar_write_offs w
+       LEFT JOIN staff_users su ON su.id = w.created_by
+       LEFT JOIN staff_users ap ON ap.id = w.approved_by
+       ORDER BY w.created_at DESC`
+    );
+    res.json(rows);
+  } catch (e) {
+    if (e.code === '42P01') return res.json([]);
+    next(e);
+  }
+});
+
+router.post('/financial-system/ar-write-offs', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const { reservation_id, amount, reason } = req.body;
+    if (!reservation_id || !(parseFloat(amount) > 0)) {
+      return res.status(400).json({ error: 'reservation_id and a positive amount are required' });
+    }
+    const { rows } = await query(
+      `INSERT INTO ar_write_offs (reservation_id, amount, reason, created_by)
+       VALUES ($1, $2, $3, $4)
+       RETURNING *`,
+      [reservation_id, round2(parseFloat(amount)), reason || null, req.user.id]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/financial-system/ar-write-offs/:id/approve', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const { rows } = await query(
+      `UPDATE ar_write_offs SET status = 'approved', approved_by = $2, approved_at = NOW()
+       WHERE id = $1 AND status = 'pending'
+       RETURNING *`,
+      [req.params.id, req.user.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Write-off not found or not pending' });
+    res.json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/financial-system/ar-write-offs/:id/reject', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const { rows } = await query(
+      `UPDATE ar_write_offs SET status = 'rejected', approved_by = $2, approved_at = NOW()
+       WHERE id = $1 AND status = 'pending'
+       RETURNING *`,
+      [req.params.id, req.user.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Write-off not found or not pending' });
+    res.json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/financial-system/ar-dashboard', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const { from, to } = dateRange(req);
+    const built = await buildFinancialPortal(from, to);
+    const asOf = to || new Date().toISOString().slice(0, 10);
+    const aging = agingFromReservations(built.reservations, asOf);
+
+    // Latest provision
+    let latestProvision = null;
+    try {
+      const { rows } = await query(
+        `SELECT * FROM ar_bad_debt_provisions ORDER BY period_month DESC LIMIT 1`
+      );
+      latestProvision = rows[0] || null;
+    } catch (e) {
+      if (e.code !== '42P01') throw e;
+    }
+
+    // Collection action counts
+    let actionCounts = {};
+    let actionsThisMonth = 0;
+    try {
+      const { rows } = await query(
+        `SELECT action_type, COUNT(*)::int AS cnt FROM ar_collection_actions GROUP BY action_type`
+      );
+      for (const r of rows) actionCounts[r.action_type] = r.cnt;
+      const currentMonth = asOf.slice(0, 7);
+      const { rows: monthRows } = await query(
+        `SELECT COUNT(*)::int AS cnt FROM ar_collection_actions WHERE to_char(created_at, 'YYYY-MM') = $1`,
+        [currentMonth]
+      );
+      actionsThisMonth = monthRows[0]?.cnt || 0;
+    } catch (e) {
+      if (e.code !== '42P01') throw e;
+    }
+
+    // Write-off totals
+    let writeOffTotals = { pending: 0, approved: 0, rejected: 0, pending_count: 0, approved_count: 0 };
+    try {
+      const { rows } = await query(
+        `SELECT status, COUNT(*)::int AS cnt, COALESCE(SUM(amount), 0)::float AS total
+         FROM ar_write_offs GROUP BY status`
+      );
+      for (const r of rows) {
+        writeOffTotals[r.status] = round2(r.total);
+        writeOffTotals[`${r.status}_count`] = r.cnt;
+      }
+    } catch (e) {
+      if (e.code !== '42P01') throw e;
+    }
+
+    // Overdue count (> 30 days)
+    const overdueCount =
+      (aging.buckets?.d31?.count || 0) +
+      (aging.buckets?.d61?.count || 0) +
+      (aging.buckets?.d90?.count || 0);
+
+    res.json({
+      aging,
+      total_ar: aging.total,
+      total_provision: round2(parseFloat(latestProvision?.total_provision) || 0),
+      latest_provision: latestProvision,
+      overdue_count: overdueCount,
+      overdue_pct: aging.total > 0 ? round2((overdueCount / (aging.buckets?.current?.count || 1 + overdueCount)) * 100) : 0,
+      action_counts: actionCounts,
+      actions_this_month: actionsThisMonth,
+      write_offs: writeOffTotals,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── Close Checklist ──────────────────────────────────────────────
+
+router.get('/financial-system/close-checklist/:month', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const month = String(req.params.month || '').trim();
+    if (!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({ error: 'month must be YYYY-MM' });
+
+    // Check if items exist for this month
+    let { rows: items } = await query(
+      `SELECT ci.*, ct.task_order, ct.required_before_close
+       FROM close_checklist_items ci
+       LEFT JOIN close_checklist_templates ct ON ct.id = ci.template_id
+       WHERE ci.period_month = $1
+       ORDER BY ct.task_order, ci.id`,
+      [month]
+    );
+
+    // Auto-create from templates if none exist
+    if (!items.length) {
+      const { rows: templates } = await query(
+        `SELECT * FROM close_checklist_templates ORDER BY task_order`
+      );
+      for (const t of templates) {
+        await query(
+          `INSERT INTO close_checklist_items (period_month, template_id, title, description, owner_role)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (period_month, template_id) DO NOTHING`,
+          [month, t.id, t.title, t.description, t.owner_role]
+        );
+      }
+      const result = await query(
+        `SELECT ci.*, ct.task_order, ct.required_before_close
+         FROM close_checklist_items ci
+         LEFT JOIN close_checklist_templates ct ON ct.id = ci.template_id
+         WHERE ci.period_month = $1
+         ORDER BY ct.task_order, ci.id`,
+        [month]
+      );
+      items = result.rows;
+    }
+
+    res.json({ month, items });
+  } catch (e) {
+    if (e.code === '42P01') return res.json({ month: req.params.month, items: [] });
+    next(e);
+  }
+});
+
+router.post('/financial-system/close-checklist/:month/:itemId', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const { status, evidence_notes } = req.body;
+    const allowed = ['pending', 'in_progress', 'done', 'skipped'];
+    if (status && !allowed.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+
+    const updateParams = [req.params.itemId, req.params.month];
+    const updateSets = [];
+    if (status) {
+      updateParams.push(status);
+      updateSets.push(`status = $${updateParams.length}`);
+      if (status === 'done') {
+        updateParams.push(req.user.id);
+        updateSets.push(`completed_by = $${updateParams.length}`);
+        updateSets.push(`completed_at = NOW()`);
+      }
+    }
+    if (evidence_notes !== undefined) {
+      updateParams.push(evidence_notes);
+      updateSets.push(`evidence_notes = $${updateParams.length}`);
+    }
+    if (!updateSets.length) return res.status(400).json({ error: 'Nothing to update' });
+
+    const { rows: updated } = await query(
+      `UPDATE close_checklist_items SET ${updateSets.join(', ')} WHERE id = $1 AND period_month = $2 RETURNING *`,
+      updateParams
+    );
+    if (!updated[0]) return res.status(404).json({ error: 'Checklist item not found' });
+    res.json(updated[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/financial-system/close-checklist-templates', requireRoles('admin', 'finance', 'finance_manager'), async (_req, res, next) => {
+  try {
+    const { rows } = await query(`SELECT * FROM close_checklist_templates ORDER BY task_order`);
+    res.json(rows);
+  } catch (e) {
+    if (e.code === '42P01') return res.json([]);
+    next(e);
+  }
+});
+
+router.post('/financial-system/close-checklist-templates', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const { id, task_order, title, description, owner_role, required_before_close } = req.body;
+    if (!title) return res.status(400).json({ error: 'title is required' });
+    if (id) {
+      const { rows } = await query(
+        `UPDATE close_checklist_templates SET task_order = COALESCE($2, task_order), title = COALESCE($3, title),
+         description = $4, owner_role = $5, required_before_close = COALESCE($6, required_before_close)
+         WHERE id = $1 RETURNING *`,
+        [id, task_order, title, description || null, owner_role || null, required_before_close]
+      );
+      if (!rows[0]) return res.status(404).json({ error: 'Template not found' });
+      return res.json(rows[0]);
+    }
+    const { rows } = await query(
+      `INSERT INTO close_checklist_templates (task_order, title, description, owner_role, required_before_close)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [task_order || 99, title, description || null, owner_role || null, required_before_close !== false]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── Segment P&L ──────────────────────────────────────────────────
+
+router.get('/financial-system/segment-pnl', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const { from, to } = dateRange(req);
+    const built = await buildFinancialPortal(from, to);
+    const reservations = built.reservations || [];
+
+    const projects = {};
+    for (const r of reservations) {
+      if (String(r.status || '').toLowerCase() === 'cancelled') continue;
+      const project = r.project || 'Unassigned';
+      if (!projects[project]) {
+        projects[project] = {
+          project,
+          gross_revenue: 0,
+          owner_share: 0,
+          commission: 0,
+          cleaning: 0,
+          direct_costs: 0,
+          count: 0,
+        };
+      }
+      const fin = calcReservationFinancials(r, r);
+      const split = bookingSplit(fin, r);
+      const p = projects[project];
+      p.gross_revenue += parseFloat(r.total_amount) || 0;
+      p.owner_share += Number(fin.ownerNet) || 0;
+      p.commission += Number(fin.companyCommission) || 0;
+      p.cleaning += Number(fin.housekeepingFees) || 0;
+      p.direct_costs += Number(fin.housekeepingFees) || 0;
+      p.count += 1;
+    }
+
+    const opexTotal = built.kpis?.opex || 0;
+    const totalRevenue = Object.values(projects).reduce((s, p) => s + p.gross_revenue, 0) || 1;
+
+    const segments = Object.values(projects).map((p) => {
+      const netRevenue = round2(p.gross_revenue - p.owner_share);
+      const opexAlloc = round2(opexTotal * (p.gross_revenue / totalRevenue));
+      const netProfit = round2(netRevenue - p.direct_costs - opexAlloc);
+      return {
+        project: p.project,
+        reservation_count: p.count,
+        gross_revenue: round2(p.gross_revenue),
+        owner_share: round2(p.owner_share),
+        net_revenue: netRevenue,
+        direct_costs: round2(p.direct_costs),
+        opex_allocation: opexAlloc,
+        net_profit: netProfit,
+      };
+    }).sort((a, b) => b.gross_revenue - a.gross_revenue);
+
+    const consolidated = {
+      project: 'Consolidated',
+      reservation_count: segments.reduce((s, p) => s + p.reservation_count, 0),
+      gross_revenue: round2(segments.reduce((s, p) => s + p.gross_revenue, 0)),
+      owner_share: round2(segments.reduce((s, p) => s + p.owner_share, 0)),
+      net_revenue: round2(segments.reduce((s, p) => s + p.net_revenue, 0)),
+      direct_costs: round2(segments.reduce((s, p) => s + p.direct_costs, 0)),
+      opex_allocation: round2(opexTotal),
+      net_profit: round2(segments.reduce((s, p) => s + p.net_profit, 0)),
+    };
+
+    res.json({ from_date: from, to_date: to, segments, consolidated });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── Cash Forecast ────────────────────────────────────────────────
+
+router.get('/financial-system/cash-forecast', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    const weekStart = new Date(today);
+    weekStart.setDate(today.getDate() - ((dayOfWeek + 6) % 7));
+
+    const weeks = [];
+    for (let i = 0; i < 13; i++) {
+      const ws = new Date(weekStart);
+      ws.setDate(weekStart.getDate() + i * 7);
+      weeks.push(ws.toISOString().slice(0, 10));
+    }
+
+    const lastWeek = new Date(weekStart);
+    lastWeek.setDate(weekStart.getDate() + 12 * 7 + 6);
+
+    // Auto-populate collections from upcoming check-ins
+    const { rows: checkins } = await query(
+      `SELECT to_char(r.check_in, 'YYYY-MM-DD') AS check_in, SUM(r.total_amount)::float AS total
+       FROM reservations r
+       WHERE r.status <> 'cancelled'
+         AND r.check_in >= $1::date AND r.check_in <= $2::date
+       GROUP BY to_char(r.check_in, 'YYYY-MM-DD')`,
+      [weeks[0], lastWeek.toISOString().slice(0, 10)]
+    );
+
+    // Auto-populate recurring
+    let recurring = [];
+    try {
+      const { rows } = await query(
+        `SELECT kind, amount_egp, day_of_month FROM financial_recurring_charges WHERE is_active = 1`
+      );
+      recurring = rows;
+    } catch (_) {}
+
+    // Load manual entries
+    let manualEntries = [];
+    try {
+      const { rows } = await query(
+        `SELECT * FROM cash_forecast_entries WHERE week_start >= $1::date AND week_start <= $2::date ORDER BY week_start`,
+        [weeks[0], lastWeek.toISOString().slice(0, 10)]
+      );
+      manualEntries = rows;
+    } catch (_) {}
+
+    // Get starting balance (treasury total)
+    const { from, to } = dateRange(req);
+    const built = await buildFinancialPortal(from, to || new Date().toISOString().slice(0, 10));
+    const startingBalance = round2((built.treasury || []).reduce((s, t) => s + (t.balance || 0), 0));
+
+    const forecast = weeks.map((ws) => {
+      const weekEnd = new Date(new Date(ws).getTime() + 6 * 86400000).toISOString().slice(0, 10);
+
+      // Collections from check-ins in this week
+      let collections = 0;
+      for (const ci of checkins) {
+        if (ci.check_in >= ws && ci.check_in <= weekEnd) {
+          collections += Number(ci.total) || 0;
+        }
+      }
+
+      // Recurring charges due this week
+      let recurringAmt = 0;
+      for (const rec of recurring) {
+        const day = parseInt(rec.day_of_month, 10) || 1;
+        const monthStart = ws.slice(0, 7);
+        const dueDate = `${monthStart}-${String(Math.min(day, 28)).padStart(2, '0')}`;
+        if (dueDate >= ws && dueDate <= weekEnd) {
+          recurringAmt += Number(rec.amount_egp) || 0;
+        }
+      }
+
+      // Manual entries for this week
+      const weekManuals = manualEntries.filter((e) => e.week_start === ws);
+      const manualByCategory = {};
+      for (const m of weekManuals) {
+        manualByCategory[m.category] = (manualByCategory[m.category] || 0) + (Number(m.amount) || 0);
+      }
+
+      const ownerPayouts = manualByCategory.owner_payouts || 0;
+      const vendorPayments = manualByCategory.vendor_payments || 0;
+      const payroll = manualByCategory.payroll || 0;
+      const tax = manualByCategory.tax || 0;
+      const otherIn = manualByCategory.other_in || 0;
+      const otherOut = manualByCategory.other_out || 0;
+
+      const totalIn = round2(collections + otherIn + (manualByCategory.collections || 0));
+      const totalOut = round2(ownerPayouts + vendorPayments + recurringAmt + payroll + tax + otherOut);
+      const netFlow = round2(totalIn - totalOut);
+
+      return {
+        week_start: ws,
+        week_end: weekEnd,
+        collections: round2(collections + (manualByCategory.collections || 0)),
+        owner_payouts: round2(ownerPayouts),
+        vendor_payments: round2(vendorPayments),
+        recurring: round2(recurringAmt + (manualByCategory.recurring || 0)),
+        payroll: round2(payroll),
+        tax: round2(tax),
+        other_in: round2(otherIn),
+        other_out: round2(otherOut),
+        net_flow: netFlow,
+        manual_entries: weekManuals,
+      };
+    });
+
+    // Add cumulative balance
+    let cumulative = startingBalance;
+    for (const week of forecast) {
+      cumulative = round2(cumulative + week.net_flow);
+      week.cumulative_balance = cumulative;
+    }
+
+    res.json({ starting_balance: startingBalance, weeks: forecast });
+  } catch (e) {
+    if (e.code === '42P01') return res.json({ starting_balance: 0, weeks: [] });
+    next(e);
+  }
+});
+
+router.post('/financial-system/cash-forecast', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const { week_start, category, amount, notes } = req.body;
+    if (!week_start || !category) return res.status(400).json({ error: 'week_start and category are required' });
+    const amt = parseFloat(amount);
+    if (!Number.isFinite(amt)) return res.status(400).json({ error: 'amount must be a number' });
+    const { rows } = await query(
+      `INSERT INTO cash_forecast_entries (week_start, category, amount, notes, created_by)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [week_start, category, amt, notes || null, req.user.id]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.delete('/financial-system/cash-forecast/:id', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const { rows } = await query(`DELETE FROM cash_forecast_entries WHERE id = $1 RETURNING id`, [req.params.id]);
+    if (!rows[0]) return res.status(404).json({ error: 'Entry not found' });
+    res.json({ ok: true, id: rows[0].id });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── Tax Filing Pack ──────────────────────────────────────────────
+
+router.get('/financial-system/tax-filing-pack/:month', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const month = String(req.params.month || '').trim();
+    if (!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({ error: 'month must be YYYY-MM' });
+    const from = `${month}-01`;
+    const to = lastDayOfMonth(month);
+    const built = await buildFinancialPortal(from, to);
+    const reservations = built.reservations || [];
+
+    // VAT output breakdown
+    let commissionBase = 0;
+    let cleaningBase = 0;
+    for (const r of reservations) {
+      if (String(r.status || '').toLowerCase() === 'cancelled') continue;
+      const fin = calcReservationFinancials(r, r);
+      commissionBase += Number(fin.companyCommission) || 0;
+      cleaningBase += Number(fin.housekeepingFees) || 0;
+    }
+    const commissionVat = round2(commissionBase * VAT_OUTPUT_PCT / 100);
+    const cleaningVat = round2(cleaningBase * VAT_OUTPUT_PCT / 100);
+    const totalOutputVat = round2(commissionVat + cleaningVat);
+
+    // VAT input breakdown by category
+    const expParams = [from, to];
+    let expenses = [];
+    try {
+      const { rows } = await query(
+        `SELECT id, description, amount, category, expense_date
+         FROM expenses WHERE expense_date >= $1::date AND expense_date <= $2::date
+           AND COALESCE(paid_by, 'company') <> 'owner'`,
+        expParams
+      );
+      expenses = rows;
+    } catch (_) {}
+
+    const inputCategories = { rent: 0, utilities: 0, professional: 0, software: 0 };
+    const whtLines = [];
+    for (const e of expenses) {
+      const amt = parseFloat(e.amount) || 0;
+      if (['rent', 'utilities', 'professional', 'software'].includes(e.category)) {
+        inputCategories[e.category] = round2((inputCategories[e.category] || 0) + round2((amt * VAT_OUTPUT_PCT) / (100 + VAT_OUTPUT_PCT)));
+      }
+      const whtRate = e.category === 'professional' ? 1 : 3;
+      whtLines.push({
+        expense_id: e.id,
+        vendor: e.description || 'Vendor',
+        amount: round2(amt),
+        wht_rate_pct: whtRate,
+        wht_amount: round2(amt * whtRate / 100),
+        date: e.expense_date,
+        category: e.category,
+      });
+    }
+
+    // Recurring input VAT
+    let recurring = [];
+    try {
+      const { rows } = await query(`SELECT kind, amount_egp FROM financial_recurring_charges WHERE is_active = 1`);
+      recurring = rows;
+    } catch (_) {}
+    for (const rec of recurring) {
+      if (rec.kind === 'rent' || rec.kind === 'utilities') {
+        const amt = Number(rec.amount_egp) || 0;
+        const cat = rec.kind;
+        inputCategories[cat] = round2((inputCategories[cat] || 0) + round2((amt * VAT_OUTPUT_PCT) / (100 + VAT_OUTPUT_PCT)));
+      }
+    }
+
+    const totalInputVat = round2(Object.values(inputCategories).reduce((s, v) => s + v, 0));
+    const netVatPayable = round2(totalOutputVat - totalInputVat);
+    const totalWht = round2(whtLines.reduce((s, l) => s + l.wht_amount, 0));
+
+    // Book balances for reconciliation
+    const vatReturn = built.journal ? (() => {
+      let output = 0, input = 0;
+      for (const e of built.journal) {
+        for (const line of e.lines) {
+          if (line.account === '205000') output += (line.credit || 0) - (line.debit || 0);
+          if (line.account === '107000') input += (line.debit || 0) - (line.credit || 0);
+        }
+      }
+      return { output: round2(output), input: round2(input) };
+    })() : { output: 0, input: 0 };
+
+    res.json({
+      month,
+      from_date: from,
+      to_date: to,
+      vat_output: {
+        commission_base: round2(commissionBase),
+        commission_vat: commissionVat,
+        cleaning_base: round2(cleaningBase),
+        cleaning_vat: cleaningVat,
+        total: totalOutputVat,
+        rate_pct: VAT_OUTPUT_PCT,
+      },
+      vat_input: {
+        by_category: inputCategories,
+        total: totalInputVat,
+      },
+      net_vat_payable: netVatPayable,
+      wht: {
+        lines: whtLines,
+        total: totalWht,
+      },
+      reconciliation: {
+        book_output_vat: vatReturn.output,
+        computed_output_vat: totalOutputVat,
+        output_diff: round2(vatReturn.output - totalOutputVat),
+        book_input_vat: vatReturn.input,
+        computed_input_vat: totalInputVat,
+        input_diff: round2(vatReturn.input - totalInputVat),
+      },
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 module.exports = router;

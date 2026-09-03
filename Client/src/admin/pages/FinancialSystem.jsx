@@ -145,6 +145,7 @@ function useFinanceNav() {
   const code = searchParams.get('code') || '';
   const txn = searchParams.get('txn') || '';
   const tabAlias = {
+    assets: 'assets',
     owners: 'owners',
     settlements: 'owners',
     statement: 'owners',
@@ -160,6 +161,8 @@ function useFinanceNav() {
     gateway: 'gateway',
     bank: 'bank',
     trust: 'trust',
+    vendors: 'vendors',
+    ar: 'ar',
   };
   const tool = searchParams.get('tool') || tabAlias[searchParams.get('tab')] || '';
 
@@ -363,6 +366,7 @@ function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool
         <h2 className="text-lg font-semibold text-soul-blue mb-3">Workspace</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
+            { id: 'assets', label: 'Fixed assets', icon: Landmark },
             { id: 'owners', label: 'Owner payouts', icon: Users },
             { id: 'insurance', label: 'Insurance refunds', icon: Shield },
             { id: 'trust', label: 'Owner trust', icon: Building2 },
@@ -374,7 +378,11 @@ function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool
             { id: 'manual', label: 'Manual entries', icon: PenLine },
             { id: 'petty', label: 'Petty cash', icon: Wallet },
             { id: 'tax', label: 'Tax desk', icon: Scale },
+            { id: 'segment', label: 'Segment P&L', icon: FileSpreadsheet },
+            { id: 'forecast', label: 'Cash forecast', icon: TrendingUp },
+            { id: 'vendors', label: 'AP / Vendors', icon: Users },
             { id: 'recurring', label: 'Monthly charges', icon: Settings2 },
+            { id: 'ar', label: 'AR controls', icon: AlertCircle },
           ].map((t) => {
             const Icon = t.icon;
             return (
@@ -754,9 +762,17 @@ function RecurringTool() {
 }
 
 function TaxTab({ rangeParams: params }) {
+  const [showPack, setShowPack] = useState(false);
+  const toDate = params.to_date || new Date().toISOString().slice(0, 10);
+  const packMonth = toDate.slice(0, 7);
   const { data, isLoading } = useQuery({
     queryKey: ['financial-system-tax', params],
     queryFn: () => api.get('/financial-system/tax', { params }).then((r) => r.data),
+  });
+  const { data: packData, isLoading: packLoading } = useQuery({
+    queryKey: ['financial-system-tax-pack', packMonth],
+    queryFn: () => api.get(`/financial-system/tax-filing-pack/${packMonth}`).then((r) => r.data),
+    enabled: showPack,
   });
   if (isLoading) return <LoadingSpinner />;
   const liability = data?.liability || {};
@@ -783,6 +799,95 @@ function TaxTab({ rangeParams: params }) {
           <p className="text-2xl font-bold mt-2 tabular-nums">{currency(wht.total_wht)}</p>
         </div>
       </div>
+
+      <button type="button" className="btn-secondary" onClick={() => setShowPack(!showPack)}>
+        <FileSpreadsheet className="w-4 h-4" /> {showPack ? 'Hide' : 'Show'} filing pack — {packMonth}
+      </button>
+
+      {showPack && (
+        packLoading ? <LoadingSpinner /> : (
+          <div className="space-y-4">
+            {/* VAT Output detail */}
+            <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
+              <div className="px-6 py-3 border-b font-semibold">VAT output detail</div>
+              <table className="table text-sm">
+                <thead><tr><th>Category</th><th className="text-right">Taxable base</th><th className="text-right">VAT ({VAT_OUTPUT_PCT}%)</th></tr></thead>
+                <tbody>
+                  <tr>
+                    <td>Commission revenue</td>
+                    <td className="text-right tabular-nums">{currency(packData?.vat_output?.commission_base)}</td>
+                    <td className="text-right tabular-nums">{currency(packData?.vat_output?.commission_vat)}</td>
+                  </tr>
+                  <tr>
+                    <td>Cleaning revenue</td>
+                    <td className="text-right tabular-nums">{currency(packData?.vat_output?.cleaning_base)}</td>
+                    <td className="text-right tabular-nums">{currency(packData?.vat_output?.cleaning_vat)}</td>
+                  </tr>
+                </tbody>
+                <tfoot>
+                  <tr className="font-semibold">
+                    <td>Total output VAT</td>
+                    <td />
+                    <td className="text-right tabular-nums">{currency(packData?.vat_output?.total)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            {/* VAT Input detail */}
+            <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
+              <div className="px-6 py-3 border-b font-semibold">VAT input detail</div>
+              <table className="table text-sm">
+                <thead><tr><th>Category</th><th className="text-right">Input VAT (14/114)</th></tr></thead>
+                <tbody>
+                  {Object.entries(packData?.vat_input?.by_category || {}).map(([cat, amt]) => (
+                    <tr key={cat}><td className="capitalize">{cat}</td><td className="text-right tabular-nums">{currency(amt)}</td></tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="font-semibold"><td>Total input VAT</td><td className="text-right tabular-nums">{currency(packData?.vat_input?.total)}</td></tr>
+                </tfoot>
+              </table>
+            </div>
+
+            {/* Net VAT reconciliation */}
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-5 space-y-2">
+              <h4 className="font-semibold">Net VAT reconciliation</h4>
+              <div className="flex justify-between text-sm"><span>Output VAT</span><span className="tabular-nums">{currency(packData?.vat_output?.total)}</span></div>
+              <div className="flex justify-between text-sm"><span>Input VAT</span><span className="tabular-nums">−{currency(packData?.vat_input?.total)}</span></div>
+              <div className="flex justify-between font-bold border-t pt-2"><span>Net VAT payable</span><span className="tabular-nums">{currency(packData?.net_vat_payable)}</span></div>
+              {packData?.reconciliation && (
+                <div className="pt-2 border-t text-xs text-gray-500 space-y-1">
+                  <p>Book output 205000: {currency(packData.reconciliation.book_output_vat)} · Computed: {currency(packData.reconciliation.computed_output_vat)} · Diff: {currency(packData.reconciliation.output_diff)}</p>
+                  <p>Book input 107000: {currency(packData.reconciliation.book_input_vat)} · Computed: {currency(packData.reconciliation.computed_input_vat)} · Diff: {currency(packData.reconciliation.input_diff)}</p>
+                </div>
+              )}
+            </div>
+
+            {/* WHT detail by vendor */}
+            <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
+              <div className="px-6 py-3 border-b font-semibold">WHT detail by vendor</div>
+              <table className="table text-sm">
+                <thead><tr><th>Vendor</th><th>Category</th><th className="text-right">Amount</th><th className="text-right">Rate</th><th className="text-right">WHT</th></tr></thead>
+                <tbody>
+                  {(packData?.wht?.lines || []).map((l) => (
+                    <tr key={l.expense_id}>
+                      <td>{l.vendor}</td>
+                      <td className="capitalize">{l.category}</td>
+                      <td className="text-right tabular-nums">{currency(l.amount)}</td>
+                      <td className="text-right tabular-nums">{l.wht_rate_pct}%</td>
+                      <td className="text-right tabular-nums">{currency(l.wht_amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="font-semibold"><td colSpan={4}>Total WHT payable</td><td className="text-right tabular-nums">{currency(packData?.wht?.total)}</td></tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        )
+      )}
     </div>
   );
 }
@@ -1760,6 +1865,18 @@ function CloseTool({ toDate }) {
     queryKey: ['financial-system-periods'],
     queryFn: () => api.get('/financial-system/periods').then((r) => r.data),
   });
+  const { data: checklistData, isLoading: clLoading } = useQuery({
+    queryKey: ['financial-system-checklist', month],
+    queryFn: () => api.get(`/financial-system/close-checklist/${month}`).then((r) => r.data),
+    enabled: Boolean(month),
+  });
+  const updateItem = useMutation({
+    mutationFn: ({ itemId, body }) => api.post(`/financial-system/close-checklist/${month}/${itemId}`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['financial-system-checklist', month] });
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+  });
   const close = useMutation({
     mutationFn: (yearMonth) => api.post(`/financial-system/periods/${yearMonth}/close`),
     onSuccess: () => {
@@ -1779,7 +1896,31 @@ function CloseTool({ toDate }) {
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
   });
+
+  const [notesItem, setNotesItem] = useState(null);
+  const [notesText, setNotesText] = useState('');
+
   if (isLoading) return <LoadingSpinner />;
+
+  const items = checklistData?.items || [];
+  const requiredItems = items.filter((i) => i.required_before_close);
+  const doneRequired = requiredItems.filter((i) => i.status === 'done' || i.status === 'skipped');
+  const allRequiredDone = requiredItems.length > 0 && doneRequired.length >= requiredItems.length;
+  const progress = requiredItems.length > 0 ? Math.round((doneRequired.length / requiredItems.length) * 100) : 0;
+
+  const statusColors = {
+    pending: 'bg-gray-100 text-gray-600',
+    in_progress: 'bg-amber-100 text-amber-800',
+    done: 'bg-emerald-100 text-emerald-800',
+    skipped: 'bg-slate-100 text-slate-600',
+  };
+  const nextStatus = { pending: 'in_progress', in_progress: 'done', done: 'pending', skipped: 'pending' };
+  const roleColors = {
+    finance: 'text-sky-700',
+    finance_manager: 'text-violet-700',
+    admin: 'text-rose-700',
+  };
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-500">
@@ -1790,10 +1931,81 @@ function CloseTool({ toDate }) {
           <label className="label">Month</label>
           <input type="month" className="input" value={month} onChange={(e) => setMonth(e.target.value)} />
         </div>
-        <button type="button" className="btn-primary" disabled={close.isPending} onClick={() => close.mutate(month)}>
+      </div>
+
+      {/* Checklist section */}
+      <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
+        <div className="px-6 py-4 border-b">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold">Close checklist — {month}</h3>
+              <p className="text-xs text-gray-500 mt-1">Complete all required tasks before closing</p>
+            </div>
+            <span className="text-sm font-semibold tabular-nums">{progress}%</span>
+          </div>
+          <div className="w-full bg-gray-200 rounded-full h-2 mt-3">
+            <div
+              className={`h-2 rounded-full transition-all ${allRequiredDone ? 'bg-emerald-500' : 'bg-soul-blue'}`}
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </div>
+        {clLoading ? (
+          <div className="p-8"><LoadingSpinner /></div>
+        ) : (
+          <div className="divide-y divide-soul-line">
+            {items.map((item) => (
+              <div key={item.id} className="px-6 py-3 flex items-start gap-4">
+                <button
+                  type="button"
+                  className="mt-1 flex-shrink-0"
+                  onClick={() => updateItem.mutate({ itemId: item.id, body: { status: nextStatus[item.status] || 'pending' } })}
+                >
+                  {item.status === 'done' ? (
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                  ) : (
+                    <div className={`w-5 h-5 rounded-full border-2 ${item.status === 'in_progress' ? 'border-amber-500 bg-amber-100' : 'border-gray-300'}`} />
+                  )}
+                </button>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-gray-400 tabular-nums w-5">{item.task_order || ''}</span>
+                    <p className={`text-sm font-medium ${item.status === 'done' ? 'line-through text-gray-400' : ''}`}>{item.title}</p>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${statusColors[item.status]}`}>{item.status}</span>
+                    {item.required_before_close && <span className="text-[10px] text-rose-500">required</span>}
+                  </div>
+                  {item.description && <p className="text-xs text-gray-500 mt-0.5">{item.description}</p>}
+                  {item.owner_role && <p className={`text-[11px] mt-0.5 ${roleColors[item.owner_role] || 'text-gray-500'}`}>{item.owner_role}</p>}
+                  {item.evidence_notes && <p className="text-xs text-emerald-700 mt-1 italic">{item.evidence_notes}</p>}
+                </div>
+                <button
+                  type="button"
+                  className="text-xs text-soul-blue hover:underline flex-shrink-0"
+                  onClick={() => { setNotesItem(item); setNotesText(item.evidence_notes || ''); }}
+                >
+                  Notes
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Close / reopen buttons */}
+      <div className="rounded-2xl border border-soul-line bg-white p-5 flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          className="btn-primary"
+          disabled={close.isPending || !allRequiredDone}
+          onClick={() => close.mutate(month)}
+          title={!allRequiredDone ? 'Complete all required checklist items first' : ''}
+        >
           <Lock className="w-4 h-4" /> Close month
         </button>
+        {!allRequiredDone && <span className="text-xs text-amber-700">Complete all required tasks to enable close</span>}
       </div>
+
+      {/* Closed periods table */}
       <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
         <table className="table text-sm">
           <thead>
@@ -1820,6 +2032,205 @@ function CloseTool({ toDate }) {
           </tbody>
         </table>
       </div>
+
+      {/* Evidence notes modal */}
+      <Modal open={Boolean(notesItem)} onClose={() => setNotesItem(null)} title="Evidence notes" size="sm"
+        footer={
+          <>
+            <button type="button" className="btn-secondary" onClick={() => setNotesItem(null)}>Cancel</button>
+            <button type="button" className="btn-primary" disabled={updateItem.isPending}
+              onClick={() => { updateItem.mutate({ itemId: notesItem.id, body: { evidence_notes: notesText } }); setNotesItem(null); }}>
+              Save
+            </button>
+          </>
+        }
+      >
+        <textarea className="input w-full min-h-[120px]" value={notesText} onChange={(e) => setNotesText(e.target.value)}
+          placeholder="Describe what was done, attach reference numbers…" />
+      </Modal>
+    </div>
+  );
+}
+
+function SegmentPnlTool({ rangeParams: params }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['financial-system-segment-pnl', params],
+    queryFn: () => api.get('/financial-system/segment-pnl', { params }).then((r) => r.data),
+  });
+  if (isLoading) return <LoadingSpinner />;
+  const segments = data?.segments || [];
+  const consolidated = data?.consolidated || {};
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-500">
+        Profit &amp; loss broken down by project. OpEx is allocated proportionally to gross revenue.
+      </p>
+      <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="table text-sm">
+            <thead>
+              <tr>
+                <th>Project</th>
+                <th className="text-right">Gross revenue</th>
+                <th className="text-right">Owner share</th>
+                <th className="text-right">Net revenue</th>
+                <th className="text-right">Direct costs</th>
+                <th className="text-right">OpEx alloc.</th>
+                <th className="text-right">Net profit</th>
+              </tr>
+            </thead>
+            <tbody>
+              {segments.map((s) => (
+                <tr key={s.project}>
+                  <td className="font-medium">{s.project}</td>
+                  <td className="text-right tabular-nums">{currency(s.gross_revenue)}</td>
+                  <td className="text-right tabular-nums">{currency(s.owner_share)}</td>
+                  <td className="text-right tabular-nums">{currency(s.net_revenue)}</td>
+                  <td className="text-right tabular-nums">{currency(s.direct_costs)}</td>
+                  <td className="text-right tabular-nums">{currency(s.opex_allocation)}</td>
+                  <td className={`text-right tabular-nums font-bold ${s.net_profit >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                    {currency(s.net_profit)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="bg-slate-50 font-semibold">
+                <td>{consolidated.project}</td>
+                <td className="text-right tabular-nums">{currency(consolidated.gross_revenue)}</td>
+                <td className="text-right tabular-nums">{currency(consolidated.owner_share)}</td>
+                <td className="text-right tabular-nums">{currency(consolidated.net_revenue)}</td>
+                <td className="text-right tabular-nums">{currency(consolidated.direct_costs)}</td>
+                <td className="text-right tabular-nums">{currency(consolidated.opex_allocation)}</td>
+                <td className={`text-right tabular-nums font-bold ${(consolidated.net_profit || 0) >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                  {currency(consolidated.net_profit)}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CashForecastTool({ rangeParams: params }) {
+  const qc = useQueryClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ['financial-system-cash-forecast', params],
+    queryFn: () => api.get('/financial-system/cash-forecast', { params }).then((r) => r.data),
+  });
+  const [editWeek, setEditWeek] = useState(null);
+  const [editForm, setEditForm] = useState({ category: 'collections', amount: '', notes: '' });
+
+  const addEntry = useMutation({
+    mutationFn: (payload) => api.post('/financial-system/cash-forecast', payload),
+    onSuccess: () => {
+      toast.success('Forecast entry added');
+      qc.invalidateQueries({ queryKey: ['financial-system-cash-forecast'] });
+      setEditWeek(null);
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+  });
+  const removeEntry = useMutation({
+    mutationFn: (id) => api.delete(`/financial-system/cash-forecast/${id}`),
+    onSuccess: () => {
+      toast.success('Entry removed');
+      qc.invalidateQueries({ queryKey: ['financial-system-cash-forecast'] });
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  const weeks = data?.weeks || [];
+  const startingBalance = data?.starting_balance || 0;
+
+  const categories = [
+    { value: 'collections', label: 'Collections' },
+    { value: 'owner_payouts', label: 'Owner payouts' },
+    { value: 'vendor_payments', label: 'Vendor payments' },
+    { value: 'recurring', label: 'Recurring' },
+    { value: 'payroll', label: 'Payroll' },
+    { value: 'tax', label: 'Tax' },
+    { value: 'other_in', label: 'Other in' },
+    { value: 'other_out', label: 'Other out' },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <p className="text-sm text-gray-500">
+          13-week rolling forecast. Starting balance: <span className="font-semibold tabular-nums">{currency(startingBalance)}</span> (current treasury).
+          Click a week to add manual overrides.
+        </p>
+      </div>
+      <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="table text-sm">
+            <thead>
+              <tr>
+                <th>Week</th>
+                <th className="text-right">Collections</th>
+                <th className="text-right">Owner payouts</th>
+                <th className="text-right">Vendor</th>
+                <th className="text-right">Recurring</th>
+                <th className="text-right">Payroll</th>
+                <th className="text-right">Tax</th>
+                <th className="text-right">Other</th>
+                <th className="text-right">Net flow</th>
+                <th className="text-right">Cumulative</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {weeks.map((w, i) => (
+                <tr key={w.week_start} className={w.cumulative_balance < 0 ? 'bg-rose-50' : ''}>
+                  <td className="font-medium text-xs whitespace-nowrap">{w.week_start}</td>
+                  <td className="text-right tabular-nums text-emerald-700">{currency(w.collections)}</td>
+                  <td className="text-right tabular-nums">{currency(w.owner_payouts)}</td>
+                  <td className="text-right tabular-nums">{currency(w.vendor_payments)}</td>
+                  <td className="text-right tabular-nums">{currency(w.recurring)}</td>
+                  <td className="text-right tabular-nums">{currency(w.payroll)}</td>
+                  <td className="text-right tabular-nums">{currency(w.tax)}</td>
+                  <td className="text-right tabular-nums">{w.other_in > 0 ? `+${currency(w.other_in)}` : ''}{w.other_out > 0 ? ` −${currency(w.other_out)}` : ''}</td>
+                  <td className={`text-right tabular-nums font-semibold ${w.net_flow >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                    {currency(w.net_flow)}
+                  </td>
+                  <td className={`text-right tabular-nums font-bold ${w.cumulative_balance >= 0 ? '' : 'text-rose-700'}`}>
+                    {currency(w.cumulative_balance)}
+                  </td>
+                  <td className="text-right">
+                    <button type="button" className="text-xs text-soul-blue" onClick={() => { setEditWeek(w.week_start); setEditForm({ category: 'collections', amount: '', notes: '' }); }}>
+                      <Plus className="w-3 h-3" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <Modal open={Boolean(editWeek)} onClose={() => setEditWeek(null)} title={`Add forecast — week ${editWeek}`} size="sm"
+        footer={
+          <>
+            <button type="button" className="btn-secondary" onClick={() => setEditWeek(null)}>Cancel</button>
+            <button type="button" className="btn-primary" disabled={addEntry.isPending}
+              onClick={() => addEntry.mutate({ week_start: editWeek, category: editForm.category, amount: parseFloat(editForm.amount), notes: editForm.notes || undefined })}>
+              Add
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <select className="input w-full" value={editForm.category} onChange={(e) => setEditForm((f) => ({ ...f, category: e.target.value }))}>
+            {categories.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+          </select>
+          <input type="number" className="input w-full" placeholder="Amount" value={editForm.amount} onChange={(e) => setEditForm((f) => ({ ...f, amount: e.target.value }))} />
+          <input className="input w-full" placeholder="Notes" value={editForm.notes} onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))} />
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -2084,6 +2495,972 @@ function OwnerTrustTool({ rangeParams: params }) {
   );
 }
 
+function VendorsTool({ rangeParams: params }) {
+  const qc = useQueryClient();
+  const [tab, setTab] = useState('vendors');
+  const [vendorModal, setVendorModal] = useState(null);
+  const [invoiceModal, setInvoiceModal] = useState(false);
+  const [selectedInvoices, setSelectedInvoices] = useState([]);
+  const [invStatus, setInvStatus] = useState('');
+  const [invVendor, setInvVendor] = useState('');
+
+  // Vendors
+  const { data: vendors = [], isLoading: vendorsLoading } = useQuery({
+    queryKey: ['financial-system-vendors'],
+    queryFn: () => api.get('/financial-system/vendors').then((r) => r.data),
+  });
+  const [vendorForm, setVendorForm] = useState({ name: '', tax_id: '', category: 'general', payment_terms_days: 30, contact_name: '', contact_phone: '', contact_email: '', bank_name: '', bank_account: '', notes: '', wht_rate_pct: 3 });
+  const saveVendor = useMutation({
+    mutationFn: (payload) =>
+      vendorModal?.id
+        ? api.put(`/financial-system/vendors/${vendorModal.id}`, payload)
+        : api.post('/financial-system/vendors', payload),
+    onSuccess: () => {
+      toast.success(vendorModal?.id ? 'Vendor updated' : 'Vendor created');
+      qc.invalidateQueries({ queryKey: ['financial-system-vendors'] });
+      setVendorModal(null);
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+  });
+
+  function openVendorEdit(v) {
+    setVendorForm({
+      name: v.name || '', tax_id: v.tax_id || '', category: v.category || 'general',
+      payment_terms_days: v.payment_terms_days || 30, contact_name: v.contact_name || '',
+      contact_phone: v.contact_phone || '', contact_email: v.contact_email || '',
+      bank_name: v.bank_name || '', bank_account: v.bank_account || '',
+      notes: v.notes || '', wht_rate_pct: v.wht_rate_pct ?? 3,
+    });
+    setVendorModal(v);
+  }
+  function openVendorNew() {
+    setVendorForm({ name: '', tax_id: '', category: 'general', payment_terms_days: 30, contact_name: '', contact_phone: '', contact_email: '', bank_name: '', bank_account: '', notes: '', wht_rate_pct: 3 });
+    setVendorModal({});
+  }
+
+  // Invoices
+  const invParams = { status: invStatus || undefined, vendor_id: invVendor || undefined };
+  const { data: invoices = [], isLoading: invoicesLoading } = useQuery({
+    queryKey: ['financial-system-vendor-invoices', invStatus, invVendor],
+    queryFn: () => api.get('/financial-system/vendor-invoices', { params: invParams }).then((r) => r.data),
+  });
+  const [invForm, setInvForm] = useState({ vendor_id: '', invoice_number: '', invoice_date: new Date().toISOString().slice(0, 10), amount: '', description: '', category: '', notes: '' });
+  const createInvoice = useMutation({
+    mutationFn: (payload) => api.post('/financial-system/vendor-invoices', payload),
+    onSuccess: () => {
+      toast.success('Invoice created');
+      qc.invalidateQueries({ queryKey: ['financial-system-vendor-invoices'] });
+      qc.invalidateQueries({ queryKey: ['financial-system-vendors'] });
+      setInvoiceModal(false);
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+  });
+  const approveInv = useMutation({
+    mutationFn: (id) => api.post(`/financial-system/vendor-invoices/${id}/approve`),
+    onSuccess: () => { toast.success('Approved'); qc.invalidateQueries({ queryKey: ['financial-system-vendor-invoices'] }); qc.invalidateQueries({ queryKey: ['financial-system-vendors'] }); },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+  });
+  const rejectInv = useMutation({
+    mutationFn: (id) => api.post(`/financial-system/vendor-invoices/${id}/reject`),
+    onSuccess: () => { toast.success('Rejected'); qc.invalidateQueries({ queryKey: ['financial-system-vendor-invoices'] }); qc.invalidateQueries({ queryKey: ['financial-system-vendors'] }); },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+  });
+  const payInv = useMutation({
+    mutationFn: (id) => api.post(`/financial-system/vendor-invoices/${id}/pay`, { payment_method: 'bank_transfer' }),
+    onSuccess: () => { toast.success('Marked paid'); qc.invalidateQueries({ queryKey: ['financial-system-vendor-invoices'] }); qc.invalidateQueries({ queryKey: ['financial-system-vendors'] }); },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+  });
+
+  // Aging
+  const { data: agingData, isLoading: agingLoading } = useQuery({
+    queryKey: ['financial-system-vendor-aging'],
+    queryFn: () => api.get('/financial-system/vendor-aging').then((r) => r.data),
+    enabled: tab === 'aging',
+  });
+
+  // Payment runs
+  const { data: runs = [], isLoading: runsLoading } = useQuery({
+    queryKey: ['financial-system-payment-runs'],
+    queryFn: () => api.get('/financial-system/payment-runs').then((r) => r.data),
+    enabled: tab === 'runs',
+  });
+  const createRun = useMutation({
+    mutationFn: (invoice_ids) => api.post('/financial-system/payment-runs', { invoice_ids }),
+    onSuccess: () => {
+      toast.success('Payment run created');
+      setSelectedInvoices([]);
+      qc.invalidateQueries({ queryKey: ['financial-system-payment-runs'] });
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+  });
+  const confirmRun = useMutation({
+    mutationFn: (id) => api.post(`/financial-system/payment-runs/${id}/confirm`),
+    onSuccess: () => {
+      toast.success('Run confirmed & invoices paid');
+      qc.invalidateQueries({ queryKey: ['financial-system-payment-runs'] });
+      qc.invalidateQueries({ queryKey: ['financial-system-vendor-invoices'] });
+      qc.invalidateQueries({ queryKey: ['financial-system-vendors'] });
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+  });
+
+  // Approved invoices for payment run selection
+  const approvedInvoices = invoices.filter((i) => i.status === 'approved');
+
+  function toggleInvoiceSelect(id) {
+    setSelectedInvoices((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+  }
+
+  const tabs = [
+    { id: 'vendors', label: 'Vendors' },
+    { id: 'invoices', label: 'Invoices' },
+    { id: 'aging', label: 'Aging' },
+    { id: 'runs', label: 'Payment runs' },
+  ];
+
+  const VENDOR_CATEGORIES = [
+    { value: 'general', label: 'General' },
+    { value: 'professional', label: 'Professional' },
+    { value: 'utilities', label: 'Utilities' },
+    { value: 'rent', label: 'Rent' },
+    { value: 'maintenance', label: 'Maintenance' },
+    { value: 'software', label: 'Software' },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            className={`px-3 py-1.5 rounded-full text-sm ${tab === t.id ? 'bg-soul-blue text-white' : 'bg-white border border-soul-line'}`}
+            onClick={() => setTab(t.id)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'vendors' && (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <p className="text-sm text-gray-500">Vendor master list with outstanding AP balances.</p>
+            <button type="button" className="btn-primary text-sm" onClick={openVendorNew}>
+              <Plus className="w-4 h-4" /> Add vendor
+            </button>
+          </div>
+          {vendorsLoading ? <LoadingSpinner /> : (
+            <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
+              <table className="table text-sm">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Category</th>
+                    <th>WHT %</th>
+                    <th>Terms</th>
+                    <th className="text-right">Outstanding</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {vendors.length === 0 ? (
+                    <tr><td colSpan={6} className="text-center text-gray-400 py-8">No vendors yet</td></tr>
+                  ) : vendors.map((v) => (
+                    <tr key={v.id} className={v.is_active === false ? 'opacity-50' : ''}>
+                      <td className="font-medium">{v.name}</td>
+                      <td className="capitalize">{v.category}</td>
+                      <td className="tabular-nums">{v.wht_rate_pct}%</td>
+                      <td className="tabular-nums">{v.payment_terms_days}d</td>
+                      <td className="text-right tabular-nums font-semibold">{currency(v.outstanding)}</td>
+                      <td className="text-right">
+                        <button type="button" className="text-xs text-soul-blue" onClick={() => openVendorEdit(v)}>Edit</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <Modal
+            open={Boolean(vendorModal)}
+            onClose={() => setVendorModal(null)}
+            title={vendorModal?.id ? 'Edit vendor' : 'New vendor'}
+            footer={
+              <>
+                <button type="button" className="btn-secondary" onClick={() => setVendorModal(null)}>Cancel</button>
+                <button type="submit" form="vendor-form" className="btn-primary" disabled={saveVendor.isPending}>Save</button>
+              </>
+            }
+          >
+            <form id="vendor-form" className="space-y-3" onSubmit={(e) => { e.preventDefault(); saveVendor.mutate(vendorForm); }}>
+              <input className="input w-full" placeholder="Vendor name *" value={vendorForm.name} onChange={(e) => setVendorForm((f) => ({ ...f, name: e.target.value }))} required />
+              <div className="grid grid-cols-2 gap-3">
+                <input className="input" placeholder="Tax ID" value={vendorForm.tax_id} onChange={(e) => setVendorForm((f) => ({ ...f, tax_id: e.target.value }))} />
+                <select className="input" value={vendorForm.category} onChange={(e) => setVendorForm((f) => ({ ...f, category: e.target.value }))}>
+                  {VENDOR_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Payment terms (days)</label>
+                  <input type="number" min="0" className="input w-full" value={vendorForm.payment_terms_days} onChange={(e) => setVendorForm((f) => ({ ...f, payment_terms_days: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="label">WHT rate %</label>
+                  <input type="number" min="0" step="0.01" className="input w-full" value={vendorForm.wht_rate_pct} onChange={(e) => setVendorForm((f) => ({ ...f, wht_rate_pct: e.target.value }))} />
+                </div>
+              </div>
+              <input className="input w-full" placeholder="Contact name" value={vendorForm.contact_name} onChange={(e) => setVendorForm((f) => ({ ...f, contact_name: e.target.value }))} />
+              <div className="grid grid-cols-2 gap-3">
+                <input className="input" placeholder="Phone" value={vendorForm.contact_phone} onChange={(e) => setVendorForm((f) => ({ ...f, contact_phone: e.target.value }))} />
+                <input className="input" placeholder="Email" value={vendorForm.contact_email} onChange={(e) => setVendorForm((f) => ({ ...f, contact_email: e.target.value }))} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <input className="input" placeholder="Bank name" value={vendorForm.bank_name} onChange={(e) => setVendorForm((f) => ({ ...f, bank_name: e.target.value }))} />
+                <input className="input" placeholder="Bank account" value={vendorForm.bank_account} onChange={(e) => setVendorForm((f) => ({ ...f, bank_account: e.target.value }))} />
+              </div>
+              <textarea className="input w-full min-h-[60px]" placeholder="Notes" value={vendorForm.notes} onChange={(e) => setVendorForm((f) => ({ ...f, notes: e.target.value }))} />
+            </form>
+          </Modal>
+        </div>
+      )}
+
+      {tab === 'invoices' && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-2">
+              <select className="input text-sm w-36" value={invStatus} onChange={(e) => setInvStatus(e.target.value)}>
+                <option value="">All statuses</option>
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="paid">Paid</option>
+                <option value="rejected">Rejected</option>
+              </select>
+              <SearchableSelect
+                className="w-48"
+                value={invVendor}
+                onChange={setInvVendor}
+                placeholder="All vendors"
+                options={[
+                  { value: '', label: 'All vendors' },
+                  ...vendors.map((v) => ({ value: String(v.id), label: v.name })),
+                ]}
+              />
+            </div>
+            <button type="button" className="btn-primary text-sm" onClick={() => setInvoiceModal(true)}>
+              <Plus className="w-4 h-4" /> New invoice
+            </button>
+          </div>
+          {invoicesLoading ? <LoadingSpinner /> : (
+            <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
+              <table className="table text-sm">
+                <thead>
+                  <tr>
+                    <th>Vendor</th>
+                    <th>Invoice #</th>
+                    <th>Date</th>
+                    <th>Due</th>
+                    <th className="text-right">Amount</th>
+                    <th className="text-right">WHT</th>
+                    <th className="text-right">Net</th>
+                    <th>Status</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {invoices.length === 0 ? (
+                    <tr><td colSpan={9} className="text-center text-gray-400 py-8">No invoices</td></tr>
+                  ) : invoices.map((inv) => (
+                    <tr key={inv.id}>
+                      <td className="font-medium">{inv.vendor_name}</td>
+                      <td>{inv.invoice_number || '—'}</td>
+                      <td>{formatDate(inv.invoice_date)}</td>
+                      <td>{formatDate(inv.due_date)}</td>
+                      <td className="text-right tabular-nums">{currency(inv.amount)}</td>
+                      <td className="text-right tabular-nums text-gray-500">{currency(inv.wht_amount)}</td>
+                      <td className="text-right tabular-nums font-semibold">{currency(inv.net_payable)}</td>
+                      <td>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${
+                          inv.status === 'paid' ? 'bg-emerald-100 text-emerald-800' :
+                          inv.status === 'approved' ? 'bg-sky-100 text-sky-800' :
+                          inv.status === 'rejected' ? 'bg-rose-100 text-rose-800' :
+                          'bg-amber-100 text-amber-800'
+                        }`}>
+                          {inv.status}
+                        </span>
+                      </td>
+                      <td className="text-right space-x-1">
+                        {inv.status === 'pending' && (
+                          <>
+                            <button type="button" className="text-xs text-emerald-700" onClick={() => approveInv.mutate(inv.id)}>Approve</button>
+                            <button type="button" className="text-xs text-rose-600" onClick={() => rejectInv.mutate(inv.id)}>Reject</button>
+                          </>
+                        )}
+                        {inv.status === 'approved' && (
+                          <button type="button" className="text-xs text-soul-blue" onClick={() => payInv.mutate(inv.id)}>Pay</button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <Modal
+            open={invoiceModal}
+            onClose={() => setInvoiceModal(false)}
+            title="New vendor invoice"
+            footer={
+              <>
+                <button type="button" className="btn-secondary" onClick={() => setInvoiceModal(false)}>Cancel</button>
+                <button type="submit" form="invoice-form" className="btn-primary" disabled={createInvoice.isPending}>Save</button>
+              </>
+            }
+          >
+            <form id="invoice-form" className="space-y-3" onSubmit={(e) => {
+              e.preventDefault();
+              createInvoice.mutate({
+                vendor_id: parseInt(invForm.vendor_id, 10),
+                invoice_number: invForm.invoice_number || undefined,
+                invoice_date: invForm.invoice_date,
+                amount: parseFloat(invForm.amount),
+                description: invForm.description || undefined,
+                category: invForm.category || undefined,
+                notes: invForm.notes || undefined,
+              });
+            }}>
+              <SearchableSelect
+                className="w-full"
+                value={invForm.vendor_id}
+                onChange={(v) => setInvForm((f) => ({ ...f, vendor_id: v }))}
+                placeholder="Select vendor *"
+                options={vendors.filter((v) => v.is_active !== false).map((v) => ({ value: String(v.id), label: v.name }))}
+              />
+              <input className="input w-full" placeholder="Invoice number" value={invForm.invoice_number} onChange={(e) => setInvForm((f) => ({ ...f, invoice_number: e.target.value }))} />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Invoice date</label>
+                  <input type="date" className="input w-full" value={invForm.invoice_date} onChange={(e) => setInvForm((f) => ({ ...f, invoice_date: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="label">Amount *</label>
+                  <input type="number" min="0.01" step="0.01" className="input w-full" value={invForm.amount} onChange={(e) => setInvForm((f) => ({ ...f, amount: e.target.value }))} required />
+                </div>
+              </div>
+              {invForm.vendor_id && invForm.amount > 0 && (() => {
+                const v = vendors.find((x) => String(x.id) === invForm.vendor_id);
+                if (!v) return null;
+                const wht = Math.round(parseFloat(invForm.amount) * (parseFloat(v.wht_rate_pct) || 0) / 100 * 100) / 100;
+                const net = Math.round((parseFloat(invForm.amount) - wht) * 100) / 100;
+                return (
+                  <div className="rounded-xl bg-slate-50 p-3 text-sm flex gap-4">
+                    <span>WHT ({v.wht_rate_pct}%): <strong className="tabular-nums">{currency(wht)}</strong></span>
+                    <span>Net payable: <strong className="tabular-nums">{currency(net)}</strong></span>
+                    <span>Due in {v.payment_terms_days}d</span>
+                  </div>
+                );
+              })()}
+              <input className="input w-full" placeholder="Description" value={invForm.description} onChange={(e) => setInvForm((f) => ({ ...f, description: e.target.value }))} />
+              <textarea className="input w-full min-h-[60px]" placeholder="Notes" value={invForm.notes} onChange={(e) => setInvForm((f) => ({ ...f, notes: e.target.value }))} />
+            </form>
+          </Modal>
+        </div>
+      )}
+
+      {tab === 'aging' && (
+        <div className="space-y-4">
+          <p className="text-sm text-gray-500">Vendor AP aging by due date. Total outstanding: {currency(agingData?.total_outstanding)}.</p>
+          {agingLoading ? <LoadingSpinner /> : (
+            <>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                {Object.entries(agingData?.buckets || {}).map(([key, b]) => (
+                  <div key={key} className="rounded-2xl border border-soul-line bg-white p-4">
+                    <p className="text-xs text-gray-400">{b.label}</p>
+                    <p className="text-xl font-bold tabular-nums mt-1">{currency(b.amount)}</p>
+                    <p className="text-xs text-gray-500">{b.count} invoices</p>
+                  </div>
+                ))}
+              </div>
+              {Object.values(agingData?.buckets || {}).map((b) =>
+                (b.rows || []).length ? (
+                  <div key={b.label} className="rounded-2xl border border-soul-line bg-white overflow-hidden">
+                    <div className="px-6 py-3 border-b font-semibold">{b.label}</div>
+                    <table className="table text-sm">
+                      <thead>
+                        <tr>
+                          <th>Vendor</th>
+                          <th>Invoice #</th>
+                          <th>Due</th>
+                          <th className="text-right">Days</th>
+                          <th className="text-right">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {b.rows.map((r) => (
+                          <tr key={r.invoice_id}>
+                            <td>{r.vendor_name}</td>
+                            <td>{r.invoice_number || '—'}</td>
+                            <td>{formatDate(r.due_date)}</td>
+                            <td className="text-right tabular-nums">{r.days}</td>
+                            <td className="text-right tabular-nums font-medium">{currency(r.amount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {tab === 'runs' && (
+        <div className="space-y-4">
+          <p className="text-sm text-gray-500">
+            Select approved invoices to batch into a payment run, then confirm to mark them paid.
+          </p>
+          {approvedInvoices.length > 0 && (
+            <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
+              <div className="px-6 py-3 border-b font-semibold flex justify-between items-center">
+                <span>Approved invoices ({approvedInvoices.length})</span>
+                <button
+                  type="button"
+                  className="btn-primary text-sm"
+                  disabled={!selectedInvoices.length || createRun.isPending}
+                  onClick={() => createRun.mutate(selectedInvoices)}
+                >
+                  Create run ({selectedInvoices.length})
+                </button>
+              </div>
+              <table className="table text-sm">
+                <thead>
+                  <tr>
+                    <th />
+                    <th>Vendor</th>
+                    <th>Invoice #</th>
+                    <th className="text-right">Net</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {approvedInvoices.map((inv) => (
+                    <tr key={inv.id}>
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={selectedInvoices.includes(inv.id)}
+                          onChange={() => toggleInvoiceSelect(inv.id)}
+                        />
+                      </td>
+                      <td>{inv.vendor_name}</td>
+                      <td>{inv.invoice_number || '—'}</td>
+                      <td className="text-right tabular-nums">{currency(inv.net_payable)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {runsLoading ? <LoadingSpinner /> : (
+            <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
+              <div className="px-6 py-3 border-b font-semibold">Payment runs</div>
+              <table className="table text-sm">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Date</th>
+                    <th className="text-right">Amount</th>
+                    <th className="text-right">WHT</th>
+                    <th className="text-right">Net</th>
+                    <th>Invoices</th>
+                    <th>Status</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {runs.length === 0 ? (
+                    <tr><td colSpan={8} className="text-center text-gray-400 py-8">No payment runs</td></tr>
+                  ) : runs.map((r) => (
+                    <tr key={r.id}>
+                      <td className="font-mono text-xs">#{r.id}</td>
+                      <td>{formatDate(r.run_date)}</td>
+                      <td className="text-right tabular-nums">{currency(r.total_amount)}</td>
+                      <td className="text-right tabular-nums text-gray-500">{currency(r.total_wht)}</td>
+                      <td className="text-right tabular-nums font-semibold">{currency(r.total_net)}</td>
+                      <td className="tabular-nums">{r.invoice_count}</td>
+                      <td>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${
+                          r.status === 'completed' ? 'bg-emerald-100 text-emerald-800' :
+                          r.status === 'confirmed' ? 'bg-sky-100 text-sky-800' :
+                          'bg-amber-100 text-amber-800'
+                        }`}>
+                          {r.status}
+                        </span>
+                      </td>
+                      <td className="text-right">
+                        {r.status === 'draft' && (
+                          <button type="button" className="btn-secondary text-xs py-1 px-2" onClick={() => confirmRun.mutate(r.id)} disabled={confirmRun.isPending}>
+                            <CheckCircle2 className="w-3 h-3 inline mr-1" /> Confirm
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const ACTION_TYPES = [
+  { value: 'reminder_sent', label: 'Reminder sent' },
+  { value: 'phone_call', label: 'Phone call' },
+  { value: 'final_notice', label: 'Final notice' },
+  { value: 'write_off_proposed', label: 'Write-off proposed' },
+  { value: 'dispute', label: 'Dispute' },
+  { value: 'payment_plan', label: 'Payment plan' },
+];
+
+function ArControlsTool({ rangeParams: params }) {
+  const [tab, setTab] = useState('dashboard');
+  const qc = useQueryClient();
+
+  // ── Dashboard ──
+  const { data: dash, isLoading: dashLoading } = useQuery({
+    queryKey: ['ar-dashboard', params],
+    queryFn: () => api.get('/financial-system/ar-dashboard', { params }).then((r) => r.data),
+    enabled: tab === 'dashboard',
+  });
+
+  // ── Collection log ──
+  const { data: actions = [], isLoading: actionsLoading } = useQuery({
+    queryKey: ['ar-actions'],
+    queryFn: () => api.get('/financial-system/ar-actions').then((r) => r.data),
+    enabled: tab === 'log',
+  });
+  const [showActionForm, setShowActionForm] = useState(false);
+  const [actionForm, setActionForm] = useState({ reservation_id: '', action_type: 'reminder_sent', notes: '', next_action_date: '', amount_disputed: '' });
+  const createAction = useMutation({
+    mutationFn: (payload) => api.post('/financial-system/ar-actions', payload),
+    onSuccess: () => {
+      toast.success('Action logged');
+      qc.invalidateQueries({ queryKey: ['ar-actions'] });
+      qc.invalidateQueries({ queryKey: ['ar-dashboard'] });
+      setShowActionForm(false);
+      setActionForm({ reservation_id: '', action_type: 'reminder_sent', notes: '', next_action_date: '', amount_disputed: '' });
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+  });
+
+  // ── Provisions ──
+  const { data: provisions = [], isLoading: provLoading } = useQuery({
+    queryKey: ['ar-provisions'],
+    queryFn: () => api.get('/financial-system/ar-provisions').then((r) => r.data),
+    enabled: tab === 'provisions',
+  });
+  const [showProvForm, setShowProvForm] = useState(false);
+  const [provForm, setProvForm] = useState({ period_month: new Date().toISOString().slice(0, 7), bucket_0_30_pct: '0', bucket_31_60_pct: '1', bucket_61_90_pct: '5', bucket_90_plus_pct: '20', notes: '' });
+  const calcProvision = useMutation({
+    mutationFn: (payload) => api.post('/financial-system/ar-provisions', payload),
+    onSuccess: () => {
+      toast.success('Provision calculated');
+      qc.invalidateQueries({ queryKey: ['ar-provisions'] });
+      qc.invalidateQueries({ queryKey: ['ar-dashboard'] });
+      setShowProvForm(false);
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+  });
+
+  // ── Write-offs ──
+  const { data: writeOffs = [], isLoading: woLoading } = useQuery({
+    queryKey: ['ar-write-offs'],
+    queryFn: () => api.get('/financial-system/ar-write-offs').then((r) => r.data),
+    enabled: tab === 'writeoffs',
+  });
+  const [showWoForm, setShowWoForm] = useState(false);
+  const [woForm, setWoForm] = useState({ reservation_id: '', amount: '', reason: '' });
+  const createWo = useMutation({
+    mutationFn: (payload) => api.post('/financial-system/ar-write-offs', payload),
+    onSuccess: () => {
+      toast.success('Write-off proposed');
+      qc.invalidateQueries({ queryKey: ['ar-write-offs'] });
+      qc.invalidateQueries({ queryKey: ['ar-dashboard'] });
+      setShowWoForm(false);
+      setWoForm({ reservation_id: '', amount: '', reason: '' });
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+  });
+  const approveWo = useMutation({
+    mutationFn: (id) => api.post(`/financial-system/ar-write-offs/${id}/approve`),
+    onSuccess: () => {
+      toast.success('Write-off approved');
+      qc.invalidateQueries({ queryKey: ['ar-write-offs'] });
+      qc.invalidateQueries({ queryKey: ['ar-dashboard'] });
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+  });
+  const rejectWo = useMutation({
+    mutationFn: (id) => api.post(`/financial-system/ar-write-offs/${id}/reject`),
+    onSuccess: () => {
+      toast.success('Write-off rejected');
+      qc.invalidateQueries({ queryKey: ['ar-write-offs'] });
+      qc.invalidateQueries({ queryKey: ['ar-dashboard'] });
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+  });
+
+  const tabs = [
+    ['dashboard', 'Dashboard'],
+    ['log', 'Collection log'],
+    ['provisions', 'Provisions'],
+    ['writeoffs', 'Write-offs'],
+  ];
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-500">
+        Track collection efforts, provision for bad debts, and manage write-offs against guest receivable (105000).
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {tabs.map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            className={`px-3 py-1.5 rounded-full text-sm ${tab === id ? 'bg-soul-blue text-white' : 'bg-white border border-soul-line'}`}
+            onClick={() => setTab(id)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Dashboard ── */}
+      {tab === 'dashboard' && (dashLoading ? <LoadingSpinner /> : (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="rounded-2xl border border-soul-line bg-white p-4">
+              <p className="text-xs text-gray-400">Total AR</p>
+              <p className="text-xl font-bold tabular-nums mt-1">{currency(dash?.total_ar)}</p>
+            </div>
+            <div className="rounded-2xl border border-soul-line bg-white p-4">
+              <p className="text-xs text-gray-400">Bad debt provision</p>
+              <p className="text-xl font-bold tabular-nums mt-1">{currency(dash?.total_provision)}</p>
+              {dash?.latest_provision && <p className="text-xs text-gray-500">{dash.latest_provision.period_month}</p>}
+            </div>
+            <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
+              <p className="text-xs text-amber-800">Overdue (&gt;30 days)</p>
+              <p className="text-xl font-bold tabular-nums mt-1">{dash?.overdue_count || 0} stays</p>
+              <p className="text-xs text-gray-500">{dash?.overdue_pct || 0}% of AR</p>
+            </div>
+            <div className="rounded-2xl border border-soul-line bg-white p-4">
+              <p className="text-xs text-gray-400">Actions this month</p>
+              <p className="text-xl font-bold tabular-nums mt-1">{dash?.actions_this_month || 0}</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {Object.entries(dash?.aging?.buckets || {}).map(([key, b]) => (
+              <div key={key} className="rounded-2xl border border-soul-line bg-white p-4">
+                <p className="text-xs text-gray-400">{b.label}</p>
+                <p className="text-xl font-bold tabular-nums mt-1">{currency(b.amount)}</p>
+                <p className="text-xs text-gray-500">{b.count} stays</p>
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="rounded-2xl border border-soul-line bg-white p-5">
+              <h3 className="font-semibold mb-3">Collection actions by type</h3>
+              {Object.entries(dash?.action_counts || {}).length === 0 ? (
+                <p className="text-sm text-gray-400">No collection actions yet</p>
+              ) : (
+                <div className="space-y-2">
+                  {Object.entries(dash?.action_counts || {}).map(([type, cnt]) => (
+                    <div key={type} className="flex justify-between text-sm">
+                      <span className="capitalize">{type.replace(/_/g, ' ')}</span>
+                      <span className="font-semibold tabular-nums">{cnt}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="rounded-2xl border border-soul-line bg-white p-5">
+              <h3 className="font-semibold mb-3">Write-off summary</h3>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span>Pending</span>
+                  <span className="font-semibold tabular-nums">{currency(dash?.write_offs?.pending)} ({dash?.write_offs?.pending_count || 0})</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Approved</span>
+                  <span className="font-semibold tabular-nums text-emerald-700">{currency(dash?.write_offs?.approved)} ({dash?.write_offs?.approved_count || 0})</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {/* ── Collection log ── */}
+      {tab === 'log' && (actionsLoading ? <LoadingSpinner /> : (
+        <div className="space-y-4">
+          <div className="flex justify-end">
+            <button type="button" className="btn-primary text-sm" onClick={() => setShowActionForm(true)}>
+              <Plus className="w-4 h-4" /> Log action
+            </button>
+          </div>
+          <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
+            <table className="table text-sm">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Reservation</th>
+                  <th>Type</th>
+                  <th>Notes</th>
+                  <th>Next action</th>
+                  <th>By</th>
+                </tr>
+              </thead>
+              <tbody>
+                {actions.length === 0 ? (
+                  <tr><td colSpan={6} className="text-center text-gray-400 py-8">No collection actions</td></tr>
+                ) : actions.map((a) => (
+                  <tr key={a.id}>
+                    <td>{formatDate(a.created_at)}</td>
+                    <td className="tabular-nums">#{a.reservation_id}</td>
+                    <td className="capitalize">{a.action_type.replace(/_/g, ' ')}</td>
+                    <td className="max-w-xs truncate">{a.notes || '—'}</td>
+                    <td>{a.next_action_date ? formatDate(a.next_action_date) : '—'}</td>
+                    <td>{a.created_by_name || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Modal open={showActionForm} onClose={() => setShowActionForm(false)} title="Log collection action" footer={
+            <>
+              <button type="button" className="btn-secondary" onClick={() => setShowActionForm(false)}>Cancel</button>
+              <button type="submit" form="ar-action-form" className="btn-primary" disabled={createAction.isPending}>Save</button>
+            </>
+          }>
+            <form id="ar-action-form" className="space-y-4" onSubmit={(e) => {
+              e.preventDefault();
+              createAction.mutate({
+                reservation_id: parseInt(actionForm.reservation_id, 10),
+                action_type: actionForm.action_type,
+                notes: actionForm.notes || undefined,
+                next_action_date: actionForm.next_action_date || undefined,
+                amount_disputed: parseFloat(actionForm.amount_disputed) || 0,
+              });
+            }}>
+              <div>
+                <label className="label">Reservation ID</label>
+                <input type="number" className="input w-full" required value={actionForm.reservation_id} onChange={(e) => setActionForm((f) => ({ ...f, reservation_id: e.target.value }))} />
+              </div>
+              <div>
+                <label className="label">Action type</label>
+                <select className="input w-full" value={actionForm.action_type} onChange={(e) => setActionForm((f) => ({ ...f, action_type: e.target.value }))}>
+                  {ACTION_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="label">Notes</label>
+                <textarea className="input w-full min-h-[80px]" value={actionForm.notes} onChange={(e) => setActionForm((f) => ({ ...f, notes: e.target.value }))} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Next action date</label>
+                  <input type="date" className="input w-full" value={actionForm.next_action_date} onChange={(e) => setActionForm((f) => ({ ...f, next_action_date: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="label">Amount disputed</label>
+                  <input type="number" min="0" step="0.01" className="input w-full" value={actionForm.amount_disputed} onChange={(e) => setActionForm((f) => ({ ...f, amount_disputed: e.target.value }))} />
+                </div>
+              </div>
+            </form>
+          </Modal>
+        </div>
+      ))}
+
+      {/* ── Provisions ── */}
+      {tab === 'provisions' && (provLoading ? <LoadingSpinner /> : (
+        <div className="space-y-4">
+          <div className="flex justify-end">
+            <button type="button" className="btn-primary text-sm" onClick={() => setShowProvForm(true)}>
+              <Plus className="w-4 h-4" /> Calculate provision
+            </button>
+          </div>
+          <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
+            <table className="table text-sm">
+              <thead>
+                <tr>
+                  <th>Month</th>
+                  <th className="text-right">Total AR</th>
+                  <th className="text-right">0–30 %</th>
+                  <th className="text-right">31–60 %</th>
+                  <th className="text-right">61–90 %</th>
+                  <th className="text-right">90+ %</th>
+                  <th className="text-right">Provision</th>
+                  <th>By</th>
+                </tr>
+              </thead>
+              <tbody>
+                {provisions.length === 0 ? (
+                  <tr><td colSpan={8} className="text-center text-gray-400 py-8">No provisions yet</td></tr>
+                ) : provisions.map((p) => (
+                  <tr key={p.id}>
+                    <td className="font-medium">{p.period_month}</td>
+                    <td className="text-right tabular-nums">{currency(p.total_ar)}</td>
+                    <td className="text-right tabular-nums">{p.bucket_0_30_pct}%</td>
+                    <td className="text-right tabular-nums">{p.bucket_31_60_pct}%</td>
+                    <td className="text-right tabular-nums">{p.bucket_61_90_pct}%</td>
+                    <td className="text-right tabular-nums">{p.bucket_90_plus_pct}%</td>
+                    <td className="text-right tabular-nums font-bold">{currency(p.total_provision)}</td>
+                    <td>{p.created_by_name || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Modal open={showProvForm} onClose={() => setShowProvForm(false)} title="Calculate bad debt provision" footer={
+            <>
+              <button type="button" className="btn-secondary" onClick={() => setShowProvForm(false)}>Cancel</button>
+              <button type="submit" form="ar-prov-form" className="btn-primary" disabled={calcProvision.isPending}>Calculate</button>
+            </>
+          }>
+            <form id="ar-prov-form" className="space-y-4" onSubmit={(e) => {
+              e.preventDefault();
+              calcProvision.mutate({
+                period_month: provForm.period_month,
+                bucket_0_30_pct: parseFloat(provForm.bucket_0_30_pct),
+                bucket_31_60_pct: parseFloat(provForm.bucket_31_60_pct),
+                bucket_61_90_pct: parseFloat(provForm.bucket_61_90_pct),
+                bucket_90_plus_pct: parseFloat(provForm.bucket_90_plus_pct),
+                notes: provForm.notes || undefined,
+              });
+            }}>
+              <div>
+                <label className="label">Period month</label>
+                <input type="month" className="input w-full" required value={provForm.period_month} onChange={(e) => setProvForm((f) => ({ ...f, period_month: e.target.value }))} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">0–30 days loss %</label>
+                  <input type="number" min="0" max="100" step="0.1" className="input w-full" value={provForm.bucket_0_30_pct} onChange={(e) => setProvForm((f) => ({ ...f, bucket_0_30_pct: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="label">31–60 days loss %</label>
+                  <input type="number" min="0" max="100" step="0.1" className="input w-full" value={provForm.bucket_31_60_pct} onChange={(e) => setProvForm((f) => ({ ...f, bucket_31_60_pct: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="label">61–90 days loss %</label>
+                  <input type="number" min="0" max="100" step="0.1" className="input w-full" value={provForm.bucket_61_90_pct} onChange={(e) => setProvForm((f) => ({ ...f, bucket_61_90_pct: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="label">90+ days loss %</label>
+                  <input type="number" min="0" max="100" step="0.1" className="input w-full" value={provForm.bucket_90_plus_pct} onChange={(e) => setProvForm((f) => ({ ...f, bucket_90_plus_pct: e.target.value }))} />
+                </div>
+              </div>
+              <div>
+                <label className="label">Notes</label>
+                <textarea className="input w-full min-h-[60px]" value={provForm.notes} onChange={(e) => setProvForm((f) => ({ ...f, notes: e.target.value }))} />
+              </div>
+            </form>
+          </Modal>
+        </div>
+      ))}
+
+      {/* ── Write-offs ── */}
+      {tab === 'writeoffs' && (woLoading ? <LoadingSpinner /> : (
+        <div className="space-y-4">
+          <div className="flex justify-end">
+            <button type="button" className="btn-primary text-sm" onClick={() => setShowWoForm(true)}>
+              <Plus className="w-4 h-4" /> Propose write-off
+            </button>
+          </div>
+          <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
+            <table className="table text-sm">
+              <thead>
+                <tr>
+                  <th>Reservation</th>
+                  <th className="text-right">Amount</th>
+                  <th>Reason</th>
+                  <th>Status</th>
+                  <th>By</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {writeOffs.length === 0 ? (
+                  <tr><td colSpan={6} className="text-center text-gray-400 py-8">No write-offs</td></tr>
+                ) : writeOffs.map((w) => (
+                  <tr key={w.id}>
+                    <td className="tabular-nums">#{w.reservation_id}</td>
+                    <td className="text-right tabular-nums font-medium">{currency(w.amount)}</td>
+                    <td className="max-w-xs truncate">{w.reason || '—'}</td>
+                    <td>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${
+                        w.status === 'approved' ? 'bg-emerald-100 text-emerald-800' :
+                        w.status === 'rejected' ? 'bg-rose-100 text-rose-800' :
+                        'bg-amber-100 text-amber-800'
+                      }`}>
+                        {w.status}
+                      </span>
+                    </td>
+                    <td>{w.created_by_name || '—'}</td>
+                    <td className="text-right space-x-2">
+                      {w.status === 'pending' && (
+                        <>
+                          <button type="button" className="text-xs text-emerald-700" onClick={() => approveWo.mutate(w.id)}>Approve</button>
+                          <button type="button" className="text-xs text-rose-600" onClick={() => rejectWo.mutate(w.id)}>Reject</button>
+                        </>
+                      )}
+                      {w.status === 'approved' && w.approved_by_name && (
+                        <span className="text-xs text-gray-400">by {w.approved_by_name}</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Modal open={showWoForm} onClose={() => setShowWoForm(false)} title="Propose write-off" footer={
+            <>
+              <button type="button" className="btn-secondary" onClick={() => setShowWoForm(false)}>Cancel</button>
+              <button type="submit" form="ar-wo-form" className="btn-primary" disabled={createWo.isPending}>Propose</button>
+            </>
+          }>
+            <form id="ar-wo-form" className="space-y-4" onSubmit={(e) => {
+              e.preventDefault();
+              createWo.mutate({
+                reservation_id: parseInt(woForm.reservation_id, 10),
+                amount: parseFloat(woForm.amount),
+                reason: woForm.reason || undefined,
+              });
+            }}>
+              <div>
+                <label className="label">Reservation ID</label>
+                <input type="number" className="input w-full" required value={woForm.reservation_id} onChange={(e) => setWoForm((f) => ({ ...f, reservation_id: e.target.value }))} />
+              </div>
+              <div>
+                <label className="label">Amount (EGP)</label>
+                <input type="number" min="0.01" step="0.01" className="input w-full" required value={woForm.amount} onChange={(e) => setWoForm((f) => ({ ...f, amount: e.target.value }))} />
+              </div>
+              <div>
+                <label className="label">Reason</label>
+                <textarea className="input w-full min-h-[80px]" value={woForm.reason} onChange={(e) => setWoForm((f) => ({ ...f, reason: e.target.value }))} placeholder="Why is this receivable uncollectible?" />
+              </div>
+            </form>
+          </Modal>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function FinancialSystem() {
   const { view, group, code, txn, tool, go } = useFinanceNav();
   const [fromDate, setFromDate] = useState(FINANCIAL_EPOCH);
@@ -2118,6 +3495,7 @@ export default function FinancialSystem() {
     const items = [{ label: 'Financial System', onClick: () => go({ view: 'home', group: '', code: '', txn: '', tool: '' }) }];
     if (tool) {
       const labels = {
+        assets: 'Fixed assets',
         owners: 'Owner payouts',
         insurance: 'Insurance refunds',
         trust: 'Owner trust',
@@ -2128,9 +3506,13 @@ export default function FinancialSystem() {
         reports: 'Month-end reports',
         aging: 'AR aging',
         close: 'Close month',
-        gateway: 'Gateway settle',
-        bank: 'Bank rec',
-      };
+    gateway: 'Gateway settle',
+    bank: 'Bank rec',
+    vendors: 'AP / Vendors',
+    ar: 'AR Controls',
+    segment: 'Segment P&L',
+    forecast: 'Cash forecast',
+  };
       items.push({ label: labels[tool] || tool });
       return items;
     }
@@ -2232,7 +3614,11 @@ export default function FinancialSystem() {
           onOpenAccount={(c) => go({ view: 'account', code: c, group: 'liabilities', txn: '', tool: '' })}
         />
       ) : tool === 'close' ? (
-        <CloseTool toDate={toDate} />
+        <CloseTool toDate={toDate} month={(toDate || new Date().toISOString().slice(0, 10)).slice(0, 7)} />
+      ) : tool === 'segment' ? (
+        <SegmentPnlTool rangeParams={params} />
+      ) : tool === 'forecast' ? (
+        <CashForecastTool rangeParams={params} />
       ) : tool === 'gateway' ? (
         <GatewayTool rangeParams={params} />
       ) : tool === 'bank' ? (
@@ -2241,8 +3627,14 @@ export default function FinancialSystem() {
         <ManualEntriesTab fromDate={fromDate} toDate={toDate} rangeParams={params} />
       ) : tool === 'petty' ? (
         <PettyCashSection embedded />
+      ) : tool === 'vendors' ? (
+        <VendorsTool rangeParams={params} />
+      ) : tool === 'ar' ? (
+        <ArControlsTool rangeParams={params} />
       ) : tool === 'recurring' ? (
         <RecurringTool />
+      ) : tool === 'assets' ? (
+        <FixedAssetsTool />
       ) : (
         <LoadingSpinner />
       )}

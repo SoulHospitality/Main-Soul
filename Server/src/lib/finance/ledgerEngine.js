@@ -958,6 +958,14 @@ async function loadPortalData(from, to) {
     reconciled = [];
   }
 
+  let depreciationEntries = [];
+  try {
+    const { rows } = await query(`SELECT d.*, fa.expense_account, fa.depreciation_account FROM fixed_asset_depreciation d JOIN fixed_assets fa ON fa.id = d.asset_id`);
+    depreciationEntries = rows;
+  } catch (_) {
+    depreciationEntries = [];
+  }
+
   return {
     reservations,
     payments,
@@ -975,6 +983,7 @@ async function loadPortalData(from, to) {
     snapshots,
     reconciled,
     reservationTotals,
+    depreciationEntries,
   };
 }
 
@@ -1211,6 +1220,28 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
           owner_id: hb.owner_id,
           owner_name: hb.owner_name,
         },
+      })
+    );
+  }
+
+  for (const dep of data.depreciationEntries || []) {
+    const depDate = dep.period_month + '-01';
+    if (!inRange(depDate, from, to)) continue;
+    const expAcct = dep.expense_account || '606000';
+    const accmAcct = dep.depreciation_account || '159000';
+    const amt = round2(parseFloat(dep.amount) || 0);
+    if (!(amt > 0.009)) continue;
+    journal.push(
+      makeEntry({
+        id: `DEP-${dep.id}`,
+        date: depDate,
+        type: 'depreciation',
+        description: `Depreciation — asset #${dep.asset_id}`,
+        lines: [
+          journalLine(expAcct, amt, 0, 'Depreciation expense'),
+          journalLine(accmAcct, 0, amt, 'Accumulated depreciation'),
+        ],
+        meta: { depreciation_id: dep.id, asset_id: dep.asset_id, period_month: dep.period_month },
       })
     );
   }
