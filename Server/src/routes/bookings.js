@@ -358,9 +358,61 @@ router.post('/:id/housekeeping-request', authGuest, async (req, res, next) => {
 
 router.get('/:id', async (req, res, next) => {
   try {
+    const jwt = require('jsonwebtoken');
+    const header = req.headers.authorization || '';
+    const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+    if (!token || !process.env.JWT_SECRET) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    let payload;
+    try {
+      payload = jwt.verify(token, process.env.JWT_SECRET);
+    } catch {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
     const { rows } = await query('SELECT * FROM bookings WHERE id = $1', [req.params.id]);
-    if (!rows[0]) return res.status(404).json({ error: 'Not found' });
-    res.json(rows[0]);
+    const booking = rows[0];
+    if (!booking) return res.status(404).json({ error: 'Not found' });
+
+    if (payload.kind === 'guest') {
+      const guestEmail = String(payload.email || '')
+        .trim()
+        .toLowerCase();
+      const owns =
+        guestEmail &&
+        String(booking.guest_email || '')
+          .trim()
+          .toLowerCase() === guestEmail;
+      if (!owns) return res.status(403).json({ error: 'Forbidden' });
+      return res.json({
+        id: booking.id,
+        status: booking.status,
+        checkin: booking.checkin,
+        checkout: booking.checkout,
+        listing_title: booking.listing_title,
+        listing_slug: booking.listing_slug,
+        total_egp: booking.total_egp,
+        payment_status: booking.payment_status,
+        payment_method: booking.payment_method,
+        guest_name: booking.guest_name,
+        guest_email: booking.guest_email,
+        guest_phone: booking.guest_phone,
+        guests: booking.guests,
+        adults: booking.adults,
+        children: booking.children,
+        nanny_count: booking.nanny_count,
+        currency: booking.currency,
+        created_at: booking.created_at,
+      });
+    }
+
+    if (payload.kind === 'staff' || (!payload.kind && payload.role)) {
+      return res.json(booking);
+    }
+
+    return res.status(401).json({ error: 'Unauthorized' });
   } catch (err) {
     next(err);
   }

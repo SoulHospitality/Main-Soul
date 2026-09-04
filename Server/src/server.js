@@ -6,7 +6,6 @@ const bcrypt = require('bcryptjs');
 const { createApp } = require('./app');
 const { runMigrations, query } = require('./config/db');
 const { ensureStaffTaskTables } = require('./lib/staffTaskSchema');
-const { applyExemptUserPasswords } = require('./lib/staffIdentity');
 const { initSocket } = require('./config/socket');
 const { startBookingHoldExpiryJob } = require('./jobs/bookingHoldExpiry');
 const { startPmsReminderJobs } = require('./jobs/pmsReminders');
@@ -18,22 +17,35 @@ const { syncAllUnitListingStatusesOnBoot } = require('./lib/bootUnitStatusSync')
 
 async function seedAdmin() {
   const username = process.env.ADMIN_USERNAME || 'admin';
-  const password = process.env.ADMIN_PASSWORD || 'Admin@123';
   const email = process.env.ADMIN_EMAIL || 'admin@soulhospitality.co';
-  const hash = await bcrypt.hash(password, 10);
+  const isProd = process.env.NODE_ENV === 'production';
+  const password = process.env.ADMIN_PASSWORD;
 
   const { rows } = await query(`SELECT id FROM staff_users WHERE username = $1`, [username]);
   if (rows.length) {
-    await query(
-      `UPDATE staff_users
-       SET password_hash = $1, email = COALESCE($2, email), role = 'admin', is_active = 1, updated_at = now()
-       WHERE username = $3`,
-      [hash, email, username]
-    );
-    console.log(`[seed] Ensured staff admin "${username}" password is in sync`);
+    // Never overwrite an existing admin password on boot.
+    if (email) {
+      await query(
+        `UPDATE staff_users
+         SET email = COALESCE($1, email), role = 'admin', is_active = 1, updated_at = now()
+         WHERE username = $2 AND id = $3`,
+        [email, username, rows[0].id]
+      );
+    }
     return;
   }
 
+  if (!password) {
+    if (isProd) {
+      throw new Error('ADMIN_PASSWORD is required to create the initial admin in production');
+    }
+    console.warn(
+      `[seed] Skipping admin create for "${username}" — set ADMIN_PASSWORD to create the initial admin`
+    );
+    return;
+  }
+
+  const hash = await bcrypt.hash(password, 10);
   await query(
     `INSERT INTO staff_users (username, password_hash, email, full_name, role)
      VALUES ($1,$2,$3,$4,'admin')`,
@@ -53,7 +65,6 @@ async function main() {
       console.error('[boot] staff task tables ensure failed:', err.message);
     }
     await seedAdmin();
-    await applyExemptUserPasswords();
     try {
       await syncAllUnitListingStatusesOnBoot();
     } catch (err) {

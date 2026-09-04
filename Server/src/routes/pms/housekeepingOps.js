@@ -6,7 +6,16 @@ const { DEFAULT_CHECKLIST } = require('../../jobs/housekeepingTasks');
 
 const router = express.Router();
 
-router.get('/housekeeping-tasks', async (req, res, next) => {
+router.get(
+  '/housekeeping-tasks',
+  requireRoles(
+    'housekeeping',
+    'housekeeping_supervisor',
+    'operations',
+    'operations_supervisor',
+    'admin'
+  ),
+  async (req, res, next) => {
   try {
     const status = req.query.status;
     const params = [];
@@ -80,7 +89,16 @@ router.post('/housekeeping-tasks', requireRoles('admin', 'reservations', 'reserv
   }
 });
 
-router.patch('/housekeeping-tasks/:id', async (req, res, next) => {
+router.patch(
+  '/housekeeping-tasks/:id',
+  requireRoles(
+    'housekeeping',
+    'housekeeping_supervisor',
+    'operations',
+    'operations_supervisor',
+    'admin'
+  ),
+  async (req, res, next) => {
   try {
     const b = req.body;
     const { rows } = await query(
@@ -117,7 +135,16 @@ router.patch('/housekeeping-tasks/:id', async (req, res, next) => {
   }
 });
 
-router.post('/housekeeping-tasks/:id/submit', async (req, res, next) => {
+router.post(
+  '/housekeeping-tasks/:id/submit',
+  requireRoles(
+    'housekeeping',
+    'housekeeping_supervisor',
+    'operations',
+    'operations_supervisor',
+    'admin'
+  ),
+  async (req, res, next) => {
   try {
     const b = req.body || {};
     const { rows } = await query(

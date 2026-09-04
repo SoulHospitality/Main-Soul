@@ -18,21 +18,41 @@ const icalRoutes = require('./routes/ical');
 const pmsRoutes = require('./routes/pms');
 const { refreshIcalBlocks } = require('./services/ical');
 
+function requireCronSecret(req, res) {
+  const secret = process.env.CRON_SECRET;
+  const auth = req.headers.authorization || '';
+  if (!secret || auth !== `Bearer ${secret}`) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return false;
+  }
+  return true;
+}
+
 function createApp() {
   const app = express();
-  
+
   app.set('trust proxy', 1);
+
+  const isProd = process.env.NODE_ENV === 'production';
+  if (isProd && (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32)) {
+    throw new Error('JWT_SECRET must be set to a strong value (32+ chars) in production');
+  }
 
   const origins = (process.env.CORS_ORIGIN || process.env.FRONTEND_URL || 'http://localhost:5173')
     .split(',')
-    .map((s) => s.trim());
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const allowAnyOrigin = origins.includes('*');
 
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
   app.use(
     cors({
       origin: (origin, cb) => {
-        if (!origin || origins.includes(origin) || origins.includes('*')) return cb(null, true);
-        return cb(null, true); 
+        // Non-browser clients (curl, server-to-server) often omit Origin.
+        if (!origin) return cb(null, true);
+        if (allowAnyOrigin) return cb(null, true);
+        if (origins.includes(origin)) return cb(null, true);
+        return cb(null, false);
       },
       credentials: true,
     })
@@ -58,35 +78,22 @@ function createApp() {
     })
   );
 
-  app.get('/api/health', async (_req, res) => {
-    let unitCounts = [];
-    let migrations = [];
-    try {
-      const { rows } = await require('./config/db').query(
-        `SELECT status, COUNT(*)::int AS count FROM units GROUP BY status ORDER BY status`
-      );
-      unitCounts = rows;
-    } catch {}
-    try {
-      migrations = await require('./config/db').listAppliedMigrations();
-    } catch {}
-    let staffTasks = { ready: false };
-    try {
-      staffTasks = await require('./lib/staffTaskSchema').staffTaskTablesReady();
-    } catch {}
+  const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many login attempts. Try again later.' },
+  });
+  app.use('/api/staff/auth/login', authLimiter);
+  app.use('/api/auth/sign-in', authLimiter);
+  app.use('/api/auth/login', authLimiter);
+
+  app.get('/api/health', (_req, res) => {
     res.json({
       ok: true,
       service: 'main-soul-backend',
       ts: new Date().toISOString(),
-      commit:
-        process.env.RAILWAY_GIT_COMMIT_SHA ||
-        process.env.RAILWAY_GIT_COMMIT_SHA_SHORT ||
-        process.env.RENDER_GIT_COMMIT ||
-        null,
-      unitCounts,
-      migrationsApplied: migrations.map((m) => m.id),
-      latestMigration: migrations.length ? migrations[migrations.length - 1].id : null,
-      staffTasks,
     });
   });
 
@@ -110,13 +117,9 @@ function createApp() {
   app.use('/api/fx', require('./routes/fx'));
   app.use('/api/reviews', require('./routes/reviews').router);
 
-  
   app.get('/api/cron/refresh-ical-blocks', async (req, res, next) => {
     try {
-      const auth = req.headers.authorization || '';
-      if (process.env.CRON_SECRET && auth !== `Bearer ${process.env.CRON_SECRET}`) {
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
+      if (!requireCronSecret(req, res)) return;
       const result = await refreshIcalBlocks();
       res.json(result);
     } catch (err) {
@@ -126,10 +129,7 @@ function createApp() {
 
   app.post('/api/cron/data-retention', async (req, res, next) => {
     try {
-      const auth = req.headers.authorization || '';
-      if (process.env.CRON_SECRET && auth !== `Bearer ${process.env.CRON_SECRET}`) {
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
+      if (!requireCronSecret(req, res)) return;
       const { runDataRetentionCleanup } = require('./jobs/dataRetention');
       const result = await runDataRetentionCleanup();
       res.json(result);
@@ -140,10 +140,7 @@ function createApp() {
 
   app.post('/api/cron/monthly-salary-expenses', async (req, res, next) => {
     try {
-      const auth = req.headers.authorization || '';
-      if (process.env.CRON_SECRET && auth !== `Bearer ${process.env.CRON_SECRET}`) {
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
+      if (!requireCronSecret(req, res)) return;
       const { postMonthlySalaryExpenses, ensureCurrentMonthSalaryExpenses } = require('./jobs/monthlySalaryExpenses');
       const periodMonth = req.body?.period_month || req.query?.period_month;
       const result = periodMonth

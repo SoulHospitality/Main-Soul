@@ -22,6 +22,18 @@ const FOLDER_PROJECTS = 'soul-hospitality/projects';
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024 },
+  fileFilter(_req, file, cb) {
+    const mime = String(file.mimetype || '').toLowerCase();
+    const name = String(file.originalname || '').toLowerCase();
+    const ok =
+      mime.startsWith('image/') ||
+      mime === 'application/pdf' ||
+      /\.(jpe?g|png|gif|webp|pdf)$/i.test(name);
+    if (!ok) {
+      return cb(new Error('Only image or PDF uploads are allowed'));
+    }
+    return cb(null, true);
+  },
 });
 
 function isPdfUpload(filename = '', mimetype = '') {

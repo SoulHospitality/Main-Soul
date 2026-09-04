@@ -39,7 +39,6 @@ import {
 } from '../utils/permissions';
 import { getRoleTheme } from '../utils/roleTheme';
 import { currency, formatDate } from '../utils/formatters';
-import { TEMP_STAFF_PASSWORD } from '../utils/passwordRules';
 
 const TABS = [
   { id: 'staff', label: 'Staff', icon: UsersIcon },
@@ -307,7 +306,7 @@ function StaffForm({
             ? applySalaryImmediately
               ? 'Salary and holiday-balance changes apply immediately.'
               : 'Salary edits require HR Supervisor or CEO approval before they apply.'
-            : `Creates login with the Staff ID you enter and temporary password ${TEMP_STAFF_PASSWORD}. User must change password on first login.`}
+            : 'Creates login with the Staff ID you enter and a one-time temporary password (shown after save). User must change password on first login.'}
       </p>
       <div className="form-grid">
         <div>
@@ -564,7 +563,7 @@ function OwnerForm({ form, setForm, isEdit, ownerId, showUnits }) {
       <p className="text-xs text-slate-500">
         {isEdit
           ? 'Update owner profile details. Phone/login cannot be changed here.'
-          : `Creates an owner portal login. Phone is the username. Temporary password ${TEMP_STAFF_PASSWORD} — owner must change it on first login.`}
+          : 'Creates an owner portal login. Phone is the username. A one-time temporary password is shown after save — owner must change it on first login.'}
       </p>
       <div className="form-grid">
         <div>
@@ -909,7 +908,8 @@ export default function Users() {
   const resetPwMutation = useMutation({
     mutationFn: (id) => api.put(`/users/${id}/reset-password`, {}),
     onSuccess: (res) => {
-      toast.success(`Password reset to ${res.data?.temporaryPassword || TEMP_STAFF_PASSWORD}`);
+      const temp = res.data?.temporaryPassword;
+      toast.success(temp ? `Password reset to ${temp}` : 'Password reset — share the temporary password shown once');
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Error'),
   });
@@ -1652,7 +1652,7 @@ export default function Users() {
             <p>
               <span className="text-slate-500">Temporary password:</span>{' '}
               <span className="font-mono font-semibold">
-                {createdInfo.temporaryPassword || TEMP_STAFF_PASSWORD}
+                {createdInfo.temporaryPassword || '— (check create response)'}
               </span>
             </p>
             {createdInfo.role === 'owner' && (

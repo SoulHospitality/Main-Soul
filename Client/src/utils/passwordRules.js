@@ -1,14 +1,8 @@
-const PASSWORD_POLICY_EXEMPT_EMAILS = new Set(['mayarmuhammed33@gmail.com']);
-
-export function isPasswordPolicyExempt(email) {
-  return PASSWORD_POLICY_EXEMPT_EMAILS.has(String(email || '').trim().toLowerCase());
+export function isPasswordPolicyExempt(_email) {
+  return false;
 }
 
-export const getPasswordRuleChecks = (password, email) => {
-  if (isPasswordPolicyExempt(email)) {
-    const ok = Boolean(String(password || ''));
-    return { minLength: ok, uppercase: ok, lowercase: ok };
-  }
+export const getPasswordRuleChecks = (password, _email) => {
   const value = String(password || '');
   return {
     minLength: value.length >= 8,
@@ -31,4 +25,5 @@ export function passwordPolicyMessage() {
   return 'Password must be at least 8 characters and include uppercase and lowercase letters';
 }
 
-export const TEMP_STAFF_PASSWORD = 'Soul@123';
+/** Placeholder only — real temps come from the API response after create/reset. */
+export const TEMP_STAFF_PASSWORD = '';

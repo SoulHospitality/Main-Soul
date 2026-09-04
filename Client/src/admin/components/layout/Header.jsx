@@ -69,7 +69,7 @@ export default function Header({ onToggleSidebar, sidebarWidth = 256 }) {
     if (!user?.id) return undefined;
     const base = import.meta.env.VITE_API_URL || window.location.origin;
     const socket = io(base, {
-      query: { userId: String(user.id), role: user.role || '' },
+      auth: { token: localStorage.getItem('pms_token') || '' },
       transports: ['websocket', 'polling'],
     });
     const refresh = () => {

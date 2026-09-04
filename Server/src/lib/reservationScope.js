@@ -32,6 +32,26 @@ function isAdmin(user) {
   return user?.role === 'admin';
 }
 
+/** Roles that may list/view all reservations (not scoped to own sales). */
+const BROAD_RESERVATION_ACCESS_ROLES = new Set([
+  'admin',
+  'finance',
+  'finance_manager',
+  'operations',
+  'operations_supervisor',
+  'housekeeping',
+  'housekeeping_supervisor',
+  'owners_relations',
+  'resale',
+  'resale_manager',
+  'unit_acquisition_agent',
+  'unit_acquisition_manager',
+]);
+
+function hasBroadReservationAccess(user) {
+  return BROAD_RESERVATION_ACCESS_ROLES.has(user?.role);
+}
+
 function isWebsiteOriginReservation(reservation) {
   if (!reservation) return false;
   if (reservation.booking_id) return true;
@@ -108,7 +128,11 @@ function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
   }
 
   if (!isReservationsTeam(user)) {
-    return { clause: '', params: [], nextIndex: paramIndex };
+    if (hasBroadReservationAccess(user)) {
+      return { clause: '', params: [], nextIndex: paramIndex };
+    }
+    // Default deny: no reservation rows for unrelated roles (HR, marketing, etc.)
+    return { clause: ' AND 1=0', params: [], nextIndex: paramIndex };
   }
 
   const name = String(user.full_name || '').trim();
@@ -231,7 +255,7 @@ function isOwnReservation(user, reservation) {
 }
 
 async function assertReservationOwned(user, reservation) {
-  if (isAdmin(user)) return;
+  if (hasBroadReservationAccess(user)) return;
   if (isReservationsManager(user)) {
     if (isOwnReservation(user, reservation)) return;
     const ids = [reservation?.sales_person_id, reservation?.created_by]
@@ -248,7 +272,11 @@ async function assertReservationOwned(user, reservation) {
     err.status = 403;
     throw err;
   }
-  if (!isReservationsTeam(user)) return;
+  if (!isReservationsTeam(user)) {
+    const err = new Error('Forbidden');
+    err.status = 403;
+    throw err;
+  }
   if (!isOwnReservation(user, reservation)) {
     const err = new Error('You can only access your own reservations');
     err.status = 403;
@@ -311,6 +339,7 @@ module.exports = {
   isWebsiteReservationsAgent,
   isManualReservationsAgent,
   isAdmin,
+  hasBroadReservationAccess,
   isWebsiteOriginReservation,
   pickLeastLoadedReservationsAgent,
   reservationScopeClause,

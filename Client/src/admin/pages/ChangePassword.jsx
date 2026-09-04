@@ -74,8 +74,7 @@ export default function ChangePassword() {
                 Set a new password before using the PMS.
               </h1>
               <p className="mt-3 text-sm text-white/75">
-                Temporary password <span className="font-mono">Soul@123</span> must be changed on first
-                login.
+                Your temporary password must be changed before you can use the PMS.
               </p>
               <p className="mt-4 text-xs uppercase tracking-[0.2em] text-white/45">
                 {PMS_LABELS[user?.role] || 'Soul PMS'}

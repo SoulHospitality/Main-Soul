@@ -12,7 +12,9 @@ function SalesShell() {
     if (!salesUser) return undefined;
     api.get('/sales/notifications').then((r) => setNotes(r.data.items || [])).catch(() => {});
     const base = import.meta.env.VITE_API_URL || window.location.origin;
-    const socket = io(base, { query: { userId: salesUser.id, role: salesUser.role } });
+    const socket = io(base, {
+      auth: { token: localStorage.getItem('soul_sales_token') || '' },
+    });
     socket.on('sales:notification', (payload) => {
       setNotes((prev) => [{ id: Date.now(), ...payload, created_at: new Date().toISOString() }, ...prev]);
     });

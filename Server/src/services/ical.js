@@ -47,10 +47,16 @@ function parseIcalBusyDates(ics, fromIso, toIso) {
 }
 
 async function fetchWithTimeout(url, ms = FEED_TIMEOUT_MS) {
+  const { assertValidIcalUrl } = require('../lib/otaPlatforms');
+  assertValidIcalUrl(url);
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
   try {
-    const res = await fetch(url, { signal: ctrl.signal });
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      redirect: 'error',
+      headers: { 'User-Agent': 'SoulHospitality-iCalSync/1.0' },
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.text();
   } finally {

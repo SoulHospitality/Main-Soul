@@ -28,7 +28,7 @@ npm run dev:client     # SPA — http://localhost:5173
 - Guest site: http://localhost:5173
 - PMS admin: http://localhost:5173/sign-in (staff username → opens `/admin`)
 
-Default staff seed: username `admin` / password from `ADMIN_PASSWORD` (default `Admin@123`).
+Default staff seed: set `ADMIN_USERNAME` / `ADMIN_PASSWORD` / `ADMIN_EMAIL` to create the initial admin on first boot only (existing passwords are never overwritten).
 
 ## Architecture
 

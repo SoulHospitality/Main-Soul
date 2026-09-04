@@ -6,7 +6,7 @@
 require('dotenv').config();
 const bcrypt = require('bcryptjs');
 const { query } = require('../src/config/db');
-const { TEMP_PASSWORD, generateUniqueStaffCode } = require('../src/lib/staffIdentity');
+const { generateTempPassword, generateUniqueStaffCode } = require('../src/lib/staffIdentity');
 
 const ACCOUNTS = [
   {
@@ -84,7 +84,8 @@ async function ensureAccount(acc, passwordHash) {
 }
 
 async function main() {
-  const hash = await bcrypt.hash(TEMP_PASSWORD, 10);
+  const tempPassword = generateTempPassword();
+  const hash = await bcrypt.hash(tempPassword, 10);
   const results = [];
   for (const acc of ACCOUNTS) {
     const result = await ensureAccount(acc, hash);
@@ -94,7 +95,7 @@ async function main() {
     );
   }
   console.log('');
-  console.log('Sign in at /sign-in with password', TEMP_PASSWORD);
+  console.log('Sign in at /sign-in with one-time password', tempPassword);
   for (const r of results) {
     console.log(`  ${r.role}: ${r.username}`);
   }

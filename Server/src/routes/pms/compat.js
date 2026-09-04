@@ -21,7 +21,7 @@ const router = express.Router();
 router.use(authStaff);
 
 
-router.get('/id-documents/view', async (req, res, next) => {
+router.get('/id-documents/view', requireRoles('admin', 'reservations', 'reservations_web', 'reservations_manual', 'reservations_manager', 'finance', 'finance_manager', 'owners_relations', 'operations', 'operations_supervisor'), async (req, res, next) => {
   try {
     const raw = String(req.query.url || '').trim();
     const cloud = process.env.CLOUDINARY_CLOUD_NAME;
@@ -46,7 +46,22 @@ router.get('/id-documents/view', async (req, res, next) => {
       return res.status(400).json({ error: 'Document is not from this Cloudinary account' });
     }
 
-    const upstream = await fetch(raw);
+    // Only proxy URLs that belong to a reservation/booking ID document field.
+    const { rows: linked } = await query(
+      `SELECT 1 FROM reservations WHERE $1 = ANY(COALESCE(id_photo_urls, '{}'::text[])) LIMIT 1`,
+      [raw]
+    );
+    if (!linked[0]) {
+      const { rows: bookingLinked } = await query(
+        `SELECT 1 FROM bookings WHERE $1 = ANY(COALESCE(id_photo_urls, '{}'::text[])) LIMIT 1`,
+        [raw]
+      );
+      if (!bookingLinked[0]) {
+        return res.status(403).json({ error: 'Document is not linked to a booking or reservation' });
+      }
+    }
+
+    const upstream = await fetch(raw, { redirect: 'error' });
     if (!upstream.ok) {
       return res.status(502).json({
         error:

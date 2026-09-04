@@ -112,8 +112,7 @@ async function initializePaymobCheckout({ amountEgp, merchantOrderId, billing })
 
 function verifyPaymobHmac(obj, receivedHmac) {
   const secret = process.env.PAYMOB_HMAC_SECRET;
-  if (!secret) return process.env.NODE_ENV !== 'production';
-  if (!receivedHmac) return false;
+  if (!secret || !receivedHmac) return false;
 
   const order = [
     'amount_cents',

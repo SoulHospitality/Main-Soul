@@ -45,8 +45,27 @@ function assertValidIcalUrl(url) {
   } catch {
     throw new Error('Enter a valid calendar URL (https://…)');
   }
-  if (!['http:', 'https:'].includes(parsed.protocol)) {
-    throw new Error('Calendar URL must start with http:// or https://');
+  if (parsed.protocol !== 'https:') {
+    throw new Error('Calendar URL must use https://');
+  }
+  const host = parsed.hostname.toLowerCase();
+  if (
+    host === 'localhost' ||
+    host === 'metadata.google.internal' ||
+    host.endsWith('.local') ||
+    host.endsWith('.internal')
+  ) {
+    throw new Error('Calendar URL host is not allowed');
+  }
+  // Block private / link-local / metadata IP literals
+  if (
+    /^(127\.|10\.|0\.|169\.254\.|192\.168\.|100\.64\.|172\.(1[6-9]|2\d|3[0-1])\.)/.test(host) ||
+    host === '::1' ||
+    host.startsWith('fc') ||
+    host.startsWith('fd') ||
+    host.startsWith('[')
+  ) {
+    throw new Error('Calendar URL must not target a private network');
   }
   return raw;
 }

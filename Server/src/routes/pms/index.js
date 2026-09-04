@@ -15,7 +15,7 @@ const housekeepingOps = require('./housekeepingOps');
 const ownerPortal = require('./ownerPortal');
 const roadmapScaffold = require('./roadmapScaffold');
 const {
-  TEMP_PASSWORD,
+  generateTempPassword,
   normalizeStaffCode,
   assertStaffCodeAvailable,
   passwordPolicyOk,
@@ -467,7 +467,7 @@ router.post('/users', requireRoles(...USER_ACCOUNT_ROLES), async (req, res, next
       if (!username) username = email;
       username = username.toLowerCase();
     }
-    const tempPassword = TEMP_PASSWORD;
+    const tempPassword = generateTempPassword();
     const hash = await bcrypt.hash(tempPassword, 10);
     const { managerId, managerIds } = await resolveStaffManagers(b, role);
 
@@ -766,7 +766,7 @@ router.put('/users/:id/reset-password', requireRoles(...USER_ACCOUNT_ROLES), asy
       return res.status(403).json({ error: 'HR cannot reset CEO passwords' });
     }
 
-    const newPassword = req.body?.new_password || TEMP_PASSWORD;
+    const newPassword = req.body?.new_password || generateTempPassword();
     if (req.body?.new_password && !passwordPolicyOk(newPassword, existingRows[0].email)) {
       return res.status(400).json({ error: passwordPolicyMessage() });
     }
@@ -3891,9 +3891,13 @@ router.get('/guest-bookings', requireRoles('admin', 'reservations'), async (req,
 
 router.post('/pricing/sync', async (req, res, next) => {
   try {
+    const configured = process.env.PRICING_SYNC_SECRET;
     const secret = req.headers['x-pricing-sync-secret'];
-    if (secret !== process.env.PRICING_SYNC_SECRET && req.user.role !== 'admin') {
-      return res.status(401).json({ error: 'Unauthorized' });
+    const isAdmin = req.user.role === 'admin';
+    if (!isAdmin) {
+      if (!configured || secret !== configured) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
     }
     const items = req.body.items || req.body;
     let n = 0;

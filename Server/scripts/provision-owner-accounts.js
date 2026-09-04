@@ -1,6 +1,6 @@
 /**
  * Create owner portal accounts for every unit owner that has both a name and phone.
- * Username = normalized phone (for phone login). Temp password = Soul@123.
+ * Username = normalized phone (for phone login). Temp password = generated one-time value.
  * Also links matching units via owner_units.
  *
  * Usage: node scripts/provision-owner-accounts.js
@@ -10,7 +10,7 @@ require('dotenv').config();
 const bcrypt = require('bcryptjs');
 const { query, pool } = require('../src/config/db');
 const { normalizeOwnerPhone, ownerPhoneLoginVariants } = require('../src/lib/ownerPhone');
-const { TEMP_PASSWORD, generateUniqueStaffCode } = require('../src/lib/staffIdentity');
+const { generateTempPassword, generateUniqueStaffCode } = require('../src/lib/staffIdentity');
 
 const dryRun = process.argv.includes('--dry-run');
 
@@ -106,7 +106,8 @@ async function main() {
   );
   if (dryRun) console.log('DRY RUN — no writes');
 
-  const hash = dryRun ? null : await bcrypt.hash(TEMP_PASSWORD, 10);
+  const tempPassword = dryRun ? null : generateTempPassword();
+  const hash = dryRun ? null : await bcrypt.hash(tempPassword, 10);
   let created = 0;
   let existing = 0;
   let linked = 0;
@@ -184,7 +185,7 @@ async function main() {
   }
 
   console.log(
-    `Done. created=${created} already_existed=${existing} links_added=${linked} links_already_present=${linkSkipped} temp_password=${TEMP_PASSWORD}`
+    `Done. created=${created} already_existed=${existing} links_added=${linked} links_already_present=${linkSkipped} temp_password=${tempPassword || '(dry-run)'}`
   );
 }
 

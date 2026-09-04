@@ -13,7 +13,7 @@ async function ownerUnitIds(ownerId) {
 }
 
 
-router.get('/reports/owner-statement', async (req, res, next) => {
+router.get('/reports/owner-statement', requireRoles('owner', 'admin', 'finance', 'finance_manager', 'owners_relations'), async (req, res, next) => {
   try {
     const from = clampFromDate(req.query.from_date);
     const to = req.query.to_date || null;
