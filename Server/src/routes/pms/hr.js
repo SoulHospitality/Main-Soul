@@ -818,6 +818,8 @@ router.post('/hr/payroll/mark-paid', requireRoles(...HR_ROLES), async (req, res,
     const { rows: staffRows } = await query(
       `SELECT
          u.id,
+         u.full_name,
+         u.staff_code,
          COALESCE(u.base_salary, 0)::float AS base_salary,
          COALESCE(d.deductions, 0)::float AS deductions,
          COALESCE(b.bonuses, 0)::float AS bonuses
@@ -845,6 +847,9 @@ router.post('/hr/payroll/mark-paid', requireRoles(...HR_ROLES), async (req, res,
     }
 
     const paid = [];
+    const expenses = [];
+    const { postExpenseForPayrollEntry } = require('../../jobs/monthlySalaryExpenses');
+
     for (const row of staffRows) {
       const base = Number(row.base_salary) || 0;
       const deductions = Number(row.deductions) || 0;
@@ -869,9 +874,21 @@ router.post('/hr/payroll/mark-paid', requireRoles(...HR_ROLES), async (req, res,
         [row.id, year, month, base, deductions, bonuses, net, req.user.id, notes]
       );
       paid.push(rows[0]);
+
+      const staffName = row.full_name || row.staff_code || `Staff #${row.id}`;
+      try {
+        const exp = await postExpenseForPayrollEntry(rows[0], {
+          staffName,
+          createdBy: req.user.id,
+        });
+        expenses.push(exp);
+      } catch (expErr) {
+        console.error('[hr/payroll] salary expense post failed', expErr.message);
+        expenses.push({ action: 'error', staff_id: row.id, error: expErr.message });
+      }
     }
 
-    res.json({ ok: true, year, month, count: paid.length, entries: paid });
+    res.json({ ok: true, year, month, count: paid.length, entries: paid, expenses });
   } catch (e) {
     next(e);
   }

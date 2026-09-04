@@ -586,21 +586,9 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
     );
     const pettyCash = Number(pettyRows[0]?.total) || 0;
 
-    
-    let payrollSnapshot = 0;
-    const todayIso = new Date().toISOString().slice(0, 10);
-    if (todayIso >= FINANCIAL_EPOCH) {
-      try {
-        const { rows: salaryRows } = await query(
-          `SELECT COALESCE(SUM(base_salary), 0)::float AS total
-           FROM employees WHERE COALESCE(is_active, 1) = 1`
-        );
-        payrollSnapshot = Number(salaryRows[0]?.total) || 0;
-      } catch (_) {
-        
-      }
-    }
-    const salaries = round2(salaryLedger + payrollSnapshot);
+    // Salaries come only from posted salary expenses (payroll mark-paid).
+    // Do not add a live base_salary snapshot — that double-counts once expenses exist.
+    const salaries = round2(salaryLedger);
 
     const agentCommissions = round2(manualAgentCommission + websiteAgentCommission);
     const salaryAndCommissions = round2(salaries + agentCommissions);

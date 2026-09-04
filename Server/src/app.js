@@ -141,11 +141,13 @@ function createApp() {
   app.post('/api/cron/monthly-salary-expenses', async (req, res, next) => {
     try {
       if (!requireCronSecret(req, res)) return;
-      const { postMonthlySalaryExpenses, ensureCurrentMonthSalaryExpenses } = require('./jobs/monthlySalaryExpenses');
-      const periodMonth = req.body?.period_month || req.query?.period_month;
-      const result = periodMonth
-        ? await postMonthlySalaryExpenses(String(periodMonth))
-        : await ensureCurrentMonthSalaryExpenses();
+      const { syncPaidPayrollExpenses } = require('./jobs/monthlySalaryExpenses');
+      const year = req.body?.year || req.query?.year;
+      const month = req.body?.month || req.query?.month;
+      const result =
+        year && month
+          ? await syncPaidPayrollExpenses({ year: Number(year), month: Number(month) })
+          : await syncPaidPayrollExpenses();
       res.json(result);
     } catch (err) {
       next(err);

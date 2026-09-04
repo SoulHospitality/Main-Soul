@@ -1,19 +1,29 @@
 const { query } = require('../config/db');
 
-const AUTO_NOTE_PREFIX = 'auto_salary_month=';
+const AUTO_NOTE_PREFIX = 'auto_payroll_expense=';
 
-function yearMonth(date = new Date()) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  return `${y}-${m}`;
+function padMonth(month) {
+  return String(month).padStart(2, '0');
 }
 
-function firstOfMonth(ym) {
-  return `${ym}-01`;
+function periodKey(year, month) {
+  return `${year}-${padMonth(month)}`;
 }
 
-function autoNote(ym, staffId) {
-  return `${AUTO_NOTE_PREFIX}${ym} staff_id=${staffId}`;
+function lastDayOfPeriod(year, month) {
+  const d = new Date(Date.UTC(Number(year), Number(month), 0));
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function autoNote(year, month, staffId) {
+  return `${AUTO_NOTE_PREFIX}${periodKey(year, month)} staff_id=${staffId}`;
+}
+
+function roundMoney(n) {
+  return Math.round((Number(n) || 0) * 100) / 100;
 }
 
 async function resolveSystemUserId() {
@@ -29,85 +39,127 @@ async function resolveSystemUserId() {
 }
 
 /**
- * Post monthly salary expenses for a YYYY-MM period.
- * One company expense per active staff member with base_salary > 0 (owners excluded).
- * Idempotent: skips staff already posted for that month.
+ * Post / refresh one salary expense from a paid payroll entry.
+ * Amount = net pay (base + bonuses − deductions). Dated last day of the payroll month
+ * so the cost lands in the correct financial period.
  */
-async function postMonthlySalaryExpenses(periodMonth = yearMonth()) {
-  if (!/^\d{4}-\d{2}$/.test(String(periodMonth))) {
-    throw new Error('periodMonth must be YYYY-MM');
+async function postExpenseForPayrollEntry(entry, { staffName, createdBy } = {}) {
+  const year = Number(entry.period_year);
+  const month = Number(entry.period_month);
+  const staffId = Number(entry.staff_user_id);
+  const net = roundMoney(entry.net_pay);
+  const base = roundMoney(entry.base_salary);
+  const bonuses = roundMoney(entry.bonuses);
+  const deductions = roundMoney(entry.deductions);
+
+  if (!(net > 0.009) && !(base > 0.009 || bonuses > 0.009)) {
+    return { action: 'skipped_zero', staff_id: staffId, amount: net };
   }
 
-  const createdBy = await resolveSystemUserId();
-  if (!createdBy) {
-    return { period_month: periodMonth, created: 0, skipped: 0, error: 'No staff user to attribute expenses' };
+  const actor = createdBy || (await resolveSystemUserId());
+  if (!actor) {
+    return { action: 'error', error: 'No staff user to attribute expenses', staff_id: staffId };
   }
 
-  const expenseDate = firstOfMonth(periodMonth);
-  const { rows: staff } = await query(
-    `SELECT id, full_name, staff_code, base_salary
-     FROM staff_users
-     WHERE COALESCE(is_active, 1) = 1
-       AND COALESCE(role, '') <> 'owner'
-       AND COALESCE(base_salary, 0) > 0.009
-     ORDER BY id ASC`
+  const note = autoNote(year, month, staffId);
+  const expenseDate = lastDayOfPeriod(year, month);
+  const name = staffName || `Staff #${staffId}`;
+  const description = `Payroll ${periodKey(year, month)} — ${name} (base ${base.toFixed(2)} + bonus ${bonuses.toFixed(2)} − ded ${deductions.toFixed(2)})`;
+
+  const { rows: existing } = await query(
+    `SELECT id FROM expenses WHERE category = 'salary' AND notes = $1 LIMIT 1`,
+    [note]
   );
 
-  let created = 0;
-  let skipped = 0;
-  const posted = [];
-
-  for (const s of staff) {
-    const amount = Math.round((Number(s.base_salary) || 0) * 100) / 100;
-    if (!(amount > 0.009)) {
-      skipped += 1;
-      continue;
-    }
-
-    const note = autoNote(periodMonth, s.id);
-    const { rows: existing } = await query(
-      `SELECT id FROM expenses
-       WHERE category = 'salary'
-         AND notes = $1
-       LIMIT 1`,
-      [note]
-    );
-    if (existing[0]) {
-      skipped += 1;
-      continue;
-    }
-
-    const name = s.full_name || s.staff_code || `Staff #${s.id}`;
+  if (existing[0]) {
     const { rows } = await query(
-      `INSERT INTO expenses (
-         unit_id, description, amount, paid_by, expense_date, notes, created_by, category
-       ) VALUES (
-         NULL, $1, $2, 'company', $3::date, $4, $5, 'salary'
-       )
+      `UPDATE expenses
+       SET description = $1,
+           amount = $2,
+           expense_date = $3::date,
+           paid_by = 'company',
+           unit_id = NULL
+       WHERE id = $4
        RETURNING id, amount, expense_date`,
-      [`Monthly salary — ${name}`, amount, expenseDate, note, createdBy]
+      [description, net, expenseDate, existing[0].id]
     );
-    created += 1;
-    posted.push({ staff_id: s.id, expense_id: rows[0].id, amount: rows[0].amount });
+    return {
+      action: 'updated',
+      staff_id: staffId,
+      expense_id: rows[0].id,
+      amount: rows[0].amount,
+      expense_date: rows[0].expense_date,
+    };
   }
 
+  const { rows } = await query(
+    `INSERT INTO expenses (
+       unit_id, description, amount, paid_by, expense_date, notes, created_by, category
+     ) VALUES (
+       NULL, $1, $2, 'company', $3::date, $4, $5, 'salary'
+     )
+     RETURNING id, amount, expense_date`,
+    [description, net, expenseDate, note, actor]
+  );
+
   return {
-    period_month: periodMonth,
-    expense_date: expenseDate,
-    staff_count: staff.length,
-    created,
-    skipped,
-    posted,
+    action: 'created',
+    staff_id: staffId,
+    expense_id: rows[0].id,
+    amount: rows[0].amount,
+    expense_date: rows[0].expense_date,
   };
 }
 
 /**
- * Ensure the current month is posted. Safe to call any day —
- * only creates missing rows. On the 1st this is the normal trigger;
- * later days catch up if the job missed the 1st.
+ * Catch-up: post expenses for any paid payroll rows that are missing (or refresh amounts).
  */
+async function syncPaidPayrollExpenses({ year, month } = {}) {
+  const params = [];
+  let filter = `p.status = 'paid'`;
+  if (year != null && month != null) {
+    params.push(Number(year), Number(month));
+    filter += ` AND p.period_year = $1 AND p.period_month = $2`;
+  }
+
+  const { rows } = await query(
+    `SELECT p.*, u.full_name, u.staff_code
+     FROM staff_payroll_entries p
+     JOIN staff_users u ON u.id = p.staff_user_id
+     WHERE ${filter}
+     ORDER BY p.period_year, p.period_month, p.staff_user_id`,
+    params
+  );
+
+  const createdBy = await resolveSystemUserId();
+  let created = 0;
+  let updated = 0;
+  let skipped = 0;
+  const posted = [];
+
+  for (const row of rows) {
+    const name = row.full_name || row.staff_code || `Staff #${row.staff_user_id}`;
+    const result = await postExpenseForPayrollEntry(row, { staffName: name, createdBy });
+    if (result.action === 'created') created += 1;
+    else if (result.action === 'updated') updated += 1;
+    else skipped += 1;
+    posted.push(result);
+  }
+
+  return { created, updated, skipped, count: rows.length, posted };
+}
+
+/** @deprecated Prefer payroll mark-paid → postExpenseForPayrollEntry */
+async function postMonthlySalaryExpenses() {
+  return syncPaidPayrollExpenses();
+}
+
 async function ensureCurrentMonthSalaryExpenses() {
-  return postMonthlySalaryExpenses(yearMonth(new Date()));
+  const now = new Date();
+  return syncPaidPayrollExpenses({
+    year: now.getFullYear(),
+    month: now.getMonth() + 1,
+  });
 }
 
 function startMonthlySalaryExpenseJob() {
@@ -115,10 +167,10 @@ function startMonthlySalaryExpenseJob() {
 
   const run = async () => {
     try {
-      const result = await ensureCurrentMonthSalaryExpenses();
-      if (result.created > 0) {
+      const result = await syncPaidPayrollExpenses();
+      if (result.created > 0 || result.updated > 0) {
         console.log(
-          `[salary-expenses] ${result.period_month}: created=${result.created} skipped=${result.skipped}`
+          `[salary-expenses] sync created=${result.created} updated=${result.updated} skipped=${result.skipped}`
         );
       }
     } catch (err) {
@@ -133,6 +185,8 @@ function startMonthlySalaryExpenseJob() {
 }
 
 module.exports = {
+  postExpenseForPayrollEntry,
+  syncPaidPayrollExpenses,
   postMonthlySalaryExpenses,
   ensureCurrentMonthSalaryExpenses,
   startMonthlySalaryExpenseJob,
