@@ -62,7 +62,7 @@ const NAV_SECTIONS = [
       { path: '/admin/schedule', label: 'Schedule', icon: CalendarRange, page: 'schedule' },
       { path: '/admin/calendar-sync', label: 'Calendar sync', icon: Link2, page: 'calendar_sync' },
       { path: '/admin/performance', label: 'Performance', icon: Trophy, page: 'performance', excludeRoles: ['resale_manager'] },
-      { path: '/admin/reports', label: 'Reservation Audits', icon: FileBarChart2, page: 'reports', roles: ['reservations_manager'] },
+      { path: '/admin/reservation-audit', label: 'Reservation Audit', icon: ClipboardList, page: 'reservation_audit' },
     ],
   },
   {

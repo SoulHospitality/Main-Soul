@@ -101,7 +101,7 @@ const RESERVATIONS_MANAGER_PAGE_ACCESS = new Set([
   'reservations',
   'schedule',
   'performance',
-  'reports',
+  'reservation_audit',
   'units',
   ...STAFF_HR_TABS,
 ]);
@@ -249,6 +249,7 @@ const PERMISSIONS = {
   reservations_manual: RESERVATIONS_MANUAL_PERMISSIONS,
   reservations_manager: [
     'units:read',
+    'units:write',
     'reservations:read',
     'reservations:write',
     'reservations:confirm',
@@ -256,6 +257,7 @@ const PERMISSIONS = {
     'schedule:read',
     'calendar_sync:write',
     'performance:read',
+    'reservation_audit:read',
     'notifications:read',
     'documents:read',
     'documents:write',
@@ -619,7 +621,7 @@ export function canAccessFinancialSystem(user) {
 }
 
 export function canAccessReports(user) {
-  return !!user && (user.role === 'admin' || user.role === 'reservations_manager');
+  return !!user && user.role === 'admin';
 }
 
 export function canManageUsers(user) {

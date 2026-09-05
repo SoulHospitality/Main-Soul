@@ -7,6 +7,30 @@ const RESERVATIONS_TEAM_ROLES = new Set([
   'reservations_manual',
 ]);
 
+/** Roles included in reservations manager daily audit (desk + manager). */
+const RESERVATION_AUDIT_TEAM_ROLES = [
+  'reservations',
+  'reservations_web',
+  'reservations_manual',
+  'reservations_manager',
+];
+
+const RESERVATION_AUDIT_ACTIONS = [
+  'CREATE_RESERVATION',
+  'UPDATE_RESERVATION',
+  'CANCEL_RESERVATION',
+  'DELETE_RESERVATION',
+  'TRANSFER_RESERVATION',
+  'UPLOAD_RESERVATION_ID',
+  'REMOVE_RESERVATION_ID',
+  'RECORD_PAYMENT',
+  'APPROVE_PAYMENT',
+  'ACCEPT_WEBSITE_BOOKING',
+  'REJECT_WEBSITE_BOOKING',
+  'ASSIGN_WEBSITE_BOOKING',
+  'UPDATE_WEBSITE_COLLECTED',
+];
+
 function isReservationsTeam(user) {
   return RESERVATIONS_TEAM_ROLES.has(user?.role);
 }
@@ -371,6 +395,8 @@ function assertBookingAssigned(user, booking) {
 
 module.exports = {
   RESERVATIONS_TEAM_ROLES,
+  RESERVATION_AUDIT_TEAM_ROLES,
+  RESERVATION_AUDIT_ACTIONS,
   isReservationsTeam,
   isReservationsAgent,
   isReservationsManager,

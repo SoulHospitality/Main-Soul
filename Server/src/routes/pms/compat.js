@@ -4,6 +4,7 @@ const { authStaff, requireRoles } = require('../../middleware/auth');
 const { syncUnitListingStatus } = require('../../lib/unitListingStatus');
 const { FINANCIAL_EPOCH, clampFromDate } = require('../../lib/financialEpoch');
 const { bookingAssigneeClause, loadReservationAccess, assertReservationOwned, assertBookingAssigned, isAdmin } = require('../../lib/reservationScope');
+const { logAudit } = require('../../lib/audit');
 const {
   upload,
   attachCloudinaryUrls,
@@ -1443,6 +1444,19 @@ router.post(
         const { notifyWebsiteBookingAccepted } = require('../../services/pmsNotifications');
         await notifyWebsiteBookingAccepted(booking, req.user);
       } catch (_) {}
+      await logAudit({
+        userId: req.user.id,
+        action: 'ACCEPT_WEBSITE_BOOKING',
+        entityType: 'booking',
+        entityId: booking.id,
+        details: {
+          guest_name: booking.guest_name || null,
+          unit_id: booking.unit_id || null,
+          checkin: booking.checkin || null,
+          checkout: booking.checkout || null,
+          reservation_id: booking.reservation_id || null,
+        },
+      });
       res.json(booking);
     } catch (e) {
       next(e);
@@ -1462,6 +1476,17 @@ router.post('/website-bookings/:id/reject', requireRoles('reservations_web', 're
       const { notifyWebsiteBookingRejected } = require('../../services/pmsNotifications');
       await notifyWebsiteBookingRejected(booking, req.user, reason);
     } catch (_) {}
+    await logAudit({
+      userId: req.user.id,
+      action: 'REJECT_WEBSITE_BOOKING',
+      entityType: 'booking',
+      entityId: booking.id,
+      details: {
+        guest_name: booking.guest_name || null,
+        unit_id: booking.unit_id || null,
+        reason,
+      },
+    });
     res.json(booking);
   } catch (e) {
     next(e);
@@ -1478,6 +1503,17 @@ router.post(
       const booking = await updateWebsiteBookingCollectedAmount(req.params.id, req.user, {
         amountPaid: body.amount_paid ?? body.amountPaid,
         paymentMethod: body.payment_method ?? body.paymentMethod ?? null,
+      });
+      await logAudit({
+        userId: req.user.id,
+        action: 'UPDATE_WEBSITE_COLLECTED',
+        entityType: 'booking',
+        entityId: booking.id,
+        details: {
+          guest_name: booking.guest_name || null,
+          amount_paid: booking.amount_paid ?? body.amount_paid ?? body.amountPaid ?? null,
+          payment_method: body.payment_method ?? body.paymentMethod ?? null,
+        },
       });
       res.json(booking);
     } catch (e) {
@@ -1507,6 +1543,17 @@ router.post(
          WHERE b.id = $1`,
         [booking.id]
       );
+      await logAudit({
+        userId: req.user.id,
+        action: 'ASSIGN_WEBSITE_BOOKING',
+        entityType: 'booking',
+        entityId: booking.id,
+        details: {
+          guest_name: booking.guest_name || rows[0]?.guest_name || null,
+          assigned_sales_id: booking.assigned_sales_id || null,
+          assigned_agent_name: rows[0]?.assigned_agent_name || null,
+        },
+      });
       res.json(rows[0] || booking);
     } catch (e) {
       next(e);

@@ -3,7 +3,7 @@ const PERMS = {
   reservations: ['reservations', 'schedule', 'units_readonly', 'tasks'],
   reservations_web: ['reservations', 'schedule', 'units', 'website_bookings', 'tasks'],
   reservations_manual: ['reservations', 'schedule', 'tasks'],
-  reservations_manager: ['reservations', 'schedule', 'performance', 'reports', 'units', 'tasks'],
+  reservations_manager: ['reservations', 'schedule', 'performance', 'reservation_audit', 'units', 'tasks'],
   unit_acquisition_agent: ['units', 'acquisition', 'reservations', 'schedule', 'owners', 'owner_statement', 'tasks'],
   unit_acquisition_manager: [
     'units',

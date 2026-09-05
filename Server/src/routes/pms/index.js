@@ -92,6 +92,7 @@ router.use(require('./reservationsPerformance'));
 router.use(require('./resalePerformance'));
 router.use(require('./acquisitionAudit'));
 router.use(require('./financeAudit'));
+router.use(require('./reservationAudit'));
 router.use(require('./staffTasks'));
 router.use(require('./financialSystem'));
 router.use(housekeepingOps);
@@ -2044,7 +2045,14 @@ router.post(
       action: 'CREATE_RESERVATION',
       entityType: 'reservation',
       entityId: reservation.id,
-      details: { unit_id: b.unit_id, check_in: b.check_in, check_out: b.check_out, payment_method: paymentMethod },
+      details: {
+        unit_id: b.unit_id,
+        guest_name: reservation.guest_name || b.guest_name || null,
+        check_in: b.check_in,
+        check_out: b.check_out,
+        payment_method: paymentMethod,
+        status: reservation.status || null,
+      },
     });
     try {
       const { notifyManualReservationCreated } = require('../../services/pmsNotifications');
@@ -2201,6 +2209,19 @@ router.patch(
     } catch (err) {
       console.warn('[reservations] block resync failed', err.message);
     }
+    await logAudit({
+      userId: req.user.id,
+      action: 'UPDATE_RESERVATION',
+      entityType: 'reservation',
+      entityId: rows[0]?.id || req.params.id,
+      details: {
+        guest_name: rows[0]?.guest_name || existing.guest_name || null,
+        unit_id: rows[0]?.unit_id || existing.unit_id || null,
+        check_in: rows[0]?.check_in || existing.check_in || null,
+        check_out: rows[0]?.check_out || existing.check_out || null,
+        status: rows[0]?.status || existing.status || null,
+      },
+    });
     res.json(rows[0]);
   } catch (e) {
     next(e);
@@ -2243,6 +2264,13 @@ router.post(
          RETURNING id, id_photo_urls`,
         [urls, req.params.id]
       );
+      await logAudit({
+        userId: req.user.id,
+        action: 'UPLOAD_RESERVATION_ID',
+        entityType: 'reservation',
+        entityId: req.params.id,
+        details: { count: urls.length, guest_name: existing.guest_name || null },
+      });
       res.json(rows[0]);
     } catch (e) {
       next(e);
@@ -2279,6 +2307,13 @@ router.delete(
          RETURNING id, id_photo_urls`,
         [url, req.params.id]
       );
+      await logAudit({
+        userId: req.user.id,
+        action: 'REMOVE_RESERVATION_ID',
+        entityType: 'reservation',
+        entityId: req.params.id,
+        details: { guest_name: existing.guest_name || null },
+      });
       res.json(rows[0]);
     } catch (e) {
       next(e);
@@ -2382,6 +2417,19 @@ router.delete(
         : 'cancelled_by_staff');
     }
 
+    await logAudit({
+      userId: req.user.id,
+      action: 'DELETE_RESERVATION',
+      entityType: 'reservation',
+      entityId: id,
+      details: {
+        guest_name: rows[0]?.guest_name || null,
+        unit_id: rows[0]?.unit_id || null,
+        check_in: rows[0]?.check_in || null,
+        check_out: rows[0]?.check_out || null,
+      },
+    });
+
     res.json(rows[0]);
   } catch (e) {
     next(e);
@@ -2451,6 +2499,20 @@ router.post(
       const { notifyCancelRequest } = require('../../services/pmsNotifications');
       await notifyCancelRequest(rows[0], req.user, reason);
     } catch (_) {}
+
+    await logAudit({
+      userId: req.user.id,
+      action: 'CANCEL_RESERVATION',
+      entityType: 'reservation',
+      entityId: rows[0].id,
+      details: {
+        guest_name: rows[0].guest_name || null,
+        unit_id: rows[0].unit_id || null,
+        check_in: rows[0].check_in || null,
+        check_out: rows[0].check_out || null,
+        reason: reason || null,
+      },
+    });
 
     res.json(rows[0]);
   } catch (e) {
@@ -2859,6 +2921,19 @@ router.post(
         } catch (_) {}
       }
     }
+
+    await logAudit({
+      userId: req.user.id,
+      action: 'RECORD_PAYMENT',
+      entityType: 'payment',
+      entityId: rows[0].id,
+      details: {
+        reservation_id: b.reservation_id || null,
+        amount: rows[0].amount,
+        payment_method: rows[0].payment_method || method || null,
+        status: rows[0].status || null,
+      },
+    });
 
     res.status(201).json(rows[0]);
   } catch (e) {
