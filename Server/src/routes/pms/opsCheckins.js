@@ -80,10 +80,66 @@ function isHkSupervisor(user) {
   return user?.role === 'admin' || user?.role === HK_SUPER;
 }
 
+function roundMoney(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v) || v < 0) return 0;
+  return Math.round(v * 100) / 100;
+}
+
 function remainingOf(row) {
   const total = Number(row.total_amount) || 0;
   const paid = Number(row.amount_paid) || 0;
   return Math.max(0, Math.round((total - paid) * 100) / 100);
+}
+
+/** Apply door-edited bill lines, then return the refreshed check-in row. */
+async function applyCollectBillEdits(reservationId, bill, row) {
+  if (!bill || typeof bill !== 'object') return row;
+
+  const nights = Number(row.nights) || 0;
+  const accommodation = roundMoney(bill.accommodation_amount);
+  const housekeeping = roundMoney(bill.housekeeping_fees);
+  const beach = roundMoney(bill.beach_access_fees);
+  const service = roundMoney(bill.service_fees);
+  const insurance = roundMoney(bill.insurance);
+  const utilities = roundMoney(bill.utilities_amount);
+  const security = roundMoney(bill.security_deposit);
+
+  const finalTotal = roundMoney(
+    accommodation + housekeeping + beach + service + insurance + utilities + security
+  );
+  if (!(finalTotal > 0) && remainingOf(row) > 0.5) {
+    const err = new Error('Edited bill total must be greater than zero');
+    err.status = 400;
+    throw err;
+  }
+
+  const paid = roundMoney(row.amount_paid);
+  if (finalTotal + 0.5 < paid) {
+    const err = new Error(
+      `Final bill (EGP ${finalTotal}) cannot be less than already paid (EGP ${paid})`
+    );
+    err.status = 400;
+    throw err;
+  }
+
+  const pricePerNight =
+    nights > 0 ? roundMoney(accommodation / nights) : roundMoney(row.price_per_night);
+
+  await query(
+    `UPDATE reservations SET
+       price_per_night = $2,
+       housekeeping_fees = $3,
+       beach_access_fees = $4,
+       insurance = $5,
+       utilities_amount = $6,
+       total_amount = $7,
+       updated_at = now()
+     WHERE id = $1`,
+    [reservationId, pricePerNight, housekeeping, beach, insurance, utilities, finalTotal]
+  );
+
+  return fetchCheckinRow(reservationId);
 }
 
 function isHkCleaned(status) {
@@ -437,13 +493,41 @@ router.post(
   async (req, res, next) => {
     try {
       const reservationId = Number(req.params.reservationId);
-      const row = await fetchCheckinRow(reservationId);
+      let row = await fetchCheckinRow(reservationId);
       if (!row) return res.status(404).json({ error: 'Reservation not found' });
       if (String(row.status).toLowerCase() === 'cancelled') {
         return res.status(409).json({ error: 'Reservation is cancelled' });
       }
       const denied = assertOpsCanAct(req, row);
       if (denied) return res.status(403).json({ error: denied });
+
+      const collectMode = String(req.body?.collect_mode || 'full').toLowerCase() === 'custom'
+        ? 'custom'
+        : 'full';
+      let billApplied = null;
+      if (collectMode === 'custom' && req.body?.bill) {
+        const before = {
+          total_amount: Number(row.total_amount) || 0,
+          price_per_night: Number(row.price_per_night) || 0,
+          housekeeping_fees: Number(row.housekeeping_fees) || 0,
+          beach_access_fees: Number(row.beach_access_fees) || 0,
+          insurance: Number(row.insurance) || 0,
+          utilities_amount: Number(row.utilities_amount) || 0,
+        };
+        row = await applyCollectBillEdits(reservationId, req.body.bill, row);
+        billApplied = {
+          before,
+          after: {
+            total_amount: Number(row.total_amount) || 0,
+            price_per_night: Number(row.price_per_night) || 0,
+            housekeeping_fees: Number(row.housekeeping_fees) || 0,
+            beach_access_fees: Number(row.beach_access_fees) || 0,
+            insurance: Number(row.insurance) || 0,
+            utilities_amount: Number(row.utilities_amount) || 0,
+            bill: req.body.bill,
+          },
+        };
+      }
 
       const remaining = remainingOf(row);
       if (remaining <= 0.5) {
@@ -457,12 +541,27 @@ router.post(
            WHERE id = $1`,
           [reservationId, req.user.id]
         );
+        if (billApplied) {
+          await logAudit({
+            userId: req.user.id,
+            action: 'OPS_EDIT_CHECKIN_BILL',
+            entityType: 'reservation',
+            entityId: reservationId,
+            details: billApplied,
+          });
+        }
         const updated = await fetchCheckinRow(reservationId);
         return res.json(mapCheckin(updated));
       }
 
-      let amount = Number(req.body?.amount);
-      if (!Number.isFinite(amount) || amount <= 0) amount = remaining;
+      // Full / custom both collect the full remaining after any bill edit.
+      let amount = remaining;
+      if (collectMode === 'full') {
+        const requested = Number(req.body?.amount);
+        if (Number.isFinite(requested) && requested > 0) {
+          amount = Math.round(requested * 100) / 100;
+        }
+      }
       amount = Math.round(amount * 100) / 100;
       if (amount > remaining + 0.5) {
         return res.status(400).json({ error: `Amount cannot exceed remaining EGP ${remaining}` });
@@ -529,12 +628,23 @@ router.post(
         [reservationId, req.user.id, amount]
       );
 
+      if (billApplied) {
+        await logAudit({
+          userId: req.user.id,
+          action: 'OPS_EDIT_CHECKIN_BILL',
+          entityType: 'reservation',
+          entityId: reservationId,
+          details: billApplied,
+        });
+      }
+
       await logAudit({
         userId: req.user.id,
         action: 'OPS_COLLECT_CHECKIN',
         entityType: 'reservation',
         entityId: reservationId,
         details: {
+          collect_mode: collectMode,
           amount,
           splits: splits.map((s) => ({
             amount: s.amount,
@@ -546,6 +656,7 @@ router.post(
       const updated = await fetchCheckinRow(reservationId);
       res.json(mapCheckin(updated));
     } catch (e) {
+      if (e.status === 400) return res.status(400).json({ error: e.message });
       next(e);
     }
   }
