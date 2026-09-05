@@ -28,54 +28,144 @@ const RESERVATIONS_TEAM = new Set([
   'reservations_manual',
 ]);
 
+/** Self-service HR pages available to most staff roles ("HR tabs"). */
+const STAFF_HR_TABS = [
+  'holiday_requests',
+  'loans',
+  'payslip',
+  'wfh',
+  'profile',
+];
+
 const RESERVATIONS_PAGE_ACCESS = new Set([
-  'dashboard',
+  'tasks',
   'reservations',
   'schedule',
-  'calendar_sync',
-  'housekeeping',
-  'commissions',
   'holiday_requests',
+  'loans',
+  'payslip',
+  'wfh',
   'profile',
 ]);
 
-
 const RESERVATIONS_MANUAL_PAGE_ACCESS = new Set([
+  'tasks',
   'reservations',
   'schedule',
-  'calendar_sync',
-  'holiday_requests',
-  'profile',
+  ...STAFF_HR_TABS,
 ]);
 
 const RESERVATIONS_WEB_PAGE_ACCESS = new Set([
-  ...RESERVATIONS_PAGE_ACCESS,
+  'tasks',
+  'reservations',
+  'schedule',
   'website_bookings',
   'units',
+  ...STAFF_HR_TABS,
 ]);
 
-const RESALE_PAGE_ACCESS = new Set(['units_sale', 'acquisition', 'commissions', 'profile']);
+const RESALE_PAGE_ACCESS = new Set(['units_sale', 'acquisition', 'commissions', 'profile', ...STAFF_HR_TABS.filter((p) => p !== 'profile'), 'tasks']);
 
 const RESALE_MANAGER_PAGE_ACCESS = new Set([
   'units_sale',
   'acquisition',
   'commissions',
   'performance',
-  'profile',
+  'tasks',
+  ...STAFF_HR_TABS,
 ]);
 
-const FINANCE_PAGE_ACCESS = new Set(['financial_system', 'profile']);
-
-const FINANCE_MANAGER_PAGE_ACCESS = new Set(['financial_system', 'finance_audit', 'profile']);
-
-const RESERVATIONS_MANAGER_PAGE_ACCESS = new Set([
+const FINANCE_PAGE_ACCESS = new Set([
+  'tasks',
+  'financial_system',
+  'units',
+  'units_sale',
   'reservations',
   'schedule',
-  'calendar_sync',
-  'performance',
-  'holiday_requests',
-  'profile',
+  ...STAFF_HR_TABS,
 ]);
+
+const FINANCE_MANAGER_PAGE_ACCESS = new Set([
+  'tasks',
+  'financial_system',
+  'finance_audit',
+  'units',
+  'units_sale',
+  'reservations',
+  'schedule',
+  ...STAFF_HR_TABS,
+]);
+
+const RESERVATIONS_MANAGER_PAGE_ACCESS = new Set([
+  'tasks',
+  'reservations',
+  'schedule',
+  'performance',
+  'reports',
+  'units',
+  ...STAFF_HR_TABS,
+]);
+
+const UNIT_ACQUISITION_AGENT_PAGE_ACCESS = new Set([
+  'tasks',
+  'units',
+  'reservations',
+  'schedule',
+  'acquisition',
+  'owner_statement',
+  'owners',
+  ...STAFF_HR_TABS,
+]);
+
+const UNIT_ACQUISITION_MANAGER_PAGE_ACCESS = new Set([
+  'tasks',
+  'units',
+  'reservations',
+  'schedule',
+  'acquisition',
+  'acquisition_audit',
+  'owner_statement',
+  'owners',
+  ...STAFF_HR_TABS,
+]);
+
+const OPERATIONS_PAGE_ACCESS = new Set([
+  'tasks',
+  'operations',
+  'ops_checkins',
+  'reservations',
+  'schedule',
+  ...STAFF_HR_TABS,
+]);
+
+const OPERATIONS_SUPERVISOR_PAGE_ACCESS = new Set([
+  'tasks',
+  'operations',
+  'ops_checkins',
+  'ops_comments',
+  'reservations',
+  'schedule',
+  ...STAFF_HR_TABS,
+]);
+
+const HOUSEKEEPING_PAGE_ACCESS = new Set(['tasks', 'housekeeping', 'hk_today', ...STAFF_HR_TABS]);
+
+const HOUSEKEEPING_SUPERVISOR_PAGE_ACCESS = new Set([
+  'tasks',
+  'housekeeping',
+  'hk_today',
+  ...STAFF_HR_TABS,
+]);
+
+const MARKETING_PR_PAGE_ACCESS = new Set([
+  'tasks',
+  'reservations',
+  'units',
+  'schedule',
+  ...STAFF_HR_TABS,
+]);
+
+const WEB_DEVELOPER_PAGE_ACCESS = new Set(['tasks', ...STAFF_HR_TABS]);
 
 const RESERVATIONS_PERMISSIONS = [
   'dashboard:read',
@@ -148,7 +238,9 @@ const HR_PAGE_ACCESS = new Set([
   'profile',
 ]);
 
-const HR_SUPERVISOR_PAGE_ACCESS = new Set([...HR_PAGE_ACCESS]);
+const HR_AGENT_PAGE_ACCESS = new Set([...HR_PAGE_ACCESS, 'reservations']);
+
+const HR_SUPERVISOR_PAGE_ACCESS = new Set([...HR_PAGE_ACCESS, 'reservations']);
 
 const PERMISSIONS = {
   admin: ['*'],
@@ -292,21 +384,21 @@ const PAGE_ACCESS = {
   reservations_web: RESERVATIONS_WEB_PAGE_ACCESS,
   reservations_manual: RESERVATIONS_MANUAL_PAGE_ACCESS,
   reservations_manager: RESERVATIONS_MANAGER_PAGE_ACCESS,
-  unit_acquisition_agent: new Set(['units', 'acquisition', 'owners', 'profile']),
-  unit_acquisition_manager: new Set(['units', 'acquisition', 'acquisition_audit', 'owners', 'profile']),
-  operations: new Set(['operations', 'ops_checkins', 'reservations', 'schedule', 'profile']),
-  operations_supervisor: new Set(['operations', 'ops_checkins', 'ops_comments', 'reservations', 'schedule', 'profile']),
-  housekeeping: new Set(['housekeeping', 'hk_today', 'profile']),
-  housekeeping_supervisor: new Set(['housekeeping', 'hk_today', 'profile']),
+  unit_acquisition_agent: UNIT_ACQUISITION_AGENT_PAGE_ACCESS,
+  unit_acquisition_manager: UNIT_ACQUISITION_MANAGER_PAGE_ACCESS,
+  operations: OPERATIONS_PAGE_ACCESS,
+  operations_supervisor: OPERATIONS_SUPERVISOR_PAGE_ACCESS,
+  housekeeping: HOUSEKEEPING_PAGE_ACCESS,
+  housekeeping_supervisor: HOUSEKEEPING_SUPERVISOR_PAGE_ACCESS,
   resale: RESALE_PAGE_ACCESS,
   resale_manager: RESALE_MANAGER_PAGE_ACCESS,
-  hr: HR_PAGE_ACCESS,
+  hr: HR_AGENT_PAGE_ACCESS,
   hr_supervisor: HR_SUPERVISOR_PAGE_ACCESS,
-  owners_relations: new Set(['reservations', 'profile', 'holiday_requests', 'loans', 'payslip']),
+  owners_relations: new Set(['reservations', 'tasks', ...STAFF_HR_TABS]),
   finance: FINANCE_PAGE_ACCESS,
   finance_manager: FINANCE_MANAGER_PAGE_ACCESS,
-  marketing_pr: new Set(['tasks', 'profile']),
-  web_developer: new Set(['tasks', 'profile']),
+  marketing_pr: MARKETING_PR_PAGE_ACCESS,
+  web_developer: WEB_DEVELOPER_PAGE_ACCESS,
   owner: new Set([
     'owner',
     'owner_reservations',
@@ -402,13 +494,15 @@ export function hasPermission(user, permission) {
 export function isStaffTaskManagerRole(role) {
   const r = String(role || '');
   if (r === 'admin') return true;
+  if (r === 'web_developer') return true;
   return r.endsWith('_manager') || r.endsWith('_supervisor');
 }
 
 export function canReceiveStaffTasks(role) {
   const r = String(role || '');
   if (r === 'owner' || r === 'admin') return false;
-  return !isStaffTaskManagerRole(r);
+  // Managers/supervisors and web developers can both assign and receive.
+  return true;
 }
 
 export function isTaskAssigneeRole(user) {
@@ -423,27 +517,7 @@ export function canAccess(user, page) {
   if (!user) return false;
   if (user.role === 'admin') return true;
   if (page === 'profile' || page === 'change-password') return true;
-  if (page === 'tasks' && user.role !== 'owner') {
-    return true;
-  }
-  if (
-    (page === 'loans' || page === 'payslip' || page === 'holiday_requests') &&
-    user.role !== 'owner' &&
-    user.role !== 'finance' &&
-    user.role !== 'finance_manager'
-  ) {
-    return true;
-  }
-  if (
-    page === 'wfh' &&
-    user.role !== 'owner' &&
-    user.role !== 'admin' &&
-    user.role !== 'finance' &&
-    user.role !== 'finance_manager' &&
-    canRequestWfh(user)
-  ) {
-    return true;
-  }
+  if (page === 'wfh' && !canRequestWfh(user)) return false;
   const allowed = PAGE_ACCESS[user.role];
   if (allowed === true) return true;
   if (allowed instanceof Set) return allowed.has(page);
@@ -457,18 +531,22 @@ export function canManageUnits(user) {
       isResaleStaff(user) ||
       user.role === 'reservations_web' ||
       user.role === 'reservations' ||
+      user.role === 'reservations_manager' ||
+      isFinanceStaff(user) ||
       isUnitAcquisitionRole(user))
   );
 }
 
 export function canDeleteUnits(user) {
-  return !!user && (user.role === 'admin' || isResaleStaff(user));
+  return (
+    !!user &&
+    (user.role === 'admin' || isResaleStaff(user) || isUnitAcquisitionRole(user))
+  );
 }
 
 function isOperationsRole(user) {
   return !!user && (user.role === 'operations' || user.role === 'operations_supervisor');
 }
-
 
 export function canManageReservations(user) {
   return (
@@ -477,10 +555,13 @@ export function canManageReservations(user) {
       isManualReservationsRole(user) ||
       isWebsiteReservationsRole(user) ||
       isReservationsManager(user) ||
-      isOperationsRole(user))
+      isOperationsRole(user) ||
+      isFinanceStaff(user) ||
+      isHrTeamRole(user.role) ||
+      user.role === 'marketing_pr' ||
+      isUnitAcquisitionRole(user))
   );
 }
-
 
 export function canHandleWebsiteBookings(user) {
   return !!user && (user.role === 'admin' || isWebsiteReservationsRole(user));
@@ -491,13 +572,17 @@ export function canViewAllReservations(user) {
 }
 
 export function canEditOrChecklist(user) {
-  return !!user && (user.role === 'admin' || user.role === 'owners_relations');
+  return (
+    !!user &&
+    (user.role === 'admin' ||
+      user.role === 'owners_relations' ||
+      user.role === 'unit_acquisition_manager')
+  );
 }
 
 export function isOwnersRelationsRole(user) {
   return !!user && user.role === 'owners_relations';
 }
-
 
 export function canViewOwnCommissions(user) {
   return !!user && (user.role === 'admin' || isReservationsTeam(user) || isResaleStaff(user));
@@ -511,6 +596,16 @@ export function isFinanceRole(user) {
   return isFinanceAgent(user);
 }
 
+/** Schedule grid create/move/edit stays (not just viewing). */
+export function canWriteSchedule(user) {
+  return (
+    !!user &&
+    (user.role === 'admin' ||
+      user.role === 'reservations_manager' ||
+      user.role === 'unit_acquisition_manager')
+  );
+}
+
 export function canEditSchedulePricing(user) {
   return !!user && user.role === 'admin';
 }
@@ -519,13 +614,12 @@ export function canAccessFinance(user) {
   return !!user && user.role === 'admin';
 }
 
-
 export function canAccessFinancialSystem(user) {
   return !!user && (user.role === 'admin' || isFinanceStaff(user));
 }
 
 export function canAccessReports(user) {
-  return !!user && user.role === 'admin';
+  return !!user && (user.role === 'admin' || user.role === 'reservations_manager');
 }
 
 export function canManageUsers(user) {

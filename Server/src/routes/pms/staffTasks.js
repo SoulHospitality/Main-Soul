@@ -87,12 +87,26 @@ router.get('/staff-tasks', async (req, res, next) => {
       return res.status(503).json({ error: 'Tasks are not set up yet. Restart the API server and try again.' });
     }
     const me = req.user.id;
+    if (req.user.role === 'admin') {
+      const { rows } = await query(
+        `SELECT ${TASK_SELECT}
+         FROM staff_tasks t
+         JOIN staff_users a ON a.id = t.assignee_id
+         JOIN staff_users m ON m.id = t.created_by
+         WHERE ${staffTaskScopeSql('$1', 'a', req.user.role)}
+         ORDER BY (t.completed_at IS NULL) DESC, t.deadline ASC, t.created_at DESC`,
+        []
+      );
+      return res.json(rows);
+    }
+
     const sql = canManageStaffTasks(req.user)
       ? `SELECT ${TASK_SELECT}
          FROM staff_tasks t
          JOIN staff_users a ON a.id = t.assignee_id
          JOIN staff_users m ON m.id = t.created_by
-         WHERE ${staffTaskScopeSql('$1', 'a', req.user.role)}
+         WHERE t.assignee_id = $1
+            OR ${staffTaskScopeSql('$1', 'a', req.user.role)}
          ORDER BY (t.completed_at IS NULL) DESC, t.deadline ASC, t.created_at DESC`
       : `SELECT ${TASK_SELECT}
          FROM staff_tasks t
@@ -100,10 +114,7 @@ router.get('/staff-tasks', async (req, res, next) => {
          JOIN staff_users m ON m.id = t.created_by
          WHERE t.assignee_id = $1
          ORDER BY (t.completed_at IS NULL) DESC, t.deadline ASC, t.created_at DESC`;
-    const params = canManageStaffTasks(req.user)
-      ? staffTaskScopeParams(req.user.role, me)
-      : [me];
-    const { rows } = await query(sql, params);
+    const { rows } = await query(sql, [me]);
     res.json(rows);
   } catch (e) {
     return taskDbError(res, next, e);

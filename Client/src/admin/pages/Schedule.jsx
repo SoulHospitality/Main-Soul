@@ -858,7 +858,7 @@ function BulkPriceModal({ open, onClose, unitCount, onSave, saving }) {
 export default function Schedule() {
   const qc = useQueryClient();
   const { user } = useAuth();
-  const { canEditSchedulePricing, canManageReservations, isManualReservations, isWebsiteReservations, isReservationsManager, isAdmin } = usePermissions();
+  const { canEditSchedulePricing, canManageReservations, canWriteSchedule, isManualReservations, isWebsiteReservations, isReservationsManager, isAdmin } = usePermissions();
   const TODAY = todayStr();
   const TOMORROW = addDays(TODAY, 1);
   const now = new Date();
@@ -1313,7 +1313,7 @@ export default function Schedule() {
     onError: () => toast.error('Failed to update some prices'),
   });
 
-  const canWrite      = canManageReservations;
+  const canWrite = canWriteSchedule;
   const canEditPrice  = canEditSchedulePricing;
 
   

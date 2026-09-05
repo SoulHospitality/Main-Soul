@@ -67,7 +67,17 @@ const {
   UNIT_ACQUISITION_ROLES,
 } = require('../../lib/unitAcquisition');
 const { isResaleStaff } = require('../../lib/resaleScope');
-const UNIT_EDITOR_ROLES = ['admin', 'resale', 'resale_manager', 'reservations_web', 'reservations', ...UNIT_ACQUISITION_ROLES];
+const UNIT_EDITOR_ROLES = [
+  'admin',
+  'resale',
+  'resale_manager',
+  'reservations_web',
+  'reservations',
+  'reservations_manager',
+  'finance',
+  'finance_manager',
+  ...UNIT_ACQUISITION_ROLES,
+];
 
 const HR_ROUTE_ROLES = ['admin', 'hr', 'hr_supervisor'];
 const USER_ACCOUNT_ROLES = ['hr', 'hr_supervisor', ...UNIT_ACQUISITION_ROLES];
@@ -1459,7 +1469,7 @@ router.patch('/units/:id/publish', requireRoles(...UNIT_EDITOR_ROLES), async (re
   }
 });
 
-router.delete('/units/:id', requireRoles('admin', 'resale', 'resale_manager'), async (req, res, next) => {
+router.delete('/units/:id', requireRoles('admin', 'resale', 'resale_manager', ...UNIT_ACQUISITION_ROLES), async (req, res, next) => {
   try {
     const unitId = req.params.id;
     const deleteReservations =
@@ -1733,6 +1743,13 @@ router.post(
     'reservations',
     'operations',
     'operations_supervisor',
+    'hr',
+    'hr_supervisor',
+    'marketing_pr',
+    'finance',
+    'finance_manager',
+    'unit_acquisition_agent',
+    'unit_acquisition_manager',
     'admin'
   ),
   upload.single('transfer_proof'),
@@ -1743,12 +1760,13 @@ router.post(
     const b = req.body;
     const { getBlockedDates } = require('../../services/pricing');
     const { paymentStatusFrom } = require('../../lib/syncReservationPayment');
-    const { isAdmin, isReservationsAgent } = require('../../lib/reservationScope');
+    const { isAdmin, isReservationsAgent, hasOwnOnlyReservationAccess, hasWebsiteAllReservationAccess } = require('../../lib/reservationScope');
 
-    const salesPersonId =
-      isReservationsAgent(req.user) && !isAdmin(req.user)
-        ? req.user.id
-        : (b.sales_person_id || req.user.id);
+    const forceSelf =
+      hasOwnOnlyReservationAccess(req.user) &&
+      !hasWebsiteAllReservationAccess(req.user) &&
+      !isAdmin(req.user);
+    const salesPersonId = forceSelf ? req.user.id : b.sales_person_id || req.user.id;
     await assertAssignableSalesPerson(req.user, salesPersonId);
     const checkIn = new Date(b.check_in);
     const checkOut = new Date(b.check_out);
@@ -2051,6 +2069,13 @@ router.patch(
     'reservations',
     'operations',
     'operations_supervisor',
+    'hr',
+    'hr_supervisor',
+    'marketing_pr',
+    'finance',
+    'finance_manager',
+    'unit_acquisition_agent',
+    'unit_acquisition_manager',
     'admin'
   ),
   async (req, res, next) => {
@@ -2061,7 +2086,12 @@ router.patch(
     await assertReservationOwned(req.user, existing);
 
     const b = req.body;
-    if (isReservationsAgent(req.user) && !isAdmin(req.user)) {
+    const { hasOwnOnlyReservationAccess, hasWebsiteAllReservationAccess } = require('../../lib/reservationScope');
+    if (
+      hasOwnOnlyReservationAccess(req.user) &&
+      !hasWebsiteAllReservationAccess(req.user) &&
+      req.user.role !== 'admin'
+    ) {
       b.sales_person_id = req.user.id;
     }
     await assertAssignableSalesPerson(req.user, b.sales_person_id);
@@ -2587,7 +2617,7 @@ router.get('/reservations/schedule', async (req, res, next) => {
 
 router.patch(
   '/reservations/:id/or-checklist',
-  requireRoles('owners_relations', 'admin'),
+  requireRoles('owners_relations', 'admin', 'unit_acquisition_manager'),
   async (req, res, next) => {
     try {
       if (!/^\d+$/.test(String(req.params.id))) {

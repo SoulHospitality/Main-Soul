@@ -161,6 +161,7 @@ function isDirectStaffManager(actorId, staff) {
 function isStaffTaskManagerRole(role) {
   const r = String(role || '');
   if (r === 'admin') return true;
+  if (r === 'web_developer') return true;
   return r.endsWith('_manager') || r.endsWith('_supervisor');
 }
 

@@ -925,6 +925,7 @@ export default function Reservations() {
     isOwnersRelations,
     isReservationsManager,
     canManageReservations,
+    canEditOrChecklist,
     canAccessFinance,
     user,
   } = usePermissions();
@@ -932,7 +933,17 @@ export default function Reservations() {
   const agentOnly =
     !isAdmin &&
     !isOwnersRelations &&
-    (isWebsiteReservations || isManualReservations || isReservations);
+    !isReservationsManager &&
+    user?.role !== 'finance' &&
+    user?.role !== 'finance_manager' &&
+    user?.role !== 'hr_supervisor' &&
+    user?.role !== 'unit_acquisition_manager' &&
+    (isWebsiteReservations ||
+      isManualReservations ||
+      isReservations ||
+      ['hr', 'marketing_pr', 'unit_acquisition_agent', 'operations', 'operations_supervisor'].includes(
+        user?.role
+      ));
   const pageTitle = agentOnly ? 'My Reservations' : 'Reservations';
   const [searchParams] = useSearchParams();
   const [search, setSearch] = useState(searchParams.get('search') || '');
@@ -1243,7 +1254,7 @@ export default function Reservations() {
   const canPay = canAccessFinance || isManualReservations || isAdmin;
   const canApprove = isAdmin;
   const canView = canWrite || isAdmin || isReservations || isOwnersRelations;
-  const showOrChecklist = isAdmin || isOwnersRelations;
+  const showOrChecklist = canEditOrChecklist;
 
   const canSeeOwnerStays = isAdmin;
 

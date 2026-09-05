@@ -33,23 +33,44 @@ function isAdmin(user) {
 }
 
 /** Roles that may list/view all reservations (not scoped to own sales). */
-const BROAD_RESERVATION_ACCESS_ROLES = new Set([
-  'admin',
-  'finance',
-  'finance_manager',
+const BROAD_RESERVATION_ACCESS_ROLES = new Set(['admin', 'owners_relations']);
+
+/** Finance sees every website-origin reservation (not manual/OTA-only). */
+const WEBSITE_ALL_RESERVATION_ROLES = new Set(['finance', 'finance_manager']);
+
+/** Managers who see own + direct-report team reservations. */
+const TEAM_RESERVATION_ROLES = new Set([
+  'reservations_manager',
+  'hr_supervisor',
+  'unit_acquisition_manager',
+]);
+
+/** Staff who only see reservations they own / created / labeled as themselves. */
+const OWN_ONLY_RESERVATION_ROLES = new Set([
+  'reservations',
+  'reservations_web',
+  'reservations_manual',
+  'hr',
+  'marketing_pr',
+  'unit_acquisition_agent',
   'operations',
   'operations_supervisor',
-  'housekeeping',
-  'housekeeping_supervisor',
-  'owners_relations',
-  'resale',
-  'resale_manager',
-  'unit_acquisition_agent',
-  'unit_acquisition_manager',
 ]);
 
 function hasBroadReservationAccess(user) {
   return BROAD_RESERVATION_ACCESS_ROLES.has(user?.role);
+}
+
+function hasWebsiteAllReservationAccess(user) {
+  return WEBSITE_ALL_RESERVATION_ROLES.has(user?.role);
+}
+
+function hasTeamReservationAccess(user) {
+  return TEAM_RESERVATION_ROLES.has(user?.role);
+}
+
+function hasOwnOnlyReservationAccess(user) {
+  return OWN_ONLY_RESERVATION_ROLES.has(user?.role) || isReservationsTeam(user);
 }
 
 function isWebsiteOriginReservation(reservation) {
@@ -105,7 +126,22 @@ async function pickLeastLoadedReservationsAgent() {
 
 
 function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
-  if (isReservationsManager(user)) {
+  if (hasBroadReservationAccess(user) || isAdmin(user)) {
+    return { clause: '', params: [], nextIndex: paramIndex };
+  }
+
+  if (hasWebsiteAllReservationAccess(user)) {
+    return {
+      clause: ` AND (
+        ${alias}.booking_id IS NOT NULL
+        OR lower(COALESCE(${alias}.booking_source, '')) = 'website'
+      )`,
+      params: [],
+      nextIndex: paramIndex,
+    };
+  }
+
+  if (hasTeamReservationAccess(user) || isReservationsManager(user)) {
     return {
       clause: ` AND (
         ${alias}.sales_person_id = $${paramIndex}
@@ -115,7 +151,7 @@ function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
         OR EXISTS (
           SELECT 1 FROM staff_users s
           WHERE s.manager_id = $${paramIndex}
-            AND s.role IN ('reservations', 'reservations_web', 'reservations_manual')
+            AND s.role IN ('reservations', 'reservations_web', 'reservations_manual', 'hr', 'unit_acquisition_agent')
             AND ${alias}.sales_label IS NOT NULL
             AND btrim(${alias}.sales_label) <> ''
             AND lower(regexp_replace(btrim(${alias}.sales_label), '\\s+', ' ', 'g'))
@@ -127,11 +163,7 @@ function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
     };
   }
 
-  if (!isReservationsTeam(user)) {
-    if (hasBroadReservationAccess(user)) {
-      return { clause: '', params: [], nextIndex: paramIndex };
-    }
-    // Default deny: no reservation rows for unrelated roles (HR, marketing, etc.)
+  if (!hasOwnOnlyReservationAccess(user)) {
     return { clause: ' AND 1=0', params: [], nextIndex: paramIndex };
   }
 
@@ -139,7 +171,6 @@ function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
   const params = [user.id];
   let nextIndex = paramIndex + 1;
 
-  
   let clause = ` AND (
     ${alias}.sales_person_id = $${paramIndex}
     OR ${alias}.created_by = $${paramIndex}`;
@@ -170,7 +201,6 @@ function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
           = lower(regexp_replace(btrim($${nameParam}), '\\s+', ' ', 'g'))
         ${aliasSql}
         OR (
-          /* Label is a longer form of the staff full name (2+ words). */
           array_length(
             regexp_split_to_array(lower(regexp_replace(btrim($${nameParam}), '\\s+', ' ', 'g')), '\\s+'),
             1
@@ -179,7 +209,6 @@ function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
             LIKE lower(regexp_replace(btrim($${nameParam}), '\\s+', ' ', 'g')) || ' %'
         )
         OR (
-          /* Staff name is a longer form of a multi-word label (not a single last name). */
           array_length(
             regexp_split_to_array(
               lower(regexp_replace(btrim(${alias}.sales_label), '\\s+', ' ', 'g')),
@@ -200,7 +229,6 @@ function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
   if (user.role === 'reservations_manual') {
     clause += ` AND ${alias}.booking_id IS NULL AND LOWER(COALESCE(${alias}.booking_source, '')) <> 'website'`;
   }
-  
 
   return { clause, params, nextIndex };
 }
@@ -259,8 +287,14 @@ function isOwnReservation(user, reservation) {
 }
 
 async function assertReservationOwned(user, reservation) {
-  if (hasBroadReservationAccess(user)) return;
-  if (isReservationsManager(user)) {
+  if (hasBroadReservationAccess(user) || isAdmin(user)) return;
+  if (hasWebsiteAllReservationAccess(user)) {
+    if (isWebsiteOriginReservation(reservation)) return;
+    const err = new Error('Finance can only access website reservations');
+    err.status = 403;
+    throw err;
+  }
+  if (hasTeamReservationAccess(user) || isReservationsManager(user)) {
     if (isOwnReservation(user, reservation)) return;
     const ids = [reservation?.sales_person_id, reservation?.created_by]
       .map((id) => Number(id))
@@ -276,7 +310,7 @@ async function assertReservationOwned(user, reservation) {
     err.status = 403;
     throw err;
   }
-  if (!isReservationsTeam(user)) {
+  if (!hasOwnOnlyReservationAccess(user)) {
     const err = new Error('Forbidden');
     err.status = 403;
     throw err;
@@ -344,6 +378,9 @@ module.exports = {
   isManualReservationsAgent,
   isAdmin,
   hasBroadReservationAccess,
+  hasWebsiteAllReservationAccess,
+  hasTeamReservationAccess,
+  hasOwnOnlyReservationAccess,
   isWebsiteOriginReservation,
   pickLeastLoadedReservationsAgent,
   reservationScopeClause,

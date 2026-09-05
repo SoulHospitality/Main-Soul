@@ -49,6 +49,7 @@ const NAV_SECTIONS = [
       { path: '/admin/acquisition', label: 'Owner leads', icon: Briefcase, page: 'acquisition', resaleLabel: 'Owners requests' },
       { path: '/admin/performance', label: 'Performance', icon: Trophy, page: 'performance', roles: ['resale_manager'] },
       { path: '/admin/acquisition-audit', label: 'Audit', icon: ClipboardList, page: 'acquisition_audit' },
+      { path: '/admin/owner-statement', label: 'Owner Statement', icon: FileBarChart2, page: 'owner_statement', roles: ['unit_acquisition_agent', 'unit_acquisition_manager'] },
       { path: '/admin/users', label: 'Owners', icon: UserCircle, page: 'owners', roles: ['unit_acquisition_agent', 'unit_acquisition_manager'] },
     ],
   },
@@ -61,6 +62,7 @@ const NAV_SECTIONS = [
       { path: '/admin/schedule', label: 'Schedule', icon: CalendarRange, page: 'schedule' },
       { path: '/admin/calendar-sync', label: 'Calendar sync', icon: Link2, page: 'calendar_sync' },
       { path: '/admin/performance', label: 'Performance', icon: Trophy, page: 'performance', excludeRoles: ['resale_manager'] },
+      { path: '/admin/reports', label: 'Reservation Audits', icon: FileBarChart2, page: 'reports', roles: ['reservations_manager'] },
     ],
   },
   {
@@ -77,7 +79,7 @@ const NAV_SECTIONS = [
     items: [
       { path: '/admin/financial-system', label: 'Financial System', icon: Landmark, page: 'financial_system' },
       { path: '/admin/finance-audit', label: 'Audit', icon: ClipboardList, page: 'finance_audit' },
-      { path: '/admin/reports', label: 'Reports', icon: FileBarChart2, page: 'reports' },
+      { path: '/admin/reports', label: 'Reports', icon: FileBarChart2, page: 'reports', roles: ['admin'] },
       { path: '/admin/commissions', label: 'Commissions', icon: BadgeDollarSign, page: 'commissions', agentLabel: 'My Profit', managerLabel: 'Team profit' },
       { path: '/admin/promo-codes', label: 'Promo Codes', icon: Tag, page: 'promo_codes' },
     ],
