@@ -131,17 +131,26 @@ function nameMatchScore(salesLabel, staffName) {
   if (label === staff) return 1;
   if (namesAreAliases(label, staff)) return 1;
 
-  const direct = stringSimilarity(label, staff);
   const labelTokens = tokens(label);
   const staffTokens = tokens(staff);
-  if (!labelTokens.length || !staffTokens.length) return direct;
+  if (!labelTokens.length || !staffTokens.length) return stringSimilarity(label, staff);
 
-  
+  // Single-token labels (e.g. "Osama") must not match a different person who only
+  // shares that token as a last/middle name (e.g. "Mahmoud Osama").
+  // Those short labels are reserved for explicit EQUIVALENCE_GROUPS aliases.
+  if (labelTokens.length === 1 && staffTokens.length >= 2) {
+    return 0;
+  }
+  if (staffTokens.length === 1 && labelTokens.length >= 2) {
+    return 0;
+  }
+
+  const direct = stringSimilarity(label, staff);
+
   const sortedLabel = [...labelTokens].sort().join(' ');
   const sortedStaff = [...staffTokens].sort().join(' ');
   const sortedScore = stringSimilarity(sortedLabel, sortedStaff);
 
-  
   let tokenHits = 0;
   let worstStaffToken = 1;
   for (const st of staffTokens) {
@@ -154,35 +163,26 @@ function nameMatchScore(salesLabel, staffName) {
   }
   const tokenCoverage = tokenHits / staffTokens.length;
 
-  
+  // Full-string containment only when both sides have the same token count
+  // (avoids "Osama" ⊂ "Mahmoud Osama").
   const contained =
-    label.includes(staff) || staff.includes(label)
+    labelTokens.length === staffTokens.length && (label.includes(staff) || staff.includes(label))
       ? 0.94
-      : staffTokens.length >= 2 && tokenCoverage >= 1
+      : staffTokens.length >= 2 && labelTokens.length >= 2 && tokenCoverage >= 1
         ? 0.9
         : 0;
 
   let score = Math.max(direct, sortedScore, tokenCoverage * 0.95, contained);
 
-  
-  
   if (labelTokens.length < staffTokens.length) {
     let labelHits = 0;
-    let bestAny = 0;
     for (const lt of labelTokens) {
       let best = 0;
       for (const st of staffTokens) best = Math.max(best, stringSimilarity(lt, st));
-      bestAny = Math.max(bestAny, best);
       if (best >= 0.82) labelHits += 1;
     }
-    
-    if (labelTokens.length === 1 && bestAny >= 0.9) {
-      score = Math.max(score, 0.88);
-    } else {
-      score = Math.max(score, (labelHits / labelTokens.length) * 0.9);
-    }
+    score = Math.max(score, (labelHits / labelTokens.length) * 0.9);
   } else if (staffTokens.length >= 2 && worstStaffToken < 0.78) {
-    
     score = Math.min(score, 0.7);
   }
 

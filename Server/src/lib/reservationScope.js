@@ -168,23 +168,27 @@ function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
       AND (
         lower(regexp_replace(btrim(${alias}.sales_label), '\\s+', ' ', 'g'))
           = lower(regexp_replace(btrim($${nameParam}), '\\s+', ' ', 'g'))
-        OR lower(regexp_replace(btrim(${alias}.sales_label), '\\s+', ' ', 'g'))
-          LIKE lower(regexp_replace(btrim($${nameParam}), '\\s+', ' ', 'g')) || ' %'
-        OR lower(regexp_replace(btrim($${nameParam}), '\\s+', ' ', 'g'))
-          LIKE lower(regexp_replace(btrim(${alias}.sales_label), '\\s+', ' ', 'g')) || ' %'
         ${aliasSql}
         OR (
-          length(btrim(${alias}.sales_label)) >= 3
-          AND (
-            lower(regexp_replace(btrim($${nameParam}), '\\s+', ' ', 'g'))
-              LIKE '% ' || lower(regexp_replace(btrim(${alias}.sales_label), '\\s+', ' ', 'g'))
-            OR lower(regexp_replace(btrim($${nameParam}), '\\s+', ' ', 'g'))
-              LIKE '% ' || lower(regexp_replace(btrim(${alias}.sales_label), '\\s+', ' ', 'g')) || ' %'
-            OR lower(regexp_replace(btrim(${alias}.sales_label), '\\s+', ' ', 'g'))
-              LIKE '% ' || lower(regexp_replace(btrim($${nameParam}), '\\s+', ' ', 'g'))
-            OR lower(regexp_replace(btrim(${alias}.sales_label), '\\s+', ' ', 'g'))
-              LIKE '% ' || lower(regexp_replace(btrim($${nameParam}), '\\s+', ' ', 'g')) || ' %'
-          )
+          /* Label is a longer form of the staff full name (2+ words). */
+          array_length(
+            regexp_split_to_array(lower(regexp_replace(btrim($${nameParam}), '\\s+', ' ', 'g')), '\\s+'),
+            1
+          ) >= 2
+          AND lower(regexp_replace(btrim(${alias}.sales_label), '\\s+', ' ', 'g'))
+            LIKE lower(regexp_replace(btrim($${nameParam}), '\\s+', ' ', 'g')) || ' %'
+        )
+        OR (
+          /* Staff name is a longer form of a multi-word label (not a single last name). */
+          array_length(
+            regexp_split_to_array(
+              lower(regexp_replace(btrim(${alias}.sales_label), '\\s+', ' ', 'g')),
+              '\\s+'
+            ),
+            1
+          ) >= 2
+          AND lower(regexp_replace(btrim($${nameParam}), '\\s+', ' ', 'g'))
+            LIKE lower(regexp_replace(btrim(${alias}.sales_label), '\\s+', ' ', 'g')) || ' %'
         )
       )
     )`;
