@@ -5,20 +5,29 @@ import toast from 'react-hot-toast';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import { currency } from '../utils/formatters';
+import { OpsDateRangeFilter, formatOpsDay } from '../components/OpsDateRangeFilter';
 
 export function CheckoutsTodaySection({ embedded = false }) {
   const qc = useQueryClient();
+  const [range, setRange] = useState('month');
   const [refundingId, setRefundingId] = useState(null);
   const [methodDrafts, setMethodDrafts] = useState({});
 
-  const { data: rows = [], isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['ops-checkouts-today'],
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['ops-checkouts-today', range],
     queryFn: async () => {
-      const r = await api.get('/ops/checkouts-today');
-      return Array.isArray(r.data) ? r.data : [];
+      const r = await api.get('/ops/checkouts-today', { params: { range } });
+      if (Array.isArray(r.data)) return { items: r.data, range };
+      return {
+        items: Array.isArray(r.data?.items) ? r.data.items : [],
+        range: r.data?.range || range,
+        from: r.data?.from,
+        to: r.data?.to,
+      };
     },
     refetchInterval: 20000,
   });
+  const rows = data?.items || [];
 
   const refundMutation = useMutation({
     mutationFn: ({ id, payment_method }) =>
@@ -33,22 +42,36 @@ export function CheckoutsTodaySection({ embedded = false }) {
 
   if (isLoading) return <LoadingSpinner />;
 
+  const emptyLabel =
+    range === 'today'
+      ? 'today'
+      : range === 'tomorrow'
+        ? 'tomorrow'
+        : range === 'week'
+          ? 'this week'
+          : 'this month';
+
   return (
     <div className={embedded ? 'space-y-4' : 'space-y-6'}>
       {!embedded ? (
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Checkouts for today</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Checkouts</h1>
             <p className="mt-1 text-sm text-gray-500">
-              Today&apos;s departures — confirm insurance held and mark when you refunded it to the guest.
+              Departures for the selected period — confirm insurance held and mark when you refunded it
+              to the guest.
             </p>
           </div>
-          <button type="button" className="btn-secondary text-sm" onClick={() => refetch()}>
-            Refresh
-          </button>
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <OpsDateRangeFilter value={range} onChange={setRange} />
+            <button type="button" className="btn-secondary text-sm" onClick={() => refetch()}>
+              Refresh
+            </button>
+          </div>
         </div>
       ) : (
-        <div className="flex items-center justify-end">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <OpsDateRangeFilter value={range} onChange={setRange} />
           <button type="button" className="btn-secondary text-sm" onClick={() => refetch()}>
             Refresh
           </button>
@@ -60,12 +83,15 @@ export function CheckoutsTodaySection({ embedded = false }) {
           Could not load checkouts: {error?.response?.data?.error || error?.message || 'Request failed'}
         </div>
       ) : !rows.length ? (
-        <div className="card p-10 text-center text-sm text-gray-500">No checkouts scheduled for today.</div>
+        <div className="card p-10 text-center text-sm text-gray-500">
+          No checkouts scheduled for {emptyLabel}.
+        </div>
       ) : (
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-gray-500 border-b">
               <tr>
+                <th className="py-3 px-4">Date</th>
                 <th className="py-3 px-4">Guest</th>
                 <th className="py-3 px-4">Unit</th>
                 <th className="py-3 px-4">Insurance</th>
@@ -80,6 +106,12 @@ export function CheckoutsTodaySection({ embedded = false }) {
                 const status = String(r.insurance_refund_status || '').toLowerCase();
                 return (
                   <tr key={r.id} className="border-t align-top">
+                    <td className="py-4 px-4 whitespace-nowrap">
+                      <div className="font-semibold text-gray-900">{formatOpsDay(r.check_out)}</div>
+                      <div className="text-[11px] text-gray-500 tabular-nums">
+                        {String(r.check_out || '').slice(0, 10)}
+                      </div>
+                    </td>
                     <td className="py-4 px-4 min-w-[12rem]">
                       <div className="font-semibold text-gray-900">{r.guest_name || '—'}</div>
                       <div className="text-xs text-gray-600 tabular-nums mt-0.5">

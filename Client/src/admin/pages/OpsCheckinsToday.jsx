@@ -6,6 +6,7 @@ import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import { useAuth } from '../context/AuthContext';
 import { currency } from '../utils/formatters';
+import { OpsDateRangeFilter, formatOpsDay } from '../components/OpsDateRangeFilter';
 
 function MoneyLine({ label, value, emphasize = false, showZero = false }) {
   if (value == null || (!showZero && Number(value) === 0)) return null;
@@ -81,6 +82,7 @@ function PaymentDetails({ row }) {
 export function CheckinsTodaySection({ embedded = false }) {
   const { user } = useAuth();
   const qc = useQueryClient();
+  const [range, setRange] = useState('month');
   const [collectingId, setCollectingId] = useState(null);
   const [amountDrafts, setAmountDrafts] = useState({});
   const [methodDrafts, setMethodDrafts] = useState({});
@@ -91,14 +93,25 @@ export function CheckinsTodaySection({ embedded = false }) {
     user?.role === 'admin' || user?.role === 'operations_supervisor';
   const isAgent = user?.role === 'operations';
 
-  const { data: rows = [], isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['ops-checkins-today'],
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['ops-checkins-today', range],
     queryFn: async () => {
-      const r = await api.get('/ops/checkins-today');
-      return Array.isArray(r.data) ? r.data : [];
+      const r = await api.get('/ops/checkins-today', { params: { range } });
+      if (Array.isArray(r.data)) return { items: r.data, range };
+      return {
+        items: Array.isArray(r.data?.items) ? r.data.items : [],
+        range: r.data?.range || range,
+        from: r.data?.from,
+        to: r.data?.to,
+      };
     },
     refetchInterval: 20000,
   });
+  const rows = data?.items || [];
+
+  const invalidateCheckins = () => {
+    qc.invalidateQueries({ queryKey: ['ops-checkins-today'] });
+  };
 
   const { data: agents = [] } = useQuery({
     queryKey: ['ops-agents'],
@@ -130,7 +143,7 @@ export function CheckinsTodaySection({ embedded = false }) {
       api.post(`/ops/checkins-today/${id}/comment`, { comment }),
     onSuccess: () => {
       toast.success('Comment saved');
-      qc.invalidateQueries({ queryKey: ['ops-checkins-today'] });
+      invalidateCheckins();
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Could not save comment'),
   });
@@ -140,7 +153,7 @@ export function CheckinsTodaySection({ embedded = false }) {
       api.post(`/ops/checkins-today/${id}/handover`, comment ? { comment } : {}),
     onSuccess: () => {
       toast.success('Unit handed to guest');
-      qc.invalidateQueries({ queryKey: ['ops-checkins-today'] });
+      invalidateCheckins();
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Handover failed'),
   });
@@ -150,19 +163,28 @@ export function CheckinsTodaySection({ embedded = false }) {
       api.post(`/ops/checkins-today/${id}/assign`, { staff_id: staff_id || null }),
     onSuccess: () => {
       toast.success('Assignment updated');
-      qc.invalidateQueries({ queryKey: ['ops-checkins-today'] });
+      invalidateCheckins();
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Assign failed'),
   });
 
   if (isLoading) return <LoadingSpinner />;
 
+  const emptyLabel =
+    range === 'today'
+      ? 'today'
+      : range === 'tomorrow'
+        ? 'tomorrow'
+        : range === 'week'
+          ? 'this week'
+          : 'this month';
+
   return (
     <div className={embedded ? 'space-y-4' : 'space-y-6'}>
       {!embedded ? (
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Checkins for today</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Check-ins</h1>
             <p className="mt-1 text-sm text-gray-500">
               {canAssign
                 ? 'Assign each arrival to an operations agent, then track collect and handover.'
@@ -171,14 +193,16 @@ export function CheckinsTodaySection({ embedded = false }) {
                   : 'Collect remaining balance and hand the unit over once housekeeping has cleaned it.'}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <OpsDateRangeFilter value={range} onChange={setRange} />
             <button type="button" className="btn-secondary text-sm" onClick={() => refetch()}>
               Refresh
             </button>
           </div>
         </div>
       ) : (
-        <div className="flex items-center justify-end">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <OpsDateRangeFilter value={range} onChange={setRange} />
           <button type="button" className="btn-secondary text-sm" onClick={() => refetch()}>
             Refresh
           </button>
@@ -192,14 +216,15 @@ export function CheckinsTodaySection({ embedded = false }) {
       ) : !rows.length ? (
         <div className="card p-10 text-center text-sm text-gray-500">
           {isAgent
-            ? 'No check-ins assigned to you yet. Ask your Operations Supervisor to assign arrivals.'
-            : 'No check-ins scheduled for today.'}
+            ? `No check-ins assigned to you for ${emptyLabel}. Ask your Operations Supervisor to assign arrivals.`
+            : `No check-ins scheduled for ${emptyLabel}.`}
         </div>
       ) : (
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-gray-500 border-b">
               <tr>
+                <th className="py-3 px-4">Date</th>
                 <th className="py-3 px-4">Guest</th>
                 <th className="py-3 px-4">Unit</th>
                 <th className="py-3 px-4">Payment details</th>
@@ -231,6 +256,12 @@ export function CheckinsTodaySection({ embedded = false }) {
                       );
                 return (
                   <tr key={r.id} className="border-t align-top">
+                    <td className="py-4 px-4 whitespace-nowrap">
+                      <div className="font-semibold text-gray-900">{formatOpsDay(r.check_in)}</div>
+                      <div className="text-[11px] text-gray-500 tabular-nums">
+                        {String(r.check_in || '').slice(0, 10)}
+                      </div>
+                    </td>
                     <td className="py-4 px-4 min-w-[12rem]">
                       <div className="font-semibold text-gray-900">{r.guest_name || '—'}</div>
                       <div className="text-xs text-gray-600 tabular-nums mt-0.5">

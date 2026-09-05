@@ -24,6 +24,54 @@ function todayCairoSql() {
   return `(timezone('Africa/Cairo', now()))::date`;
 }
 
+function cairoTodayYmd() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Cairo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
+function addDaysYmd(ymd, days) {
+  const [y, m, d] = String(ymd)
+    .slice(0, 10)
+    .split('-')
+    .map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + Number(days || 0)));
+  return dt.toISOString().slice(0, 10);
+}
+
+/** Ops list ranges: today | tomorrow | week | month (default). */
+function parseOpsDateRange(rangeRaw) {
+  const key = String(rangeRaw || 'month')
+    .trim()
+    .toLowerCase();
+  const today = cairoTodayYmd();
+
+  if (key === 'today') {
+    return { range: 'today', from: today, to: today };
+  }
+  if (key === 'tomorrow') {
+    const tomorrow = addDaysYmd(today, 1);
+    return { range: 'tomorrow', from: tomorrow, to: tomorrow };
+  }
+  if (key === 'week') {
+    const [y, m, d] = today.split('-').map(Number);
+    const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0=Sun
+    const mondayOffset = dow === 0 ? -6 : 1 - dow;
+    const from = addDaysYmd(today, mondayOffset);
+    const to = addDaysYmd(from, 6);
+    return { range: 'week', from, to };
+  }
+
+  const [y, m] = today.split('-').map(Number);
+  const from = `${y}-${String(m).padStart(2, '0')}-01`;
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const to = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  return { range: 'month', from, to };
+}
+
 function isOpsSupervisor(user) {
   return user?.role === 'admin' || user?.role === OPS_SUPER;
 }
@@ -273,7 +321,8 @@ router.get('/ops/checkins-today', requireRoles(...OPS_ROLES), async (req, res, n
       console.error('[ops/checkins-today] ensurePreArrivalTasks', err.message);
     }
 
-    const params = [];
+    const { range, from, to } = parseOpsDateRange(req.query.range || req.query.period);
+    const params = [from, to];
     let scope = '';
     if (req.user.role === OPS_AGENT) {
       params.push(req.user.id);
@@ -282,13 +331,14 @@ router.get('/ops/checkins-today', requireRoles(...OPS_ROLES), async (req, res, n
 
     const { rows } = await query(
       `${CHECKIN_SELECT}
-       WHERE r.check_in::date = ${todayCairoSql()}
+       WHERE r.check_in::date >= $1::date
+         AND r.check_in::date <= $2::date
          AND r.status IS DISTINCT FROM 'cancelled'
          ${scope}
        ORDER BY r.check_in ASC, u.unit_number ASC NULLS LAST`,
       params
     );
-    res.json(rows.map(mapCheckin));
+    res.json({ range, from, to, items: rows.map(mapCheckin) });
   } catch (e) {
     next(e);
   }
@@ -1077,6 +1127,7 @@ function mapCheckout(row) {
 
 router.get('/ops/checkouts-today', requireRoles(...OPS_ROLES), async (req, res, next) => {
   try {
+    const { range, from, to } = parseOpsDateRange(req.query.range || req.query.period);
     const { rows } = await query(
       `SELECT r.id,
               r.guest_name,
@@ -1098,11 +1149,13 @@ router.get('/ops/checkouts-today', requireRoles(...OPS_ROLES), async (req, res, 
        FROM reservations r
        JOIN units u ON u.id = r.unit_id
        LEFT JOIN staff_users refunded_by ON refunded_by.id = r.insurance_refunded_by
-       WHERE r.check_out::date = ${todayCairoSql()}
+       WHERE r.check_out::date >= $1::date
+         AND r.check_out::date <= $2::date
          AND r.status IS DISTINCT FROM 'cancelled'
-       ORDER BY r.check_out ASC, u.unit_number ASC NULLS LAST`
+       ORDER BY r.check_out ASC, u.unit_number ASC NULLS LAST`,
+      [from, to]
     );
-    res.json(rows.map(mapCheckout));
+    res.json({ range, from, to, items: rows.map(mapCheckout) });
   } catch (e) {
     next(e);
   }

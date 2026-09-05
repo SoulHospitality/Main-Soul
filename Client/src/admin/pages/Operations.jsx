@@ -8,8 +8,8 @@ import { CheckinCommentsSection } from './OpsCheckinComments';
 import { CheckoutsTodaySection } from './OpsCheckoutsToday';
 
 const TABS = [
-  { id: 'today', label: "Today's check-ins", icon: KeyRound, page: 'ops_checkins' },
-  { id: 'checkouts', label: "Today's checkouts", icon: LogOut, page: 'ops_checkins' },
+  { id: 'today', label: 'Check-ins', icon: KeyRound, page: 'ops_checkins' },
+  { id: 'checkouts', label: 'Checkouts', icon: LogOut, page: 'ops_checkins' },
   { id: 'history', label: 'Check-ins history', icon: History, page: 'ops_checkins' },
   { id: 'comments', label: 'Check-in comments', icon: MessageSquareText, page: 'ops_comments' },
 ];
@@ -45,7 +45,8 @@ export default function Operations() {
       <div className="page-header mb-0">
         <h1 className="page-title">Operations</h1>
         <p className="page-subtitle">
-          Check-ins, today&apos;s checkouts and insurance refunds, history, and agent comments
+          Check-ins and checkouts for this month (filter by today, tomorrow, or this week), history, and
+          agent comments
         </p>
       </div>
 
