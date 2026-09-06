@@ -1158,7 +1158,7 @@ export default function Reservations() {
   const openAdd = () => {
     setForm({
       ...EMPTY_FORM,
-      sales_person_id: (isManualReservations || isWebsiteReservations || isReservationsManager) && !isAdmin && user?.id ? String(user.id) : '',
+      sales_person_id: !isAdmin && user?.id ? String(user.id) : '',
       payment_method: 'cash',
     });
     setEditId(null);
@@ -1738,7 +1738,7 @@ export default function Reservations() {
           users={salesUsers}
           transferProof={transferProof}
           onTransferProofChange={setTransferProof}
-          lockSalesPerson={(isManualReservations || isWebsiteReservations) && !isAdmin}
+          lockSalesPerson={!isAdmin}
           currentUserName={user?.full_name || user?.username || ''}
           showCommission={isAdmin}
           allowPastDates={isAdmin}
@@ -1761,7 +1761,7 @@ export default function Reservations() {
         <ReservationForm form={form} setForm={setForm} units={units} users={salesUsers}
           isNew={false} editId={editId} transferProof={transferProof} onTransferProofChange={setTransferProof}
           allowPastDates={allowPastDates}
-          lockSalesPerson={(isManualReservations || isWebsiteReservations) && !isAdmin}
+          lockSalesPerson={!isAdmin}
           currentUserName={user?.full_name || user?.username || ''} />
       </Modal>
 

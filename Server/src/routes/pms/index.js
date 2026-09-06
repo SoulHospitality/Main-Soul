@@ -1761,12 +1761,9 @@ router.post(
     const b = req.body;
     const { getBlockedDates } = require('../../services/pricing');
     const { paymentStatusFrom } = require('../../lib/syncReservationPayment');
-    const { isAdmin, isReservationsAgent, hasOwnOnlyReservationAccess, hasWebsiteAllReservationAccess } = require('../../lib/reservationScope');
+    const { isAdmin } = require('../../lib/reservationScope');
 
-    const forceSelf =
-      hasOwnOnlyReservationAccess(req.user) &&
-      !hasWebsiteAllReservationAccess(req.user) &&
-      !isAdmin(req.user);
+    const forceSelf = !isAdmin(req.user);
     const salesPersonId = forceSelf ? req.user.id : b.sales_person_id || req.user.id;
     await assertAssignableSalesPerson(req.user, salesPersonId);
     const checkIn = new Date(b.check_in);
@@ -2094,12 +2091,7 @@ router.patch(
     await assertReservationOwned(req.user, existing);
 
     const b = req.body;
-    const { hasOwnOnlyReservationAccess, hasWebsiteAllReservationAccess } = require('../../lib/reservationScope');
-    if (
-      hasOwnOnlyReservationAccess(req.user) &&
-      !hasWebsiteAllReservationAccess(req.user) &&
-      req.user.role !== 'admin'
-    ) {
+    if (req.user.role !== 'admin') {
       b.sales_person_id = req.user.id;
     }
     await assertAssignableSalesPerson(req.user, b.sales_person_id);

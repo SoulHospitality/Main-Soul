@@ -22,3 +22,26 @@ describe('salesNameMatch Osama isolation', () => {
     assert.equal(matched?.staff?.id, 2);
   });
 });
+
+describe('salesNameMatch Abdelrahman isolation', () => {
+  const staff = [
+    { id: 1, full_name: 'Abdelrahman Dawod' },
+    { id: 2, full_name: 'Abdelrahman Shaheen' },
+  ];
+
+  it('maps Mr Abdelrahman to Shaheen, not Dawod', () => {
+    assert.equal(salesLabelBelongsToUser('Abdelrahman Dawod', staff[0]), true);
+    assert.equal(salesLabelBelongsToUser('Abdelrahman Dawood', staff[0]), true);
+    assert.equal(salesLabelBelongsToUser('Abdelrahman Shaheen', staff[1]), true);
+    assert.equal(salesLabelBelongsToUser('Mr Abdelrahman', staff[1]), true);
+    assert.equal(salesLabelBelongsToUser('Mr Abdelrahaman', staff[1]), true);
+
+    assert.equal(salesLabelBelongsToUser('Abdelrahman Dawod', staff[1]), false);
+    assert.equal(salesLabelBelongsToUser('Abdelrahman Shaheen', staff[0]), false);
+    assert.equal(salesLabelBelongsToUser('Mr Abdelrahman', staff[0]), false);
+
+    assert.equal(matchSalesLabelToStaff('Abdelrahman Dawod', staff)?.staff?.id, 1);
+    assert.equal(matchSalesLabelToStaff('Abdelrahman Shaheen', staff)?.staff?.id, 2);
+    assert.equal(matchSalesLabelToStaff('Mr Abdelrahman', staff)?.staff?.id, 2);
+  });
+});

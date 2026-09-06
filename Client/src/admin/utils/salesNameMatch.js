@@ -1,6 +1,7 @@
 function normalizeName(value) {
   return String(value || '')
     .toLowerCase()
+    .replace(/\b(mr|mrs|ms|miss|mister|dr|prof)\.?/g, ' ')
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -24,6 +25,14 @@ const EQUIVALENCE_GROUPS = [
     'abdelrahman dawood',
     'abdelrhman dawod',
     'abdelrhman dawood',
+  ],
+  [
+    'abdelrahman shaheen',
+    'abdelrhman shaheen',
+    'abdelrahman shahin',
+    'abdelrahaman shaheen',
+    'abdelrahman',
+    'abdelrahaman',
   ],
 ];
 

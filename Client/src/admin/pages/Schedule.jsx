@@ -1144,7 +1144,7 @@ export default function Schedule() {
   const openCreateDrawer = () => {
     setCreateForm({
       ...EMPTY_MANUAL_RESERVATION_FORM,
-      sales_person_id: (isManualReservations || isWebsiteReservations || isReservationsManager) && !isAdmin && user?.id ? String(user.id) : '',
+      sales_person_id: !isAdmin && user?.id ? String(user.id) : '',
       payment_method: 'cash',
     });
     setCreateProof(null);
@@ -2281,7 +2281,7 @@ export default function Schedule() {
           users={salesUsers}
           transferProof={createProof}
           onTransferProofChange={setCreateProof}
-          lockSalesPerson={(isManualReservations || isWebsiteReservations) && !isAdmin}
+          lockSalesPerson={!isAdmin}
           currentUserName={user?.full_name || user?.username || ''}
           showCommission={isAdmin}
           allowPastDates={isAdmin}

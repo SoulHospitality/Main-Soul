@@ -1894,9 +1894,9 @@ router.put(
     await assertReservationOwned(req.user, existing);
 
     const b = req.body;
-    const { isAdmin, isReservationsTeam, assertAssignableSalesPerson } = require('../../lib/reservationScope');
+    const { isAdmin, assertAssignableSalesPerson } = require('../../lib/reservationScope');
     
-    if (isReservationsTeam(req.user) && !isAdmin(req.user)) {
+    if (!isAdmin(req.user)) {
       b.sales_person_id = req.user.id;
     }
     await assertAssignableSalesPerson(req.user, b.sales_person_id);

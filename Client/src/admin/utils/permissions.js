@@ -481,10 +481,9 @@ export function isUnitAcquisitionAgent(user) {
 }
 
 export function salesUsersForActor(users, actor) {
-  if (!actor || actor.role === 'admin' || !isReservationsManager(actor)) return users || [];
-  return (users || []).filter(
-    (u) => String(u.id) === String(actor.id) || String(u.manager_id) === String(actor.id)
-  );
+  if (!actor) return users || [];
+  if (actor.role === 'admin') return users || [];
+  return (users || []).filter((u) => String(u.id) === String(actor.id));
 }
 
 export function hasPermission(user, permission) {

@@ -352,21 +352,13 @@ async function assertReservationOwned(user, reservation) {
 }
 
 async function assertAssignableSalesPerson(user, salesPersonId) {
-  if (isAdmin(user) || !isReservationsManager(user) || salesPersonId == null || salesPersonId === '') {
-    return;
-  }
+  if (isAdmin(user) || salesPersonId == null || salesPersonId === '') return;
   const id = Number(salesPersonId);
   if (!Number.isFinite(id) || id < 1) return;
   if (Number(user.id) === id) return;
-  const { rows } = await query(
-    `SELECT 1 FROM staff_users WHERE id = $1 AND manager_id = $2 LIMIT 1`,
-    [id, user.id]
-  );
-  if (!rows[0]) {
-    const err = new Error('You can only assign reservations to agents you manage');
-    err.status = 403;
-    throw err;
-  }
+  const err = new Error('You can only assign reservations to yourself');
+  err.status = 403;
+  throw err;
 }
 
 function assertBookingAssigned(user, booking) {

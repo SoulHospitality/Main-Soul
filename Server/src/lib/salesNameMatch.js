@@ -5,6 +5,7 @@ function normalizeName(value) {
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
+    .replace(/\b(mr|mrs|ms|miss|mister|dr|prof)\.?/g, ' ')
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -35,6 +36,14 @@ const EQUIVALENCE_GROUPS = [
     'abdelrahman dawood',
     'abdelrhman dawod',
     'abdelrhman dawood',
+  ],
+  [
+    'abdelrahman shaheen',
+    'abdelrhman shaheen',
+    'abdelrahman shahin',
+    'abdelrahaman shaheen',
+    'abdelrahman',
+    'abdelrahaman',
   ],
 ];
 
@@ -135,14 +144,23 @@ function nameMatchScore(salesLabel, staffName) {
   const staffTokens = tokens(staff);
   if (!labelTokens.length || !staffTokens.length) return stringSimilarity(label, staff);
 
-  // Single-token labels (e.g. "Osama") must not match a different person who only
-  // shares that token as a last/middle name (e.g. "Mahmoud Osama").
-  // Those short labels are reserved for explicit EQUIVALENCE_GROUPS aliases.
+  // Single-token labels (e.g. "Osama" or "Mr Abdelrahman" after dropping Mr)
+  // must not match a different person who only shares that given name.
   if (labelTokens.length === 1 && staffTokens.length >= 2) {
     return 0;
   }
   if (staffTokens.length === 1 && labelTokens.length >= 2) {
     return 0;
+  }
+
+  // Shared first names are not enough: Abdelrahman Dawod ≠ Abdelrahman Shaheen.
+  if (labelTokens.length >= 2 && staffTokens.length >= 2) {
+    const labelSurnames = labelTokens.slice(1);
+    const staffSurnames = staffTokens.slice(1);
+    const surnameHit = labelSurnames.some((lt) =>
+      staffSurnames.some((st) => stringSimilarity(lt, st) >= 0.82)
+    );
+    if (!surnameHit) return 0;
   }
 
   const direct = stringSimilarity(label, staff);
