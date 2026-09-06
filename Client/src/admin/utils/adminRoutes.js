@@ -30,7 +30,7 @@ export function defaultAdminPage(role) {
     case 'marketing_pr':
       return `${A}/tasks`;
     case 'web_developer':
-      return `${A}/guest-errors`;
+      return `${A}/website-performance`;
     case 'owner':
       return `${A}/owner`;
     default:

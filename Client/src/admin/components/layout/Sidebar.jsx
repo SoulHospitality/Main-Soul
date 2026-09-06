@@ -28,9 +28,7 @@ import {
   FileBarChart2,
   Trophy,
   ListTodo,
-  AlertTriangle,
   Gauge,
-  HeartPulse,
 } from 'lucide-react';
 
 const NAV_SECTIONS = [
@@ -40,15 +38,7 @@ const NAV_SECTIONS = [
     items: [
       { path: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard, page: 'dashboard' },
       { path: '/admin/tasks', label: 'Tasks', icon: ListTodo, page: 'tasks', excludeRoles: ['hr', 'hr_supervisor'] },
-    ],
-  },
-  {
-    id: 'website',
-    label: 'Website',
-    items: [
-      { path: '/admin/guest-errors', label: 'Guest Errors', icon: AlertTriangle, page: 'guest_errors' },
-      { path: '/admin/site-performance', label: 'Site Performance', icon: Gauge, page: 'site_performance' },
-      { path: '/admin/booking-health', label: 'Booking Health', icon: HeartPulse, page: 'booking_health' },
+      { path: '/admin/website-performance', label: 'Website Performance', icon: Gauge, page: 'site_performance' },
     ],
   },
   {
