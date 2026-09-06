@@ -4,6 +4,7 @@ import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
 import api from '../api/http';
 import { useLocale } from '../context/LocaleContext';
+import { reportEvent } from '../utils/siteTelemetry';
 
 export default function CheckoutPage() {
   const { t } = useLocale();
@@ -48,12 +49,15 @@ export default function CheckoutPage() {
         callback_url: `${window.location.origin}/checkout/payment/callback`,
       });
       if (data.redirectToPaymob && data.checkoutUrl) {
+        reportEvent({ event: 'payment_redirect', unit_slug: slug || '' });
         window.location.href = data.checkoutUrl;
         return;
       }
+      reportEvent({ event: 'booking_submitted', unit_slug: slug || '' });
       navigate(`/booking-success?id=${data.booking?.id || ''}`);
     } catch (err) {
       setError(err.response?.data?.error || err.message);
+      reportEvent({ event: 'payment_fail', unit_slug: slug || '' });
     } finally {
       setBusy(false);
     }

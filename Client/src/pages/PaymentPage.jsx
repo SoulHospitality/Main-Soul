@@ -8,6 +8,7 @@ import BookingRequestSuccess from '../components/booking/BookingRequestSuccess';
 import { createBookingCheckout } from '../api/http';
 import { useAuth } from '../context/AuthContext';
 import { useLocale } from '../context/LocaleContext';
+import { reportError, reportEvent } from '../utils/siteTelemetry';
 
 const money = (n) => `EGP ${Number(n || 0).toLocaleString('en-US')}`;
 
@@ -85,15 +86,18 @@ export default function PaymentPage() {
   async function handleConfirmReservation() {
     if (!user) {
       setMessage(t('payment.needAuth'));
+      reportError({ type: 'checkout', message: 'Payment blocked: guest not signed in' });
       return;
     }
     if (!selectedMethod) {
       setMessage(t('payment.needMethod'));
+      reportError({ type: 'checkout', message: 'Payment blocked: no payment method' });
       return;
     }
     const identityDocuments = Array.isArray(formState?.identityDocuments) ? formState.identityDocuments : [];
     if (!identityDocuments.length) {
       setMessage(t('payment.needId'));
+      reportError({ type: 'checkout', message: 'Payment blocked: missing ID documents' });
       return;
     }
 
@@ -127,29 +131,39 @@ export default function PaymentPage() {
       payload.append('callback_url', `${window.location.origin}/checkout/payment/callback`);
       identityDocuments.forEach((file) => payload.append('id_photos', file));
 
+      reportEvent({
+        event: 'checkout_submit',
+        unit_slug: unit?.slug || '',
+      });
       const data = await createBookingCheckout(payload);
 
       if (selectedMethod === 'paymob_card') {
         if (data.redirectToPaymob && data.checkoutUrl) {
+          reportEvent({ event: 'payment_redirect', unit_slug: unit?.slug || '' });
           window.location.assign(data.checkoutUrl);
           return;
         }
         setMessage(t('payment.cardNotConfigured'));
+        reportError({ type: 'payment', message: 'Card checkout is not configured' });
+        reportEvent({ event: 'payment_fail', unit_slug: unit?.slug || '' });
         return;
       }
 
       if (selectedMethod === 'instapay') {
+        reportEvent({ event: 'booking_submitted', unit_slug: unit?.slug || '' });
         setSuccessCard({
           description: t('payment.instapaySuccess'),
         });
         return;
       }
 
+      reportEvent({ event: 'booking_submitted', unit_slug: unit?.slug || '' });
       setSuccessCard({
         description: t('payment.cashSuccess'),
       });
     } catch (err) {
       setMessage(err.response?.data?.error || err.message || t('payment.unable'));
+      reportEvent({ event: 'payment_fail', unit_slug: unit?.slug || '' });
     } finally {
       setSubmitting(false);
     }

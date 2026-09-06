@@ -93,6 +93,7 @@ router.use(require('./resalePerformance'));
 router.use(require('./acquisitionAudit'));
 router.use(require('./financeAudit'));
 router.use(require('./reservationAudit'));
+router.use(require('./siteHealth'));
 router.use(require('./staffTasks'));
 router.use(require('./financialSystem'));
 router.use(housekeepingOps);

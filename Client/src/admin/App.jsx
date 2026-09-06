@@ -48,6 +48,9 @@ const OwnerDateBlocks = lazy(() => import('./pages/OwnerDateBlocks'));
 const PromoCodes = lazy(() => import('./pages/PromoCodes'));
 const Reports = lazy(() => import('./pages/Reports'));
 const Performance = lazy(() => import('./pages/Performance'));
+const GuestErrors = lazy(() => import('./pages/GuestErrors'));
+const SitePerformance = lazy(() => import('./pages/SitePerformance'));
+const BookingHealth = lazy(() => import('./pages/BookingHealth'));
 const Tasks = lazy(() => import('./pages/Tasks'));
 
 function PageFallback() {
@@ -130,6 +133,9 @@ function AppRoutes() {
       <Route path="schedule" element={<ProtectedRoute page="schedule"><Schedule /></ProtectedRoute>} />
       <Route path="calendar-sync" element={<ProtectedRoute page="calendar_sync"><CalendarSync /></ProtectedRoute>} />
       <Route path="performance" element={<ProtectedRoute page="performance"><Performance /></ProtectedRoute>} />
+      <Route path="guest-errors" element={<ProtectedRoute page="guest_errors"><GuestErrors /></ProtectedRoute>} />
+      <Route path="site-performance" element={<ProtectedRoute page="site_performance"><SitePerformance /></ProtectedRoute>} />
+      <Route path="booking-health" element={<ProtectedRoute page="booking_health"><BookingHealth /></ProtectedRoute>} />
       <Route path="tasks" element={<ProtectedRoute page="tasks"><Tasks /></ProtectedRoute>} />
 
       

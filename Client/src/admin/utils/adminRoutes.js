@@ -28,8 +28,9 @@ export function defaultAdminPage(role) {
     case 'owners_relations':
       return `${A}/reservations`;
     case 'marketing_pr':
-    case 'web_developer':
       return `${A}/tasks`;
+    case 'web_developer':
+      return `${A}/guest-errors`;
     case 'owner':
       return `${A}/owner`;
     default:

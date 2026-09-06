@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { CurrencyProvider } from './context/CurrencyContext';
@@ -6,6 +6,8 @@ import { LocaleProvider } from './context/LocaleContext';
 import RouteFallback from './components/RouteFallback';
 import WhatsAppFAB from './components/layout/WhatsAppFAB';
 import WebsiteEntryPopup from './components/WebsiteEntryPopup';
+import SiteTelemetryBridge from './components/SiteTelemetryBridge';
+import { reportError } from './utils/siteTelemetry';
 
 const HomePage = lazy(() => import('./pages/HomePage'));
 const SearchPage = lazy(() => import('./pages/SearchPage'));
@@ -35,12 +37,20 @@ const Legal = lazy(() => import('./pages/StaticPages').then((m) => ({ default: m
 const Owners = lazy(() => import('./pages/BecomeAHostPage'));
 const ContactPage = lazy(() => import('./pages/ContactPage'));
 
+function GuestNotFound() {
+  useEffect(() => {
+    reportError({ type: 'not_found', message: 'Page not found', path: window.location.pathname });
+  }, []);
+  return <Navigate to="/" replace />;
+}
+
 export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
         <LocaleProvider>
           <CurrencyProvider>
+            <SiteTelemetryBridge />
             <Suspense fallback={<RouteFallback />}>
               <Routes>
                 <Route path="/" element={<HomePage />} />
@@ -71,7 +81,7 @@ export default function App() {
                 <Route path="/refund-policy" element={<Legal kind="refund-policy" />} />
                 <Route path="/sales/*" element={<SalesRoutes />} />
                 <Route path="/admin/*" element={<AdminApp />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
+                <Route path="*" element={<GuestNotFound />} />
               </Routes>
             </Suspense>
             <WhatsAppFAB />

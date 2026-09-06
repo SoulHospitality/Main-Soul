@@ -252,6 +252,24 @@ async function runDataRetentionCleanup() {
     client.release();
   }
 
+  let deletedTelemetry = 0;
+  try {
+    const telemetry = await query(
+      `WITH gone_errors AS (
+         DELETE FROM site_guest_errors WHERE created_at < now() - interval '90 days' RETURNING 1
+       ),
+       gone_events AS (
+         DELETE FROM site_guest_events WHERE created_at < now() - interval '90 days' RETURNING 1
+       )
+       SELECT
+         (SELECT COUNT(*) FROM gone_errors)::int +
+         (SELECT COUNT(*) FROM gone_events)::int AS deleted`
+    );
+    deletedTelemetry = Number(telemetry.rows[0]?.deleted || 0);
+  } catch (err) {
+    if (!/site_guest_/.test(String(err.message || ''))) throw err;
+  }
+
   const summary = {
     dryRun: false,
     days,
@@ -259,6 +277,7 @@ async function runDataRetentionCleanup() {
     scrubbedBookings,
     scrubbedPayments,
     deletedSessions,
+    deletedTelemetry,
     media: mediaResult,
     protectedUnitUrls: protectedUrls.size,
   };

@@ -1,9 +1,18 @@
 import axios from 'axios';
+import { reportApiError } from '../utils/siteTelemetry';
 
 const api = axios.create({
   baseURL: '/api',
   headers: { 'Content-Type': 'application/json' },
 });
+
+api.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    reportApiError(err);
+    return Promise.reject(err);
+  }
+);
 
 api.interceptors.request.use((config) => {
   if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
