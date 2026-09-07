@@ -48,7 +48,7 @@ async function validateManagerIds(managerIds, selfId) {
     }
     if (!LINE_MANAGER_ROLES.includes(rows[0].role)) {
       const err = new Error(
-        'Manager must be a CEO, HR Supervisor, Reservations Manager, Resale Manager, Unit Acquisition Manager, Financial Manager, or Operations Supervisor'
+        'Manager must be a CEO, HR Manager, Reservations Manager, Resale Manager, Unit Acquisition Manager, Financial Manager, or Operations Supervisor'
       );
       err.status = 400;
       throw err;

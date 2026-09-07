@@ -701,7 +701,7 @@ const FIELD_ROLES = [
   'housekeeping',
 ];
 
-/** Roles CEO / HR Supervisor can assign in User Management */
+/** Roles CEO / HR Manager can assign in User Management */
 export const HR_MANAGED_STAFF_ROLES = [
   ...RESERVATION_ROLES,
   ...FIELD_ROLES,
@@ -758,7 +758,7 @@ export const ROLE_LABELS = {
   finance: 'Finance',
   finance_manager: 'Financial Manager',
   hr: 'HR',
-  hr_supervisor: 'HR Supervisor',
+  hr_supervisor: 'HR Manager',
   owners_relations: 'Owner Experience',
   marketing_pr: 'Marketing and PR',
   web_developer: 'Web Developer',
@@ -806,7 +806,7 @@ export const PMS_LABELS = {
   finance: 'Finance PMS',
   finance_manager: 'Finance Manager PMS',
   hr: 'HR PMS',
-  hr_supervisor: 'HR Supervisor PMS',
+  hr_supervisor: 'HR Manager PMS',
   owners_relations: 'Owner Experience PMS',
   marketing_pr: 'Marketing and PR PMS',
   web_developer: 'Web Developer PMS',

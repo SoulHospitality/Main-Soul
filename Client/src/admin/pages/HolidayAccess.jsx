@@ -56,9 +56,9 @@ export default function HolidayAccess() {
         <h1 className="page-title mt-1">Holidays access</h1>
         <p className="page-subtitle">
           Choose who can request paid holidays. Auto allows casual and annual after 6 months.
-          Casual needs manager approval; annual needs manager and HR Supervisor.
-          Unpaid leave and excuses need manager or HR Supervisor approval (no holiday access required).
-          Only an HR Supervisor or CEO can change access, and they cannot change their own.
+          Casual needs manager approval; annual needs manager and HR Manager.
+          Unpaid leave and excuses need manager or HR Manager approval (no holiday access required).
+          Only an HR Manager or CEO can change access, and they cannot change their own.
         </p>
       </div>
 
@@ -104,7 +104,7 @@ export default function HolidayAccess() {
                           !canEditRow
                             ? String(user?.id) === String(r.id)
                               ? 'Only a CEO can change your holiday access'
-                              : 'Only an HR Supervisor or CEO can change holiday access'
+                              : 'Only an HR Manager or CEO can change holiday access'
                             : undefined
                         }
                         onChange={(e) =>

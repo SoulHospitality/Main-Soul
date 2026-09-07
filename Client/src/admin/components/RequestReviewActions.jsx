@@ -6,20 +6,27 @@ export function approvalStatusClass(status) {
   return 'bg-amber-50 text-amber-800';
 }
 
+function isLoanRow(row) {
+  return row?.request_kind === 'loan' || (row?.amount != null && row?.leave_type == null && row?.work_date == null);
+}
+
 function stepLine(row) {
+  const loan = isLoanRow(row);
+  const managerLabel = loan ? 'Financial Manager' : 'Manager';
+  const hrLabel = 'HR Manager';
   const parts = [];
   if (row.needs_manager_approval) {
     parts.push(
       row.manager_reviewed_by
-        ? `Manager: ${row.manager_reviewed_by_name || 'accepted'}`
-        : 'Manager: waiting'
+        ? `${managerLabel}: ${row.manager_reviewed_by_name || 'accepted'}`
+        : `${managerLabel}: waiting`
     );
   }
   if (row.needs_hr_approval) {
     parts.push(
       row.hr_reviewed_by
-        ? `HR Supervisor: ${row.hr_reviewed_by_name || 'accepted'}`
-        : 'HR Supervisor: waiting'
+        ? `${hrLabel}: ${row.hr_reviewed_by_name || 'accepted'}`
+        : `${hrLabel}: waiting`
     );
   }
   if (!parts.length) return '';
@@ -36,13 +43,18 @@ export function requestApprovalSummary(row) {
 
 export function RequestReviewActions({ row, onApprove, onReject, pending }) {
   const slots = row.can_review_slots || [];
+  const loan = isLoanRow(row);
   const acceptHint = slots.includes('admin')
     ? 'Accept and finalize'
     : slots.includes('manager') && slots.includes('hr')
-      ? 'Accept as manager & HR Supervisor'
+      ? loan
+        ? 'Accept as Financial Manager & HR Manager'
+        : 'Accept as manager & HR Manager'
       : slots.includes('hr')
-        ? 'Accept as HR Supervisor'
-        : 'Accept as manager';
+        ? 'Accept as HR Manager'
+        : loan
+          ? 'Accept as Financial Manager'
+          : 'Accept as manager';
 
   if (row.status !== 'pending') {
     return (

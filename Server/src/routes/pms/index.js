@@ -293,7 +293,7 @@ function assertCanAssignRole(actorRole, targetRole) {
     throw err;
   }
   if (targetRole === 'hr_supervisor' && actorRole !== 'admin') {
-    const err = new Error('Only a CEO can create or assign the HR Supervisor role');
+    const err = new Error('Only a CEO can create or assign the HR Manager role');
     err.status = 403;
     throw err;
   }

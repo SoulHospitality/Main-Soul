@@ -39,7 +39,7 @@ describe('staff task access', () => {
     assert.equal(isTaskAssigneeRole({ role: 'finance_manager' }), false);
   });
 
-  it('lets HR Supervisor assign tasks only to direct reports', () => {
+  it('lets HR Manager assign tasks only to direct reports', () => {
     const hrSuper = { id: 8, role: 'hr_supervisor' };
     const webDev = { id: 20, role: 'web_developer', manager_id: 5, manager_ids: [5, 8] };
     const hrStaff = { id: 11, role: 'hr', manager_id: null, manager_ids: [] };

@@ -385,7 +385,7 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.equal(matchAttendanceStaff({ name: 'Unknown' }, staff), null);
   });
 
-  it('requires manager + HR Supervisor for agents, HR Supervisor only for HR, manager only for HR Supervisor', () => {
+  it('requires manager + HR Manager for agents, HR Manager only for HR, manager only for HR Manager', () => {
     assert.deepEqual(staffRequestPolicy('reservations_web'), {
       canRequest: true,
       needsManager: true,
@@ -457,7 +457,7 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.equal(applyRequestReview(superReq, admin, 'approved', superStaff).status, 'approved');
   });
 
-  it('lets HR Supervisor change pay and leave for others, but not themselves', () => {
+  it('lets HR Manager change pay and leave for others, but not themselves', () => {
     const supervisor = { id: 10, role: 'hr_supervisor' };
     const hr = { id: 11, role: 'hr' };
     const admin = { id: 1, role: 'admin' };
@@ -473,6 +473,61 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.equal(isHrActingOnSelf(hr, 11), true);
     assert.doesNotThrow(() => assertCanEditStaffCompensation(supervisor, 11));
     assert.throws(() => assertCanEditStaffCompensation(supervisor, 10), /Only a CEO/);
-    assert.throws(() => assertCanEditStaffCompensation(hr, 12), /HR Supervisor or CEO/);
+    assert.throws(() => assertCanEditStaffCompensation(hr, 12), /HR Manager or CEO/);
+  });
+
+  it('requires Financial Manager + HR Manager for loans, not the line manager', () => {
+    const { loanRequestPolicy, isLoanRequest, describeRequestApproval } = require('./hrRules');
+    assert.deepEqual(loanRequestPolicy('reservations_web'), {
+      canRequest: true,
+      needsManager: true,
+      needsHr: true,
+    });
+    assert.deepEqual(loanRequestPolicy('finance_manager'), {
+      canRequest: true,
+      needsManager: false,
+      needsHr: true,
+    });
+    assert.deepEqual(loanRequestPolicy('hr_supervisor'), {
+      canRequest: true,
+      needsManager: true,
+      needsHr: false,
+    });
+
+    const loanReq = {
+      status: 'pending',
+      request_kind: 'loan',
+      amount: 1000,
+      staff_user_id: 20,
+      role: 'reservations_web',
+      manager_id: 5,
+      needs_manager_approval: true,
+      needs_hr_approval: true,
+    };
+    const agent = { id: 20, role: 'reservations_web', manager_id: 5, manager_ids: [5] };
+    const lineManager = { id: 5, role: 'reservations_manager' };
+    const financeMgr = { id: 9, role: 'finance_manager' };
+    const hrMgr = { id: 8, role: 'hr_supervisor' };
+
+    assert.equal(isLoanRequest(loanReq), true);
+    assert.deepEqual(eligibleReviewSlots(lineManager, loanReq, agent), []);
+    assert.deepEqual(eligibleReviewSlots(financeMgr, loanReq, agent), ['manager']);
+    assert.deepEqual(eligibleReviewSlots(hrMgr, loanReq, agent), ['hr']);
+    assert.equal(
+      describeRequestApproval(loanReq),
+      'Waiting for Financial Manager & HR Manager'
+    );
+
+    const afterFinance = applyRequestReview(loanReq, financeMgr, 'approved', agent);
+    assert.equal(afterFinance.status, 'pending');
+    assert.equal(afterFinance.manager_reviewed_by, 9);
+    const afterHr = applyRequestReview(
+      { ...loanReq, manager_reviewed_by: 9 },
+      hrMgr,
+      'approved',
+      agent
+    );
+    assert.equal(afterHr.status, 'approved');
+    assert.equal(afterHr.finalized, true);
   });
 });

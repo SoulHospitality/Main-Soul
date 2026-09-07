@@ -43,6 +43,7 @@ const {
   canRequestWfh,
   canRequestStaffBenefits,
   staffRequestPolicy,
+  loanRequestPolicy,
   canViewAllStaffRequests,
   eligibleReviewSlots,
   applyRequestReview,
@@ -67,7 +68,7 @@ function assertCanTargetBenefits(staff) {
   }
 }
 
-function requestListScope(actor, { mine, alias = 'r', staffAlias = 'u' } = {}) {
+function requestListScope(actor, { mine, alias = 'r', staffAlias = 'u', kind } = {}) {
   const params = [];
   const where = [];
   const wantMine = mine === '1' || mine === 1 || mine === true;
@@ -79,12 +80,20 @@ function requestListScope(actor, { mine, alias = 'r', staffAlias = 'u' } = {}) {
       where.push(`${alias}.staff_user_id = ${me}`);
     } else {
       const parts = [`${alias}.staff_user_id = ${me}`, sqlStaffManagedBy(me, staffAlias)];
-      // HR Supervisor also gets the pending HR-approval queue (not a full company browse).
+      // HR Manager also gets the pending HR-approval queue (not a full company browse).
       if (actor.role === 'hr_supervisor') {
         parts.push(`(
           ${alias}.status = 'pending'
           AND COALESCE(${alias}.needs_hr_approval, true) = true
           AND ${alias}.hr_reviewed_by IS NULL
+        )`);
+      }
+      // Financial Manager gets pending loans waiting on the finance slot.
+      if (actor.role === 'finance_manager' && kind === 'loan') {
+        parts.push(`(
+          ${alias}.status = 'pending'
+          AND COALESCE(${alias}.needs_manager_approval, true) = true
+          AND ${alias}.manager_reviewed_by IS NULL
         )`);
       }
       where.push(`(${parts.join(' OR ')})`);
@@ -93,7 +102,7 @@ function requestListScope(actor, { mine, alias = 'r', staffAlias = 'u' } = {}) {
   return { params, where };
 }
 
-function presentStaffRequest(row, actor) {
+function presentStaffRequest(row, actor, kind = null) {
   const managerIds = Array.isArray(row.manager_ids)
     ? row.manager_ids.map(Number).filter((id) => Number.isFinite(id))
     : row.manager_id != null
@@ -105,9 +114,13 @@ function presentStaffRequest(row, actor) {
     manager_id: row.manager_id,
     manager_ids: managerIds,
   };
+  const requestKind =
+    kind ||
+    (row.leave_type != null ? 'leave' : row.work_date != null ? 'wfh' : row.amount != null ? 'loan' : null);
   const shaped = {
     ...row,
     manager_ids: managerIds,
+    request_kind: requestKind,
     approval_mode: row.approval_mode || (row.leave_type ? leaveTypeApprovalMode(row.leave_type) : 'all'),
   };
   return {
@@ -145,7 +158,9 @@ const REQUEST_LIST_SELECT = `
 
 async function listStaffRequests(req, table) {
   const status = String(req.query.status || '').toLowerCase();
-  const { params, where } = requestListScope(req.user, { mine: req.query.mine });
+  const kind =
+    table === 'staff_loan_requests' ? 'loan' : table === 'staff_wfh_requests' ? 'wfh' : 'leave';
+  const { params, where } = requestListScope(req.user, { mine: req.query.mine, kind });
   if (['pending', 'approved', 'rejected'].includes(status)) {
     params.push(status);
     where.push(`r.status = $${params.length}`);
@@ -159,12 +174,14 @@ async function listStaffRequests(req, table) {
      LIMIT 500`,
     params
   );
-  return rows.map((row) => presentStaffRequest(row, req.user));
+  return rows.map((row) => presentStaffRequest(row, req.user, kind));
 }
 
 async function reviewStaffRequest({ table, id, actor, body, onApprove }) {
   const status = String(body?.status || '').toLowerCase();
   const note = body?.review_note ? String(body.review_note).slice(0, 500) : null;
+  const kind =
+    table === 'staff_loan_requests' ? 'loan' : table === 'staff_wfh_requests' ? 'wfh' : 'leave';
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -199,7 +216,7 @@ async function reviewStaffRequest({ table, id, actor, body, onApprove }) {
       base_salary: row.base_salary,
       full_name: row.full_name,
     };
-    const next = applyRequestReview(row, actor, status, staff);
+    const next = applyRequestReview({ ...row, request_kind: kind }, actor, status, staff);
     const extra = {};
     if (next.finalized && next.status === 'approved' && onApprove) {
       const fromApprove = await onApprove(client, row, staff);
@@ -244,7 +261,8 @@ async function reviewStaffRequest({ table, id, actor, body, onApprove }) {
         manager_id: staff.manager_id,
         full_name: staff.full_name,
       },
-      actor
+      actor,
+      kind
     );
   } catch (err) {
     try {
@@ -1389,7 +1407,7 @@ router.post('/hr/loans', async (req, res, next) => {
     }
     const target = await loadStaffForHr(staffUserId);
     assertCanTargetBenefits(target);
-    const policy = staffRequestPolicy(target.role);
+    const policy = loanRequestPolicy(target.role);
     const { rows } = await query(
       `INSERT INTO staff_loan_requests
          (staff_user_id, amount, reason, status, needs_manager_approval, needs_hr_approval)
@@ -1406,7 +1424,8 @@ router.post('/hr/loans', async (req, res, next) => {
           staff_code: target.staff_code,
           manager_id: target.manager_id,
         },
-        req.user
+        req.user,
+        'loan'
       )
     );
   } catch (e) {

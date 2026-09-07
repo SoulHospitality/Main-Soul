@@ -281,9 +281,9 @@ function leaveTypeApprovalMode(leaveType) {
 
 /**
  * Approval requirements for a leave/excuse type, adjusted for the requester's role.
- * - annual: manager AND HR Supervisor
+ * - annual: manager AND HR Manager
  * - casual: manager only
- * - unpaid / paid_excuse / unpaid_excuse: manager OR HR Supervisor
+ * - unpaid / paid_excuse / unpaid_excuse: manager OR HR Manager
  */
 function leaveApprovalPolicy(leaveType, role) {
   const rolePolicy = staffRequestPolicy(role);
@@ -316,16 +316,16 @@ function leaveApprovalPolicy(leaveType, role) {
 
   const r = String(role || '');
   if (r === 'hr') {
-    // HR staff: HR Supervisor is their approver (no separate manager path for most).
+    // HR staff: HR Manager is their approver (no separate manager path for most).
     if (approvalMode === 'all') {
       needsManager = false;
       needsHr = true;
     } else {
-      // OR: HR Supervisor can finalize; manager slot still allowed if they have one.
+      // OR: HR Manager can finalize; manager slot still allowed if they have one.
       needsHr = true;
     }
   } else if (r === 'hr_supervisor') {
-    // HR Supervisor cannot self-approve the HR slot — their line manager (CEO) reviews.
+    // HR Manager cannot self-approve the HR slot — their line manager (CEO) reviews.
     needsHr = false;
     needsManager = true;
     if (approvalMode === 'any') approvalMode = 'all';
@@ -375,7 +375,7 @@ function assertCanEditStaffCompensation(
     err.status = 403;
     throw err;
   }
-  const err = new Error(`Only an HR Supervisor or CEO can change ${label}`);
+  const err = new Error(`Only an HR Manager or CEO can change ${label}`);
   err.status = 403;
   throw err;
 }
@@ -753,6 +753,34 @@ function staffRequestPolicy(role) {
   return { canRequest: true, needsManager: true, needsHr: true };
 }
 
+/**
+ * Loans need Financial Manager + HR Manager (not the line manager).
+ * DB columns reuse needs_manager_approval for the finance slot.
+ */
+function loanRequestPolicy(role) {
+  const r = String(role || '');
+  if (!canRequestStaffBenefits(r)) {
+    return { canRequest: false, needsManager: false, needsHr: false };
+  }
+  if (r === 'finance_manager') {
+    // Cannot self-approve the finance slot — HR Manager (and CEO) still review.
+    return { canRequest: true, needsManager: false, needsHr: true };
+  }
+  if (r === 'hr_supervisor') {
+    // Cannot self-approve the HR slot — Financial Manager + CEO cover it.
+    return { canRequest: true, needsManager: true, needsHr: false };
+  }
+  return { canRequest: true, needsManager: true, needsHr: true };
+}
+
+function isLoanRequest(request) {
+  if (!request || typeof request !== 'object') return false;
+  if (request.request_kind === 'loan') return true;
+  if (request.leave_type != null) return false;
+  if (request.work_date != null) return false;
+  return request.amount != null;
+}
+
 function departmentManagerRole(role) {
   switch (String(role || '')) {
     case 'operations':
@@ -823,8 +851,13 @@ function eligibleReviewSlots(actor, request, staff) {
     manager_id: request.manager_id,
     manager_ids: request.manager_ids,
   };
-  if (needsManager && !managerDone && isLineManager(actor, staffShape)) {
-    slots.push('manager');
+  const loan = isLoanRequest(request);
+  if (needsManager && !managerDone) {
+    if (loan) {
+      if (actor.role === 'finance_manager') slots.push('manager');
+    } else if (isLineManager(actor, staffShape)) {
+      slots.push('manager');
+    }
   }
   if (needsHr && !hrDone && actor.role === 'hr_supervisor') {
     slots.push('hr');
@@ -842,7 +875,9 @@ function applyRequestReview(request, actor, decision, staff) {
   const slots = eligibleReviewSlots(actor, request, staff);
   if (!slots.length) {
     const err = new Error(
-      'Only the staff manager, HR Supervisor, or a CEO can review this request'
+      isLoanRequest(request)
+        ? 'Only the Financial Manager, HR Manager, or a CEO can review this loan'
+        : 'Only the staff manager, HR Manager, or a CEO can review this request'
     );
     err.status = 403;
     throw err;
@@ -896,9 +931,12 @@ function applyRequestReview(request, actor, decision, staff) {
 function describeRequestApproval(request) {
   if (request.status === 'approved') return 'Approved';
   if (request.status === 'rejected') return 'Rejected';
+  const loan = isLoanRequest(request);
   const waiting = [];
-  if (request.needs_manager_approval && !request.manager_reviewed_by) waiting.push('manager');
-  if (request.needs_hr_approval && !request.hr_reviewed_by) waiting.push('HR Supervisor');
+  if (request.needs_manager_approval && !request.manager_reviewed_by) {
+    waiting.push(loan ? 'Financial Manager' : 'manager');
+  }
+  if (request.needs_hr_approval && !request.hr_reviewed_by) waiting.push('HR Manager');
   if (!waiting.length) return 'Pending';
   const mode = requestApprovalMode(request);
   if (mode === 'any' && waiting.length > 1) {
@@ -1001,6 +1039,8 @@ module.exports = {
   canRequestWfh,
   canRequestStaffBenefits,
   staffRequestPolicy,
+  loanRequestPolicy,
+  isLoanRequest,
   departmentManagerRole,
   isLineManager,
   canViewAllStaffRequests,
