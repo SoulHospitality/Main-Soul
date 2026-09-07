@@ -49,7 +49,7 @@ function dateRange(req) {
   const from = clampFromDate(req.query.from_date);
   const to = req.query.to_date || null;
   const params = [from];
-  // Period filter is by when the reservation was created (booked), not check-in.
+  // Period filter is by created/booked date for reservations and other ledger sources.
   let resSql = `r.status <> 'cancelled' AND r.created_at::date >= $1::date`;
   if (to) {
     params.push(to);
@@ -104,14 +104,14 @@ async function computeOwnerPeriodBalance(ownerId, from, to) {
 
   const expParams = [unitIds, from, ownerId];
   let expWhere = `paid_by = 'owner'
-       AND expense_date >= $2::date
+       AND created_at::date >= $2::date
        AND (
          owner_id = $3
          OR (owner_id IS NULL AND unit_id = ANY($1::uuid[]))
        )`;
   if (to) {
     expParams.push(to);
-    expWhere += ` AND expense_date <= $4::date`;
+    expWhere += ` AND created_at::date <= $4::date`;
   }
   const { rows: expRows } = await query(
     `SELECT COALESCE(SUM(amount), 0)::float AS total FROM expenses WHERE ${expWhere}`,
@@ -231,10 +231,10 @@ async function loadOwnerStatementData(from, to, unitId = null) {
   }
 
   const expParams = [from];
-  let expWhere = `paid_by = 'owner' AND expense_date >= $1::date`;
+  let expWhere = `paid_by = 'owner' AND created_at::date >= $1::date`;
   if (to) {
     expParams.push(to);
-    expWhere += ` AND expense_date <= $${expParams.length}::date`;
+    expWhere += ` AND created_at::date <= $${expParams.length}::date`;
   }
   if (unitId) {
     expParams.push(unitId);
@@ -405,10 +405,10 @@ function journalLine(account, debit, credit, memo) {
 
 async function loadManualEntries(from, to) {
   const params = [from];
-  let where = 'm.entry_date >= $1::date';
+  let where = 'm.created_at::date >= $1::date';
   if (to) {
     params.push(to);
-    where += ` AND m.entry_date <= $${params.length}::date`;
+    where += ` AND m.created_at::date <= $${params.length}::date`;
   }
   try {
     const { rows } = await query(
@@ -419,7 +419,7 @@ async function loadManualEntries(from, to) {
        LEFT JOIN units u ON u.id = m.unit_id
        LEFT JOIN staff_users su ON su.id = m.created_by
        WHERE ${where}
-       ORDER BY m.entry_date DESC, m.created_at DESC`,
+       ORDER BY m.created_at DESC, m.entry_date DESC`,
       params
     );
     return rows;
@@ -567,10 +567,10 @@ router.get('/financial-system/overview', requireRoles('admin', 'finance', 'finan
     const vat = outputVatOnCommission(commissionRevenue);
 
     const expParams = [from];
-    let expWhere = `expense_date >= $1::date AND COALESCE(paid_by, 'company') <> 'owner'`;
+    let expWhere = `created_at::date >= $1::date AND COALESCE(paid_by, 'company') <> 'owner'`;
     if (to) {
       expParams.push(to);
-      expWhere += ` AND expense_date <= $${expParams.length}::date`;
+      expWhere += ` AND created_at::date <= $${expParams.length}::date`;
     }
     const { rows: expenseRows } = await query(
       `SELECT id, description, amount, category, expense_date
@@ -591,10 +591,10 @@ router.get('/financial-system/overview', requireRoles('admin', 'finance', 'finan
 
     const pcParams = [from];
     let pcWhere = `entry_type = 'out' AND COALESCE(status, 'open') <> 'moved'
-      AND COALESCE(paid_by, 'company') <> 'owner' AND entry_date >= $1::date`;
+      AND COALESCE(paid_by, 'company') <> 'owner' AND created_at::date >= $1::date`;
     if (to) {
       pcParams.push(to);
-      pcWhere += ` AND entry_date <= $${pcParams.length}::date`;
+      pcWhere += ` AND created_at::date <= $${pcParams.length}::date`;
     }
     const { rows: pettyRows } = await query(
       `SELECT COALESCE(SUM(amount), 0)::float AS total FROM petty_cash WHERE ${pcWhere}`,
@@ -863,10 +863,10 @@ router.get('/financial-system/ledger', requireRoles('admin', 'finance', 'finance
     }
 
     const expParams = [from];
-    let expWhere = `expense_date >= $1::date`;
+    let expWhere = `created_at::date >= $1::date`;
     if (to) {
       expParams.push(to);
-      expWhere += ` AND expense_date <= $${expParams.length}::date`;
+      expWhere += ` AND created_at::date <= $${expParams.length}::date`;
     }
     const { rows: expenses } = await query(
       `SELECT id, description, amount, category, expense_date
@@ -953,10 +953,10 @@ router.get('/financial-system/tax', requireRoles('admin', 'finance', 'finance_ma
     }
 
     const expParams = [from];
-    let expWhere = `expense_date >= $1::date AND COALESCE(paid_by, 'company') <> 'owner'`;
+    let expWhere = `created_at::date >= $1::date AND COALESCE(paid_by, 'company') <> 'owner'`;
     if (to) {
       expParams.push(to);
-      expWhere += ` AND expense_date <= $${expParams.length}::date`;
+      expWhere += ` AND created_at::date <= $${expParams.length}::date`;
     }
     const { rows: expenseRows } = await query(
       `SELECT id, description, amount, category, expense_date FROM expenses WHERE ${expWhere}`,
@@ -2912,7 +2912,7 @@ router.get('/financial-system/tax-filing-pack/:month', requireRoles('admin', 'fi
     try {
       const { rows } = await query(
         `SELECT id, description, amount, category, expense_date
-         FROM expenses WHERE expense_date >= $1::date AND expense_date <= $2::date
+         FROM expenses WHERE created_at::date >= $1::date AND created_at::date <= $2::date
            AND COALESCE(paid_by, 'company') <> 'owner'`,
         expParams
       );

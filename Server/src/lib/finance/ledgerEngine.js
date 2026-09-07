@@ -398,7 +398,7 @@ function collectionEntry(p, reservation) {
   const method = p.payment_method || reservation?.payment_method || 'cash';
   const treasury = treasuryAccountForMethod(method);
   const checkIn = isoDate(reservation?.check_in);
-  const payDate = isoDate(p.payment_date || p.paid_at || p.created_at);
+  const payDate = isoDate(p.created_at) || isoDate(p.payment_date || p.paid_at);
   const cancelled = isCancelledStay(reservation);
   const unearned = !cancelled && checkIn && payDate && payDate < checkIn;
   const refund = amt < 0;
@@ -542,12 +542,13 @@ function expenseEntries(e) {
     : { wht_amount: 0 };
   const payTreasury = '101000';
   const vendorNet = round2(amt - (wht.wht_amount || 0));
+  const periodDate = isoDate(e.created_at) || isoDate(e.expense_date);
 
   if (!companyPaid) {
     return [
       makeEntry({
         id: `EXP-${e.id}`,
-        date: e.expense_date,
+        date: periodDate,
         type: 'expense',
         description: e.description || 'Owner-charged expense',
         lines: [
@@ -573,7 +574,7 @@ function expenseEntries(e) {
   return [
     makeEntry({
       id: `EXP-${e.id}-ACC`,
-      date: e.expense_date,
+      date: periodDate,
       type: 'expense_accrual',
       description: e.description || 'Expense accrued',
       lines: accrueLines,
@@ -581,7 +582,7 @@ function expenseEntries(e) {
     }),
     makeEntry({
       id: `EXP-${e.id}-PAY`,
-      date: e.expense_date,
+      date: periodDate,
       type: 'expense_payment',
       description: `${e.description || 'Expense'} — paid`,
       lines: payLines,
@@ -685,7 +686,7 @@ function prepaidAmount(r, payments) {
     if (String(p.reservation_id) !== String(r.id) || !paymentCollected(p)) continue;
     const amt = parseFloat(p.amount) || 0;
     if (amt <= 0) continue;
-    const payDate = isoDate(p.payment_date || p.paid_at || p.created_at);
+    const payDate = isoDate(p.created_at) || isoDate(p.payment_date || p.paid_at);
     if (checkIn && payDate && payDate < checkIn) fromRows += amt;
   }
   const claimed = round2(parseFloat(r.amount_paid) || 0);
@@ -771,16 +772,16 @@ async function loadPortalData(from, to) {
   };
 
   const payParams = [from];
-  let paySql = `COALESCE(p.payment_date, p.created_at::date) >= $1::date`;
+  let paySql = `p.created_at::date >= $1::date`;
   if (to) {
     payParams.push(to);
-    paySql += ` AND COALESCE(p.payment_date, p.created_at::date) <= $${payParams.length}::date`;
+    paySql += ` AND p.created_at::date <= $${payParams.length}::date`;
   }
   const { rows: payments } = await query(
     `SELECT p.*
      FROM payments p
      WHERE ${paySql}
-     ORDER BY COALESCE(p.payment_date, p.created_at::date) DESC`,
+     ORDER BY p.created_at DESC`,
     payParams
   );
 
@@ -803,26 +804,26 @@ async function loadPortalData(from, to) {
   }
 
   const expParams = [from];
-  let expSql = `expense_date >= $1::date`;
+  let expSql = `created_at::date >= $1::date`;
   if (to) {
     expParams.push(to);
-    expSql += ` AND expense_date <= $${expParams.length}::date`;
+    expSql += ` AND created_at::date <= $${expParams.length}::date`;
   }
   const { rows: expenses } = await query(
-    `SELECT * FROM expenses WHERE ${expSql} ORDER BY expense_date DESC`,
+    `SELECT * FROM expenses WHERE ${expSql} ORDER BY created_at DESC`,
     expParams
   );
 
   let hkOrders = [];
   try {
     const hkParams = [from];
-    let hkSql = `status <> 'cancelled' AND period_start >= $1::date`;
+    let hkSql = `status <> 'cancelled' AND created_at::date >= $1::date`;
     if (to) {
       hkParams.push(to);
-      hkSql += ` AND period_start <= $${hkParams.length}::date`;
+      hkSql += ` AND created_at::date <= $${hkParams.length}::date`;
     }
     const { rows } = await query(
-      `SELECT * FROM housekeeping_service_orders WHERE ${hkSql} ORDER BY period_start DESC`,
+      `SELECT * FROM housekeeping_service_orders WHERE ${hkSql} ORDER BY created_at DESC`,
       hkParams
     );
     hkOrders = rows;
@@ -833,12 +834,12 @@ async function loadPortalData(from, to) {
   let petty = [];
   try {
     const pcParams = [from];
-    let pcSql = `entry_date >= $1::date AND COALESCE(status, 'open') <> 'moved'`;
+    let pcSql = `created_at::date >= $1::date AND COALESCE(status, 'open') <> 'moved'`;
     if (to) {
       pcParams.push(to);
-      pcSql += ` AND entry_date <= $${pcParams.length}::date`;
+      pcSql += ` AND created_at::date <= $${pcParams.length}::date`;
     }
-    const { rows } = await query(`SELECT * FROM petty_cash WHERE ${pcSql} ORDER BY entry_date DESC`, pcParams);
+    const { rows } = await query(`SELECT * FROM petty_cash WHERE ${pcSql} ORDER BY created_at DESC`, pcParams);
     petty = rows;
   } catch (_) {
     petty = [];
@@ -847,10 +848,10 @@ async function loadPortalData(from, to) {
   let manuals = [];
   try {
     const mParams = [from];
-    let mSql = `entry_date >= $1::date`;
+    let mSql = `m.created_at::date >= $1::date`;
     if (to) {
       mParams.push(to);
-      mSql += ` AND entry_date <= $${mParams.length}::date`;
+      mSql += ` AND m.created_at::date <= $${mParams.length}::date`;
     }
     const { rows } = await query(
       `SELECT m.*, COALESCE(u.unit_number, u.title) AS unit_name, su.full_name AS created_by_name
@@ -858,7 +859,7 @@ async function loadPortalData(from, to) {
        LEFT JOIN units u ON u.id = m.unit_id
        LEFT JOIN staff_users su ON su.id = m.created_by
        WHERE ${mSql}
-       ORDER BY m.entry_date DESC`,
+       ORDER BY m.created_at DESC`,
       mParams
     );
     manuals = rows;
@@ -1007,7 +1008,7 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
     if (!paymentCollected(p) || (parseFloat(p.amount) || 0) <= 0) continue;
     const res = byResId[String(p.reservation_id)];
     if (!res) continue;
-    const payDate = isoDate(p.payment_date || p.paid_at || p.created_at);
+    const payDate = isoDate(p.created_at) || isoDate(p.payment_date || p.paid_at);
     const checkIn = isoDate(res.check_in);
     if (p.reservation_id) {
       paidByRes[p.reservation_id] = round2((paidByRes[p.reservation_id] || 0) + (parseFloat(p.amount) || 0));
@@ -1080,7 +1081,7 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
   for (const hk of data.hkOrders || []) {
     const amt = round2(parseFloat(hk.amount) || 0);
     if (!(amt > 0.009)) continue;
-    const date = isoDate(hk.period_start || hk.created_at);
+    const date = isoDate(hk.created_at) || isoDate(hk.period_start);
     if (!inRange(date, from, to)) continue;
     journal.push(
       makeEntry({
@@ -1109,11 +1110,12 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
           journalLine('103000', amt, 0, 'Petty cash in'),
           journalLine('409000', 0, amt, pc.description || 'Petty cash in'),
         ];
-    if (!inRange(pc.entry_date, from, to)) continue;
+    const pcDate = isoDate(pc.created_at) || isoDate(pc.entry_date);
+    if (!inRange(pcDate, from, to)) continue;
     journal.push(
       makeEntry({
         id: `PC-${pc.id}`,
-        date: pc.entry_date,
+        date: pcDate,
         type: 'petty_cash',
         description: pc.description || (outflow ? 'Petty cash out' : 'Petty cash in'),
         lines,
@@ -1154,7 +1156,7 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
     journal.push(
       makeEntry({
         id: `MAN-${row.id}`,
-        date: row.entry_date,
+        date: isoDate(row.created_at) || row.entry_date,
         type,
         description: row.description,
         lines,

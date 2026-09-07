@@ -117,26 +117,141 @@ function IconFor({ code, group, className = 'w-5 h-5' }) {
   return <Comp className={className} />;
 }
 
-function DateFilters({ fromDate, toDate, onFrom, onTo }) {
+function cairoYearMonth() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' }).slice(0, 7);
+}
+
+function clampYearMonth(ym) {
+  const epochYm = FINANCIAL_EPOCH.slice(0, 7);
+  const raw = String(ym || '').slice(0, 7);
+  if (!/^\d{4}-\d{2}$/.test(raw)) return clampYearMonth(cairoYearMonth());
+  return raw < epochYm ? epochYm : raw;
+}
+
+function monthBounds(ym) {
+  const safe = clampYearMonth(ym);
+  const [y, m] = safe.split('-').map(Number);
+  const from = `${y}-${String(m).padStart(2, '0')}-01`;
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const to = `${y}-${String(m).padStart(2, '0')}-${String(last).padStart(2, '0')}`;
+  return { from, to };
+}
+
+function DateFilters({ periodYm, onPeriodYm }) {
   const { t } = useFinLocale();
+  const epochYm = FINANCIAL_EPOCH.slice(0, 7);
+  const years = [];
+  const nowY = Number(cairoYearMonth().slice(0, 4));
+  const epochY = Number(epochYm.slice(0, 4));
+  for (let y = nowY + 1; y >= epochY; y -= 1) years.push(y);
+  const [year, month] = String(periodYm || cairoYearMonth()).split('-');
+  const months = [
+    ['01', t('pms.fin.months.01')],
+    ['02', t('pms.fin.months.02')],
+    ['03', t('pms.fin.months.03')],
+    ['04', t('pms.fin.months.04')],
+    ['05', t('pms.fin.months.05')],
+    ['06', t('pms.fin.months.06')],
+    ['07', t('pms.fin.months.07')],
+    ['08', t('pms.fin.months.08')],
+    ['09', t('pms.fin.months.09')],
+    ['10', t('pms.fin.months.10')],
+    ['11', t('pms.fin.months.11')],
+    ['12', t('pms.fin.months.12')],
+  ];
+
+  function setYm(nextY, nextM) {
+    let ym = `${nextY}-${nextM}`;
+    if (ym < epochYm) ym = epochYm;
+    onPeriodYm(ym);
+  }
+
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="text-xs text-gray-500 mr-1">{t('pms.fin.byBookingDate')}</span>
-      <label className="text-xs text-gray-500">{t('pms.fin.dateFrom')}</label>
-      <input
-        type="date"
-        className="input w-36 text-sm"
-        min={FINANCIAL_EPOCH}
-        value={fromDate}
-        onChange={(e) => onFrom(e.target.value)}
-      />
-      <label className="text-xs text-gray-500">{t('pms.fin.dateTo')}</label>
-      <input
-        type="date"
-        className="input w-36 text-sm"
-        value={toDate}
-        onChange={(e) => onTo(e.target.value)}
-      />
+      <span className="text-xs text-gray-500 mr-1">{t('pms.fin.byCreatedMonth')}</span>
+      <label className="text-xs text-gray-500">{t('pms.fin.month')}</label>
+      <select
+        className="input w-36 text-sm py-1.5"
+        value={month}
+        onChange={(e) => setYm(year, e.target.value)}
+      >
+        {months.map(([val, label]) => (
+          <option key={val} value={val} disabled={`${year}-${val}` < epochYm}>
+            {label}
+          </option>
+        ))}
+      </select>
+      <label className="text-xs text-gray-500">{t('pms.fin.year')}</label>
+      <select
+        className="input w-24 text-sm py-1.5"
+        value={year}
+        onChange={(e) => setYm(e.target.value, month)}
+      >
+        {years.map((y) => (
+          <option key={y} value={String(y)}>
+            {y}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function ExportPeriodModal({ open, defaultYm, onClose, onConfirm, exporting }) {
+  const { t } = useFinLocale();
+  const epochYm = FINANCIAL_EPOCH.slice(0, 7);
+  const [fromYm, setFromYm] = useState(defaultYm);
+  const [toYm, setToYm] = useState(defaultYm);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="card w-full max-w-md space-y-4 p-5 shadow-xl">
+        <div>
+          <h2 className="text-lg font-semibold text-soul-blue">{t('pms.fin.exportPeriodTitle')}</h2>
+          <p className="text-sm text-gray-500 mt-1">{t('pms.fin.exportPeriodHint')}</p>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <label className="label text-xs">{t('pms.fin.exportFromMonth')}</label>
+            <input
+              type="month"
+              className="input text-sm"
+              min={epochYm}
+              value={fromYm}
+              onChange={(e) => setFromYm(e.target.value || epochYm)}
+            />
+          </div>
+          <div>
+            <label className="label text-xs">{t('pms.fin.exportToMonth')}</label>
+            <input
+              type="month"
+              className="input text-sm"
+              min={epochYm}
+              value={toYm}
+              onChange={(e) => setToYm(e.target.value || fromYm)}
+            />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 pt-1">
+          <button type="button" className="btn-secondary text-sm" onClick={onClose} disabled={exporting}>
+            {t('pms.fin.cancel')}
+          </button>
+          <button
+            type="button"
+            className="btn-primary text-sm"
+            disabled={exporting}
+            onClick={() => {
+              const from = fromYm < epochYm ? epochYm : fromYm;
+              const to = toYm < from ? from : toYm;
+              onConfirm(from, to);
+            }}
+          >
+            {exporting ? t('pms.fin.exporting') : t('pms.fin.exportExcel')}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -3839,9 +3954,10 @@ function FixedAssetsTool() {
 function FinancialSystemInner() {
   const { t, locale, toggleLocale, isRtl } = useFinLocale();
   const { view, group, code, txn, tool, go } = useFinanceNav();
-  const [fromDate, setFromDate] = useState(FINANCIAL_EPOCH);
-  const [toDate, setToDate] = useState('');
+  const [periodYm, setPeriodYm] = useState(() => clampYearMonth(cairoYearMonth()));
+  const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const { from: fromDate, to: toDate } = monthBounds(periodYm);
   const params = rangeParams(fromDate, toDate);
 
   const { data, isLoading } = useQuery({
@@ -3850,16 +3966,23 @@ function FinancialSystemInner() {
     refetchInterval: 60_000,
   });
 
-  async function exportReport() {
+  async function exportReport(fromYm, toYm) {
     try {
       setExporting(true);
-      const res = await api.get('/financial-system/export', { params, responseType: 'blob' });
+      const fromBounds = monthBounds(fromYm);
+      const toBounds = monthBounds(toYm);
+      const exportParams = rangeParams(fromBounds.from, toBounds.to);
+      const res = await api.get('/financial-system/export', {
+        params: exportParams,
+        responseType: 'blob',
+      });
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'soul-financial-system.xlsx';
+      a.download = `soul-financial-system-${fromYm}_to_${toYm}.xlsx`;
       a.click();
       window.URL.revokeObjectURL(url);
+      setExportOpen(false);
     } catch {
       toast.error(t('pms.fin.exportFailed'));
     } finally {
@@ -3937,9 +4060,18 @@ function FinancialSystemInner() {
             <Globe className="w-4 h-4" />
             {locale === 'en' ? 'العربية' : 'English'}
           </button>
-          <DateFilters fromDate={fromDate} toDate={toDate} onFrom={setFromDate} onTo={setToDate} />
+          <DateFilters periodYm={periodYm} onPeriodYm={setPeriodYm} />
         </div>
       </div>
+
+      <ExportPeriodModal
+        key={exportOpen ? `export-${periodYm}` : 'export-closed'}
+        open={exportOpen}
+        defaultYm={periodYm}
+        exporting={exporting}
+        onClose={() => setExportOpen(false)}
+        onConfirm={exportReport}
+      />
 
       {!showHome && (
         <button
@@ -3965,7 +4097,7 @@ function FinancialSystemInner() {
           onOpenAccount={(c) => go({ view: 'account', code: c, group: getAccount(c)?.group || '', txn: '', tool: '' })}
           onOpenTreasury={(c) => go({ view: 'account', code: c, group: 'assets', txn: '', tool: '' })}
           onOpenTool={(id) => go({ view: 'tool', tool: id, group: '', code: '', txn: '' })}
-          onExport={exportReport}
+          onExport={() => setExportOpen(true)}
           exporting={exporting}
         />
       ) : showTxn ? (
