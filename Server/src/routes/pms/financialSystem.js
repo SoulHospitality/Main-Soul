@@ -1016,7 +1016,7 @@ router.get('/financial-system/export', requireRoles('admin', 'finance', 'finance
       aging: agingFromReservations(portal.reservations, asOf),
       trust: ownerTrustSubledger(portal.journal, portal.data || {}),
     });
-    const buf = workbookToBuffer(wb);
+    const buf = await workbookToBuffer(wb);
     const fromLabel = String(from || '').slice(0, 10);
     const toLabel = String(to || asOf).slice(0, 10);
     const filename = `soul-financial-report_${fromLabel}_to_${toLabel}.xlsx`;
