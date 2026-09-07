@@ -1845,6 +1845,7 @@ async function isPeriodClosed(date) {
 module.exports = {
   buildFinancialPortal,
   buildYtdStatements,
+  buildStatements,
   buildJournal,
   loadPortalData,
   balancesFromJournal,

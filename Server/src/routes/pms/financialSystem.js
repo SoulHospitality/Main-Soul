@@ -1,6 +1,5 @@
 
 const express = require('express');
-const XLSX = require('xlsx');
 const { query } = require('../../config/db');
 const { requireRoles } = require('../../middleware/auth');
 const { clampFromDate, FINANCIAL_EPOCH } = require('../../lib/financialEpoch');
@@ -22,6 +21,7 @@ const {
 const {
   buildFinancialPortal,
   buildYtdStatements,
+  buildStatements,
   buildJournal,
   loadPortalData,
   mirrorTransactions,
@@ -30,8 +30,10 @@ const {
   isPeriodClosed,
   vatReturn,
   agingFromReservations,
+  ownerTrustSubledger,
   closeMonthEntry,
 } = require('../../lib/finance/ledgerEngine');
+const { buildFinancialWorkbook, workbookToBuffer } = require('../../lib/finance/financialExport');
 
 const router = express.Router();
 
@@ -996,55 +998,33 @@ router.get('/financial-system/tax', requireRoles('admin', 'finance', 'finance_ma
 router.get('/financial-system/export', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const { from, to } = dateRange(req);
-    const rows = await loadReservations(req);
-    const sheetRows = rows.map((r) => {
-      const fin = calcReservationFinancials(r, r);
-      const split = bookingSplit(fin, r);
-      return {
-        ID: r.id,
-        Guest: r.guest_name,
-        Unit: r.unit_name,
-        Project: r.project,
-        Created: r.created_at,
-        'Check-in': r.check_in,
-        'Check-out': r.check_out,
-        Gross: split.gross_booking,
-        Commission: split.soul_commission,
-        Cleaning: split.cleaning_fee,
-        VAT: split.vat_on_commission,
-        'Owner share': split.owner_trust_credit,
-      };
-    });
-
-    const manualEntries = await loadManualEntries(from, to);
-    const manualRows = manualEntries.map((m) => ({
-      ID: m.id,
-      Date: m.entry_date,
-      Type: m.entry_type,
-      Flow: m.misc_flow || '',
-      Description: m.description,
-      Amount: m.amount,
-      Unit: m.unit_name || '',
-      Notes: m.notes || '',
-    }));
-
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheetRows), 'Bookings');
-    XLSX.utils.book_append_sheet(
-      wb,
-      XLSX.utils.json_to_sheet(
-        manualRows.length
-          ? manualRows
-          : [{ Date: '', Type: '', Description: '', Amount: '', Notes: 'No manual entries' }]
-      ),
-      'Manual entries'
+    const portal = await buildFinancialPortal(from, to);
+    const statements = buildStatements(
+      portal.journal,
+      portal.reservations,
+      from,
+      to,
+      portal.data?.reservationTotals
     );
-    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const asOf = to || new Date().toISOString().slice(0, 10);
+    const wb = buildFinancialWorkbook({
+      from,
+      to,
+      portal,
+      statements,
+      vat: vatReturn(portal.journal),
+      aging: agingFromReservations(portal.reservations, asOf),
+      trust: ownerTrustSubledger(portal.journal, portal.data || {}),
+    });
+    const buf = workbookToBuffer(wb);
+    const fromLabel = String(from || '').slice(0, 10);
+    const toLabel = String(to || asOf).slice(0, 10);
+    const filename = `soul-financial-report_${fromLabel}_to_${toLabel}.xlsx`;
     res.setHeader(
       'Content-Type',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     );
-    res.setHeader('Content-Disposition', 'attachment; filename="soul-financial-system.xlsx"');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(buf);
   } catch (e) {
     next(e);
