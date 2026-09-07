@@ -1,4 +1,3 @@
-const { departmentManagerRole } = require('./hrRules');
 const {
   sqlStaffManagedBy,
   isDirectStaffManager,
@@ -45,42 +44,13 @@ function canAssignTaskTo(actor, assignee) {
   if (String(actor.id) === String(assignee.id)) return false;
   if (!canReceiveStaffTasks(assignee.role)) return false;
   if (actor.role === 'admin') return true;
-  if (isDirectStaffManager(actor.id, assignee)) return true;
-  const dept = departmentManagerRole(assignee.role);
-  return Boolean(dept) && actor.role === dept;
+  // Managers may only assign to staff linked to them (manager_id / staff_user_managers).
+  return isDirectStaffManager(actor.id, assignee);
 }
 
-function sqlStaffTaskManagedBy(managerParam, staffAlias = 'u') {
-  return `(
-    ${sqlStaffManagedBy(managerParam, staffAlias)}
-    OR EXISTS (
-      SELECT 1 FROM staff_users mgr
-      WHERE mgr.id = ${managerParam}
-        AND mgr.is_active = 1
-        AND mgr.role = 'admin'
-        AND ${staffAlias}.role IN ('marketing_pr', 'web_developer')
-    )
-  )`;
-}
-
+/** Managers see assignees they manage; CEO sees all recipient roles. */
 function sqlLineManagerTaskScope(managerParam, staffAlias = 'u') {
-  return `(
-    ${sqlStaffManagedBy(managerParam, staffAlias)}
-    OR EXISTS (
-      SELECT 1 FROM staff_users mgr
-      WHERE mgr.id = ${managerParam}
-        AND mgr.is_active = 1
-        AND (
-          (${staffAlias}.role = 'operations' AND mgr.role = 'operations_supervisor')
-          OR (${staffAlias}.role = 'housekeeping' AND mgr.role = 'housekeeping_supervisor')
-          OR (${staffAlias}.role = 'hr' AND mgr.role = 'hr_supervisor')
-          OR (${staffAlias}.role IN ('reservations', 'reservations_web', 'reservations_manual') AND mgr.role = 'reservations_manager')
-          OR (${staffAlias}.role = 'unit_acquisition_agent' AND mgr.role = 'unit_acquisition_manager')
-          OR (${staffAlias}.role = 'resale' AND mgr.role = 'resale_manager')
-          OR (${staffAlias}.role = 'finance' AND mgr.role = 'finance_manager')
-        )
-    )
-  )`;
+  return sqlStaffManagedBy(managerParam, staffAlias);
 }
 
 function staffTaskScopeSql(managerParam, staffAlias, actorRole) {
@@ -104,7 +74,7 @@ module.exports = {
   canManageStaffTasks,
   canAssignTaskTo,
   sqlTaskRecipientRoles,
-  sqlStaffTaskManagedBy,
+  sqlStaffManagedBy,
   sqlLineManagerTaskScope,
   staffTaskScopeSql,
   staffTaskScopeParams,

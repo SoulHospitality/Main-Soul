@@ -495,14 +495,13 @@ export function hasPermission(user, permission) {
 export function isStaffTaskManagerRole(role) {
   const r = String(role || '');
   if (r === 'admin') return true;
-  if (r === 'web_developer') return true;
   return r.endsWith('_manager') || r.endsWith('_supervisor');
 }
 
 export function canReceiveStaffTasks(role) {
   const r = String(role || '');
   if (r === 'owner' || r === 'admin') return false;
-  // Managers/supervisors and web developers can both assign and receive.
+  if (r.endsWith('_manager') || r.endsWith('_supervisor')) return false;
   return true;
 }
 

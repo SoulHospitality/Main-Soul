@@ -161,7 +161,7 @@ function isDirectStaffManager(actorId, staff) {
 function isStaffTaskManagerRole(role) {
   const r = String(role || '');
   if (r === 'admin') return true;
-  if (r === 'web_developer') return true;
+  // Regular staff (including web developers) cannot assign tasks — managers/supervisors only.
   return r.endsWith('_manager') || r.endsWith('_supervisor');
 }
 

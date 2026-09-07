@@ -835,17 +835,17 @@ function isDirectStaffManager(actor, staff) {
 function isLineManager(actor, staff) {
   if (!actor || !staff) return false;
   if (String(actor.id) === String(staff.id)) return false;
+  // Multi-manager roles (e.g. web_developer): only the primary manager approves.
   if (supportsMultipleManagers(staff.role)) {
-    if (staff.manager_id != null && String(actor.id) === String(staff.manager_id)) return true;
-  } else if (isDirectStaffManager(actor, staff)) {
-    return true;
+    return staff.manager_id != null && String(actor.id) === String(staff.manager_id);
   }
-  const dept = departmentManagerRole(staff.role);
-  return Boolean(dept) && actor.role === dept;
+  // Everyone else: assigned manager link only (not whole department by role).
+  return isDirectStaffManager(actor, staff);
 }
 
 function canViewAllStaffRequests(actor) {
-  return actor?.role === 'admin' || isHrTeamRole(actor?.role);
+  // Only the CEO can list every holiday / loan / WFH request.
+  return actor?.role === 'admin';
 }
 
 function eligibleReviewSlots(actor, request, staff) {
@@ -857,7 +857,13 @@ function eligibleReviewSlots(actor, request, staff) {
   const needsHr = request.needs_hr_approval !== false;
   const managerDone = Boolean(request.manager_reviewed_by);
   const hrDone = Boolean(request.hr_reviewed_by);
-  if (needsManager && !managerDone && isLineManager(actor, staff || { id: request.staff_user_id, role: request.role, manager_id: request.manager_id, manager_ids: request.manager_ids })) {
+  const staffShape = staff || {
+    id: request.staff_user_id,
+    role: request.role,
+    manager_id: request.manager_id,
+    manager_ids: request.manager_ids,
+  };
+  if (needsManager && !managerDone && isLineManager(actor, staffShape)) {
     slots.push('manager');
   }
   if (needsHr && !hrDone && actor.role === 'hr_supervisor') {

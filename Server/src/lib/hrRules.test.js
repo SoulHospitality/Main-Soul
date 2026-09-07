@@ -424,8 +424,8 @@ describe('HR daily-rate deductions and leave rules', () => {
       needs_manager_approval: true,
       needs_hr_approval: true,
     };
-    const agent = { id: 20, role: 'reservations_web', manager_id: 5 };
-    const manager = { id: 5, role: 'reservations_manual' };
+    const agent = { id: 20, role: 'reservations_web', manager_id: 5, manager_ids: [5] };
+    const manager = { id: 5, role: 'reservations_manager' };
     const hrSuper = { id: 8, role: 'hr_supervisor' };
     const admin = { id: 1, role: 'admin' };
 
@@ -453,7 +453,7 @@ describe('HR daily-rate deductions and leave rules', () => {
       needs_manager_approval: false,
       needs_hr_approval: true,
     };
-    const hrStaff = { id: 11, role: 'hr' };
+    const hrStaff = { id: 11, role: 'hr', manager_id: 8, manager_ids: [8] };
     assert.deepEqual(eligibleReviewSlots(hrSuper, hrReq, hrStaff), ['hr']);
     assert.equal(applyRequestReview(hrReq, hrSuper, 'approved', hrStaff).status, 'approved');
 

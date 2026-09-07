@@ -74,6 +74,7 @@ function requestListScope(actor, { mine, alias = 'r', staffAlias = 'u' } = {}) {
   const params = [];
   const where = [];
   const wantMine = mine === '1' || mine === 1 || mine === true;
+  // Only CEO lists every request. Managers see self + direct reports; staff see self.
   if (wantMine || !canViewAllStaffRequests(actor)) {
     params.push(actor.id);
     const me = `$${params.length}`;
@@ -81,8 +82,14 @@ function requestListScope(actor, { mine, alias = 'r', staffAlias = 'u' } = {}) {
       where.push(`${alias}.staff_user_id = ${me}`);
     } else {
       const parts = [`${alias}.staff_user_id = ${me}`, sqlStaffManagedBy(me, staffAlias)];
-      if (actor.role === 'operations_supervisor') parts.push(`${staffAlias}.role = 'operations'`);
-      if (actor.role === 'housekeeping_supervisor') parts.push(`${staffAlias}.role = 'housekeeping'`);
+      // HR Supervisor also gets the pending HR-approval queue (not a full company browse).
+      if (actor.role === 'hr_supervisor') {
+        parts.push(`(
+          ${alias}.status = 'pending'
+          AND COALESCE(${alias}.needs_hr_approval, true) = true
+          AND ${alias}.hr_reviewed_by IS NULL
+        )`);
+      }
       where.push(`(${parts.join(' OR ')})`);
     }
   }

@@ -21,6 +21,12 @@ describe('staff task access', () => {
     assert.equal(canManageStaffTasks({ role: 'resale_manager' }), true);
   });
 
+  it('blocks regular staff including web developers from assigning tasks', () => {
+    assert.equal(isStaffTaskManagerRole('web_developer'), false);
+    assert.equal(isStaffTaskManagerRole('reservations_web'), false);
+    assert.equal(canManageStaffTasks({ role: 'marketing_pr' }), false);
+  });
+
   it('lets staff receive tasks but not managers or owners', () => {
     assert.equal(canReceiveStaffTasks('reservations_web'), true);
     assert.equal(canReceiveStaffTasks('web_developer'), true);
@@ -33,18 +39,22 @@ describe('staff task access', () => {
     assert.equal(isTaskAssigneeRole({ role: 'finance_manager' }), false);
   });
 
-  it('lets HR Supervisor assign tasks to direct reports including web developers', () => {
+  it('lets HR Supervisor assign tasks only to direct reports', () => {
     const hrSuper = { id: 8, role: 'hr_supervisor' };
     const webDev = { id: 20, role: 'web_developer', manager_id: 5, manager_ids: [5, 8] };
     const hrStaff = { id: 11, role: 'hr', manager_id: null, manager_ids: [] };
+    const managedHr = { id: 12, role: 'hr', manager_id: 8, manager_ids: [8] };
     assert.equal(canAssignTaskTo(hrSuper, webDev), true);
-    assert.equal(canAssignTaskTo(hrSuper, hrStaff), true);
+    assert.equal(canAssignTaskTo(hrSuper, hrStaff), false);
+    assert.equal(canAssignTaskTo(hrSuper, managedHr), true);
   });
 
-  it('lets department managers assign tasks to their team', () => {
+  it('lets department managers assign tasks only when they manage the person', () => {
     const reservationsManager = { id: 12, role: 'reservations_manager' };
     const agent = { id: 21, role: 'reservations_web', manager_id: null, manager_ids: [] };
-    assert.equal(canAssignTaskTo(reservationsManager, agent), true);
+    const managed = { id: 22, role: 'reservations_web', manager_id: 12, manager_ids: [12] };
+    assert.equal(canAssignTaskTo(reservationsManager, agent), false);
+    assert.equal(canAssignTaskTo(reservationsManager, managed), true);
   });
 
   it('lets CEO assign tasks to any non-manager staff', () => {
