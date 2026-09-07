@@ -501,7 +501,7 @@ function StaffForm({
             disabled={lockPayAndLeave}
             onChange={(e) => setForm((f) => ({ ...f, leave_casual_days: e.target.value }))}
           />
-          <p className="mt-1 text-[11px] text-slate-400">Paid casual balance. Same-day request and approval before 11:00 AM. No deduction.</p>
+          <p className="mt-1 text-[11px] text-slate-400">Paid casual balance. No deduction when approved.</p>
         </div>
         <div>
           <label className="label">Annual days</label>
@@ -514,7 +514,7 @@ function StaffForm({
             disabled={lockPayAndLeave}
             onChange={(e) => setForm((f) => ({ ...f, leave_annual_days: e.target.value }))}
           />
-          <p className="mt-1 text-[11px] text-slate-400">Paid annual balance. Before the shift day; 3+ days need 7 days notice. No deduction.</p>
+          <p className="mt-1 text-[11px] text-slate-400">Paid annual balance. No deduction when approved.</p>
         </div>
         <div className="sm:col-span-2 rounded-xl border border-soul-line bg-slate-50 px-3 py-2 text-sm text-soul-muted">
           Unpaid leave is unlimited for all staff. Each approved day deducts 1× daily rate (salary ÷ 30).

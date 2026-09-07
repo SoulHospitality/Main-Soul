@@ -9,9 +9,6 @@ const {
   computeAbsenceDeduction,
   computeHalfDayDeduction,
   cairoParts,
-  assertCasualTiming,
-  assertAnnualNotice,
-  assertExcuseTiming,
   PAID_EXCUSE_MAX_PER_MONTH,
   PAID_EXCUSE_MAX_HOURS,
   canRequestHolidays,
@@ -1203,14 +1200,6 @@ router.post('/hr/leave-requests', async (req, res, next) => {
       });
     }
 
-    const now = new Date();
-    if (leaveType === 'casual') assertCasualTiming(start, now);
-    if (leaveType === 'annual') assertAnnualNotice(start, now, days);
-    if (isExcuse) assertExcuseTiming(start, now);
-    if (leaveType === 'unpaid' && start < cairoParts(now).date) {
-      return res.status(400).json({ error: 'Unpaid leave cannot be requested for a past date' });
-    }
-
     const snap = await leaveSnapshot(staffUserId);
     if (leaveType === 'casual' && days > snap.casual_available) {
       return res.status(400).json({
@@ -1291,9 +1280,6 @@ router.post('/hr/leave-requests/:id/review', async (req, res, next) => {
       actor: req.user,
       body: req.body,
       onApprove: async (client, row, staff) => {
-        const now = new Date();
-        if (row.leave_type === 'casual') assertCasualTiming(row.start_date, now);
-        if (row.leave_type === 'annual') assertAnnualNotice(row.start_date, now, row.days);
         if (row.leave_type === 'casual' || row.leave_type === 'annual') {
           const col = row.leave_type === 'casual' ? 'leave_casual_days' : 'leave_annual_days';
           const { rows: staffRows } = await client.query(

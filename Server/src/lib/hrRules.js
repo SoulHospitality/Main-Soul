@@ -232,54 +232,14 @@ function addDaysIso(iso, days) {
   return `${y}-${m}-${day}`;
 }
 
-function assertCasualTiming(startDate, now = new Date()) {
-  const cairo = cairoParts(now);
-  if (startDate < cairo.date) {
-    const err = new Error('Casual leave cannot be requested for a past date');
-    err.status = 400;
-    throw err;
-  }
-  if (startDate === cairo.date && cairo.minutes >= SHIFT_START_MINUTES) {
-    const err = new Error('Casual leave must be requested before the 11:00 AM shift');
-    err.status = 400;
-    throw err;
-  }
-}
+/** Request timing rules removed — past / same-day leave requests are allowed. */
+function assertCasualTiming() {}
 
-function assertAnnualNotice(startDate, now = new Date(), days = 1) {
-  const cairo = cairoParts(now);
-  if (startDate <= cairo.date) {
-    const err = new Error(
-      'Annual leave must be requested before the shift day (by 11:59 PM the day before)'
-    );
-    err.status = 400;
-    throw err;
-  }
-  const duration = Number(days) || 1;
-  if (duration >= ANNUAL_EXTENDED_MIN_DURATION) {
-    const minDate = addDaysIso(cairo.date, ANNUAL_EXTENDED_NOTICE_DAYS);
-    if (startDate < minDate) {
-      const err = new Error(
-        `Annual leave of ${duration} days or more must be requested at least ${ANNUAL_EXTENDED_NOTICE_DAYS} days in advance`
-      );
-      err.status = 400;
-      throw err;
-    }
-  }
-}
+function assertAnnualNotice() {}
 
-function assertEarlyLeaveTiming(startDate, now = new Date()) {
-  return assertExcuseTiming(startDate, now);
-}
+function assertEarlyLeaveTiming() {}
 
-function assertExcuseTiming(startDate, now = new Date()) {
-  const cairo = cairoParts(now);
-  if (startDate < cairo.date) {
-    const err = new Error('Excuses cannot be requested for a past date');
-    err.status = 400;
-    throw err;
-  }
-}
+function assertExcuseTiming() {}
 
 const HOLIDAY_ACCESS_MONTHS = 6;
 

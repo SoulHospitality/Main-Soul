@@ -103,6 +103,7 @@ const RESERVATIONS_MANAGER_PAGE_ACCESS = new Set([
   'performance',
   'reservation_audit',
   'units',
+  'projects',
   ...STAFF_HR_TABS,
 ]);
 
@@ -258,6 +259,8 @@ const PERMISSIONS = {
     'calendar_sync:write',
     'performance:read',
     'reservation_audit:read',
+    'projects:read',
+    'projects:write',
     'notifications:read',
     'documents:read',
     'documents:write',

@@ -526,7 +526,7 @@ export default function HolidayRequests() {
         <p className="page-subtitle">
           {activeView === 'incoming'
             ? 'Review holiday requests from your team. CEOs can accept or reject any request.'
-            : 'Casual: same day before 11:00 AM (no deduction). Annual: before the shift day; 3+ days need 7 days notice. Unpaid: unlimited (1× daily rate). No show: 2× daily rate.'}
+            : 'Request casual, annual, unpaid leave, or excuses for any date. Unpaid leave deducts 1× daily rate; no show is 2× daily rate.'}
         </p>
       </div>
 

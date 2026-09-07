@@ -75,25 +75,12 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.equal(leaveDayDeductionAmount('annual', 9000), 0);
   });
 
-  it('blocks casual leave after the 11:00 shift on the same day', () => {
+  it('allows casual and annual leave with no request timing rules', () => {
     const afterShift = new Date('2026-08-19T09:05:00Z');
-    assert.throws(() => assertCasualTiming('2026-08-19', afterShift), /before the 11:00/);
-    const beforeShift = new Date('2026-08-19T07:30:00Z');
-    assert.doesNotThrow(() => assertCasualTiming('2026-08-19', beforeShift));
-  });
-
-  it('requires annual leave before the shift day', () => {
-    const now = new Date('2026-08-19T08:00:00Z');
-    assert.throws(() => assertAnnualNotice('2026-08-19', now), /before the shift day/);
-    assert.doesNotThrow(() => assertAnnualNotice('2026-08-20', now, 1));
-    assert.doesNotThrow(() => assertAnnualNotice('2026-08-20', now, 2));
-  });
-
-  it('requires a week of notice for annual leave of 3 days or more', () => {
-    const now = new Date('2026-08-19T08:00:00Z');
-    assert.throws(() => assertAnnualNotice('2026-08-24', now, 3), /7 days/);
-    assert.doesNotThrow(() => assertAnnualNotice(addDaysIso('2026-08-19', 7), now, 3));
-    assert.doesNotThrow(() => assertAnnualNotice('2026-08-20', now, 2));
+    assert.doesNotThrow(() => assertCasualTiming('2026-08-18', afterShift));
+    assert.doesNotThrow(() => assertCasualTiming('2026-08-19', afterShift));
+    assert.doesNotThrow(() => assertAnnualNotice('2026-08-19', afterShift, 1));
+    assert.doesNotThrow(() => assertAnnualNotice('2026-08-20', afterShift, 5));
   });
 
   it('caps paid excuses at two per month and two hours each', () => {
