@@ -100,6 +100,7 @@ const RESERVATIONS_MANAGER_PAGE_ACCESS = new Set([
   'tasks',
   'reservations',
   'schedule',
+  'calendar_sync',
   'performance',
   'reservation_audit',
   'units',
