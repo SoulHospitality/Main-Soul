@@ -50,11 +50,27 @@ describe('staff task access', () => {
   });
 
   it('lets department managers assign tasks only when they manage the person', () => {
+    const financeManager = { id: 12, role: 'finance_manager' };
+    const agent = { id: 21, role: 'finance', manager_id: null, manager_ids: [] };
+    const managed = { id: 22, role: 'finance', manager_id: 12, manager_ids: [12] };
+    assert.equal(canAssignTaskTo(financeManager, agent), false);
+    assert.equal(canAssignTaskTo(financeManager, managed), true);
+  });
+
+  it('lets Reservations Manager assign missions to the whole reservation team', () => {
     const reservationsManager = { id: 12, role: 'reservations_manager' };
-    const agent = { id: 21, role: 'reservations_web', manager_id: null, manager_ids: [] };
-    const managed = { id: 22, role: 'reservations_web', manager_id: 12, manager_ids: [12] };
-    assert.equal(canAssignTaskTo(reservationsManager, agent), false);
-    assert.equal(canAssignTaskTo(reservationsManager, managed), true);
+    const unlinkedWeb = { id: 21, role: 'reservations_web', manager_id: null, manager_ids: [] };
+    const unlinkedManual = { id: 22, role: 'reservations_manual', manager_id: 99, manager_ids: [99] };
+    const financeAgent = { id: 23, role: 'finance', manager_id: null, manager_ids: [] };
+    assert.equal(canAssignTaskTo(reservationsManager, unlinkedWeb), true);
+    assert.equal(canAssignTaskTo(reservationsManager, unlinkedManual), true);
+    assert.equal(canAssignTaskTo(reservationsManager, financeAgent), false);
+  });
+
+  it('omits manager bind params for CEO and Reservations Manager task scope', () => {
+    assert.deepEqual(staffTaskScopeParams('admin', 1), []);
+    assert.deepEqual(staffTaskScopeParams('reservations_manager', 12), []);
+    assert.deepEqual(staffTaskScopeParams('hr_supervisor', 8), [8]);
   });
 
   it('lets CEO assign tasks to any non-manager staff', () => {
@@ -84,10 +100,5 @@ describe('staff task access', () => {
     assert.match(sql, /u\.role IN \(/);
     assert.match(sql, /'web_developer'/);
     assert.doesNotMatch(sql, /ESCAPE/);
-  });
-
-  it('omits manager bind params for CEO task scope', () => {
-    assert.deepEqual(staffTaskScopeParams('admin', 1), []);
-    assert.deepEqual(staffTaskScopeParams('hr_supervisor', 8), [8]);
   });
 });

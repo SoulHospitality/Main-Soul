@@ -25,7 +25,7 @@ function isOverdue(deadline) {
 export default function Tasks() {
   const qc = useQueryClient();
   const { user } = useAuth();
-  const { canAssignStaffTasks, isTaskAssignee } = usePermissions();
+  const { canAssignStaffTasks, isTaskAssignee, isReservationsManager } = usePermissions();
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [deleteTask, setDeleteTask] = useState(null);
@@ -58,8 +58,11 @@ export default function Tasks() {
     if (isTaskAssignee) {
       return 'Tasks assigned to you by your manager. You will also receive them by email.';
     }
+    if (isReservationsManager) {
+      return 'Assign missions and targets to the reservation team (web and manual agents).';
+    }
     if (canAdd) {
-      return 'Assign a title, description, and deadline.';
+      return 'Assign a title, description, and deadline to someone on your team.';
     }
     if (canAssignStaffTasks && assigneesLoading) {
       return 'Loading team members you can assign tasks to…';
@@ -74,6 +77,9 @@ export default function Tasks() {
     if (isTaskAssignee) {
       return 'When your manager adds a task, it will show up here and in your email.';
     }
+    if (isReservationsManager) {
+      return 'Add a mission for a reservation agent. Every active web or manual agent is available.';
+    }
     if (canAdd) {
       return 'Add a task for someone on your team.';
     }
@@ -82,6 +88,12 @@ export default function Tasks() {
     }
     return 'No tasks to show.';
   })();
+
+  const addLabel = isReservationsManager ? 'Add mission' : 'Add task';
+  const modalTitle = isReservationsManager ? 'New mission' : 'New task';
+  const assigneePlaceholder = isReservationsManager
+    ? 'Choose a reservation agent…'
+    : 'Choose staff member…';
 
   const createMutation = useMutation({
     mutationFn: (payload) => api.post('/staff-tasks', payload).then((r) => r.data),
@@ -123,7 +135,11 @@ export default function Tasks() {
 
   const openAdd = () => {
     if (!assignees.length) {
-      toast.error('No eligible staff to assign yet. Add active non-manager employees in User Management.');
+      toast.error(
+        isReservationsManager
+          ? 'No reservation agents found. Add active Reservations (web or manual) staff in User Management.'
+          : 'No eligible staff to assign yet. Add active non-manager employees in User Management.'
+      );
       return;
     }
     setForm({
@@ -181,7 +197,7 @@ export default function Tasks() {
         </div>
         {canAdd && (
           <button type="button" onClick={openAdd} className="btn-primary">
-            <Plus className="w-4 h-4" /> Add task
+            <Plus className="w-4 h-4" /> {addLabel}
           </button>
         )}
       </div>
@@ -194,7 +210,7 @@ export default function Tasks() {
           action={
             canAdd ? (
               <button type="button" onClick={openAdd} className="btn-primary">
-                <Plus className="w-4 h-4" /> Add task
+                <Plus className="w-4 h-4" /> {addLabel}
               </button>
             ) : null
           }
@@ -287,7 +303,7 @@ export default function Tasks() {
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title="New task"
+        title={modalTitle}
         footer={
           <>
             <button type="button" onClick={() => setModalOpen(false)} className="btn-secondary">
@@ -299,7 +315,7 @@ export default function Tasks() {
               disabled={createMutation.isPending}
               className="btn-primary"
             >
-              {createMutation.isPending ? 'Sending…' : 'Send task'}
+              {createMutation.isPending ? 'Sending…' : isReservationsManager ? 'Send mission' : 'Send task'}
             </button>
           </>
         }
@@ -315,7 +331,7 @@ export default function Tasks() {
                   ? 'Loading team members…'
                   : assigneesError
                     ? 'Could not load team members'
-                    : 'Choose a team member…'
+                    : assigneePlaceholder
               }
               options={assignees.map((u) => ({
                 value: String(u.id),
@@ -323,7 +339,9 @@ export default function Tasks() {
               }))}
             />
             <p className="mt-1 text-[11px] text-slate-400">
-              The task email goes to the address saved on their Users record.
+              {isReservationsManager
+                ? 'Every active reservation agent is listed. The email goes to the address on their Users record.'
+                : 'The task email goes to the address saved on their Users record.'}
             </p>
           </div>
           <div>
