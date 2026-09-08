@@ -17,7 +17,10 @@ const {
   hourlyRate,
   computeUnpaidExcuseDeduction,
   assertExcuseWindow,
+  assertMissionWindow,
   isExcuseLeaveType,
+  isMissionLeaveType,
+  leaveDoesNotAffectAttendance,
   normalizeExcuseLeaveType,
   leaveTypeRequiresApproval,
   leaveApprovalPolicy,
@@ -107,23 +110,30 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.equal(canRequestHolidays({ holiday_access: 'denied', created_at: created }, now), false);
   });
 
-  it('treats unpaid leave and excuses as open without holiday access, but all need approval', () => {
+  it('treats unpaid leave, excuses, and missions as open without holiday access, but all need approval', () => {
     assert.equal(isUnpaidLeaveUnlimited(), true);
     assert.equal(leaveTypeRequiresHolidayAccess('unpaid'), false);
     assert.equal(leaveTypeRequiresHolidayAccess('paid_excuse'), false);
     assert.equal(leaveTypeRequiresHolidayAccess('unpaid_excuse'), false);
     assert.equal(leaveTypeRequiresHolidayAccess('early_leave'), false);
+    assert.equal(leaveTypeRequiresHolidayAccess('mission'), false);
     assert.equal(leaveTypeRequiresHolidayAccess('casual'), true);
     assert.equal(leaveTypeRequiresHolidayAccess('annual'), true);
     assert.equal(leaveTypeRequiresApproval('paid_excuse'), true);
     assert.equal(leaveTypeRequiresApproval('unpaid_excuse'), true);
+    assert.equal(leaveTypeRequiresApproval('mission'), true);
     assert.equal(leaveTypeRequiresApproval('casual'), true);
     assert.equal(leaveTypeRequiresApproval('annual'), true);
     assert.equal(isExcuseLeaveType('paid_excuse'), true);
+    assert.equal(isMissionLeaveType('mission'), true);
+    assert.equal(leaveDoesNotAffectAttendance('mission'), true);
+    assert.equal(leaveDoesNotAffectAttendance('paid_excuse'), true);
+    assert.equal(leaveDoesNotAffectAttendance('casual'), false);
     assert.equal(normalizeExcuseLeaveType('early_leave'), 'paid_excuse');
+    assert.equal(assertMissionWindow('09:00', '17:00').hours, 8);
   });
 
-  it('sets leave approval rules by type: annual AND, casual manager-only, unpaid/excuse OR', () => {
+  it('sets leave approval rules by type: annual AND, casual manager-only, unpaid/excuse/mission OR', () => {
     assert.deepEqual(leaveApprovalPolicy('annual', 'reservations_web'), {
       canRequest: true,
       needsManager: true,
@@ -149,6 +159,12 @@ describe('HR daily-rate deductions and leave rules', () => {
       approvalMode: 'any',
     });
     assert.deepEqual(leaveApprovalPolicy('unpaid_excuse', 'reservations_web'), {
+      canRequest: true,
+      needsManager: true,
+      needsHr: true,
+      approvalMode: 'any',
+    });
+    assert.deepEqual(leaveApprovalPolicy('mission', 'reservations_web'), {
       canRequest: true,
       needsManager: true,
       needsHr: true,

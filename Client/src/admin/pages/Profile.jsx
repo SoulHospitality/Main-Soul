@@ -9,7 +9,14 @@ import { getRoleTheme } from '../utils/roleTheme';
 import { formatDate, formatDateTime } from '../utils/formatters';
 import { getPasswordRuleChecks, passwordPolicyMessage } from '../utils/passwordRules';
 import PasswordChecklist from '../../components/auth/PasswordChecklist';
-import { LEAVE_TYPE_LABELS, requestableLeaveTypes, formatUnpaidLeaveAvailable, isExcuseLeaveType } from '../utils/hrPolicy';
+import {
+  LEAVE_TYPE_LABELS,
+  requestableLeaveTypes,
+  formatUnpaidLeaveAvailable,
+  isExcuseLeaveType,
+  isMissionLeaveType,
+  isTimedLeaveType,
+} from '../utils/hrPolicy';
 
 export default function Profile() {
   const { user, refreshUser } = useAuth();
@@ -63,7 +70,11 @@ export default function Profile() {
       qc.invalidateQueries({ queryKey: ['hr-leave-requests'] });
       qc.invalidateQueries({ queryKey: ['hr-my-leave'] });
       toast.success(
-        isExcuseLeaveType(vars?.leave_type) ? 'Excuse request sent' : 'Holiday request sent'
+        isMissionLeaveType(vars?.leave_type)
+          ? 'Mission request sent'
+          : isExcuseLeaveType(vars?.leave_type)
+            ? 'Excuse request sent'
+            : 'Holiday request sent'
       );
       setLeaveForm({
         leave_type: leaveSnap?.can_request_holidays === false ? 'paid_excuse' : 'casual',
@@ -99,22 +110,29 @@ export default function Profile() {
 
   const submitLeave = () => {
     const leaveType =
-      leaveSnap?.can_request_holidays === false && !isExcuseLeaveType(leaveForm.leave_type)
+      leaveSnap?.can_request_holidays === false &&
+      !isTimedLeaveType(leaveForm.leave_type) &&
+      leaveForm.leave_type !== 'unpaid'
         ? 'unpaid'
         : leaveForm.leave_type;
     if (!leaveForm.start_date) {
       toast.error('Choose a date');
       return;
     }
-    if (isExcuseLeaveType(leaveType)) {
+    if (isTimedLeaveType(leaveType)) {
       if (!leaveForm.start_time || !leaveForm.end_time) {
         toast.error('Choose start and end times');
+        return;
+      }
+      if (isMissionLeaveType(leaveType) && !String(leaveForm.reason || '').trim()) {
+        toast.error('A note is required for mission requests');
         return;
       }
       leaveMutation.mutate({
         ...leaveForm,
         leave_type: leaveType,
         end_date: leaveForm.start_date,
+        reason: String(leaveForm.reason || '').trim(),
       });
       return;
     }
@@ -264,7 +282,7 @@ export default function Profile() {
               </div>
               <div className="sm:col-span-2 grid grid-cols-2 gap-3">
                 <div>
-                  <label className="label">{isExcuseLeaveType(leaveForm.leave_type) ? 'Day' : 'From'}</label>
+                  <label className="label">{isTimedLeaveType(leaveForm.leave_type) ? 'Day' : 'From'}</label>
                   <input
                     type="date"
                     className="input"
@@ -274,14 +292,14 @@ export default function Profile() {
                         ...f,
                         start_date: e.target.value,
                         end_date:
-                          isExcuseLeaveType(f.leave_type) || !f.end_date || f.end_date < e.target.value
+                          isTimedLeaveType(f.leave_type) || !f.end_date || f.end_date < e.target.value
                             ? e.target.value
                             : f.end_date,
                       }))
                     }
                   />
                 </div>
-                {!isExcuseLeaveType(leaveForm.leave_type) && (
+                {!isTimedLeaveType(leaveForm.leave_type) && (
                 <div>
                   <label className="label">To</label>
                   <input
@@ -292,7 +310,7 @@ export default function Profile() {
                   />
                 </div>
                 )}
-                {isExcuseLeaveType(leaveForm.leave_type) && (
+                {isTimedLeaveType(leaveForm.leave_type) && (
                   <>
                     <div>
                       <label className="label">From time *</label>
@@ -312,21 +330,29 @@ export default function Profile() {
                         onChange={(e) => setLeaveForm((f) => ({ ...f, end_time: e.target.value }))}
                       />
                       <p className="mt-1 text-[11px] text-slate-400">
-                        {leaveForm.leave_type === 'paid_excuse'
-                          ? 'Paid excuse: max 2 hours, 2 per month. Needs manager or HR approval.'
-                          : 'Unpaid excuse: hours × (daily rate ÷ 24). Needs manager or HR approval.'}
+                        {isMissionLeaveType(leaveForm.leave_type)
+                          ? 'Paid mission time. Does not affect attendance. Needs manager or HR approval.'
+                          : leaveForm.leave_type === 'paid_excuse'
+                            ? 'Paid excuse: max 2 hours, 2 per month. Needs manager or HR approval.'
+                            : 'Unpaid excuse: hours × (daily rate ÷ 24). Needs manager or HR approval.'}
                       </p>
                     </div>
                   </>
                 )}
               </div>
               <div className="sm:col-span-2">
-                <label className="label">Note</label>
+                <label className="label">
+                  {isMissionLeaveType(leaveForm.leave_type) ? 'Note *' : 'Note'}
+                </label>
                 <textarea
                   className="input min-h-[72px]"
                   value={leaveForm.reason}
                   onChange={(e) => setLeaveForm((f) => ({ ...f, reason: e.target.value }))}
-                  placeholder="Optional"
+                  placeholder={
+                    isMissionLeaveType(leaveForm.leave_type)
+                      ? 'Describe the mission (required)'
+                      : 'Optional'
+                  }
                 />
               </div>
             </div>
@@ -350,7 +376,7 @@ export default function Profile() {
                     </div>
                     <div className="text-xs text-soul-muted capitalize">
                       {LEAVE_TYPE_LABELS[r.leave_type] || String(r.leave_type || '').replace('_', ' ')}
-                      {isExcuseLeaveType(r.leave_type) && r.start_time
+                      {isTimedLeaveType(r.leave_type) && r.start_time
                         ? ` · ${String(r.start_time).slice(0, 5)}–${String(r.end_time || '').slice(0, 5)}`
                         : ''}
                       {r.reason ? ` · ${r.reason}` : ''}

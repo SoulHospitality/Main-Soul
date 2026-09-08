@@ -10,7 +10,7 @@ import EmptyState from '../components/ui/EmptyState';
 import SearchFilter from '../components/ui/SearchFilter';
 import { ROLE_LABELS, canRequestStaffBenefits, canSeeRequestQueue } from '../utils/permissions';
 import { formatDate, formatDateTime } from '../utils/formatters';
-import { LEAVE_TYPE_LABELS, requestableLeaveTypes, formatUnpaidLeaveAvailable, isExcuseLeaveType } from '../utils/hrPolicy';
+import { LEAVE_TYPE_LABELS, requestableLeaveTypes, formatUnpaidLeaveAvailable, isExcuseLeaveType, isMissionLeaveType, isTimedLeaveType } from '../utils/hrPolicy';
 import { useAuth } from '../context/AuthContext';
 import { RequestReviewActions, approvalStatusClass, requestApprovalSummary } from '../components/RequestReviewActions';
 import { acknowledgeRequest } from '../utils/requestAcknowledgements';
@@ -53,14 +53,15 @@ function StatusFilter({ status, onChange }) {
 }
 
 function RequestForm({ leaveSnap, form, setForm, createMutation, onSubmit }) {
-  const isExcuse = isExcuseLeaveType(form.leave_type);
+  const isTimed = isTimedLeaveType(form.leave_type);
+  const isMission = isMissionLeaveType(form.leave_type);
   return (
     <div className="card space-y-3">
       <h3 className="font-semibold text-soul-blue">Request a holiday</h3>
       {leaveSnap && !leaveSnap.can_request_holidays ? (
         <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
           Paid holidays (casual, annual) open after 6 months, or when HR grants access.
-          Unpaid leave and excuses can be requested now (manager or HR approval).
+          Unpaid leave, excuses, and missions can be requested now (manager or HR approval).
           {leaveSnap.tenure_months != null ? ` Current tenure: ${leaveSnap.tenure_months} months.` : ''}
         </p>
       ) : null}
@@ -103,7 +104,7 @@ function RequestForm({ leaveSnap, form, setForm, createMutation, onSubmit }) {
           </select>
         </div>
         <div>
-          <label className="label">{isExcuse ? 'Day' : 'From'}</label>
+          <label className="label">{isTimed ? 'Day' : 'From'}</label>
           <input
             type="date"
             className="input"
@@ -113,14 +114,14 @@ function RequestForm({ leaveSnap, form, setForm, createMutation, onSubmit }) {
                 ...f,
                 start_date: e.target.value,
                 end_date:
-                  isExcuseLeaveType(f.leave_type) || !f.end_date || f.end_date < e.target.value
+                  isTimedLeaveType(f.leave_type) || !f.end_date || f.end_date < e.target.value
                     ? e.target.value
                     : f.end_date,
               }))
             }
           />
         </div>
-        {isExcuse ? (
+        {isTimed ? (
           <>
             <div>
               <label className="label">From time *</label>
@@ -140,9 +141,11 @@ function RequestForm({ leaveSnap, form, setForm, createMutation, onSubmit }) {
                 onChange={(e) => setForm((f) => ({ ...f, end_time: e.target.value }))}
               />
               <p className="mt-1 text-[11px] text-slate-400">
-                {form.leave_type === 'paid_excuse'
-                  ? 'Paid excuse: max 2 hours, 2 per month. Needs manager or HR approval.'
-                  : 'Unpaid excuse: hours × hourly rate (daily rate ÷ 24). Needs manager or HR approval.'}
+                {isMission
+                  ? 'Paid mission time. Does not affect attendance. Needs manager or HR approval.'
+                  : form.leave_type === 'paid_excuse'
+                    ? 'Paid excuse: max 2 hours, 2 per month. Needs manager or HR approval.'
+                    : 'Unpaid excuse: hours × hourly rate (daily rate ÷ 24). Needs manager or HR approval.'}
               </p>
             </div>
           </>
@@ -158,12 +161,12 @@ function RequestForm({ leaveSnap, form, setForm, createMutation, onSubmit }) {
           </div>
         )}
         <div className="sm:col-span-2">
-          <label className="label">Note</label>
+          <label className="label">{isMission ? 'Note *' : 'Note'}</label>
           <textarea
             className="input min-h-[72px]"
             value={form.reason}
             onChange={(e) => setForm((f) => ({ ...f, reason: e.target.value }))}
-            placeholder="Optional"
+            placeholder={isMission ? 'Describe the mission (required)' : 'Optional'}
           />
         </div>
       </div>
@@ -201,7 +204,7 @@ function HolidayRequestDetailModal({
     row.start_date === row.end_date
       ? formatDate(row.start_date)
       : `${formatDate(row.start_date)} → ${formatDate(row.end_date)}`;
-  const isExcuse = isExcuseLeaveType(row.leave_type);
+  const isTimed = isTimedLeaveType(row.leave_type);
   const timeLabel =
     row.start_time && row.end_time
       ? `${String(row.start_time).slice(0, 5)} – ${String(row.end_time).slice(0, 5)}`
@@ -254,7 +257,7 @@ function HolidayRequestDetailModal({
             {LEAVE_TYPE_LABELS[row.leave_type] || row.leave_type}
           </DetailField>
           <DetailField label="Duration">
-            {isExcuse
+            {isTimed
               ? `${Number(row.hours) || '—'} hour${Number(row.hours) === 1 ? '' : 's'}`
               : `${row.days} day${Number(row.days) === 1 ? '' : 's'}`}
           </DetailField>
@@ -321,7 +324,7 @@ function RequestsTable({ rows, incoming, reviewMutation, onReject, onSelect }) {
                   {formatDate(r.start_date)}
                   {r.start_date !== r.end_date ? ` → ${formatDate(r.end_date)}` : ''}
                   <div className="text-[11px] text-soul-muted">
-                    {isExcuseLeaveType(r.leave_type)
+                    {isTimedLeaveType(r.leave_type)
                       ? `${r.start_time ? String(r.start_time).slice(0, 5) : '—'}–${
                           r.end_time ? String(r.end_time).slice(0, 5) : '—'
                         } · ${Number(r.hours) || '—'}h`
@@ -426,7 +429,11 @@ export default function HolidayRequests() {
       qc.invalidateQueries({ queryKey: ['hr-leave-requests'] });
       qc.invalidateQueries({ queryKey: ['hr-my-leave'] });
       toast.success(
-        isExcuseLeaveType(vars?.leave_type) ? 'Excuse request sent' : 'Holiday request sent'
+        isMissionLeaveType(vars?.leave_type)
+          ? 'Mission request sent'
+          : isExcuseLeaveType(vars?.leave_type)
+            ? 'Excuse request sent'
+            : 'Holiday request sent'
       );
       setForm({
         leave_type: leaveSnap?.can_request_holidays === false ? 'paid_excuse' : 'casual',
@@ -480,16 +487,22 @@ export default function HolidayRequests() {
 
   const submitLeave = () => {
     const leaveType =
-      leaveSnap?.can_request_holidays === false && !isExcuseLeaveType(form.leave_type)
+      leaveSnap?.can_request_holidays === false &&
+      !isTimedLeaveType(form.leave_type) &&
+      form.leave_type !== 'unpaid'
         ? 'unpaid'
         : form.leave_type;
     if (!form.start_date) {
       toast.error('Choose a date');
       return;
     }
-    if (isExcuseLeaveType(leaveType)) {
+    if (isTimedLeaveType(leaveType)) {
       if (!form.start_time || !form.end_time) {
         toast.error('Choose start and end times');
+        return;
+      }
+      if (isMissionLeaveType(leaveType) && !String(form.reason || '').trim()) {
+        toast.error('A note is required for mission requests');
         return;
       }
       createMutation.mutate({
@@ -498,6 +511,7 @@ export default function HolidayRequests() {
         end_date: form.start_date,
         start_time: form.start_time,
         end_time: form.end_time,
+        reason: String(form.reason || '').trim(),
       });
       return;
     }
@@ -526,7 +540,7 @@ export default function HolidayRequests() {
         <p className="page-subtitle">
           {activeView === 'incoming'
             ? 'Manager accepts first; HR Manager can see waiting requests but only Accept/Reject after the manager. CEOs can act anytime.'
-            : 'Request casual, annual, unpaid leave, or excuses for any date. Unpaid leave deducts 1× daily rate; no show is 2× daily rate.'}
+            : 'Request casual, annual, unpaid leave, excuses, or missions. Missions are paid timed absences and do not affect attendance.'}
         </p>
       </div>
 

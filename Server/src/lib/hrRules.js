@@ -33,6 +33,16 @@ function isExcuseLeaveType(leaveType) {
   return EXCUSE_LEAVE_TYPES.has(String(leaveType || '').toLowerCase());
 }
 
+function isMissionLeaveType(leaveType) {
+  return String(leaveType || '').toLowerCase() === 'mission';
+}
+
+/** Timed paid/unpaid windows that do not block the attendance schedule. */
+function leaveDoesNotAffectAttendance(leaveType) {
+  const t = normalizeExcuseLeaveType(leaveType);
+  return isExcuseLeaveType(t) || isMissionLeaveType(t);
+}
+
 function normalizeExcuseLeaveType(leaveType) {
   const t = String(leaveType || '').toLowerCase();
   if (t === 'early_leave') return 'paid_excuse';
@@ -194,6 +204,21 @@ function assertExcuseWindow(leaveType, startTime, endTime) {
   };
 }
 
+/** Mission: any positive duration, no monthly/hour cap. */
+function assertMissionWindow(startTime, endTime) {
+  const hours = excuseHoursFromTimes(startTime, endTime);
+  if (hours <= 0) {
+    const err = new Error('Mission duration must be greater than 0');
+    err.status = 400;
+    throw err;
+  }
+  return {
+    hours,
+    start_time: formatExcuseTime(startTime),
+    end_time: formatExcuseTime(endTime),
+  };
+}
+
 function enumerateDateRange(start, end) {
   const dates = [];
   let cur = String(start || '').slice(0, 10);
@@ -263,7 +288,7 @@ function canRequestHolidays({ holiday_access, created_at }, now = new Date()) {
 
 function leaveTypeRequiresHolidayAccess(leaveType) {
   const t = normalizeExcuseLeaveType(leaveType);
-  // Annual and casual need holiday access. Unpaid leave and excuses do not.
+  // Annual and casual need holiday access. Unpaid, excuses, and missions do not.
   return t === 'annual' || t === 'casual';
 }
 
@@ -275,7 +300,7 @@ function leaveTypeRequiresApproval(leaveType) {
 /** @returns {'all' | 'any'} */
 function leaveTypeApprovalMode(leaveType) {
   const t = normalizeExcuseLeaveType(leaveType);
-  if (t === 'unpaid' || t === 'paid_excuse' || t === 'unpaid_excuse') return 'any';
+  if (t === 'unpaid' || t === 'paid_excuse' || t === 'unpaid_excuse' || t === 'mission') return 'any';
   return 'all';
 }
 
@@ -283,7 +308,7 @@ function leaveTypeApprovalMode(leaveType) {
  * Approval requirements for a leave/excuse type, adjusted for the requester's role.
  * - annual: manager AND HR Manager
  * - casual: manager only
- * - unpaid / paid_excuse / unpaid_excuse: manager OR HR Manager
+ * - unpaid / paid_excuse / unpaid_excuse / mission: manager OR HR Manager
  */
 function leaveApprovalPolicy(leaveType, role) {
   const rolePolicy = staffRequestPolicy(role);
@@ -304,7 +329,7 @@ function leaveApprovalPolicy(leaveType, role) {
     needsManager = true;
     needsHr = false;
     approvalMode = 'all';
-  } else if (t === 'unpaid' || t === 'paid_excuse' || t === 'unpaid_excuse') {
+  } else if (t === 'unpaid' || t === 'paid_excuse' || t === 'unpaid_excuse' || t === 'mission') {
     needsManager = true;
     needsHr = true;
     approvalMode = 'any';
@@ -1058,6 +1083,8 @@ module.exports = {
   dailyRate,
   hourlyRate,
   isExcuseLeaveType,
+  isMissionLeaveType,
+  leaveDoesNotAffectAttendance,
   normalizeExcuseLeaveType,
   parseHhMm,
   latenessFactor,
@@ -1070,6 +1097,7 @@ module.exports = {
   formatExcuseTime,
   excuseHoursFromTimes,
   assertExcuseWindow,
+  assertMissionWindow,
   enumerateDateRange,
   cairoParts,
   addDaysIso,

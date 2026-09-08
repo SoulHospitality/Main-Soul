@@ -23,6 +23,7 @@ export const LEAVE_TYPE_LABELS = {
   holiday: 'Holiday',
   day_off: 'Day off',
   unpaid: 'Unpaid',
+  mission: 'Mission',
 };
 
 export function formatUnpaidLeaveAvailable(leaveSnap) {
@@ -36,20 +37,31 @@ export function isExcuseLeaveType(leaveType) {
   return t === 'paid_excuse' || t === 'unpaid_excuse' || t === 'early_leave';
 }
 
+export function isMissionLeaveType(leaveType) {
+  return String(leaveType || '') === 'mission';
+}
+
+/** Day + time window requests (excuses and missions). */
+export function isTimedLeaveType(leaveType) {
+  return isExcuseLeaveType(leaveType) || isMissionLeaveType(leaveType);
+}
+
 export function requestableLeaveTypes(canRequestHolidays) {
   const unpaid = { value: 'unpaid', label: 'Unpaid leave (manager or HR)' };
   const paidExcuse = { value: 'paid_excuse', label: 'Paid excuse (2/month, max 2h)' };
   const unpaidExcuse = { value: 'unpaid_excuse', label: 'Unpaid excuse (hourly deduction)' };
+  const mission = { value: 'mission', label: 'Mission (paid time, note required)' };
   if (canRequestHolidays) {
     return [
       { value: 'casual', label: 'Casual (manager approval)' },
       { value: 'annual', label: 'Annual (manager then HR)' },
       paidExcuse,
       unpaidExcuse,
+      mission,
       unpaid,
     ];
   }
-  return [paidExcuse, unpaidExcuse, unpaid];
+  return [paidExcuse, unpaidExcuse, mission, unpaid];
 }
 
 export function computeAttendanceAmount(baseSalary, { status, check_in } = {}) {

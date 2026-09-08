@@ -21,8 +21,10 @@ const {
   computeUnpaidLeaveDeduction,
   computeUnpaidExcuseDeduction,
   isExcuseLeaveType,
+  leaveDoesNotAffectAttendance,
   normalizeExcuseLeaveType,
   assertExcuseWindow,
+  assertMissionWindow,
   hourlyRate,
   monthsBetween,
   HR_TEAM_ROLES,
@@ -1226,22 +1228,39 @@ router.post('/hr/leave-requests', async (req, res, next) => {
     const start = String(b.start_date || '').slice(0, 10);
     const end = String(b.end_date || start).slice(0, 10);
     const reason = String(b.reason || '').trim();
-    const allowed = new Set(['casual', 'annual', 'paid_excuse', 'unpaid_excuse', 'sick', 'unpaid']);
+    const allowed = new Set([
+      'casual',
+      'annual',
+      'paid_excuse',
+      'unpaid_excuse',
+      'sick',
+      'unpaid',
+      'mission',
+    ]);
     if (!allowed.has(leaveType)) {
       return res.status(400).json({ error: 'Invalid leave type' });
     }
     const isExcuse = isExcuseLeaveType(leaveType);
-    const days = isExcuse ? 1 : inclusiveDays(start, end);
+    const isMission = leaveType === 'mission';
+    const isTimed = isExcuse || isMission;
+    const days = isTimed ? 1 : inclusiveDays(start, end);
     if (!start || !end || !Number.isFinite(days) || days < 1) {
       return res.status(400).json({ error: 'Valid start and end dates are required' });
     }
-    if (isExcuse && start !== end) {
-      return res.status(400).json({ error: 'Excuses are for a single day' });
+    if (isTimed && start !== end) {
+      return res.status(400).json({
+        error: isMission ? 'Missions are for a single day' : 'Excuses are for a single day',
+      });
+    }
+    if (isMission && !reason) {
+      return res.status(400).json({ error: 'A note is required for mission requests' });
     }
 
     let excuseWindow = null;
     if (isExcuse) {
       excuseWindow = assertExcuseWindow(leaveType, b.start_time, b.end_time);
+    } else if (isMission) {
+      excuseWindow = assertMissionWindow(b.start_time, b.end_time);
     }
 
     let staffUserId = req.user.id;
@@ -1257,7 +1276,7 @@ router.post('/hr/leave-requests', async (req, res, next) => {
     if (leaveTypeRequiresHolidayAccess(leaveType) && !canRequestHolidays(targetStaff)) {
       return res.status(403).json({
         error:
-          'Paid holiday requests are not enabled for this account yet. Access opens automatically after 6 months, or HR can grant it earlier. Unpaid leave and excuses can be requested now.',
+          'Paid holiday requests are not enabled for this account yet. Access opens automatically after 6 months, or HR can grant it earlier. Unpaid leave, excuses, and missions can be requested now.',
       });
     }
 
@@ -1296,7 +1315,7 @@ router.post('/hr/leave-requests', async (req, res, next) => {
           staffUserId,
           leaveType,
           start,
-          isExcuse ? start : end,
+          isTimed ? start : end,
           days,
           reason || null,
           policy.needsManager,
@@ -1926,7 +1945,7 @@ router.get('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
     }
     const salaryByStaff = Object.fromEntries(staff.map((s) => [s.id, Number(s.base_salary) || 0]));
     for (const leave of leaveRows) {
-      if (isExcuseLeaveType(leave.leave_type)) continue;
+      if (leaveDoesNotAffectAttendance(leave.leave_type)) continue;
       for (const date of days) {
         if (!dateCoveredByRanges(date, [leave])) continue;
         const baseSalary = salaryByStaff[leave.staff_user_id] || 0;
@@ -1977,13 +1996,12 @@ router.put('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
       return res.status(400).json({ error: 'This role does not use office attendance' });
     }
     const { rows: holidayRows } = await query(
-      `SELECT id FROM staff_leave_requests
+      `SELECT id, leave_type FROM staff_leave_requests
        WHERE staff_user_id = $1 AND status = 'approved'
-         AND start_date <= $2::date AND end_date >= $2::date
-       LIMIT 1`,
+         AND start_date <= $2::date AND end_date >= $2::date`,
       [staff.id, date]
     );
-    if (holidayRows[0]) {
+    if (holidayRows.some((row) => !leaveDoesNotAffectAttendance(row.leave_type))) {
       return res.status(400).json({ error: 'This day is an approved holiday' });
     }
     if (b.clear === true || b.status === '' || b.status === 'clear') {
@@ -2045,13 +2063,15 @@ router.post(
       const maxDate = dates[dates.length - 1] || minDate;
 
       const { rows: leaveRows } = await query(
-        `SELECT staff_user_id, start_date::text AS start_date, end_date::text AS end_date
+        `SELECT staff_user_id, leave_type,
+                start_date::text AS start_date, end_date::text AS end_date
          FROM staff_leave_requests
          WHERE status = 'approved' AND start_date <= $2::date AND end_date >= $1::date`,
         [minDate, maxDate]
       );
       const leavesByStaff = new Map();
       for (const l of leaveRows) {
+        if (leaveDoesNotAffectAttendance(l.leave_type)) continue;
         const list = leavesByStaff.get(l.staff_user_id) || [];
         list.push(l);
         leavesByStaff.set(l.staff_user_id, list);
