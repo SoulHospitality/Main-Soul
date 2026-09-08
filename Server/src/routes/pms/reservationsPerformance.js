@@ -6,6 +6,8 @@ const { isReservationsManager, isAdmin } = require('../../lib/reservationScope')
 const router = express.Router();
 
 const AGENT_ROLES = ['reservations', 'reservations_web', 'reservations_manual', 'reservations_manager'];
+const TEAM_AGENT_ROLES = ['reservations', 'reservations_web', 'reservations_manual'];
+
 const ACTIVE_STAY_SQL = `
   r.status <> 'cancelled'
   AND NOT (
@@ -47,16 +49,11 @@ router.get(
       const to = isoDate(req.query.to_date) || defaults.to;
       const admin = isAdmin(req.user);
 
-      const teamSql = admin
-        ? `SELECT id, full_name, role FROM staff_users
-           WHERE is_active = 1 AND role = ANY($1::text[])`
-        : `SELECT id, full_name, role FROM staff_users
-           WHERE is_active = 1
-             AND (id = $1 OR manager_id = $1)
-             AND role = ANY($2::text[])`;
-
-      const teamQueryParams = admin ? [AGENT_ROLES] : [req.user.id, AGENT_ROLES];
-      const { rows: team } = await query(teamSql, teamQueryParams);
+      // Admin + Reservations Manager see the full reservation desk.
+      const teamSql = `SELECT id, full_name, role FROM staff_users
+           WHERE is_active = 1 AND role = ANY($1::text[])`;
+      const roles = admin ? AGENT_ROLES : TEAM_AGENT_ROLES;
+      const { rows: team } = await query(teamSql, [roles]);
 
       if (!team.length) {
         return res.json({

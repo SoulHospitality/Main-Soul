@@ -1,17 +1,43 @@
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Building2, CalendarDays, Handshake, Trophy, Users, ClipboardList } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  Building2,
+  CalendarDays,
+  Handshake,
+  Trophy,
+  Users,
+  ClipboardList,
+  Target,
+} from 'lucide-react';
+import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { ROLE_LABELS, isResaleManager } from '../utils/permissions';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
+import Modal from '../components/ui/Modal';
+import { currency } from '../utils/formatters';
 
 function defaultRange() {
   const to = new Date().toISOString().slice(0, 10);
   const fromDt = new Date(`${to}T12:00:00Z`);
   fromDt.setUTCDate(fromDt.getUTCDate() - 29);
   return { from: fromDt.toISOString().slice(0, 10), to };
+}
+
+function currentPeriod() {
+  const now = new Date();
+  return { year: now.getFullYear(), month: now.getMonth() + 1 };
+}
+
+function monthInputValue(year, month) {
+  return `${year}-${String(month).padStart(2, '0')}`;
+}
+
+function parseMonthInput(value) {
+  const [y, m] = String(value || '').split('-').map(Number);
+  if (!y || !m) return currentPeriod();
+  return { year: y, month: m };
 }
 
 function formatDay(iso) {
@@ -90,6 +116,327 @@ function DailyBars({ rows, title, subtitle, emptyTitle }) {
   );
 }
 
+function MonthlyTargetsPanel() {
+  const qc = useQueryClient();
+  const initial = currentPeriod();
+  const [period, setPeriod] = useState(initial);
+  const [editRow, setEditRow] = useState(null);
+  const [form, setForm] = useState({
+    target_bookings: '20',
+    bonus_amount: '500',
+    deduction_amount: '500',
+  });
+  const [bulk, setBulk] = useState({
+    target_bookings: '20',
+    bonus_amount: '500',
+    deduction_amount: '500',
+  });
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['reservation-targets', period.year, period.month],
+    queryFn: () =>
+      api
+        .get('/reservation-targets', { params: { year: period.year, month: period.month } })
+        .then((r) => r.data),
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: (payload) => api.put('/reservation-targets', payload).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['reservation-targets'] });
+      toast.success('Target saved');
+      setEditRow(null);
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Could not save target'),
+  });
+
+  const bulkMutation = useMutation({
+    mutationFn: (payload) => api.post('/reservation-targets/bulk', payload).then((r) => r.data),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['reservation-targets'] });
+      toast.success(`Targets set for ${res.updated} agent(s)${res.skipped ? ` · ${res.skipped} already applied` : ''}`);
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Could not set targets'),
+  });
+
+  const applyMutation = useMutation({
+    mutationFn: (payload) => api.post('/reservation-targets/apply', payload).then((r) => r.data),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['reservation-targets'] });
+      toast.success(
+        `Applied · ${res.summary?.bonuses || 0} bonus(es), ${res.summary?.deductions || 0} deduction(s)`
+      );
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Could not apply targets'),
+  });
+
+  const rows = data?.rows || [];
+  const totals = data?.totals || {};
+  const openCount = rows.filter((r) => r.status === 'open' || r.status === 'unset').length;
+  const applyable = rows.filter((r) => r.status === 'open').length;
+
+  const openEdit = (row) => {
+    setEditRow(row);
+    setForm({
+      target_bookings: String(row.target_bookings ?? 20),
+      bonus_amount: String(row.bonus_amount ?? 500),
+      deduction_amount: String(row.deduction_amount ?? 500),
+    });
+  };
+
+  return (
+    <section className="card overflow-hidden">
+      <div className="px-5 py-4 border-b border-soul-line flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-2">
+          <Target className="w-4 h-4 mt-1" style={{ color: 'var(--pms-accent)' }} />
+          <div>
+            <h2 className="font-semibold text-soul-blue">Monthly booking targets</h2>
+            <p className="text-xs text-soul-muted mt-0.5">
+              Set a booking target for each agent. Hit it → salary bonus. Miss it → performance deduction.
+              Apply at month end to post payroll lines.
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
+          <div>
+            <label className="label text-xs">Month</label>
+            <input
+              type="month"
+              className="input w-40"
+              value={monthInputValue(period.year, period.month)}
+              onChange={(e) => setPeriod(parseMonthInput(e.target.value))}
+            />
+          </div>
+          <button
+            type="button"
+            className="btn-primary text-sm"
+            disabled={!applyable || applyMutation.isPending}
+            onClick={() => {
+              if (
+                !window.confirm(
+                  `Apply open targets for ${monthInputValue(period.year, period.month)}?\nAgents who hit the target get a bonus; those who miss get a deduction on payroll.`
+                )
+              ) {
+                return;
+              }
+              applyMutation.mutate({ year: period.year, month: period.month });
+            }}
+          >
+            {applyMutation.isPending ? 'Applying…' : `Apply month (${applyable})`}
+          </button>
+        </div>
+      </div>
+
+      <div className="px-5 py-4 border-b border-soul-line bg-soul-blue-50/40">
+        <p className="text-xs font-semibold text-soul-blue mb-2">Set same target for all agents</p>
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="label text-xs">Bookings target</label>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              className="input w-28"
+              value={bulk.target_bookings}
+              onChange={(e) => setBulk((f) => ({ ...f, target_bookings: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="label text-xs">Bonus if hit (EGP)</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              className="input w-32"
+              value={bulk.bonus_amount}
+              onChange={(e) => setBulk((f) => ({ ...f, bonus_amount: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="label text-xs">Deduction if miss (EGP)</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              className="input w-36"
+              value={bulk.deduction_amount}
+              onChange={(e) => setBulk((f) => ({ ...f, deduction_amount: e.target.value }))}
+            />
+          </div>
+          <button
+            type="button"
+            className="btn-secondary text-sm"
+            disabled={bulkMutation.isPending || !openCount}
+            onClick={() =>
+              bulkMutation.mutate({
+                year: period.year,
+                month: period.month,
+                target_bookings: Number(bulk.target_bookings),
+                bonus_amount: Number(bulk.bonus_amount),
+                deduction_amount: Number(bulk.deduction_amount),
+              })
+            }
+          >
+            {bulkMutation.isPending ? 'Saving…' : 'Apply to all'}
+          </button>
+        </div>
+        <p className="mt-2 text-[11px] text-soul-muted">
+          {totals.hitting ?? 0} hitting · {totals.missing ?? 0} missing · {totals.applied ?? 0} already applied
+        </p>
+      </div>
+
+      {isLoading ? (
+        <div className="p-8">
+          <LoadingSpinner />
+        </div>
+      ) : !rows.length ? (
+        <EmptyState title="No reservation agents" subtitle="Add active web or manual reservation staff in Users." />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-[11px] uppercase tracking-wide text-soul-muted border-b border-soul-line">
+                <th className="px-5 py-2.5 font-semibold">Agent</th>
+                <th className="px-3 py-2.5 font-semibold text-right">Bookings</th>
+                <th className="px-3 py-2.5 font-semibold text-right">Target</th>
+                <th className="px-3 py-2.5 font-semibold text-right">Bonus</th>
+                <th className="px-3 py-2.5 font-semibold text-right">Deduction</th>
+                <th className="px-3 py-2.5 font-semibold">Status</th>
+                <th className="px-5 py-2.5 font-semibold text-right" />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.staff_user_id} className="border-b border-soul-line/70 last:border-0">
+                  <td className="px-5 py-3">
+                    <div className="font-medium text-soul-blue">{row.full_name}</div>
+                    <div className="text-[11px] text-soul-muted">{ROLE_LABELS[row.role] || row.role}</div>
+                  </td>
+                  <td className="px-3 py-3 text-right tabular-nums font-semibold">{row.bookings_count}</td>
+                  <td className="px-3 py-3 text-right tabular-nums">
+                    {row.target_bookings == null ? '—' : row.target_bookings}
+                  </td>
+                  <td className="px-3 py-3 text-right tabular-nums text-emerald-700">
+                    {row.bonus_amount == null ? '—' : currency(row.bonus_amount)}
+                  </td>
+                  <td className="px-3 py-3 text-right tabular-nums text-rose-700">
+                    {row.deduction_amount == null ? '—' : currency(row.deduction_amount)}
+                  </td>
+                  <td className="px-3 py-3">
+                    {row.status === 'applied' ? (
+                      <span className="inline-flex rounded-full px-2 py-0.5 text-xs font-semibold bg-slate-100 text-slate-700">
+                        Applied
+                      </span>
+                    ) : row.hit === true ? (
+                      <span className="inline-flex rounded-full px-2 py-0.5 text-xs font-semibold bg-emerald-50 text-emerald-700">
+                        On track
+                      </span>
+                    ) : row.hit === false ? (
+                      <span className="inline-flex rounded-full px-2 py-0.5 text-xs font-semibold bg-rose-50 text-rose-700">
+                        Behind
+                      </span>
+                    ) : (
+                      <span className="inline-flex rounded-full px-2 py-0.5 text-xs font-semibold bg-amber-50 text-amber-800">
+                        No target
+                      </span>
+                    )}
+                    {row.target_bookings != null ? (
+                      <div className="mt-1 h-1.5 w-24 rounded-full bg-slate-100 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-soul-blue"
+                          style={{ width: `${row.progress_pct || 0}%` }}
+                        />
+                      </div>
+                    ) : null}
+                  </td>
+                  <td className="px-5 py-3 text-right">
+                    {row.status !== 'applied' ? (
+                      <button type="button" className="btn-secondary text-xs px-2 py-1" onClick={() => openEdit(row)}>
+                        Set
+                      </button>
+                    ) : (
+                      <span className="text-[11px] text-soul-muted">Locked</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <Modal
+        open={!!editRow}
+        onClose={() => setEditRow(null)}
+        title={editRow ? `Target · ${editRow.full_name}` : 'Target'}
+        footer={
+          <>
+            <button type="button" className="btn-secondary" onClick={() => setEditRow(null)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={saveMutation.isPending}
+              onClick={() =>
+                saveMutation.mutate({
+                  staff_user_id: editRow.staff_user_id,
+                  year: period.year,
+                  month: period.month,
+                  target_bookings: Number(form.target_bookings),
+                  bonus_amount: Number(form.bonus_amount),
+                  deduction_amount: Number(form.deduction_amount),
+                })
+              }
+            >
+              {saveMutation.isPending ? 'Saving…' : 'Save target'}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="label">Bookings target *</label>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              className="input"
+              value={form.target_bookings}
+              onChange={(e) => setForm((f) => ({ ...f, target_bookings: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="label">Bonus if achieved (EGP)</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              className="input"
+              value={form.bonus_amount}
+              onChange={(e) => setForm((f) => ({ ...f, bonus_amount: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="label">Deduction if missed (EGP)</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              className="input"
+              value={form.deduction_amount}
+              onChange={(e) => setForm((f) => ({ ...f, deduction_amount: e.target.value }))}
+            />
+          </div>
+          <p className="text-xs text-soul-muted">
+            Current bookings this month: <strong>{editRow?.bookings_count ?? 0}</strong>
+          </p>
+        </div>
+      </Modal>
+    </section>
+  );
+}
+
 function ReservationsPerformance() {
   const { user } = useAuth();
   const initial = defaultRange();
@@ -118,10 +465,12 @@ function ReservationsPerformance() {
         <h1 className="page-title">Performance</h1>
         <p className="page-subtitle">
           {user?.role === 'admin'
-            ? 'Reservation counts for every reservations agent.'
-            : 'How your team is booking — totals, daily pace, and the leaderboard.'}
+            ? 'Reservation counts and monthly targets for every reservations agent.'
+            : 'Team booking pace, leaderboard, and monthly targets (bonus if hit, deduction if missed).'}
         </p>
       </div>
+
+      <MonthlyTargetsPanel />
 
       <DateRangePicker
         fromDate={fromDate}
@@ -155,7 +504,7 @@ function ReservationsPerformance() {
             Team
           </div>
           <p className="mt-2 font-display text-3xl text-soul-blue">{totals.team_size}</p>
-          <p className="mt-1 text-xs text-soul-muted">Agents you manage, including you</p>
+          <p className="mt-1 text-xs text-soul-muted">Active reservation agents</p>
         </div>
       </div>
 
@@ -168,7 +517,7 @@ function ReservationsPerformance() {
           {!leaderboard.length ? (
             <EmptyState
               title="No team members yet"
-              subtitle="Assign agents to this reservations manager in Users."
+              subtitle="Add active reservation agents in Users."
             />
           ) : (
             <div className="overflow-x-auto">

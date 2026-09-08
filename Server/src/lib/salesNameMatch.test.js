@@ -45,3 +45,16 @@ describe('salesNameMatch Abdelrahman isolation', () => {
     assert.equal(matchSalesLabelToStaff('Mr Abdelrahman', staff)?.staff?.id, 2);
   });
 });
+
+describe('salesNameMatch Mahy El Dreeny', () => {
+  it('maps short label Mahy to Mahy El Dreeny', () => {
+    const { resolveSalesLabel } = require('./salesNameMatch');
+    assert.equal(salesLabelBelongsToUser('Mahy', { full_name: 'Mahy El Dreeny' }), true);
+    assert.equal(salesLabelBelongsToUser('Mahy El Dreeny', { full_name: 'Mahy El Dreeny' }), true);
+    assert.equal(resolveSalesLabel('Mahy'), 'Mahy El Dreeny');
+    assert.equal(
+      matchSalesLabelToStaff('Mahy', [{ id: 1, full_name: 'Mahy El Dreeny' }])?.staff?.id,
+      1
+    );
+  });
+});

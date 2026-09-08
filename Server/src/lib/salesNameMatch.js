@@ -5,7 +5,7 @@ function normalizeName(value) {
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
-    .replace(/\b(mr|mrs|ms|miss|mister|dr|prof)\.?/g, ' ')
+    .replace(/\b(mr|mrs|ms|miss|mister|dr|prof)\.?\b/g, ' ')
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -31,6 +31,7 @@ const EQUIVALENCE_GROUPS = [
   ['aya ahmed', 'aya'],
   ['hana kamal', 'hana', 'hanna'],
   ['nouran nasser', 'nouran'],
+  ['mahy el dreeny', 'mahy eldreeny', 'mahy el-dreeny', 'mahy'],
   [
     'abdelrahman dawod',
     'abdelrahman dawood',
