@@ -14,8 +14,22 @@ const STATUS_META = {
   on_time: { label: 'On time', className: 'bg-emerald-500 hover:bg-emerald-600' },
   late: { label: 'Late', className: 'bg-amber-400 hover:bg-amber-500' },
   no_show: { label: 'No show', className: 'bg-red-500 hover:bg-red-600' },
-  holiday: { label: 'Holiday', className: 'bg-blue-500 cursor-default' },
+  holiday: { label: 'Holiday', className: 'bg-blue-500 hover:bg-blue-600' },
 };
+
+const HOLIDAY_TYPE_OPTIONS = [
+  { value: 'casual', label: LEAVE_TYPE_LABELS.casual },
+  { value: 'annual', label: LEAVE_TYPE_LABELS.annual },
+  { value: 'unpaid', label: LEAVE_TYPE_LABELS.unpaid },
+  { value: 'sick', label: LEAVE_TYPE_LABELS.sick },
+];
+
+function normalizeHolidayType(type) {
+  const t = String(type || '');
+  if (t === 'holiday') return 'annual';
+  if (t === 'day_off') return 'casual';
+  return HOLIDAY_TYPE_OPTIONS.some((o) => o.value === t) ? t : 'unpaid';
+}
 
 function currentMonthIso() {
   const d = new Date();
@@ -60,6 +74,7 @@ export default function Attendance() {
   const fileRef = useRef(null);
   const [month, setMonth] = useState(currentMonthIso);
   const [form, setForm] = useState(null);
+  const [holidayForm, setHolidayForm] = useState(null);
   const [deductionTouched, setDeductionTouched] = useState(false);
   const [tip, setTip] = useState(null);
 
@@ -89,6 +104,20 @@ export default function Attendance() {
       setForm(null);
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Could not save attendance'),
+  });
+
+  const holidayTypeMutation = useMutation({
+    mutationFn: ({ id, leave_type }) => api.patch(`/hr/leave-requests/${id}/type`, { leave_type }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['hr-attendance'] });
+      qc.invalidateQueries({ queryKey: ['hr-deductions'] });
+      qc.invalidateQueries({ queryKey: ['hr-payroll'] });
+      qc.invalidateQueries({ queryKey: ['hr-leave-requests'] });
+      qc.invalidateQueries({ queryKey: ['hr-staff'] });
+      toast.success('Holiday type updated');
+      setHolidayForm(null);
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Could not update holiday type'),
   });
 
   const importMutation = useMutation({
@@ -139,10 +168,26 @@ export default function Attendance() {
 
   function openCell(person, date) {
     const cell = cells[cellKey(person.id, date)];
-    if (cell?.status === 'holiday') return;
+    setTip(null);
+    if (cell?.status === 'holiday') {
+      if (!cell.leave_request_id) {
+        toast.error('This holiday has no linked leave request to edit');
+        return;
+      }
+      setForm(null);
+      setHolidayForm({
+        leave_request_id: cell.leave_request_id,
+        staff_name: person.full_name,
+        work_date: date,
+        leave_type: normalizeHolidayType(cell.leave_type),
+        start_date: cell.start_date || date,
+        end_date: cell.end_date || date,
+      });
+      return;
+    }
+    setHolidayForm(null);
     setDeductionTouched(false);
     setForm(emptyForm(person, date, cell));
-    setTip(null);
   }
 
   function submitCell() {
@@ -327,12 +372,15 @@ export default function Attendance() {
                 <span className="font-medium">{STATUS_META[tip.cell.status]?.label || tip.cell.status}</span>
               </div>
               {tip.cell.status === 'holiday' ? (
-                <div>
-                  {LEAVE_TYPE_LABELS[tip.cell.leave_type] || tip.cell.leave_type || 'Approved holiday'}
-                  {tip.cell.start_date && tip.cell.end_date && tip.cell.start_date !== tip.cell.end_date
-                    ? ` · ${tip.cell.start_date} → ${tip.cell.end_date}`
-                    : ''}
-                </div>
+                <>
+                  <div>
+                    {LEAVE_TYPE_LABELS[tip.cell.leave_type] || tip.cell.leave_type || 'Approved holiday'}
+                    {tip.cell.start_date && tip.cell.end_date && tip.cell.start_date !== tip.cell.end_date
+                      ? ` · ${tip.cell.start_date} → ${tip.cell.end_date}`
+                      : ''}
+                  </div>
+                  <div className="text-soul-muted">Click to change holiday type</div>
+                </>
               ) : (
                 <>
                   <div>Check-in: {tip.cell.check_in || '—'}</div>
@@ -428,6 +476,63 @@ export default function Attendance() {
                   setForm((f) => ({ ...f, deduction_amount: e.target.value }));
                 }}
               />
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={!!holidayForm}
+        onClose={() => setHolidayForm(null)}
+        title={holidayForm ? `${holidayForm.staff_name} · holiday type` : 'Holiday type'}
+        footer={
+          <>
+            <button type="button" className="btn-secondary" onClick={() => setHolidayForm(null)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={holidayTypeMutation.isPending || !holidayForm?.leave_type}
+              onClick={() => {
+                if (!holidayForm?.leave_request_id) return;
+                holidayTypeMutation.mutate({
+                  id: holidayForm.leave_request_id,
+                  leave_type: holidayForm.leave_type,
+                });
+              }}
+            >
+              {holidayTypeMutation.isPending ? 'Saving…' : 'Save type'}
+            </button>
+          </>
+        }
+      >
+        {holidayForm ? (
+          <div className="space-y-4">
+            <p className="text-sm text-soul-muted">
+              Change this approved holiday between paid and unpaid types.
+              {holidayForm.start_date !== holidayForm.end_date
+                ? ` Applies to the full request (${holidayForm.start_date} → ${holidayForm.end_date}).`
+                : ` Date: ${holidayForm.work_date}.`}
+            </p>
+            <div>
+              <label className="label">Holiday type</label>
+              <div className="grid grid-cols-2 gap-2">
+                {HOLIDAY_TYPE_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setHolidayForm((f) => (f ? { ...f, leave_type: opt.value } : f))}
+                    className={`rounded-xl border px-3 py-2 text-sm font-semibold ${
+                      holidayForm.leave_type === opt.value
+                        ? 'border-soul-blue ring-2 ring-soul-blue/20'
+                        : 'border-soul-line'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         ) : null}

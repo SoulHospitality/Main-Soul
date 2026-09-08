@@ -1424,6 +1424,194 @@ router.post('/hr/leave-requests/:id/review', async (req, res, next) => {
   }
 });
 
+const EDITABLE_FULL_DAY_LEAVE_TYPES = new Set(['casual', 'annual', 'unpaid', 'sick']);
+
+function balanceColumnForLeaveType(leaveType) {
+  if (leaveType === 'casual') return 'leave_casual_days';
+  if (leaveType === 'annual') return 'leave_annual_days';
+  return null;
+}
+
+/**
+ * Change leave_type on an approved full-day holiday (e.g. unpaid → casual/annual).
+ * Reverses/applies balance debits and unpaid salary deductions for the whole request range.
+ */
+router.patch('/hr/leave-requests/:id/type', requireRoles(...HR_ROLES), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    let nextType = normalizeExcuseLeaveType(String(req.body?.leave_type || '').trim());
+    if (nextType === 'holiday') nextType = 'annual';
+    if (nextType === 'day_off') nextType = 'casual';
+    if (!EDITABLE_FULL_DAY_LEAVE_TYPES.has(nextType)) {
+      return res.status(400).json({
+        error: 'Holiday type must be casual, annual, unpaid, or sick',
+      });
+    }
+    if (isExcuseLeaveType(nextType)) {
+      return res.status(400).json({ error: 'Cannot convert a full-day holiday into an excuse' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query(
+        `SELECT r.*, u.role, u.manager_id, u.base_salary, u.full_name,
+                u.leave_casual_days, u.leave_annual_days,
+                COALESCE(
+                  (SELECT array_agg(sm.manager_id ORDER BY sm.manager_id)
+                   FROM staff_user_managers sm
+                   WHERE sm.staff_user_id = u.id),
+                  ARRAY[]::int[]
+                ) AS manager_ids
+         FROM staff_leave_requests r
+         JOIN staff_users u ON u.id = r.staff_user_id
+         WHERE r.id = $1
+         FOR UPDATE OF r, u`,
+        [id]
+      );
+      const row = rows[0];
+      if (!row) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Leave request not found' });
+      }
+      if (row.status !== 'approved') {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Only approved holidays can change type here' });
+      }
+      if (isExcuseLeaveType(row.leave_type)) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Excuses cannot be edited from the attendance holiday cell' });
+      }
+
+      let fromType = normalizeExcuseLeaveType(row.leave_type);
+      if (fromType === 'holiday') fromType = 'annual';
+      if (fromType === 'day_off') fromType = 'casual';
+      if (fromType === nextType) {
+        await client.query('COMMIT');
+        return res.json(
+          presentStaffRequest(
+            {
+              ...row,
+              role: row.role,
+              manager_id: row.manager_id,
+              full_name: row.full_name,
+            },
+            req.user,
+            'leave'
+          )
+        );
+      }
+
+      const days = Number(row.days) || inclusiveDays(row.start_date, row.end_date);
+
+      const fromBalanceCol = balanceColumnForLeaveType(fromType);
+      const toBalanceCol = balanceColumnForLeaveType(nextType);
+
+      // Restore balance if leaving a paid balance type.
+      if (fromBalanceCol) {
+        await client.query(
+          `UPDATE staff_users SET ${fromBalanceCol} = ${fromBalanceCol} + $1, updated_at = now() WHERE id = $2`,
+          [days, row.staff_user_id]
+        );
+      }
+      // Remove unpaid leave deductions for this range.
+      if (fromType === 'unpaid') {
+        await client.query(
+          `DELETE FROM staff_salary_deductions
+           WHERE staff_user_id = $1
+             AND category = 'other'
+             AND reason = 'Unpaid leave'
+             AND deduction_date >= $2::date
+             AND deduction_date <= $3::date`,
+          [row.staff_user_id, row.start_date, row.end_date]
+        );
+      }
+
+      // Debit new paid balance type.
+      if (toBalanceCol) {
+        const { rows: balRows } = await client.query(
+          `SELECT ${toBalanceCol} AS balance FROM staff_users WHERE id = $1 FOR UPDATE`,
+          [row.staff_user_id]
+        );
+        const balance = Number(balRows[0]?.balance) || 0;
+        if (balance < days) {
+          const err = new Error(
+            `Not enough ${nextType} balance (${balance} left, ${days} needed)`
+          );
+          err.status = 400;
+          throw err;
+        }
+        await client.query(
+          `UPDATE staff_users SET ${toBalanceCol} = ${toBalanceCol} - $1, updated_at = now() WHERE id = $2`,
+          [days, row.staff_user_id]
+        );
+      }
+      // Add unpaid deductions for the range.
+      if (nextType === 'unpaid') {
+        const unpaid = computeUnpaidLeaveDeduction(row.base_salary);
+        for (const date of enumerateDateRange(row.start_date, row.end_date)) {
+          await insertDeduction(client, [
+            row.staff_user_id,
+            unpaid.amount,
+            'Unpaid leave',
+            date,
+            'other',
+            req.user.id,
+            null,
+            null,
+            unpaid.daily_rate,
+            unpaid.factor,
+          ]);
+        }
+      }
+
+      const { rows: updatedRows } = await client.query(
+        `UPDATE staff_leave_requests
+         SET leave_type = $2,
+             review_note = COALESCE($3, review_note),
+             reviewed_by = $4,
+             reviewed_at = now()
+         WHERE id = $1
+         RETURNING *`,
+        [
+          id,
+          nextType,
+          req.body?.review_note
+            ? String(req.body.review_note).slice(0, 500)
+            : `Type changed from ${fromType} to ${nextType}`,
+          req.user.id,
+        ]
+      );
+      await client.query('COMMIT');
+
+      res.json(
+        presentStaffRequest(
+          {
+            ...updatedRows[0],
+            role: row.role,
+            manager_id: row.manager_id,
+            full_name: row.full_name,
+            manager_ids: row.manager_ids,
+          },
+          req.user,
+          'leave'
+        )
+      );
+    } catch (err) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        /* ignore */
+      }
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.get('/hr/loans', async (req, res, next) => {
   try {
     if (req.user.role === 'owner') return res.status(403).json({ error: 'Forbidden' });
@@ -1720,7 +1908,7 @@ router.get('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
       [from, to]
     );
     const { rows: leaveRows } = await query(
-      `SELECT staff_user_id, leave_type,
+      `SELECT id, staff_user_id, leave_type,
               start_date::text AS start_date, end_date::text AS end_date
        FROM staff_leave_requests
        WHERE status = 'approved'
@@ -1747,6 +1935,7 @@ router.get('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
           work_date: date,
           status: 'holiday',
           leave_type: leave.leave_type,
+          leave_request_id: leave.id,
           start_date: leave.start_date,
           end_date: leave.end_date,
           check_in: null,
