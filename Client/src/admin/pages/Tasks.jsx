@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarDays, Check, ListTodo, Plus, Trash2 } from 'lucide-react';
+import { CalendarDays, Check, ListTodo, Pencil, Plus, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import { useAuth } from '../context/AuthContext';
 import { usePermissions } from '../hooks/usePermissions';
-import { ROLE_LABELS } from '../utils/permissions';
+import { ROLE_LABELS, canEditStaffTask } from '../utils/permissions';
 import Modal from '../components/ui/Modal';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
@@ -27,6 +27,7 @@ export default function Tasks() {
   const { user } = useAuth();
   const { canAssignStaffTasks, isTaskAssignee, isReservationsManager } = usePermissions();
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [deleteTask, setDeleteTask] = useState(null);
 
@@ -52,7 +53,11 @@ export default function Tasks() {
     enabled: canAssignStaffTasks,
   });
 
-  const canAdd = canAssignStaffTasks;
+  // Line managers only — and only once they actually have people they can assign to.
+  const canAdd =
+    canAssignStaffTasks &&
+    !assigneesError &&
+    (assigneesLoading || assignees.length > 0);
 
   const pageSubtitle = (() => {
     if (isTaskAssignee) {
@@ -62,13 +67,13 @@ export default function Tasks() {
       return 'Assign missions and targets to the reservation team (web and manual agents).';
     }
     if (canAdd) {
-      return 'Assign a title, description, and deadline to someone on your team.';
+      return 'Assign a title, description, and deadline to someone on your team. Only you can edit tasks you create.';
     }
     if (canAssignStaffTasks && assigneesLoading) {
       return 'Loading team members you can assign tasks to…';
     }
     if (canAssignStaffTasks) {
-      return 'Assign tasks to employees on your team. CEOs can assign to any non-manager staff.';
+      return 'Set line managers in User Management, then assign tasks to staff who report to you.';
     }
     return 'Tasks assigned to your team appear here.';
   })();
@@ -90,7 +95,13 @@ export default function Tasks() {
   })();
 
   const addLabel = isReservationsManager ? 'Add mission' : 'Add task';
-  const modalTitle = isReservationsManager ? 'New mission' : 'New task';
+  const modalTitle = editingTask
+    ? isReservationsManager
+      ? 'Edit mission'
+      : 'Edit task'
+    : isReservationsManager
+      ? 'New mission'
+      : 'New task';
   const assigneePlaceholder = isReservationsManager
     ? 'Choose a reservation agent…'
     : 'Choose staff member…';
@@ -108,10 +119,20 @@ export default function Tasks() {
             'Could not email the assignee. Check the email on their Users record.'
         );
       }
-      setModalOpen(false);
-      setForm(EMPTY_FORM);
+      closeModal();
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Could not add task'),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, ...payload }) =>
+      api.patch(`/staff-tasks/${id}`, payload).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['staff-tasks'] });
+      toast.success('Task updated');
+      closeModal();
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Could not update task'),
   });
 
   const deleteMutation = useMutation({
@@ -133,6 +154,12 @@ export default function Tasks() {
     onError: (e) => toast.error(e.response?.data?.error || 'Could not mark task done'),
   });
 
+  const closeModal = () => {
+    setModalOpen(false);
+    setEditingTask(null);
+    setForm(EMPTY_FORM);
+  };
+
   const openAdd = () => {
     if (!assignees.length) {
       toast.error(
@@ -142,9 +169,21 @@ export default function Tasks() {
       );
       return;
     }
+    setEditingTask(null);
     setForm({
       ...EMPTY_FORM,
       assignee_id: assignees.length === 1 ? String(assignees[0].id) : '',
+    });
+    setModalOpen(true);
+  };
+
+  const openEdit = (task) => {
+    setEditingTask(task);
+    setForm({
+      assignee_id: String(task.assignee_id || ''),
+      title: task.title || '',
+      description: task.description || '',
+      deadline: String(task.deadline || '').slice(0, 10),
     });
     setModalOpen(true);
   };
@@ -162,13 +201,20 @@ export default function Tasks() {
       toast.error('Deadline is required');
       return;
     }
-    createMutation.mutate({
+    const payload = {
       assignee_id: Number(form.assignee_id),
       title: form.title.trim(),
       description: form.description.trim(),
       deadline: form.deadline,
-    });
+    };
+    if (editingTask) {
+      updateMutation.mutate({ id: editingTask.id, ...payload });
+      return;
+    }
+    createMutation.mutate(payload);
   };
+
+  const saving = createMutation.isPending || updateMutation.isPending;
 
   if (isLoading) return <LoadingSpinner />;
 
@@ -221,6 +267,7 @@ export default function Tasks() {
             const overdue = isOverdue(task.deadline) && !task.completed_at;
             const isMine = String(task.assignee_id) === String(user?.id);
             const canMarkDone = isMine && !task.completed_at;
+            const canManage = canEditStaffTask(user, task);
             const cardStateClass = task.completed_at
               ? 'border border-emerald-200 bg-emerald-50/60'
               : overdue
@@ -277,15 +324,25 @@ export default function Tasks() {
                         Done
                       </button>
                     ) : null}
-                    {canAssignStaffTasks ? (
-                      <button
-                        type="button"
-                        className="rounded-lg p-1.5 text-soul-muted hover:bg-rose-50 hover:text-rose-700"
-                        title="Delete task"
-                        onClick={() => setDeleteTask(task)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                    {canManage ? (
+                      <>
+                        <button
+                          type="button"
+                          className="rounded-lg p-1.5 text-soul-muted hover:bg-slate-100 hover:text-soul-blue"
+                          title="Edit task"
+                          onClick={() => openEdit(task)}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-lg p-1.5 text-soul-muted hover:bg-rose-50 hover:text-rose-700"
+                          title="Delete task"
+                          onClick={() => setDeleteTask(task)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </>
                     ) : null}
                   </div>
                 </div>
@@ -302,20 +359,26 @@ export default function Tasks() {
 
       <Modal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={closeModal}
         title={modalTitle}
         footer={
           <>
-            <button type="button" onClick={() => setModalOpen(false)} className="btn-secondary">
+            <button type="button" onClick={closeModal} className="btn-secondary">
               Cancel
             </button>
             <button
               type="button"
               onClick={handleSave}
-              disabled={createMutation.isPending}
+              disabled={saving}
               className="btn-primary"
             >
-              {createMutation.isPending ? 'Sending…' : isReservationsManager ? 'Send mission' : 'Send task'}
+              {saving
+                ? 'Saving…'
+                : editingTask
+                  ? 'Save changes'
+                  : isReservationsManager
+                    ? 'Send mission'
+                    : 'Send task'}
             </button>
           </>
         }

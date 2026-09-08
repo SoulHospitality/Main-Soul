@@ -3,6 +3,7 @@ const { query } = require('../../config/db');
 const {
   canReceiveStaffTasks,
   canManageStaffTasks,
+  canEditStaffTask,
   canAssignTaskTo,
   staffTaskScopeSql,
   staffTaskScopeParams,
@@ -254,6 +255,111 @@ router.post('/staff-tasks/:id/complete', async (req, res, next) => {
   }
 });
 
+router.patch('/staff-tasks/:id', async (req, res, next) => {
+  try {
+    if (!canManageStaffTasks(req.user)) {
+      return res.status(403).json({ error: 'You cannot edit tasks' });
+    }
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id < 1) {
+      return res.status(400).json({ error: 'Invalid task' });
+    }
+
+    const { rows } = await query(
+      `SELECT t.id, t.title, t.description, t.deadline::text AS deadline,
+              t.assignee_id, t.created_by, t.completed_at,
+              a.role AS assignee_role, a.manager_id, a.full_name AS assignee_name, a.email AS assignee_email,
+              COALESCE(
+                (SELECT array_agg(sm.manager_id ORDER BY sm.manager_id)
+                 FROM staff_user_managers sm
+                 WHERE sm.staff_user_id = a.id),
+                ARRAY[]::int[]
+              ) AS manager_ids
+       FROM staff_tasks t
+       JOIN staff_users a ON a.id = t.assignee_id
+       WHERE t.id = $1`,
+      [id]
+    );
+    const task = rows[0];
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+    if (!canEditStaffTask(req.user, task)) {
+      return res.status(403).json({ error: 'Only the person who added this task can edit it' });
+    }
+
+    const b = req.body || {};
+    const title = b.title != null ? String(b.title).trim() : task.title;
+    const description =
+      b.description != null ? String(b.description).trim() : task.description || '';
+    const deadline = b.deadline != null ? isoDate(b.deadline) : isoDate(task.deadline);
+    let assigneeId = task.assignee_id;
+    if (b.assignee_id != null && b.assignee_id !== '') {
+      assigneeId = Number(b.assignee_id);
+    }
+    if (!title) return res.status(400).json({ error: 'Title is required' });
+    if (!deadline) return res.status(400).json({ error: 'Deadline is required' });
+    if (!Number.isFinite(assigneeId) || assigneeId < 1) {
+      return res.status(400).json({ error: 'Choose who this task is for' });
+    }
+
+    let assigneeName = task.assignee_name;
+    let assigneeRole = task.assignee_role;
+    if (String(assigneeId) !== String(task.assignee_id)) {
+      const { rows: assignees } = await query(
+        `SELECT id, full_name, email, role, manager_id, is_active,
+                COALESCE(
+                  (SELECT array_agg(sm.manager_id ORDER BY sm.manager_id)
+                   FROM staff_user_managers sm
+                   WHERE sm.staff_user_id = staff_users.id),
+                  ARRAY[]::int[]
+                ) AS manager_ids
+         FROM staff_users WHERE id = $1`,
+        [assigneeId]
+      );
+      const assignee = assignees[0];
+      if (!assignee || !Number(assignee.is_active)) {
+        return res.status(404).json({ error: 'Staff member not found' });
+      }
+      if (!canReceiveStaffTasks(assignee.role)) {
+        return res.status(403).json({ error: 'Tasks cannot be assigned to this role' });
+      }
+      if (!canAssignTaskTo(req.user, assigneeAuthShape(assignee))) {
+        return res.status(403).json({ error: 'You can only assign tasks to staff you manage' });
+      }
+      assigneeName = assignee.full_name;
+      assigneeRole = assignee.role;
+    }
+
+    const { rows: updated } = await query(
+      `UPDATE staff_tasks
+       SET assignee_id = $2,
+           title = $3,
+           description = $4,
+           deadline = $5::date
+       WHERE id = $1
+       RETURNING id, assignee_id, created_by, title, description, deadline::text AS deadline,
+                 created_at, completed_at, completed_by`,
+      [id, assigneeId, title, description || null, deadline]
+    );
+
+    await logAudit({
+      userId: req.user.id,
+      action: 'UPDATE_STAFF_TASK',
+      entityType: 'staff_task',
+      entityId: id,
+      details: { assignee_id: assigneeId, title, deadline },
+    });
+
+    res.json({
+      ...updated[0],
+      assignee_name: assigneeName,
+      assignee_role: assigneeRole,
+      created_by_name: req.user.full_name,
+    });
+  } catch (e) {
+    return taskDbError(res, next, e);
+  }
+});
+
 router.delete('/staff-tasks/:id', async (req, res, next) => {
   try {
     if (!canManageStaffTasks(req.user)) {
@@ -281,16 +387,8 @@ router.delete('/staff-tasks/:id', async (req, res, next) => {
     const task = rows[0];
     if (!task) return res.status(404).json({ error: 'Task not found' });
 
-    const isAdmin = req.user.role === 'admin';
-    const isCreator = String(task.created_by) === String(req.user.id);
-    const assignee = assigneeAuthShape({
-      id: task.assignee_id,
-      role: task.assignee_role,
-      manager_id: task.manager_id,
-      manager_ids: task.manager_ids,
-    });
-    if (!isAdmin && !isCreator && !canAssignTaskTo(req.user, assignee)) {
-      return res.status(403).json({ error: 'You can only delete tasks for staff you manage' });
+    if (!canEditStaffTask(req.user, task)) {
+      return res.status(403).json({ error: 'Only the person who added this task can delete it' });
     }
 
     await query(`DELETE FROM staff_tasks WHERE id = $1`, [id]);

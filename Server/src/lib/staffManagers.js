@@ -159,10 +159,8 @@ function isDirectStaffManager(actorId, staff) {
 }
 
 function isStaffTaskManagerRole(role) {
-  const r = String(role || '');
-  if (r === 'admin') return true;
-  // Regular staff (including web developers) cannot assign tasks — managers/supervisors only.
-  return r.endsWith('_manager') || r.endsWith('_supervisor');
+  // Only roles selectable as line managers in User Management may assign/edit tasks.
+  return LINE_MANAGER_ROLES.includes(String(role || ''));
 }
 
 function sqlStaffManagedBy(managerParam, staffAlias = 'u') {

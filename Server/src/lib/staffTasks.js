@@ -51,6 +51,14 @@ function canManageStaffTasks(actor) {
   return !!actor && isStaffTaskManagerRole(actor.role);
 }
 
+/** Only the creator (or CEO) may edit/delete a task. */
+function canEditStaffTask(actor, task) {
+  if (!actor || !task) return false;
+  if (!canManageStaffTasks(actor)) return false;
+  if (actor.role === 'admin') return true;
+  return String(task.created_by) === String(actor.id);
+}
+
 function canAssignTaskTo(actor, assignee) {
   if (!actor || !assignee) return false;
   if (String(actor.id) === String(assignee.id)) return false;
@@ -94,6 +102,7 @@ module.exports = {
   isReservationTeamTaskRole,
   isTaskAssigneeRole,
   canManageStaffTasks,
+  canEditStaffTask,
   canAssignTaskTo,
   sqlTaskRecipientRoles,
   sqlReservationTeamRoles,

@@ -495,12 +495,6 @@ export function hasPermission(user, permission) {
   return (PERMISSIONS[user.role] || []).includes(permission);
 }
 
-export function isStaffTaskManagerRole(role) {
-  const r = String(role || '');
-  if (r === 'admin') return true;
-  return r.endsWith('_manager') || r.endsWith('_supervisor');
-}
-
 export function canReceiveStaffTasks(role) {
   const r = String(role || '');
   if (r === 'owner' || r === 'admin') return false;
@@ -512,8 +506,21 @@ export function isTaskAssigneeRole(user) {
   return !!user && canReceiveStaffTasks(user.role);
 }
 
+/** Only roles on the User Management line-manager list may assign tasks. */
+export function isStaffTaskManagerRole(role) {
+  return isLineManagerRole(role);
+}
+
 export function canAssignStaffTasks(user) {
-  return !!user && isStaffTaskManagerRole(user.role);
+  return !!user && isLineManagerRole(user.role);
+}
+
+/** Only the creator (or CEO) may edit/delete a task they assigned. */
+export function canEditStaffTask(user, task) {
+  if (!user || !task) return false;
+  if (!canAssignStaffTasks(user)) return false;
+  if (user.role === 'admin') return true;
+  return String(task.created_by) === String(user.id);
 }
 
 export function canAccess(user, page) {

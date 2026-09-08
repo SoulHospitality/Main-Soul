@@ -4,6 +4,7 @@ const { isStaffTaskManagerRole } = require('./staffManagers');
 const {
   canAssignTaskTo,
   canManageStaffTasks,
+  canEditStaffTask,
   canReceiveStaffTasks,
   isTaskAssigneeRole,
   sqlTaskRecipientRoles,
@@ -11,7 +12,7 @@ const {
 } = require('./staffTasks');
 
 describe('staff task access', () => {
-  it('treats CEOs and every manager role as task assigners', () => {
+  it('treats only line-manager roles as task assigners', () => {
     assert.equal(isStaffTaskManagerRole('admin'), true);
     assert.equal(isStaffTaskManagerRole('hr_supervisor'), true);
     assert.equal(isStaffTaskManagerRole('reservations_manager'), true);
@@ -25,6 +26,18 @@ describe('staff task access', () => {
     assert.equal(isStaffTaskManagerRole('web_developer'), false);
     assert.equal(isStaffTaskManagerRole('reservations_web'), false);
     assert.equal(canManageStaffTasks({ role: 'marketing_pr' }), false);
+    assert.equal(canManageStaffTasks({ role: 'hr' }), false);
+  });
+
+  it('lets only the creator (or CEO) edit or delete a task', () => {
+    const creator = { id: 12, role: 'reservations_manager' };
+    const otherManager = { id: 13, role: 'finance_manager' };
+    const admin = { id: 1, role: 'admin' };
+    const task = { id: 9, created_by: 12 };
+    assert.equal(canEditStaffTask(creator, task), true);
+    assert.equal(canEditStaffTask(otherManager, task), false);
+    assert.equal(canEditStaffTask(admin, task), true);
+    assert.equal(canEditStaffTask({ id: 12, role: 'reservations_web' }, task), false);
   });
 
   it('lets staff receive tasks but not managers or owners', () => {
