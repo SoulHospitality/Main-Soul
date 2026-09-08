@@ -338,6 +338,8 @@ function requestApprovalMode(request) {
   const raw = String(request?.approval_mode || '').toLowerCase();
   if (raw === 'any' || raw === 'all') return raw;
   if (request?.leave_type) return leaveTypeApprovalMode(request.leave_type);
+  // WFH shares the annual-holiday sequential cycle (manager → HR).
+  if (request?.request_kind === 'wfh' || request?.work_date != null) return 'all';
   return 'all';
 }
 
@@ -754,23 +756,37 @@ function staffRequestPolicy(role) {
 }
 
 /**
- * Loans need Financial Manager + HR Manager (not the line manager).
- * DB columns reuse needs_manager_approval for the finance slot.
+ * WFH uses the same cycle as annual holidays: manager first, then HR Manager.
+ */
+function wfhRequestPolicy(role) {
+  const base = staffRequestPolicy(role);
+  return { ...base, approvalMode: 'all' };
+}
+
+function isWfhRequest(request) {
+  if (!request || typeof request !== 'object') return false;
+  if (request.request_kind === 'wfh') return true;
+  if (request.leave_type != null) return false;
+  return request.work_date != null;
+}
+
+/**
+ * Loans: line manager → Financial Manager → HR Manager (sequential).
  */
 function loanRequestPolicy(role) {
   const r = String(role || '');
   if (!canRequestStaffBenefits(r)) {
-    return { canRequest: false, needsManager: false, needsHr: false };
+    return { canRequest: false, needsManager: false, needsFinance: false, needsHr: false };
   }
   if (r === 'finance_manager') {
-    // Cannot self-approve the finance slot — HR Manager (and CEO) still review.
-    return { canRequest: true, needsManager: false, needsHr: true };
+    // Cannot self-approve finance — manager (CEO) then HR Manager.
+    return { canRequest: true, needsManager: true, needsFinance: false, needsHr: true };
   }
   if (r === 'hr_supervisor') {
-    // Cannot self-approve the HR slot — Financial Manager + CEO cover it.
-    return { canRequest: true, needsManager: true, needsHr: false };
+    // Cannot self-approve HR — manager then Financial Manager.
+    return { canRequest: true, needsManager: true, needsFinance: true, needsHr: false };
   }
-  return { canRequest: true, needsManager: true, needsHr: true };
+  return { canRequest: true, needsManager: true, needsFinance: true, needsHr: true };
 }
 
 function isLoanRequest(request) {
@@ -779,6 +795,23 @@ function isLoanRequest(request) {
   if (request.leave_type != null) return false;
   if (request.work_date != null) return false;
   return request.amount != null;
+}
+
+function requestNeedsFinance(request) {
+  return isLoanRequest(request) && request.needs_finance_approval !== false;
+}
+
+function requestNeedsManager(request) {
+  return request.needs_manager_approval !== false;
+}
+
+function requestNeedsHr(request) {
+  return request.needs_hr_approval !== false;
+}
+
+function isSequentialApproval(request) {
+  if (isLoanRequest(request)) return true;
+  return requestApprovalMode(request) !== 'any';
 }
 
 function departmentManagerRole(role) {
@@ -840,28 +873,48 @@ function eligibleReviewSlots(actor, request, staff) {
   if (!actor || !request || request.status !== 'pending') return [];
   if (String(actor.id) === String(request.staff_user_id || staff?.id)) return [];
   if (actor.role === 'admin') return ['admin'];
-  const slots = [];
-  const needsManager = request.needs_manager_approval !== false;
-  const needsHr = request.needs_hr_approval !== false;
+
+  const needsManager = requestNeedsManager(request);
+  const needsFinance = requestNeedsFinance(request);
+  const needsHr = requestNeedsHr(request);
   const managerDone = Boolean(request.manager_reviewed_by);
+  const financeDone = Boolean(request.finance_reviewed_by);
   const hrDone = Boolean(request.hr_reviewed_by);
+  const managerCleared = !needsManager || managerDone;
+  const financeCleared = !needsFinance || financeDone;
+  const sequential = isSequentialApproval(request);
+
   const staffShape = staff || {
     id: request.staff_user_id,
     role: request.role,
     manager_id: request.manager_id,
     manager_ids: request.manager_ids,
   };
-  const loan = isLoanRequest(request);
-  if (needsManager && !managerDone) {
-    if (loan) {
-      if (actor.role === 'finance_manager') slots.push('manager');
-    } else if (isLineManager(actor, staffShape)) {
-      slots.push('manager');
+
+  const slots = [];
+
+  // Step 1 — line manager (always first when required).
+  if (needsManager && !managerDone && isLineManager(actor, staffShape)) {
+    slots.push('manager');
+  }
+
+  // Step 2 — Financial Manager (loans only), after manager.
+  if (
+    needsFinance &&
+    !financeDone &&
+    (!sequential || managerCleared) &&
+    actor.role === 'finance_manager'
+  ) {
+    slots.push('finance');
+  }
+
+  // Step 3 — HR Manager, after prior steps when sequential; OR-mode leave can act in parallel.
+  if (needsHr && !hrDone && actor.role === 'hr_supervisor') {
+    if (!sequential || (managerCleared && financeCleared)) {
+      slots.push('hr');
     }
   }
-  if (needsHr && !hrDone && actor.role === 'hr_supervisor') {
-    slots.push('hr');
-  }
+
   return slots;
 }
 
@@ -876,8 +929,8 @@ function applyRequestReview(request, actor, decision, staff) {
   if (!slots.length) {
     const err = new Error(
       isLoanRequest(request)
-        ? 'Only the Financial Manager, HR Manager, or a CEO can review this loan'
-        : 'Only the staff manager, HR Manager, or a CEO can review this request'
+        ? 'Only the line manager, Financial Manager, HR Manager, or a CEO can review this loan — and only at their step'
+        : 'Only the staff manager, HR Manager, or a CEO can review this request — and only at their step'
     );
     err.status = 403;
     throw err;
@@ -885,6 +938,7 @@ function applyRequestReview(request, actor, decision, staff) {
 
   const next = {
     manager_reviewed_by: request.manager_reviewed_by || null,
+    finance_reviewed_by: request.finance_reviewed_by || null,
     hr_reviewed_by: request.hr_reviewed_by || null,
     reviewed_by: actor.id,
     status: 'pending',
@@ -896,31 +950,35 @@ function applyRequestReview(request, actor, decision, staff) {
     next.status = 'rejected';
     next.finalized = true;
     if (slots.includes('admin') || slots.includes('manager')) next.manager_reviewed_by = actor.id;
+    if (slots.includes('admin') || slots.includes('finance')) next.finance_reviewed_by = actor.id;
     if (slots.includes('admin') || slots.includes('hr')) next.hr_reviewed_by = actor.id;
     return next;
   }
 
   if (slots.includes('admin')) {
-    if (request.needs_manager_approval !== false) next.manager_reviewed_by = actor.id;
-    if (request.needs_hr_approval !== false) next.hr_reviewed_by = actor.id;
+    if (requestNeedsManager(request)) next.manager_reviewed_by = actor.id;
+    if (requestNeedsFinance(request)) next.finance_reviewed_by = actor.id;
+    if (requestNeedsHr(request)) next.hr_reviewed_by = actor.id;
     next.status = 'approved';
     next.finalized = true;
     return next;
   }
 
   if (slots.includes('manager')) next.manager_reviewed_by = actor.id;
+  if (slots.includes('finance')) next.finance_reviewed_by = actor.id;
   if (slots.includes('hr')) next.hr_reviewed_by = actor.id;
 
   const mode = requestApprovalMode(request);
-  if (mode === 'any') {
+  if (!isLoanRequest(request) && mode === 'any') {
     if (next.manager_reviewed_by || next.hr_reviewed_by) {
       next.status = 'approved';
       next.finalized = true;
     }
   } else {
-    const managerOk = request.needs_manager_approval === false || next.manager_reviewed_by;
-    const hrOk = request.needs_hr_approval === false || next.hr_reviewed_by;
-    if (managerOk && hrOk) {
+    const managerOk = !requestNeedsManager(request) || next.manager_reviewed_by;
+    const financeOk = !requestNeedsFinance(request) || next.finance_reviewed_by;
+    const hrOk = !requestNeedsHr(request) || next.hr_reviewed_by;
+    if (managerOk && financeOk && hrOk) {
       next.status = 'approved';
       next.finalized = true;
     }
@@ -931,18 +989,35 @@ function applyRequestReview(request, actor, decision, staff) {
 function describeRequestApproval(request) {
   if (request.status === 'approved') return 'Approved';
   if (request.status === 'rejected') return 'Rejected';
-  const loan = isLoanRequest(request);
-  const waiting = [];
-  if (request.needs_manager_approval && !request.manager_reviewed_by) {
-    waiting.push(loan ? 'Financial Manager' : 'manager');
+
+  const needsManagerEffective = request.needs_manager_approval !== false;
+  const needsFinance = requestNeedsFinance(request);
+  const needsHr = request.needs_hr_approval !== false;
+  const managerDone = Boolean(request.manager_reviewed_by);
+  const financeDone = Boolean(request.finance_reviewed_by);
+  const hrDone = Boolean(request.hr_reviewed_by);
+
+  if (isLoanRequest(request)) {
+    if (needsManagerEffective && !managerDone) return 'Waiting for manager';
+    if (needsFinance && !financeDone) return 'Waiting for Financial Manager';
+    if (needsHr && !hrDone) return 'Waiting for HR Manager';
+    return 'Pending';
   }
-  if (request.needs_hr_approval && !request.hr_reviewed_by) waiting.push('HR Manager');
-  if (!waiting.length) return 'Pending';
+
   const mode = requestApprovalMode(request);
-  if (mode === 'any' && waiting.length > 1) {
-    return `Waiting for ${waiting.join(' or ')}`;
+  if (mode === 'any') {
+    const waiting = [];
+    if (needsManagerEffective && !managerDone) waiting.push('manager');
+    if (needsHr && !hrDone) waiting.push('HR Manager');
+    if (!waiting.length) return 'Pending';
+    if (waiting.length > 1) return `Waiting for ${waiting.join(' or ')}`;
+    return `Waiting for ${waiting[0]}`;
   }
-  return `Waiting for ${waiting.join(' & ')}`;
+
+  // Sequential leave / WFH: show only the current step so everyone knows where it sits.
+  if (needsManagerEffective && !managerDone) return 'Waiting for manager';
+  if (needsHr && !hrDone) return 'Waiting for HR Manager';
+  return 'Pending';
 }
 
 function isPenaltyCategory(category) {
@@ -1039,6 +1114,8 @@ module.exports = {
   canRequestWfh,
   canRequestStaffBenefits,
   staffRequestPolicy,
+  wfhRequestPolicy,
+  isWfhRequest,
   loanRequestPolicy,
   isLoanRequest,
   departmentManagerRole,

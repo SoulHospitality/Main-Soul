@@ -43,7 +43,7 @@ export function requestableLeaveTypes(canRequestHolidays) {
   if (canRequestHolidays) {
     return [
       { value: 'casual', label: 'Casual (manager approval)' },
-      { value: 'annual', label: 'Annual (manager + HR)' },
+      { value: 'annual', label: 'Annual (manager then HR)' },
       paidExcuse,
       unpaidExcuse,
       unpaid,

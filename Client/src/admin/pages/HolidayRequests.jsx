@@ -368,7 +368,7 @@ export default function HolidayRequests() {
   const showIncomingTab = canQueue;
   const qc = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
-  const defaultView = showMineTab ? 'mine' : 'incoming';
+  const defaultView = showIncomingTab ? 'incoming' : 'mine';
   const rawView = searchParams.get('view') || defaultView;
   const activeView =
     rawView === 'incoming' && showIncomingTab
@@ -525,7 +525,7 @@ export default function HolidayRequests() {
         <h1 className="page-title mt-1">Holiday requests</h1>
         <p className="page-subtitle">
           {activeView === 'incoming'
-            ? 'Review holiday requests from your team. CEOs can accept or reject any request.'
+            ? 'Manager accepts first; HR Manager can see waiting requests but only Accept/Reject after the manager. CEOs can act anytime.'
             : 'Request casual, annual, unpaid leave, or excuses for any date. Unpaid leave deducts 1× daily rate; no show is 2× daily rate.'}
         </p>
       </div>

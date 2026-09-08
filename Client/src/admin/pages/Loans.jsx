@@ -80,8 +80,8 @@ export default function Loans() {
         <h1 className="page-title mt-1">Loans</h1>
         <p className="page-subtitle">
           {canQueue
-            ? 'Loans need the same dual acceptance as holidays. The CEO can accept or reject any request.'
-            : 'Request a loan. The HR Manager and Financial Manager must both accept it before it is deducted from next month’s salary.'}
+            ? 'Loans go manager → Financial Manager → HR Manager. Everyone can see which step is waiting. The CEO can accept or reject any request.'
+            : 'Request a loan. Your manager accepts first, then Financial Manager, then HR Manager. It is deducted from next month’s salary after all three accept.'}
         </p>
       </div>
 

@@ -289,10 +289,14 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
                             : item.badge === 'job_pending'
                               ? pendingJobCount
                               : 0;
+                  const navTo =
+                    item.badge === 'leave_pending' && pendingLeaveCount > 0
+                      ? `${item.path}?view=incoming`
+                      : item.path;
                   return (
                     <NavLink
                       key={item.path}
-                      to={item.path}
+                      to={navTo}
                       end={Boolean(item.end)}
                       onClick={handleNavClick}
                       className={({ isActive }) =>

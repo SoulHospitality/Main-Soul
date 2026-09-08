@@ -56,7 +56,7 @@ export default function HolidayAccess() {
         <h1 className="page-title mt-1">Holidays access</h1>
         <p className="page-subtitle">
           Choose who can request paid holidays. Auto allows casual and annual after 6 months.
-          Casual needs manager approval; annual needs manager and HR Manager.
+          Casual needs manager approval; annual needs manager first, then HR Manager.
           Unpaid leave and excuses need manager or HR Manager approval (no holiday access required).
           Only an HR Manager or CEO can change access, and they cannot change their own.
         </p>

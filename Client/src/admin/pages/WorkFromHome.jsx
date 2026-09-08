@@ -80,8 +80,8 @@ export default function WorkFromHome() {
         <h1 className="page-title mt-1">Work from home</h1>
         <p className="page-subtitle">
           {canQueue
-            ? 'WFH needs the same dual acceptance as holidays. The CEO can accept or reject any request.'
-            : 'Request a WFH day. Your manager and the HR Manager must accept it. If approved, it counts as a half day on payroll.'}
+            ? 'Same cycle as holidays: manager accepts first; HR Manager can see waiting requests but only Accept/Reject after the manager. CEOs can act anytime.'
+            : 'Request a WFH day. Your manager accepts first, then the HR Manager. If approved, it counts as a half day on payroll.'}
         </p>
       </div>
 

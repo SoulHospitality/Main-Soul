@@ -43,6 +43,7 @@ const {
   canRequestWfh,
   canRequestStaffBenefits,
   staffRequestPolicy,
+  wfhRequestPolicy,
   loanRequestPolicy,
   canViewAllStaffRequests,
   eligibleReviewSlots,
@@ -80,7 +81,7 @@ function requestListScope(actor, { mine, alias = 'r', staffAlias = 'u', kind } =
       where.push(`${alias}.staff_user_id = ${me}`);
     } else {
       const parts = [`${alias}.staff_user_id = ${me}`, sqlStaffManagedBy(me, staffAlias)];
-      // HR Manager also gets the pending HR-approval queue (not a full company browse).
+      // HR Manager sees pending items that still need HR (including while waiting on manager/finance).
       if (actor.role === 'hr_supervisor') {
         parts.push(`(
           ${alias}.status = 'pending'
@@ -88,13 +89,9 @@ function requestListScope(actor, { mine, alias = 'r', staffAlias = 'u', kind } =
           AND ${alias}.hr_reviewed_by IS NULL
         )`);
       }
-      // Financial Manager gets pending loans waiting on the finance slot.
+      // Financial Manager sees all pending loans so they can tell where each one is waiting.
       if (actor.role === 'finance_manager' && kind === 'loan') {
-        parts.push(`(
-          ${alias}.status = 'pending'
-          AND COALESCE(${alias}.needs_manager_approval, true) = true
-          AND ${alias}.manager_reviewed_by IS NULL
-        )`);
+        parts.push(`${alias}.status = 'pending'`);
       }
       where.push(`(${parts.join(' OR ')})`);
     }
@@ -121,7 +118,9 @@ function presentStaffRequest(row, actor, kind = null) {
     ...row,
     manager_ids: managerIds,
     request_kind: requestKind,
-    approval_mode: row.approval_mode || (row.leave_type ? leaveTypeApprovalMode(row.leave_type) : 'all'),
+    approval_mode:
+      row.approval_mode ||
+      (row.leave_type ? leaveTypeApprovalMode(row.leave_type) : 'all'),
   };
   return {
     ...shaped,
@@ -136,6 +135,11 @@ const REQUEST_LIST_JOINS = `
       LEFT JOIN staff_users reviewer ON reviewer.id = r.reviewed_by
       LEFT JOIN staff_users mgr_rev ON mgr_rev.id = r.manager_reviewed_by
       LEFT JOIN staff_users hr_rev ON hr_rev.id = r.hr_reviewed_by
+`;
+
+const LOAN_LIST_JOINS = `
+      ${REQUEST_LIST_JOINS}
+      LEFT JOIN staff_users fin_rev ON fin_rev.id = r.finance_reviewed_by
 `;
 
 const REQUEST_LIST_SELECT = `
@@ -156,6 +160,11 @@ const REQUEST_LIST_SELECT = `
       hr_rev.full_name AS hr_reviewed_by_name
 `;
 
+const LOAN_LIST_SELECT = `
+      ${REQUEST_LIST_SELECT},
+      fin_rev.full_name AS finance_reviewed_by_name
+`;
+
 async function listStaffRequests(req, table) {
   const status = String(req.query.status || '').toLowerCase();
   const kind =
@@ -165,10 +174,11 @@ async function listStaffRequests(req, table) {
     params.push(status);
     where.push(`r.status = $${params.length}`);
   }
+  const isLoan = table === 'staff_loan_requests';
   const { rows } = await query(
-    `SELECT ${REQUEST_LIST_SELECT}
+    `SELECT ${isLoan ? LOAN_LIST_SELECT : REQUEST_LIST_SELECT}
      FROM ${table} r
-     ${REQUEST_LIST_JOINS}
+     ${isLoan ? LOAN_LIST_JOINS : REQUEST_LIST_JOINS}
      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
      ORDER BY CASE r.status WHEN 'pending' THEN 0 ELSE 1 END, r.created_at DESC
      LIMIT 500`,
@@ -182,6 +192,7 @@ async function reviewStaffRequest({ table, id, actor, body, onApprove }) {
   const note = body?.review_note ? String(body.review_note).slice(0, 500) : null;
   const kind =
     table === 'staff_loan_requests' ? 'loan' : table === 'staff_wfh_requests' ? 'wfh' : 'leave';
+  const isLoan = table === 'staff_loan_requests';
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -226,10 +237,41 @@ async function reviewStaffRequest({ table, id, actor, body, onApprove }) {
     }
     const managerJustSet = next.manager_reviewed_by && !row.manager_reviewed_by;
     const hrJustSet = next.hr_reviewed_by && !row.hr_reviewed_by;
+    const financeJustSet =
+      isLoan && next.finance_reviewed_by && !row.finance_reviewed_by;
     const extraCols = Object.keys(extra);
-    const extraSql = extraCols.map((col, i) => `${col} = $${8 + i}`).join(', ');
-    const { rows } = await client.query(
-      `UPDATE ${table} SET
+    let sql;
+    let params;
+    if (isLoan) {
+      sql = `UPDATE ${table} SET
+         status = $1,
+         reviewed_by = $2,
+         reviewed_at = now(),
+         review_note = COALESCE($3, review_note),
+         manager_reviewed_by = $4,
+         manager_reviewed_at = CASE WHEN $5 THEN now() ELSE manager_reviewed_at END,
+         hr_reviewed_by = $6,
+         hr_reviewed_at = CASE WHEN $7 THEN now() ELSE hr_reviewed_at END,
+         finance_reviewed_by = $8,
+         finance_reviewed_at = CASE WHEN $9 THEN now() ELSE finance_reviewed_at END
+         ${extraCols.length ? `, ${extraCols.map((col, i) => `${col} = $${10 + i}`).join(', ')}` : ''}
+       WHERE id = $${10 + extraCols.length}
+       RETURNING *`;
+      params = [
+        next.status,
+        actor.id,
+        note,
+        next.manager_reviewed_by,
+        managerJustSet,
+        next.hr_reviewed_by,
+        hrJustSet,
+        next.finance_reviewed_by,
+        financeJustSet,
+        ...extraCols.map((col) => extra[col]),
+        id,
+      ];
+    } else {
+      sql = `UPDATE ${table} SET
          status = $1,
          reviewed_by = $2,
          reviewed_at = now(),
@@ -238,10 +280,10 @@ async function reviewStaffRequest({ table, id, actor, body, onApprove }) {
          manager_reviewed_at = CASE WHEN $5 THEN now() ELSE manager_reviewed_at END,
          hr_reviewed_by = $6,
          hr_reviewed_at = CASE WHEN $7 THEN now() ELSE hr_reviewed_at END
-         ${extraSql ? `, ${extraSql}` : ''}
+         ${extraCols.length ? `, ${extraCols.map((col, i) => `${col} = $${8 + i}`).join(', ')}` : ''}
        WHERE id = $${8 + extraCols.length}
-       RETURNING *`,
-      [
+       RETURNING *`;
+      params = [
         next.status,
         actor.id,
         note,
@@ -251,8 +293,9 @@ async function reviewStaffRequest({ table, id, actor, body, onApprove }) {
         hrJustSet,
         ...extraCols.map((col) => extra[col]),
         id,
-      ]
-    );
+      ];
+    }
+    const { rows } = await client.query(sql, params);
     await client.query('COMMIT');
     return presentStaffRequest(
       {
@@ -1410,10 +1453,10 @@ router.post('/hr/loans', async (req, res, next) => {
     const policy = loanRequestPolicy(target.role);
     const { rows } = await query(
       `INSERT INTO staff_loan_requests
-         (staff_user_id, amount, reason, status, needs_manager_approval, needs_hr_approval)
-       VALUES ($1,$2,$3,'pending',$4,$5)
+         (staff_user_id, amount, reason, status, needs_manager_approval, needs_finance_approval, needs_hr_approval)
+       VALUES ($1,$2,$3,'pending',$4,$5,$6)
        RETURNING *`,
-      [staffUserId, amount, reason, policy.needsManager, policy.needsHr]
+      [staffUserId, amount, reason, policy.needsManager, policy.needsFinance, policy.needsHr]
     );
     res.status(201).json(
       presentStaffRequest(
@@ -1512,7 +1555,10 @@ router.post('/hr/wfh', async (req, res, next) => {
     if (existing[0]) {
       return res.status(400).json({ error: 'A work-from-home request already exists for that day' });
     }
-    const policy = staffRequestPolicy(target.role);
+    const policy = wfhRequestPolicy(target.role);
+    if (!policy.canRequest) {
+      return res.status(403).json({ error: 'This role cannot request work-from-home days' });
+    }
     const { rows } = await query(
       `INSERT INTO staff_wfh_requests
          (staff_user_id, work_date, reason, status, needs_manager_approval, needs_hr_approval)
@@ -1528,8 +1574,10 @@ router.post('/hr/wfh', async (req, res, next) => {
           role: target.role,
           staff_code: target.staff_code,
           manager_id: target.manager_id,
+          approval_mode: policy.approvalMode || 'all',
         },
-        req.user
+        req.user,
+        'wfh'
       )
     );
   } catch (e) {

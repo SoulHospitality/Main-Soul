@@ -407,7 +407,7 @@ function StaffForm({
               <p className="mt-1 text-[11px] text-slate-400">
                 Web developers can have more than one manager. Each selected manager can assign tasks.
                 Only the primary manager (first selected) approves holiday and WFH requests,
-                with the HR Manager. Loans need the HR Manager and Financial Manager.
+                with the HR Manager. Loans need the manager, then Financial Manager, then HR Manager.
               </p>
             </div>
           ) : (
@@ -458,14 +458,14 @@ function StaffForm({
             />
             <p className="mt-1 text-[11px] text-slate-400">
               {isReservationAgentRole(form.role)
-                ? 'This manager sees the agent\'s reservations and must accept holiday and WFH requests (with the HR Manager). Loans need HR Manager + Financial Manager.'
+                ? 'This manager sees the agent\'s reservations and must accept holiday and WFH requests first (then HR Manager). Loans go manager → Financial Manager → HR Manager.'
                 : isUnitAcquisitionAgentRole(form.role)
-                  ? 'This manager sees the agent\'s daily audit and must accept holiday and WFH requests (with the HR Manager). Loans need HR Manager + Financial Manager.'
+                  ? 'This manager sees the agent\'s daily audit and must accept holiday and WFH requests first (then HR Manager). Loans go manager → Financial Manager → HR Manager.'
                   : isResaleAgentRole(form.role)
                     ? 'This manager tracks units added and signed sales for this agent on the Performance page.'
                     : isFinanceAgentRole(form.role)
                       ? 'This manager tracks finance desk activity for this agent on the Audit page.'
-                      : 'Must accept holiday and WFH requests (with the HR Manager, except for HR staff). Loans need HR Manager + Financial Manager.'}
+                      : 'Must accept holiday and WFH requests first (then the HR Manager, except for HR staff). Loans go manager → Financial Manager → HR Manager.'}
             </p>
           </div>
           )
