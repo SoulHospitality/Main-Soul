@@ -197,7 +197,7 @@ function mapUnitRow(u) {
     type: u.property_type,
     area_sqft: u.size_m2,
     price_per_night: u.price_fallback,
-    photos_link: details.photos_folder_url || u.cover_url,
+    photos_link: details.photos_folder_url || '',
     photos_folder_url: details.photos_folder_url || '',
     cover_drive_url: details.cover_drive_url || '',
     destination: u.area,
@@ -839,7 +839,7 @@ router.delete('/users/:id', requireRoles(...HR_ROUTE_ROLES), async (req, res, ne
 
 router.get('/units', async (req, res, next) => {
   try {
-    const { search, status, ops_status, project, bedrooms, listing_type } = req.query;
+    const { search, status, ops_status, project, area, destination, bedrooms, listing_type } = req.query;
     const where = ['TRUE'];
     const params = [];
     let i = 1;
@@ -869,6 +869,12 @@ router.get('/units', async (req, res, next) => {
     if (project) {
       where.push(`(project ILIKE $${i} OR compound ILIKE $${i})`);
       params.push(project);
+      i++;
+    }
+    const areaFilter = area || destination;
+    if (areaFilter) {
+      where.push(`area ILIKE $${i}`);
+      params.push(areaFilter);
       i++;
     }
     if (bedrooms !== undefined && bedrooms !== '') {
@@ -986,9 +992,9 @@ router.post('/units', requireRoles(...UNIT_EDITOR_ROLES), async (req, res, next)
       coverUrl = explicitCover.url;
       coverDriveLink = explicitCover.driveLink;
     }
-    let folderUrl = b.photos_folder_url || b.drive_folder_url || b.photos_link || null;
+    let folderUrl = b.photos_folder_url || b.drive_folder_url || null;
     if (folderUrl) {
-      const resolved = await resolvePhotosFromBody(b);
+      const resolved = await resolvePhotosFromBody({ photos_folder_url: folderUrl });
       folderUrl = resolved.folderUrl;
       photoUrls = resolved.urls || [];
       if (!coverUrl) coverUrl = photoUrls[0] || null;
@@ -1154,7 +1160,7 @@ async function updateUnitHandler(req, res, next) {
       `SELECT other_details, price_fallback, wp_post_id, property_type, status,
               project, compound, area, beds, listing_type, size_m2,
               utilities_cost, access_fee_per_adult_egp, access_fee_per_teen_egp,
-              access_card_count_included
+              access_card_count_included, cover_url, photo_urls
        FROM units WHERE id = $1`,
       [req.params.id]
     );
@@ -1237,10 +1243,16 @@ async function updateUnitHandler(req, res, next) {
       }
     }
     let folderUrl;
-    if (b.photos_folder_url !== undefined || b.drive_folder_url !== undefined || b.photos_link !== undefined) {
-      folderUrl = b.photos_folder_url || b.drive_folder_url || b.photos_link || '';
-      if (folderUrl) {
-        const resolved = await resolvePhotosFromBody({ photos_folder_url: folderUrl });
+    // Only treat an explicit Drive *folder* field as a folder scrape trigger.
+    // Never fall back to photos_link / cover_url (those may be image URLs).
+    const folderProvided =
+      b.photos_folder_url !== undefined || b.drive_folder_url !== undefined;
+    if (folderProvided) {
+      const nextFolder = String(b.photos_folder_url || b.drive_folder_url || '').trim();
+      const existingDetails = parseOtherDetails(existingRows[0].other_details);
+      const prevFolder = String(existingDetails.photos_folder_url || '').trim();
+      if (nextFolder && nextFolder !== prevFolder) {
+        const resolved = await resolvePhotosFromBody({ photos_folder_url: nextFolder });
         folderUrl = resolved.folderUrl;
         photoUrls = resolved.urls;
         if (!coverUrl) {
@@ -1252,6 +1264,9 @@ async function updateUnitHandler(req, res, next) {
             photoUrls?.[0] ||
             null;
         }
+      } else if (nextFolder) {
+        // Same folder as before — keep gallery; do not re-scrape Drive.
+        folderUrl = prevFolder;
       } else {
         folderUrl = '';
       }

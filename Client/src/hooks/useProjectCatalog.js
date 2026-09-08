@@ -71,11 +71,22 @@ export function useProjectCatalog() {
     return cards;
   }, [resolved]);
 
+  const projectNames = useMemo(() => {
+    const names = new Set();
+    for (const list of Object.values(resolved.projectsByDestination || {})) {
+      for (const name of list || []) {
+        if (name) names.add(String(name));
+      }
+    }
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [resolved.projectsByDestination]);
+
   return {
     destinations: resolved.destinations,
     projectsByDestination: resolved.projectsByDestination,
     items: resolved.items,
     projectCards,
+    projectNames,
     loading: isLoading,
     error: error?.response?.data?.error || error?.message || '',
     refresh: refetch,

@@ -28,6 +28,7 @@ import AdminReservationDrawer from '../components/AdminReservationDrawer';
 import ManualReservationForm from '../components/ManualReservationForm';
 import TransferReservationModal from '../components/TransferReservationModal';
 import ReservationsNav from '../components/ReservationsNav';
+import { useProjectCatalog } from '../../hooks/useProjectCatalog';
 
 export const EMPTY_FORM = {
   unit_id: '', guest_name: '', guest_email: '', guest_phone: '', guest_nationality: '',
@@ -1006,6 +1007,7 @@ export default function Reservations() {
   });
 
   const { data: units = [] } = useQuery({ queryKey: ['units'], queryFn: () => api.get('/units').then(r => r.data) });
+  const { projectNames: catalogProjects } = useProjectCatalog();
   const { data: users = [] } = useQuery({ queryKey: ['users-sales'], queryFn: () => api.get('/users/sales').then(r => r.data) });
   const salesUsers = useMemo(() => salesUsersForActor(users, user), [users, user]);
 
@@ -1427,7 +1429,7 @@ export default function Reservations() {
         <SearchableSelect className="w-44" value={filterProject}
           onChange={v => { setFilterProject(v); setFilterUnit(''); }}
           placeholder="All Projects"
-          options={[{ value: '', label: 'All Projects' }, ...[...new Set(units.map(u => u.project).filter(Boolean))].sort().map(p => ({ value: p, label: p }))]}
+          options={[{ value: '', label: 'All Projects' }, ...catalogProjects.map((p) => ({ value: p, label: p }))]}
         />
         <SearchableSelect className="w-44" value={filterUnit} onChange={setFilterUnit}
           placeholder="All Units"

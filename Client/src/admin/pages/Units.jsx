@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Edit2, Trash2, Building2, BedDouble, Bath, Layers, Eye, ExternalLink, DollarSign, Globe, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -14,7 +14,6 @@ import SortTh from '../components/ui/SortTh';
 import { currency, UNIT_TYPES, normalizePropertyType, unitDisplay } from '../utils/formatters';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import { useProjectCatalog } from '../../hooks/useProjectCatalog';
-import { AREAS, COMPOUNDS } from '../../data/compounds';
 import { normalizeProjectName } from '../../utils/projectNames';
 import {
   beachAccessFormDefaults,
@@ -33,11 +32,6 @@ function guestListingPath(unit) {
   const slug = String(unit?.slug || '').trim();
   return slug ? `/listings/${encodeURIComponent(slug)}` : null;
 }
-const FALLBACK_PROJECTS_BY_DEST = COMPOUNDS.reduce((acc, c) => {
-  if (!acc[c.area]) acc[c.area] = [];
-  if (!acc[c.area].includes(c.name)) acc[c.area].push(c.name);
-  return acc;
-}, {});
 
 const COMMISSION_MODES = [
   { value: 'A', label: 'Fixed Rate', desc: 'Commission = nightly rate × % (all bookings)' },
@@ -249,10 +243,7 @@ function UnitForm({ form, setForm, listingType = 'rent' }) {
   const canSeeOwner = isAdmin || canManageUnits;
   const isSale = listingType === 'sale';
   const { destinations, projectsByDestination } = useProjectCatalog();
-  const effectiveDestinations = destinations.length ? destinations : AREAS;
-  const catalogProjects = projectsByDestination[form.destination] || [];
-  const fallbackProjects = FALLBACK_PROJECTS_BY_DEST[form.destination] || [];
-  const projectOptions = catalogProjects.length ? catalogProjects : fallbackProjects;
+  const projectOptions = projectsByDestination[form.destination] || [];
   const projectCtx = { project: form.project, compound: form.project, listing_type: listingType };
   const showBeachFields = !isSale && beachAccessRequiresManualEntry(projectCtx);
   const gaiaProject = !isSale && isGaiaUnit(projectCtx);
@@ -288,10 +279,10 @@ function UnitForm({ form, setForm, listingType = 'rent' }) {
             }))}
           >
             <option value="">Select destination…</option>
-            {effectiveDestinations.map((d) => (
+            {destinations.map((d) => (
               <option key={d} value={d}>{d}</option>
             ))}
-            {form.destination && !effectiveDestinations.includes(form.destination) && (
+            {form.destination && !destinations.includes(form.destination) && (
               <option value={form.destination}>{form.destination}</option>
             )}
           </select>
@@ -603,10 +594,13 @@ function CommissionBadge({ unit }) {
 export default function Units({ listingType = 'rent' }) {
   const qc = useQueryClient();
   const { canDeleteUnits, canManageUnits, isResale } = usePermissions();
+  const { destinations: catalogDestinations, projectsByDestination, projectNames: catalogProjects } =
+    useProjectCatalog();
   const isSale = listingType === 'sale';
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterOpsStatus, setFilterOpsStatus] = useState('');
+  const [filterDestination, setFilterDestination] = useState('');
   const [filterProject, setFilterProject] = useState('');
   const [filterBedrooms, setFilterBedrooms] = useState('');
   const [modal, setModal] = useState(null);
@@ -619,23 +613,28 @@ export default function Units({ listingType = 'rent' }) {
   const [unpublishTarget, setUnpublishTarget] = useState(null);
 
   const { data: units = [], isLoading } = useQuery({
-    queryKey: ['units', listingType, search, filterStatus, filterOpsStatus, filterProject, filterBedrooms],
+    queryKey: ['units', listingType, search, filterStatus, filterOpsStatus, filterDestination, filterProject, filterBedrooms],
     queryFn: () => api.get('/units', {
       params: {
         listing_type: listingType,
         search: search || undefined,
         status: filterStatus || undefined,
         ops_status: !isSale ? (filterOpsStatus || undefined) : undefined,
+        destination: filterDestination || undefined,
         project: filterProject || undefined,
         bedrooms: filterBedrooms || undefined,
       },
     }).then(r => r.data),
   });
 
-  const { data: projects = [] } = useQuery({
-    queryKey: ['unit-projects'],
-    queryFn: () => api.get('/units/projects').then(r => r.data),
-  });
+  const projectFilterOptions = useMemo(() => {
+    if (filterDestination) {
+      return [...(projectsByDestination[filterDestination] || [])].sort((a, b) =>
+        a.localeCompare(b)
+      );
+    }
+    return catalogProjects;
+  }, [catalogProjects, filterDestination, projectsByDestination]);
 
   const saveMutation = useMutation({
     mutationFn: async (data) => {
@@ -647,6 +646,7 @@ export default function Units({ listingType = 'rent' }) {
     onSuccess: (unit) => {
       qc.invalidateQueries({ queryKey: ['units'] });
       qc.invalidateQueries({ queryKey: ['unit-projects'] });
+      qc.invalidateQueries({ queryKey: ['guest-projects-catalog'] });
       const n = unit?.photo_urls?.length || 0;
       const missing = unit?.listing_completeness?.missing || [];
       if (unit?.status === 'draft' && missing.length) {
@@ -734,16 +734,23 @@ export default function Units({ listingType = 'rent' }) {
     setEditId(u.id);
     setForm({
       ...EMPTY_FORM,
-      ...u,
       name: u.name || u.title || '',
       destination: u.destination || u.area || '',
       project: u.project || u.compound || '',
+      unit_number: u.unit_number || '',
       type: normalizePropertyType(u.type || u.property_type || 'Apartment'),
       bedrooms: u.bedrooms ?? u.beds ?? 1,
       bathrooms: u.bathrooms ?? u.baths ?? 1,
       floor: u.floor ?? 0,
       has_nanny_room: !!u.has_nanny_room,
       guests: guestsFromBedrooms(u.bedrooms ?? u.beds ?? 1, !!u.has_nanny_room),
+      owner_name: u.owner_name || '',
+      owner_email: u.owner_email || '',
+      owner_phone: u.owner_phone || '',
+      commission_mode: u.commission_mode || 'A',
+      company_commission_pct: u.company_commission_pct ?? 20,
+      company_commission_owner_pct: u.company_commission_owner_pct ?? 10,
+      commission_tenant_pct: u.commission_tenant_pct ?? 0,
       description: u.description || u.the_property || '',
       amenities: toTagList(u.amenities),
       location_link: u.location_link || u.source_url || '',
@@ -758,6 +765,8 @@ export default function Units({ listingType = 'rent' }) {
       beach_access_extra_guest: u.beach_access_extra_guest ?? u.access_fee_per_teen_egp ?? '',
       unit_area: u.unit_area ?? u.size_m2 ?? '',
       ops_status: u.ops_status || 'available',
+      view: u.view || '',
+      listing_status: u.status || 'published',
     });
     setModal('edit');
   };
@@ -798,9 +807,7 @@ export default function Units({ listingType = 'rent' }) {
         ? beachDefaults.beach_access_days
         : (form.beach_access_days === '' ? null : form.beach_access_days);
 
-    const { facilities: _omitFacilities, ...formRest } = form;
     saveMutation.mutate({
-      ...formRest,
       listing_type: listingType,
       title: form.name,
       name: form.name,
@@ -809,20 +816,34 @@ export default function Units({ listingType = 'rent' }) {
       project: projectName,
       compound: projectName,
       projectName,
-      status: undefined,
+      unit_number: form.unit_number,
       ops_status: form.ops_status,
       property_type: normalizePropertyType(form.type),
       type: normalizePropertyType(form.type),
       bedrooms: form.bedrooms,
       beds: form.bedrooms,
+      bathrooms: form.bathrooms,
+      baths: form.bathrooms,
+      floor: form.floor,
+      view: form.view,
       has_nanny_room: !!form.has_nanny_room,
       guests: guestsFromBedrooms(form.bedrooms, form.has_nanny_room),
       capacity: guestsFromBedrooms(form.bedrooms, form.has_nanny_room),
+      owner_name: form.owner_name,
+      owner_email: form.owner_email,
+      owner_phone: form.owner_phone,
+      commission_mode: form.commission_mode,
+      company_commission_pct: form.company_commission_pct,
+      company_commission_owner_pct: form.company_commission_owner_pct,
+      commission_tenant_pct: form.commission_tenant_pct,
       the_property: form.description,
       description: form.description,
       amenities: form.amenities,
+      location_link: form.location_link,
+      source_url: form.location_link,
       photos_folder_url: form.photos_folder_url || '',
       cover_drive_url: form.cover_drive_url || '',
+      cover_url: form.cover_url || '',
       unit_area: isSale ? form.unit_area : null,
       size_m2: isSale ? form.unit_area : form.unit_area || null,
       access_fee_per_adult_egp: isSale ? null : beachPrice,
@@ -919,9 +940,22 @@ export default function Units({ listingType = 'rent' }) {
             ]}
           />
         )}
+        <SearchableSelect
+          className="w-44"
+          value={filterDestination}
+          onChange={(v) => {
+            setFilterDestination(v);
+            setFilterProject('');
+          }}
+          placeholder="All Destinations"
+          options={[
+            { value: '', label: 'All Destinations' },
+            ...catalogDestinations.map((d) => ({ value: d, label: d })),
+          ]}
+        />
         <SearchableSelect className="w-44" value={filterProject} onChange={setFilterProject}
           placeholder="All Projects"
-          options={[{ value: '', label: 'All Projects' }, ...projects.map(p => ({ value: p, label: p }))]}
+          options={[{ value: '', label: 'All Projects' }, ...projectFilterOptions.map(p => ({ value: p, label: p }))]}
         />
         <SearchableSelect className="w-36" value={filterBedrooms} onChange={setFilterBedrooms}
           placeholder="All Bedrooms"

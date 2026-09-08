@@ -20,6 +20,7 @@ import { housekeepingFeeForUnit } from '../../utils/housekeeping';
 import { useAuth } from '../context/AuthContext';
 import { isoDateOnly } from '../../utils/stayNights';
 import { otaBlockRank, otaBlockLook } from '../utils/otaCalendar';
+import { useProjectCatalog } from '../../hooks/useProjectCatalog';
 
 
 
@@ -1034,7 +1035,7 @@ export default function Schedule() {
     return priceMap[unit.id]?.[dateStr] ?? null;
   };
 
-  const { data: projectsList = [] } = useQuery({ queryKey: ['projects'], queryFn: () => api.get('/units/projects').then(r => r.data) });
+  const { projectNames: projectsList } = useProjectCatalog();
   const { data: unitsList     = [] } = useQuery({ queryKey: ['units'],    queryFn: () => api.get('/units').then(r => r.data) });
   const { data: usersList     = [] } = useQuery({ queryKey: ['users-sales'], queryFn: () => api.get('/users/sales').then(r => r.data) });
   const salesUsers = useMemo(() => salesUsersForActor(usersList, user), [usersList, user]);

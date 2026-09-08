@@ -31,6 +31,7 @@ import SearchableSelect from '../components/ui/SearchableSelect';
 import { currency, unitDisplay } from '../utils/formatters';
 import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
 import { ROLE_LABELS } from '../utils/permissions';
+import { useProjectCatalog } from '../../hooks/useProjectCatalog';
 
 const COLORS = ['#283f5e', '#134e5e', '#F28C28', '#10b981', '#8b5cf6', '#ef4444'];
 
@@ -145,10 +146,7 @@ export default function Reports() {
     project: project || undefined,
   };
 
-  const { data: projects = [] } = useQuery({
-    queryKey: ['unit-projects'],
-    queryFn: () => api.get('/units/projects').then((r) => r.data),
-  });
+  const { projectNames: projects } = useProjectCatalog();
 
   const { data: revenueData, isLoading: revenueLoading } = useQuery({
     queryKey: ['revenue-report', fromDate, toDate, project],

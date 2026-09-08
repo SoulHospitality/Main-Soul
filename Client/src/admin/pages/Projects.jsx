@@ -91,6 +91,8 @@ export default function Projects() {
       clearCreateImage();
       refetch();
       qc.invalidateQueries({ queryKey: PROJECT_CATALOG_KEY });
+      qc.invalidateQueries({ queryKey: ['unit-projects'] });
+      qc.invalidateQueries({ queryKey: ['projects'] });
     },
     onError: (err) => toast.error(err.message),
   });
@@ -111,6 +113,8 @@ export default function Projects() {
       clearEditImage();
       refetch();
       qc.invalidateQueries({ queryKey: PROJECT_CATALOG_KEY });
+      qc.invalidateQueries({ queryKey: ['unit-projects'] });
+      qc.invalidateQueries({ queryKey: ['projects'] });
     },
     onError: (err) => toast.error(err.message),
   });
@@ -121,6 +125,8 @@ export default function Projects() {
       toast.success('Project removed — guest site will refresh on next load');
       refetch();
       qc.invalidateQueries({ queryKey: PROJECT_CATALOG_KEY });
+      qc.invalidateQueries({ queryKey: ['unit-projects'] });
+      qc.invalidateQueries({ queryKey: ['projects'] });
     },
     onError: (err) => toast.error(err.message),
   });
@@ -140,6 +146,8 @@ export default function Projects() {
       setSelectedDestination('');
       refetch();
       qc.invalidateQueries({ queryKey: PROJECT_CATALOG_KEY });
+      qc.invalidateQueries({ queryKey: ['unit-projects'] });
+      qc.invalidateQueries({ queryKey: ['projects'] });
     },
     onError: (err) => toast.error(err.message),
   });
