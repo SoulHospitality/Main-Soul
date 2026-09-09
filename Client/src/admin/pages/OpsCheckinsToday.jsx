@@ -67,8 +67,12 @@ function PaymentDetails({ row }) {
         />
       )}
       <div className="flex justify-between gap-3 border-t pt-1 mt-1">
-        <span className="text-gray-500">Total</span>
-        <span className="font-medium tabular-nums">{currency(row.total_amount)}</span>
+        <span className="text-gray-500">Total (full bill)</span>
+        <span className="font-medium tabular-nums">
+          {currency(
+            Number(b.full_bill_total ?? b.total_amount ?? row.total_amount) || 0
+          )}
+        </span>
       </div>
       <div className="flex justify-between gap-3">
         <span className="text-gray-500">Paid</span>
@@ -95,10 +99,12 @@ function seedBillDraft(row) {
   for (const f of BILL_FIELDS) {
     out[f.key] = String(Number(b[f.key]) || 0);
   }
-  // Keep final bill aligned with stored total when line items don't already sum to it.
-  const storedTotal = Number(row.total_amount) || 0;
+  // Line items are the source of truth for the full bill. Only backfill accommodation
+  // when price/night is missing but a stored total exceeds the other fee lines.
   const lineSum = sumBillDraft(out);
-  if (storedTotal > 0 && Math.abs(lineSum - storedTotal) > 0.5) {
+  const storedTotal = Number(b.full_bill_total ?? b.total_amount ?? row.total_amount) || 0;
+  const accom = Number(out.accommodation_amount) || 0;
+  if (accom <= 0 && storedTotal > lineSum + 0.5) {
     const withoutAcc = BILL_FIELDS.filter((f) => f.key !== 'accommodation_amount').reduce(
       (s, f) => s + (Number(out[f.key]) || 0),
       0
@@ -195,6 +201,7 @@ export function CheckinsTodaySection({ embedded = false }) {
   const [cashDrafts, setCashDrafts] = useState({});
   const [instapayDrafts, setInstapayDrafts] = useState({});
   const [commentDrafts, setCommentDrafts] = useState({});
+  const [collectCommentDrafts, setCollectCommentDrafts] = useState({});
   const canAssign =
     user?.role === 'admin' || user?.role === 'operations_supervisor';
   const isAgent = user?.role === 'operations';
@@ -229,7 +236,16 @@ export function CheckinsTodaySection({ embedded = false }) {
   });
 
   const collectMutation = useMutation({
-    mutationFn: ({ id, collect_mode, amount, payment_method, cash_amount, instapay_amount, bill }) =>
+    mutationFn: ({
+      id,
+      collect_mode,
+      amount,
+      payment_method,
+      cash_amount,
+      instapay_amount,
+      bill,
+      comment,
+    }) =>
       api.post(`/ops/checkins-today/${id}/collect`, {
         collect_mode,
         amount,
@@ -237,6 +253,7 @@ export function CheckinsTodaySection({ embedded = false }) {
         cash_amount,
         instapay_amount,
         bill,
+        comment,
       }),
     onSuccess: () => {
       toast.success('Money marked as collected');
@@ -550,6 +567,22 @@ export function CheckinsTodaySection({ embedded = false }) {
                                       <span className="tabular-nums">{currency(customRemaining)}</span>
                                     </div>
                                   </div>
+                                  <label className="block text-xs space-y-1">
+                                    <span className="text-gray-600 font-medium">
+                                      Comment (required for bill edits)
+                                    </span>
+                                    <textarea
+                                      className="input text-sm py-1.5 min-h-[4rem]"
+                                      value={collectCommentDrafts[r.id] || ''}
+                                      onChange={(e) =>
+                                        setCollectCommentDrafts((prev) => ({
+                                          ...prev,
+                                          [r.id]: e.target.value,
+                                        }))
+                                      }
+                                      placeholder="Why was the bill changed?"
+                                    />
+                                  </label>
                                 </>
                               ) : (
                                 <div className="text-xs text-gray-700">
@@ -591,6 +624,11 @@ export function CheckinsTodaySection({ embedded = false }) {
                                     toast.error('Final bill cannot be less than already paid');
                                     return;
                                   }
+                                  const comment = String(collectCommentDrafts[r.id] || '').trim();
+                                  if (isCustom && !comment) {
+                                    toast.error('Add a comment explaining the bill edit');
+                                    return;
+                                  }
 
                                   const bill = isCustom
                                     ? Object.fromEntries(
@@ -619,6 +657,7 @@ export function CheckinsTodaySection({ embedded = false }) {
                                       cash_amount: cash,
                                       instapay_amount: instapay,
                                       bill,
+                                      comment: comment || undefined,
                                     });
                                     return;
                                   }
@@ -628,6 +667,7 @@ export function CheckinsTodaySection({ embedded = false }) {
                                     amount,
                                     payment_method: method,
                                     bill,
+                                    comment: comment || undefined,
                                   });
                                 }}
                               >

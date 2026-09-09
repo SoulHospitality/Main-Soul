@@ -52,6 +52,24 @@ function calcNights(checkIn, checkOut) {
   return d > 0 ? d : 0;
 }
 
+/** Full stay bill (accommodation + fees), not accommodation-only. */
+function reservationFullBill(r) {
+  const nights = Number(r?.nights) || 0;
+  const pricePerNight = parseFloat(r?.price_per_night) || 0;
+  const accommodation =
+    pricePerNight > 0 && nights > 0
+      ? Math.round(pricePerNight * nights * 100) / 100
+      : 0;
+  const storedTotal = parseFloat(r?.total_amount) || 0;
+  const hkFees = parseFloat(r?.housekeeping_fees) || 0;
+  const beachFees = parseFloat(r?.beach_access_fees) || 0;
+  const ins = parseFloat(r?.insurance) || 0;
+  const utilities = parseFloat(r?.utilities_amount) || 0;
+  const lineSum = Math.round((accommodation + hkFees + beachFees + ins + utilities) * 100) / 100;
+  if (accommodation > 0 && Math.abs(storedTotal - accommodation) <= 0.5) return lineSum;
+  return Math.max(storedTotal, lineSum);
+}
+
 export function ReservationForm({ form, setForm, units, users, isNew, transferProof, onTransferProofChange, editId, allowPastDates, lockSalesPerson = false, currentUserName = '' }) {
   
   const selectedUnit = units.find(u => String(u.id) === String(form.unit_id));
@@ -501,12 +519,27 @@ function ReservationDetail({
   uploadingDocs,
   onPreviewDocs,
   showCommission = false,
+  ownerExperienceView = false,
 }) {
   if (!reservation) return null;
+  const nights = Number(reservation.nights) || 0;
+  const pricePerNight = parseFloat(reservation.price_per_night) || 0;
+  const accommodation =
+    pricePerNight > 0 && nights > 0
+      ? Math.round(pricePerNight * nights * 100) / 100
+      : 0;
   const downPmt   = parseFloat(reservation.down_payment) || 0;
-  const total     = parseFloat(reservation.total_amount) || 0;
+  const storedTotal = parseFloat(reservation.total_amount) || 0;
   const hkFees    = parseFloat(reservation.housekeeping_fees) || 0;
+  const beachFees = parseFloat(reservation.beach_access_fees) || 0;
   const ins       = parseFloat(reservation.insurance) || 0;
+  const utilities = parseFloat(reservation.utilities_amount) || 0;
+  const lineSum = Math.round((accommodation + hkFees + beachFees + ins + utilities) * 100) / 100;
+  // Full stay bill: line items when total_amount is accommodation-only; else prefer stored full total.
+  const total =
+    accommodation > 0 && Math.abs(storedTotal - accommodation) <= 0.5
+      ? lineSum
+      : Math.max(storedTotal, lineSum);
   const ownerAmt  = parseFloat(reservation.owner_collected_amount) || 0;
   const idPhotos = Array.isArray(reservation.id_photo_urls)
     ? reservation.id_photo_urls.filter(Boolean)
@@ -518,6 +551,54 @@ function ReservationDetail({
     amountToPay = total - ownerAmt - downPmt;
   } else {
     amountToPay = total - downPmt;
+  }
+
+  if (ownerExperienceView) {
+    return (
+      <div className="space-y-4 text-sm">
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <InfoRow label="Unit" value={unitDisplay(reservation)} />
+            <InfoRow label="Tenant" value={reservation.guest_name} />
+            <InfoRow label="Mobile" value={reservation.guest_phone} />
+            <InfoRow label="Nights" value={nightsText(reservation.nights)} />
+            <InfoRow
+              label="Party"
+              value={[
+                reservation.adults != null
+                  ? `${reservation.adults} adult${Number(reservation.adults) === 1 ? '' : 's'}`
+                  : null,
+                reservation.children != null && Number(reservation.children) > 0
+                  ? `${reservation.children} child${Number(reservation.children) === 1 ? '' : 'ren'}`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(' · ') || '—'}
+            />
+          </div>
+          <div className="space-y-2">
+            <InfoRow label="Check-in" value={formatDate(reservation.check_in)} />
+            <InfoRow label="Check-out" value={formatDate(reservation.check_out)} />
+            <InfoRow
+              label="Price/Night"
+              value={reservation.price_per_night > 0 ? currency(reservation.price_per_night) : '—'}
+            />
+            <InfoRow
+              label="Owner collected"
+              value={
+                reservation.owner_collected_type
+                  ? `${reservation.owner_collected_type}${
+                      ownerAmt > 0 ? ` · ${currency(ownerAmt)}` : ''
+                    }`
+                  : '—'
+              }
+            />
+            <InfoRow label="Housekeeping" value={currency(reservation.housekeeping_fees)} />
+            <InfoRow label="Insurance" value={currency(reservation.insurance)} />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   
@@ -582,7 +663,11 @@ function ReservationDetail({
           <InfoRow label="Check-out" value={formatDate(reservation.check_out)} />
           <InfoRow label="Nights" value={nightsText(reservation.nights)} />
           <InfoRow label="Price/Night" value={reservation.price_per_night > 0 ? currency(reservation.price_per_night) : '—'} />
-          <InfoRow label="Total" value={currency(total)} bold />
+          <InfoRow
+            label="Accommodation"
+            value={accommodation > 0 ? currency(accommodation) : currency(storedTotal)}
+          />
+          <InfoRow label="Total (full bill)" value={currency(total)} bold />
           <InfoRow label="Down Payment" value={currency(downPmt)} />
           <InfoRow
             label="Amt to Pay"
@@ -1480,28 +1565,44 @@ export default function Reservations() {
                   <SortTh col="check_in" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Check In</SortTh>
                   <SortTh col="check_out" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Check Out</SortTh>
                   <SortTh col="unit_number" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Unit</SortTh>
-                  <SortTh col="project" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Project</SortTh>
+                  {!isOwnersRelations && (
+                    <SortTh col="project" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Project</SortTh>
+                  )}
                   <SortTh col="guest_name" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Tenant Name</SortTh>
                   <SortTh col="guest_phone" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Mobile</SortTh>
                   <SortTh col="nights" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap text-center">Nights</SortTh>
                   <SortTh col="price_per_night" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap text-right">Price/Night</SortTh>
-                  <SortTh col="total_amount" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap text-right">Total</SortTh>
-                  <SortTh col="down_payment" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap text-right">Down Payment</SortTh>
-                  <th className="whitespace-nowrap text-right">Amt to Pay</th>
-                  <th className="whitespace-nowrap text-right">Housekeeping</th>
-                  <th className="whitespace-nowrap text-right">Beach Pass</th>
-                  <th className="whitespace-nowrap text-right">Insurance</th>
-                  <th className="whitespace-nowrap text-right">Utilities</th>
-                  <SortTh col="payment_status" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Payment Status</SortTh>
-                  <SortTh col="status" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Status</SortTh>
-                  <th className="whitespace-nowrap">Sales / Owner</th>
-                  <th className="whitespace-nowrap">Documents</th>
+                  {!isOwnersRelations && (
+                    <>
+                      <SortTh col="total_amount" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap text-right">Total</SortTh>
+                      <SortTh col="down_payment" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap text-right">Down Payment</SortTh>
+                      <th className="whitespace-nowrap text-right">Amt to Pay</th>
+                    </>
+                  )}
+                  {isOwnersRelations ? (
+                    <>
+                      <th className="whitespace-nowrap">Owner collected</th>
+                      <th className="whitespace-nowrap text-right">Housekeeping</th>
+                      <th className="whitespace-nowrap text-right">Insurance</th>
+                    </>
+                  ) : (
+                    <>
+                      <th className="whitespace-nowrap text-right">Housekeeping</th>
+                      <th className="whitespace-nowrap text-right">Beach Pass</th>
+                      <th className="whitespace-nowrap text-right">Insurance</th>
+                      <th className="whitespace-nowrap text-right">Utilities</th>
+                      <SortTh col="payment_status" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Payment Status</SortTh>
+                      <SortTh col="status" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="whitespace-nowrap">Status</SortTh>
+                      <th className="whitespace-nowrap">Sales / Owner</th>
+                      <th className="whitespace-nowrap">Documents</th>
+                    </>
+                  )}
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {sorted.map(r => {
-                  const total = parseFloat(r.total_amount) || 0;
+                  const total = reservationFullBill(r);
                   const paid = parseFloat(r.amount_paid) || 0;
                   const down = parseFloat(r.down_payment) || 0;
                   const amtToPay =
@@ -1520,11 +1621,29 @@ export default function Reservations() {
                       <td className="whitespace-nowrap">{formatDate(r.check_in)}</td>
                       <td className="whitespace-nowrap">{formatDate(r.check_out)}</td>
                       <td className="whitespace-nowrap font-medium text-gray-800">{r.unit_number || '—'}</td>
-                      <td className="whitespace-nowrap text-gray-600">{r.project || '—'}</td>
+                      {!isOwnersRelations && (
+                        <td className="whitespace-nowrap text-gray-600">{r.project || '—'}</td>
+                      )}
                       <td className="font-medium text-gray-900 whitespace-nowrap">{r.guest_name || '—'}</td>
                       <td className="text-gray-600 whitespace-nowrap">{r.guest_phone || '—'}</td>
                       <td className="text-center whitespace-nowrap">{r.nights ?? '—'}</td>
                       <td className={`text-right whitespace-nowrap ${isCancelled ? 'line-through opacity-60' : ''}`}>{currency(r.price_per_night)}</td>
+                      {isOwnersRelations ? (
+                        <>
+                          <td className="whitespace-nowrap text-gray-700">
+                            {r.owner_collected_type
+                              ? `${r.owner_collected_type}${
+                                  Number(r.owner_collected_amount) > 0
+                                    ? ` · ${currency(r.owner_collected_amount)}`
+                                    : ''
+                                }`
+                              : '—'}
+                          </td>
+                          <td className={`text-right whitespace-nowrap ${isCancelled ? 'line-through opacity-60' : ''}`}>{currency(r.housekeeping_fees)}</td>
+                          <td className={`text-right whitespace-nowrap ${isCancelled ? 'line-through opacity-60' : ''}`}>{currency(r.insurance)}</td>
+                        </>
+                      ) : (
+                        <>
                       <td className={`text-right whitespace-nowrap font-medium ${isCancelled ? 'line-through opacity-60' : ''}`}>{currency(total)}</td>
                       <td className={`text-right whitespace-nowrap ${isCancelled ? 'line-through opacity-60' : ''}`}>{currency(down)}</td>
                       <td className={`text-right font-medium whitespace-nowrap ${isCancelled ? 'line-through opacity-60' : amtToPay > 0 ? 'text-red-600' : 'text-green-600'}`}>
@@ -1569,6 +1688,8 @@ export default function Reservations() {
                           )}
                         </div>
                       </td>
+                        </>
+                      )}
                       <td>
                         <div className="flex gap-1 flex-wrap">
                           {canView && (
@@ -1796,6 +1917,7 @@ export default function Reservations() {
           onApprovePayment={(pmtId) => approveMutation.mutate(pmtId)}
           canWrite={canWrite}
           showCommission={isAdmin}
+          ownerExperienceView={isOwnersRelations}
           uploadingDocs={uploadIdDocsMutation.isPending}
           onUploadIdDocs={(files) => uploadIdDocsMutation.mutate(files)}
           onRemoveIdDoc={(url) => removeIdDocMutation.mutate(url)}

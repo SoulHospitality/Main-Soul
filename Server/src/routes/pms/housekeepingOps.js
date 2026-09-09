@@ -8,13 +8,7 @@ const router = express.Router();
 
 router.get(
   '/housekeeping-tasks',
-  requireRoles(
-    'housekeeping',
-    'housekeeping_supervisor',
-    'operations',
-    'operations_supervisor',
-    'admin'
-  ),
+  requireRoles('operations', 'operations_supervisor', 'admin'),
   async (req, res, next) => {
   try {
     const status = req.query.status;
@@ -91,13 +85,7 @@ router.post('/housekeeping-tasks', requireRoles('admin', 'reservations', 'reserv
 
 router.patch(
   '/housekeeping-tasks/:id',
-  requireRoles(
-    'housekeeping',
-    'housekeeping_supervisor',
-    'operations',
-    'operations_supervisor',
-    'admin'
-  ),
+  requireRoles('operations', 'operations_supervisor', 'admin'),
   async (req, res, next) => {
   try {
     const b = req.body;
@@ -111,10 +99,11 @@ router.patch(
          notes = COALESCE($6, notes),
          arrive_lat = COALESCE($7, arrive_lat),
          arrive_lng = COALESCE($8, arrive_lng),
+         due_at = COALESCE($9::timestamptz, due_at),
          accepted_at = CASE WHEN $1 = 'accepted' THEN COALESCE(accepted_at, now()) ELSE accepted_at END,
          started_at = CASE WHEN $1 = 'in_progress' THEN COALESCE(started_at, now()) ELSE started_at END,
          updated_at = now()
-       WHERE id = $9
+       WHERE id = $10
        RETURNING *`,
       [
         b.status || null,
@@ -125,6 +114,7 @@ router.patch(
         b.notes ?? null,
         b.arrive_lat ?? null,
         b.arrive_lng ?? null,
+        b.due_at || b.cleaning_date || null,
         req.params.id,
       ]
     );
@@ -137,13 +127,7 @@ router.patch(
 
 router.post(
   '/housekeeping-tasks/:id/submit',
-  requireRoles(
-    'housekeeping',
-    'housekeeping_supervisor',
-    'operations',
-    'operations_supervisor',
-    'admin'
-  ),
+  requireRoles('operations', 'operations_supervisor', 'admin'),
   async (req, res, next) => {
   try {
     const b = req.body || {};

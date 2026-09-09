@@ -18,7 +18,7 @@ describe('staff task access', () => {
     assert.equal(isStaffTaskManagerRole('reservations_manager'), true);
     assert.equal(isStaffTaskManagerRole('finance_manager'), true);
     assert.equal(isStaffTaskManagerRole('operations_supervisor'), true);
-    assert.equal(isStaffTaskManagerRole('housekeeping_supervisor'), true);
+    assert.equal(isStaffTaskManagerRole('housekeeping_supervisor'), false);
     assert.equal(canManageStaffTasks({ role: 'resale_manager' }), true);
   });
 

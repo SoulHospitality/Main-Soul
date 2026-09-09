@@ -52,6 +52,7 @@ const RESERVATIONS_MANUAL_PAGE_ACCESS = new Set([
   'tasks',
   'reservations',
   'schedule',
+  'units',
   ...STAFF_HR_TABS,
 ]);
 
@@ -113,9 +114,6 @@ const UNIT_ACQUISITION_AGENT_PAGE_ACCESS = new Set([
   'units',
   'reservations',
   'schedule',
-  'acquisition',
-  'owner_statement',
-  'owners',
   ...STAFF_HR_TABS,
 ]);
 
@@ -135,6 +133,7 @@ const OPERATIONS_PAGE_ACCESS = new Set([
   'tasks',
   'operations',
   'ops_checkins',
+  'hk_today',
   'reservations',
   'schedule',
   ...STAFF_HR_TABS,
@@ -145,6 +144,7 @@ const OPERATIONS_SUPERVISOR_PAGE_ACCESS = new Set([
   'operations',
   'ops_checkins',
   'ops_comments',
+  'hk_today',
   'reservations',
   'schedule',
   ...STAFF_HR_TABS,
@@ -198,7 +198,6 @@ const RESERVATIONS_MANUAL_PERMISSIONS = [
 
 const RESERVATIONS_WEB_PERMISSIONS = [
   ...RESERVATIONS_PERMISSIONS,
-  'units:write',
 ];
 
 const HR_PERMISSIONS = [
@@ -269,10 +268,6 @@ const PERMISSIONS = {
   unit_acquisition_agent: [
     'units:read',
     'units:write',
-    'acquisition:read',
-    'acquisition:write',
-    'owners:read',
-    'owners:write',
     'notifications:read',
     'documents:read',
     'documents:write',
@@ -317,6 +312,8 @@ const PERMISSIONS = {
   operations: [
     'ops_checkins:read',
     'ops_checkins:write',
+    'hk_today:read',
+    'hk_today:write',
     'units:read',
     'reservations:read',
     'reservations:write',
@@ -330,27 +327,13 @@ const PERMISSIONS = {
     'ops_checkins:assign',
     'ops_comments:read',
     'ops_comments:write',
+    'hk_today:read',
+    'hk_today:write',
+    'hk_today:assign',
     'units:read',
     'reservations:read',
     'reservations:write',
     'schedule:read',
-    'notifications:read',
-    'profile:read',
-  ],
-  housekeeping: [
-    'hk_today:read',
-    'hk_today:write',
-    'housekeeping:read',
-    'housekeeping:write',
-    'notifications:read',
-    'profile:read',
-  ],
-  housekeeping_supervisor: [
-    'hk_today:read',
-    'hk_today:write',
-    'hk_today:assign',
-    'housekeeping:read',
-    'housekeeping:write',
     'notifications:read',
     'profile:read',
   ],
@@ -363,6 +346,7 @@ const PERMISSIONS = {
   owners_relations: [
     'reservations:read',
     'reservations:or_checklist',
+    'owner_statement:read',
     'notifications:read',
     'profile:read',
   ],
@@ -394,13 +378,11 @@ const PAGE_ACCESS = {
   unit_acquisition_manager: UNIT_ACQUISITION_MANAGER_PAGE_ACCESS,
   operations: OPERATIONS_PAGE_ACCESS,
   operations_supervisor: OPERATIONS_SUPERVISOR_PAGE_ACCESS,
-  housekeeping: HOUSEKEEPING_PAGE_ACCESS,
-  housekeeping_supervisor: HOUSEKEEPING_SUPERVISOR_PAGE_ACCESS,
   resale: RESALE_PAGE_ACCESS,
   resale_manager: RESALE_MANAGER_PAGE_ACCESS,
   hr: HR_AGENT_PAGE_ACCESS,
   hr_supervisor: HR_SUPERVISOR_PAGE_ACCESS,
-  owners_relations: new Set(['reservations', 'tasks', ...STAFF_HR_TABS]),
+  owners_relations: new Set(['reservations', 'owner_statement', 'tasks', ...STAFF_HR_TABS]),
   finance: FINANCE_PAGE_ACCESS,
   finance_manager: FINANCE_MANAGER_PAGE_ACCESS,
   marketing_pr: MARKETING_PR_PAGE_ACCESS,
@@ -540,8 +522,6 @@ export function canManageUnits(user) {
     !!user &&
     (user.role === 'admin' ||
       isResaleStaff(user) ||
-      user.role === 'reservations_web' ||
-      user.role === 'reservations' ||
       user.role === 'reservations_manager' ||
       isFinanceStaff(user) ||
       isUnitAcquisitionRole(user))
@@ -638,7 +618,10 @@ export function canManageUsers(user) {
 }
 
 export function canManageOwners(user) {
-  return !!user && (user.role === 'admin' || isUnitAcquisitionRole(user));
+  return (
+    !!user &&
+    (user.role === 'admin' || user.role === 'unit_acquisition_manager')
+  );
 }
 
 export function isHrTeamRole(role) {
@@ -648,8 +631,7 @@ export function isHrTeamRole(role) {
 export function canSeeRequestQueue(user) {
   if (!user) return false;
   if (user.role === 'admin') return true;
-  if (isLineManagerRole(user.role)) return true;
-  return user.role === 'housekeeping_supervisor';
+  return isLineManagerRole(user.role);
 }
 
 export function canRequestStaffBenefits(user) {
@@ -686,7 +668,6 @@ export const LINE_MANAGER_ROLES = [
   'finance_manager',
   'unit_acquisition_manager',
   'operations_supervisor',
-  'housekeeping_supervisor',
 ];
 
 export function isLineManagerRole(role) {
@@ -702,12 +683,7 @@ export function hasOfficeAttendance(role, staff) {
 }
 
 const RESERVATION_ROLES = ['reservations_web', 'reservations_manual', 'reservations_manager'];
-const FIELD_ROLES = [
-  'operations_supervisor',
-  'operations',
-  'housekeeping_supervisor',
-  'housekeeping',
-];
+const FIELD_ROLES = ['operations_supervisor', 'operations'];
 
 /** Roles CEO / HR Manager can assign in User Management */
 export const HR_MANAGED_STAFF_ROLES = [
@@ -743,7 +719,7 @@ export const ADMIN_STAFF_FILTER_ROLES = ['admin', ...HR_STAFF_FILTER_ROLES];
 export function creatableRoles(actorRole) {
   if (actorRole === 'admin') return ADMIN_CREATABLE_ROLES;
   if (isHrTeamRole(actorRole)) return HR_MANAGED_STAFF_ROLES;
-  if (actorRole === 'unit_acquisition_agent' || actorRole === 'unit_acquisition_manager') {
+  if (actorRole === 'unit_acquisition_manager') {
     return ['owner'];
   }
   return [];

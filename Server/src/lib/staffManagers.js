@@ -10,7 +10,6 @@ const LINE_MANAGER_ROLES = [
   'unit_acquisition_manager',
   'finance_manager',
   'operations_supervisor',
-  'housekeeping_supervisor',
 ];
 
 function supportsMultipleManagers(role) {

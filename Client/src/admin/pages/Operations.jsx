@@ -1,15 +1,19 @@
 import { useSearchParams } from 'react-router-dom';
-import { KeyRound, History, MessageSquareText, LogOut } from 'lucide-react';
+import { KeyRound, History, MessageSquareText, LogOut, SprayCan } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { canAccess } from '../utils/permissions';
 import { CheckinsTodaySection } from './OpsCheckinsToday';
 import { CheckinsHistorySection } from './OpsCheckinsHistory';
 import { CheckinCommentsSection } from './OpsCheckinComments';
 import { CheckoutsTodaySection } from './OpsCheckoutsToday';
+import { TodayCleansSection } from './HkTodayCleans';
+import { CleansHistorySection } from './HkCleansHistory';
 
 const TABS = [
   { id: 'today', label: 'Check-ins', icon: KeyRound, page: 'ops_checkins' },
   { id: 'checkouts', label: 'Checkouts', icon: LogOut, page: 'ops_checkins' },
+  { id: 'cleans', label: "Today's cleans", icon: SprayCan, page: 'hk_today' },
+  { id: 'cleans-history', label: 'Cleans history', icon: History, page: 'hk_today' },
   { id: 'history', label: 'Check-ins history', icon: History, page: 'ops_checkins' },
   { id: 'comments', label: 'Check-in comments', icon: MessageSquareText, page: 'ops_comments' },
 ];
@@ -19,6 +23,9 @@ const TAB_ALIASES = {
   'checkins-today': 'today',
   checkouts: 'checkouts',
   'checkouts-today': 'checkouts',
+  cleans: 'cleans',
+  'today-cleans': 'cleans',
+  'cleans-history': 'cleans-history',
   history: 'history',
   'checkins-history': 'history',
   comments: 'comments',
@@ -45,8 +52,8 @@ export default function Operations() {
       <div className="page-header mb-0">
         <h1 className="page-title">Operations</h1>
         <p className="page-subtitle">
-          Check-ins and checkouts for this month (filter by today, tomorrow, or this week), history, and
-          agent comments
+          Check-ins, checkouts, cleans, history, and agent comments — filter by today, tomorrow, this
+          week, or this month
         </p>
       </div>
 
@@ -74,6 +81,8 @@ export default function Operations() {
 
       {resolvedTab === 'today' ? <CheckinsTodaySection embedded /> : null}
       {resolvedTab === 'checkouts' ? <CheckoutsTodaySection embedded /> : null}
+      {resolvedTab === 'cleans' ? <TodayCleansSection embedded /> : null}
+      {resolvedTab === 'cleans-history' ? <CleansHistorySection embedded /> : null}
       {resolvedTab === 'history' ? <CheckinsHistorySection embedded /> : null}
       {resolvedTab === 'comments' ? <CheckinCommentsSection embedded /> : null}
     </div>

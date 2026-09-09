@@ -10,7 +10,6 @@ const STAFF_TASK_RECIPIENT_ROLES = [
   'reservations_manual',
   'unit_acquisition_agent',
   'operations',
-  'housekeeping',
   'resale',
   'finance',
   'hr',

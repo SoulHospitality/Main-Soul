@@ -843,8 +843,6 @@ function departmentManagerRole(role) {
   switch (String(role || '')) {
     case 'operations':
       return 'operations_supervisor';
-    case 'housekeeping':
-      return 'housekeeping_supervisor';
     case 'hr':
       return 'hr_supervisor';
     case 'reservations':
@@ -863,7 +861,6 @@ function departmentManagerRole(role) {
     case 'finance_manager':
     case 'hr_supervisor':
     case 'operations_supervisor':
-    case 'housekeeping_supervisor':
     case 'marketing_pr':
     case 'web_developer':
       return 'admin';

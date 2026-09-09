@@ -11,14 +11,12 @@ const router = express.Router();
 
 const OPS_AGENT = 'operations';
 const OPS_SUPER = 'operations_supervisor';
-const HK_AGENT = 'housekeeping';
-const HK_SUPER = 'housekeeping_supervisor';
 
 const OPS_ROLES = ['admin', OPS_AGENT, OPS_SUPER];
 const OPS_SUPER_ROLES = ['admin', OPS_SUPER];
-const HK_ROLES = ['admin', HK_AGENT, HK_SUPER];
-const HK_SUPER_ROLES = ['admin', HK_SUPER];
-const HK_READ_ROLES = ['admin', HK_AGENT, HK_SUPER, OPS_AGENT, OPS_SUPER];
+const HK_READ_ROLES = ['admin', OPS_AGENT, OPS_SUPER];
+const HK_SUPER_ROLES = ['admin', OPS_SUPER];
+const HK_ROLES = ['admin', OPS_AGENT, OPS_SUPER];
 
 function todayCairoSql() {
   return `(timezone('Africa/Cairo', now()))::date`;
@@ -77,7 +75,7 @@ function isOpsSupervisor(user) {
 }
 
 function isHkSupervisor(user) {
-  return user?.role === 'admin' || user?.role === HK_SUPER;
+  return user?.role === 'admin' || user?.role === OPS_SUPER;
 }
 
 function roundMoney(n) {
@@ -86,8 +84,24 @@ function roundMoney(n) {
   return Math.round(v * 100) / 100;
 }
 
-function remainingOf(row) {
-  const total = Number(row.total_amount) || 0;
+/** Full stay bill = sum of all line items (not accommodation-only). */
+function fullBillTotalFromParts(parts) {
+  return roundMoney(
+    (Number(parts.accommodation_amount) || 0) +
+      (Number(parts.housekeeping_fees) || 0) +
+      (Number(parts.beach_access_fees) || 0) +
+      (Number(parts.service_fees) || 0) +
+      (Number(parts.insurance) || 0) +
+      (Number(parts.utilities_amount) || 0) +
+      (Number(parts.security_deposit) || 0)
+  );
+}
+
+function remainingOf(row, billTotal = null) {
+  const total =
+    billTotal != null && Number.isFinite(Number(billTotal))
+      ? Number(billTotal)
+      : Number(row.total_amount) || 0;
   const paid = Number(row.amount_paid) || 0;
   return Math.max(0, Math.round((total - paid) * 100) / 100);
 }
@@ -148,7 +162,8 @@ function isHkCleaned(status) {
 
 function moneySatisfied(row) {
   if (Number(row.ops_money_collected) === 1) return true;
-  return remainingOf(row) <= 0.5;
+  const breakdown = paymentBreakdown(row);
+  return remainingOf(row, breakdown.full_bill_total) <= 0.5;
 }
 
 function paymentBreakdown(row) {
@@ -206,16 +221,25 @@ function paymentBreakdown(row) {
     securityDeposit = Number(fees.security_deposit_egp) || 0;
   } catch {}
 
-  return {
-    nights,
-    price_per_night: pricePerNight,
+  const parts = {
     accommodation_amount: accommodation,
     housekeeping_fees: housekeepingFees,
     beach_access_fees: beachAccessFees,
     service_fees: serviceFees,
-    service_fee_percent: serviceFeePercent,
     insurance,
     utilities_amount: utilities,
+    security_deposit: securityDeposit,
+  };
+  const lineSum = fullBillTotalFromParts(parts);
+  const storedTotal = roundMoney(row.total_amount);
+  // Prefer line-item sum; if DB total is higher (legacy lump / edited extras), keep it.
+  const totalAmount = storedTotal > lineSum + 0.5 ? storedTotal : lineSum;
+
+  return {
+    nights,
+    price_per_night: pricePerNight,
+    ...parts,
+    service_fee_percent: serviceFeePercent,
     down_payment: downPayment,
     owner_collected_type: row.owner_collected_type || null,
     owner_collected_amount: Number(row.owner_collected_amount) || 0,
@@ -223,7 +247,8 @@ function paymentBreakdown(row) {
     children,
     nanny_count: nannyCount,
     guests_total: adults + children + nannyCount,
-    security_deposit: securityDeposit,
+    total_amount: totalAmount,
+    full_bill_total: totalAmount,
   };
 }
 
@@ -274,11 +299,13 @@ async function fetchCheckinRow(reservationId) {
 }
 
 function mapCheckin(row) {
-  const remaining = remainingOf(row);
-  const moneyCollected = moneySatisfied(row);
+  const breakdown = paymentBreakdown(row);
+  const billTotal = Number(breakdown.full_bill_total) || Number(breakdown.total_amount) || 0;
+  const remaining = remainingOf(row, billTotal);
+  const moneyCollected =
+    Number(row.ops_money_collected) === 1 || remaining <= 0.5;
   const hkCleaned = isHkCleaned(row.hk_task_status);
   const handedOver = Number(row.ops_handed_over) === 1;
-  const breakdown = paymentBreakdown(row);
   return {
     id: row.id,
     guest_name: row.guest_name,
@@ -290,7 +317,7 @@ function mapCheckin(row) {
     check_in: row.check_in,
     check_out: row.check_out,
     status: row.status,
-    total_amount: Number(row.total_amount) || 0,
+    total_amount: billTotal,
     amount_paid: Number(row.amount_paid) || 0,
     remaining_amount: remaining,
     payment_status: row.payment_status,
@@ -332,7 +359,7 @@ function assertOpsCanAct(req, row) {
 
 function assertHkCanAct(req, task) {
   if (isHkSupervisor(req.user)) return null;
-  if (req.user.role !== HK_AGENT) return 'Forbidden';
+  if (req.user.role !== OPS_AGENT) return 'Forbidden';
   if (!task.assigned_to || Number(task.assigned_to) !== Number(req.user.id)) {
     return 'This clean is not assigned to you';
   }
@@ -361,7 +388,7 @@ router.get('/housekeeping/agents', requireRoles(...HK_SUPER_ROLES), async (_req,
        FROM staff_users
        WHERE role = $1 AND is_active = 1
        ORDER BY full_name ASC NULLS LAST, username ASC`,
-      [HK_AGENT]
+      [OPS_AGENT]
     );
     res.json(rows);
   } catch (e) {
@@ -471,12 +498,24 @@ router.post(
         [reservationId, staffId || null, Number(req.user.id) || null]
       );
 
+      // Single assign: same ops agent owns the linked pre-arrival clean.
+      await query(
+        `UPDATE housekeeping_tasks SET
+           assigned_to = $2::int,
+           assigned_at = CASE WHEN $2::int IS NULL THEN NULL ELSE now() END,
+           assigned_by = CASE WHEN $2::int IS NULL THEN NULL ELSE $3::int END,
+           updated_at = now()
+         WHERE reservation_id = $1
+           AND COALESCE(source, 'pre_arrival') = 'pre_arrival'`,
+        [reservationId, staffId || null, Number(req.user.id) || null]
+      );
+
       await logAudit({
         userId: req.user.id,
         action: 'OPS_ASSIGN_CHECKIN',
         entityType: 'reservation',
         entityId: reservationId,
-        details: { staff_id: staffId || null },
+        details: { staff_id: staffId || null, also_assigned_clean: true },
       });
 
       const updated = await fetchCheckinRow(reservationId);
@@ -504,8 +543,14 @@ router.post(
       const collectMode = String(req.body?.collect_mode || 'full').toLowerCase() === 'custom'
         ? 'custom'
         : 'full';
+      const collectComment = String(req.body?.comment || req.body?.note || '').trim();
       let billApplied = null;
       if (collectMode === 'custom' && req.body?.bill) {
+        if (!collectComment) {
+          return res.status(400).json({
+            error: 'A comment is required when editing the bill before collect',
+          });
+        }
         const before = {
           total_amount: Number(row.total_amount) || 0,
           price_per_night: Number(row.price_per_night) || 0,
@@ -526,10 +571,11 @@ router.post(
             utilities_amount: Number(row.utilities_amount) || 0,
             bill: req.body.bill,
           },
+          comment: collectComment,
         };
       }
 
-      const remaining = remainingOf(row);
+      const remaining = remainingOf(row, paymentBreakdown(row).full_bill_total);
       if (remaining <= 0.5) {
         await query(
           `UPDATE reservations SET
@@ -595,7 +641,9 @@ router.post(
         splits.push({ amount, payment_method: method });
       }
 
-      const noteBase = `[ops check-in] Collected at door by ${req.user.full_name || req.user.username || req.user.id}`;
+      const noteBase = collectComment
+        ? `[ops check-in] ${collectComment}`
+        : `[ops check-in] Collected at door by ${req.user.full_name || req.user.username || req.user.id}`;
       for (const part of splits) {
         await query(
           `INSERT INTO payments (
@@ -646,6 +694,7 @@ router.post(
         details: {
           collect_mode: collectMode,
           amount,
+          comment: collectComment || null,
           splits: splits.map((s) => ({
             amount: s.amount,
             payment_method: s.payment_method,
@@ -946,7 +995,7 @@ router.get('/housekeeping/today-cleans', requireRoles(...HK_READ_ROLES), async (
 
     const params = [];
     let scope = '';
-    if (req.user.role === HK_AGENT) {
+    if (req.user.role === OPS_AGENT) {
       params.push(req.user.id);
       scope = ` AND t.assigned_to = $${params.length}`;
     }
@@ -970,7 +1019,8 @@ router.get('/housekeeping/today-cleans', requireRoles(...HK_READ_ROLES), async (
               hk_agent.staff_code AS assignee_code,
               t.accepted_at,
               t.started_at,
-              t.submitted_at
+              t.submitted_at,
+              t.due_at
        FROM reservations r
        JOIN units u ON u.id = r.unit_id
        LEFT JOIN LATERAL (
@@ -1007,6 +1057,7 @@ router.get('/housekeeping/today-cleans', requireRoles(...HK_READ_ROLES), async (
         assigned_at: r.assigned_at || null,
         assignee_name: r.assignee_name || null,
         assignee_code: r.assignee_code || null,
+        due_at: r.due_at || null,
       }))
     );
   } catch (e) {
@@ -1019,7 +1070,7 @@ router.get('/housekeeping/cleans-history', requireRoles(...HK_READ_ROLES), async
     const { from, to } = parseHistoryRange(req.query);
     const params = [from, to];
     let scope = '';
-    if (req.user.role === HK_AGENT) {
+    if (req.user.role === OPS_AGENT) {
       params.push(req.user.id);
       scope = ` AND t.assigned_to = $${params.length}`;
     }
@@ -1107,10 +1158,10 @@ router.post(
       if (staffId) {
         const { rows: agents } = await query(
           `SELECT id FROM staff_users WHERE id = $1 AND role = $2 AND is_active = 1`,
-          [staffId, HK_AGENT]
+          [staffId, OPS_AGENT]
         );
         if (!agents[0]) {
-          return res.status(400).json({ error: 'Select an active housekeeping agent' });
+          return res.status(400).json({ error: 'Select an active operations agent' });
         }
       }
 
@@ -1124,6 +1175,19 @@ router.post(
          RETURNING *`,
         [taskId, staffId || null, Number(req.user.id) || null]
       );
+
+      // Keep reservation ops assignee in sync when assigning from cleans UI.
+      if (task.reservation_id) {
+        await query(
+          `UPDATE reservations SET
+             ops_assigned_to = $2::int,
+             ops_assigned_at = CASE WHEN $2::int IS NULL THEN NULL ELSE now() END,
+             ops_assigned_by = CASE WHEN $2::int IS NULL THEN NULL ELSE $3::int END,
+             updated_at = now()
+           WHERE id = $1`,
+          [task.reservation_id, staffId || null, Number(req.user.id) || null]
+        );
+      }
 
       await logAudit({
         userId: req.user.id,
@@ -1239,6 +1303,12 @@ function mapCheckout(row) {
 router.get('/ops/checkouts-today', requireRoles(...OPS_ROLES), async (req, res, next) => {
   try {
     const { range, from, to } = parseOpsDateRange(req.query.range || req.query.period);
+    const params = [from, to];
+    let scope = '';
+    if (req.user.role === OPS_AGENT) {
+      params.push(req.user.id);
+      scope = ` AND r.ops_assigned_to = $${params.length}`;
+    }
     const { rows } = await query(
       `SELECT r.id,
               r.guest_name,
@@ -1247,6 +1317,7 @@ router.get('/ops/checkouts-today', requireRoles(...OPS_ROLES), async (req, res, 
               r.check_out,
               r.status,
               r.unit_id,
+              r.ops_assigned_to,
               COALESCE(r.insurance, 0)::float AS insurance,
               r.insurance_refund_status,
               COALESCE(r.insurance_refunded_amount, 0)::float AS insurance_refunded_amount,
@@ -1263,8 +1334,9 @@ router.get('/ops/checkouts-today', requireRoles(...OPS_ROLES), async (req, res, 
        WHERE r.check_out::date >= $1::date
          AND r.check_out::date <= $2::date
          AND r.status IS DISTINCT FROM 'cancelled'
+         ${scope}
        ORDER BY r.check_out ASC, u.unit_number ASC NULLS LAST`,
-      [from, to]
+      params
     );
     res.json({ range, from, to, items: rows.map(mapCheckout) });
   } catch (e) {
@@ -1288,6 +1360,7 @@ router.post(
                 r.check_out,
                 r.status,
                 r.unit_id,
+                r.ops_assigned_to,
                 COALESCE(r.insurance, 0)::float AS insurance,
                 r.insurance_refund_status,
                 COALESCE(r.insurance_refunded_amount, 0)::float AS insurance_refunded_amount,
@@ -1309,6 +1382,8 @@ router.post(
       if (String(row.status).toLowerCase() === 'cancelled') {
         return res.status(409).json({ error: 'Reservation is cancelled' });
       }
+      const denied = assertOpsCanAct(req, row);
+      if (denied) return res.status(403).json({ error: denied });
 
       const held = Math.round((Number(row.insurance) || 0) * 100) / 100;
       if (!(held > 0.009)) {

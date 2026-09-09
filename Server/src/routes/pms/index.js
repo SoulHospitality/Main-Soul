@@ -71,8 +71,6 @@ const UNIT_EDITOR_ROLES = [
   'admin',
   'resale',
   'resale_manager',
-  'reservations_web',
-  'reservations',
   'reservations_manager',
   'finance',
   'finance_manager',
@@ -80,7 +78,7 @@ const UNIT_EDITOR_ROLES = [
 ];
 
 const HR_ROUTE_ROLES = ['admin', 'hr', 'hr_supervisor'];
-const USER_ACCOUNT_ROLES = ['hr', 'hr_supervisor', ...UNIT_ACQUISITION_ROLES];
+const USER_ACCOUNT_ROLES = ['hr', 'hr_supervisor', 'unit_acquisition_manager'];
 const { normalizePropertyType } = require('../../lib/propertyType');
 
 const router = express.Router();
@@ -311,8 +309,6 @@ function assertCanAssignRole(actorRole, targetRole) {
     'reservations_manager',
     'operations',
     'operations_supervisor',
-    'housekeeping',
-    'housekeeping_supervisor',
     'resale',
     'resale_manager',
     'unit_acquisition_agent',
@@ -328,7 +324,7 @@ function assertCanAssignRole(actorRole, targetRole) {
   ];
   if (!allowed.includes(targetRole)) {
     const err = new Error(
-      'Invalid role. Use admin, reservations_web, reservations_manual, reservations_manager, unit_acquisition_agent, unit_acquisition_manager, operations, operations_supervisor, housekeeping, housekeeping_supervisor, resale, resale_manager, finance, finance_manager, hr, hr_supervisor, owners_relations, marketing_pr, web_developer, or owner.'
+      'Invalid role. Use admin, reservations_web, reservations_manual, reservations_manager, unit_acquisition_agent, unit_acquisition_manager, operations, operations_supervisor, resale, resale_manager, finance, finance_manager, hr, hr_supervisor, owners_relations, marketing_pr, web_developer, or owner.'
     );
     err.status = 400;
     throw err;
@@ -342,10 +338,8 @@ function assertCanAssignRole(actorRole, targetRole) {
       'reservations_manager',
       'operations',
       'operations_supervisor',
-      'housekeeping',
-      'housekeeping_supervisor',
       'resale',
-    'resale_manager',
+      'resale_manager',
       'unit_acquisition_agent',
       'unit_acquisition_manager',
       'marketing_pr',
@@ -354,7 +348,7 @@ function assertCanAssignRole(actorRole, targetRole) {
     ].includes(targetRole)
   ) {
     const err = new Error(
-      'HR can only create reservation, operations, housekeeping, resale, unit acquisition, marketing, web developer, or HR users'
+      'HR can only create reservation, operations, resale, unit acquisition, marketing, web developer, or HR users'
     );
     err.status = 403;
     throw err;
@@ -3518,7 +3512,13 @@ router.get('/petty-cash', requireRoles('admin'), async (req, res, next) => {
   }
 });
 
-router.post('/petty-cash', requireRoles('admin'), async (req, res, next) => {
+router.post(
+  '/petty-cash',
+  requireRoles('admin'),
+  setCloudinaryFolder(FOLDER_PAYMENTS),
+  upload.single('transfer_proof'),
+  attachCloudinaryUrls,
+  async (req, res, next) => {
   const client = await pool.connect();
   try {
     const b = req.body || {};
@@ -3538,9 +3538,14 @@ router.post('/petty-cash', requireRoles('admin'), async (req, res, next) => {
     const description = String(b.description || '').trim();
     const entryDate = b.expense_date || b.entry_date || null;
     const location = b.location || 'north_coast';
+    const proofPath = req.file?.path || req.file?.secure_url || b.transfer_proof_path || null;
+    const proofName = req.file?.originalname || b.transfer_proof_name || null;
 
     if (!description || Number.isNaN(amount) || amount < 0) {
       return res.status(400).json({ error: 'Description and amount are required' });
+    }
+    if (entryType === 'out' && !proofPath) {
+      return res.status(400).json({ error: 'Transfer proof is required for cash out' });
     }
     if (entryType === 'out' && paidBy === 'owner') {
       if (!ownerId || Number.isNaN(ownerId)) {
@@ -3588,10 +3593,10 @@ router.post('/petty-cash', requireRoles('admin'), async (req, res, next) => {
       `INSERT INTO petty_cash (
          location, description, amount, entry_type, entry_date, created_by,
          unit_id, paid_by, notes, status, is_advance, res_from_date, res_to_date,
-         linked_expense_id, moved_to, owner_id
+         linked_expense_id, moved_to, owner_id, transfer_proof_path, transfer_proof_name
        ) VALUES (
          $1,$2,$3,$4,COALESCE($5::date, CURRENT_DATE),$6,
-         $7,$8,$9,$10,COALESCE($11,0),$12,$13,$14,$15,$16
+         $7,$8,$9,$10,COALESCE($11,0),$12,$13,$14,$15,$16,$17,$18
        ) RETURNING *`,
       [
         location,
@@ -3610,6 +3615,8 @@ router.post('/petty-cash', requireRoles('admin'), async (req, res, next) => {
         linkedExpenseId,
         linkedExpenseId ? 'expenses' : null,
         ownerId,
+        proofPath,
+        proofName,
       ]
     );
 

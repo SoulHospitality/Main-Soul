@@ -24,6 +24,7 @@ const TASK_SELECT = `
   t.created_at,
   t.completed_at,
   t.completed_by,
+  t.completion_comment,
   a.full_name AS assignee_name,
   a.role AS assignee_role,
   a.email AS assignee_email,
@@ -220,6 +221,11 @@ router.post('/staff-tasks/:id/complete', async (req, res, next) => {
       return res.status(400).json({ error: 'Invalid task' });
     }
 
+    const comment = String(req.body?.comment || req.body?.completion_comment || '').trim();
+    if (!comment) {
+      return res.status(400).json({ error: 'A completion comment is required' });
+    }
+
     const { rows } = await query(
       `SELECT id, title, assignee_id, completed_at
        FROM staff_tasks
@@ -237,17 +243,17 @@ router.post('/staff-tasks/:id/complete', async (req, res, next) => {
 
     const { rows: updated } = await query(
       `UPDATE staff_tasks
-       SET completed_at = now(), completed_by = $2
+       SET completed_at = now(), completed_by = $2, completion_comment = $3
        WHERE id = $1 AND assignee_id = $2 AND completed_at IS NULL
-       RETURNING id, assignee_id, completed_at, completed_by`,
-      [id, req.user.id]
+       RETURNING id, assignee_id, completed_at, completed_by, completion_comment`,
+      [id, req.user.id, comment]
     );
     await logAudit({
       userId: req.user.id,
       action: 'COMPLETE_STAFF_TASK',
       entityType: 'staff_task',
       entityId: task.id,
-      details: { title: task.title },
+      details: { title: task.title, completion_comment: comment },
     });
     res.json({ ok: true, ...updated[0] });
   } catch (e) {

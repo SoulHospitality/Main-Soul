@@ -13,7 +13,7 @@ import {
   LayoutDashboard, Building2, CalendarDays,
   BadgeDollarSign, Users, UserCircle,
   LogOut, Building, CalendarRange,
-  Sparkles, Briefcase, Globe, Tag, KeyRound,
+  Briefcase, Globe, Tag, KeyRound,
   Link2,
   Landmark,
   Wallet,
@@ -51,8 +51,8 @@ const NAV_SECTIONS = [
       { path: '/admin/acquisition', label: 'Owner leads', icon: Briefcase, page: 'acquisition', resaleLabel: 'Owners requests' },
       { path: '/admin/performance', label: 'Performance', icon: Trophy, page: 'performance', roles: ['resale_manager'] },
       { path: '/admin/acquisition-audit', label: 'Audit', icon: ClipboardList, page: 'acquisition_audit' },
-      { path: '/admin/owner-statement', label: 'Owner Statement', icon: FileBarChart2, page: 'owner_statement', roles: ['unit_acquisition_agent', 'unit_acquisition_manager'] },
-      { path: '/admin/users', label: 'Owners', icon: UserCircle, page: 'owners', roles: ['unit_acquisition_agent', 'unit_acquisition_manager'] },
+      { path: '/admin/owner-statement', label: 'Owner Statement', icon: FileBarChart2, page: 'owner_statement', roles: ['unit_acquisition_manager', 'owners_relations'] },
+      { path: '/admin/users', label: 'Owners', icon: UserCircle, page: 'owners', roles: ['unit_acquisition_manager'] },
     ],
   },
   {
@@ -72,7 +72,6 @@ const NAV_SECTIONS = [
     label: 'Operations',
     items: [
       { path: '/admin/operations', label: 'Operations', icon: KeyRound, page: 'operations' },
-      { path: '/admin/housekeeping', label: 'Housekeeping', icon: Sparkles, page: 'housekeeping' },
     ],
   },
   {

@@ -67,6 +67,7 @@ const TEAM_RESERVATION_ROLES = new Set([
   'reservations_manager',
   'hr_supervisor',
   'unit_acquisition_manager',
+  'operations_supervisor',
 ]);
 
 /** Staff who only see reservations they own / created / labeled as themselves. */
@@ -78,7 +79,6 @@ const OWN_ONLY_RESERVATION_ROLES = new Set([
   'marketing_pr',
   'unit_acquisition_agent',
   'operations',
-  'operations_supervisor',
 ]);
 
 function hasBroadReservationAccess(user) {
@@ -162,6 +162,30 @@ function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
       )`,
       params: [],
       nextIndex: paramIndex,
+    };
+  }
+
+  if (user.role === 'operations_supervisor') {
+    return {
+      clause: ` AND (
+        ${alias}.ops_assigned_to = $${paramIndex}
+        OR ${alias}.ops_assigned_to IN (
+          SELECT id FROM staff_users
+          WHERE manager_id = $${paramIndex} AND role = 'operations'
+        )
+        OR ${alias}.created_by = $${paramIndex}
+        OR ${alias}.ops_assigned_by = $${paramIndex}
+      )`,
+      params: [user.id],
+      nextIndex: paramIndex + 1,
+    };
+  }
+
+  if (user.role === 'operations') {
+    return {
+      clause: ` AND ${alias}.ops_assigned_to = $${paramIndex}`,
+      params: [user.id],
+      nextIndex: paramIndex + 1,
     };
   }
 

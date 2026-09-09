@@ -160,18 +160,20 @@ export default function ManualReservationForm({
   const utilitiesPerNight = form.is_owner_reservation
     ? 0
     : Number(form.utilities_cost_override || selectedUnit?.utilities_cost) || 0;
+  const utilitiesAmount = utilitiesPerNight * nights;
+  const fullBill = Math.round((total + housekeeping + beachAccessFees + insurance + utilitiesAmount) * 100) / 100;
   const commissionFinancials = selectedUnit
     ? calcReservationFinancials(selectedUnit, {
         ...form,
         nights,
         broker_total: brokerTotal,
-        utilities_amount: utilitiesPerNight * nights,
+        utilities_amount: utilitiesAmount,
       })
     : null;
 
-  let toCollect = total - downPayment;
+  let toCollect = fullBill - downPayment;
   if (form.owner_collected_type === 'full') toCollect = housekeeping + insurance - downPayment;
-  if (form.owner_collected_type === 'partial') toCollect = total - ownerCollected - downPayment;
+  if (form.owner_collected_type === 'partial') toCollect = fullBill - ownerCollected - downPayment;
   toCollect = Math.max(0, toCollect);
 
   useEffect(() => {
@@ -766,6 +768,22 @@ export default function ManualReservationForm({
                 <strong className="text-[#0f1c2e]">{money(beachAccessFees)}</strong>
               </div>
             )}
+            {insurance > 0 && (
+              <div className="flex justify-between py-1">
+                <span className="text-[#5b6b80]">Insurance</span>
+                <strong className="text-[#0f1c2e]">{money(insurance)}</strong>
+              </div>
+            )}
+            {utilitiesAmount > 0 && (
+              <div className="flex justify-between py-1">
+                <span className="text-[#5b6b80]">Utilities</span>
+                <strong className="text-[#0f1c2e]">{money(utilitiesAmount)}</strong>
+              </div>
+            )}
+            <div className="flex justify-between py-1 border-t border-[#e6ebf2] mt-1 pt-2">
+              <span className="font-semibold text-[#0f1c2e]">Full bill total</span>
+              <strong className="text-[#0f1c2e]">{money(fullBill)}</strong>
+            </div>
             {downPayment > 0 && (
               <div className="flex justify-between py-1">
                 <span className="text-[#5b6b80]">Down payment</span>

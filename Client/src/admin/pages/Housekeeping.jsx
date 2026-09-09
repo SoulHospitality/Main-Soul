@@ -750,9 +750,14 @@ export default function Housekeeping() {
   const tabs = [
     { id: 'today', label: "Today's cleans", icon: SprayCan, page: 'hk_today' },
     { id: 'history', label: 'Cleans history', icon: History, page: 'hk_today' },
-    { id: 'tasks', label: 'Tasks', icon: Sparkles, page: 'housekeeping' },
-    { id: 'fees', label: 'Fees', icon: DollarSign, page: 'housekeeping' },
-    { id: 'services', label: 'Service requests', icon: ClipboardList, page: 'housekeeping' },
+    // Fees / Tasks money surfaces removed for ops; admin-only if housekeeping page still reachable
+    ...(user?.role === 'admin'
+      ? [
+          { id: 'tasks', label: 'Tasks', icon: Sparkles, page: 'housekeeping' },
+          { id: 'fees', label: 'Fees', icon: DollarSign, page: 'housekeeping' },
+          { id: 'services', label: 'Service requests', icon: ClipboardList, page: 'housekeeping' },
+        ]
+      : []),
   ].filter((t) => canAccess(user, t.page));
 
   const resolvedTab = tabs.some((t) => t.id === activeTab) ? activeTab : tabs[0]?.id || 'today';

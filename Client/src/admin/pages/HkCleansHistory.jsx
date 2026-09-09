@@ -16,7 +16,7 @@ function defaultRange() {
 
 export function CleansHistorySection({ embedded = false }) {
   const { user } = useAuth();
-  const isAgent = user?.role === 'housekeeping';
+  const isAgent = user?.role === 'operations';
   const defaults = useMemo(() => defaultRange(), []);
   const [from, setFrom] = useState(defaults.from);
   const [to, setTo] = useState(defaults.to);

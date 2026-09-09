@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Edit2, ArrowRightCircle, Wallet, CreditCard, TrendingUp, TrendingDown, Pencil, Check, X } from 'lucide-react';
+import { Plus, Edit2, ArrowRightCircle, Wallet, CreditCard, TrendingUp, TrendingDown, Pencil, Check, X, Upload } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
@@ -51,7 +51,7 @@ function PaidByBadge({ paidBy }) {
   return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">Company</span>;
 }
 
-function EntryForm({ form, setForm, units, owners = [], ownerUnits = [] }) {
+function EntryForm({ form, setForm, units, owners = [], ownerUnits = [], transferProof, onTransferProofChange }) {
   const isIn = form.type === 'in';
   const categories = isIn ? IN_CATEGORIES : OUT_CATEGORIES;
   const requiresDates = isIn ? IN_REQUIRES_DATES : OUT_REQUIRES_DATES;
@@ -266,6 +266,22 @@ function EntryForm({ form, setForm, units, owners = [], ownerUnits = [] }) {
           onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
           placeholder="Optional notes…" />
       </div>
+
+      {!isIn && (
+        <div>
+          <label className="label">Transfer proof *</label>
+          <label className="flex items-center gap-2 rounded-[10px] border border-dashed border-[#c5d0de] bg-[#f8fafc] px-3 py-3 text-sm text-[#5b6b80] cursor-pointer hover:border-[#1e5fbf]">
+            <Upload className="h-4 w-4" />
+            <span>{transferProof?.name || 'Upload image or PDF (required for cash out)'}</span>
+            <input
+              type="file"
+              accept="image/*,.pdf"
+              className="hidden"
+              onChange={(e) => onTransferProofChange?.(e.target.files?.[0] || null)}
+            />
+          </label>
+        </div>
+      )}
     </div>
   );
 }
@@ -296,6 +312,7 @@ export function PettyCashSection({ embedded = false }) {
   const [modal,  setModal]  = useState(false);
   const [editId, setEditId] = useState(null);
   const [form,   setForm]   = useState(EMPTY_FORM);
+  const [transferProof, setTransferProof] = useState(null);
 
   const [editingBalance, setEditingBalance] = useState(false);
   const [balanceDraft,   setBalanceDraft]   = useState('');
@@ -346,9 +363,16 @@ export function PettyCashSection({ embedded = false }) {
 
   
   const saveMutation = useMutation({
-    mutationFn: (d) => editId
-      ? api.patch(`/petty-cash/${editId}`, d)
-      : api.post('/petty-cash', d),
+    mutationFn: (d) => {
+      if (d instanceof FormData) {
+        return editId
+          ? api.patch(`/petty-cash/${editId}`, d)
+          : api.post('/petty-cash', d);
+      }
+      return editId
+        ? api.patch(`/petty-cash/${editId}`, d)
+        : api.post('/petty-cash', d);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['petty-cash'] });
       qc.invalidateQueries({ queryKey: ['expenses'] });
@@ -356,6 +380,7 @@ export function PettyCashSection({ embedded = false }) {
       toast.success(editId ? 'Entry updated' : 'Entry added');
       setModal(false);
       setEditId(null);
+      setTransferProof(null);
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Error saving entry'),
   });
@@ -399,6 +424,7 @@ export function PettyCashSection({ embedded = false }) {
   const openAdd = (defaultType = 'out') => {
     setForm({ ...EMPTY_FORM, type: defaultType });
     setEditId(null);
+    setTransferProof(null);
     setModal(true);
   };
 
@@ -420,8 +446,10 @@ export function PettyCashSection({ embedded = false }) {
       notes:              entry.notes        || '',
       is_general:         !entry.unit_id && !isIn && entry.paid_by !== 'owner',
       is_advance:         !!entry.is_advance,
+      _hasExistingProof:  !!entry.transfer_proof_path,
     });
     setEditId(entry.id);
+    setTransferProof(null);
     setModal(true);
   };
 
@@ -448,12 +476,16 @@ export function PettyCashSection({ embedded = false }) {
       return toast.error('Reservation period "From" must be before "To"');
     if (form.category === 'Others' && !form.custom_description.trim())
       return toast.error('Please enter a description for Others');
+    if (!isIn && !editId && !transferProof)
+      return toast.error('Upload a transfer proof for cash out');
+    if (!isIn && editId && !transferProof && !form._hasExistingProof)
+      return toast.error('Upload a transfer proof for cash out');
 
     const description = form.category === 'Others'
       ? form.custom_description.trim()
       : form.category;
 
-    saveMutation.mutate({
+    const payload = {
       unit_id:      form.unit_id || null,
       owner_id:     !isIn && form.paid_by === 'owner' ? form.owner_id : null,
       description,
@@ -466,7 +498,20 @@ export function PettyCashSection({ embedded = false }) {
       is_advance:   isIn ? form.is_advance : false,
       res_from_date: needsDates ? form.res_from_date : undefined,
       res_to_date:   needsDates ? form.res_to_date   : undefined,
-    });
+    };
+
+    if (!isIn && transferProof) {
+      const fd = new FormData();
+      Object.entries(payload).forEach(([key, value]) => {
+        if (value === undefined || value === null) return;
+        fd.append(key, String(value));
+      });
+      fd.append('transfer_proof', transferProof);
+      saveMutation.mutate(fd);
+      return;
+    }
+
+    saveMutation.mutate(payload);
   };
 
   const startEditBalance = () => {
@@ -824,6 +869,8 @@ export function PettyCashSection({ embedded = false }) {
           units={units}
           owners={owners.filter((o) => o.is_active == null || Number(o.is_active) === 1)}
           ownerUnits={ownerUnits}
+          transferProof={transferProof}
+          onTransferProofChange={setTransferProof}
         />
       </Modal>
 

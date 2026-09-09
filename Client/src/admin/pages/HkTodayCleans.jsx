@@ -10,8 +10,8 @@ export function TodayCleansSection({ embedded = false }) {
   const { user } = useAuth();
   const qc = useQueryClient();
   const canAssign =
-    user?.role === 'admin' || user?.role === 'housekeeping_supervisor';
-  const isAgent = user?.role === 'housekeeping';
+    user?.role === 'admin' || user?.role === 'operations_supervisor';
+  const isAgent = user?.role === 'operations';
 
   const { data: rows = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ['hk-today-cleans'],
@@ -48,8 +48,22 @@ export function TodayCleansSection({ embedded = false }) {
     onSuccess: () => {
       toast.success('Assignment updated');
       qc.invalidateQueries({ queryKey: ['hk-today-cleans'] });
+      qc.invalidateQueries({ queryKey: ['ops-checkins-today'] });
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Assign failed'),
+  });
+
+  const dueDateMutation = useMutation({
+    mutationFn: ({ taskId, cleaning_date }) =>
+      api.patch(`/housekeeping-tasks/${taskId}`, {
+        due_at: cleaning_date ? `${cleaning_date}T12:00:00` : null,
+        cleaning_date,
+      }),
+    onSuccess: () => {
+      toast.success('Cleaning date updated');
+      qc.invalidateQueries({ queryKey: ['hk-today-cleans'] });
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Could not update cleaning date'),
   });
 
   if (isLoading) return <LoadingSpinner />;
@@ -62,10 +76,10 @@ export function TodayCleansSection({ embedded = false }) {
             <h1 className="text-2xl font-bold text-gray-900">Today&apos;s cleans</h1>
             <p className="mt-1 text-sm text-gray-500">
               {canAssign
-                ? 'Assign each clean to a housekeeping agent, then track when units are ready.'
+                ? 'Assign each clean to an operations agent, then track when units are ready.'
                 : isAgent
-                  ? 'Your assigned cleans — mark cleaned when the unit is ready for Operations.'
-                  : 'Units with check-in today. Mark cleaned when ready for Operations handover.'}
+                  ? 'Your assigned cleans — mark cleaned when the unit is ready for handover.'
+                  : 'Units with check-in today. Mark cleaned when ready for handover.'}
             </p>
           </div>
           <button type="button" className="btn-secondary text-sm" onClick={() => refetch()}>
@@ -87,7 +101,7 @@ export function TodayCleansSection({ embedded = false }) {
       ) : !rows.length ? (
         <div className="card p-10 text-center text-sm text-gray-500">
           {isAgent
-            ? 'No cleans assigned to you yet. Ask your Housekeeping Supervisor to assign units.'
+            ? 'No cleans assigned to you yet. Ask your Operations Supervisor to assign units.'
             : 'No check-in cleans for today.'}
         </div>
       ) : (
@@ -132,27 +146,44 @@ export function TodayCleansSection({ embedded = false }) {
               </div>
 
               {canAssign && r.task_id ? (
-                <div className="mt-3">
-                  <label className="text-[10px] uppercase text-gray-500">Assign agent</label>
-                  <select
-                    className="input text-sm py-1.5 mt-1"
-                    value={r.assigned_to || ''}
-                    disabled={assignMutation.isPending}
-                    onChange={(e) =>
-                      assignMutation.mutate({
-                        taskId: r.task_id,
-                        staff_id: e.target.value ? Number(e.target.value) : null,
-                      })
-                    }
-                  >
-                    <option value="">Unassigned</option>
-                    {agents.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.full_name || a.username}
-                        {a.staff_code ? ` (${a.staff_code})` : ''}
-                      </option>
-                    ))}
-                  </select>
+                <div className="mt-3 space-y-2">
+                  <div>
+                    <label className="text-[10px] uppercase text-gray-500">Assign agent</label>
+                    <select
+                      className="input text-sm py-1.5 mt-1"
+                      value={r.assigned_to || ''}
+                      disabled={assignMutation.isPending}
+                      onChange={(e) =>
+                        assignMutation.mutate({
+                          taskId: r.task_id,
+                          staff_id: e.target.value ? Number(e.target.value) : null,
+                        })
+                      }
+                    >
+                      <option value="">Unassigned</option>
+                      {agents.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.full_name || a.username}
+                          {a.staff_code ? ` (${a.staff_code})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] uppercase text-gray-500">Cleaning date</label>
+                    <input
+                      type="date"
+                      className="input text-sm py-1.5 mt-1"
+                      value={String(r.due_at || '').slice(0, 10)}
+                      disabled={dueDateMutation.isPending}
+                      onChange={(e) =>
+                        dueDateMutation.mutate({
+                          taskId: r.task_id,
+                          cleaning_date: e.target.value || null,
+                        })
+                      }
+                    />
+                  </div>
                 </div>
               ) : null}
 

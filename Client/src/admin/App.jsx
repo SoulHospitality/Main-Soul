@@ -103,8 +103,10 @@ function LegacyOpsRedirect({ tab }) {
 
 function LegacyHousekeepingRedirect({ tab }) {
   const location = useLocation();
-  const suffix = tab ? `?tab=${tab}${location.search ? `&${location.search.slice(1)}` : ''}` : location.search;
-  return <Navigate to={`/admin/housekeeping${suffix}`} replace />;
+  const opsTab =
+    tab === 'today' ? 'cleans' : tab === 'history' ? 'cleans-history' : tab || 'cleans';
+  const suffix = `?tab=${opsTab}${location.search ? `&${location.search.slice(1)}` : ''}`;
+  return <Navigate to={`/admin/operations${suffix}`} replace />;
 }
 
 function AppRoutes() {

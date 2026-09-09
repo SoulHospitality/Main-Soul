@@ -30,6 +30,8 @@ export default function Tasks() {
   const [editingTask, setEditingTask] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [deleteTask, setDeleteTask] = useState(null);
+  const [completeTask, setCompleteTask] = useState(null);
+  const [completionComment, setCompletionComment] = useState('');
 
   const {
     data: tasks = [],
@@ -146,10 +148,13 @@ export default function Tasks() {
   });
 
   const completeMutation = useMutation({
-    mutationFn: (id) => api.post(`/staff-tasks/${id}/complete`).then((r) => r.data),
+    mutationFn: ({ id, comment }) =>
+      api.post(`/staff-tasks/${id}/complete`, { comment }).then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['staff-tasks'] });
       toast.success('Task marked as done');
+      setCompleteTask(null);
+      setCompletionComment('');
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Could not mark task done'),
   });
@@ -318,7 +323,10 @@ export default function Tasks() {
                         type="button"
                         className="btn-secondary text-xs px-2.5 py-1.5 text-emerald-700"
                         disabled={completeMutation.isPending}
-                        onClick={() => completeMutation.mutate(task.id)}
+                        onClick={() => {
+                          setCompleteTask(task);
+                          setCompletionComment('');
+                        }}
                       >
                         <Check className="w-3.5 h-3.5" />
                         Done
@@ -351,6 +359,11 @@ export default function Tasks() {
                 ) : (
                   <p className="mt-3 text-sm text-soul-muted">No description</p>
                 )}
+                {task.completed_at && task.completion_comment ? (
+                  <p className="mt-2 text-xs text-emerald-800 whitespace-pre-wrap">
+                    Done note: {task.completion_comment}
+                  </p>
+                ) : null}
               </li>
             );
           })}
@@ -432,6 +445,59 @@ export default function Tasks() {
               className="input w-48"
               value={form.deadline}
               onChange={(e) => setForm((f) => ({ ...f, deadline: e.target.value }))}
+            />
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!completeTask}
+        onClose={() => {
+          setCompleteTask(null);
+          setCompletionComment('');
+        }}
+        title="Mark task done"
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                setCompleteTask(null);
+                setCompletionComment('');
+              }}
+              className="btn-secondary"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={completeMutation.isPending}
+              onClick={() => {
+                const comment = String(completionComment || '').trim();
+                if (!comment) {
+                  toast.error('Add a completion comment');
+                  return;
+                }
+                completeMutation.mutate({ id: completeTask.id, comment });
+              }}
+            >
+              {completeMutation.isPending ? 'Saving…' : 'Confirm done'}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-slate-600">
+            {completeTask ? `Add a short note for “${completeTask.title}”.` : ''}
+          </p>
+          <div>
+            <label className="label">Completion comment *</label>
+            <textarea
+              className="input min-h-[100px]"
+              value={completionComment}
+              onChange={(e) => setCompletionComment(e.target.value)}
+              placeholder="What was completed / any notes"
             />
           </div>
         </div>
