@@ -1564,6 +1564,182 @@ function AccountLines({ rows, amountKey = 'balance' }) {
   );
 }
 
+function CashFlowSection({ cf, fromDate, toDate }) {
+  const { t } = useFinLocale();
+  const [expanded, setExpanded] = useState({});
+
+  function toggle(key) {
+    setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
+  function lineLabel(line) {
+    const key = `pms.fin.reports.cfLines.${line.id}`;
+    const translated = t(key);
+    return translated === key ? line.label || line.id : translated;
+  }
+
+  function SectionBlock({ title, section, sectionKey }) {
+    const lines = section?.lines || [];
+    return (
+      <div className="space-y-1">
+        <div className="px-4 py-2 bg-slate-50 border-b font-semibold text-sm text-soul-blue">
+          {title}
+        </div>
+        {lines.length === 0 ? (
+          <p className="px-4 py-2 text-xs text-gray-400">{t('pms.fin.reports.cfNoActivity')}</p>
+        ) : (
+          lines.map((line) => {
+            const key = `${sectionKey}:${line.id}`;
+            const open = Boolean(expanded[key]);
+            return (
+              <div key={key} className="border-b border-soul-line/60 last:border-0">
+                <button
+                  type="button"
+                  className="w-full flex justify-between items-center gap-3 px-4 py-2 text-sm hover:bg-soul-blue-50/40 text-left"
+                  onClick={() => toggle(key)}
+                >
+                  <span className="flex items-center gap-2">
+                    <ChevronRight
+                      className={`w-3.5 h-3.5 text-gray-400 transition-transform ${open ? 'rotate-90' : ''}`}
+                    />
+                    {lineLabel(line)}
+                    {line.entries?.length ? (
+                      <span className="text-[10px] text-gray-400">({line.entries.length})</span>
+                    ) : null}
+                  </span>
+                  <span className="tabular-nums font-medium">{currency(line.amount)}</span>
+                </button>
+                {open && line.entries?.length ? (
+                  <div className="bg-gray-50/80 px-4 py-2 space-y-1">
+                    {line.entries.map((e) => (
+                      <div
+                        key={`${e.id}-${e.amount}-${e.date}`}
+                        className="flex justify-between gap-3 text-xs text-gray-600"
+                      >
+                        <span className="min-w-0 truncate">
+                          <span className="text-gray-400 mr-2">{formatDate(e.date)}</span>
+                          {e.description}
+                        </span>
+                        <span className="tabular-nums shrink-0">{currency(e.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })
+        )}
+        <div className="flex justify-between px-4 py-2.5 text-sm font-semibold border-t">
+          <span>{t('pms.fin.reports.cfSectionTotal', { section: title })}</span>
+          <span className="tabular-nums">{currency(section?.total)}</span>
+        </div>
+      </div>
+    );
+  }
+
+  const balanced = cf.reconciliation?.balanced !== false;
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-soul-line bg-white p-5 space-y-2">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h3 className="font-semibold text-soul-blue">{t('pms.fin.reports.cfTitle')}</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {t('pms.fin.reports.cfMethodHint', {
+                from: fromDate || cf.from_date,
+                to: toDate || cf.to_date,
+              })}
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+          <div className="rounded-xl border border-soul-line bg-slate-50/80 p-3">
+            <p className="text-[11px] uppercase tracking-wide text-gray-400">{t('pms.fin.reports.cfOpening')}</p>
+            <p className="text-lg font-bold tabular-nums mt-1">{currency(cf.opening_cash)}</p>
+          </div>
+          <div className="rounded-xl border border-soul-line bg-white p-3">
+            <p className="text-[11px] uppercase tracking-wide text-gray-400">{t('pms.fin.reports.cfNetChange')}</p>
+            <p className="text-lg font-bold tabular-nums mt-1">{currency(cf.net_change)}</p>
+          </div>
+          <div
+            className={`rounded-xl border p-3 ${
+              balanced ? 'border-emerald-200 bg-emerald-50/50' : 'border-rose-200 bg-rose-50/60'
+            }`}
+          >
+            <p className="text-[11px] uppercase tracking-wide text-gray-400">{t('pms.fin.reports.cfEnding')}</p>
+            <p className="text-lg font-bold tabular-nums mt-1">{currency(cf.ending_cash)}</p>
+            {!balanced ? (
+              <p className="text-[11px] text-rose-700 mt-1">
+                {t('pms.fin.reports.cfVariance', {
+                  amount: currency(cf.reconciliation?.variance),
+                })}
+              </p>
+            ) : (
+              <p className="text-[11px] text-emerald-700 mt-1">{t('pms.fin.reports.cfReconciled')}</p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
+        <SectionBlock
+          title={t('pms.fin.reports.cfOperating')}
+          section={cf.operating}
+          sectionKey="operating"
+        />
+        <SectionBlock
+          title={t('pms.fin.reports.cfInvesting')}
+          section={cf.investing}
+          sectionKey="investing"
+        />
+        <SectionBlock
+          title={t('pms.fin.reports.cfFinancing')}
+          section={cf.financing}
+          sectionKey="financing"
+        />
+        <div className="flex justify-between px-4 py-3 bg-soul-blue text-white font-semibold">
+          <span>{t('pms.fin.reports.netTreasuryChange')}</span>
+          <span className="tabular-nums">{currency(cf.net_change)}</span>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
+        <div className="px-4 py-3 border-b font-semibold text-sm">{t('pms.fin.reports.cfByAccount')}</div>
+        <table className="table text-sm">
+          <thead>
+            <tr>
+              <th>{t('pms.fin.reports.thAccount')}</th>
+              <th className="text-right">{t('pms.fin.reports.cfOpening')}</th>
+              <th className="text-right">{t('pms.fin.reports.cfInflows')}</th>
+              <th className="text-right">{t('pms.fin.reports.cfOutflows')}</th>
+              <th className="text-right">{t('pms.fin.reports.cfEnding')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(cf.by_account || []).map((a) => (
+              <tr key={a.code}>
+                <td>
+                  <span className="font-mono text-[11px] text-gray-400 mr-2">{a.code}</span>
+                  {a.name}
+                  {a.currency && a.currency !== 'EGP' ? (
+                    <span className="text-[10px] text-gray-400 ml-1">({a.currency})</span>
+                  ) : null}
+                </td>
+                <td className="text-right tabular-nums">{currency(a.opening)}</td>
+                <td className="text-right tabular-nums text-emerald-700">{currency(a.inflows)}</td>
+                <td className="text-right tabular-nums text-rose-700">{currency(a.outflows)}</td>
+                <td className="text-right tabular-nums font-medium">{currency(a.closing)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="px-4 py-2 text-[11px] text-gray-500 border-t">{cf.note}</p>
+      </div>
+    </div>
+  );
+}
+
 function ReportsTool({ rangeParams: params }) {
   const { t } = useFinLocale();
   const [tab, setTab] = useState('pnl');
@@ -1690,29 +1866,7 @@ function ReportsTool({ rangeParams: params }) {
         </div>
       )}
       {tab === 'cf' && (
-        <div className="rounded-2xl border border-soul-line bg-white p-6 space-y-3">
-          <div className="flex justify-between text-sm">
-            <span>{t('pms.fin.reports.operatingInflows')}</span>
-            <span className="tabular-nums">{currency(cf.operating_in)}</span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span>{t('pms.fin.reports.operatingOutflows')}</span>
-            <span className="tabular-nums">{currency(cf.operating_out)}</span>
-          </div>
-          <div className="flex justify-between font-semibold">
-            <span>{t('pms.fin.reports.operatingNet')}</span>
-            <span className="tabular-nums">{currency(cf.operating_net)}</span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span>{t('pms.fin.reports.ownerPayoutsFinancing')}</span>
-            <span className="tabular-nums">{currency(cf.financing_out)}</span>
-          </div>
-          <div className="flex justify-between text-lg font-bold text-soul-blue pt-2 border-t">
-            <span>{t('pms.fin.reports.netTreasuryChange')}</span>
-            <span className="tabular-nums">{currency(cf.net_change)}</span>
-          </div>
-          <p className="text-xs text-gray-500">{cf.note}</p>
-        </div>
+        <CashFlowSection cf={cf} fromDate={data?.from_date} toDate={data?.to_date} />
       )}
     </div>
   );

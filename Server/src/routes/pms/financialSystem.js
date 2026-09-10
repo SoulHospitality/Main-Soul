@@ -32,6 +32,7 @@ const {
   agingFromReservations,
   ownerTrustSubledger,
   closeMonthEntry,
+  buildCashFlowStatement,
 } = require('../../lib/finance/ledgerEngine');
 const { buildFinancialWorkbook, workbookToBuffer } = require('../../lib/finance/financialExport');
 
@@ -1026,6 +1027,7 @@ router.get('/financial-system/export', requireRoles('admin', 'finance', 'finance
       to,
       portal.data?.reservationTotals
     );
+    statements.cash_flow = await buildCashFlowStatement(from, to);
     const asOf = to || new Date().toISOString().slice(0, 10);
     const wb = buildFinancialWorkbook({
       from,

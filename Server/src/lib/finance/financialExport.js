@@ -500,16 +500,69 @@ function buildTrialBalance(statements) {
 function buildCashFlow(statements) {
   const cf = statements?.cash_flow || {};
   const rows = [
-    banner('CASH FLOW'),
-    subtitle('Treasury operating & financing movements'),
+    banner('STATEMENT OF CASH FLOWS'),
+    subtitle(cf.method === 'direct' ? 'Direct method · Treasury 101000–104000' : 'Treasury operating & financing movements'),
     blank(),
-    header('Category', 'Amount (EGP)'),
-    kv('Operating inflows', money(cf.operating_in)),
-    kv('Operating outflows', money(cf.operating_out)),
-    kv('Operating net', money(cf.operating_net)),
-    kv('Financing outflows (owner payouts)', money(cf.financing_out)),
-    total('Net change in treasury', money(cf.net_change)),
   ];
+  if (cf.from_date || cf.to_date) {
+    rows.push(note(`Period: ${cf.from_date || '—'} → ${cf.to_date || '—'}`));
+    rows.push(blank());
+  }
+
+  rows.push(header('Cash bridge', 'Amount (EGP)'));
+  rows.push(kv('Opening cash', money(cf.opening_cash)));
+  rows.push(kv('Net change in cash', money(cf.net_change)));
+  rows.push(kv('Ending cash (opening + net)', money(cf.ending_cash_bridge ?? cf.reconciliation?.opening_plus_net)));
+  rows.push(total('Ending cash (ledger)', money(cf.ending_cash)));
+  if (cf.reconciliation) {
+    rows.push(
+      kv(
+        cf.reconciliation.balanced ? 'Reconciliation' : 'Reconciliation variance',
+        money(cf.reconciliation.variance)
+      )
+    );
+  }
+  rows.push(blank());
+
+  function sectionRows(title, section) {
+    rows.push(header(title, 'Amount (EGP)'));
+    for (const line of section?.lines || []) {
+      rows.push(kv(line.label || line.id, money(line.amount)));
+    }
+    rows.push(total(`${title} total`, money(section?.total)));
+    rows.push(blank());
+  }
+
+  sectionRows('Operating activities', cf.operating);
+  sectionRows('Investing activities', cf.investing);
+  sectionRows('Financing activities', cf.financing);
+  rows.push(total('Net increase / (decrease) in cash', money(cf.net_change)));
+  rows.push(blank());
+
+  if (cf.by_account?.length) {
+    rows.push(header('Account', 'Opening', 'Inflows', 'Outflows', 'Closing'));
+    for (const a of cf.by_account) {
+      rows.push(
+        data(
+          `${a.code} ${a.name || ''}`,
+          money(a.opening),
+          money(a.inflows),
+          money(a.outflows),
+          money(a.closing)
+        )
+      );
+    }
+    rows.push(blank());
+  }
+
+  // Legacy summary rows for compatibility
+  rows.push(header('Summary (legacy)', 'Amount (EGP)'));
+  rows.push(kv('Operating inflows', money(cf.operating_in)));
+  rows.push(kv('Operating outflows', money(cf.operating_out)));
+  rows.push(kv('Operating net', money(cf.operating_net)));
+  rows.push(kv('Financing outflows (owner payouts)', money(cf.financing_out)));
+  rows.push(total('Net change in treasury', money(cf.net_change)));
+
   if (cf.note) {
     rows.push(blank(), note(cf.note));
   }
@@ -840,7 +893,7 @@ function buildContentsSheet() {
     data('04 Chart of Accounts', 'Period account balances by group'),
     data('05 Balance Sheet', 'Assets, liabilities, and equity'),
     data('06 Trial Balance', 'Debits and credits by account'),
-    data('07 Cash Flow', 'Treasury operating and financing movements'),
+    data('07 Cash Flow', 'Direct-method statement of cash flows'),
     data('08 Bookings', 'Reservations with commission / owner splits'),
     data('09 Expenses', 'Operating and unit expenses'),
     data('10 Payments', 'Guest collections and refunds'),
@@ -893,7 +946,7 @@ function buildFinancialWorkbook(pack) {
   ]);
   addSheet(wb, '05 Balance Sheet', buildBalanceSheet(statements), [16, 10, 48, 16]);
   addSheet(wb, '06 Trial Balance', buildTrialBalance(statements), [10, 48, 12, 14, 14, 14]);
-  addSheet(wb, '07 Cash Flow', buildCashFlow(statements), [42, 16]);
+  addSheet(wb, '07 Cash Flow', buildCashFlow(statements), [42, 14, 14, 14, 14]);
   addSheet(wb, '08 Bookings', buildBookingsSheet(portal?.reservations || []), [
     10, 22, 14, 16, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12,
   ]);

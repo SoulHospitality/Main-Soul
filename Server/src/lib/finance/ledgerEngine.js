@@ -1568,32 +1568,266 @@ function balanceSheet(bals, pnlNet) {
   };
 }
 
-function cashFlow(journal) {
-  const opsIn = ['collection', 'manual_revenue', 'miscellaneous', 'gateway_settle', 'petty_cash'];
+function treasuryBalancesFromJournal(journal) {
+  const bals = balancesFromJournal(journal);
+  const byCode = {};
+  let total = 0;
+  for (const code of TREASURY_CODES) {
+    const a = bals.find((x) => x.code === code);
+    const balance = a?.balance || 0;
+    byCode[code] = {
+      code,
+      name: a?.name || accountLabel(code),
+      currency: getAccount(code)?.currency || 'EGP',
+      balance: round2(balance),
+      debit: a?.debit || 0,
+      credit: a?.credit || 0,
+    };
+    total = round2(total + balance);
+  }
+  return { byCode, total: round2(total) };
+}
+
+const FIXED_ASSET_CODES = new Set(['150000', '151000', '159000']);
+const FINANCING_EQUITY_CODES = new Set(['301000', '302000']);
+
+function entryTreasuryTotals(entry) {
+  let debit = 0;
+  let credit = 0;
+  for (const line of entry.lines || []) {
+    if (!TREASURY_CODES.includes(line.account)) continue;
+    debit += Number(line.debit) || 0;
+    credit += Number(line.credit) || 0;
+  }
+  return { debit: round2(debit), credit: round2(credit), net: round2(debit - credit) };
+}
+
+function isPureTreasuryTransfer(entry) {
+  const tLines = (entry.lines || []).filter((l) => TREASURY_CODES.includes(l.account));
+  if (tLines.length < 2) return false;
+  const hasDebit = tLines.some((l) => (Number(l.debit) || 0) > 0.009);
+  const hasCredit = tLines.some((l) => (Number(l.credit) || 0) > 0.009);
+  if (!hasDebit || !hasCredit) return false;
+  const other = (entry.lines || []).filter((l) => !TREASURY_CODES.includes(l.account));
+  const otherAmt = other.reduce((s, l) => s + (Number(l.debit) || 0) + (Number(l.credit) || 0), 0);
+  return otherAmt < 0.01;
+}
+
+function touchesCodes(entry, codeSet) {
+  return (entry.lines || []).some((l) => codeSet.has(l.account));
+}
+
+function cfEntryRef(entry, amount) {
+  return {
+    id: entry.id,
+    date: isoDate(entry.date),
+    description: entry.description || entry.type || entry.id,
+    amount: round2(amount),
+    type: entry.type,
+  };
+}
+
+function makeCfLine(id, label) {
+  return { id, label, amount: 0, entries: [] };
+}
+
+function pushCfAmount(line, entry, amount) {
+  const amt = round2(amount);
+  if (Math.abs(amt) < 0.005) return;
+  line.amount = round2(line.amount + amt);
+  line.entries.push(cfEntryRef(entry, amt));
+}
+
+function sectionFromLines(lines) {
+  const nonempty = lines.filter((l) => Math.abs(l.amount) >= 0.005 || (l.entries && l.entries.length));
+  const total = round2(nonempty.reduce((s, l) => s + l.amount, 0));
+  return { lines: nonempty, total };
+}
+
+/**
+ * Direct-method Statement of Cash Flows for treasury accounts 101000–104000.
+ * @param {Array} periodJournal - entries in [from, to]
+ * @param {{ openingJournal?: Array, closingJournal?: Array, from?: string, to?: string }} opts
+ */
+function cashFlow(periodJournal, opts = {}) {
+  const openingJournal = opts.openingJournal || [];
+  const closingJournal = opts.closingJournal || periodJournal || [];
+  const openingPos = treasuryBalancesFromJournal(openingJournal);
+  const closingPos = treasuryBalancesFromJournal(closingJournal);
+
+  const opCollections = makeCfLine('collections', 'Cash received from guests');
+  const opGateway = makeCfLine('gateway_settlements', 'Gateway settlements to bank');
+  const opOtherIn = makeCfLine('other_receipts', 'Other operating receipts');
+  const opVendors = makeCfLine('vendor_payments', 'Cash paid to vendors / operations');
+  const opRefunds = makeCfLine('guest_refunds', 'Guest / insurance cash refunds');
+  const opOtherOut = makeCfLine('other_payments', 'Other operating payments');
+  const opTransfers = makeCfLine('treasury_transfers', 'Treasury transfers (net)');
+
+  const invCapex = makeCfLine('capex', 'Purchase of fixed assets');
+  const invProceeds = makeCfLine('asset_proceeds', 'Proceeds from asset disposals');
+
+  const finOwner = makeCfLine('owner_payouts', 'Owner trust settlements');
+  const finOther = makeCfLine('other_financing', 'Other financing');
+
   let operatingIn = 0;
   let operatingOut = 0;
-  let financing = 0;
-  for (const e of journal) {
-    for (const line of e.lines) {
+  let financingOut = 0;
+
+  const byAccountFlow = {};
+  for (const code of TREASURY_CODES) {
+    byAccountFlow[code] = { inflows: 0, outflows: 0 };
+  }
+
+  for (const entry of periodJournal || []) {
+    if (entry.type === 'depreciation' || entry.type === 'period_close') continue;
+    const { debit, credit, net } = entryTreasuryTotals(entry);
+    if (Math.abs(debit) < 0.005 && Math.abs(credit) < 0.005) continue;
+
+    for (const line of entry.lines || []) {
       if (!TREASURY_CODES.includes(line.account)) continue;
-      if (e.type === 'owner_payout') {
-        financing += line.credit || 0;
-        continue;
+      byAccountFlow[line.account].inflows = round2(
+        byAccountFlow[line.account].inflows + (Number(line.debit) || 0)
+      );
+      byAccountFlow[line.account].outflows = round2(
+        byAccountFlow[line.account].outflows + (Number(line.credit) || 0)
+      );
+    }
+
+    if (isPureTreasuryTransfer(entry)) {
+      // Gross cancel within cash — memo at net 0 so operating in/out are not inflated
+      opTransfers.entries.push({
+        id: entry.id,
+        date: isoDate(entry.date),
+        description: `${entry.description || 'Treasury transfer'} (${round2(debit)} moved)`,
+        amount: 0,
+        type: entry.type,
+      });
+      continue;
+    }
+
+    if (entry.type === 'owner_payout') {
+      const out = credit || Math.abs(Math.min(0, net));
+      pushCfAmount(finOwner, entry, -out);
+      financingOut = round2(financingOut + out);
+      continue;
+    }
+
+    if (touchesCodes(entry, FIXED_ASSET_CODES)) {
+      if (credit > 0.009) pushCfAmount(invCapex, entry, -credit);
+      if (debit > 0.009) pushCfAmount(invProceeds, entry, debit);
+      continue;
+    }
+
+    if (touchesCodes(entry, FINANCING_EQUITY_CODES)) {
+      if (debit > 0.009) pushCfAmount(finOther, entry, debit);
+      if (credit > 0.009) {
+        pushCfAmount(finOther, entry, -credit);
+        financingOut = round2(financingOut + credit);
       }
-      operatingIn += line.debit || 0;
-      operatingOut += line.credit || 0;
+      continue;
+    }
+
+    // Operating classification
+    if (debit > 0.009) {
+      operatingIn = round2(operatingIn + debit);
+      if (entry.type === 'collection') pushCfAmount(opCollections, entry, debit);
+      else if (entry.type === 'gateway_settle') pushCfAmount(opGateway, entry, debit);
+      else pushCfAmount(opOtherIn, entry, debit);
+    }
+    if (credit > 0.009) {
+      operatingOut = round2(operatingOut + credit);
+      if (
+        entry.type === 'expense' ||
+        entry.type === 'expense_payment' ||
+        entry.type === 'recurring_payment' ||
+        entry.type === 'housekeeping_order'
+      ) {
+        pushCfAmount(opVendors, entry, -credit);
+      } else if (entry.type === 'refund' || entry.type === 'insurance_refund') {
+        pushCfAmount(opRefunds, entry, -credit);
+      } else {
+        pushCfAmount(opOtherOut, entry, -credit);
+      }
     }
   }
-  const netOps = round2(operatingIn - operatingOut);
+
+  const operating = sectionFromLines([
+    opCollections,
+    opGateway,
+    opOtherIn,
+    opVendors,
+    opRefunds,
+    opOtherOut,
+    opTransfers,
+  ]);
+  const investing = sectionFromLines([invCapex, invProceeds]);
+  const financing = sectionFromLines([finOwner, finOther]);
+
+  const netChange = round2(operating.total + investing.total + financing.total);
+  const openingCash = openingPos.total;
+  const endingFromBridge = round2(openingCash + netChange);
+  const endingFromLedger = closingPos.total;
+  const variance = round2(endingFromBridge - endingFromLedger);
+
+  const byAccount = TREASURY_CODES.map((code) => {
+    const open = openingPos.byCode[code]?.balance || 0;
+    const flow = byAccountFlow[code] || { inflows: 0, outflows: 0 };
+    const closeLedger = closingPos.byCode[code]?.balance || 0;
+    return {
+      code,
+      name: openingPos.byCode[code]?.name || accountLabel(code),
+      currency: getAccount(code)?.currency || 'EGP',
+      opening: round2(open),
+      inflows: round2(flow.inflows),
+      outflows: round2(flow.outflows),
+      closing: round2(closeLedger),
+    };
+  });
+
   return {
-    operating_in: round2(operatingIn),
-    operating_out: round2(operatingOut),
-    operating_net: netOps,
-    financing_out: round2(financing),
-    net_change: round2(netOps - financing),
-    note: 'Treasury movements only (Bank EGP / cash). Gateway clearing is not cash until settled.',
-    ops_types: opsIn,
+    method: 'direct',
+    cash_definition: [...TREASURY_CODES],
+    from_date: opts.from || null,
+    to_date: opts.to || null,
+    opening_cash: openingCash,
+    ending_cash: endingFromLedger,
+    ending_cash_bridge: endingFromBridge,
+    net_change: netChange,
+    by_account: byAccount,
+    operating,
+    investing,
+    financing,
+    reconciliation: {
+      opening_plus_net: endingFromBridge,
+      ending_from_ledger: endingFromLedger,
+      variance,
+      balanced: Math.abs(variance) <= 0.05,
+    },
+    operating_in: operatingIn,
+    operating_out: operatingOut,
+    operating_net: operating.total,
+    financing_out: financingOut,
+    note:
+      'Direct method. Cash = Bank/Cash 101000–104000. Gateway clearing (106000) is not cash until settled. Mixed EGP/USD summed at recorded book amounts.',
   };
+}
+
+async function buildCashFlowStatement(from, to) {
+  const asOf = to || todayIso();
+  const start = from || FINANCIAL_EPOCH;
+  const hist = await loadPortalData(FINANCIAL_EPOCH, asOf);
+  const full = buildJournal(hist, FINANCIAL_EPOCH, asOf);
+  const openingJournal = full.filter((e) => {
+    const d = isoDate(e.date);
+    return d && d < start;
+  });
+  const periodJournal = full.filter((e) => inRange(e.date, start, asOf));
+  return cashFlow(periodJournal, {
+    openingJournal,
+    closingJournal: full,
+    from: start,
+    to: asOf,
+  });
 }
 
 function ownerTrustSubledger(journal, data) {
@@ -1797,7 +2031,7 @@ function buildStatements(journal, reservations, from, to, reservationTotals) {
       totals: pnlTotalsFromReceipts(pnl, receipts),
     },
     balance_sheet: bs,
-    cash_flow: cashFlow(journal),
+    cash_flow: cashFlow(journal, { openingJournal: [], closingJournal: journal, from, to }),
   };
 }
 
@@ -1845,10 +2079,13 @@ async function buildYtdStatements(to, fromDate) {
   const asOf = to || todayIso();
   const data = await loadPortalData(from, asOf);
   const journal = buildJournal(data, from, asOf);
+  const statements = buildStatements(journal, data.reservations, from, asOf, data.reservationTotals);
+  const cashFlowStatement = await buildCashFlowStatement(from, asOf);
   return {
     from_date: from,
     to_date: asOf,
-    ...buildStatements(journal, data.reservations, from, asOf, data.reservationTotals),
+    ...statements,
+    cash_flow: cashFlowStatement,
     vat_return: vatReturn(journal),
     owner_trust: ownerTrustSubledger(journal, data),
     aging: agingFromReservations(data.reservations, asOf),
@@ -1886,4 +2123,6 @@ module.exports = {
   isPeriodClosed,
   closeMonthEntry,
   FINANCIAL_EPOCH,
+  cashFlow,
+  buildCashFlowStatement,
 };
