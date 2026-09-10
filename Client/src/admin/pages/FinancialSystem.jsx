@@ -482,11 +482,25 @@ function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool
 
       <section>
         <h2 className="text-lg font-semibold text-soul-blue mb-3">{t('pms.fin.home.workspace')}</h2>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { id: 'manual', labelKey: 'manualEntries', icon: PenLine },
+            { id: 'assets', labelKey: 'fixedAssets', icon: Landmark },
             { id: 'owners', labelKey: 'ownerPayouts', icon: Users },
             { id: 'insurance', labelKey: 'insurancePayout', icon: Shield },
+            { id: 'trust', labelKey: 'ownerTrust', icon: Building2 },
+            { id: 'reports', labelKey: 'monthEndReports', icon: FileSpreadsheet },
+            { id: 'aging', labelKey: 'arAging', icon: AlertCircle },
+            { id: 'close', labelKey: 'closeMonth', icon: Lock },
+            { id: 'gateway', labelKey: 'gatewaySettle', icon: CreditCard },
+            { id: 'bank', labelKey: 'bankRec', icon: Landmark },
+            { id: 'manual', labelKey: 'manualEntries', icon: PenLine },
+            { id: 'petty', labelKey: 'pettyCash', icon: Wallet },
+            { id: 'tax', labelKey: 'taxDesk', icon: Scale },
+            { id: 'segment', labelKey: 'segmentPnl', icon: FileSpreadsheet },
+            { id: 'forecast', labelKey: 'cashForecast', icon: TrendingUp },
+            { id: 'vendors', labelKey: 'apVendors', icon: Users },
+            { id: 'recurring', labelKey: 'monthlyCharges', icon: Settings2 },
+            { id: 'ar', labelKey: 'arControls', icon: AlertCircle },
           ].map((tool) => {
             const Icon = tool.icon;
             return (
