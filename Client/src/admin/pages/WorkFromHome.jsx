@@ -11,8 +11,9 @@ import { ROLE_LABELS, canRequestWfh, canSeeRequestQueue } from '../utils/permiss
 import { formatDate } from '../utils/formatters';
 import { useAuth } from '../context/AuthContext';
 import { RequestReviewActions, approvalStatusClass } from '../components/RequestReviewActions';
+import { acknowledgeRequest } from '../utils/requestAcknowledgements';
 
-export default function WorkFromHome() {
+export default function WorkFromHome({ embedded = false }) {
   const { user } = useAuth();
   const canQueue = canSeeRequestQueue(user);
   const canRequest = canRequestWfh(user);
@@ -24,7 +25,7 @@ export default function WorkFromHome() {
   const [form, setForm] = useState({ work_date: '', reason: '' });
 
   const { data: rows = [], isLoading } = useQuery({
-    queryKey: ['hr-wfh', status],
+    queryKey: ['hr-wfh', user?.id, status],
     queryFn: () =>
       api
         .get('/hr/wfh', {
@@ -33,6 +34,7 @@ export default function WorkFromHome() {
           },
         })
         .then((r) => r.data),
+    enabled: !!user?.id,
   });
 
   const createMutation = useMutation({
@@ -49,6 +51,7 @@ export default function WorkFromHome() {
     mutationFn: ({ id, status: next, review_note }) =>
       api.post(`/hr/wfh/${id}/review`, { status: next, review_note }),
     onSuccess: (_, vars) => {
+      acknowledgeRequest('wfh', vars.id, user?.id);
       qc.invalidateQueries({ queryKey: ['hr-wfh'] });
       qc.invalidateQueries({ queryKey: ['hr-deductions'] });
       qc.invalidateQueries({ queryKey: ['hr-payroll'] });
@@ -75,6 +78,7 @@ export default function WorkFromHome() {
 
   return (
     <div className="space-y-6">
+      {!embedded ? (
       <div className="page-header">
         <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-soul-muted">HR</p>
         <h1 className="page-title mt-1">Work from home</h1>
@@ -84,6 +88,7 @@ export default function WorkFromHome() {
             : 'Request a WFH day. Your manager accepts first, then the HR Manager. If approved, it counts as a half day on payroll.'}
         </p>
       </div>
+      ) : null}
 
       {canRequest ? (
       <div className="card space-y-3">

@@ -18,9 +18,7 @@ import {
   Landmark,
   Wallet,
   MinusCircle,
-  Palmtree,
-  Banknote,
-  Home,
+  Inbox,
   ClipboardList,
   Clock,
   ShieldCheck,
@@ -91,11 +89,9 @@ const NAV_SECTIONS = [
     items: [
       { path: '/admin/users', label: 'User Management', icon: Users, page: 'users' },
       { path: '/admin/attendance', label: 'Attendance', icon: Clock, page: 'attendance' },
-      { path: '/admin/holiday-requests', label: 'Holiday requests', icon: Palmtree, page: 'holiday_requests', badge: 'leave_pending', agentLabel: 'Request holiday' },
+      { path: '/admin/requests', label: 'Requests', icon: Inbox, page: 'requests', badge: 'requests_pending', agentLabel: 'My requests' },
       { path: '/admin/holiday-access', label: 'Holidays access', icon: ShieldCheck, page: 'holiday_access' },
       { path: '/admin/tasks', label: 'Tasks', icon: ListTodo, page: 'tasks', roles: ['hr', 'hr_supervisor'] },
-      { path: '/admin/wfh', label: 'Work from home', icon: Home, page: 'wfh', badge: 'wfh_pending' },
-      { path: '/admin/loans', label: 'Loans', icon: Banknote, page: 'loans', badge: 'loan_pending' },
       { path: '/admin/deductions', label: 'Deductions/Bonus', icon: MinusCircle, page: 'deductions' },
       { path: '/admin/payslip', label: 'Payslip', icon: Receipt, page: 'payslip' },
       { path: '/admin/payroll', label: 'Payrolls', icon: Wallet, page: 'payroll' },
@@ -152,10 +148,10 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
   const unassignedWebsiteCount = Array.isArray(unassignedBookings) ? unassignedBookings.length : 0;
   const websiteNeedsReviewCount = pendingWebsiteCount + unassignedWebsiteCount;
   const { data: pendingLeave = [] } = useQuery({
-    queryKey: ['hr-leave-requests', 'pending'],
+    queryKey: ['hr-leave-requests', user?.id, 'pending'],
     queryFn: () =>
       api.get('/hr/leave-requests', { params: { status: 'pending' } }).then((r) => r.data),
-    enabled: showReviewPending,
+    enabled: showReviewPending && !!user?.id,
     refetchInterval: 30000,
   });
   const pendingLeaveCount = countActionableRequests(pendingLeave, {
@@ -164,15 +160,15 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
     acknowledged: acknowledgedLeave,
   });
   const { data: pendingLoans = [] } = useQuery({
-    queryKey: ['hr-loans', 'pending'],
+    queryKey: ['hr-loans', user?.id, 'pending'],
     queryFn: () => api.get('/hr/loans', { params: { status: 'pending' } }).then((r) => r.data),
-    enabled: showReviewPending,
+    enabled: showReviewPending && !!user?.id,
     refetchInterval: 30000,
   });
   const { data: pendingWfh = [] } = useQuery({
-    queryKey: ['hr-wfh', 'pending'],
+    queryKey: ['hr-wfh', user?.id, 'pending'],
     queryFn: () => api.get('/hr/wfh', { params: { status: 'pending' } }).then((r) => r.data),
-    enabled: showReviewPending,
+    enabled: showReviewPending && !!user?.id,
     refetchInterval: 30000,
   });
   const pendingLoanCount = countActionableRequests(pendingLoans, {
@@ -185,6 +181,7 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
     userId: user?.id,
     acknowledged: acknowledgedWfh,
   });
+  const pendingRequestsCount = pendingLeaveCount + pendingLoanCount + pendingWfhCount;
   const { data: jobSummary } = useQuery({
     queryKey: ['recruitment-summary'],
     queryFn: () => api.get('/recruitment/summary').then((r) => r.data),
@@ -266,6 +263,8 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
                       ? item.resaleLabel
                       : item.managerLabel && user?.role === 'reservations_manager'
                         ? item.managerLabel
+                      : item.page === 'requests' && item.agentLabel && !showReviewPending
+                        ? item.agentLabel
                       : item.agentLabel &&
                           (user?.role === 'reservations_web' ||
                             user?.role === 'reservations_manual' ||
@@ -279,6 +278,8 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
                   const pendingCount =
                     item.badge === 'website_pending'
                       ? websiteNeedsReviewCount
+                      : item.badge === 'requests_pending'
+                        ? pendingRequestsCount
                       : item.badge === 'leave_pending'
                         ? pendingLeaveCount
                         : item.badge === 'loan_pending'
@@ -289,9 +290,15 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
                               ? pendingJobCount
                               : 0;
                   const navTo =
-                    item.badge === 'leave_pending' && pendingLeaveCount > 0
-                      ? `${item.path}?view=incoming`
-                      : item.path;
+                    item.badge === 'requests_pending' && pendingRequestsCount > 0
+                      ? pendingLeaveCount > 0
+                        ? `${item.path}?type=holiday&view=incoming`
+                        : pendingWfhCount > 0
+                          ? `${item.path}?type=wfh`
+                          : `${item.path}?type=loans`
+                      : item.badge === 'leave_pending' && pendingLeaveCount > 0
+                        ? `${item.path}?view=incoming`
+                        : item.path;
                   return (
                     <NavLink
                       key={item.path}

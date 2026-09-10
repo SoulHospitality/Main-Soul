@@ -1,9 +1,11 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import api from '../api/axios';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
+  const queryClient = useQueryClient();
   const [user, setUser] = useState(() => {
     try { return JSON.parse(localStorage.getItem('pms_user')); } catch { return null; }
   });
@@ -18,14 +20,21 @@ export function AuthProvider({ children }) {
           setUser(next);
           localStorage.setItem('pms_user', JSON.stringify(next));
         })
-        .catch(() => { localStorage.removeItem('pms_token'); localStorage.removeItem('pms_user'); setUser(null); })
+        .catch(() => {
+          localStorage.removeItem('pms_token');
+          localStorage.removeItem('pms_user');
+          setUser(null);
+          queryClient.clear();
+        })
         .finally(() => setLoading(false));
     } else {
       setLoading(false);
     }
-  }, []);
+  }, [queryClient]);
 
   const login = useCallback(async (username, password) => {
+    // Drop previous account's cached lists before switching users.
+    queryClient.clear();
     const res = await api.post('/auth/login', { username, password });
     const userPayload = {
       ...res.data.user,
@@ -35,13 +44,14 @@ export function AuthProvider({ children }) {
     localStorage.setItem('pms_user', JSON.stringify(userPayload));
     setUser(userPayload);
     return userPayload;
-  }, []);
+  }, [queryClient]);
 
   const logout = useCallback(() => {
     localStorage.removeItem('pms_token');
     localStorage.removeItem('pms_user');
     setUser(null);
-  }, []);
+    queryClient.clear();
+  }, [queryClient]);
 
   const refreshUser = useCallback(async () => {
     const res = await api.get('/auth/me');

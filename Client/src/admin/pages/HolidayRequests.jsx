@@ -363,7 +363,7 @@ function RequestsTable({ rows, incoming, reviewMutation, onReject, onSelect }) {
   );
 }
 
-export default function HolidayRequests() {
+export default function HolidayRequests({ embedded = false }) {
   const { user } = useAuth();
   const canQueue = canSeeRequestQueue(user);
   const canRequest = canRequestStaffBenefits(user);
@@ -387,11 +387,14 @@ export default function HolidayRequests() {
   const [form, setForm] = useState(EMPTY_FORM);
 
   function setView(id) {
-    setSearchParams({ view: id }, { replace: true });
+    const next = new URLSearchParams(searchParams);
+    next.set('view', id);
+    if (embedded) next.set('type', 'holiday');
+    setSearchParams(next, { replace: true });
   }
 
   const { data: mineRows = [], isLoading: mineLoading } = useQuery({
-    queryKey: ['hr-leave-requests', 'mine', status],
+    queryKey: ['hr-leave-requests', user?.id, 'mine', status],
     queryFn: () =>
       api
         .get('/hr/leave-requests', {
@@ -401,11 +404,11 @@ export default function HolidayRequests() {
           },
         })
         .then((r) => r.data),
-    enabled: showMineTab && activeView === 'mine',
+    enabled: !!user?.id && showMineTab && activeView === 'mine',
   });
 
   const { data: incomingRows = [], isLoading: incomingLoading } = useQuery({
-    queryKey: ['hr-leave-requests', 'incoming', status],
+    queryKey: ['hr-leave-requests', user?.id, 'incoming', status],
     queryFn: () =>
       api
         .get('/hr/leave-requests', {
@@ -414,13 +417,13 @@ export default function HolidayRequests() {
           },
         })
         .then((r) => r.data),
-    enabled: showIncomingTab && activeView === 'incoming',
+    enabled: !!user?.id && showIncomingTab && activeView === 'incoming',
   });
 
   const { data: leaveSnap } = useQuery({
-    queryKey: ['hr-my-leave'],
+    queryKey: ['hr-my-leave', user?.id],
     queryFn: () => api.get('/hr/my-leave').then((r) => r.data),
-    enabled: canRequest && activeView === 'mine',
+    enabled: !!user?.id && canRequest && activeView === 'mine',
   });
 
   const createMutation = useMutation({
@@ -534,6 +537,7 @@ export default function HolidayRequests() {
 
   return (
     <div className="space-y-6">
+      {!embedded ? (
       <div className="page-header">
         <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-soul-muted">HR</p>
         <h1 className="page-title mt-1">Holiday requests</h1>
@@ -543,6 +547,7 @@ export default function HolidayRequests() {
             : 'Request casual, annual, unpaid leave, excuses, or missions. Missions are paid timed absences and do not affect attendance.'}
         </p>
       </div>
+      ) : null}
 
       {pageTabs.length > 1 ? (
         <div className="flex flex-wrap gap-1 p-1 bg-gray-100 rounded-xl w-fit">

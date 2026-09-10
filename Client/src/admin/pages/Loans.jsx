@@ -11,8 +11,9 @@ import { ROLE_LABELS, canRequestStaffBenefits, canSeeRequestQueue } from '../uti
 import { currency, formatDate } from '../utils/formatters';
 import { useAuth } from '../context/AuthContext';
 import { RequestReviewActions, approvalStatusClass } from '../components/RequestReviewActions';
+import { acknowledgeRequest } from '../utils/requestAcknowledgements';
 
-export default function Loans() {
+export default function Loans({ embedded = false }) {
   const { user } = useAuth();
   const canQueue = canSeeRequestQueue(user);
   const canRequest = canRequestStaffBenefits(user);
@@ -24,7 +25,7 @@ export default function Loans() {
   const [form, setForm] = useState({ amount: '', reason: '' });
 
   const { data: rows = [], isLoading } = useQuery({
-    queryKey: ['hr-loans', status],
+    queryKey: ['hr-loans', user?.id, status],
     queryFn: () =>
       api
         .get('/hr/loans', {
@@ -33,6 +34,7 @@ export default function Loans() {
           },
         })
         .then((r) => r.data),
+    enabled: !!user?.id,
   });
 
   const createMutation = useMutation({
@@ -49,6 +51,7 @@ export default function Loans() {
     mutationFn: ({ id, status: next, review_note }) =>
       api.post(`/hr/loans/${id}/review`, { status: next, review_note }),
     onSuccess: (_, vars) => {
+      acknowledgeRequest('loan', vars.id, user?.id);
       qc.invalidateQueries({ queryKey: ['hr-loans'] });
       qc.invalidateQueries({ queryKey: ['hr-deductions'] });
       qc.invalidateQueries({ queryKey: ['hr-payroll'] });
@@ -75,6 +78,7 @@ export default function Loans() {
 
   return (
     <div className="space-y-6">
+      {!embedded ? (
       <div className="page-header">
         <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-soul-muted">HR</p>
         <h1 className="page-title mt-1">Loans</h1>
@@ -84,6 +88,7 @@ export default function Loans() {
             : 'Request a loan. Your manager accepts first, then Financial Manager, then HR Manager. It is deducted from next month’s salary after all three accept.'}
         </p>
       </div>
+      ) : null}
 
       {canRequest ? (
       <div className="card space-y-3">

@@ -20,12 +20,10 @@ const Commissions = lazy(() => import('./pages/Commissions'));
 const Users = lazy(() => import('./pages/Users'));
 const Payrolls = lazy(() => import('./pages/Payrolls'));
 const Deductions = lazy(() => import('./pages/Deductions'));
-const HolidayRequests = lazy(() => import('./pages/HolidayRequests'));
+const Requests = lazy(() => import('./pages/Requests'));
 const HolidayAccess = lazy(() => import('./pages/HolidayAccess'));
 const JobOffers = lazy(() => import('./pages/JobOffers'));
 const Attendance = lazy(() => import('./pages/Attendance'));
-const Loans = lazy(() => import('./pages/Loans'));
-const WorkFromHome = lazy(() => import('./pages/WorkFromHome'));
 const Payslip = lazy(() => import('./pages/Payslip'));
 const Profile = lazy(() => import('./pages/Profile'));
 const CalendarSync = lazy(() => import('./pages/CalendarSync'));
@@ -172,12 +170,13 @@ function AppRoutes() {
       <Route path="users" element={<ProtectedRoute page={['users', 'owners']}><Users /></ProtectedRoute>} />
       <Route path="payroll" element={<ProtectedRoute page="payroll"><Payrolls /></ProtectedRoute>} />
       <Route path="deductions" element={<ProtectedRoute page="deductions"><Deductions /></ProtectedRoute>} />
-      <Route path="holiday-requests" element={<ProtectedRoute page="holiday_requests"><HolidayRequests /></ProtectedRoute>} />
+      <Route path="requests" element={<ProtectedRoute page="requests"><Requests /></ProtectedRoute>} />
+      <Route path="holiday-requests" element={<Navigate to="/admin/requests?type=holiday" replace />} />
       <Route path="holiday-access" element={<ProtectedRoute page="holiday_access"><HolidayAccess /></ProtectedRoute>} />
       <Route path="job-offers" element={<ProtectedRoute page="job_offers"><JobOffers /></ProtectedRoute>} />
       <Route path="attendance" element={<ProtectedRoute page="attendance"><Attendance /></ProtectedRoute>} />
-      <Route path="loans" element={<ProtectedRoute page="loans"><Loans /></ProtectedRoute>} />
-      <Route path="wfh" element={<ProtectedRoute page="wfh"><WorkFromHome /></ProtectedRoute>} />
+      <Route path="loans" element={<Navigate to="/admin/requests?type=loans" replace />} />
+      <Route path="wfh" element={<Navigate to="/admin/requests?type=wfh" replace />} />
       <Route path="payslip" element={<ProtectedRoute page="payslip"><Payslip /></ProtectedRoute>} />
       <Route path="promo-codes" element={<ProtectedRoute page="promo_codes"><PromoCodes /></ProtectedRoute>} />
       <Route path="acquisition" element={<ProtectedRoute page="acquisition"><AcquisitionPipeline /></ProtectedRoute>} />

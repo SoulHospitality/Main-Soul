@@ -30,10 +30,8 @@ const RESERVATIONS_TEAM = new Set([
 
 /** Self-service HR pages available to most staff roles ("HR tabs"). */
 const STAFF_HR_TABS = [
-  'holiday_requests',
-  'loans',
+  'requests',
   'payslip',
-  'wfh',
   'profile',
 ];
 
@@ -41,11 +39,7 @@ const RESERVATIONS_PAGE_ACCESS = new Set([
   'tasks',
   'reservations',
   'schedule',
-  'holiday_requests',
-  'loans',
-  'payslip',
-  'wfh',
-  'profile',
+  ...STAFF_HR_TABS,
 ]);
 
 const RESERVATIONS_MANUAL_PAGE_ACCESS = new Set([
@@ -228,12 +222,10 @@ const HR_PAGE_ACCESS = new Set([
   'users',
   'payroll',
   'deductions',
-  'holiday_requests',
+  'requests',
   'holiday_access',
   'job_offers',
   'attendance',
-  'loans',
-  'wfh',
   'payslip',
   'tasks',
   'profile',
@@ -510,7 +502,10 @@ export function canAccess(user, page) {
   if (!user) return false;
   if (user.role === 'admin') return true;
   if (page === 'profile' || page === 'change-password') return true;
-  if (page === 'wfh' && !canRequestWfh(user)) return false;
+  // Legacy paths still resolve to the merged Requests page.
+  if (page === 'holiday_requests' || page === 'loans' || page === 'wfh') {
+    page = 'requests';
+  }
   const allowed = PAGE_ACCESS[user.role];
   if (allowed === true) return true;
   if (allowed instanceof Set) return allowed.has(page);
