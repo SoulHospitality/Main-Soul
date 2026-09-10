@@ -37,7 +37,56 @@ const { buildFinancialWorkbook, workbookToBuffer } = require('../../lib/finance/
 
 const router = express.Router();
 
-const MANUAL_ENTRY_TYPES = new Set(['revenue', 'expense']);
+const MANUAL_ENTRY_TYPES = new Set(['revenue', 'expense', 'journal']);
+
+function resolveManualJournalLines(row) {
+  const amt = parseFloat(row.amount) || 0;
+  const debitCode = String(row.debit_account_code || '').trim();
+  const creditCode = String(row.credit_account_code || '').trim();
+  if (debitCode && creditCode && getAccount(debitCode) && getAccount(creditCode)) {
+    return {
+      type: row.entry_type === 'journal' ? 'manual_journal' : row.entry_type === 'revenue' ? 'manual_revenue' : row.entry_type === 'expense' ? 'manual_expense' : 'manual',
+      lines: [
+        journalLine(debitCode, amt, 0, row.description || row.notes || 'Manual journal debit'),
+        journalLine(creditCode, 0, amt, row.description || row.notes || 'Manual journal credit'),
+      ],
+    };
+  }
+  if (row.entry_type === 'revenue') {
+    return {
+      type: 'manual_revenue',
+      lines: [
+        journalLine('101000', amt, 0, 'Manual revenue received'),
+        journalLine('409000', 0, amt, row.description),
+      ],
+    };
+  }
+  if (row.entry_type === 'expense') {
+    return {
+      type: 'manual_expense',
+      lines: [
+        journalLine('503000', amt, 0, row.description),
+        journalLine('201000', 0, amt, 'Manual expense paid'),
+      ],
+    };
+  }
+  if (row.misc_flow === 'out') {
+    return {
+      type: 'miscellaneous',
+      lines: [
+        journalLine('503000', amt, 0, row.description),
+        journalLine('101000', 0, amt, 'Miscellaneous expense'),
+      ],
+    };
+  }
+  return {
+    type: 'miscellaneous',
+    lines: [
+      journalLine('101000', amt, 0, 'Miscellaneous income'),
+      journalLine('409000', 0, amt, row.description),
+    ],
+  };
+}
 
 async function assertPeriodOpen(date) {
   if (await isPeriodClosed(date)) {
@@ -453,43 +502,14 @@ function summarizeManualEntries(entries) {
 }
 
 function manualJournalEntry(row) {
-  const amt = parseFloat(row.amount) || 0;
   const ref = `MAN-${row.id}`;
-  let lines = [];
-  let type = 'manual';
-
-  if (row.entry_type === 'revenue') {
-    lines = [
-      journalLine('101000', amt, 0, 'Manual revenue received'),
-      journalLine('409000', 0, amt, row.description),
-    ];
-    type = 'manual_revenue';
-  } else if (row.entry_type === 'expense') {
-    lines = [
-      journalLine('503000', amt, 0, row.description),
-      journalLine('201000', 0, amt, 'Manual expense paid'),
-    ];
-    type = 'manual_expense';
-  } else if (row.misc_flow === 'out') {
-    lines = [
-      journalLine('503000', amt, 0, row.description),
-      journalLine('101000', 0, amt, 'Miscellaneous expense'),
-    ];
-    type = 'miscellaneous';
-  } else {
-    lines = [
-      journalLine('101000', amt, 0, 'Miscellaneous income'),
-      journalLine('409000', 0, amt, row.description),
-    ];
-    type = 'miscellaneous';
-  }
-
+  const { type, lines } = resolveManualJournalLines(row);
   return {
     id: ref,
     date: row.entry_date,
     type,
     reference: ref,
-    description: row.description,
+    description: row.description || row.notes || 'Manual journal',
     lines,
   };
 }
@@ -1059,20 +1079,43 @@ router.get('/financial-system/manual-entries', requireRoles('admin', 'finance', 
 
 router.post('/financial-system/manual-entries', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
-    const entryType = String(req.body.entry_type || '').toLowerCase();
-    if (!MANUAL_ENTRY_TYPES.has(entryType)) {
-      return res.status(400).json({ error: 'entry_type must be revenue or expense' });
-    }
-
     const amount = parseFloat(req.body.amount);
     if (!(amount > 0)) {
       return res.status(400).json({ error: 'amount must be greater than zero' });
     }
 
-    const description = String(req.body.description || '').trim();
-    if (!description) {
-      return res.status(400).json({ error: 'description is required' });
+    const fromAccount = String(req.body.from_account || req.body.credit_account_code || '').trim();
+    const toAccount = String(req.body.to_account || req.body.debit_account_code || '').trim();
+    const hasAccounts = Boolean(fromAccount && toAccount);
+
+    let entryType = String(req.body.entry_type || (hasAccounts ? 'journal' : '')).toLowerCase();
+    if (!MANUAL_ENTRY_TYPES.has(entryType)) {
+      return res.status(400).json({ error: 'Choose From and To accounts (or legacy revenue/expense)' });
     }
+
+    let debitAccount = toAccount;
+    let creditAccount = fromAccount;
+    if (entryType === 'journal' || hasAccounts) {
+      if (!getAccount(debitAccount) || !getAccount(creditAccount)) {
+        return res.status(400).json({ error: 'from_account and to_account must be valid chart accounts' });
+      }
+      if (debitAccount === creditAccount) {
+        return res.status(400).json({ error: 'From and To accounts must be different' });
+      }
+      entryType = 'journal';
+    } else if (entryType === 'revenue') {
+      debitAccount = '101000';
+      creditAccount = '409000';
+    } else if (entryType === 'expense') {
+      debitAccount = '503000';
+      creditAccount = '201000';
+    }
+
+    const notes = req.body.notes ? String(req.body.notes).trim() : null;
+    const description =
+      String(req.body.description || '').trim() ||
+      notes ||
+      `Manual journal ${creditAccount} → ${debitAccount}`;
 
     const entryDate = req.body.entry_date || new Date().toISOString().slice(0, 10);
     if (String(entryDate) < FINANCIAL_EPOCH) {
@@ -1081,14 +1124,14 @@ router.post('/financial-system/manual-entries', requireRoles('admin', 'finance',
     await assertPeriodOpen(entryDate);
 
     const unitId = req.body.unit_id || null;
-    const notes = req.body.notes ? String(req.body.notes).trim() : null;
 
     const { rows } = await query(
       `INSERT INTO financial_manual_entries
-         (entry_type, misc_flow, description, amount, entry_date, notes, unit_id, created_by)
-       VALUES ($1, NULL, $2, $3, $4, $5, $6, $7)
+         (entry_type, misc_flow, description, amount, entry_date, notes, unit_id, created_by,
+          debit_account_code, credit_account_code)
+       VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
-      [entryType, description, amount, entryDate, notes, unitId, req.user.id]
+      [entryType, description, amount, entryDate, notes, unitId, req.user.id, debitAccount, creditAccount]
     );
 
     res.status(201).json(rows[0]);

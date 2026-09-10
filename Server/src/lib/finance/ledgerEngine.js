@@ -1126,9 +1126,22 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
 
   for (const row of data.manuals || []) {
     const amt = parseFloat(row.amount) || 0;
+    const debitCode = String(row.debit_account_code || '').trim();
+    const creditCode = String(row.credit_account_code || '').trim();
     let lines = [];
     let type = 'manual';
-    if (row.entry_type === 'revenue') {
+    if (debitCode && creditCode) {
+      lines = [
+        journalLine(debitCode, amt, 0, row.description || row.notes || 'Manual journal debit'),
+        journalLine(creditCode, 0, amt, row.description || row.notes || 'Manual journal credit'),
+      ];
+      type =
+        row.entry_type === 'revenue'
+          ? 'manual_revenue'
+          : row.entry_type === 'expense'
+            ? 'manual_expense'
+            : 'manual_journal';
+    } else if (row.entry_type === 'revenue') {
       lines = [
         journalLine('101000', amt, 0, 'Manual revenue received'),
         journalLine('409000', 0, amt, row.description),
@@ -1158,7 +1171,7 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
         id: `MAN-${row.id}`,
         date: isoDate(row.created_at) || row.entry_date,
         type,
-        description: row.description,
+        description: row.description || row.notes || 'Manual journal',
         lines,
         meta: {
           manual_id: row.id,
@@ -1166,6 +1179,8 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
           unit_name: row.unit_name,
           created_by_name: row.created_by_name,
           notes: row.notes,
+          from_account: creditCode || null,
+          to_account: debitCode || null,
         },
       })
     );
@@ -1413,18 +1428,29 @@ function agingFromReservations(reservations, asOf) {
 
 function pnlFromBalances(bals) {
   const revenue = bals.filter((a) => a.type === 'revenue' && !a.virtual);
-  const cogs = bals.filter((a) => a.group === 'cogs');
-  const opex = bals.filter((a) => a.group === 'opex');
+  const expenses = bals.filter((a) => a.group === 'expenses' || a.type === 'expense');
+  // Keep legacy cogs/opex buckets by account code series for reports that still split them.
+  const cogs = expenses.filter((a) => String(a.code || '').startsWith('5'));
+  const opex = expenses.filter((a) => String(a.code || '').startsWith('6'));
   const revTotal = round2(revenue.reduce((s, a) => s + a.balance, 0));
   const cogsTotal = round2(cogs.reduce((s, a) => s + a.balance, 0));
   const opexTotal = round2(opex.reduce((s, a) => s + a.balance, 0));
+  const expenseTotal = round2(expenses.reduce((s, a) => s + a.balance, 0));
   const gross = round2(revTotal - cogsTotal);
-  const net = round2(gross - opexTotal);
+  const net = round2(revTotal - expenseTotal);
   return {
     revenue,
+    expenses,
     cogs,
     opex,
-    totals: { revenue: revTotal, cogs: cogsTotal, gross, opex: opexTotal, net },
+    totals: {
+      revenue: revTotal,
+      expenses: expenseTotal,
+      cogs: cogsTotal,
+      gross,
+      opex: opexTotal,
+      net,
+    },
   };
 }
 

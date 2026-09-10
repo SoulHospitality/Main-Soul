@@ -1398,9 +1398,31 @@ router.post(
       let method = String(req.body?.payment_method || 'cash').toLowerCase();
       if (!['cash', 'instapay', 'bank_transfer'].includes(method)) method = 'cash';
 
+      let refunded =
+        req.body?.refunded_amount != null && req.body.refunded_amount !== ''
+          ? Math.round((Number(req.body.refunded_amount) || 0) * 100) / 100
+          : held;
+      let damage =
+        req.body?.damage_amount != null && req.body.damage_amount !== ''
+          ? Math.round((Number(req.body.damage_amount) || 0) * 100) / 100
+          : Math.round((held - refunded) * 100) / 100;
+
+      if (!(refunded >= 0) || !(damage >= 0)) {
+        return res.status(400).json({ error: 'refunded_amount and damage_amount must be non-negative' });
+      }
+      if (Math.abs(Math.round((refunded + damage) * 100) / 100 - held) > 0.05) {
+        return res.status(400).json({
+          error: `Refunded + damage must equal insurance held (EGP ${held.toFixed(2)})`,
+        });
+      }
+
+      let status = 'refunded';
+      if (damage > 0.009 && refunded > 0.009) status = 'partial';
+      else if (damage > 0.009 && !(refunded > 0.009)) status = 'forfeited';
+
       const notes = req.body?.notes
         ? String(req.body.notes).slice(0, 2000)
-        : `[ops checkout] Insurance refunded by ${req.user.full_name || req.user.username || req.user.id}`;
+        : `[ops checkout] Insurance payout by ${req.user.full_name || req.user.username || req.user.id}`;
 
       const refundDate = row.check_out
         ? String(row.check_out).slice(0, 10)
@@ -1408,17 +1430,17 @@ router.post(
 
       const { rows: updated } = await query(
         `UPDATE reservations SET
-           insurance_refund_status = 'refunded',
-           insurance_refunded_amount = $2,
-           insurance_damage_amount = 0,
-           insurance_refunded_at = $3::date,
-           insurance_refund_method = $4,
-           insurance_refund_notes = $5,
-           insurance_refunded_by = $6,
+           insurance_refund_status = $2,
+           insurance_refunded_amount = $3,
+           insurance_damage_amount = $4,
+           insurance_refunded_at = $5::date,
+           insurance_refund_method = $6,
+           insurance_refund_notes = $7,
+           insurance_refunded_by = $8,
            updated_at = now()
          WHERE id = $1
          RETURNING id`,
-        [reservationId, held, refundDate, method, notes, req.user.id]
+        [reservationId, status, refunded, damage, refundDate, method, notes, req.user.id]
       );
 
       if (!updated[0]) return res.status(404).json({ error: 'Reservation not found' });
@@ -1428,7 +1450,12 @@ router.post(
         action: 'OPS_REFUND_INSURANCE',
         entityType: 'reservation',
         entityId: reservationId,
-        details: { amount: held, payment_method: method },
+        details: {
+          amount: refunded,
+          damage_amount: damage,
+          status,
+          payment_method: method,
+        },
       });
 
       const { rows: refreshed } = await query(

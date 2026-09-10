@@ -4,8 +4,7 @@ const ACCOUNT_GROUPS = {
   liabilities: 'Liabilities',
   equity: 'Equity',
   revenue: 'Revenue',
-  cogs: 'COGS & Direct Costs',
-  opex: 'Operating Expenses',
+  expenses: 'Expenses',
 };
 
 const CHART_OF_ACCOUNTS = [
@@ -42,23 +41,23 @@ const CHART_OF_ACCOUNTS = [
   { code: '409000', name: 'Miscellaneous Guest Revenue (Early Check-in, Extra Amenities)', group: 'revenue', type: 'revenue' },
   { code: '410000', name: 'Insurance Damage Retention Revenue', group: 'revenue', type: 'revenue' },
 
-  { code: '501000', name: 'Housekeeping & Laundry Direct Costs', group: 'cogs', type: 'expense' },
-  { code: '502000', name: 'Guest Welcome Amenities & Refreshments', group: 'cogs', type: 'expense' },
-  { code: '503000', name: 'Direct Villa Repairs & Maintenance (Soul Cost)', group: 'cogs', type: 'expense' },
-  { code: '504000', name: 'Merchant / Payment Gateway Transaction Fees', group: 'cogs', type: 'expense' },
-  { code: '505000', name: 'Master-Lease Rent Expense (Principal Units)', group: 'cogs', type: 'expense' },
-  { code: '506000', name: 'Owner Share Expense (Unit % of nightly rate × nights)', group: 'cogs', type: 'expense' },
-  { code: '508000', name: 'Staff Buffet & Meals', group: 'cogs', type: 'expense', recurring: 'buffet' },
+  { code: '501000', name: 'Housekeeping & Laundry Direct Costs', group: 'expenses', type: 'expense' },
+  { code: '502000', name: 'Guest Welcome Amenities & Refreshments', group: 'expenses', type: 'expense' },
+  { code: '503000', name: 'Direct Villa Repairs & Maintenance (Soul Cost)', group: 'expenses', type: 'expense' },
+  { code: '504000', name: 'Merchant / Payment Gateway Transaction Fees', group: 'expenses', type: 'expense' },
+  { code: '505000', name: 'Master-Lease Rent Expense (Principal Units)', group: 'expenses', type: 'expense' },
+  { code: '506000', name: 'Owner Share Expense (Unit % of nightly rate × nights)', group: 'expenses', type: 'expense' },
+  { code: '508000', name: 'Staff Buffet & Meals', group: 'expenses', type: 'expense', recurring: 'buffet' },
 
-  { code: '601000', name: 'Software & Tech Stack (Odoo, Channel Manager, PriceLabs)', group: 'opex', type: 'expense' },
-  { code: '602000', name: 'Salaries, Wages & Field Staff Payroll', group: 'opex', type: 'expense' },
-  { code: '603000', name: 'Marketing, OTA Promotions & Guest Acquisition', group: 'opex', type: 'expense' },
-  { code: '604000', name: 'Office Rent', group: 'opex', type: 'expense', recurring: 'rent' },
-  { code: '605000', name: 'Professional, CPA & Legal Fees', group: 'opex', type: 'expense' },
-  { code: '606000', name: 'Depreciation & Amortization', group: 'opex', type: 'expense' },
-  { code: '607000', name: 'Realized & Unrealized Foreign Exchange Gain/Loss', group: 'opex', type: 'expense' },
-  { code: '608000', name: 'Company Campus Utilities', group: 'opex', type: 'expense', recurring: 'utilities' },
-  { code: '609000', name: 'Sales Agent Commission Expense', group: 'opex', type: 'expense' },
+  { code: '601000', name: 'Software & Tech Stack (Odoo, Channel Manager, PriceLabs)', group: 'expenses', type: 'expense' },
+  { code: '602000', name: 'Salaries, Wages & Field Staff Payroll', group: 'expenses', type: 'expense' },
+  { code: '603000', name: 'Marketing, OTA Promotions & Guest Acquisition', group: 'expenses', type: 'expense' },
+  { code: '604000', name: 'Office Rent', group: 'expenses', type: 'expense', recurring: 'rent' },
+  { code: '605000', name: 'Professional, CPA & Legal Fees', group: 'expenses', type: 'expense' },
+  { code: '606000', name: 'Depreciation & Amortization', group: 'expenses', type: 'expense' },
+  { code: '607000', name: 'Realized & Unrealized Foreign Exchange Gain/Loss', group: 'expenses', type: 'expense' },
+  { code: '608000', name: 'Company Campus Utilities', group: 'expenses', type: 'expense', recurring: 'utilities' },
+  { code: '609000', name: 'Sales Agent Commission Expense', group: 'expenses', type: 'expense' },
 ];
 
 const BY_CODE = Object.fromEntries(CHART_OF_ACCOUNTS.map((a) => [a.code, a]));

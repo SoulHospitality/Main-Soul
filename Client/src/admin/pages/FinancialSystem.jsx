@@ -20,7 +20,6 @@ import {
   Shield,
   TrendingUp,
   Receipt,
-  Briefcase,
   CircleDollarSign,
   CreditCard,
   Home,
@@ -43,7 +42,7 @@ import ConfirmDialog from '../components/ui/ConfirmDialog';
 import Modal from '../components/ui/Modal';
 import { currency, formatDate } from '../utils/formatters';
 import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
-import { ACCOUNT_GROUPS, getAccount } from '../../lib/finance/chartOfAccounts';
+import { ACCOUNT_GROUPS, CHART_OF_ACCOUNTS, getAccount } from '../../lib/finance/chartOfAccounts';
 import { VAT_OUTPUT_PCT, WHT_STANDARD_PCT, WHT_REDUCED_PCT } from '../../lib/finance/taxEngine';
 import { PettyCashSection } from './PettyCash';
 import { FinLocaleProvider, useFinLocale } from '../context/FinLocaleContext';
@@ -77,21 +76,20 @@ const GROUP_META = {
     tile: 'bg-emerald-600',
     hint: 'Reservation totals plus custom revenue',
   },
-  cogs: {
-    label: ACCOUNT_GROUPS.cogs,
+  expenses: {
+    label: ACCOUNT_GROUPS.expenses,
     icon: Receipt,
     tint: 'bg-orange-50 text-orange-900',
     tile: 'bg-orange-500',
-    hint: 'Housekeeping, owner share, and stay costs',
-  },
-  opex: {
-    label: ACCOUNT_GROUPS.opex,
-    icon: Briefcase,
-    tint: 'bg-violet-50 text-violet-900',
-    tile: 'bg-violet-600',
-    hint: 'Company running costs',
+    hint: 'Direct costs and company running costs',
   },
 };
+
+const MANUAL_ACCOUNT_OPTIONS = CHART_OF_ACCOUNTS.filter((a) => !a.virtual).map((a) => ({
+  value: a.code,
+  label: `${a.code} — ${a.name}`,
+  group: ACCOUNT_GROUPS[a.group] || a.group,
+}));
 
 const ACCOUNT_ICONS = {
   '101000': Landmark,
@@ -484,25 +482,11 @@ function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool
 
       <section>
         <h2 className="text-lg font-semibold text-soul-blue mb-3">{t('pms.fin.home.workspace')}</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {[
-            { id: 'assets', labelKey: 'fixedAssets', icon: Landmark },
-            { id: 'owners', labelKey: 'ownerPayouts', icon: Users },
-            { id: 'insurance', labelKey: 'insuranceRefunds', icon: Shield },
-            { id: 'trust', labelKey: 'ownerTrust', icon: Building2 },
-            { id: 'reports', labelKey: 'monthEndReports', icon: FileSpreadsheet },
-            { id: 'aging', labelKey: 'arAging', icon: AlertCircle },
-            { id: 'close', labelKey: 'closeMonth', icon: Lock },
-            { id: 'gateway', labelKey: 'gatewaySettle', icon: CreditCard },
-            { id: 'bank', labelKey: 'bankRec', icon: Landmark },
             { id: 'manual', labelKey: 'manualEntries', icon: PenLine },
-            { id: 'petty', labelKey: 'pettyCash', icon: Wallet },
-            { id: 'tax', labelKey: 'taxDesk', icon: Scale },
-            { id: 'segment', labelKey: 'segmentPnl', icon: FileSpreadsheet },
-            { id: 'forecast', labelKey: 'cashForecast', icon: TrendingUp },
-            { id: 'vendors', labelKey: 'apVendors', icon: Users },
-            { id: 'recurring', labelKey: 'monthlyCharges', icon: Settings2 },
-            { id: 'ar', labelKey: 'arControls', icon: AlertCircle },
+            { id: 'owners', labelKey: 'ownerPayouts', icon: Users },
+            { id: 'insurance', labelKey: 'insurancePayout', icon: Shield },
           ].map((tool) => {
             const Icon = tool.icon;
             return (
@@ -1142,7 +1126,7 @@ function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
                           onClick={() => openSettle(o)}
                         >
                           <CheckCircle2 className="w-3 h-3 inline mr-1" />
-                          {t('pms.fin.owners.markSettled')}
+                          {t('pms.fin.owners.customSettle')}
                         </button>
                       ) : (
                         <span className="text-xs text-emerald-600 font-medium">{t('pms.fin.owners.settled')}</span>
@@ -1322,18 +1306,14 @@ function ManualEntriesTab({ fromDate, toDate, rangeParams: params }) {
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
-  const [form, setForm] = useState({
-    entry_type: 'revenue',
-    description: '',
+  const emptyForm = {
+    from_account: '',
+    to_account: '',
     amount: '',
     entry_date: new Date().toISOString().slice(0, 10),
     notes: '',
-    unit_id: '',
-  });
-  const { data: units = [] } = useQuery({
-    queryKey: ['financial-system-units'],
-    queryFn: () => api.get('/financial-system/units').then((r) => r.data),
-  });
+  };
+  const [form, setForm] = useState(emptyForm);
   const { data, isLoading } = useQuery({
     queryKey: ['financial-system-manual', fromDate, toDate],
     queryFn: () => api.get('/financial-system/manual-entries', { params }).then((r) => r.data),
@@ -1345,6 +1325,7 @@ function ManualEntriesTab({ fromDate, toDate, rangeParams: params }) {
       qc.invalidateQueries({ queryKey: ['financial-system-manual'] });
       qc.invalidateQueries({ queryKey: ['financial-system-portal'] });
       setShowForm(false);
+      setForm(emptyForm);
     },
     onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
@@ -1373,26 +1354,60 @@ function ManualEntriesTab({ fromDate, toDate, rangeParams: params }) {
           <thead>
             <tr>
               <th>{t('pms.fin.manual.date')}</th>
-              <th>{t('pms.fin.manual.type')}</th>
-              <th>{t('pms.fin.description')}</th>
+              <th>{t('pms.fin.manual.fromAccount')}</th>
+              <th>{t('pms.fin.manual.toAccount')}</th>
+              <th>{t('pms.fin.notes')}</th>
               <th className="text-right">{t('pms.fin.amount')}</th>
               <th />
             </tr>
           </thead>
           <tbody>
-            {entries.map((row) => (
-              <tr key={row.id}>
-                <td>{formatDate(row.entry_date)}</td>
-                <td className="capitalize">{row.entry_type}</td>
-                <td>{row.description}</td>
-                <td className="text-right tabular-nums">{currency(row.amount)}</td>
-                <td className="text-right">
-                  <button type="button" className="p-1.5 text-gray-400 hover:text-rose-600" onClick={() => setDeleteId(row.id)}>
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+            {entries.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="text-center text-sm text-gray-400 py-8">
+                  {t('pms.fin.manual.noEntries')}
                 </td>
               </tr>
-            ))}
+            ) : (
+              entries.map((row) => {
+                const fromCode = row.credit_account_code;
+                const toCode = row.debit_account_code;
+                const fromAcct = fromCode ? getAccount(fromCode) : null;
+                const toAcct = toCode ? getAccount(toCode) : null;
+                return (
+                  <tr key={row.id}>
+                    <td>{formatDate(row.entry_date)}</td>
+                    <td>
+                      {fromCode ? (
+                        <>
+                          <span className="font-mono text-[11px] text-gray-400 mr-1">{fromCode}</span>
+                          {fromAcct?.name || row.entry_type}
+                        </>
+                      ) : (
+                        <span className="capitalize text-gray-500">{row.entry_type}</span>
+                      )}
+                    </td>
+                    <td>
+                      {toCode ? (
+                        <>
+                          <span className="font-mono text-[11px] text-gray-400 mr-1">{toCode}</span>
+                          {toAcct?.name || '—'}
+                        </>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td className="max-w-[14rem] truncate">{row.notes || row.description || '—'}</td>
+                    <td className="text-right tabular-nums">{currency(row.amount)}</td>
+                    <td className="text-right">
+                      <button type="button" className="p-1.5 text-gray-400 hover:text-rose-600" onClick={() => setDeleteId(row.id)}>
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
       </div>
@@ -1419,33 +1434,80 @@ function ManualEntriesTab({ fromDate, toDate, rangeParams: params }) {
           className="space-y-4"
           onSubmit={(e) => {
             e.preventDefault();
+            if (!form.from_account || !form.to_account) {
+              toast.error(t('pms.fin.manual.chooseFrom'));
+              return;
+            }
+            if (form.from_account === form.to_account) {
+              toast.error(t('pms.fin.manual.fromHint'));
+              return;
+            }
             createEntry.mutate({
-              entry_type: form.entry_type,
-              description: form.description.trim(),
+              entry_type: 'journal',
+              from_account: form.from_account,
+              to_account: form.to_account,
               amount: parseFloat(form.amount),
               entry_date: form.entry_date,
               notes: form.notes.trim() || undefined,
-              unit_id: form.unit_id || undefined,
             });
           }}
         >
-          <select className="input w-full" value={form.entry_type} onChange={(e) => setForm((f) => ({ ...f, entry_type: e.target.value }))}>
-            <option value="revenue">{t('pms.fin.manual.customRevenue')}</option>
-            <option value="expense">{t('pms.fin.manual.customExpense')}</option>
-          </select>
-          <input className="input w-full" placeholder={t('pms.fin.description')} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} required />
-          <input type="number" min="0.01" step="0.01" className="input w-full" placeholder={t('pms.fin.amount')} value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} required />
-          <input type="date" min={FINANCIAL_EPOCH} className="input w-full" value={form.entry_date} onChange={(e) => setForm((f) => ({ ...f, entry_date: e.target.value }))} />
-          <SearchableSelect
-            className="w-full"
-            value={form.unit_id}
-            onChange={(v) => setForm((f) => ({ ...f, unit_id: v }))}
-            placeholder={t('pms.fin.manual.notLinked')}
-            options={[
-              { value: '', label: t('pms.fin.manual.notLinked') },
-              ...units.map((u) => ({ value: String(u.id), label: u.unit_name })),
-            ]}
-          />
+          <div>
+            <label className="label">{t('pms.fin.manual.fromAccount')}</label>
+            <SearchableSelect
+              className="w-full"
+              value={form.from_account}
+              onChange={(v) => setForm((f) => ({ ...f, from_account: v }))}
+              placeholder={t('pms.fin.manual.chooseFrom')}
+              options={MANUAL_ACCOUNT_OPTIONS}
+              required
+            />
+            <p className="text-[11px] text-gray-400 mt-1">{t('pms.fin.manual.fromHint')}</p>
+          </div>
+          <div>
+            <label className="label">{t('pms.fin.manual.toAccount')}</label>
+            <SearchableSelect
+              className="w-full"
+              value={form.to_account}
+              onChange={(v) => setForm((f) => ({ ...f, to_account: v }))}
+              placeholder={t('pms.fin.manual.chooseTo')}
+              options={MANUAL_ACCOUNT_OPTIONS}
+              required
+            />
+            <p className="text-[11px] text-gray-400 mt-1">{t('pms.fin.manual.toHint')}</p>
+          </div>
+          <div>
+            <label className="label">{t('pms.fin.amountEgp')}</label>
+            <input
+              type="number"
+              min="0.01"
+              step="0.01"
+              className="input w-full"
+              value={form.amount}
+              onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+              required
+            />
+          </div>
+          <div>
+            <label className="label">{t('pms.fin.manual.date')}</label>
+            <input
+              type="date"
+              min={FINANCIAL_EPOCH}
+              className="input w-full"
+              value={form.entry_date}
+              onChange={(e) => setForm((f) => ({ ...f, entry_date: e.target.value }))}
+              required
+            />
+          </div>
+          <div>
+            <label className="label">{t('pms.fin.notes')}</label>
+            <textarea
+              className="input w-full min-h-[80px]"
+              value={form.notes}
+              onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+              placeholder={t('pms.fin.manual.notesPlaceholder')}
+            />
+          </div>
         </form>
       </Modal>
       <ConfirmDialog
@@ -3996,7 +4058,7 @@ function FinancialSystemInner() {
       const labels = {
         assets: t('pms.fin.tools.fixedAssets'),
         owners: t('pms.fin.tools.ownerPayouts'),
-        insurance: t('pms.fin.tools.insuranceRefunds'),
+        insurance: t('pms.fin.tools.insurancePayout'),
         trust: t('pms.fin.tools.ownerTrust'),
         manual: t('pms.fin.tools.manualEntries'),
         petty: t('pms.fin.tools.pettyCash'),

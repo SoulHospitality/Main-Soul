@@ -12,6 +12,9 @@ export function CheckoutsTodaySection({ embedded = false }) {
   const [range, setRange] = useState('month');
   const [refundingId, setRefundingId] = useState(null);
   const [methodDrafts, setMethodDrafts] = useState({});
+  const [refundDrafts, setRefundDrafts] = useState({});
+  const [damageDrafts, setDamageDrafts] = useState({});
+  const [notesDrafts, setNotesDrafts] = useState({});
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['ops-checkouts-today', range],
@@ -30,15 +33,47 @@ export function CheckoutsTodaySection({ embedded = false }) {
   const rows = data?.items || [];
 
   const refundMutation = useMutation({
-    mutationFn: ({ id, payment_method }) =>
-      api.post(`/ops/checkouts-today/${id}/refund-insurance`, { payment_method }),
+    mutationFn: ({ id, payment_method, refunded_amount, damage_amount, notes }) =>
+      api.post(`/ops/checkouts-today/${id}/refund-insurance`, {
+        payment_method,
+        refunded_amount,
+        damage_amount,
+        notes,
+      }),
     onSuccess: () => {
-      toast.success('Insurance marked as refunded');
+      toast.success('Insurance payout recorded');
       setRefundingId(null);
       qc.invalidateQueries({ queryKey: ['ops-checkouts-today'] });
     },
-    onError: (e) => toast.error(e.response?.data?.error || 'Could not mark insurance refunded'),
+    onError: (e) => toast.error(e.response?.data?.error || 'Could not record insurance payout'),
   });
+
+  function openRefund(row) {
+    const held = Math.round((Number(row.insurance) || 0) * 100) / 100;
+    setRefundingId(row.id);
+    setRefundDrafts((prev) => ({ ...prev, [row.id]: String(held) }));
+    setDamageDrafts((prev) => ({ ...prev, [row.id]: '0' }));
+    setMethodDrafts((prev) => ({ ...prev, [row.id]: prev[row.id] || 'cash' }));
+    setNotesDrafts((prev) => ({ ...prev, [row.id]: prev[row.id] || '' }));
+  }
+
+  function onRefundAmountChange(id, held, value) {
+    setRefundDrafts((prev) => ({ ...prev, [id]: value }));
+    const ref = Math.max(0, parseFloat(value) || 0);
+    setDamageDrafts((prev) => ({
+      ...prev,
+      [id]: String(Math.max(0, Math.round((held - ref) * 100) / 100)),
+    }));
+  }
+
+  function onDamageAmountChange(id, held, value) {
+    setDamageDrafts((prev) => ({ ...prev, [id]: value }));
+    const dmg = Math.max(0, parseFloat(value) || 0);
+    setRefundDrafts((prev) => ({
+      ...prev,
+      [id]: String(Math.max(0, Math.round((held - dmg) * 100) / 100)),
+    }));
+  }
 
   if (isLoading) return <LoadingSpinner />;
 
@@ -58,8 +93,8 @@ export function CheckoutsTodaySection({ embedded = false }) {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Checkouts</h1>
             <p className="mt-1 text-sm text-gray-500">
-              Departures for the selected period — confirm insurance held and mark when you refunded it
-              to the guest.
+              Departures for the selected period — confirm insurance held and record a custom payout
+              (full or partial refund / damage retention).
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
@@ -102,21 +137,20 @@ export function CheckoutsTodaySection({ embedded = false }) {
             <tbody>
               {rows.map((r) => {
                 const insurance = Number(r.insurance) || 0;
-                const method = methodDrafts[r.id] || 'cash';
                 const status = String(r.insurance_refund_status || '').toLowerCase();
+                const method = methodDrafts[r.id] || 'cash';
+                const refundAmt = refundDrafts[r.id] ?? String(insurance);
+                const damageAmt = damageDrafts[r.id] ?? '0';
                 return (
-                  <tr key={r.id} className="border-t align-top">
-                    <td className="py-4 px-4 whitespace-nowrap">
-                      <div className="font-semibold text-gray-900">{formatOpsDay(r.check_out)}</div>
-                      <div className="text-[11px] text-gray-500 tabular-nums">
-                        {String(r.check_out || '').slice(0, 10)}
-                      </div>
+                  <tr key={r.id} className="border-b last:border-0 align-top">
+                    <td className="py-4 px-4 whitespace-nowrap text-gray-600">
+                      {formatOpsDay(r.check_out)}
                     </td>
-                    <td className="py-4 px-4 min-w-[12rem]">
+                    <td className="py-4 px-4 min-w-[10rem]">
                       <div className="font-semibold text-gray-900">{r.guest_name || '—'}</div>
-                      <div className="text-xs text-gray-600 tabular-nums mt-0.5">
-                        {r.guest_phone || 'No phone'}
-                      </div>
+                      {r.guest_phone ? (
+                        <div className="text-xs text-gray-500">{r.guest_phone}</div>
+                      ) : null}
                     </td>
                     <td className="py-4 px-4 min-w-[9rem]">
                       <div className="font-semibold text-gray-900">{r.unit_number || '—'}</div>
@@ -150,6 +184,11 @@ export function CheckoutsTodaySection({ embedded = false }) {
                               {r.insurance_refund_method ? ` · ${r.insurance_refund_method}` : ''}
                             </div>
                           ) : null}
+                          {r.insurance_damage_amount > 0 ? (
+                            <div className="text-[11px] text-rose-700 tabular-nums">
+                              Damage {currency(r.insurance_damage_amount)}
+                            </div>
+                          ) : null}
                           {r.insurance_refunded_by_name ? (
                             <div className="text-[11px] text-gray-500">
                               by {r.insurance_refunded_by_name}
@@ -158,20 +197,52 @@ export function CheckoutsTodaySection({ embedded = false }) {
                         </div>
                       ) : insurance > 0.009 ? (
                         <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 px-2.5 py-1 text-xs font-semibold">
-                          Pending refund
+                          Pending payout
                         </span>
                       ) : (
                         <span className="text-xs text-gray-400">—</span>
                       )}
                     </td>
-                    <td className="py-4 px-4 min-w-[14rem]">
+                    <td className="py-4 px-4 min-w-[16rem]">
                       {r.can_refund_insurance ? (
                         <div className="space-y-2">
                           {refundingId === r.id ? (
                             <div className="space-y-2 rounded-lg border bg-gray-50 p-2.5">
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="text-[10px] uppercase text-gray-500">
+                                    Refund amount
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    className="input text-sm py-1.5"
+                                    value={refundAmt}
+                                    onChange={(e) =>
+                                      onRefundAmountChange(r.id, insurance, e.target.value)
+                                    }
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-[10px] uppercase text-gray-500">
+                                    Damage kept
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    className="input text-sm py-1.5"
+                                    value={damageAmt}
+                                    onChange={(e) =>
+                                      onDamageAmountChange(r.id, insurance, e.target.value)
+                                    }
+                                  />
+                                </div>
+                              </div>
                               <div>
                                 <label className="text-[10px] uppercase text-gray-500">
-                                  Refund method
+                                  Payout method
                                 </label>
                                 <select
                                   className="input text-sm py-1.5"
@@ -185,6 +256,17 @@ export function CheckoutsTodaySection({ embedded = false }) {
                                   <option value="bank_transfer">Bank transfer</option>
                                 </select>
                               </div>
+                              <div>
+                                <label className="text-[10px] uppercase text-gray-500">Notes</label>
+                                <input
+                                  className="input text-sm py-1.5"
+                                  value={notesDrafts[r.id] || ''}
+                                  onChange={(e) =>
+                                    setNotesDrafts((prev) => ({ ...prev, [r.id]: e.target.value }))
+                                  }
+                                  placeholder="Optional"
+                                />
+                              </div>
                               <div className="flex gap-2">
                                 <button
                                   type="button"
@@ -194,10 +276,13 @@ export function CheckoutsTodaySection({ embedded = false }) {
                                     refundMutation.mutate({
                                       id: r.id,
                                       payment_method: method,
+                                      refunded_amount: parseFloat(refundAmt) || 0,
+                                      damage_amount: parseFloat(damageAmt) || 0,
+                                      notes: notesDrafts[r.id] || undefined,
                                     })
                                   }
                                 >
-                                  Confirm refunded
+                                  Confirm payout
                                 </button>
                                 <button
                                   type="button"
@@ -212,10 +297,10 @@ export function CheckoutsTodaySection({ embedded = false }) {
                             <button
                               type="button"
                               className="btn-primary text-xs inline-flex items-center gap-1.5"
-                              onClick={() => setRefundingId(r.id)}
+                              onClick={() => openRefund(r)}
                             >
                               <LogOut className="w-3.5 h-3.5" />
-                              Refunded the insurance
+                              Insurance payout
                             </button>
                           )}
                         </div>
