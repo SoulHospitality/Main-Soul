@@ -489,6 +489,7 @@ function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool
             { id: 'insurance', labelKey: 'insurancePayout', icon: Shield },
             { id: 'trust', labelKey: 'ownerTrust', icon: Building2 },
             { id: 'reports', labelKey: 'monthEndReports', icon: FileSpreadsheet },
+            { id: 'cashflow', labelKey: 'cashFlow', icon: Banknote },
             { id: 'aging', labelKey: 'arAging', icon: AlertCircle },
             { id: 'close', labelKey: 'closeMonth', icon: Lock },
             { id: 'gateway', labelKey: 'gatewaySettle', icon: CreditCard },
@@ -1740,6 +1741,30 @@ function CashFlowSection({ cf, fromDate, toDate }) {
   );
 }
 
+function CashFlowTool({ rangeParams: params }) {
+  const { t } = useFinLocale();
+  const { data, isLoading } = useQuery({
+    queryKey: ['financial-system-reports', params],
+    queryFn: () => api.get('/financial-system/reports', { params }).then((r) => r.data),
+  });
+  if (isLoading) return <LoadingSpinner />;
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-500">
+        {t('pms.fin.reports.cfPageHint', {
+          from: data?.from_date,
+          to: data?.to_date,
+        })}
+      </p>
+      <CashFlowSection
+        cf={data?.cash_flow || {}}
+        fromDate={data?.from_date}
+        toDate={data?.to_date}
+      />
+    </div>
+  );
+}
+
 function ReportsTool({ rangeParams: params }) {
   const { t } = useFinLocale();
   const [tab, setTab] = useState('pnl');
@@ -1751,7 +1776,6 @@ function ReportsTool({ rangeParams: params }) {
   const pnl = data?.profit_and_loss || {};
   const tb = data?.trial_balance || {};
   const bs = data?.balance_sheet || {};
-  const cf = data?.cash_flow || {};
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-500">
@@ -1762,7 +1786,6 @@ function ReportsTool({ rangeParams: params }) {
           ['pnl', t('pms.fin.reports.pnl')],
           ['tb', t('pms.fin.reports.tb')],
           ['bs', t('pms.fin.reports.bs')],
-          ['cf', t('pms.fin.reports.cf')],
         ].map(([id, label]) => (
           <button
             key={id}
@@ -1864,9 +1887,6 @@ function ReportsTool({ rangeParams: params }) {
             </div>
           </div>
         </div>
-      )}
-      {tab === 'cf' && (
-        <CashFlowSection cf={cf} fromDate={data?.from_date} toDate={data?.to_date} />
       )}
     </div>
   );
@@ -4233,6 +4253,7 @@ function FinancialSystemInner() {
         tax: t('pms.fin.tools.taxDesk'),
         recurring: t('pms.fin.tools.monthlyCharges'),
         reports: t('pms.fin.tools.monthEndReports'),
+        cashflow: t('pms.fin.tools.cashFlow'),
         aging: t('pms.fin.tools.arAging'),
         close: t('pms.fin.tools.closeMonth'),
         gateway: t('pms.fin.tools.gatewaySettle'),
@@ -4353,6 +4374,8 @@ function FinancialSystemInner() {
         <OwnerTrustTool rangeParams={params} />
       ) : tool === 'reports' ? (
         <ReportsTool rangeParams={params} />
+      ) : tool === 'cashflow' ? (
+        <CashFlowTool rangeParams={params} />
       ) : tool === 'aging' ? (
         <AgingTool
           rangeParams={params}
