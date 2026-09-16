@@ -505,24 +505,24 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.equal(applyRequestReview(superReq, admin, 'approved', superStaff).status, 'approved');
   });
 
-  it('lets HR and HR Manager change pay and leave for others, but not themselves', () => {
+  it('lets HR and HR Manager change pay and leave for any staff including themselves', () => {
     const supervisor = { id: 10, role: 'hr_supervisor' };
     const hr = { id: 11, role: 'hr' };
     const admin = { id: 1, role: 'admin' };
     assert.equal(canEditStaffCompensation(admin, 10), true);
     assert.equal(canEditStaffCompensation(supervisor, 11), true);
-    assert.equal(canEditStaffCompensation(supervisor, 10), false);
+    assert.equal(canEditStaffCompensation(supervisor, 10), true);
     assert.equal(canEditStaffCompensation(hr, 12), true);
-    assert.equal(canEditStaffCompensation(hr, 11), false);
+    assert.equal(canEditStaffCompensation(hr, 11), true);
     assert.equal(appliesSalaryImmediately(admin), true);
     assert.equal(appliesSalaryImmediately(supervisor), true);
     assert.equal(appliesSalaryImmediately(hr), true);
     assert.equal(isHrActingOnSelf(supervisor, 10), true);
     assert.equal(isHrActingOnSelf(hr, 11), true);
     assert.doesNotThrow(() => assertCanEditStaffCompensation(supervisor, 11));
-    assert.throws(() => assertCanEditStaffCompensation(supervisor, 10), /Only a CEO/);
+    assert.doesNotThrow(() => assertCanEditStaffCompensation(supervisor, 10));
     assert.doesNotThrow(() => assertCanEditStaffCompensation(hr, 12));
-    assert.throws(() => assertCanEditStaffCompensation(hr, 11), /Only a CEO/);
+    assert.doesNotThrow(() => assertCanEditStaffCompensation(hr, 11));
   });
 
   it('requires Financial Manager then HR for loans (no line manager)', () => {

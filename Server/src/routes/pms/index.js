@@ -551,6 +551,13 @@ router.patch('/users/:id', requireRoles(...USER_ACCOUNT_ROLES), async (req, res,
       return res.status(403).json({ error: 'HR cannot edit admin accounts' });
     }
 
+    let nextRole = b.role != null ? String(b.role) : existing.role;
+    // Only enforce role-assignment rules when the role actually changes.
+    // HR must be able to edit Staff ID and other fields on existing managers without re-assigning the role.
+    if (b.role != null && nextRole !== existing.role) {
+      assertCanAssignRole(req.user.role, nextRole);
+    }
+
     const salaryChanged =
       b.base_salary != null &&
       b.base_salary !== '' &&
@@ -568,11 +575,11 @@ router.patch('/users/:id', requireRoles(...USER_ACCOUNT_ROLES), async (req, res,
       b.leave_unpaid_days !== '' &&
       parseInt(b.leave_unpaid_days, 10) !== Number(existing.leave_unpaid_days || 0);
     if (salaryChanged || casualChanged || annualChanged || unpaidChanged) {
-      assertCanEditStaffCompensation(req.user, existing.id, 'salary or holiday balances');
+      // HR / HR Manager may change pay and leave for any staff (including themselves).
+      if (!isHrTeamRole(req.user.role)) {
+        assertCanEditStaffCompensation(req.user, existing.id, 'salary or holiday balances');
+      }
     }
-
-    let nextRole = b.role != null ? String(b.role) : existing.role;
-    if (b.role != null) assertCanAssignRole(req.user.role, nextRole);
 
     let nextCommissionPct = existing.sales_commission_pct;
     if (b.sales_commission_pct != null || usesCommissionPct(nextRole)) {

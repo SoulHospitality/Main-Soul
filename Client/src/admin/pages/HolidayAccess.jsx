@@ -58,7 +58,7 @@ export default function HolidayAccess() {
           Choose who can request paid holidays. Auto allows casual and annual after 6 months.
           Casual and annual need manager then HR Manager.
           Unpaid leave and excuses also need manager then HR Manager (no holiday access required).
-          HR or an HR Manager can change access (not their own — ask a CEO).
+          HR or an HR Manager can change access for any staff.
         </p>
       </div>
 
@@ -102,9 +102,7 @@ export default function HolidayAccess() {
                         disabled={mutation.isPending || !canEditRow}
                         title={
                           !canEditRow
-                            ? String(user?.id) === String(r.id)
-                              ? 'Only a CEO can change your holiday access'
-                              : 'Only HR, an HR Manager, or a CEO can change holiday access'
+                            ? 'Only HR, an HR Manager, or a CEO can change holiday access'
                             : undefined
                         }
                         onChange={(e) =>

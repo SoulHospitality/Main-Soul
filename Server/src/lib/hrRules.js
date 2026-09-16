@@ -361,9 +361,8 @@ function appliesSalaryImmediately(actor) {
 function canEditStaffCompensation(actor, targetUserId) {
   if (!actor) return false;
   if (actor.role === 'admin') return true;
-  if (isHrTeamRole(actor.role)) {
-    return targetUserId == null || String(actor.id) !== String(targetUserId);
-  }
+  // HR team can edit pay/leave for any staff account (including their own).
+  if (isHrTeamRole(actor.role)) return true;
   return false;
 }
 
@@ -373,25 +372,14 @@ function assertCanEditStaffCompensation(
   label = 'salary, holiday balances, or holiday access'
 ) {
   if (canEditStaffCompensation(actor, targetUserId)) return;
-  if (isHrActingOnSelf(actor, targetUserId)) {
-    const err = new Error(`Only a CEO can change your ${label}`);
-    err.status = 403;
-    throw err;
-  }
   const err = new Error(`Only HR, an HR Manager, or a CEO can change ${label}`);
   err.status = 403;
   throw err;
 }
 
-function assertHrNotEditingOwnCompensation(
-  actor,
-  targetUserId,
-  label = 'salary, holiday balances, or holiday access'
-) {
-  if (!isHrActingOnSelf(actor, targetUserId)) return;
-  const err = new Error(`Only a CEO can change your ${label}`);
-  err.status = 403;
-  throw err;
+/** @deprecated No longer blocks HR self-edits; kept for callers that still import it. */
+function assertHrNotEditingOwnCompensation() {
+  return;
 }
 
 function nextPayrollPeriod(isoDate) {

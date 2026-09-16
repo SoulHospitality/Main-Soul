@@ -652,9 +652,8 @@ export function canRequestWfh(user) {
 export function canEditStaffCompensation(user, targetUserId) {
   if (!user) return false;
   if (user.role === 'admin') return true;
-  if (user.role === 'hr' || user.role === 'hr_supervisor') {
-    return targetUserId == null || String(user.id) !== String(targetUserId);
-  }
+  // HR / HR Manager can edit pay and leave for any staff, including themselves.
+  if (user.role === 'hr' || user.role === 'hr_supervisor') return true;
   return false;
 }
 

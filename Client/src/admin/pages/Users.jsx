@@ -289,14 +289,11 @@ function StaffForm({
   isEdit,
   roleOptions,
   lockPayAndLeave,
-  editingSelf,
   applySalaryImmediately,
   managerOptions = [],
 }) {
   const showCommission = usesCommissionPct(form.role);
-  const lockHint = editingSelf
-    ? 'Only a CEO can change your salary and holiday balances.'
-    : 'Only HR, an HR Manager, or a CEO can change salary and holiday balances.';
+  const lockHint = 'Only HR, an HR Manager, or a CEO can change salary and holiday balances.';
   return (
     <div className="space-y-4">
       <p className="text-xs text-slate-500">
@@ -304,7 +301,7 @@ function StaffForm({
           ? lockHint
           : isEdit
             ? applySalaryImmediately
-              ? 'Salary and holiday-balance changes apply immediately.'
+              ? 'Staff ID, salary, leave, and other fields can be updated anytime. Changes apply immediately.'
               : 'Salary edits require CEO approval before they apply.'
             : 'Creates login with the Staff ID you enter and a one-time temporary password (shown after save). User must change password on first login.'}
       </p>
@@ -484,9 +481,7 @@ function StaffForm({
           />
           {lockPayAndLeave ? (
             <p className="mt-1 text-[11px] text-amber-700">
-              {editingSelf
-                ? 'Ask a CEO to update your salary.'
-                : 'Ask HR, an HR Manager, or a CEO to update this salary.'}
+              Ask HR, an HR Manager, or a CEO to update this salary.
             </p>
           ) : null}
         </div>
@@ -1523,9 +1518,6 @@ export default function Users() {
           roleOptions={formRoleOptions}
           lockPayAndLeave={
             modal === 'edit-staff' && !canEditStaffCompensation(user, editId)
-          }
-          editingSelf={
-            modal === 'edit-staff' && String(user?.id) === String(editId)
           }
           applySalaryImmediately={isAdmin || isHr || isHrSupervisor}
           managerOptions={users.filter((u) => {
