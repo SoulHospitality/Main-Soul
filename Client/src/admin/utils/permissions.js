@@ -166,6 +166,7 @@ const WEB_DEVELOPER_PAGE_ACCESS = new Set(['tasks', 'site_performance', ...STAFF
 const RESERVATIONS_PERMISSIONS = [
   'dashboard:read',
   'units:read',
+  'units:write',
   'reservations:read',
   'reservations:write',
   'reservations:confirm',
@@ -180,6 +181,7 @@ const RESERVATIONS_PERMISSIONS = [
 
 const RESERVATIONS_MANUAL_PERMISSIONS = [
   'units:read',
+  'units:write',
   'reservations:read',
   'reservations:write',
   'reservations:confirm',
@@ -518,6 +520,9 @@ export function canManageUnits(user) {
     (user.role === 'admin' ||
       isResaleStaff(user) ||
       user.role === 'reservations_manager' ||
+      user.role === 'reservations_web' ||
+      user.role === 'reservations_manual' ||
+      user.role === 'reservations' ||
       isFinanceStaff(user) ||
       isUnitAcquisitionRole(user))
   );

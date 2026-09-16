@@ -31,7 +31,12 @@ const ACQUISITION_AUDIT_ACTIONS = [
 
 function isRentOnlyUnitEditor(userOrRole) {
   const role = typeof userOrRole === 'string' ? userOrRole : userOrRole?.role;
-  return role === 'reservations_web' || role === 'reservations' || isUnitAcquisitionRole(role);
+  return (
+    role === 'reservations_web' ||
+    role === 'reservations_manual' ||
+    role === 'reservations' ||
+    isUnitAcquisitionRole(role)
+  );
 }
 
 module.exports = {

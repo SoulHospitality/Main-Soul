@@ -1,8 +1,8 @@
 const PERMS = {
   admin: ['*'],
-  reservations: ['reservations', 'schedule', 'units_readonly', 'tasks'],
-  reservations_web: ['reservations', 'schedule', 'units_readonly', 'website_bookings', 'tasks'],
-  reservations_manual: ['reservations', 'schedule', 'units_readonly', 'tasks'],
+  reservations: ['reservations', 'schedule', 'units', 'tasks'],
+  reservations_web: ['reservations', 'schedule', 'units', 'website_bookings', 'tasks'],
+  reservations_manual: ['reservations', 'schedule', 'units', 'tasks'],
   reservations_manager: [
     'reservations',
     'schedule',
