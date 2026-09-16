@@ -38,6 +38,10 @@ const {
   splitSalaryAdjustments,
   hasOfficeAttendance,
   canRequestWfh,
+  assertOriginalRecordsAttendanceTemplate,
+  toIsoDate,
+  DEFAULT_ATTENDANCE_CHECKOUT,
+  normalizePersonId,
   canRequestStaffBenefits,
   staffRequestPolicy,
   eligibleReviewSlots,
@@ -254,19 +258,38 @@ describe('HR daily-rate deductions and leave rules', () => {
       },
       {
         'Person ID': "'15",
-        Time: '2026-06-02 09:49:33',
+        Time: '8/30/2026 11:06',
         'Attendance Status': 'Check-in',
       },
     ]);
     assert.equal(isDoorPunchLog(punches), true);
+    assert.equal(toIsoDate('8/30/2026 11:06'), '2026-08-30');
     const daily = collapsePunchAttendance(punches);
     const may31 = daily.find((r) => r.date === '2026-05-31');
-    const jun2 = daily.find((r) => r.date === '2026-06-02');
+    const aug30 = daily.find((r) => r.date === '2026-08-30');
     assert.equal(may31.staff_code, '15');
     assert.equal(may31.arrival_time, '12:03');
     assert.equal(may31.check_out, '18:00');
     assert.equal(may31.absent, false);
-    assert.equal(jun2.arrival_time, '09:49');
+    assert.equal(aug30.arrival_time, '11:06');
+    assert.equal(aug30.check_out, DEFAULT_ATTENDANCE_CHECKOUT);
+  });
+
+  it('requires the Original Records Report column headers', () => {
+    assert.doesNotThrow(() =>
+      assertOriginalRecordsAttendanceTemplate([
+        { 'Person ID': '15', Time: '8/30/2026 11:06', 'Attendance Status': 'Check-in' },
+      ])
+    );
+    assert.doesNotThrow(() =>
+      assertOriginalRecordsAttendanceTemplate([
+        { 'Personal ID': '15', Time: '8/30/2026 11:06', 'Attendance Status': 'Check-in' },
+      ])
+    );
+    assert.throws(
+      () => assertOriginalRecordsAttendanceTemplate([{ Name: 'Wael', Date: '2026-08-30' }]),
+      /Wrong template/
+    );
   });
 
   it('parses the HTML .xls door report layout', () => {
@@ -395,6 +418,15 @@ describe('HR daily-rate deductions and leave rules', () => {
       ),
       ['hr']
     );
+  });
+
+  it('strips a leading apostrophe from Person ID so \'15 matches 15', () => {
+    assert.equal(normalizePersonId("'15"), '15');
+    assert.equal(normalizePersonId("'103"), '103');
+    assert.equal(normalizePersonId('‘22'), '22');
+    assert.equal(normalizePersonId(15), '15');
+    const staff = [{ id: 15, staff_code: 'SH15', full_name: 'Wael' }];
+    assert.equal(matchAttendanceStaff({ staff_code: "'15" }, staff).id, 15);
   });
 
   it('matches door-report Person ID to staff user id first', () => {

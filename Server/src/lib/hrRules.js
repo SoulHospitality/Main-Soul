@@ -436,14 +436,51 @@ function toIsoDate(value) {
   }
   if (typeof value === 'number') return excelSerialToIso(value);
   const s = String(value || '').trim();
-  const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
-  return m ? m[1] : null;
+  const iso = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (iso) return iso[1];
+  // Original Records Report uses M/D/YYYY (optionally with time), e.g. "8/30/2026 11:06".
+  const mdY = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (mdY) {
+    const month = Number(mdY[1]);
+    const day = Number(mdY[2]);
+    const year = Number(mdY[3]);
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
+  }
+  return null;
+}
+
+/** Default checkout when the door report has check-in but no check-out. */
+const DEFAULT_ATTENDANCE_CHECKOUT = '19:00';
+
+function assertOriginalRecordsAttendanceTemplate(rows) {
+  const sample = (rows || []).find((row) => row && typeof row === 'object') || null;
+  if (!sample) {
+    const err = new Error(
+      'Upload the Original Records Report Excel (.xls or .xlsx) with Person ID, Time, and Attendance Status columns'
+    );
+    err.status = 400;
+    throw err;
+  }
+  const keys = Object.keys(sample).map((k) => normalizeHeader(k));
+  const hasPerson = keys.includes('person_id') || keys.includes('personal_id');
+  const hasTime = keys.includes('time');
+  const hasStatus = keys.includes('attendance_status');
+  if (!hasPerson || !hasTime || !hasStatus) {
+    const err = new Error(
+      'Wrong template. Use the Original Records Report Excel with columns Person ID (or Personal ID), Time, and Attendance Status'
+    );
+    err.status = 400;
+    throw err;
+  }
 }
 
 function normalizePersonId(value) {
-  return String(value || '')
+  // Door reports often force text with a leading apostrophe: "'15" → "15".
+  return String(value ?? '')
     .trim()
-    .replace(/^'+/, '')
+    .replace(/^[\s'‘’‛`]+/, '')
     .replace(/\.0$/, '')
     .trim();
 }
@@ -634,6 +671,8 @@ function collapsePunchAttendance(rows) {
       const last = pickLatest(cur.punches);
       if (last && last !== arrival) check_out = last;
     }
+    // Door reports often only log check-in; missing checkout defaults to 7:00 PM that day.
+    if (!check_out && arrival) check_out = DEFAULT_ATTENDANCE_CHECKOUT;
     const absent = cur.explicitAbsent && !arrival;
     return {
       staff_code: cur.staff_code,
@@ -1113,6 +1152,9 @@ module.exports = {
   normalizePersonId,
   matchAttendanceStaff,
   excelTimeToHhMm,
+  toIsoDate,
+  assertOriginalRecordsAttendanceTemplate,
+  DEFAULT_ATTENDANCE_CHECKOUT,
   computeHalfDayDeduction,
   PENALTY_CATEGORIES,
   NO_OFFICE_ATTENDANCE_ROLES,

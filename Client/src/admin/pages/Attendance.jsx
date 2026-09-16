@@ -122,6 +122,12 @@ export default function Attendance() {
 
   const importMutation = useMutation({
     mutationFn: (file) => {
+      const name = String(file?.name || '');
+      if (!/\.xlsx?$/i.test(name)) {
+        return Promise.reject({
+          response: { data: { error: 'Upload an Excel Original Records Report (.xls or .xlsx) only' } },
+        });
+      }
       const fd = new FormData();
       fd.append('file', file);
       return api.post('/hr/attendance/import', fd, { timeout: 180000 }).then((r) => r.data);
@@ -224,8 +230,9 @@ export default function Attendance() {
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-soul-muted">HR</p>
           <h1 className="page-title mt-1">Attendance</h1>
           <p className="page-subtitle">
-            Upload the door report (Person ID, Time, Attendance Status). Person ID is the Staff ID.
-            Admin, operations, and web developers are not on this sheet.
+            Upload the Original Records Report Excel (.xls / .xlsx) with Person ID, Time, and
+            Attendance Status. Person ID matches the staff user id. Missing checkout defaults to
+            7:00 PM. Admin, operations, and web developers are not on this sheet.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

@@ -38,6 +38,7 @@ const {
   isDoorPunchLog,
   normalizePersonId,
   matchAttendanceStaff,
+  assertOriginalRecordsAttendanceTemplate,
   roundMoney,
   splitSalaryAdjustments,
   hasOfficeAttendance,
@@ -1919,20 +1920,39 @@ router.patch('/hr/holiday-access/:id', requireRoles(...HR_ROLES), async (req, re
   }
 });
 
+function assertAttendanceExcelFile(file) {
+  const name = String(file?.originalname || file?.name || '').trim();
+  if (!/\.xlsx?$/i.test(name)) {
+    const err = new Error('Upload an Excel Original Records Report (.xls or .xlsx) only');
+    err.status = 400;
+    throw err;
+  }
+}
+
 function loadAttendanceJson(file) {
+  assertAttendanceExcelFile(file);
   const buf = file.buffer;
   const head = buf.slice(0, 800).toString('utf8');
+  // Some door systems export HTML tables saved as .xls — still require the Original Records columns.
   if (/<html/i.test(head) || /<table/i.test(head)) {
     return parseHtmlExcelTables(buf.toString('utf8'));
   }
   try {
     const wb = XLSX.read(buf, { type: 'buffer', cellDates: true });
+    if (!wb.SheetNames?.length) {
+      const err = new Error('The Excel file has no sheets');
+      err.status = 400;
+      throw err;
+    }
     const sheet = wb.Sheets[wb.SheetNames[0]];
     return XLSX.utils.sheet_to_json(sheet, { defval: '' });
   } catch (err) {
+    if (err.status) throw err;
     const asText = buf.toString('utf8');
     if (/<td/i.test(asText)) return parseHtmlExcelTables(asText);
-    throw err;
+    const wrapped = new Error('Could not read the Excel file. Use the Original Records Report .xls/.xlsx template');
+    wrapped.status = 400;
+    throw wrapped;
   }
 }
 
@@ -2086,16 +2106,32 @@ router.post(
   async (req, res, next) => {
     try {
       if (!req.file?.buffer) {
-        return res.status(400).json({ error: 'Upload an Excel attendance file (.xls or .xlsx)' });
+        return res.status(400).json({ error: 'Upload an Excel Original Records Report (.xls or .xlsx)' });
       }
-      const json = loadAttendanceJson(req.file);
+      let json;
+      try {
+        json = loadAttendanceJson(req.file);
+        assertOriginalRecordsAttendanceTemplate(json);
+      } catch (err) {
+        return res.status(err.status || 400).json({ error: err.message });
+      }
       const punches = parseAttendanceRows(json).filter((r) => r.staff_code || r.name || r.date);
       if (!punches.length) {
-        return res.status(400).json({ error: 'The sheet has no attendance rows' });
+        return res.status(400).json({
+          error: 'The sheet has no attendance rows. Use Person ID, Time, and Attendance Status',
+        });
       }
-      let parsed = isDoorPunchLog(punches) ? collapsePunchAttendance(punches) : punches;
+      if (!isDoorPunchLog(punches)) {
+        return res.status(400).json({
+          error:
+            'Wrong template. Attendance Status must include Check-in / Check-out (Original Records Report)',
+        });
+      }
+      let parsed = collapsePunchAttendance(punches);
       if (!parsed.length) {
-        return res.status(400).json({ error: 'The sheet has no attendance rows' });
+        return res.status(400).json({
+          error: 'Could not read punch times. Check the Time column uses dates like 8/30/2026 11:06',
+        });
       }
 
       const { rows: staffRows } = await query(
@@ -2104,9 +2140,7 @@ router.post(
          FROM staff_users WHERE role <> 'owner'`
       );
 
-      if (isDoorPunchLog(punches)) {
-        parsed = parsed.concat(fillMissingOfficeAbsences(parsed, staffRows));
-      }
+      parsed = parsed.concat(fillMissingOfficeAbsences(parsed, staffRows));
 
       const dates = parsed.map((p) => p.date).filter(Boolean).sort();
       const minDate = dates[0] || cairoParts().date;
