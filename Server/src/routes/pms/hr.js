@@ -1894,7 +1894,7 @@ router.get('/hr/holiday-access', requireRoles(...HR_ROLES), async (req, res, nex
   }
 });
 
-router.patch('/hr/holiday-access/:id', requireRoles('admin', 'hr_supervisor'), async (req, res, next) => {
+router.patch('/hr/holiday-access/:id', requireRoles(...HR_ROLES), async (req, res, next) => {
   try {
     const access = String(req.body?.holiday_access || '').toLowerCase();
     if (!['auto', 'granted', 'denied'].includes(access)) {

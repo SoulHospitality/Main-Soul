@@ -296,7 +296,7 @@ function StaffForm({
   const showCommission = usesCommissionPct(form.role);
   const lockHint = editingSelf
     ? 'Only a CEO can change your salary and holiday balances.'
-    : 'Only an HR Manager or CEO can change salary and holiday balances.';
+    : 'Only HR, an HR Manager, or a CEO can change salary and holiday balances.';
   return (
     <div className="space-y-4">
       <p className="text-xs text-slate-500">
@@ -305,7 +305,7 @@ function StaffForm({
           : isEdit
             ? applySalaryImmediately
               ? 'Salary and holiday-balance changes apply immediately.'
-              : 'Salary edits require HR Manager or CEO approval before they apply.'
+              : 'Salary edits require CEO approval before they apply.'
             : 'Creates login with the Staff ID you enter and a one-time temporary password (shown after save). User must change password on first login.'}
       </p>
       <div className="form-grid">
@@ -407,7 +407,7 @@ function StaffForm({
               <p className="mt-1 text-[11px] text-slate-400">
                 Web developers can have more than one manager. Each selected manager can assign tasks.
                 Only the primary manager (first selected) approves holiday and WFH requests,
-                with the HR Manager. Loans need the manager, then Financial Manager, then HR Manager.
+                with the HR Manager. Loans need Financial Manager then HR Manager.
               </p>
             </div>
           ) : (
@@ -458,14 +458,14 @@ function StaffForm({
             />
             <p className="mt-1 text-[11px] text-slate-400">
               {isReservationAgentRole(form.role)
-                ? 'This manager sees the agent\'s reservations and must accept holiday and WFH requests first (then HR Manager). Loans go manager → Financial Manager → HR Manager.'
+                ? 'This manager sees the agent\'s reservations and must accept holiday and WFH requests first (then HR Manager). Loans go Financial Manager → HR Manager.'
                 : isUnitAcquisitionAgentRole(form.role)
-                  ? 'This manager sees the agent\'s daily audit and must accept holiday and WFH requests first (then HR Manager). Loans go manager → Financial Manager → HR Manager.'
+                  ? 'This manager sees the agent\'s daily audit and must accept holiday and WFH requests first (then HR Manager). Loans go Financial Manager → HR Manager.'
                   : isResaleAgentRole(form.role)
                     ? 'This manager tracks units added and signed sales for this agent on the Performance page.'
                     : isFinanceAgentRole(form.role)
                       ? 'This manager tracks finance desk activity for this agent on the Audit page.'
-                      : 'Must accept holiday and WFH requests first (then the HR Manager, except for HR staff). Loans go manager → Financial Manager → HR Manager.'}
+                      : 'Must accept holiday and WFH requests first (then the HR Manager). Loans go Financial Manager → HR Manager.'}
             </p>
           </div>
           )
@@ -486,7 +486,7 @@ function StaffForm({
             <p className="mt-1 text-[11px] text-amber-700">
               {editingSelf
                 ? 'Ask a CEO to update your salary.'
-                : 'Ask an HR Manager or CEO to update this salary.'}
+                : 'Ask HR, an HR Manager, or a CEO to update this salary.'}
             </p>
           ) : null}
         </div>
@@ -1527,7 +1527,7 @@ export default function Users() {
           editingSelf={
             modal === 'edit-staff' && String(user?.id) === String(editId)
           }
-          applySalaryImmediately={isAdmin || isHrSupervisor}
+          applySalaryImmediately={isAdmin || isHr || isHrSupervisor}
           managerOptions={users.filter((u) => {
             if (editId && String(u.id) === String(editId)) return false;
             if (isLineManagerRole(u.role)) return true;

@@ -355,13 +355,13 @@ function isHrActingOnSelf(actor, targetUserId) {
 }
 
 function appliesSalaryImmediately(actor) {
-  return actor?.role === 'admin' || actor?.role === 'hr_supervisor';
+  return actor?.role === 'admin' || isHrTeamRole(actor?.role);
 }
 
 function canEditStaffCompensation(actor, targetUserId) {
   if (!actor) return false;
   if (actor.role === 'admin') return true;
-  if (actor.role === 'hr_supervisor') {
+  if (isHrTeamRole(actor.role)) {
     return targetUserId == null || String(actor.id) !== String(targetUserId);
   }
   return false;
@@ -378,7 +378,7 @@ function assertCanEditStaffCompensation(
     err.status = 403;
     throw err;
   }
-  const err = new Error(`Only an HR Manager or CEO can change ${label}`);
+  const err = new Error(`Only HR, an HR Manager, or a CEO can change ${label}`);
   err.status = 403;
   throw err;
 }

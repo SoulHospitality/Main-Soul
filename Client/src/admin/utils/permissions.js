@@ -652,7 +652,7 @@ export function canRequestWfh(user) {
 export function canEditStaffCompensation(user, targetUserId) {
   if (!user) return false;
   if (user.role === 'admin') return true;
-  if (user.role === 'hr_supervisor') {
+  if (user.role === 'hr' || user.role === 'hr_supervisor') {
     return targetUserId == null || String(user.id) !== String(targetUserId);
   }
   return false;
