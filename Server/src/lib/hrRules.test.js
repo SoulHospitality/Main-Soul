@@ -430,18 +430,30 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.equal(matchAttendanceStaff({ staff_code: "'15" }, staff).id, 15);
   });
 
-  it('matches door-report Person ID to staff user id first', () => {
+  it('matches door Person ID to Staff ID (staff_code) before internal user id', () => {
+    const staff = [
+      { id: 90, staff_code: '2424242', full_name: 'Youssif Fekry', role: 'finance_manager' },
+      { id: 113, staff_code: '90', full_name: 'Aml Nasser', role: 'unit_acquisition_manager' },
+      { id: 22, staff_code: 'AYA', full_name: 'Aya Ahmed' },
+      { id: 30, staff_code: 'AD1', full_name: 'Abdelrahman Dawood' },
+    ];
+    assert.equal(matchAttendanceStaff({ staff_code: "'90", name: 'Aml' }, staff).id, 113);
+    assert.equal(matchAttendanceStaff({ staff_code: '90' }, staff).full_name, 'Aml Nasser');
+    assert.equal(matchAttendanceStaff({ staff_code: 'AYA' }, staff).id, 22);
+    assert.equal(matchAttendanceStaff({ name: 'Hanna' }, staff), null);
+    assert.equal(matchAttendanceStaff({ name: 'Abdelrhman Dawod' }, staff).id, 30);
+    assert.equal(matchAttendanceStaff({ name: 'Unknown' }, staff), null);
+  });
+
+  it('matches door-report names when Person ID is missing', () => {
     const staff = [
       { id: 15, staff_code: 'SH15', full_name: 'Hana Kamal' },
       { id: 22, staff_code: 'AYA', full_name: 'Aya Ahmed' },
       { id: 30, staff_code: 'AD1', full_name: 'Abdelrahman Dawood' },
     ];
-    assert.equal(matchAttendanceStaff({ staff_code: '15' }, staff).id, 15);
-    assert.equal(matchAttendanceStaff({ staff_code: 'SH15' }, staff).full_name, 'Hana Kamal');
     assert.equal(matchAttendanceStaff({ name: 'Hanna' }, staff).id, 15);
     assert.equal(matchAttendanceStaff({ name: 'Aya' }, staff).id, 22);
-    assert.equal(matchAttendanceStaff({ name: 'Abdelrhman Dawod' }, staff).id, 30);
-    assert.equal(matchAttendanceStaff({ name: 'Unknown' }, staff), null);
+    assert.equal(matchAttendanceStaff({ staff_code: '15' }, staff).id, 15);
   });
 
   it('requires manager + HR Manager for agents and HR staff; manager only for HR Manager', () => {

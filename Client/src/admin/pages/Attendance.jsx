@@ -231,9 +231,9 @@ export default function Attendance() {
           <h1 className="page-title mt-1">Attendance</h1>
           <p className="page-subtitle">
             Upload the Original Records Report Excel (.xls / .xlsx) with Person ID, Time, and
-            Attendance Status. Person ID matches the staff user id. Missing checkout defaults to
-            7:00 PM. Resale Manager and Unit Acquisition Manager are included; other line managers,
-            admin, operations, and web developers are not.
+            Attendance Status. Person ID must match each person's Staff ID. Missing checkout
+            defaults to 7:00 PM. Resale Manager and Unit Acquisition Manager are included; other
+            line managers, admin, operations, and web developers are not.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

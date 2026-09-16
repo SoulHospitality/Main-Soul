@@ -2192,8 +2192,9 @@ router.post(
       }
       const findStaff = (row) => {
         const code = normalizePersonId(row.staff_code);
-        if (code && /^\d+$/.test(code) && staffById.has(code)) return staffById.get(code);
+        // Door Person ID = Staff ID (staff_code). Prefer that over internal user id.
         if (code && staffByCode.has(code.toLowerCase())) return staffByCode.get(code.toLowerCase());
+        if (code && /^\d+$/.test(code) && staffById.has(code)) return staffById.get(code);
         return matchAttendanceStaff(row, staffRows);
       };
 

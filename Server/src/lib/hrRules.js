@@ -488,15 +488,17 @@ function normalizePersonId(value) {
 function matchAttendanceStaff(row, staffList) {
   const list = staffList || [];
   const code = normalizePersonId(row?.staff_code).toLowerCase();
-  if (code && /^\d+$/.test(code)) {
-    const byId = list.filter((s) => String(s.id) === code);
-    if (byId.length === 1) return byId[0];
-  }
+  // Door Person ID is the Staff ID (staff_code), not the internal user id.
+  // Prefer staff_code so "'90" maps to Aml (staff_code 90), not user id 90.
   if (code) {
     const byCode = list.filter(
       (s) => normalizePersonId(s.staff_code).toLowerCase() === code
     );
     if (byCode.length === 1) return byCode[0];
+  }
+  if (code && /^\d+$/.test(code)) {
+    const byId = list.filter((s) => String(s.id) === code);
+    if (byId.length === 1) return byId[0];
   }
   const name = String(row?.name || '').trim();
   if (!name) return null;
