@@ -36,6 +36,26 @@ const upload = multer({
   },
 });
 
+/** Memory-only Excel uploads (attendance door reports). Not sent to Cloudinary. */
+const excelUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter(_req, file, cb) {
+    const mime = String(file.mimetype || '').toLowerCase();
+    const name = String(file.originalname || '').toLowerCase();
+    const ok =
+      /\.xlsx?$/i.test(name) ||
+      mime === 'application/vnd.ms-excel' ||
+      mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      mime === 'application/octet-stream' ||
+      /spreadsheet|excel/i.test(mime);
+    if (!ok) {
+      return cb(new Error('Upload an Excel Original Records Report (.xls or .xlsx) only'));
+    }
+    return cb(null, true);
+  },
+});
+
 function isPdfUpload(filename = '', mimetype = '') {
   return /pdf/i.test(String(mimetype)) || /\.pdf$/i.test(String(filename));
 }
@@ -207,6 +227,7 @@ async function destroyCloudinaryUrl(url, { allowFolders = [FOLDER_ID_DOCS, FOLDE
 module.exports = {
   cloudinary,
   upload,
+  excelUpload,
   uploadBufferToCloudinary,
   attachCloudinaryUrls,
   setCloudinaryFolder,

@@ -2,7 +2,7 @@ const express = require('express');
 const XLSX = require('xlsx');
 const { query, pool } = require('../../config/db');
 const { requireRoles } = require('../../middleware/auth');
-const { upload } = require('../../config/cloudinary');
+const { excelUpload } = require('../../config/cloudinary');
 const {
   dailyRate,
   computeLatenessDeduction,
@@ -2102,7 +2102,16 @@ router.put('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
 router.post(
   '/hr/attendance/import',
   requireRoles(...HR_ROLES),
-  upload.single('file'),
+  (req, res, next) => {
+    excelUpload.single('file')(req, res, (err) => {
+      if (!err) return next();
+      const message =
+        err.code === 'LIMIT_FILE_SIZE'
+          ? 'Excel file is too large (max 20 MB)'
+          : err.message || 'Upload an Excel Original Records Report (.xls or .xlsx) only';
+      return res.status(400).json({ error: message });
+    });
+  },
   async (req, res, next) => {
     try {
       if (!req.file?.buffer) {
