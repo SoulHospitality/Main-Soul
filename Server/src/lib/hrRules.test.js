@@ -133,7 +133,7 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.equal(assertMissionWindow('09:00', '17:00').hours, 8);
   });
 
-  it('sets leave approval rules by type: annual AND, casual manager-only, unpaid/excuse/mission OR', () => {
+  it('sets leave approval rules: all types need manager AND HR Manager', () => {
     assert.deepEqual(leaveApprovalPolicy('annual', 'reservations_web'), {
       canRequest: true,
       needsManager: true,
@@ -143,32 +143,32 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.deepEqual(leaveApprovalPolicy('casual', 'reservations_web'), {
       canRequest: true,
       needsManager: true,
-      needsHr: false,
+      needsHr: true,
       approvalMode: 'all',
     });
     assert.deepEqual(leaveApprovalPolicy('unpaid', 'reservations_web'), {
       canRequest: true,
       needsManager: true,
       needsHr: true,
-      approvalMode: 'any',
+      approvalMode: 'all',
     });
     assert.deepEqual(leaveApprovalPolicy('paid_excuse', 'reservations_web'), {
       canRequest: true,
       needsManager: true,
       needsHr: true,
-      approvalMode: 'any',
+      approvalMode: 'all',
     });
     assert.deepEqual(leaveApprovalPolicy('unpaid_excuse', 'reservations_web'), {
       canRequest: true,
       needsManager: true,
       needsHr: true,
-      approvalMode: 'any',
+      approvalMode: 'all',
     });
     assert.deepEqual(leaveApprovalPolicy('mission', 'reservations_web'), {
       canRequest: true,
       needsManager: true,
       needsHr: true,
-      approvalMode: 'any',
+      approvalMode: 'all',
     });
 
     const unpaidReq = {
@@ -187,8 +187,8 @@ describe('HR daily-rate deductions and leave rules', () => {
       'approved',
       staff
     );
-    assert.equal(managerApprove.finalized, true);
-    assert.equal(managerApprove.status, 'approved');
+    assert.equal(managerApprove.finalized, false);
+    assert.equal(managerApprove.status, 'pending');
 
     const annualReq = {
       status: 'pending',
@@ -411,7 +411,7 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.equal(matchAttendanceStaff({ name: 'Unknown' }, staff), null);
   });
 
-  it('requires manager + HR Manager for agents, HR Manager only for HR, manager only for HR Manager', () => {
+  it('requires manager + HR Manager for agents and HR staff; manager only for HR Manager', () => {
     assert.deepEqual(staffRequestPolicy('reservations_web'), {
       canRequest: true,
       needsManager: true,
@@ -419,7 +419,7 @@ describe('HR daily-rate deductions and leave rules', () => {
     });
     assert.deepEqual(staffRequestPolicy('hr'), {
       canRequest: true,
-      needsManager: false,
+      needsManager: true,
       needsHr: true,
     });
     assert.deepEqual(staffRequestPolicy('hr_supervisor'), {
@@ -472,12 +472,25 @@ describe('HR daily-rate deductions and leave rules', () => {
       status: 'pending',
       staff_user_id: 11,
       role: 'hr',
-      needs_manager_approval: false,
+      needs_manager_approval: true,
       needs_hr_approval: true,
+      manager_reviewed_by: null,
+      hr_reviewed_by: null,
     };
     const hrStaff = { id: 11, role: 'hr', manager_id: 8, manager_ids: [8] };
-    assert.deepEqual(eligibleReviewSlots(hrSuper, hrReq, hrStaff), ['hr']);
-    assert.equal(applyRequestReview(hrReq, hrSuper, 'approved', hrStaff).status, 'approved');
+    // HR Manager is also the line manager — first step is manager.
+    assert.deepEqual(eligibleReviewSlots(hrSuper, hrReq, hrStaff), ['manager']);
+    const afterHrManager = applyRequestReview(hrReq, hrSuper, 'approved', hrStaff);
+    assert.equal(afterHrManager.status, 'pending');
+    assert.equal(afterHrManager.manager_reviewed_by, 8);
+    const afterHrHr = applyRequestReview(
+      { ...hrReq, manager_reviewed_by: 8 },
+      hrSuper,
+      'approved',
+      hrStaff
+    );
+    assert.equal(afterHrHr.status, 'approved');
+    assert.equal(afterHrHr.finalized, true);
 
     const superReq = {
       status: 'pending',
@@ -511,11 +524,11 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.throws(() => assertCanEditStaffCompensation(hr, 12), /HR Manager or CEO/);
   });
 
-  it('requires manager then Financial Manager then HR for loans', () => {
+  it('requires Financial Manager then HR for loans (no line manager)', () => {
     const { loanRequestPolicy, isLoanRequest, describeRequestApproval } = require('./hrRules');
     assert.deepEqual(loanRequestPolicy('reservations_web'), {
       canRequest: true,
-      needsManager: true,
+      needsManager: false,
       needsFinance: true,
       needsHr: true,
     });
@@ -539,7 +552,7 @@ describe('HR daily-rate deductions and leave rules', () => {
       staff_user_id: 20,
       role: 'reservations_web',
       manager_id: 5,
-      needs_manager_approval: true,
+      needs_manager_approval: false,
       needs_finance_approval: true,
       needs_hr_approval: true,
     };
@@ -549,25 +562,16 @@ describe('HR daily-rate deductions and leave rules', () => {
     const hrMgr = { id: 8, role: 'hr_supervisor' };
 
     assert.equal(isLoanRequest(loanReq), true);
-    assert.deepEqual(eligibleReviewSlots(lineManager, loanReq, agent), ['manager']);
-    assert.deepEqual(eligibleReviewSlots(financeMgr, loanReq, agent), []);
+    assert.deepEqual(eligibleReviewSlots(lineManager, loanReq, agent), []);
+    assert.deepEqual(eligibleReviewSlots(financeMgr, loanReq, agent), ['finance']);
     assert.deepEqual(eligibleReviewSlots(hrMgr, loanReq, agent), []);
-    assert.equal(describeRequestApproval(loanReq), 'Waiting for manager');
+    assert.equal(describeRequestApproval(loanReq), 'Waiting for Financial Manager');
 
-    const afterManager = applyRequestReview(loanReq, lineManager, 'approved', agent);
-    assert.equal(afterManager.status, 'pending');
-    assert.equal(afterManager.manager_reviewed_by, 5);
-
-    const afterMgrReq = { ...loanReq, manager_reviewed_by: 5 };
-    assert.deepEqual(eligibleReviewSlots(financeMgr, afterMgrReq, agent), ['finance']);
-    assert.deepEqual(eligibleReviewSlots(hrMgr, afterMgrReq, agent), []);
-    assert.equal(describeRequestApproval(afterMgrReq), 'Waiting for Financial Manager');
-
-    const afterFinance = applyRequestReview(afterMgrReq, financeMgr, 'approved', agent);
+    const afterFinance = applyRequestReview(loanReq, financeMgr, 'approved', agent);
     assert.equal(afterFinance.status, 'pending');
     assert.equal(afterFinance.finance_reviewed_by, 9);
 
-    const afterFinReq = { ...afterMgrReq, finance_reviewed_by: 9 };
+    const afterFinReq = { ...loanReq, finance_reviewed_by: 9 };
     assert.deepEqual(eligibleReviewSlots(hrMgr, afterFinReq, agent), ['hr']);
     assert.equal(describeRequestApproval(afterFinReq), 'Waiting for HR Manager');
 

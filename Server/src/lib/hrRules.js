@@ -298,17 +298,15 @@ function leaveTypeRequiresApproval(leaveType) {
 }
 
 /** @returns {'all' | 'any'} */
-function leaveTypeApprovalMode(leaveType) {
-  const t = normalizeExcuseLeaveType(leaveType);
-  if (t === 'unpaid' || t === 'paid_excuse' || t === 'unpaid_excuse' || t === 'mission') return 'any';
+function leaveTypeApprovalMode(_leaveType) {
+  // All leave types require both direct manager and HR Manager (sequential).
   return 'all';
 }
 
 /**
  * Approval requirements for a leave/excuse type, adjusted for the requester's role.
- * - annual: manager AND HR Manager
- * - casual: manager only
- * - unpaid / paid_excuse / unpaid_excuse / mission: manager OR HR Manager
+ * Default: direct manager AND HR Manager (sequential).
+ * HR Manager requesters: line manager (CEO) only — cannot self-approve the HR slot.
  */
 function leaveApprovalPolicy(leaveType, role) {
   const rolePolicy = staffRequestPolicy(role);
@@ -316,44 +314,22 @@ function leaveApprovalPolicy(leaveType, role) {
     return { canRequest: false, needsManager: false, needsHr: false, approvalMode: 'all' };
   }
 
-  const t = normalizeExcuseLeaveType(leaveType);
   let needsManager = true;
   let needsHr = true;
-  let approvalMode = 'all';
-
-  if (t === 'annual') {
-    needsManager = true;
-    needsHr = true;
-    approvalMode = 'all';
-  } else if (t === 'casual') {
-    needsManager = true;
-    needsHr = false;
-    approvalMode = 'all';
-  } else if (t === 'unpaid' || t === 'paid_excuse' || t === 'unpaid_excuse' || t === 'mission') {
-    needsManager = true;
-    needsHr = true;
-    approvalMode = 'any';
-  } else {
-    needsManager = rolePolicy.needsManager;
-    needsHr = rolePolicy.needsHr;
-    approvalMode = 'all';
-  }
+  const approvalMode = 'all';
 
   const r = String(role || '');
-  if (r === 'hr') {
-    // HR staff: HR Manager is their approver (no separate manager path for most).
-    if (approvalMode === 'all') {
-      needsManager = false;
-      needsHr = true;
-    } else {
-      // OR: HR Manager can finalize; manager slot still allowed if they have one.
-      needsHr = true;
-    }
-  } else if (r === 'hr_supervisor') {
+  if (r === 'hr_supervisor') {
     // HR Manager cannot self-approve the HR slot — their line manager (CEO) reviews.
     needsHr = false;
     needsManager = true;
-    if (approvalMode === 'any') approvalMode = 'all';
+  } else if (r === 'hr') {
+    // HR staff: both their assigned manager and HR Manager (may be the same person sequentially).
+    needsManager = true;
+    needsHr = true;
+  } else {
+    needsManager = rolePolicy.needsManager !== false;
+    needsHr = rolePolicy.needsHr !== false;
   }
 
   return { canRequest: true, needsManager, needsHr, approvalMode };
@@ -775,13 +751,13 @@ function staffRequestPolicy(role) {
   if (!canRequestStaffBenefits(r)) {
     return { canRequest: false, needsManager: false, needsHr: false };
   }
-  if (r === 'hr') return { canRequest: true, needsManager: false, needsHr: true };
   if (r === 'hr_supervisor') return { canRequest: true, needsManager: true, needsHr: false };
+  // Everyone else (including HR staff): direct manager then HR Manager.
   return { canRequest: true, needsManager: true, needsHr: true };
 }
 
 /**
- * WFH uses the same cycle as annual holidays: manager first, then HR Manager.
+ * WFH uses the same cycle as holidays: manager first, then HR Manager.
  */
 function wfhRequestPolicy(role) {
   const base = staffRequestPolicy(role);
@@ -796,7 +772,8 @@ function isWfhRequest(request) {
 }
 
 /**
- * Loans: line manager → Financial Manager → HR Manager (sequential).
+ * Loans: Financial Manager → HR Manager (sequential). No line-manager step.
+ * Role exceptions avoid self-approval of finance/HR slots.
  */
 function loanRequestPolicy(role) {
   const r = String(role || '');
@@ -811,7 +788,7 @@ function loanRequestPolicy(role) {
     // Cannot self-approve HR — manager then Financial Manager.
     return { canRequest: true, needsManager: true, needsFinance: true, needsHr: false };
   }
-  return { canRequest: true, needsManager: true, needsFinance: true, needsHr: true };
+  return { canRequest: true, needsManager: false, needsFinance: true, needsHr: true };
 }
 
 function isLoanRequest(request) {
@@ -886,9 +863,30 @@ function isLineManager(actor, staff) {
   return isDirectStaffManager(actor, staff);
 }
 
-function canViewAllStaffRequests(actor) {
-  // Only the CEO can list every holiday / loan / WFH request.
-  return actor?.role === 'admin';
+function canViewAllStaffRequests(actor, { history = false } = {}) {
+  // CEO always sees every request.
+  if (actor?.role === 'admin') return true;
+  // HR and HR Manager see company-wide history (not the live review queue).
+  if (history && (actor?.role === 'hr' || actor?.role === 'hr_supervisor')) return true;
+  return false;
+}
+
+function canSeeRequestHistory(actor) {
+  if (!actor) return false;
+  if (actor.role === 'admin' || actor.role === 'hr' || actor.role === 'hr_supervisor') return true;
+  return isLineManagerRoleForHistory(actor.role);
+}
+
+function isLineManagerRoleForHistory(role) {
+  return [
+    'admin',
+    'hr_supervisor',
+    'reservations_manager',
+    'resale_manager',
+    'finance_manager',
+    'unit_acquisition_manager',
+    'operations_supervisor',
+  ].includes(String(role || ''));
 }
 
 function eligibleReviewSlots(actor, request, staff) {
@@ -920,7 +918,7 @@ function eligibleReviewSlots(actor, request, staff) {
     slots.push('manager');
   }
 
-  // Step 2 — Financial Manager (loans only), after manager.
+  // Step 2 — Financial Manager (loans), after manager when manager is required.
   if (
     needsFinance &&
     !financeDone &&
@@ -930,7 +928,7 @@ function eligibleReviewSlots(actor, request, staff) {
     slots.push('finance');
   }
 
-  // Step 3 — HR Manager, after prior steps when sequential; OR-mode leave can act in parallel.
+  // Step 3 — HR Manager, after prior steps when sequential.
   if (needsHr && !hrDone && actor.role === 'hr_supervisor') {
     if (!sequential || (managerCleared && financeCleared)) {
       slots.push('hr');
@@ -951,7 +949,7 @@ function applyRequestReview(request, actor, decision, staff) {
   if (!slots.length) {
     const err = new Error(
       isLoanRequest(request)
-        ? 'Only the line manager, Financial Manager, HR Manager, or a CEO can review this loan — and only at their step'
+        ? 'Only the Financial Manager, HR Manager, or a CEO can review this loan — and only at their step'
         : 'Only the staff manager, HR Manager, or a CEO can review this request — and only at their step'
     );
     err.status = 403;
@@ -1146,6 +1144,7 @@ module.exports = {
   departmentManagerRole,
   isLineManager,
   canViewAllStaffRequests,
+  canSeeRequestHistory,
   eligibleReviewSlots,
   applyRequestReview,
   describeRequestApproval,

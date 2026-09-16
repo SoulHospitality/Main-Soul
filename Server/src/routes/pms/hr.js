@@ -48,6 +48,7 @@ const {
   wfhRequestPolicy,
   loanRequestPolicy,
   canViewAllStaffRequests,
+  canSeeRequestHistory,
   eligibleReviewSlots,
   applyRequestReview,
   describeRequestApproval,
@@ -71,12 +72,13 @@ function assertCanTargetBenefits(staff) {
   }
 }
 
-function requestListScope(actor, { mine, alias = 'r', staffAlias = 'u', kind } = {}) {
+function requestListScope(actor, { mine, alias = 'r', staffAlias = 'u', kind, history = false } = {}) {
   const params = [];
   const where = [];
   const wantMine = mine === '1' || mine === 1 || mine === true;
-  // Only CEO lists every request. Managers see self + direct reports; staff see self.
-  if (wantMine || !canViewAllStaffRequests(actor)) {
+  const wantHistory = history === true || history === '1' || history === 1;
+  // CEO (and HR/HR Manager in history mode) list every request. Managers see self + direct reports.
+  if (wantMine || !canViewAllStaffRequests(actor, { history: wantHistory })) {
     params.push(actor.id);
     const me = `$${params.length}`;
     if (wantMine) {
@@ -84,7 +86,7 @@ function requestListScope(actor, { mine, alias = 'r', staffAlias = 'u', kind } =
     } else {
       const parts = [`${alias}.staff_user_id = ${me}`, sqlStaffManagedBy(me, staffAlias)];
       // HR Manager sees pending items that still need HR (including while waiting on manager/finance).
-      if (actor.role === 'hr_supervisor') {
+      if (!wantHistory && actor.role === 'hr_supervisor') {
         parts.push(`(
           ${alias}.status = 'pending'
           AND COALESCE(${alias}.needs_hr_approval, true) = true
@@ -92,7 +94,7 @@ function requestListScope(actor, { mine, alias = 'r', staffAlias = 'u', kind } =
         )`);
       }
       // Financial Manager sees all pending loans so they can tell where each one is waiting.
-      if (actor.role === 'finance_manager' && kind === 'loan') {
+      if (!wantHistory && actor.role === 'finance_manager' && kind === 'loan') {
         parts.push(`${alias}.status = 'pending'`);
       }
       where.push(`(${parts.join(' OR ')})`);
@@ -171,7 +173,8 @@ async function listStaffRequests(req, table) {
   const status = String(req.query.status || '').toLowerCase();
   const kind =
     table === 'staff_loan_requests' ? 'loan' : table === 'staff_wfh_requests' ? 'wfh' : 'leave';
-  const { params, where } = requestListScope(req.user, { mine: req.query.mine, kind });
+  const history = req.query.history === '1' || req.query.history === 1 || req.query.history === true;
+  const { params, where } = requestListScope(req.user, { mine: req.query.mine, kind, history });
   if (['pending', 'approved', 'rejected'].includes(status)) {
     params.push(status);
     where.push(`r.status = $${params.length}`);
@@ -1203,6 +1206,53 @@ router.delete('/hr/salary-deductions/:id', requireRoles(...HR_ROLES), async (req
     ]);
     if (!rowCount) return res.status(404).json({ error: 'Deduction not found' });
     res.json({ ok: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/hr/requests-history', async (req, res, next) => {
+  try {
+    if (!canSeeRequestHistory(req.user)) {
+      return res.status(403).json({ error: 'You cannot view request history' });
+    }
+    const status = String(req.query.status || 'all').toLowerCase();
+    const kindFilter = String(req.query.kind || 'all').toLowerCase();
+    const historyReq = { ...req, query: { ...req.query, history: '1', mine: undefined } };
+
+    const loads = [];
+    if (kindFilter === 'all' || kindFilter === 'holiday' || kindFilter === 'leave') {
+      loads.push(
+        listStaffRequests(
+          { ...historyReq, query: { ...historyReq.query, status: status === 'all' ? undefined : status } },
+          'staff_leave_requests'
+        ).then((rows) => rows.map((r) => ({ ...r, history_kind: 'holiday' })))
+      );
+    }
+    if (kindFilter === 'all' || kindFilter === 'wfh') {
+      loads.push(
+        listStaffRequests(
+          { ...historyReq, query: { ...historyReq.query, status: status === 'all' ? undefined : status } },
+          'staff_wfh_requests'
+        ).then((rows) => rows.map((r) => ({ ...r, history_kind: 'wfh' })))
+      );
+    }
+    if (kindFilter === 'all' || kindFilter === 'loans' || kindFilter === 'loan') {
+      loads.push(
+        listStaffRequests(
+          { ...historyReq, query: { ...historyReq.query, status: status === 'all' ? undefined : status } },
+          'staff_loan_requests'
+        ).then((rows) => rows.map((r) => ({ ...r, history_kind: 'loan' })))
+      );
+    }
+
+    const groups = await Promise.all(loads);
+    const items = groups
+      .flat()
+      .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))
+      .slice(0, 500);
+
+    res.json({ items });
   } catch (e) {
     next(e);
   }

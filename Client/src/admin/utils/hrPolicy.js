@@ -47,13 +47,13 @@ export function isTimedLeaveType(leaveType) {
 }
 
 export function requestableLeaveTypes(canRequestHolidays) {
-  const unpaid = { value: 'unpaid', label: 'Unpaid leave (manager or HR)' };
-  const paidExcuse = { value: 'paid_excuse', label: 'Paid excuse (2/month, max 2h)' };
-  const unpaidExcuse = { value: 'unpaid_excuse', label: 'Unpaid excuse (hourly deduction)' };
-  const mission = { value: 'mission', label: 'Mission (paid time, note required)' };
+  const unpaid = { value: 'unpaid', label: 'Unpaid leave (manager then HR)' };
+  const paidExcuse = { value: 'paid_excuse', label: 'Paid excuse (2/month, max 2h · manager then HR)' };
+  const unpaidExcuse = { value: 'unpaid_excuse', label: 'Unpaid excuse (hourly · manager then HR)' };
+  const mission = { value: 'mission', label: 'Mission (paid time · manager then HR)' };
   if (canRequestHolidays) {
     return [
-      { value: 'casual', label: 'Casual (manager approval)' },
+      { value: 'casual', label: 'Casual (manager then HR)' },
       { value: 'annual', label: 'Annual (manager then HR)' },
       paidExcuse,
       unpaidExcuse,

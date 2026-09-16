@@ -84,7 +84,7 @@ export default function WorkFromHome({ embedded = false }) {
         <h1 className="page-title mt-1">Work from home</h1>
         <p className="page-subtitle">
           {canQueue
-            ? 'Same cycle as holidays: manager accepts first; HR Manager can see waiting requests but only Accept/Reject after the manager. CEOs can act anytime.'
+            ? 'Same cycle as holidays: manager accepts first; HR Manager Accept/Reject after the manager. CEOs can act anytime.'
             : 'Request a WFH day. Your manager accepts first, then the HR Manager. If approved, it counts as a half day on payroll.'}
         </p>
       </div>

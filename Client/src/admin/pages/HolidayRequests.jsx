@@ -61,7 +61,7 @@ function RequestForm({ leaveSnap, form, setForm, createMutation, onSubmit }) {
       {leaveSnap && !leaveSnap.can_request_holidays ? (
         <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
           Paid holidays (casual, annual) open after 6 months, or when HR grants access.
-          Unpaid leave, excuses, and missions can be requested now (manager or HR approval).
+          Unpaid leave, excuses, and missions can be requested now (manager then HR Manager).
           {leaveSnap.tenure_months != null ? ` Current tenure: ${leaveSnap.tenure_months} months.` : ''}
         </p>
       ) : null}
@@ -142,10 +142,10 @@ function RequestForm({ leaveSnap, form, setForm, createMutation, onSubmit }) {
               />
               <p className="mt-1 text-[11px] text-slate-400">
                 {isMission
-                  ? 'Paid mission time. Does not affect attendance. Needs manager or HR approval.'
+                  ? 'Paid mission time. Does not affect attendance. Needs manager then HR Manager.'
                   : form.leave_type === 'paid_excuse'
-                    ? 'Paid excuse: max 2 hours, 2 per month. Needs manager or HR approval.'
-                    : 'Unpaid excuse: hours × hourly rate (daily rate ÷ 24). Needs manager or HR approval.'}
+                    ? 'Paid excuse: max 2 hours, 2 per month. Needs manager then HR Manager.'
+                    : 'Unpaid excuse: hours × hourly rate (daily rate ÷ 24). Needs manager then HR Manager.'}
               </p>
             </div>
           </>
@@ -543,8 +543,8 @@ export default function HolidayRequests({ embedded = false }) {
         <h1 className="page-title mt-1">Holiday requests</h1>
         <p className="page-subtitle">
           {activeView === 'incoming'
-            ? 'Manager accepts first; HR Manager can see waiting requests but only Accept/Reject after the manager. CEOs can act anytime.'
-            : 'Request casual, annual, unpaid leave, excuses, or missions. Missions are paid timed absences and do not affect attendance.'}
+            ? 'Manager accepts first; HR Manager Accept/Reject after the manager. CEOs can act anytime.'
+            : 'Request casual, annual, unpaid leave, excuses, or missions. All need manager then HR Manager. Missions are paid timed absences and do not affect attendance.'}
         </p>
       </div>
       ) : null}

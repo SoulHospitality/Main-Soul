@@ -629,6 +629,13 @@ export function canSeeRequestQueue(user) {
   return isLineManagerRole(user.role);
 }
 
+/** HR, HR Manager, line managers, and CEO can open the Requests History tab. */
+export function canSeeRequestHistory(user) {
+  if (!user) return false;
+  if (user.role === 'admin' || user.role === 'hr' || user.role === 'hr_supervisor') return true;
+  return isLineManagerRole(user.role);
+}
+
 export function canRequestStaffBenefits(user) {
   return !!user && user.role !== 'admin' && user.role !== 'owner';
 }

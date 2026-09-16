@@ -1,26 +1,30 @@
 import { useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Banknote, Home, Inbox } from 'lucide-react';
+import { Banknote, History, Home, Inbox } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
   canRequestStaffBenefits,
   canRequestWfh,
+  canSeeRequestHistory,
   canSeeRequestQueue,
 } from '../utils/permissions';
 import HolidayRequests from './HolidayRequests';
 import WorkFromHome from './WorkFromHome';
 import Loans from './Loans';
+import RequestsHistory from './RequestsHistory';
 
 const TYPE_TABS = [
   { id: 'holiday', label: 'Holiday', icon: Inbox, pageHint: 'holiday' },
   { id: 'wfh', label: 'Work from home', icon: Home, pageHint: 'wfh' },
   { id: 'loans', label: 'Loans', icon: Banknote, pageHint: 'loans' },
+  { id: 'history', label: 'Requests history', icon: History, pageHint: 'history' },
 ];
 
 export default function Requests() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const canQueue = canSeeRequestQueue(user);
+  const canHistory = canSeeRequestHistory(user);
   const canRequestHolidayOrLoan = canRequestStaffBenefits(user);
   const canRequestWfhDay = canRequestWfh(user);
 
@@ -30,9 +34,10 @@ export default function Requests() {
         if (tab.id === 'holiday') return canRequestHolidayOrLoan || canQueue;
         if (tab.id === 'wfh') return canRequestWfhDay || canQueue;
         if (tab.id === 'loans') return canRequestHolidayOrLoan || canQueue;
+        if (tab.id === 'history') return canHistory;
         return false;
       }),
-    [canQueue, canRequestHolidayOrLoan, canRequestWfhDay]
+    [canQueue, canHistory, canRequestHolidayOrLoan, canRequestWfhDay]
   );
 
   const rawType = searchParams.get('type') || visibleTabs[0]?.id || 'holiday';
@@ -53,8 +58,9 @@ export default function Requests() {
         <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-soul-muted">HR</p>
         <h1 className="page-title mt-1">Requests</h1>
         <p className="page-subtitle">
-          Holiday, work-from-home, and loan requests in one place
-          {canQueue ? ' — review your team’s incoming items, or submit your own.' : '.'}
+          Holiday and WFH need your manager then the HR Manager. Loans need the Financial Manager
+          then the HR Manager
+          {canHistory ? '. History shows past and current requests for your team or the company.' : '.'}
         </p>
       </div>
 
@@ -85,6 +91,7 @@ export default function Requests() {
       {activeType === 'holiday' ? <HolidayRequests embedded /> : null}
       {activeType === 'wfh' ? <WorkFromHome embedded /> : null}
       {activeType === 'loans' ? <Loans embedded /> : null}
+      {activeType === 'history' ? <RequestsHistory /> : null}
     </div>
   );
 }
