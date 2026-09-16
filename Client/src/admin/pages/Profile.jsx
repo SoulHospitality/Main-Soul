@@ -19,7 +19,7 @@ import {
 } from '../utils/hrPolicy';
 
 export default function Profile() {
-  const { user, refreshUser } = useAuth();
+  const { user, refreshUser, applySession } = useAuth();
   const qc = useQueryClient();
   const theme = getRoleTheme(user?.role);
   const [pwForm, setPwForm] = useState({
@@ -153,7 +153,8 @@ export default function Profile() {
         currentPassword: d.current_password,
         newPassword: d.new_password,
       }),
-    onSuccess: async () => {
+    onSuccess: async (res) => {
+      if (res.data?.token) applySession(res.data.token, res.data.user);
       toast.success('Password changed successfully');
       setPwForm({ current_password: '', new_password: '', confirm_password: '' });
       if (refreshUser) await refreshUser();

@@ -12,7 +12,7 @@ import PasswordChecklist from '../../components/auth/PasswordChecklist';
 
 export default function ChangePassword() {
   const navigate = useNavigate();
-  const { user, refreshUser } = useAuth();
+  const { user, refreshUser, applySession } = useAuth();
   const theme = getRoleTheme(user?.role);
   const [form, setForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [visibility, setVisibility] = useState({
@@ -38,10 +38,11 @@ export default function ChangePassword() {
     if (!canSubmit) return;
     setSaving(true);
     try {
-      await api.patch('/auth/change-password', {
+      const res = await api.patch('/auth/change-password', {
         currentPassword: form.currentPassword,
         newPassword: form.newPassword,
       });
+      if (res.data?.token) applySession(res.data.token, res.data.user);
       await refreshUser();
       toast.success('Password updated');
       navigate(defaultAdminPage(user?.role), { replace: true });

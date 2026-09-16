@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const { query } = require('../config/db');
 const { getServiceClient } = require('../config/supabase');
 const { isPasswordPolicyExempt } = require('../lib/staffIdentity');
+const { tokenVersionMatches } = require('../lib/staffAuthSessions');
 
 async function authStaff(req, res, next) {
   try {
@@ -16,11 +17,15 @@ async function authStaff(req, res, next) {
 
     const { rows } = await query(
       `SELECT id, username, email, full_name, role, is_active, sales_commission_pct, petty_cash_location,
-              staff_code, base_salary, pending_base_salary, salary_change_status, is_first_login
+              staff_code, base_salary, pending_base_salary, salary_change_status, is_first_login,
+              COALESCE(auth_token_version, 0)::int AS auth_token_version
        FROM staff_users WHERE id = $1`,
       [payload.sub || payload.id]
     );
     if (!rows[0] || !rows[0].is_active) return res.status(401).json({ error: 'Unauthorized' });
+    if (!tokenVersionMatches(payload, rows[0])) {
+      return res.status(401).json({ error: 'Session expired. Please sign in again.' });
+    }
     req.user = {
       ...rows[0],
       is_first_login:

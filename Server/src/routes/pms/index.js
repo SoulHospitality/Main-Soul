@@ -21,6 +21,7 @@ const {
   passwordPolicyOk,
   passwordPolicyMessage,
 } = require('../../lib/staffIdentity');
+const { bumpStaffAuthSessions } = require('../../lib/staffAuthSessions');
 
 const { resolveDriveFolderPhotos } = require('../../services/drivePhotos');
 const { resolveListingStatus } = require('../../lib/unitCompleteness');
@@ -794,6 +795,8 @@ router.put('/users/:id/reset-password', requireRoles(...USER_ACCOUNT_ROLES), asy
        WHERE id = $2`,
       [hash, req.params.id]
     );
+    // Invalidate every existing staff JWT for this account.
+    await bumpStaffAuthSessions(req.params.id);
     res.json({ ok: true, temporaryPassword: newPassword });
   } catch (e) {
     next(e);

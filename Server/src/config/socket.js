@@ -15,6 +15,8 @@ const NOTIF_ROLES = new Set([
 function initSocket(server) {
   const { Server } = require('socket.io');
   const jwt = require('jsonwebtoken');
+  const { query } = require('./db');
+  const { tokenVersionMatches } = require('../lib/staffAuthSessions');
   const origins = (process.env.CORS_ORIGIN || process.env.FRONTEND_URL || 'http://localhost:5173')
     .split(',')
     .map((s) => s.trim())
@@ -27,7 +29,7 @@ function initSocket(server) {
     },
   });
 
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
     try {
       const token =
         socket.handshake.auth?.token ||
@@ -42,11 +44,22 @@ function initSocket(server) {
       if (payload.kind && payload.kind !== 'staff' && payload.kind !== 'sales') {
         return next(new Error('Unauthorized'));
       }
+      const staffId = payload.sub || payload.id;
+      if (!staffId) return next(new Error('Unauthorized'));
+
+      const { rows } = await query(
+        `SELECT id, role, is_active, COALESCE(auth_token_version, 0)::int AS auth_token_version
+         FROM staff_users WHERE id = $1`,
+        [staffId]
+      );
+      if (!rows[0] || !rows[0].is_active || !tokenVersionMatches(payload, rows[0])) {
+        return next(new Error('Unauthorized'));
+      }
+
       socket.staff = {
-        id: payload.sub || payload.id,
-        role: payload.role,
+        id: rows[0].id,
+        role: rows[0].role || payload.role,
       };
-      if (!socket.staff.id) return next(new Error('Unauthorized'));
       return next();
     } catch {
       return next(new Error('Unauthorized'));

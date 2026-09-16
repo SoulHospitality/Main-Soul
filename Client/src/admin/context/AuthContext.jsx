@@ -62,8 +62,22 @@ export function AuthProvider({ children }) {
     return next;
   }, []);
 
+  const applySession = useCallback((token, userPayload) => {
+    if (token) localStorage.setItem('pms_token', token);
+    if (userPayload) {
+      const next = {
+        ...userPayload,
+        is_first_login: Boolean(userPayload?.is_first_login),
+      };
+      localStorage.setItem('pms_user', JSON.stringify(next));
+      setUser(next);
+      return next;
+    }
+    return null;
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading, refreshUser }}>
+    <AuthContext.Provider value={{ user, login, logout, loading, refreshUser, applySession }}>
       {children}
     </AuthContext.Provider>
   );

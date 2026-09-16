@@ -2060,10 +2060,11 @@ router.put(
 });
 
 router.put('/auth/change-password', async (req, res, next) => {
-  
   try {
     const bcrypt = require('bcryptjs');
+    const jwt = require('jsonwebtoken');
     const { passwordPolicyOk, passwordPolicyMessage } = require('../../lib/staffIdentity');
+    const { staffTokenVersion } = require('../../lib/staffAuthSessions');
     const { currentPassword, newPassword, current_password, new_password } = req.body;
     const cur = currentPassword || current_password;
     const neu = newPassword || new_password;
@@ -2078,11 +2079,27 @@ router.put('/auth/change-password', async (req, res, next) => {
       return res.status(400).json({ error: 'Current password incorrect' });
     }
     const hash = await bcrypt.hash(neu, 10);
-    await query(
-      `UPDATE staff_users SET password_hash = $1, is_first_login = 0, updated_at = now() WHERE id = $2`,
+    const { rows: updated } = await query(
+      `UPDATE staff_users
+       SET password_hash = $1,
+           is_first_login = 0,
+           auth_token_version = COALESCE(auth_token_version, 0) + 1,
+           updated_at = now()
+       WHERE id = $2
+       RETURNING id, role, COALESCE(auth_token_version, 0)::int AS auth_token_version`,
       [hash, req.user.id]
     );
-    res.json({ ok: true });
+    const token = jwt.sign(
+      {
+        kind: 'staff',
+        sub: updated[0].id,
+        role: updated[0].role,
+        tv: staffTokenVersion(updated[0]),
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+    );
+    res.json({ ok: true, token });
   } catch (e) {
     next(e);
   }

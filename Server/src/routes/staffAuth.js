@@ -9,6 +9,7 @@ const {
   passwordPolicyMessage,
 } = require('../lib/staffIdentity');
 const { normalizeOwnerPhone, ownerPhoneLoginVariants } = require('../lib/ownerPhone');
+const { staffTokenVersion } = require('../lib/staffAuthSessions');
 
 const router = express.Router();
 
@@ -16,7 +17,7 @@ const STAFF_PUBLIC_FIELDS = `
   id, username, email, full_name, role, is_active,
   sales_commission_pct, petty_cash_location,
   staff_code, base_salary, pending_base_salary, salary_change_status,
-  is_first_login
+  is_first_login, COALESCE(auth_token_version, 0)::int AS auth_token_version
 `;
 
 function toPublicUser(row) {
@@ -41,7 +42,12 @@ function toPublicUser(row) {
 
 function signStaff(user) {
   return jwt.sign(
-    { kind: 'staff', sub: user.id, role: user.role },
+    {
+      kind: 'staff',
+      sub: user.id,
+      role: user.role,
+      tv: staffTokenVersion(user),
+    },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
   );
@@ -112,13 +118,18 @@ router.patch('/change-password', authStaff, async (req, res, next) => {
     const hash = await bcrypt.hash(newPassword, 10);
     const { rows: updated } = await query(
       `UPDATE staff_users
-       SET password_hash = $1, is_first_login = 0, updated_at = now()
+       SET password_hash = $1,
+           is_first_login = 0,
+           auth_token_version = COALESCE(auth_token_version, 0) + 1,
+           updated_at = now()
        WHERE id = $2
        RETURNING ${STAFF_PUBLIC_FIELDS}`,
       [hash, req.user.id]
     );
+    const publicUser = toPublicUser(updated[0]);
+    const token = signStaff(updated[0]);
 
-    res.json({ ok: true, user: toPublicUser(updated[0]) });
+    res.json({ ok: true, user: publicUser, token });
   } catch (err) {
     next(err);
   }
