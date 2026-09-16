@@ -232,7 +232,8 @@ export default function Attendance() {
           <p className="page-subtitle">
             Upload the Original Records Report Excel (.xls / .xlsx) with Person ID, Time, and
             Attendance Status. Person ID matches the staff user id. Missing checkout defaults to
-            7:00 PM. Admin, operations, and web developers are not on this sheet.
+            7:00 PM. Resale Manager and Unit Acquisition Manager are included; other line managers,
+            admin, operations, and web developers are not.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

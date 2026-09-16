@@ -736,8 +736,13 @@ const LINE_MANAGER_ROLES = new Set([
   'operations_supervisor',
   'finance_manager',
 ]);
+/** Line managers who still clock office attendance (door report). */
+const OFFICE_ATTENDANCE_LINE_MANAGER_ROLES = new Set([
+  'resale_manager',
+  'unit_acquisition_manager',
+]);
 const NO_OFFICE_ATTENDANCE_ROLES = new Set([
-  ...LINE_MANAGER_ROLES,
+  ...[...LINE_MANAGER_ROLES].filter((r) => !OFFICE_ATTENDANCE_LINE_MANAGER_ROLES.has(r)),
   'owner',
   'operations',
   'web_developer',
@@ -1158,6 +1163,7 @@ module.exports = {
   computeHalfDayDeduction,
   PENALTY_CATEGORIES,
   NO_OFFICE_ATTENDANCE_ROLES,
+  OFFICE_ATTENDANCE_LINE_MANAGER_ROLES,
   LINE_MANAGER_ROLES,
   NO_STAFF_BENEFIT_ROLES,
   UNPAID_LEAVE_UNLIMITED,

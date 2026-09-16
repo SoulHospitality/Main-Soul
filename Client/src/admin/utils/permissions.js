@@ -679,6 +679,8 @@ export function hasOfficeAttendance(role, staff) {
   if (staff?.office_attendance_exempt) return false;
   const r = String(role || '');
   if (['owner', 'operations', 'web_developer'].includes(r)) return false;
+  // Resale Manager and Unit Acquisition Manager are the only line managers on attendance.
+  if (r === 'resale_manager' || r === 'unit_acquisition_manager') return true;
   if (isLineManagerRole(r)) return false;
   return true;
 }
