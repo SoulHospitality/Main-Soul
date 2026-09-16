@@ -450,7 +450,7 @@ async function insertDeduction(db, values) {
     `INSERT INTO staff_salary_deductions
        (staff_user_id, amount, reason, deduction_date, category, created_by,
         arrival_time, notified, daily_rate, days_factor)
-     VALUES ($1,$2,$3,$4::date,$5,$6,$7,$8,$9,$10)
+     VALUES ($1,$2,$3,$4::date,$5,$6,NULLIF($7, '')::time,$8,$9,$10)
      RETURNING *`,
     values
   );
@@ -583,7 +583,8 @@ async function bulkWriteAttendance(writes) {
     await client.query(
       `INSERT INTO staff_attendance
          (staff_user_id, work_date, status, check_in, check_out, deduction_amount, notified, created_by, updated_at)
-       SELECT t.staff_user_id, t.work_date::date, t.status, t.check_in, t.check_out,
+       SELECT t.staff_user_id, t.work_date::date, t.status,
+              NULLIF(t.check_in, '')::time, NULLIF(t.check_out, '')::time,
               t.deduction_amount, t.notified, t.created_by, now()
        FROM unnest(
          $1::int[], $2::date[], $3::text[], $4::text[], $5::text[], $6::float8[], $7::boolean[], $8::int[]
@@ -614,7 +615,7 @@ async function bulkWriteAttendance(writes) {
            (staff_user_id, amount, reason, deduction_date, category, created_by,
             arrival_time, notified, daily_rate, days_factor)
          SELECT t.staff_user_id, t.amount, t.reason, t.deduction_date::date, t.category, t.created_by,
-                t.arrival_time, t.notified, t.daily_rate, t.days_factor
+                NULLIF(t.arrival_time, '')::time, t.notified, t.daily_rate, t.days_factor
          FROM unnest(
            $1::int[], $2::float8[], $3::text[], $4::date[], $5::text[], $6::int[],
            $7::text[], $8::boolean[], $9::float8[], $10::float8[]
@@ -724,7 +725,7 @@ async function upsertAttendanceRecord({
   await query(
     `INSERT INTO staff_attendance
        (staff_user_id, work_date, status, check_in, check_out, deduction_amount, notified, created_by, updated_at)
-     VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8,now())
+     VALUES ($1,$2::date,$3,NULLIF($4, '')::time,NULLIF($5, '')::time,$6,$7,$8,now())
      ON CONFLICT (staff_user_id, work_date) DO UPDATE SET
        status = EXCLUDED.status,
        check_in = EXCLUDED.check_in,
@@ -1179,7 +1180,7 @@ router.post('/hr/salary-deductions', requireRoles(...HR_ROLES), async (req, res,
       `INSERT INTO staff_salary_deductions
          (staff_user_id, amount, reason, deduction_date, category, created_by,
           arrival_time, notified, daily_rate, days_factor)
-       VALUES ($1,$2,$3,$4::date,$5,$6,$7,$8,$9,$10)
+       VALUES ($1,$2,$3,$4::date,$5,$6,NULLIF($7, '')::time,$8,$9,$10)
        RETURNING *`,
       [
         staffUserId,
