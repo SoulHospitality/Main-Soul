@@ -80,6 +80,28 @@ describe('staff task access', () => {
     assert.equal(canAssignTaskTo(reservationsManager, financeAgent), false);
   });
 
+  it('omits assigner and assignee names for everyone except CEO', () => {
+    const { presentStaffTaskForViewer } = require('./staffTasks');
+    const row = {
+      id: 1,
+      created_by: 12,
+      created_by_name: 'Manager',
+      assignee_id: 22,
+      assignee_name: 'Agent',
+      assignee_role: 'reservations_web',
+      assignee_email: 'a@x.com',
+      title: 'Do thing',
+    };
+    assert.equal(presentStaffTaskForViewer(row, { role: 'admin' }).created_by_name, 'Manager');
+    assert.equal(presentStaffTaskForViewer(row, { role: 'admin' }).assignee_name, 'Agent');
+    const hidden = presentStaffTaskForViewer(row, { role: 'reservations_manager' });
+    assert.equal(hidden.created_by_name, null);
+    assert.equal(hidden.assignee_name, null);
+    assert.equal(hidden.assignee_email, null);
+    assert.equal(hidden.assignee_id, 22);
+    assert.equal(hidden.title, 'Do thing');
+  });
+
   it('omits manager bind params for CEO and Reservations Manager task scope', () => {
     assert.deepEqual(staffTaskScopeParams('admin', 1), []);
     assert.deepEqual(staffTaskScopeParams('reservations_manager', 12), []);

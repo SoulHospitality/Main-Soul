@@ -71,7 +71,18 @@ function canAssignTaskTo(actor, assignee) {
   return isDirectStaffManager(actor.id, assignee);
 }
 
-/** Managers see assignees they manage; CEO sees all recipient roles. */
+/** Only CEO sees who assigned a task and to whom. */
+function presentStaffTaskForViewer(row, actor) {
+  if (!row) return row;
+  if (actor?.role === 'admin') return row;
+  return {
+    ...row,
+    created_by_name: null,
+    assignee_name: null,
+    assignee_role: null,
+    assignee_email: null,
+  };
+}
 function sqlLineManagerTaskScope(managerParam, staffAlias = 'u') {
   return sqlStaffManagedBy(managerParam, staffAlias);
 }
@@ -103,6 +114,7 @@ module.exports = {
   canManageStaffTasks,
   canEditStaffTask,
   canAssignTaskTo,
+  presentStaffTaskForViewer,
   sqlTaskRecipientRoles,
   sqlReservationTeamRoles,
   sqlStaffManagedBy,

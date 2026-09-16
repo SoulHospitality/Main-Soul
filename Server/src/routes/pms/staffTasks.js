@@ -7,6 +7,7 @@ const {
   canAssignTaskTo,
   staffTaskScopeSql,
   staffTaskScopeParams,
+  presentStaffTaskForViewer,
 } = require('../../lib/staffTasks');
 const { sendStaffTaskAssignedEmail, staffEmailFromUser } = require('../../services/staffTaskEmails');
 const { logAudit } = require('../../lib/audit');
@@ -99,7 +100,7 @@ router.get('/staff-tasks', async (req, res, next) => {
          ORDER BY (t.completed_at IS NULL) DESC, t.deadline ASC, t.created_at DESC`,
         []
       );
-      return res.json(rows);
+      return res.json(rows.map((row) => presentStaffTaskForViewer(row, req.user)));
     }
 
     const sql = canManageStaffTasks(req.user)
@@ -117,7 +118,7 @@ router.get('/staff-tasks', async (req, res, next) => {
          WHERE t.assignee_id = $1
          ORDER BY (t.completed_at IS NULL) DESC, t.deadline ASC, t.created_at DESC`;
     const { rows } = await query(sql, [me]);
-    res.json(rows);
+    res.json(rows.map((row) => presentStaffTaskForViewer(row, req.user)));
   } catch (e) {
     return taskDbError(res, next, e);
   }

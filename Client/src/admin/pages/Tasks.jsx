@@ -25,7 +25,7 @@ function isOverdue(deadline) {
 export default function Tasks() {
   const qc = useQueryClient();
   const { user } = useAuth();
-  const { canAssignStaffTasks, isTaskAssignee, isReservationsManager } = usePermissions();
+  const { canAssignStaffTasks, isTaskAssignee, isReservationsManager, isAdmin } = usePermissions();
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -292,14 +292,16 @@ export default function Tasks() {
                     >
                       {task.title}
                     </h2>
-                    {!isTaskAssignee && (
+                    {isAdmin ? (
                       <p className="text-xs text-soul-muted mt-0.5">
-                        For {task.assignee_name} ({ROLE_LABELS[task.assignee_role] || task.assignee_role})
+                        From {task.created_by_name || '—'}
+                        {' · '}
+                        For {task.assignee_name || '—'}
+                        {task.assignee_role
+                          ? ` (${ROLE_LABELS[task.assignee_role] || task.assignee_role})`
+                          : ''}
                       </p>
-                    )}
-                    {isTaskAssignee && task.created_by_name && (
-                      <p className="text-xs text-soul-muted mt-0.5">From {task.created_by_name}</p>
-                    )}
+                    ) : null}
                   </div>
                   <div className="flex items-start gap-2 shrink-0">
                     {task.completed_at ? (
