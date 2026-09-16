@@ -789,6 +789,208 @@ async function deleteAttendanceRecord(staffId, date) {
   );
 }
 
+function normalizeAttendanceHolidayType(value) {
+  let nextType = normalizeExcuseLeaveType(String(value || '').trim());
+  if (nextType === 'holiday') nextType = 'annual';
+  if (nextType === 'day_off') nextType = 'casual';
+  return nextType;
+}
+
+function isSingleDayLeave(row) {
+  return String(row.start_date || '').slice(0, 10) === String(row.end_date || '').slice(0, 10);
+}
+
+async function loadCoveringAttendanceLeaves(staffId, date, db = null) {
+  const q = db ? (sql, params) => db.query(sql, params) : query;
+  const { rows } = await q(
+    `SELECT id, staff_user_id, leave_type,
+            start_date::text AS start_date, end_date::text AS end_date,
+            COALESCE(days, 1)::float AS days
+     FROM staff_leave_requests
+     WHERE staff_user_id = $1 AND status = 'approved'
+       AND start_date <= $2::date AND end_date >= $2::date`,
+    [staffId, date]
+  );
+  return rows.filter((row) => !leaveDoesNotAffectAttendance(row.leave_type));
+}
+
+async function removeSingleDayLeavesForDate(db, staff, date) {
+  const covering = await loadCoveringAttendanceLeaves(staff.id, date, db);
+  for (const leave of covering) {
+    if (!isSingleDayLeave(leave)) {
+      const err = new Error(
+        'This day is part of a multi-day holiday. Change or cancel that leave request first.'
+      );
+      err.status = 400;
+      throw err;
+    }
+    await reverseLeaveTypeEffects(db, leave, staff.base_salary);
+    await db.query(`DELETE FROM staff_leave_requests WHERE id = $1`, [leave.id]);
+  }
+}
+
+async function reverseLeaveTypeEffects(db, row, baseSalary) {
+  const q = db ? (sql, params) => db.query(sql, params) : query;
+  let fromType = normalizeAttendanceHolidayType(row.leave_type);
+  const days = Number(row.days) || inclusiveDays(row.start_date, row.end_date);
+  const fromBalanceCol = balanceColumnForLeaveType(fromType);
+  if (fromBalanceCol) {
+    await q(
+      `UPDATE staff_users SET ${fromBalanceCol} = ${fromBalanceCol} + $1, updated_at = now() WHERE id = $2`,
+      [days, row.staff_user_id]
+    );
+  }
+  if (fromType === 'unpaid') {
+    await q(
+      `DELETE FROM staff_salary_deductions
+       WHERE staff_user_id = $1
+         AND category = 'other'
+         AND reason = 'Unpaid leave'
+         AND deduction_date >= $2::date
+         AND deduction_date <= $3::date`,
+      [row.staff_user_id, row.start_date, row.end_date]
+    );
+  }
+}
+
+async function applyLeaveTypeEffects(db, { staffId, leaveType, days, startDate, endDate, baseSalary, actorId }) {
+  const q = db ? (sql, params) => db.query(sql, params) : query;
+  const toBalanceCol = balanceColumnForLeaveType(leaveType);
+  if (toBalanceCol) {
+    const { rows: balRows } = await q(
+      `SELECT ${toBalanceCol} AS balance FROM staff_users WHERE id = $1 FOR UPDATE`,
+      [staffId]
+    );
+    const balance = Number(balRows[0]?.balance) || 0;
+    if (balance < days) {
+      const err = new Error(`Not enough ${leaveType} balance (${balance} left, ${days} needed)`);
+      err.status = 400;
+      throw err;
+    }
+    await q(
+      `UPDATE staff_users SET ${toBalanceCol} = ${toBalanceCol} - $1, updated_at = now() WHERE id = $2`,
+      [days, staffId]
+    );
+  }
+  if (leaveType === 'unpaid') {
+    const unpaid = computeUnpaidLeaveDeduction(baseSalary);
+    for (const date of enumerateDateRange(startDate, endDate)) {
+      await insertDeduction(db, [
+        staffId,
+        unpaid.amount,
+        'Unpaid leave',
+        date,
+        'other',
+        actorId || null,
+        null,
+        null,
+        unpaid.daily_rate,
+        unpaid.factor,
+      ]);
+    }
+  }
+}
+
+function holidayAttendanceCell(staff, date, leaveRow, baseSalary) {
+  return {
+    staff_user_id: staff.id,
+    work_date: date,
+    status: 'holiday',
+    leave_type: leaveRow.leave_type,
+    leave_request_id: leaveRow.id,
+    start_date: String(leaveRow.start_date).slice(0, 10),
+    end_date: String(leaveRow.end_date).slice(0, 10),
+    check_in: null,
+    check_out: null,
+    deduction_amount: leaveDayDeductionAmount(leaveRow.leave_type, baseSalary),
+    notified: false,
+    notes: '',
+  };
+}
+
+async function setAttendanceHolidayDay({ staff, date, leaveType, actorId }) {
+  const nextType = normalizeAttendanceHolidayType(leaveType);
+  if (!EDITABLE_FULL_DAY_LEAVE_TYPES.has(nextType)) {
+    const err = new Error('Holiday type must be casual, annual, unpaid, or sick');
+    err.status = 400;
+    throw err;
+  }
+
+  const covering = await loadCoveringAttendanceLeaves(staff.id, date);
+  const multi = covering.find((leave) => !isSingleDayLeave(leave));
+  if (multi) {
+    // Only type changes are allowed on multi-day leaves from attendance.
+    if (normalizeAttendanceHolidayType(multi.leave_type) === nextType) {
+      return holidayAttendanceCell(staff, date, multi, staff.base_salary);
+    }
+    const err = new Error(
+      'This day is part of a multi-day holiday. Use the holiday type editor, or cancel the leave request first.'
+    );
+    err.status = 400;
+    throw err;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const leave of covering) {
+      await reverseLeaveTypeEffects(client, leave, staff.base_salary);
+      await client.query(`DELETE FROM staff_leave_requests WHERE id = $1`, [leave.id]);
+    }
+    await applyLeaveTypeEffects(client, {
+      staffId: staff.id,
+      leaveType: nextType,
+      days: 1,
+      startDate: date,
+      endDate: date,
+      baseSalary: staff.base_salary,
+      actorId,
+    });
+    await client.query(
+      `DELETE FROM staff_salary_deductions
+       WHERE staff_user_id = $1
+         AND deduction_date = $2::date
+         AND category IN ('lateness', 'absence')`,
+      [staff.id, date]
+    );
+    await client.query(
+      `DELETE FROM staff_attendance WHERE staff_user_id = $1 AND work_date = $2::date`,
+      [staff.id, date]
+    );
+    const { rows } = await client.query(
+      `INSERT INTO staff_leave_requests
+         (staff_user_id, leave_type, start_date, end_date, days, reason, status,
+          needs_manager_approval, needs_hr_approval,
+          manager_reviewed_by, manager_reviewed_at,
+          hr_reviewed_by, hr_reviewed_at,
+          reviewed_by, reviewed_at, review_note)
+       VALUES ($1,$2,$3::date,$3::date,1,$4,'approved',
+               false,false,
+               $5,now(),
+               $5,now(),
+               $5,now(),$6)
+       RETURNING id, leave_type, start_date::text AS start_date, end_date::text AS end_date`,
+      [
+        staff.id,
+        nextType,
+        date,
+        'Marked from attendance',
+        actorId || null,
+        `Attendance holiday · ${nextType}`,
+      ]
+    );
+    await client.query('COMMIT');
+    return holidayAttendanceCell(staff, date, rows[0], staff.base_salary);
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (_) {}
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 router.get('/hr/payroll', requireRoles(...HR_ROLES), async (req, res, next) => {
   try {
     const { year, month, from, to } = parsePeriod(req);
@@ -2066,19 +2268,64 @@ router.put('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
     if (!hasOfficeAttendance(staff.role, staff)) {
       return res.status(400).json({ error: 'This role does not use office attendance' });
     }
-    const { rows: holidayRows } = await query(
-      `SELECT id, leave_type FROM staff_leave_requests
-       WHERE staff_user_id = $1 AND status = 'approved'
-         AND start_date <= $2::date AND end_date >= $2::date`,
-      [staff.id, date]
-    );
-    if (holidayRows.some((row) => !leaveDoesNotAffectAttendance(row.leave_type))) {
-      return res.status(400).json({ error: 'This day is an approved holiday' });
-    }
+
     if (b.clear === true || b.status === '' || b.status === 'clear') {
-      await deleteAttendanceRecord(staff.id, date);
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await removeSingleDayLeavesForDate(client, staff, date);
+        await client.query(
+          `DELETE FROM staff_salary_deductions
+           WHERE staff_user_id = $1
+             AND deduction_date = $2::date
+             AND category IN ('lateness', 'absence')`,
+          [staff.id, date]
+        );
+        await client.query(
+          `DELETE FROM staff_attendance WHERE staff_user_id = $1 AND work_date = $2::date`,
+          [staff.id, date]
+        );
+        await client.query('COMMIT');
+      } catch (err) {
+        try {
+          await client.query('ROLLBACK');
+        } catch (_) {}
+        throw err;
+      } finally {
+        client.release();
+      }
       return res.json({ ok: true, cleared: true, staff_user_id: staff.id, work_date: date });
     }
+
+    const status = String(b.status || '').trim();
+    if (status === 'holiday') {
+      const cell = await setAttendanceHolidayDay({
+        staff,
+        date,
+        leaveType: b.leave_type,
+        actorId: req.user.id,
+      });
+      return res.json({ ok: true, cell });
+    }
+
+    // Switching to an attendance status removes a single-day holiday on that date.
+    const covering = await loadCoveringAttendanceLeaves(staff.id, date);
+    if (covering.length) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await removeSingleDayLeavesForDate(client, staff, date);
+        await client.query('COMMIT');
+      } catch (err) {
+        try {
+          await client.query('ROLLBACK');
+        } catch (_) {}
+        throw err;
+      } finally {
+        client.release();
+      }
+    }
+
     const amountRaw = b.deduction_amount;
     const amount =
       amountRaw === '' || amountRaw == null || amountRaw === undefined
@@ -2087,7 +2334,7 @@ router.put('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
     const cell = await upsertAttendanceRecord({
       staff,
       date,
-      status: b.status,
+      status,
       checkIn: b.check_in,
       checkOut: b.check_out,
       amount,
@@ -2096,6 +2343,7 @@ router.put('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
     });
     res.json({ ok: true, cell });
   } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
     next(e);
   }
 });

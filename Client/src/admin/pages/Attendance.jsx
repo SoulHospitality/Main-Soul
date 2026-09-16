@@ -63,6 +63,10 @@ function emptyForm(staff, date, cell) {
     staff_name: staff?.full_name || '',
     work_date: date || '',
     status: cell?.status || 'on_time',
+    leave_type: normalizeHolidayType(cell?.leave_type),
+    leave_request_id: cell?.leave_request_id || null,
+    start_date: cell?.start_date || date || '',
+    end_date: cell?.end_date || date || '',
     check_in: String(cell?.check_in || '').slice(0, 5),
     check_out: String(cell?.check_out || '').slice(0, 5),
     deduction_amount: cell ? String(cell.deduction_amount ?? 0) : '',
@@ -74,7 +78,6 @@ export default function Attendance() {
   const fileRef = useRef(null);
   const [month, setMonth] = useState(currentMonthIso);
   const [form, setForm] = useState(null);
-  const [holidayForm, setHolidayForm] = useState(null);
   const [deductionTouched, setDeductionTouched] = useState(false);
   const [tip, setTip] = useState(null);
 
@@ -100,24 +103,12 @@ export default function Attendance() {
       qc.invalidateQueries({ queryKey: ['hr-attendance'] });
       qc.invalidateQueries({ queryKey: ['hr-deductions'] });
       qc.invalidateQueries({ queryKey: ['hr-payroll'] });
+      qc.invalidateQueries({ queryKey: ['hr-leave-requests'] });
+      qc.invalidateQueries({ queryKey: ['hr-staff'] });
       toast.success('Attendance saved');
       setForm(null);
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Could not save attendance'),
-  });
-
-  const holidayTypeMutation = useMutation({
-    mutationFn: ({ id, leave_type }) => api.patch(`/hr/leave-requests/${id}/type`, { leave_type }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['hr-attendance'] });
-      qc.invalidateQueries({ queryKey: ['hr-deductions'] });
-      qc.invalidateQueries({ queryKey: ['hr-payroll'] });
-      qc.invalidateQueries({ queryKey: ['hr-leave-requests'] });
-      qc.invalidateQueries({ queryKey: ['hr-staff'] });
-      toast.success('Holiday type updated');
-      setHolidayForm(null);
-    },
-    onError: (e) => toast.error(e.response?.data?.error || 'Could not update holiday type'),
   });
 
   const importMutation = useMutation({
@@ -166,7 +157,7 @@ export default function Attendance() {
   );
 
   useEffect(() => {
-    if (!form || deductionTouched || !selectedStaff) return;
+    if (!form || deductionTouched || !selectedStaff || form.status === 'holiday') return;
     const amount = String(computeAttendanceAmount(selectedStaff.base_salary, form));
     if (String(form.deduction_amount) === amount) return;
     setForm((f) => (f ? { ...f, deduction_amount: amount } : f));
@@ -175,23 +166,6 @@ export default function Attendance() {
   function openCell(person, date) {
     const cell = cells[cellKey(person.id, date)];
     setTip(null);
-    if (cell?.status === 'holiday') {
-      if (!cell.leave_request_id) {
-        toast.error('This holiday has no linked leave request to edit');
-        return;
-      }
-      setForm(null);
-      setHolidayForm({
-        leave_request_id: cell.leave_request_id,
-        staff_name: person.full_name,
-        work_date: date,
-        leave_type: normalizeHolidayType(cell.leave_type),
-        start_date: cell.start_date || date,
-        end_date: cell.end_date || date,
-      });
-      return;
-    }
-    setHolidayForm(null);
     setDeductionTouched(false);
     setForm(emptyForm(person, date, cell));
   }
@@ -199,6 +173,42 @@ export default function Attendance() {
   function submitCell() {
     if (!form?.status) {
       toast.error('Choose a status');
+      return;
+    }
+    if (form.status === 'holiday') {
+      if (!form.leave_type) {
+        toast.error('Choose a holiday type');
+        return;
+      }
+      // Multi-day leave: only the holiday type can change from attendance.
+      if (
+        form.leave_request_id &&
+        form.start_date &&
+        form.end_date &&
+        form.start_date !== form.end_date
+      ) {
+        api
+          .patch(`/hr/leave-requests/${form.leave_request_id}/type`, {
+            leave_type: form.leave_type,
+          })
+          .then(() => {
+            qc.invalidateQueries({ queryKey: ['hr-attendance'] });
+            qc.invalidateQueries({ queryKey: ['hr-deductions'] });
+            qc.invalidateQueries({ queryKey: ['hr-payroll'] });
+            qc.invalidateQueries({ queryKey: ['hr-leave-requests'] });
+            qc.invalidateQueries({ queryKey: ['hr-staff'] });
+            toast.success('Holiday type updated');
+            setForm(null);
+          })
+          .catch((e) => toast.error(e.response?.data?.error || 'Could not update holiday type'));
+        return;
+      }
+      saveMutation.mutate({
+        staff_user_id: form.staff_user_id,
+        work_date: form.work_date,
+        status: 'holiday',
+        leave_type: form.leave_type,
+      });
       return;
     }
     if (form.status === 'late' && !String(form.check_in || '').trim()) {
@@ -387,7 +397,8 @@ export default function Attendance() {
                       ? ` · ${tip.cell.start_date} → ${tip.cell.end_date}`
                       : ''}
                   </div>
-                  <div className="text-soul-muted">Click to change holiday type</div>
+                  <div>Deduction: {currency(tip.cell.deduction_amount || 0)}</div>
+                  <div className="text-soul-muted">Click to edit status or holiday type</div>
                 </>
               ) : (
                 <>
@@ -427,16 +438,18 @@ export default function Attendance() {
           <div className="space-y-4">
             <div>
               <label className="label">Status</label>
-              <div className="grid grid-cols-3 gap-2">
-                {Object.entries(STATUS_META)
-                  .filter(([value]) => value !== 'holiday')
-                  .map(([value, meta]) => (
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {Object.entries(STATUS_META).map(([value, meta]) => (
                   <button
                     key={value}
                     type="button"
                     onClick={() => {
                       setDeductionTouched(false);
-                      setForm((f) => ({ ...f, status: value }));
+                      setForm((f) => ({
+                        ...f,
+                        status: value,
+                        leave_type: value === 'holiday' ? f.leave_type || 'casual' : f.leave_type,
+                      }));
                     }}
                     className={`rounded-xl border px-3 py-2 text-sm font-semibold ${
                       form.status === value ? 'border-soul-blue ring-2 ring-soul-blue/20' : 'border-soul-line'
@@ -448,100 +461,79 @@ export default function Attendance() {
                 ))}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="label">Check-in</label>
-                <input
-                  type="time"
-                  className="input"
-                  value={form.check_in}
-                  onChange={(e) => {
-                    setDeductionTouched(false);
-                    setForm((f) => ({ ...f, check_in: e.target.value }));
-                  }}
-                />
-              </div>
-              <div>
-                <label className="label">Check-out</label>
-                <input
-                  type="time"
-                  className="input"
-                  value={form.check_out}
-                  onChange={(e) => setForm((f) => ({ ...f, check_out: e.target.value }))}
-                />
-              </div>
-            </div>
-            <div>
-              <label className="label">Deduction</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                className="input"
-                value={form.deduction_amount}
-                onChange={(e) => {
-                  setDeductionTouched(true);
-                  setForm((f) => ({ ...f, deduction_amount: e.target.value }));
-                }}
-              />
-            </div>
-          </div>
-        ) : null}
-      </Modal>
 
-      <Modal
-        open={!!holidayForm}
-        onClose={() => setHolidayForm(null)}
-        title={holidayForm ? `${holidayForm.staff_name} · holiday type` : 'Holiday type'}
-        footer={
-          <>
-            <button type="button" className="btn-secondary" onClick={() => setHolidayForm(null)}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="btn-primary"
-              disabled={holidayTypeMutation.isPending || !holidayForm?.leave_type}
-              onClick={() => {
-                if (!holidayForm?.leave_request_id) return;
-                holidayTypeMutation.mutate({
-                  id: holidayForm.leave_request_id,
-                  leave_type: holidayForm.leave_type,
-                });
-              }}
-            >
-              {holidayTypeMutation.isPending ? 'Saving…' : 'Save type'}
-            </button>
-          </>
-        }
-      >
-        {holidayForm ? (
-          <div className="space-y-4">
-            <p className="text-sm text-soul-muted">
-              Change this approved holiday between paid and unpaid types.
-              {holidayForm.start_date !== holidayForm.end_date
-                ? ` Applies to the full request (${holidayForm.start_date} → ${holidayForm.end_date}).`
-                : ` Date: ${holidayForm.work_date}.`}
-            </p>
-            <div>
-              <label className="label">Holiday type</label>
-              <div className="grid grid-cols-2 gap-2">
-                {HOLIDAY_TYPE_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => setHolidayForm((f) => (f ? { ...f, leave_type: opt.value } : f))}
-                    className={`rounded-xl border px-3 py-2 text-sm font-semibold ${
-                      holidayForm.leave_type === opt.value
-                        ? 'border-soul-blue ring-2 ring-soul-blue/20'
-                        : 'border-soul-line'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
+            {form.status === 'holiday' ? (
+              <div>
+                <label className="label">Holiday type</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {HOLIDAY_TYPE_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setForm((f) => (f ? { ...f, leave_type: opt.value } : f))}
+                      className={`rounded-xl border px-3 py-2 text-sm font-semibold ${
+                        form.leave_type === opt.value
+                          ? 'border-soul-blue ring-2 ring-soul-blue/20'
+                          : 'border-soul-line'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                {form.start_date && form.end_date && form.start_date !== form.end_date ? (
+                  <p className="mt-2 text-xs text-amber-700">
+                    This day is part of a multi-day holiday ({form.start_date} → {form.end_date}).
+                    You can change the holiday type for the whole request, or clear only after cancelling
+                    that leave.
+                  </p>
+                ) : (
+                  <p className="mt-2 text-xs text-soul-muted">
+                    Marks this day as an approved holiday and removes check-in / late / no-show for the day.
+                  </p>
+                )}
               </div>
-            </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="label">Check-in</label>
+                    <input
+                      type="time"
+                      className="input"
+                      value={form.check_in}
+                      onChange={(e) => {
+                        setDeductionTouched(false);
+                        setForm((f) => ({ ...f, check_in: e.target.value }));
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Check-out</label>
+                    <input
+                      type="time"
+                      className="input"
+                      value={form.check_out}
+                      onChange={(e) => setForm((f) => ({ ...f, check_out: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="label">Deduction</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="input"
+                    value={form.deduction_amount}
+                    onChange={(e) => {
+                      setDeductionTouched(true);
+                      setForm((f) => ({ ...f, deduction_amount: e.target.value }));
+                    }}
+                  />
+                </div>
+              </>
+            )}
           </div>
         ) : null}
       </Modal>
