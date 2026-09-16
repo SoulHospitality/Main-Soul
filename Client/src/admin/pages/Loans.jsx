@@ -84,8 +84,8 @@ export default function Loans({ embedded = false }) {
         <h1 className="page-title mt-1">Loans</h1>
         <p className="page-subtitle">
           {canQueue
-            ? 'Loans go Financial Manager → HR Manager. Everyone can see which step is waiting. The CEO can accept or reject any request.'
-            : 'Request a loan. The Financial Manager accepts first, then the HR Manager. It is deducted from next month’s salary after both accept.'}
+            ? 'Loans go HR Manager → Financial Manager. Everyone can see which step is waiting. The CEO can accept or reject any request.'
+            : 'Request a loan. The HR Manager accepts first, then the Financial Manager. It is deducted from next month’s salary after both accept.'}
         </p>
       </div>
       ) : null}

@@ -570,7 +570,7 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.doesNotThrow(() => assertCanEditStaffCompensation(hr, 11));
   });
 
-  it('requires Financial Manager then HR for loans (no line manager)', () => {
+  it('requires HR Manager then Financial Manager for loans (no line manager)', () => {
     const { loanRequestPolicy, isLoanRequest, describeRequestApproval } = require('./hrRules');
     assert.deepEqual(loanRequestPolicy('reservations_web'), {
       canRequest: true,
@@ -609,21 +609,21 @@ describe('HR daily-rate deductions and leave rules', () => {
 
     assert.equal(isLoanRequest(loanReq), true);
     assert.deepEqual(eligibleReviewSlots(lineManager, loanReq, agent), []);
-    assert.deepEqual(eligibleReviewSlots(financeMgr, loanReq, agent), ['finance']);
-    assert.deepEqual(eligibleReviewSlots(hrMgr, loanReq, agent), []);
-    assert.equal(describeRequestApproval(loanReq), 'Waiting for Financial Manager');
+    assert.deepEqual(eligibleReviewSlots(hrMgr, loanReq, agent), ['hr']);
+    assert.deepEqual(eligibleReviewSlots(financeMgr, loanReq, agent), []);
+    assert.equal(describeRequestApproval(loanReq), 'Waiting for HR Manager');
 
-    const afterFinance = applyRequestReview(loanReq, financeMgr, 'approved', agent);
-    assert.equal(afterFinance.status, 'pending');
-    assert.equal(afterFinance.finance_reviewed_by, 9);
+    const afterHr = applyRequestReview(loanReq, hrMgr, 'approved', agent);
+    assert.equal(afterHr.status, 'pending');
+    assert.equal(afterHr.hr_reviewed_by, 8);
 
-    const afterFinReq = { ...loanReq, finance_reviewed_by: 9 };
-    assert.deepEqual(eligibleReviewSlots(hrMgr, afterFinReq, agent), ['hr']);
-    assert.equal(describeRequestApproval(afterFinReq), 'Waiting for HR Manager');
+    const afterHrReq = { ...loanReq, hr_reviewed_by: 8 };
+    assert.deepEqual(eligibleReviewSlots(financeMgr, afterHrReq, agent), ['finance']);
+    assert.equal(describeRequestApproval(afterHrReq), 'Waiting for Financial Manager');
 
-    const afterHr = applyRequestReview(afterFinReq, hrMgr, 'approved', agent);
-    assert.equal(afterHr.status, 'approved');
-    assert.equal(afterHr.finalized, true);
+    const afterFinance = applyRequestReview(afterHrReq, financeMgr, 'approved', agent);
+    assert.equal(afterFinance.status, 'approved');
+    assert.equal(afterFinance.finalized, true);
   });
 
   it('blocks HR from approving holidays until the manager accepts', () => {

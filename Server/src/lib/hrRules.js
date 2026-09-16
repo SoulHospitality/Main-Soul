@@ -806,7 +806,7 @@ function isWfhRequest(request) {
 }
 
 /**
- * Loans: Financial Manager → HR Manager (sequential). No line-manager step.
+ * Loans: HR Manager → Financial Manager (sequential). No line-manager step.
  * Role exceptions avoid self-approval of finance/HR slots.
  */
 function loanRequestPolicy(role) {
@@ -935,7 +935,6 @@ function eligibleReviewSlots(actor, request, staff) {
   const financeDone = Boolean(request.finance_reviewed_by);
   const hrDone = Boolean(request.hr_reviewed_by);
   const managerCleared = !needsManager || managerDone;
-  const financeCleared = !needsFinance || financeDone;
   const sequential = isSequentialApproval(request);
 
   const staffShape = staff || {
@@ -952,20 +951,19 @@ function eligibleReviewSlots(actor, request, staff) {
     slots.push('manager');
   }
 
-  // Step 2 — Financial Manager (loans), after manager when manager is required.
-  if (
-    needsFinance &&
-    !financeDone &&
-    (!sequential || managerCleared) &&
-    actor.role === 'finance_manager'
-  ) {
-    slots.push('finance');
+  // Step 2 — HR Manager (after manager when sequential).
+  // Loans: HR accepts before Financial Manager.
+  if (needsHr && !hrDone && actor.role === 'hr_supervisor') {
+    if (!sequential || managerCleared) {
+      slots.push('hr');
+    }
   }
 
-  // Step 3 — HR Manager, after prior steps when sequential.
-  if (needsHr && !hrDone && actor.role === 'hr_supervisor') {
-    if (!sequential || (managerCleared && financeCleared)) {
-      slots.push('hr');
+  // Step 3 — Financial Manager (loans), after manager + HR when sequential.
+  if (needsFinance && !financeDone && actor.role === 'finance_manager') {
+    const hrCleared = !needsHr || hrDone;
+    if (!sequential || (managerCleared && hrCleared)) {
+      slots.push('finance');
     }
   }
 
@@ -983,7 +981,7 @@ function applyRequestReview(request, actor, decision, staff) {
   if (!slots.length) {
     const err = new Error(
       isLoanRequest(request)
-        ? 'Only the Financial Manager, HR Manager, or a CEO can review this loan — and only at their step'
+        ? 'Only the HR Manager, Financial Manager, or a CEO can review this loan — and only at their step'
         : 'Only the staff manager, HR Manager, or a CEO can review this request — and only at their step'
     );
     err.status = 403;
@@ -1053,8 +1051,8 @@ function describeRequestApproval(request) {
 
   if (isLoanRequest(request)) {
     if (needsManagerEffective && !managerDone) return 'Waiting for manager';
-    if (needsFinance && !financeDone) return 'Waiting for Financial Manager';
     if (needsHr && !hrDone) return 'Waiting for HR Manager';
+    if (needsFinance && !financeDone) return 'Waiting for Financial Manager';
     return 'Pending';
   }
 

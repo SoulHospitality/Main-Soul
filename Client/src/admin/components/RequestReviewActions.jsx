@@ -20,13 +20,13 @@ function stepLine(row) {
   if (row.needs_manager_approval) {
     parts.push(stepPart(row.manager_reviewed_by, 'Manager', row.manager_reviewed_by_name));
   }
+  if (row.needs_hr_approval) {
+    parts.push(stepPart(row.hr_reviewed_by, 'HR Manager', row.hr_reviewed_by_name));
+  }
   if (loan && row.needs_finance_approval !== false) {
     parts.push(
       stepPart(row.finance_reviewed_by, 'Financial Manager', row.finance_reviewed_by_name)
     );
-  }
-  if (row.needs_hr_approval) {
-    parts.push(stepPart(row.hr_reviewed_by, 'HR Manager', row.hr_reviewed_by_name));
   }
   if (!parts.length) return '';
   const joiner = row.approval_mode === 'any' ? ' or ' : ' · ';

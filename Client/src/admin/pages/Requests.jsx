@@ -58,8 +58,8 @@ export default function Requests() {
         <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-soul-muted">HR</p>
         <h1 className="page-title mt-1">Requests</h1>
         <p className="page-subtitle">
-          Holiday and WFH need your manager then the HR Manager. Loans need the Financial Manager
-          then the HR Manager
+          Holiday and WFH need your manager then the HR Manager. Loans need the HR Manager
+          then the Financial Manager
           {canHistory ? '. History shows past and current requests for your team or the company.' : '.'}
         </p>
       </div>
