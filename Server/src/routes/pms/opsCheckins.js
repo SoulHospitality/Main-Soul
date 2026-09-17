@@ -1142,6 +1142,111 @@ router.get('/housekeeping/cleans-history', requireRoles(...HK_READ_ROLES), async
   }
 });
 
+/** Per-unit rollup: last cleaned, times cleaned, last assignee who cleaned it. */
+router.get('/housekeeping/unit-cleans-summary', requireRoles(...HK_READ_ROLES), async (req, res, next) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    const params = [];
+    const filters = [`COALESCE(u.listing_type, 'rent') = 'rent'`];
+
+    if (q) {
+      params.push(`%${q}%`);
+      filters.push(
+        `(u.unit_number ILIKE $${params.length} OR COALESCE(u.project, u.compound, '') ILIKE $${params.length} OR COALESCE(u.title, '') ILIKE $${params.length})`
+      );
+    }
+
+    let agentScopeJoin = '';
+    let agentScopeWhere = '';
+    if (req.user.role === OPS_AGENT) {
+      params.push(req.user.id);
+      agentScopeJoin = `
+        AND EXISTS (
+          SELECT 1 FROM housekeeping_tasks ta
+          WHERE ta.unit_id = u.id
+            AND ta.assigned_to = $${params.length}
+            AND COALESCE(ta.source, 'pre_arrival') = 'pre_arrival'
+            AND (ta.status = 'ready' OR ta.ready_at IS NOT NULL OR ta.submitted_at IS NOT NULL)
+        )`;
+      agentScopeWhere = ` AND t.assigned_to = $${params.length}`;
+    }
+
+    const { rows } = await query(
+      `SELECT u.id AS unit_id,
+              u.unit_number,
+              COALESCE(u.unit_number, u.title, 'Unit') AS unit_title,
+              COALESCE(u.project, u.compound) AS project,
+              u.ops_status,
+              COUNT(*) FILTER (
+                WHERE t.id IS NOT NULL
+                  AND (t.status = 'ready' OR t.ready_at IS NOT NULL OR t.submitted_at IS NOT NULL)
+                  ${agentScopeWhere}
+              )::int AS times_cleaned,
+              MAX(
+                CASE
+                  WHEN t.id IS NOT NULL
+                    AND (t.status = 'ready' OR t.ready_at IS NOT NULL OR t.submitted_at IS NOT NULL)
+                    ${agentScopeWhere}
+                  THEN COALESCE(t.ready_at, t.submitted_at)
+                  ELSE NULL
+                END
+              ) AS last_cleaned_at,
+              (
+                SELECT t2.assigned_to
+                FROM housekeeping_tasks t2
+                WHERE t2.unit_id = u.id
+                  AND COALESCE(t2.source, 'pre_arrival') = 'pre_arrival'
+                  AND (t2.status = 'ready' OR t2.ready_at IS NOT NULL OR t2.submitted_at IS NOT NULL)
+                  ${req.user.role === OPS_AGENT ? `AND t2.assigned_to = $${params.length}` : ''}
+                ORDER BY COALESCE(t2.ready_at, t2.submitted_at) DESC NULLS LAST
+                LIMIT 1
+              ) AS last_assigned_to
+       FROM units u
+       LEFT JOIN housekeeping_tasks t
+         ON t.unit_id = u.id
+        AND COALESCE(t.source, 'pre_arrival') = 'pre_arrival'
+       WHERE ${filters.join(' AND ')}
+         ${agentScopeJoin}
+       GROUP BY u.id
+       ORDER BY last_cleaned_at DESC NULLS LAST, u.unit_number ASC NULLS LAST
+       LIMIT 1000`,
+      params
+    );
+
+    const assigneeIds = [
+      ...new Set(rows.map((r) => r.last_assigned_to).filter((id) => id != null)),
+    ];
+    let nameById = new Map();
+    if (assigneeIds.length) {
+      const { rows: agents } = await query(
+        `SELECT id, full_name, staff_code FROM staff_users WHERE id = ANY($1::int[])`,
+        [assigneeIds]
+      );
+      nameById = new Map(agents.map((a) => [a.id, a]));
+    }
+
+    res.json({
+      items: rows.map((r) => {
+        const agent = nameById.get(r.last_assigned_to) || null;
+        return {
+          unit_id: r.unit_id,
+          unit_number: r.unit_number,
+          unit_title: r.unit_title,
+          project: r.project,
+          ops_status: r.ops_status || null,
+          times_cleaned: Number(r.times_cleaned) || 0,
+          last_cleaned_at: r.last_cleaned_at || null,
+          last_assigned_to: r.last_assigned_to || null,
+          assignee_name: agent?.full_name || null,
+          assignee_code: agent?.staff_code || null,
+        };
+      }),
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.post(
   '/housekeeping/today-cleans/:taskId/assign',
   requireRoles(...HK_SUPER_ROLES),
