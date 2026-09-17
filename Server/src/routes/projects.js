@@ -181,6 +181,91 @@ router.post(
 
 
 router.put(
+  '/destination/:destination',
+  authStaff,
+  requireRoles('admin', 'resale', 'resale_manager', 'reservations_manager'),
+  async (req, res, next) => {
+    try {
+      const current = normalizeText(decodeURIComponent(req.params.destination));
+      const nextName = normalizeText(req.body?.name || req.body?.destination);
+      if (!current) {
+        return res.status(400).json({ error: 'destination is required' });
+      }
+      if (!nextName) {
+        return res.status(400).json({ error: 'New destination name is required' });
+      }
+
+      const currentNorm = current.toLowerCase();
+      const nextNorm = nextName.toLowerCase();
+
+      const { rows: existingRows } = await query(
+        `SELECT id, name, normalized_name
+         FROM location_projects
+         WHERE normalized_destination = $1`,
+        [currentNorm]
+      );
+      if (!existingRows.length) {
+        return res.status(404).json({ error: 'Destination not found' });
+      }
+
+      if (currentNorm !== nextNorm) {
+        const { rows: conflicts } = await query(
+          `SELECT name FROM location_projects
+           WHERE normalized_destination = $1
+             AND normalized_name = ANY($2::text[])`,
+          [nextNorm, existingRows.map((r) => r.normalized_name)]
+        );
+        if (conflicts.length) {
+          return res.status(409).json({
+            error: `Cannot rename: “${nextName}” already has project(s) named ${conflicts
+              .map((c) => c.name)
+              .join(', ')}`,
+          });
+        }
+      }
+
+      const updated = await query(
+        `UPDATE location_projects
+         SET destination = $2,
+             normalized_destination = $3,
+             updated_at = now()
+         WHERE normalized_destination = $1
+         RETURNING id`,
+        [currentNorm, nextName, nextNorm]
+      );
+
+      let unitsUpdated = 0;
+      if (currentNorm !== nextNorm) {
+        const unitsRes = await query(
+          `UPDATE units
+           SET area = $2, updated_at = now()
+           WHERE lower(trim(area)) = $1
+           RETURNING id`,
+          [currentNorm, nextName]
+        );
+        unitsUpdated = unitsRes.rows.length;
+      }
+
+      const rows = await loadCatalogRows();
+      res.json({
+        success: true,
+        data: {
+          ...buildCatalog(rows),
+          items: rows,
+          renamedFrom: current,
+          renamedTo: nextName,
+          projectsUpdated: updated.rows.length,
+          unitsUpdated,
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+
+router.put(
   '/:id',
   authStaff,
   requireRoles('admin', 'resale', 'resale_manager', 'reservations_manager'),

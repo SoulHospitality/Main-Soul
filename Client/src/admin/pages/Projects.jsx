@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { ImagePlus, MapPin, Plus, Trash2, Upload } from 'lucide-react';
+import { ImagePlus, MapPin, Pencil, Plus, Trash2, Upload } from 'lucide-react';
 
 import { PROJECT_CATALOG_KEY } from '../../hooks/useProjectCatalog';
 import TagSelect from '../components/ui/TagSelect';
@@ -45,10 +45,13 @@ export default function Projects() {
   const [createImageFile, setCreateImageFile] = useState(null);
   const [createImagePreview, setCreateImagePreview] = useState('');
   const [editingId, setEditingId] = useState(null);
+  const [editName, setEditName] = useState('');
   const [editFacilities, setEditFacilities] = useState([]);
   const [editMinNights, setEditMinNights] = useState(4);
   const [editImageFile, setEditImageFile] = useState(null);
   const [editImagePreview, setEditImagePreview] = useState('');
+  const [editingDestination, setEditingDestination] = useState(false);
+  const [destinationEditName, setDestinationEditName] = useState('');
 
   useEffect(() => {
     if (!selectedDestination && destinations[0]) {
@@ -98,8 +101,9 @@ export default function Projects() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, facilities, minNights, imageFile }) => {
+    mutationFn: ({ id, name, facilities, minNights, imageFile }) => {
       const fd = new FormData();
+      if (name) fd.append('name', name);
       fd.append('facilities', JSON.stringify(facilities || []));
       fd.append('min_nights', String(minNights));
       if (imageFile) fd.append('image', imageFile);
@@ -108,6 +112,7 @@ export default function Projects() {
     onSuccess: () => {
       toast.success('Project saved');
       setEditingId(null);
+      setEditName('');
       setEditFacilities([]);
       setEditMinNights(4);
       clearEditImage();
@@ -115,6 +120,32 @@ export default function Projects() {
       qc.invalidateQueries({ queryKey: PROJECT_CATALOG_KEY });
       qc.invalidateQueries({ queryKey: ['unit-projects'] });
       qc.invalidateQueries({ queryKey: ['projects'] });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const renameDestinationMutation = useMutation({
+    mutationFn: ({ current, name }) =>
+      catalogFetch(`/projects/destination/${encodeURIComponent(current)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ name }),
+      }),
+    onSuccess: (data) => {
+      const next = data?.renamedTo || destinationEditName.trim();
+      const units = data?.unitsUpdated || 0;
+      toast.success(
+        units > 0
+          ? `Destination renamed to “${next}” (${units} unit area(s) updated)`
+          : `Destination renamed to “${next}”`
+      );
+      setSelectedDestination(next);
+      setEditingDestination(false);
+      setDestinationEditName('');
+      refetch();
+      qc.invalidateQueries({ queryKey: PROJECT_CATALOG_KEY });
+      qc.invalidateQueries({ queryKey: ['unit-projects'] });
+      qc.invalidateQueries({ queryKey: ['projects'] });
+      qc.invalidateQueries({ queryKey: ['units'] });
     },
     onError: (err) => toast.error(err.message),
   });
@@ -222,9 +253,35 @@ export default function Projects() {
 
   function startEdit(row) {
     setEditingId(row.id);
+    setEditName(row.name || '');
     setEditFacilities(Array.isArray(row.facilities) ? row.facilities : []);
     setEditMinNights(Math.max(1, Number(row.min_nights) || 4));
     clearEditImage();
+  }
+
+  function startEditDestination() {
+    if (!selectedDestination) return;
+    setEditingDestination(true);
+    setDestinationEditName(selectedDestination);
+  }
+
+  function cancelEditDestination() {
+    setEditingDestination(false);
+    setDestinationEditName('');
+  }
+
+  function handleSaveDestination() {
+    const name = String(destinationEditName || '').trim();
+    if (!selectedDestination) return;
+    if (!name) {
+      toast.error('Destination name is required');
+      return;
+    }
+    if (name.toLowerCase() === selectedDestination.toLowerCase() && name === selectedDestination) {
+      cancelEditDestination();
+      return;
+    }
+    renameDestinationMutation.mutate({ current: selectedDestination, name });
   }
 
   const selectedItems = items.filter((i) => i.destination === selectedDestination);
@@ -365,7 +422,11 @@ export default function Projects() {
               >
                 <button
                   type="button"
-                  onClick={() => setSelectedDestination(d)}
+                  onClick={() => {
+                    setSelectedDestination(d);
+                    setEditingDestination(false);
+                    setDestinationEditName('');
+                  }}
                   className={`min-w-0 flex-1 text-left rounded-lg px-3 py-2 text-sm font-medium ${
                     selectedDestination === d ? 'text-primary-700' : 'text-gray-700'
                   }`}
@@ -377,6 +438,20 @@ export default function Projects() {
                   <span className="float-right text-xs text-gray-400 ml-2">
                     {(projectsByDestination[d] || []).length}
                   </span>
+                </button>
+                <button
+                  type="button"
+                  title={`Edit ${d}`}
+                  aria-label={`Edit destination ${d}`}
+                  className="rounded-lg p-2 text-gray-400 opacity-70 hover:bg-primary-50 hover:text-primary-700 group-hover:opacity-100"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedDestination(d);
+                    setEditingDestination(true);
+                    setDestinationEditName(d);
+                  }}
+                >
+                  <Pencil className="w-4 h-4" />
                 </button>
                 <button
                   type="button"
@@ -398,19 +473,66 @@ export default function Projects() {
 
         <div className="card">
           <div className="card-header flex-wrap gap-3">
-            <h2 className="text-lg font-semibold text-gray-900">
-              Projects in {selectedDestination || '…'}
-            </h2>
-            {selectedDestination ? (
-              <button
-                type="button"
-                className="btn-danger btn-sm"
-                disabled={deleteDestinationMutation.isPending}
-                onClick={() => handleDeleteDestination(selectedDestination)}
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                Delete destination
-              </button>
+            <div className="min-w-0 flex-1">
+              {editingDestination && selectedDestination ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    className="input max-w-md"
+                    value={destinationEditName}
+                    onChange={(e) => setDestinationEditName(e.target.value)}
+                    placeholder="Destination name"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleSaveDestination();
+                      }
+                      if (e.key === 'Escape') cancelEditDestination();
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="btn-primary btn-sm"
+                    disabled={renameDestinationMutation.isPending}
+                    onClick={handleSaveDestination}
+                  >
+                    {renameDestinationMutation.isPending ? 'Saving…' : 'Save'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary btn-sm"
+                    disabled={renameDestinationMutation.isPending}
+                    onClick={cancelEditDestination}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <h2 className="text-lg font-semibold text-gray-900">
+                  Projects in {selectedDestination || '…'}
+                </h2>
+              )}
+            </div>
+            {selectedDestination && !editingDestination ? (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="btn-secondary btn-sm"
+                  onClick={startEditDestination}
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  Edit destination
+                </button>
+                <button
+                  type="button"
+                  className="btn-danger btn-sm"
+                  disabled={deleteDestinationMutation.isPending}
+                  onClick={() => handleDeleteDestination(selectedDestination)}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Delete destination
+                </button>
+              </div>
             ) : null}
           </div>
           {selectedProjects.length === 0 ? (
@@ -467,14 +589,20 @@ export default function Projects() {
                               type="button"
                               className="btn-primary btn-sm"
                               disabled={updateMutation.isPending}
-                              onClick={() =>
+                              onClick={() => {
+                                const name = String(editName || '').trim();
+                                if (!name) {
+                                  toast.error('Project name is required');
+                                  return;
+                                }
                                 updateMutation.mutate({
                                   id: row.id,
+                                  name,
                                   facilities: editFacilities,
                                   minNights: Math.max(1, parseInt(editMinNights, 10) || 4),
                                   imageFile: editImageFile,
-                                })
-                              }
+                                });
+                              }}
                             >
                               Save
                             </button>
@@ -483,6 +611,7 @@ export default function Projects() {
                               className="btn-secondary btn-sm"
                               onClick={() => {
                                 setEditingId(null);
+                                setEditName('');
                                 setEditFacilities([]);
                                 setEditMinNights(4);
                                 clearEditImage();
@@ -508,6 +637,15 @@ export default function Projects() {
 
                     {isEditing ? (
                       <div className="space-y-3">
+                        <div>
+                          <label className="label">Project name *</label>
+                          <input
+                            className="input max-w-md"
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                            required
+                          />
+                        </div>
                         <div>
                           <label className="label">Min stay (nights) *</label>
                           <input
