@@ -7,6 +7,7 @@ import { useLocale } from '../context/LocaleContext';
 import api from '../api/http';
 import ListingCard from '../components/ListingCard';
 import { getListingWpId, useWishlist } from '../hooks/useWishlist';
+import BrandLoader from '../components/ui/BrandLoader';
 
 const HOUSEKEEPING_TIMES = (() => {
   const out = [];
@@ -236,7 +237,11 @@ export default function AccountPage() {
         <section className="mt-10">
           <h2 className="font-display text-2xl text-soul-blue">{t('account.history')}</h2>
           <div className="mt-4 space-y-3">
-            {loading && <p className="text-sm text-soul-muted">{t('common.loading')}</p>}
+            {loading && (
+              <div className="flex justify-center py-8">
+                <BrandLoader size="sm" label={t('common.loading')} />
+              </div>
+            )}
             {!loading &&
               trips.map((trip) => (
                 <div key={trip.id} className="rounded-xl border border-soul-line p-4">

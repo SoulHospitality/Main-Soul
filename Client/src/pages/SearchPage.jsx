@@ -11,6 +11,7 @@ import { resolveLocationFilter, useProjectCatalog } from '../hooks/useProjectCat
 import api from '../api/http';
 import { getDisplayPriceEgp } from '../utils/displayPrice';
 import { useLocale } from '../context/LocaleContext';
+import BrandLoader from '../components/ui/BrandLoader';
 
 const PAGE_SIZE = 18;
 
@@ -415,7 +416,14 @@ export default function SearchPage({ listingType = 'rent' }) {
                     disabled={loadingMore}
                     className="rounded-full border border-soul-blue bg-white px-6 py-3 text-sm font-semibold text-soul-blue transition-colors hover:bg-soul-blue hover:text-white disabled:cursor-default disabled:opacity-60"
                   >
-                    {loadingMore ? t('common.loading') : t('search.showMore')}
+                    {loadingMore ? (
+                      <span className="inline-flex items-center gap-2">
+                        <BrandLoader size="xs" label={t('common.loading')} />
+                        <span>{t('common.loading')}</span>
+                      </span>
+                    ) : (
+                      t('search.showMore')
+                    )}
                   </button>
                 )}
                 <span className="text-sm text-soul-muted">

@@ -304,6 +304,75 @@ tr.cancelled-row td span[class*="inline-flex"] {
   to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes soulLoaderBreathe {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.04); opacity: 0.88; }
+}
+
+@keyframes soulLoaderOrbit {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes soulLoaderGlow {
+  0%, 100% {
+    opacity: 0.35;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes soulLoaderCaption {
+  0%, 100% { opacity: 0.45; letter-spacing: 0.04em; }
+  50% { opacity: 0.85; letter-spacing: 0.08em; }
+}
+
+.soul-brand-loader-page {
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 42%, rgba(245, 241, 233, 0.95) 0%, transparent 70%),
+    linear-gradient(180deg, #fff 0%, #f8f6f1 100%);
+}
+
+.soul-brand-loader__glow {
+  background: radial-gradient(
+    circle,
+    rgba(242, 140, 40, 0.22) 0%,
+    rgba(40, 63, 94, 0.1) 42%,
+    transparent 70%
+  );
+  animation: soulLoaderGlow 2.4s ease-in-out infinite;
+}
+
+.soul-brand-loader__orbit {
+  border: 1.5px solid transparent;
+  border-top-color: rgba(40, 63, 94, 0.45);
+  border-right-color: rgba(242, 140, 40, 0.35);
+  animation: soulLoaderOrbit 1.35s linear infinite;
+}
+
+.soul-brand-loader__orbit--lag {
+  border-top-color: rgba(242, 140, 40, 0.55);
+  border-right-color: transparent;
+  border-bottom-color: rgba(40, 63, 94, 0.2);
+  animation-duration: 2.1s;
+  animation-direction: reverse;
+}
+
+.soul-brand-loader__mark {
+  width: 72%;
+  height: 72%;
+}
+
+.soul-brand-loader__logo {
+  animation: soulLoaderBreathe 2.2s ease-in-out infinite;
+}
+
+.soul-brand-loader__caption {
+  animation: soulLoaderCaption 2.4s ease-in-out infinite;
+}
+
 .soul-success-pop {
   animation: soulSuccessPop 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -321,7 +390,12 @@ tr.cancelled-row td span[class*="inline-flex"] {
   .soul-fade-up,
   .soul-success-pop,
   .soul-success-pop-delay,
-  .soul-success-fade {
+  .soul-success-fade,
+  .soul-brand-loader__glow,
+  .soul-brand-loader__orbit,
+  .soul-brand-loader__orbit--lag,
+  .soul-brand-loader__logo,
+  .soul-brand-loader__caption {
     animation: none;
   }
 }

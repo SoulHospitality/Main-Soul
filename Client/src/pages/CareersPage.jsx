@@ -3,6 +3,7 @@ import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
 import api from '../api/http';
 import { useLocale } from '../context/LocaleContext';
+import BrandLoader from '../components/ui/BrandLoader';
 
 const emptyForm = { fullName: '', email: '', phone: '' };
 
@@ -178,8 +179,8 @@ export default function CareersPage() {
         </section>
 
         {loading ? (
-          <div className="mx-auto mt-10 max-w-2xl border border-soul-line bg-soul-blue-50/40 p-4 text-center text-sm uppercase tracking-[0.18em] text-soul-muted">
-            {t('careers.loading')}
+          <div className="mt-10 flex justify-center py-8">
+            <BrandLoader size="md" label={t('careers.loading')} />
           </div>
         ) : null}
 

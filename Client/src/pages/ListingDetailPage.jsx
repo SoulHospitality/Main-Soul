@@ -12,6 +12,7 @@ import { useLocale } from '../context/LocaleContext';
 import api, { createUnitReview, fetchUnitReviews } from '../api/http';
 import { optimizeImageUrl } from '../utils/imageUrl';
 import { GUEST_AVAILABILITY_MONTHS } from '../constants/availability';
+import BrandLoader from '../components/ui/BrandLoader';
 
 const localISO = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -276,7 +277,7 @@ export default function ListingDetailPage() {
     return (
       <div>
         <Header />
-        <main className="mx-auto max-w-[1280px] px-6 py-20 text-soul-muted">{t('listing.loading')}</main>
+        <BrandLoader fullPage size="lg" label={t('listing.loading')} />
         <Footer />
       </div>
     );
