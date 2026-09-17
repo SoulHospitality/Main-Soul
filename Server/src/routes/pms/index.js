@@ -211,12 +211,17 @@ function mapUnitRow(u) {
     listing_type: u.listing_type || 'rent',
     unit_area: u.size_m2,
     has_nanny_room: !!u.has_nanny_room,
+    disable_automatic_reservations: !!u.disable_automatic_reservations,
     listing_unpublished: details.listing_unpublished === true,
   };
 }
 
 function truthyNanny(v) {
   return v === true || v === 1 || v === '1' || v === 'true' || v === 'on' || v === 'yes';
+}
+
+function truthyFlag(v) {
+  return truthyNanny(v);
 }
 
 function parsePartyCounts(b, { isOwner = false } = {}) {
@@ -956,6 +961,7 @@ router.post('/units', requireRoles(...UNIT_EDITOR_ROLES), async (req, res, next)
     const beds = toNum(b.beds ?? b.bedrooms, { int: true, fallback: 1 });
     const baths = toNum(b.baths ?? b.bathrooms, { int: true, fallback: 1 });
     const hasNannyRoom = truthyNanny(b.has_nanny_room);
+    const disableAutomaticReservations = truthyFlag(b.disable_automatic_reservations);
     const guests = guestsFromBedrooms(beds, hasNannyRoom);
 
     const slug = toText(b.slug) || slugify(title || `unit-${Date.now()}`);
@@ -1066,12 +1072,12 @@ router.post('/units', requireRoles(...UNIT_EDITOR_ROLES), async (req, res, next)
          utilities_cost, ops_status, unit_number, internal_code, created_by_staff, price_fallback,
          property_type, view, floor, source_url, min_nights, cleaning_fee_egp,
          access_fee_per_adult_egp, access_fee_per_teen_egp, access_card_count_included,
-         listing_type, has_nanny_room
+         listing_type, has_nanny_room, disable_automatic_reservations
        ) VALUES (
          $1,$2,COALESCE($3,'draft'),'manual',$4,COALESCE($5,$4),COALESCE($6,'North Coast'),
          $7,$8,$9,$10,$11,COALESCE($12::text[], '{}'::text[]),COALESCE($13::text[], '{}'::text[]),$14,$15,$16,
          $17,$18,$19,$20,$21,$22,$23,$24,COALESCE($25,'available'),$26,$27,$28,$29,
-         $30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40
+         $30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41
        ) RETURNING *`,
       [
         slug,
@@ -1118,6 +1124,7 @@ router.post('/units', requireRoles(...UNIT_EDITOR_ROLES), async (req, res, next)
         beachDays,
         listingType,
         hasNannyRoom,
+        disableAutomaticReservations,
       ]
     );
     const payload = mapUnitRow(rows[0]);
@@ -1330,6 +1337,7 @@ async function updateUnitHandler(req, res, next) {
          access_card_count_included = COALESCE($35, access_card_count_included),
          cleaning_fee_egp = $36,
          has_nanny_room = COALESCE($38, has_nanny_room),
+         disable_automatic_reservations = COALESCE($39, disable_automatic_reservations),
          updated_at = now()
        WHERE id = $37 RETURNING *`,
       [
@@ -1389,6 +1397,9 @@ async function updateUnitHandler(req, res, next) {
         cleaningFee,
         req.params.id,
         b.has_nanny_room !== undefined ? truthyNanny(b.has_nanny_room) : null,
+        b.disable_automatic_reservations !== undefined
+          ? truthyFlag(b.disable_automatic_reservations)
+          : null,
       ]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Not found' });

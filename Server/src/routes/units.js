@@ -404,6 +404,11 @@ router.get('/:idOrSlug/quote', async (req, res, next) => {
     const { checkin, checkout, adults, teens, guests } = req.query;
     const unit = await loadUnit(req.params.idOrSlug);
     if (!unit?.wp_post_id) return res.status(404).json({ error: 'Unit not found' });
+    if (unit.disable_automatic_reservations) {
+      return res.status(403).json({
+        error: 'Online reservations are disabled for this unit. Please inquire on WhatsApp.',
+      });
+    }
     const adultCount = Number(adults || guests || 1);
     const teenCount = Number(teens || 0);
     const quote = await quoteStay({

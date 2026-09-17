@@ -1658,6 +1658,405 @@ router.get('/financial-system/insurance-refunds', requireRoles('admin', 'finance
   }
 });
 
+/**
+ * Finance desk: audit trail for ops check-ins (money collected, payments, bill edits, handover).
+ * GET /financial-system/checkin-audit?from=&to=
+ * GET /financial-system/checkin-audit/:id  — one reservation with payments + audit events
+ */
+function parseCheckinAuditRange(query) {
+  const today = new Date().toISOString().slice(0, 10);
+  const fromDefaultDate = new Date();
+  fromDefaultDate.setUTCDate(fromDefaultDate.getUTCDate() - 30);
+  const fromDefault = fromDefaultDate.toISOString().slice(0, 10);
+  const from = clampFromDate(query.from || query.from_date || fromDefault);
+  const to = String(query.to || query.to_date || today).slice(0, 10);
+  return { from, to };
+}
+
+function mapCheckinAuditRow(r) {
+  const total = round2(parseFloat(r.total_amount) || 0);
+  const paid = round2(parseFloat(r.amount_paid) || 0);
+  const collected = round2(parseFloat(r.ops_money_collected_amount) || 0);
+  return {
+    reservation_id: r.id,
+    guest_name: r.guest_name,
+    guest_phone: r.guest_phone,
+    unit_name: r.unit_name,
+    project: r.project,
+    check_in: r.check_in,
+    check_out: r.check_out,
+    status: r.status,
+    payment_status: r.payment_status,
+    total_amount: total,
+    amount_paid: paid,
+    balance_due: round2(Math.max(0, total - paid)),
+    accommodation: round2(parseFloat(r.accommodation) || 0),
+    housekeeping_fees: round2(parseFloat(r.housekeeping_fees) || 0),
+    beach_access_fees: round2(parseFloat(r.beach_access_fees) || 0),
+    insurance: round2(parseFloat(r.insurance) || 0),
+    utilities_amount: round2(parseFloat(r.utilities_amount) || 0),
+    ops_money_collected: Number(r.ops_money_collected) === 1,
+    ops_money_collected_amount: collected,
+    ops_money_collected_at: r.ops_money_collected_at || null,
+    ops_money_collected_by_name: r.ops_money_collected_by_name || null,
+    ops_handed_over: Number(r.ops_handed_over) === 1,
+    ops_handed_over_at: r.ops_handed_over_at || null,
+    ops_handed_over_by_name: r.ops_handed_over_by_name || null,
+    ops_assignee_name: r.ops_assignee_name || null,
+    payment_count: Number(r.payment_count) || 0,
+    payments_total: round2(parseFloat(r.payments_total) || 0),
+  };
+}
+
+router.get('/financial-system/checkin-audit', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const { from, to } = parseCheckinAuditRange(req.query);
+    const { rows } = await query(
+      `SELECT r.id,
+              r.guest_name,
+              r.guest_phone,
+              to_char(r.check_in, 'YYYY-MM-DD') AS check_in,
+              to_char(r.check_out, 'YYYY-MM-DD') AS check_out,
+              r.status,
+              r.payment_status,
+              COALESCE(r.total_amount, 0)::float AS total_amount,
+              COALESCE(r.amount_paid, 0)::float AS amount_paid,
+              COALESCE(
+                CASE
+                  WHEN COALESCE(r.price_per_night, 0) > 0 AND COALESCE(r.nights, 0) > 0
+                  THEN r.price_per_night * r.nights
+                  ELSE 0
+                END,
+                0
+              )::float AS accommodation,
+              COALESCE(r.housekeeping_fees, 0)::float AS housekeeping_fees,
+              COALESCE(r.beach_access_fees, 0)::float AS beach_access_fees,
+              COALESCE(r.insurance, 0)::float AS insurance,
+              COALESCE(r.utilities_amount, 0)::float AS utilities_amount,
+              COALESCE(r.ops_money_collected, 0) AS ops_money_collected,
+              COALESCE(r.ops_money_collected_amount, 0)::float AS ops_money_collected_amount,
+              r.ops_money_collected_at,
+              COALESCE(r.ops_handed_over, 0) AS ops_handed_over,
+              r.ops_handed_over_at,
+              COALESCE(u.unit_number, u.title, 'Unit') AS unit_name,
+              COALESCE(u.project, u.compound) AS project,
+              money_by.full_name AS ops_money_collected_by_name,
+              hand_by.full_name AS ops_handed_over_by_name,
+              ops_agent.full_name AS ops_assignee_name,
+              COALESCE(pagg.payment_count, 0)::int AS payment_count,
+              COALESCE(pagg.payments_total, 0)::float AS payments_total
+       FROM reservations r
+       JOIN units u ON u.id = r.unit_id
+       LEFT JOIN staff_users money_by ON money_by.id = r.ops_money_collected_by
+       LEFT JOIN staff_users hand_by ON hand_by.id = r.ops_handed_over_by
+       LEFT JOIN staff_users ops_agent ON ops_agent.id = r.ops_assigned_to
+       LEFT JOIN LATERAL (
+         SELECT COUNT(*)::int AS payment_count,
+                COALESCE(SUM(p.amount), 0)::float AS payments_total
+         FROM payments p
+         WHERE p.reservation_id = r.id
+           AND LOWER(COALESCE(p.status, '')) NOT IN ('cancelled', 'failed', 'refunded')
+       ) pagg ON TRUE
+       WHERE r.check_in::date >= $1::date
+         AND r.check_in::date <= $2::date
+         AND LOWER(COALESCE(r.status::text, '')) <> 'cancelled'
+         AND (
+           COALESCE(r.ops_money_collected, 0) = 1
+           OR COALESCE(r.ops_handed_over, 0) = 1
+           OR EXISTS (
+             SELECT 1 FROM payments px
+             WHERE px.reservation_id = r.id
+               AND (
+                 px.notes ILIKE '%[ops check-in]%'
+                 OR px.notes ILIKE '%ops_handover%'
+                 OR px.notes ILIKE '%ops check-in%'
+               )
+           )
+         )
+       ORDER BY r.check_in DESC, r.id DESC
+       LIMIT 500`,
+      [from, to]
+    );
+
+    const mapped = rows.map(mapCheckinAuditRow);
+    const collectedTotal = round2(
+      mapped.reduce((s, r) => s + (r.ops_money_collected_amount || 0), 0)
+    );
+    const paidTotal = round2(mapped.reduce((s, r) => s + (r.amount_paid || 0), 0));
+
+    res.json({
+      from,
+      to,
+      summary: {
+        checkin_count: mapped.length,
+        money_collected_total: collectedTotal,
+        amount_paid_total: paidTotal,
+        handed_over_count: mapped.filter((r) => r.ops_handed_over).length,
+      },
+      rows: mapped,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/financial-system/checkin-audit/:id', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!id) return res.status(400).json({ error: 'Invalid reservation id' });
+
+    const { rows } = await query(
+      `SELECT r.id,
+              r.guest_name,
+              r.guest_phone,
+              to_char(r.check_in, 'YYYY-MM-DD') AS check_in,
+              to_char(r.check_out, 'YYYY-MM-DD') AS check_out,
+              r.status,
+              r.payment_status,
+              COALESCE(r.total_amount, 0)::float AS total_amount,
+              COALESCE(r.amount_paid, 0)::float AS amount_paid,
+              COALESCE(
+                CASE
+                  WHEN COALESCE(r.price_per_night, 0) > 0 AND COALESCE(r.nights, 0) > 0
+                  THEN r.price_per_night * r.nights
+                  ELSE 0
+                END,
+                0
+              )::float AS accommodation,
+              COALESCE(r.housekeeping_fees, 0)::float AS housekeeping_fees,
+              COALESCE(r.beach_access_fees, 0)::float AS beach_access_fees,
+              COALESCE(r.insurance, 0)::float AS insurance,
+              COALESCE(r.utilities_amount, 0)::float AS utilities_amount,
+              COALESCE(r.ops_money_collected, 0) AS ops_money_collected,
+              COALESCE(r.ops_money_collected_amount, 0)::float AS ops_money_collected_amount,
+              r.ops_money_collected_at,
+              COALESCE(r.ops_handed_over, 0) AS ops_handed_over,
+              r.ops_handed_over_at,
+              r.ops_handover_comment,
+              COALESCE(u.unit_number, u.title, 'Unit') AS unit_name,
+              COALESCE(u.project, u.compound) AS project,
+              money_by.full_name AS ops_money_collected_by_name,
+              hand_by.full_name AS ops_handed_over_by_name,
+              ops_agent.full_name AS ops_assignee_name,
+              0 AS payment_count,
+              0 AS payments_total
+       FROM reservations r
+       JOIN units u ON u.id = r.unit_id
+       LEFT JOIN staff_users money_by ON money_by.id = r.ops_money_collected_by
+       LEFT JOIN staff_users hand_by ON hand_by.id = r.ops_handed_over_by
+       LEFT JOIN staff_users ops_agent ON ops_agent.id = r.ops_assigned_to
+       WHERE r.id = $1`,
+      [id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Reservation not found' });
+
+    const { rows: payments } = await query(
+      `SELECT p.id, p.amount, p.payment_method, p.payment_date, p.paid_at, p.status,
+              p.notes, p.is_approved, p.created_at, p.created_by,
+              su.full_name AS created_by_name
+       FROM payments p
+       LEFT JOIN staff_users su ON su.id = p.created_by
+       WHERE p.reservation_id = $1
+       ORDER BY COALESCE(p.paid_at, p.payment_date::timestamptz, p.created_at) ASC, p.id ASC`,
+      [id]
+    );
+
+    const { rows: events } = await query(
+      `SELECT a.id, a.action, a.details, a.created_at, a.user_id,
+              su.full_name AS actor_name
+       FROM audit_log a
+       LEFT JOIN staff_users su ON su.id = a.user_id
+       WHERE a.entity_type = 'reservation'
+         AND a.entity_id = $1::text
+         AND a.action IN (
+           'OPS_COLLECT_CHECKIN',
+           'OPS_HANDOVER_CHECKIN',
+           'OPS_EDIT_CHECKIN_BILL',
+           'OPS_ASSIGN_CHECKIN',
+           'CREATE_PAYMENT',
+           'APPROVE_PAYMENT',
+           'RECORD_PAYMENT'
+         )
+       ORDER BY a.created_at ASC, a.id ASC`,
+      [String(id)]
+    );
+
+    const base = mapCheckinAuditRow({
+      ...rows[0],
+      payment_count: payments.length,
+      payments_total: payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0),
+    });
+
+    res.json({
+      ...base,
+      ops_handover_comment: rows[0].ops_handover_comment || null,
+      payments: payments.map((p) => ({
+        id: p.id,
+        amount: round2(parseFloat(p.amount) || 0),
+        payment_method: p.payment_method,
+        payment_date: p.payment_date,
+        paid_at: p.paid_at,
+        status: p.status,
+        notes: p.notes,
+        is_approved: Number(p.is_approved) === 1,
+        created_at: p.created_at,
+        created_by_name: p.created_by_name || null,
+      })),
+      events: events.map((e) => ({
+        id: e.id,
+        action: e.action,
+        details: e.details || {},
+        created_at: e.created_at,
+        actor_name: e.actor_name || null,
+      })),
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+const {
+  buildPaymentCalendar,
+  ensureFinanceCalendarTable,
+  isoDate: calendarIsoDate,
+} = require('../../lib/finance/paymentCalendar');
+
+router.get('/financial-system/payment-calendar', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const payload = await buildPaymentCalendar(req.query.from || req.query.from_date, req.query.to || req.query.to_date);
+    res.json(payload);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/financial-system/payment-calendar', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    await ensureFinanceCalendarTable();
+    const b = req.body || {};
+    const title = String(b.title || '').trim();
+    const dueDate = calendarIsoDate(b.due_date);
+    const amount = round2(parseFloat(b.amount) || 0);
+    const direction = String(b.direction || 'out').toLowerCase() === 'in' ? 'in' : 'out';
+    const status = ['pending', 'paid', 'cancelled'].includes(String(b.status || '').toLowerCase())
+      ? String(b.status).toLowerCase()
+      : 'pending';
+    if (!title) return res.status(400).json({ error: 'Title is required' });
+    if (!dueDate) return res.status(400).json({ error: 'Due date is required' });
+
+    const { rows } = await query(
+      `INSERT INTO finance_calendar_payments
+         (title, amount, currency, due_date, direction, category, status, paid_at, notes, account_code, related_ref, created_by, updated_by)
+       VALUES ($1, $2, $3, $4::date, $5, $6, $7, $8, $9, $10, $11, $12, $12)
+       RETURNING *`,
+      [
+        title,
+        amount,
+        String(b.currency || 'EGP').slice(0, 8),
+        dueDate,
+        direction,
+        String(b.category || 'other').slice(0, 64) || 'other',
+        status,
+        status === 'paid' ? new Date().toISOString() : null,
+        b.notes != null ? String(b.notes) : null,
+        b.account_code != null ? String(b.account_code).slice(0, 16) : null,
+        b.related_ref != null ? String(b.related_ref) : null,
+        req.user.id,
+      ]
+    );
+    res.status(201).json({ ok: true, item: rows[0] });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.patch('/financial-system/payment-calendar/:id', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    await ensureFinanceCalendarTable();
+    const id = parseInt(req.params.id, 10);
+    if (!id) return res.status(400).json({ error: 'Invalid id' });
+    const { rows: existing } = await query(`SELECT * FROM finance_calendar_payments WHERE id = $1`, [id]);
+    if (!existing[0]) return res.status(404).json({ error: 'Not found' });
+
+    const b = req.body || {};
+    const title = b.title != null ? String(b.title).trim() : existing[0].title;
+    const dueDate = b.due_date != null ? calendarIsoDate(b.due_date) : String(existing[0].due_date).slice(0, 10);
+    const amount = b.amount != null ? round2(parseFloat(b.amount) || 0) : round2(parseFloat(existing[0].amount) || 0);
+    const direction =
+      b.direction != null
+        ? String(b.direction).toLowerCase() === 'in'
+          ? 'in'
+          : 'out'
+        : existing[0].direction;
+    let status = existing[0].status;
+    if (b.status != null && ['pending', 'paid', 'cancelled'].includes(String(b.status).toLowerCase())) {
+      status = String(b.status).toLowerCase();
+    }
+    if (!title) return res.status(400).json({ error: 'Title is required' });
+    if (!dueDate) return res.status(400).json({ error: 'Due date is required' });
+
+    let paidAt = existing[0].paid_at;
+    if (status === 'paid' && !paidAt) paidAt = new Date().toISOString();
+    if (status !== 'paid') paidAt = null;
+
+    const { rows } = await query(
+      `UPDATE finance_calendar_payments SET
+         title = $2,
+         amount = $3,
+         due_date = $4::date,
+         direction = $5,
+         category = $6,
+         status = $7,
+         paid_at = $8,
+         notes = $9,
+         account_code = $10,
+         related_ref = $11,
+         updated_by = $12,
+         updated_at = now()
+       WHERE id = $1
+       RETURNING *`,
+      [
+        id,
+        title,
+        amount,
+        dueDate,
+        direction,
+        b.category != null ? String(b.category).slice(0, 64) : existing[0].category,
+        status,
+        paidAt,
+        b.notes !== undefined ? (b.notes != null ? String(b.notes) : null) : existing[0].notes,
+        b.account_code !== undefined
+          ? b.account_code != null
+            ? String(b.account_code).slice(0, 16)
+            : null
+          : existing[0].account_code,
+        b.related_ref !== undefined
+          ? b.related_ref != null
+            ? String(b.related_ref)
+            : null
+          : existing[0].related_ref,
+        req.user.id,
+      ]
+    );
+    res.json({ ok: true, item: rows[0] });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.delete('/financial-system/payment-calendar/:id', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    await ensureFinanceCalendarTable();
+    const id = parseInt(req.params.id, 10);
+    if (!id) return res.status(400).json({ error: 'Invalid id' });
+    const { rowCount } = await query(`DELETE FROM finance_calendar_payments WHERE id = $1`, [id]);
+    if (!rowCount) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true, id });
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.post('/financial-system/insurance-refunds/:id/settle', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const id = parseInt(req.params.id, 10);

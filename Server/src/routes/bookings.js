@@ -34,6 +34,11 @@ router.post('/checkout', authGuest, upload.array('id_photos', 10), attachCloudin
     const { rows: units } = await query(`SELECT * FROM units WHERE slug = $1 AND status = 'published'`, [slug]);
     const unit = units[0];
     if (!unit) return res.status(404).json({ error: 'Listing not found' });
+    if (unit.disable_automatic_reservations) {
+      return res.status(403).json({
+        error: 'Online reservations are disabled for this unit. Please inquire on WhatsApp.',
+      });
+    }
 
     
     const teenCount = Math.max(0, parseInt(teens ?? children, 10) || 0);

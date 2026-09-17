@@ -118,6 +118,7 @@ const FLOOR_OPTIONS = [
 const EMPTY_FORM = {
   name: '', destination: '', project: '', unit_number: '', type: 'Apartment',
   bedrooms: 1, bathrooms: 1, floor: 0, guests: 2, has_nanny_room: false,
+  disable_automatic_reservations: false,
   owner_name: '', owner_email: '', owner_phone: '',
   commission_mode: 'A',
   company_commission_pct: 20,
@@ -375,6 +376,34 @@ function UnitForm({ form, setForm, listingType = 'rent' }) {
             </p>
           </div>
         </div>
+        {!isSale ? (
+          <div className="sm:col-span-2 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2.5">
+            <input
+              id="disable_automatic_reservations"
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600"
+              checked={!!form.disable_automatic_reservations}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  disable_automatic_reservations: e.target.checked,
+                }))
+              }
+            />
+            <div>
+              <label
+                htmlFor="disable_automatic_reservations"
+                className="text-sm font-medium text-gray-800"
+              >
+                Disable automatic reservations
+              </label>
+              <p className="text-xs text-gray-500">
+                Guests cannot book this unit online. The listing shows a WhatsApp Inquiry button
+                instead of Reserve.
+              </p>
+            </div>
+          </div>
+        ) : null}
         <div>
           <label className="label">Guests / capacity</label>
           <input
@@ -743,6 +772,7 @@ export default function Units({ listingType = 'rent' }) {
       bathrooms: u.bathrooms ?? u.baths ?? 1,
       floor: u.floor ?? 0,
       has_nanny_room: !!u.has_nanny_room,
+      disable_automatic_reservations: !!u.disable_automatic_reservations,
       guests: guestsFromBedrooms(u.bedrooms ?? u.beds ?? 1, !!u.has_nanny_room),
       owner_name: u.owner_name || '',
       owner_email: u.owner_email || '',
@@ -827,6 +857,7 @@ export default function Units({ listingType = 'rent' }) {
       floor: form.floor,
       view: form.view,
       has_nanny_room: !!form.has_nanny_room,
+      disable_automatic_reservations: !!form.disable_automatic_reservations,
       guests: guestsFromBedrooms(form.bedrooms, form.has_nanny_room),
       capacity: guestsFromBedrooms(form.bedrooms, form.has_nanny_room),
       owner_name: form.owner_name,
