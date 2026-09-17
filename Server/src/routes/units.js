@@ -450,3 +450,7 @@ async function loadUnit(idOrSlug) {
 }
 
 module.exports = router;
+module.exports.toPublicUnit = toPublicUnit;
+module.exports.attachFacilities = attachFacilities;
+module.exports.projectFacilitiesMap = projectFacilitiesMap;
+module.exports.loadTodayPriceMap = loadTodayPriceMap;

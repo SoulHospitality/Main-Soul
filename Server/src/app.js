@@ -114,6 +114,16 @@ function createApp() {
   app.use('/api/sales', salesRoutes);
   app.use('/api/calendar', icalRoutes);
   app.use('/api/pms', pmsRoutes);
+  app.use(
+    '/api/partners',
+    rateLimit({
+      windowMs: 15 * 60 * 1000,
+      max: 120,
+      standardHeaders: true,
+      legacyHeaders: false,
+    }),
+    require('./routes/partners')
+  );
   app.use('/api/fx', require('./routes/fx'));
   app.use('/api/reviews', require('./routes/reviews').router);
   app.use('/api/site-telemetry', require('./routes/siteTelemetry'));
