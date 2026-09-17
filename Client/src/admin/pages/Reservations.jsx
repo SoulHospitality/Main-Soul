@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { Plus, Edit2, Eye, Ban, CreditCard, CalendarDays, Upload, Download, CheckCircle, AlertCircle, Lock, Trash2, Maximize2, X, FileText, ArrowRightLeft } from 'lucide-react';
+import { Plus, Edit2, Eye, Ban, CreditCard, CalendarDays, Upload, Download, CheckCircle, AlertCircle, Lock, Trash2, Maximize2, X, FileText, ArrowRightLeft, Printer } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
@@ -29,6 +29,7 @@ import ManualReservationForm from '../components/ManualReservationForm';
 import TransferReservationModal from '../components/TransferReservationModal';
 import ReservationsNav from '../components/ReservationsNav';
 import { useProjectCatalog } from '../../hooks/useProjectCatalog';
+import { openReservationReceipt } from '../utils/reservationReceipt';
 
 export const EMPTY_FORM = {
   unit_id: '', guest_name: '', guest_email: '', guest_phone: '', guest_nationality: '',
@@ -1013,8 +1014,10 @@ export default function Reservations() {
     canManageReservations,
     canEditOrChecklist,
     canAccessFinance,
+    canAccessFinancialSystem,
     user,
   } = usePermissions();
+  const canGenerateReceipt = canAccessFinancialSystem;
   const allowPastDates = isAdmin;
   const agentOnly =
     !isAdmin &&
@@ -1321,6 +1324,30 @@ export default function Reservations() {
   };
 
   const handleAddPayment = () => { setPmtForm(EMPTY_PMT); setPmtModal(true); };
+
+  const handleGenerateReceipt = async (reservationOrId) => {
+    if (!canGenerateReceipt) {
+      toast.error('Only finance and admin can generate receipts');
+      return;
+    }
+    try {
+      let reservation = reservationOrId;
+      if (reservationOrId == null || typeof reservationOrId !== 'object') {
+        const id = reservationOrId ?? viewRes;
+        if (!id) return;
+        const { data } = await api.get(`/reservations/${id}`);
+        reservation = data;
+      } else if (!Array.isArray(reservationOrId.payments)) {
+        const { data } = await api.get(`/reservations/${reservationOrId.id}`);
+        reservation = data;
+      }
+      if (!openReservationReceipt(reservation)) {
+        toast.error('Allow pop-ups to open the receipt');
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Could not generate receipt');
+    }
+  };
 
   const openCancelReq  = (id) => { setCancelReqId(id); setCancelReason(''); setCancelType('non_refundable'); setCancelReqOpen(true); };
   const openRefundDone = (id) => { setRefundDoneId(id); setRefundFile(null); setRefundDoneOpen(true); };
@@ -1697,6 +1724,16 @@ export default function Reservations() {
                               <Eye className="w-3.5 h-3.5" />
                             </button>
                           )}
+                          {canGenerateReceipt && (
+                            <button
+                              type="button"
+                              onClick={() => handleGenerateReceipt(r.id)}
+                              className="p-1.5 rounded text-gray-400 hover:text-emerald-700 hover:bg-emerald-50"
+                              title="Generate receipt"
+                            >
+                              <Printer className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                           {canWrite && r.status !== 'cancelled' && (
                             <button onClick={() => openEdit(r)} className="p-1.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50" title="Edit">
                               <Edit2 className="w-3.5 h-3.5" />
@@ -1782,6 +1819,16 @@ export default function Reservations() {
                         <td>
                           <div className="flex gap-1 flex-wrap">
                             <button onClick={() => setViewRes(r.id)} className="p-1.5 rounded text-gray-400 hover:text-primary-600 hover:bg-primary-50" title="View"><Eye className="w-3.5 h-3.5" /></button>
+                            {canGenerateReceipt && (
+                              <button
+                                type="button"
+                                onClick={() => handleGenerateReceipt(r.id)}
+                                className="p-1.5 rounded text-gray-400 hover:text-emerald-700 hover:bg-emerald-50"
+                                title="Generate receipt"
+                              >
+                                <Printer className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                             {canWrite && r.status !== 'cancelled' && (
                               <button onClick={() => openEdit(r)} className="p-1.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50" title="Edit"><Edit2 className="w-3.5 h-3.5" /></button>
                             )}
@@ -1892,6 +1939,15 @@ export default function Reservations() {
       <Modal open={!!viewRes} onClose={() => setViewRes(null)} title={`Reservation #${viewRes}`} size="lg"
         footer={
           <div className="flex items-center justify-end gap-2 w-full">
+            {canGenerateReceipt && viewDetail ? (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => handleGenerateReceipt(viewDetail)}
+              >
+                <Printer className="w-4 h-4" /> Generate receipt
+              </button>
+            ) : null}
             {canWrite && viewDetail && viewDetail.status !== 'cancelled' && Number(viewDetail.is_owner_reservation) !== 1 && (
               <button
                 type="button"
