@@ -26,6 +26,9 @@ const TASK_SELECT = `
   t.completed_at,
   t.completed_by,
   t.completion_comment,
+  (
+    SELECT COUNT(*)::int FROM staff_task_comments c WHERE c.task_id = t.id
+  ) AS comment_count,
   a.full_name AS assignee_name,
   a.role AS assignee_role,
   a.email AS assignee_email,
@@ -257,6 +260,110 @@ router.post('/staff-tasks/:id/complete', async (req, res, next) => {
       details: { title: task.title, completion_comment: comment },
     });
     res.json({ ok: true, ...updated[0] });
+  } catch (e) {
+    return taskDbError(res, next, e);
+  }
+});
+
+async function loadTaskForDiscussion(taskId) {
+  const { rows } = await query(
+    `SELECT t.id, t.title, t.assignee_id, t.created_by, t.completed_at, t.deadline::text AS deadline,
+            a.role AS assignee_role, a.manager_id, a.full_name AS assignee_name,
+            COALESCE(
+              (SELECT array_agg(sm.manager_id ORDER BY sm.manager_id)
+               FROM staff_user_managers sm
+               WHERE sm.staff_user_id = a.id),
+              ARRAY[]::int[]
+            ) AS manager_ids
+     FROM staff_tasks t
+     JOIN staff_users a ON a.id = t.assignee_id
+     WHERE t.id = $1`,
+    [taskId]
+  );
+  return rows[0] || null;
+}
+
+function canDiscussStaffTask(actor, task) {
+  if (!actor || !task) return false;
+  if (actor.role === 'admin') return true;
+  if (String(task.assignee_id) === String(actor.id)) return true;
+  if (String(task.created_by) === String(actor.id)) return true;
+  return canAssignTaskTo(
+    actor,
+    assigneeAuthShape({
+      id: task.assignee_id,
+      role: task.assignee_role,
+      manager_id: task.manager_id,
+      manager_ids: task.manager_ids,
+    })
+  );
+}
+
+router.get('/staff-tasks/:id/comments', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id < 1) {
+      return res.status(400).json({ error: 'Invalid task' });
+    }
+    const task = await loadTaskForDiscussion(id);
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+    if (!canDiscussStaffTask(req.user, task)) {
+      return res.status(403).json({ error: 'You cannot view comments on this task' });
+    }
+
+    const { rows } = await query(
+      `SELECT c.id, c.task_id, c.author_id, c.body, c.created_at,
+              u.full_name AS author_name, u.role AS author_role
+       FROM staff_task_comments c
+       JOIN staff_users u ON u.id = c.author_id
+       WHERE c.task_id = $1
+       ORDER BY c.created_at ASC, c.id ASC`,
+      [id]
+    );
+    res.json({ task_id: id, items: rows });
+  } catch (e) {
+    return taskDbError(res, next, e);
+  }
+});
+
+router.post('/staff-tasks/:id/comments', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id < 1) {
+      return res.status(400).json({ error: 'Invalid task' });
+    }
+    const body = String(req.body?.body || req.body?.comment || '').trim();
+    if (!body) {
+      return res.status(400).json({ error: 'Comment is required' });
+    }
+    if (body.length > 4000) {
+      return res.status(400).json({ error: 'Comment is too long' });
+    }
+
+    const task = await loadTaskForDiscussion(id);
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+    if (!canDiscussStaffTask(req.user, task)) {
+      return res.status(403).json({ error: 'You cannot reply to this task' });
+    }
+
+    const { rows } = await query(
+      `INSERT INTO staff_task_comments (task_id, author_id, body)
+       VALUES ($1, $2, $3)
+       RETURNING id, task_id, author_id, body, created_at`,
+      [id, req.user.id, body]
+    );
+    await logAudit({
+      userId: req.user.id,
+      action: 'REPLY_STAFF_TASK',
+      entityType: 'staff_task',
+      entityId: id,
+      details: { comment_id: rows[0].id },
+    });
+    res.status(201).json({
+      ...rows[0],
+      author_name: req.user.full_name,
+      author_role: req.user.role,
+    });
   } catch (e) {
     return taskDbError(res, next, e);
   }

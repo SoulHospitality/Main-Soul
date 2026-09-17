@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarDays, Check, ListTodo, Pencil, Plus, Trash2 } from 'lucide-react';
+import { CalendarDays, Check, ListTodo, MessageSquare, Pencil, Plus, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import { useAuth } from '../context/AuthContext';
@@ -11,7 +11,7 @@ import ConfirmDialog from '../components/ui/ConfirmDialog';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
 import SearchableSelect from '../components/ui/SearchableSelect';
-import { formatDate } from '../utils/formatters';
+import { formatDate, formatDateTime } from '../utils/formatters';
 
 const EMPTY_FORM = { assignee_id: '', title: '', description: '', deadline: '' };
 
@@ -32,6 +32,8 @@ export default function Tasks() {
   const [deleteTask, setDeleteTask] = useState(null);
   const [completeTask, setCompleteTask] = useState(null);
   const [completionComment, setCompletionComment] = useState('');
+  const [replyTask, setReplyTask] = useState(null);
+  const [replyBody, setReplyBody] = useState('');
 
   const {
     data: tasks = [],
@@ -157,6 +159,29 @@ export default function Tasks() {
       setCompletionComment('');
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Could not mark task done'),
+  });
+
+  const {
+    data: replyThread,
+    isLoading: replyLoading,
+    isFetching: replyFetching,
+  } = useQuery({
+    queryKey: ['staff-task-comments', replyTask?.id],
+    queryFn: () =>
+      api.get(`/staff-tasks/${replyTask.id}/comments`).then((r) => r.data?.items || []),
+    enabled: !!replyTask?.id,
+  });
+
+  const replyMutation = useMutation({
+    mutationFn: ({ id, body }) =>
+      api.post(`/staff-tasks/${id}/comments`, { body }).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['staff-task-comments', replyTask?.id] });
+      qc.invalidateQueries({ queryKey: ['staff-tasks'] });
+      setReplyBody('');
+      toast.success('Reply sent');
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Could not send reply'),
   });
 
   const closeModal = () => {
@@ -334,6 +359,23 @@ export default function Tasks() {
                         Done
                       </button>
                     ) : null}
+                    <button
+                      type="button"
+                      className="btn-secondary text-xs px-2.5 py-1.5"
+                      onClick={() => {
+                        setReplyTask(task);
+                        setReplyBody('');
+                      }}
+                      title="Reply with a comment"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      Reply
+                      {Number(task.comment_count) > 0 ? (
+                        <span className="tabular-nums text-soul-muted">
+                          ({Number(task.comment_count)})
+                        </span>
+                      ) : null}
+                    </button>
                     {canManage ? (
                       <>
                         <button
@@ -500,6 +542,82 @@ export default function Tasks() {
               value={completionComment}
               onChange={(e) => setCompletionComment(e.target.value)}
               placeholder="What was completed / any notes"
+            />
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!replyTask}
+        onClose={() => {
+          setReplyTask(null);
+          setReplyBody('');
+        }}
+        title={replyTask ? `Reply · ${replyTask.title}` : 'Reply'}
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                setReplyTask(null);
+                setReplyBody('');
+              }}
+              className="btn-secondary"
+            >
+              Close
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={replyMutation.isPending}
+              onClick={() => {
+                const body = String(replyBody || '').trim();
+                if (!body) {
+                  toast.error('Write a comment first');
+                  return;
+                }
+                replyMutation.mutate({ id: replyTask.id, body });
+              }}
+            >
+              {replyMutation.isPending ? 'Sending…' : 'Send reply'}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          {replyTask?.deadline ? (
+            <p className="text-xs text-slate-500">
+              Deadline {formatDate(replyTask.deadline)}
+              {isOverdue(replyTask.deadline) && !replyTask.completed_at ? ' · overdue' : ''}
+            </p>
+          ) : null}
+          <div className="max-h-64 overflow-y-auto space-y-3 rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+            {replyLoading || replyFetching ? (
+              <p className="text-sm text-soul-muted">Loading comments…</p>
+            ) : !(replyThread || []).length ? (
+              <p className="text-sm text-soul-muted">No replies yet. Add the first comment.</p>
+            ) : (
+              (replyThread || []).map((c) => (
+                <div key={c.id} className="rounded-lg bg-white border border-slate-100 px-3 py-2">
+                  <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500">
+                    <span className="font-semibold text-slate-700">
+                      {c.author_name || 'Staff'}
+                      {String(c.author_id) === String(user?.id) ? ' (you)' : ''}
+                    </span>
+                    <span>{c.created_at ? formatDateTime(c.created_at) : ''}</span>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-700 whitespace-pre-wrap">{c.body}</p>
+                </div>
+              ))
+            )}
+          </div>
+          <div>
+            <label className="label">Your comment *</label>
+            <textarea
+              className="input min-h-[100px]"
+              value={replyBody}
+              onChange={(e) => setReplyBody(e.target.value)}
+              placeholder="Write an update or reply…"
             />
           </div>
         </div>
