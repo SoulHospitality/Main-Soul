@@ -786,7 +786,7 @@ const RESERVATIONS_CALENDAR_ROLES = ['admin', 'reservations', 'reservations_web'
 
 router.get('/ota-calendar', async (_req, res, next) => {
   try {
-    const { calendarExportUrl } = require('../../lib/otaPlatforms');
+    const { calendarExportUrl, OTA_PLATFORM_LABELS } = require('../../lib/otaPlatforms');
     const { rows: units } = await query(
       `SELECT id, wp_post_id, slug, title, unit_number, status
        FROM units
@@ -795,14 +795,29 @@ router.get('/ota-calendar', async (_req, res, next) => {
     );
     const { rows: feeds } = await query(
       `SELECT id, unit_id, wp_post_id, platform, label, ical_url, enabled,
-              last_sync_at, last_sync_error, updated_at
+              external_listing_id, sync_status, last_sync_at, last_sync_error, updated_at
        FROM unit_ota_feeds
        ORDER BY platform`
     );
     const feedsByUnit = new Map();
     for (const feed of feeds) {
       if (!feedsByUnit.has(feed.unit_id)) feedsByUnit.set(feed.unit_id, []);
-      feedsByUnit.get(feed.unit_id).push(feed);
+      const status =
+        !feed.enabled
+          ? 'disconnected'
+          : feed.sync_status === 'syncing'
+            ? 'syncing'
+            : feed.last_sync_error
+              ? 'failed'
+              : feed.last_sync_at
+                ? 'connected'
+                : feed.sync_status || 'disconnected';
+      feedsByUnit.get(feed.unit_id).push({
+        ...feed,
+        connection_type: 'ical',
+        status,
+        provider_label: `${OTA_PLATFORM_LABELS[feed.platform] || feed.platform} (iCal)`,
+      });
     }
     res.json(
       units.map((unit) => ({
@@ -822,7 +837,7 @@ router.put('/ota-calendar/:unitId/:platform', requireRoles(...RESERVATIONS_CALEN
       normalizeOtaPlatform,
       assertValidIcalUrl,
     } = require('../../lib/otaPlatforms');
-    const { refreshIcalBlocks } = require('../../services/ical');
+    const { runChannelSync } = require('../../lib/channelManager');
     const platform = normalizeOtaPlatform(req.params.platform);
     if (!platform) return res.status(400).json({ error: 'Invalid platform' });
 
@@ -832,7 +847,7 @@ router.put('/ota-calendar/:unitId/:platform', requireRoles(...RESERVATIONS_CALEN
     );
     if (!u[0]?.wp_post_id) return res.status(404).json({ error: 'Unit not found' });
 
-    const { ical_url, label, enabled } = req.body || {};
+    const { ical_url, label, enabled, external_listing_id } = req.body || {};
     if (ical_url === null || ical_url === '') {
       await query(`DELETE FROM unit_ota_feeds WHERE unit_id = $1 AND platform = $2`, [
         u[0].id,
@@ -845,15 +860,24 @@ router.put('/ota-calendar/:unitId/:platform', requireRoles(...RESERVATIONS_CALEN
 
     const { rows } = await query(
       `INSERT INTO unit_ota_feeds
-         (unit_id, wp_post_id, platform, label, ical_url, enabled, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,now())
+         (unit_id, wp_post_id, platform, label, ical_url, enabled, external_listing_id, sync_status, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'disconnected',now())
        ON CONFLICT (unit_id, platform) DO UPDATE SET
          ical_url = EXCLUDED.ical_url,
          label = EXCLUDED.label,
          enabled = EXCLUDED.enabled,
+         external_listing_id = COALESCE(EXCLUDED.external_listing_id, unit_ota_feeds.external_listing_id),
          updated_at = now()
        RETURNING *`,
-      [u[0].id, u[0].wp_post_id, platform, label || null, url, enabled !== false]
+      [
+        u[0].id,
+        u[0].wp_post_id,
+        platform,
+        label || null,
+        url,
+        enabled !== false,
+        external_listing_id || null,
+      ]
     );
 
     await query(
@@ -868,7 +892,7 @@ router.put('/ota-calendar/:unitId/:platform', requireRoles(...RESERVATIONS_CALEN
     );
     await query(`UPDATE units SET ical_url = $1, updated_at = now() WHERE id = $2`, [url, u[0].id]);
 
-    const sync = await refreshIcalBlocks({ unitId: u[0].id });
+    const sync = await runChannelSync({ feedId: rows[0].id });
     res.json({ feed: rows[0], sync });
   } catch (e) {
     if (e.message?.includes('calendar URL')) return res.status(400).json({ error: e.message });
@@ -897,9 +921,10 @@ router.delete('/ota-calendar/:unitId/:platform', requireRoles(...RESERVATIONS_CA
 
 router.post('/ota-calendar/refresh', requireRoles(...RESERVATIONS_CALENDAR_ROLES), async (req, res, next) => {
   try {
-    const { refreshIcalBlocks } = require('../../services/ical');
+    const { runChannelSync } = require('../../lib/channelManager');
     const unitId = req.body?.unit_id || null;
-    const result = await refreshIcalBlocks({ unitId });
+    const feedId = req.body?.feed_id || null;
+    const result = await runChannelSync({ unitId, feedId });
     res.json(result);
   } catch (e) {
     next(e);
@@ -925,7 +950,7 @@ router.get('/listing-ical', async (_req, res, next) => {
 router.put('/listing-ical/:unitId', requireRoles(...RESERVATIONS_CALENDAR_ROLES), async (req, res, next) => {
   try {
     const { assertValidIcalUrl } = require('../../lib/otaPlatforms');
-    const { refreshIcalBlocks } = require('../../services/ical');
+    const { runChannelSync } = require('../../lib/channelManager');
     const { ical_url, notes } = req.body || {};
     const { rows: u } = await query(`SELECT id, wp_post_id, slug, title FROM units WHERE id = $1`, [
       req.params.unitId,
@@ -959,7 +984,7 @@ router.put('/listing-ical/:unitId', requireRoles(...RESERVATIONS_CALENDAR_ROLES)
       [u[0].wp_post_id, u[0].slug, url, notes || null]
     );
     await query(`UPDATE units SET ical_url = $1, updated_at = now() WHERE id = $2`, [url, u[0].id]);
-    const sync = await refreshIcalBlocks({ unitId: u[0].id });
+    const sync = await runChannelSync({ feedId: rows[0].id });
     res.json({ ...rows[0], sync });
   } catch (e) {
     if (e.message?.includes('calendar URL')) return res.status(400).json({ error: e.message });
@@ -969,8 +994,8 @@ router.put('/listing-ical/:unitId', requireRoles(...RESERVATIONS_CALENDAR_ROLES)
 
 router.post('/listing-ical/refresh', requireRoles(...RESERVATIONS_CALENDAR_ROLES), async (req, res, next) => {
   try {
-    const { refreshIcalBlocks } = require('../../services/ical');
-    const result = await refreshIcalBlocks();
+    const { runChannelSync } = require('../../lib/channelManager');
+    const result = await runChannelSync();
     res.json(result);
   } catch (e) {
     next(e);

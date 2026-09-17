@@ -15,8 +15,9 @@ const promoRoutes = require('./routes/promoCodes');
 const recruitmentRoutes = require('./routes/recruitment');
 const salesRoutes = require('./routes/sales');
 const icalRoutes = require('./routes/ical');
+const channelManagerRoutes = require('./routes/channelManager');
 const pmsRoutes = require('./routes/pms');
-const { refreshIcalBlocks } = require('./services/ical');
+const { runChannelSync } = require('./lib/channelManager');
 
 function requireCronSecret(req, res) {
   const secret = process.env.CRON_SECRET;
@@ -113,6 +114,7 @@ function createApp() {
   app.use('/api/recruitment', recruitmentRoutes);
   app.use('/api/sales', salesRoutes);
   app.use('/api/calendar', icalRoutes);
+  app.use('/api/pms/channel-manager', channelManagerRoutes);
   app.use('/api/pms', pmsRoutes);
   app.use(
     '/api/partners',
@@ -131,7 +133,7 @@ function createApp() {
   app.get('/api/cron/refresh-ical-blocks', async (req, res, next) => {
     try {
       if (!requireCronSecret(req, res)) return;
-      const result = await refreshIcalBlocks();
+      const result = await runChannelSync();
       res.json(result);
     } catch (err) {
       next(err);

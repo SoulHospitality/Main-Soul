@@ -1,9 +1,11 @@
-const { query } = require('../config/db');
+const { pool, query } = require('../config/db');
 const { icalSourceForPlatform } = require('../lib/otaPlatforms');
+const { GUEST_AVAILABILITY_MONTHS } = require('../lib/calendarOccupancy');
 
-const FEED_TIMEOUT_MS = 9000;
+const FEED_TIMEOUT_MS = 20000;
 const CONCURRENCY = 8;
-const MONTHS_AHEAD = 8;
+const MONTHS_AHEAD = GUEST_AVAILABILITY_MONTHS;
+const MAX_REDIRECTS = 5;
 
 function localIso(d) {
   const y = d.getFullYear();
@@ -19,7 +21,19 @@ function addDaysIso(iso, n) {
 }
 
 function ymd(s) {
-  return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+  const digits = String(s || '').replace(/\D/g, '').slice(0, 8);
+  if (digits.length !== 8) return null;
+  return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+}
+
+/** Extract YYYYMMDD from DATE or DATE-TIME (local/Z) values. */
+function extractYmdToken(raw) {
+  const m = /([0-9]{8})(?:T[0-9]{6}Z?)?/.exec(String(raw || ''));
+  return m ? ymd(m[1]) : null;
+}
+
+function looksLikeIcal(text) {
+  return /BEGIN:VCALENDAR/i.test(String(text || ''));
 }
 
 function parseIcalBusyDates(ics, fromIso, toIso) {
@@ -27,16 +41,18 @@ function parseIcalBusyDates(ics, fromIso, toIso) {
   const normalized = String(ics || '')
     .replace(/\r\n/g, '\n')
     .replace(/\n[ \t]/g, '');
-  const events = normalized.split('BEGIN:VEVENT');
+  const events = normalized.split(/BEGIN:VEVENT/i);
   const toExcl = toIso || '9999-12-31';
   const from = fromIso || '1970-01-01';
 
   for (const ev of events.slice(1)) {
-    const startRaw = /DTSTART[^:]*:([0-9]{8})/.exec(ev)?.[1];
-    const endRaw = /DTEND[^:]*:([0-9]{8})/.exec(ev)?.[1];
-    if (!startRaw) continue;
-    const start = ymd(startRaw);
-    const end = endRaw ? ymd(endRaw) : addDaysIso(start, 1);
+    const startMatch = /DTSTART[^:]*:([^\r\n]+)/i.exec(ev);
+    const endMatch = /DTEND[^:]*:([^\r\n]+)/i.exec(ev);
+    if (!startMatch) continue;
+    const start = extractYmdToken(startMatch[1]);
+    if (!start) continue;
+    const end = endMatch ? extractYmdToken(endMatch[1]) : addDaysIso(start, 1);
+    if (!end) continue;
     const walkStart = start > from ? start : from;
     const walkEnd = end < toExcl ? end : toExcl;
     for (let d = new Date(`${walkStart}T00:00:00`); localIso(d) < walkEnd; d.setDate(d.getDate() + 1)) {
@@ -48,17 +64,35 @@ function parseIcalBusyDates(ics, fromIso, toIso) {
 
 async function fetchWithTimeout(url, ms = FEED_TIMEOUT_MS) {
   const { assertValidIcalUrl } = require('../lib/otaPlatforms');
-  assertValidIcalUrl(url);
+  let current = assertValidIcalUrl(url);
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
   try {
-    const res = await fetch(url, {
-      signal: ctrl.signal,
-      redirect: 'error',
-      headers: { 'User-Agent': 'SoulHospitality-iCalSync/1.0' },
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.text();
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      const res = await fetch(current, {
+        signal: ctrl.signal,
+        redirect: 'manual',
+        headers: {
+          'User-Agent': 'SoulHospitality-ChannelManager/1.0',
+          Accept: 'text/calendar, text/plain, */*',
+        },
+      });
+      if (res.status >= 300 && res.status < 400) {
+        const loc = res.headers.get('location');
+        if (!loc) throw new Error(`HTTP ${res.status} redirect without Location`);
+        const next = new URL(loc, current).toString();
+        assertValidIcalUrl(next);
+        current = next;
+        continue;
+      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      if (!looksLikeIcal(text)) {
+        throw new Error('Remote response is not a valid iCalendar feed');
+      }
+      return text;
+    }
+    throw new Error(`Too many redirects (max ${MAX_REDIRECTS})`);
   } finally {
     clearTimeout(t);
   }
@@ -73,7 +107,7 @@ async function getEnabledOtaFeeds({ unitId = null } = {}) {
   }
   const { rows } = await query(
     `SELECT f.id, f.unit_id, f.wp_post_id, f.platform, f.label, f.ical_url, f.enabled,
-            f.last_sync_at, f.last_sync_error, f.updated_at,
+            f.external_listing_id, f.sync_status, f.last_sync_at, f.last_sync_error, f.updated_at,
             u.slug AS unit_slug, u.title AS unit_title, u.status AS unit_status
      FROM unit_ota_feeds f
      JOIN units u ON u.id = f.unit_id
@@ -87,7 +121,7 @@ async function getEnabledOtaFeeds({ unitId = null } = {}) {
   return rows;
 }
 
-async function pool(items, concurrency, fn) {
+async function poolMap(items, concurrency, fn) {
   let i = 0;
   const n = Math.min(concurrency, items.length || 1);
   await Promise.all(
@@ -102,32 +136,46 @@ async function pool(items, concurrency, fn) {
 
 async function refreshFeedBlocks(feed, { from, to }) {
   const text = await fetchWithTimeout(feed.ical_url);
+  if (!looksLikeIcal(text)) {
+    throw new Error('Remote response is not a valid iCalendar feed');
+  }
   const dates = parseIcalBusyDates(text, from, to);
-  await query(`BEGIN`);
+
+  const client = await pool.connect();
   try {
-    await query(
+    await client.query('BEGIN');
+    await client.query(
       `DELETE FROM unit_ical_blocks
        WHERE feed_id = $1 AND date >= $2 AND date < $3`,
       [feed.id, from, to]
     );
     for (const date of dates) {
-      await query(
+      await client.query(
         `INSERT INTO unit_ical_blocks (feed_id, wp_post_id, platform, date, updated_at)
          VALUES ($1,$2,$3,$4,now())
          ON CONFLICT (feed_id, date) DO UPDATE SET updated_at = now(), platform = EXCLUDED.platform`,
         [feed.id, feed.wp_post_id, feed.platform, date]
       );
     }
-    await query(
+    await client.query(
       `UPDATE unit_ota_feeds
-       SET last_sync_at = now(), last_sync_error = NULL, updated_at = now()
+       SET last_sync_at = now(),
+           last_sync_error = NULL,
+           sync_status = 'connected',
+           updated_at = now()
        WHERE id = $1`,
       [feed.id]
     );
-    await query(`COMMIT`);
+    await client.query('COMMIT');
   } catch (err) {
-    await query(`ROLLBACK`);
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      /* ignore */
+    }
     throw err;
+  } finally {
+    client.release();
   }
   return dates.length;
 }
@@ -144,8 +192,12 @@ async function refreshIcalBlocks({ monthsAhead = MONTHS_AHEAD, unitId = null } =
   let errors = 0;
   const feedErrors = [];
 
-  await pool(feeds, CONCURRENCY, async (feed) => {
+  await poolMap(feeds, CONCURRENCY, async (feed) => {
     try {
+      await query(
+        `UPDATE unit_ota_feeds SET sync_status = 'syncing', updated_at = now() WHERE id = $1`,
+        [feed.id]
+      );
       const count = await refreshFeedBlocks(feed, { from, to });
       datesWritten += count;
     } catch (err) {
@@ -153,7 +205,7 @@ async function refreshIcalBlocks({ monthsAhead = MONTHS_AHEAD, unitId = null } =
       feedErrors.push({ feed_id: feed.id, platform: feed.platform, error: err.message });
       await query(
         `UPDATE unit_ota_feeds
-         SET last_sync_error = $2, updated_at = now()
+         SET last_sync_error = $2, sync_status = 'failed', updated_at = now()
          WHERE id = $1`,
         [feed.id, err.message]
       );
@@ -211,4 +263,6 @@ module.exports = {
   getEnabledOtaFeeds,
   refreshFeedBlocks,
   icalSourceForPlatform,
+  looksLikeIcal,
+  MONTHS_AHEAD,
 };
