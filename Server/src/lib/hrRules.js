@@ -780,6 +780,11 @@ function canRequestStaffBenefits(role) {
   return !NO_STAFF_BENEFIT_ROLES.has(String(role || ''));
 }
 
+/** Any staff role may request a salary loan (including admin / owner). */
+function canRequestLoan(role) {
+  return Boolean(String(role || '').trim());
+}
+
 function staffRequestPolicy(role) {
   const r = String(role || '');
   if (!canRequestStaffBenefits(r)) {
@@ -811,7 +816,7 @@ function isWfhRequest(request) {
  */
 function loanRequestPolicy(role) {
   const r = String(role || '');
-  if (!canRequestStaffBenefits(r)) {
+  if (!canRequestLoan(r)) {
     return { canRequest: false, needsManager: false, needsFinance: false, needsHr: false };
   }
   if (r === 'finance_manager') {
@@ -822,6 +827,7 @@ function loanRequestPolicy(role) {
     // Cannot self-approve HR — manager then Financial Manager.
     return { canRequest: true, needsManager: true, needsFinance: true, needsHr: false };
   }
+  // Default (including admin): HR Manager → Financial Manager.
   return { canRequest: true, needsManager: false, needsFinance: true, needsHr: true };
 }
 
@@ -1172,6 +1178,7 @@ module.exports = {
   isFieldOperationsRole,
   canRequestWfh,
   canRequestStaffBenefits,
+  canRequestLoan,
   staffRequestPolicy,
   wfhRequestPolicy,
   isWfhRequest,

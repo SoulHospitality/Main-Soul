@@ -43,6 +43,8 @@ const {
   DEFAULT_ATTENDANCE_CHECKOUT,
   normalizePersonId,
   canRequestStaffBenefits,
+  canRequestLoan,
+  loanRequestPolicy,
   staffRequestPolicy,
   eligibleReviewSlots,
   applyRequestReview,
@@ -378,6 +380,16 @@ describe('HR daily-rate deductions and leave rules', () => {
     );
     assert.equal(canRequestStaffBenefits('admin'), false);
     assert.equal(canRequestStaffBenefits('reservations_web'), true);
+    assert.equal(canRequestLoan('admin'), true);
+    assert.equal(canRequestLoan('owner'), true);
+    assert.equal(canRequestLoan('reservations_web'), true);
+    assert.equal(canRequestLoan(''), false);
+    assert.deepEqual(loanRequestPolicy('admin'), {
+      canRequest: true,
+      needsManager: false,
+      needsFinance: true,
+      needsHr: true,
+    });
     assert.equal(canRequestWfh('web_developer'), false);
     assert.equal(canRequestWfh('operations_supervisor'), false);
     assert.equal(canRequestWfh('reservations_web'), true);

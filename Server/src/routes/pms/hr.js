@@ -45,6 +45,7 @@ const {
   isFieldOperationsRole,
   canRequestWfh,
   canRequestStaffBenefits,
+  canRequestLoan,
   staffRequestPolicy,
   wfhRequestPolicy,
   loanRequestPolicy,
@@ -67,7 +68,15 @@ function isHrActor(user) {
 
 function assertCanTargetBenefits(staff) {
   if (!canRequestStaffBenefits(staff?.role)) {
-    const err = new Error('Admins do not request holidays, loans, or work-from-home days');
+    const err = new Error('Admins do not request holidays or work-from-home days');
+    err.status = 403;
+    throw err;
+  }
+}
+
+function assertCanTargetLoan(staff) {
+  if (!canRequestLoan(staff?.role)) {
+    const err = new Error('This account cannot request loans');
     err.status = 403;
     throw err;
   }
@@ -1896,10 +1905,6 @@ router.get('/hr/loans', async (req, res, next) => {
 
 router.post('/hr/loans', async (req, res, next) => {
   try {
-    if (req.user.role === 'admin') {
-      return res.status(403).json({ error: 'Admins do not request loans' });
-    }
-    if (req.user.role === 'owner') return res.status(403).json({ error: 'Forbidden' });
     const amount = parseFloat(req.body?.amount);
     const reason = String(req.body?.reason || '').trim();
     if (!(amount > 0) || !reason) {
@@ -1910,7 +1915,7 @@ router.post('/hr/loans', async (req, res, next) => {
       staffUserId = Number(req.body.staff_user_id);
     }
     const target = await loadStaffForHr(staffUserId);
-    assertCanTargetBenefits(target);
+    assertCanTargetLoan(target);
     const policy = loanRequestPolicy(target.role);
     const { rows } = await query(
       `INSERT INTO staff_loan_requests

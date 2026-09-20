@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Banknote, History, Home, Inbox } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
+  canRequestLoan,
   canRequestStaffBenefits,
   canRequestWfh,
   canSeeRequestHistory,
@@ -25,19 +26,20 @@ export default function Requests() {
   const [searchParams, setSearchParams] = useSearchParams();
   const canQueue = canSeeRequestQueue(user);
   const canHistory = canSeeRequestHistory(user);
-  const canRequestHolidayOrLoan = canRequestStaffBenefits(user);
+  const canRequestHoliday = canRequestStaffBenefits(user);
+  const canAskLoan = canRequestLoan(user);
   const canRequestWfhDay = canRequestWfh(user);
 
   const visibleTabs = useMemo(
     () =>
       TYPE_TABS.filter((tab) => {
-        if (tab.id === 'holiday') return canRequestHolidayOrLoan || canQueue;
+        if (tab.id === 'holiday') return canRequestHoliday || canQueue;
         if (tab.id === 'wfh') return canRequestWfhDay || canQueue;
-        if (tab.id === 'loans') return canRequestHolidayOrLoan || canQueue;
+        if (tab.id === 'loans') return canAskLoan || canQueue;
         if (tab.id === 'history') return canHistory;
         return false;
       }),
-    [canQueue, canHistory, canRequestHolidayOrLoan, canRequestWfhDay]
+    [canQueue, canHistory, canRequestHoliday, canAskLoan, canRequestWfhDay]
   );
 
   const rawType = searchParams.get('type') || visibleTabs[0]?.id || 'holiday';

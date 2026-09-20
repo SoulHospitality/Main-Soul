@@ -7,7 +7,7 @@ import Modal from '../components/ui/Modal';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
 import SearchFilter from '../components/ui/SearchFilter';
-import { ROLE_LABELS, canRequestStaffBenefits, canSeeRequestQueue } from '../utils/permissions';
+import { ROLE_LABELS, canRequestLoan, canSeeRequestQueue } from '../utils/permissions';
 import { currency, formatDate } from '../utils/formatters';
 import { useAuth } from '../context/AuthContext';
 import { RequestReviewActions, approvalStatusClass } from '../components/RequestReviewActions';
@@ -16,7 +16,7 @@ import { acknowledgeRequest } from '../utils/requestAcknowledgements';
 export default function Loans({ embedded = false }) {
   const { user } = useAuth();
   const canQueue = canSeeRequestQueue(user);
-  const canRequest = canRequestStaffBenefits(user);
+  const canRequest = canRequestLoan(user);
   const qc = useQueryClient();
   const [status, setStatus] = useState('pending');
   const [search, setSearch] = useState('');

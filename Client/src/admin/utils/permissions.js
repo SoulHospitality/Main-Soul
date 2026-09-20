@@ -655,6 +655,11 @@ export function canRequestStaffBenefits(user) {
   return !!user && user.role !== 'admin' && user.role !== 'owner';
 }
 
+/** Any signed-in staff role can request a loan. */
+export function canRequestLoan(user) {
+  return !!user && Boolean(String(user.role || '').trim());
+}
+
 export function canRequestWfh(user) {
   if (!canRequestStaffBenefits(user)) return false;
   const role = user.role;
