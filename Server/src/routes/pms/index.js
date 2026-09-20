@@ -2283,7 +2283,7 @@ router.post(
         return res.status(400).json({ error: 'Upload at least one ID document (image or PDF)' });
       }
 
-      const { rows } = await query(
+    const { rows } = await query(
         `UPDATE reservations SET
            id_photo_urls = COALESCE(id_photo_urls, '{}'::text[]) || $1::text[],
            updated_at = now()
@@ -4041,7 +4041,7 @@ router.post('/pricing/sync', async (req, res, next) => {
     const isAdmin = req.user.role === 'admin';
     if (!isAdmin) {
       if (!configured || secret !== configured) {
-        return res.status(401).json({ error: 'Unauthorized' });
+      return res.status(401).json({ error: 'Unauthorized' });
       }
     }
     const items = req.body.items || req.body;

@@ -46,7 +46,9 @@ const RESERVATIONS_MANUAL_PAGE_ACCESS = new Set([
   'tasks',
   'reservations',
   'schedule',
+  'calendar_sync',
   'units',
+  'projects',
   ...STAFF_HR_TABS,
 ]);
 
@@ -54,8 +56,10 @@ const RESERVATIONS_WEB_PAGE_ACCESS = new Set([
   'tasks',
   'reservations',
   'schedule',
+  'calendar_sync',
   'website_bookings',
   'units',
+  'projects',
   ...STAFF_HR_TABS,
 ]);
 
@@ -182,6 +186,9 @@ const RESERVATIONS_PERMISSIONS = [
 const RESERVATIONS_MANUAL_PERMISSIONS = [
   'units:read',
   'units:write',
+  'projects:read',
+  'projects:write',
+  'calendar_sync:write',
   'reservations:read',
   'reservations:write',
   'reservations:confirm',
@@ -194,6 +201,9 @@ const RESERVATIONS_MANUAL_PERMISSIONS = [
 
 const RESERVATIONS_WEB_PERMISSIONS = [
   ...RESERVATIONS_PERMISSIONS,
+  'projects:read',
+  'projects:write',
+  'calendar_sync:write',
 ];
 
 const HR_PERMISSIONS = [

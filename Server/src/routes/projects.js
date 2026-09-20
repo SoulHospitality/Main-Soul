@@ -15,6 +15,15 @@ const {
   FOLDER_PROJECTS,
 } = require('../config/cloudinary');
 
+const PROJECT_EDITOR_ROLES = [
+  'admin',
+  'resale',
+  'resale_manager',
+  'reservations_manager',
+  'reservations_web',
+  'reservations_manual',
+];
+
 const router = express.Router();
 
 function normalizeText(value) {
@@ -122,7 +131,7 @@ router.get('/catalog', async (_req, res, next) => {
 router.post(
   '/',
   authStaff,
-  requireRoles('admin', 'resale', 'resale_manager', 'reservations_manager'),
+  requireRoles(...PROJECT_EDITOR_ROLES),
   setCloudinaryFolder(FOLDER_PROJECTS),
   upload.single('image'),
   attachCloudinaryUrls,
@@ -183,7 +192,7 @@ router.post(
 router.put(
   '/destination/:destination',
   authStaff,
-  requireRoles('admin', 'resale', 'resale_manager', 'reservations_manager'),
+  requireRoles(...PROJECT_EDITOR_ROLES),
   async (req, res, next) => {
     try {
       const current = normalizeText(decodeURIComponent(req.params.destination));
@@ -268,7 +277,7 @@ router.put(
 router.put(
   '/:id',
   authStaff,
-  requireRoles('admin', 'resale', 'resale_manager', 'reservations_manager'),
+  requireRoles(...PROJECT_EDITOR_ROLES),
   setCloudinaryFolder(FOLDER_PROJECTS),
   upload.single('image'),
   attachCloudinaryUrls,
@@ -347,7 +356,7 @@ router.put(
 router.delete(
   '/destination/:destination',
   authStaff,
-  requireRoles('admin', 'resale', 'resale_manager', 'reservations_manager'),
+  requireRoles(...PROJECT_EDITOR_ROLES),
   async (req, res, next) => {
     try {
       const destination = normalizeText(decodeURIComponent(req.params.destination));
@@ -398,7 +407,7 @@ router.delete(
 );
 
 
-router.delete('/:id', authStaff, requireRoles('admin', 'resale', 'resale_manager', 'reservations_manager'), async (req, res, next) => {
+router.delete('/:id', authStaff, requireRoles(...PROJECT_EDITOR_ROLES), async (req, res, next) => {
   try {
     const { rows } = await query(
       `DELETE FROM location_projects WHERE id = $1 RETURNING image_url`,

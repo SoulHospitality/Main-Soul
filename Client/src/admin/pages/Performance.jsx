@@ -671,7 +671,7 @@ function ResalePerformance() {
                       <div className="font-medium text-soul-blue">{row.full_name}</div>
                       <div className="text-[11px] text-soul-muted">
                         {ROLE_LABELS[row.role] || row.role}
-                      </div>
+                  </div>
                     </td>
                     <td className="px-3 py-3 text-right tabular-nums">{row.units_today}</td>
                     <td className="px-3 py-3 text-right tabular-nums font-medium">{row.units_total}</td>
@@ -684,8 +684,8 @@ function ResalePerformance() {
               </tbody>
             </table>
           </div>
-        )}
-      </section>
+          )}
+        </section>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <DailyBars

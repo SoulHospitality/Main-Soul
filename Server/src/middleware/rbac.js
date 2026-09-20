@@ -1,8 +1,23 @@
 const PERMS = {
   admin: ['*'],
   reservations: ['reservations', 'schedule', 'units', 'tasks'],
-  reservations_web: ['reservations', 'schedule', 'units', 'website_bookings', 'tasks'],
-  reservations_manual: ['reservations', 'schedule', 'units', 'tasks'],
+  reservations_web: [
+    'reservations',
+    'schedule',
+    'units',
+    'projects',
+    'calendar_sync',
+    'website_bookings',
+    'tasks',
+  ],
+  reservations_manual: [
+    'reservations',
+    'schedule',
+    'units',
+    'projects',
+    'calendar_sync',
+    'tasks',
+  ],
   reservations_manager: [
     'reservations',
     'schedule',
@@ -10,6 +25,7 @@ const PERMS = {
     'reservation_audit',
     'units',
     'projects',
+    'calendar_sync',
     'tasks',
   ],
   unit_acquisition_agent: ['units', 'reservations', 'schedule', 'tasks'],
