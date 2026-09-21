@@ -873,8 +873,8 @@ export default function Schedule() {
   const [createDrawer, setCreateDrawer] = useState(false);
   const [createForm, setCreateForm] = useState({ ...EMPTY_MANUAL_RESERVATION_FORM });
   const [createProof, setCreateProof] = useState(null);
-  const [reserveMode, setReserveMode] = useState(false);
   const [dateSelect, setDateSelect] = useState(null);
+  const dragSelectRef = useRef(null);
 
   
   const [filterBedrooms,  setFilterBedrooms]  = useState('');
@@ -1154,17 +1154,7 @@ export default function Schedule() {
     setCreateProof(null);
     setCreateDrawer(true);
     setDateSelect(null);
-    setReserveMode(false);
-  };
-
-  const confirmDateSelection = () => {
-    if (!dateSelect?.unitId || !dateSelect.start) return;
-    const checkOut = addDays(dateSelect.end || dateSelect.start, 1);
-    openCreateDrawer({
-      unit_id: String(dateSelect.unitId),
-      check_in: dateSelect.start,
-      check_out: checkOut,
-    });
+    dragSelectRef.current = null;
   };
 
   const handleCreateReservation = () => {
@@ -1282,23 +1272,56 @@ export default function Schedule() {
     isReservationsManager ||
     isAdmin;
 
-  const handleCellReserveClick = useCallback(
-    (unit, dateStr) => {
-      if (reserveMode && canBookFromGrid) {
-        setDateSelect((prev) => {
-          if (!prev || prev.unitId !== unit.id) {
-            return { unitId: unit.id, start: dateStr, end: dateStr };
-          }
-          const start = prev.start <= dateStr ? prev.start : dateStr;
-          const end = prev.start <= dateStr ? dateStr : prev.start;
-          return { unitId: unit.id, start, end };
-        });
-        return;
-      }
-      if (canEditSchedulePricing) handlePriceClick(unit, dateStr);
+  const finishDragSelect = useCallback(() => {
+    const drag = dragSelectRef.current;
+    dragSelectRef.current = null;
+    if (!drag?.unitId || !drag.start) {
+      setDateSelect(null);
+      return;
+    }
+    const start = drag.start <= drag.end ? drag.start : drag.end;
+    const end = drag.start <= drag.end ? drag.end : drag.start;
+    openCreateDrawer({
+      unit_id: String(drag.unitId),
+      check_in: start,
+      check_out: addDays(end, 1),
+    });
+  }, [isAdmin, user?.id]);
+
+  useEffect(() => {
+    const onUp = () => {
+      if (!dragSelectRef.current) return;
+      finishDragSelect();
+    };
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => {
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+  }, [finishDragSelect]);
+
+  const startDragSelect = useCallback(
+    (unit, dateStr, event) => {
+      if (!canBookFromGrid || dateStr < TODAY) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const next = { unitId: unit.id, start: dateStr, end: dateStr };
+      dragSelectRef.current = next;
+      setDateSelect(next);
     },
-    [reserveMode, canBookFromGrid, canEditSchedulePricing, handlePriceClick]
+    [canBookFromGrid, TODAY]
   );
+
+  const extendDragSelect = useCallback((unit, dateStr) => {
+    const drag = dragSelectRef.current;
+    if (!drag || drag.unitId !== unit.id || dateStr < TODAY) return;
+    if (drag.end === dateStr) return;
+    drag.end = dateStr;
+    const start = drag.start <= dateStr ? drag.start : dateStr;
+    const end = drag.start <= dateStr ? dateStr : drag.start;
+    setDateSelect({ unitId: drag.unitId, start, end });
+  }, [TODAY]);
 
   const handleResClick = useCallback((res) => {
     
@@ -1481,7 +1504,11 @@ export default function Schedule() {
             {filterFrom || filterTo
               ? `${formatDate(fromStr)} — ${filterTo ? formatDate(filterTo) : formatDate(addDays(toStr, -1))}`
               : monthLabel}
-            {canEditPrice ? ' · Tap an open night to price or clear it' : ''}
+            {canBookFromGrid
+              ? ' · Drag across open nights to create a reservation'
+              : canEditPrice
+                ? ' · Tap the pencil on an open night to price or clear it'
+                : ''}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -1500,19 +1527,6 @@ export default function Schedule() {
                 <span className="hidden sm:inline">Hold</span>
               </button>
             </>
-          )}
-          {canBookFromGrid && (
-            <button
-              type="button"
-              onClick={() => {
-                setReserveMode((v) => !v);
-                setDateSelect(null);
-              }}
-              className={`btn-secondary flex items-center gap-2 ${reserveMode ? 'ring-2 ring-[var(--pms-accent,#283f5e)]' : ''}`}
-            >
-              <CalendarRange className="w-4 h-4" />
-              <span className="hidden sm:inline">{reserveMode ? 'Selecting dates…' : 'Select dates'}</span>
-            </button>
           )}
           <div className="flex items-center rounded-xl border border-soul-line bg-white p-0.5 shadow-sm">
             {[1, 2, 3].map((n) => (
@@ -1548,30 +1562,15 @@ export default function Schedule() {
         </div>
       </div>
 
-      {dateSelect?.unitId && reserveMode ? (
-        <div className="sticky top-2 z-20 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 shadow-sm">
+      {dateSelect?.unitId && dragSelectRef.current ? (
+        <div className="sticky top-2 z-20 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 shadow-sm pointer-events-none">
           <p className="text-sm text-sky-900">
-            Selected {formatDate(dateSelect.start)}
+            {formatDate(dateSelect.start)}
             {dateSelect.end && dateSelect.end !== dateSelect.start
               ? ` → ${formatDate(dateSelect.end)}`
               : ''}{' '}
-            · checkout {formatDate(addDays(dateSelect.end || dateSelect.start, 1))}
+            · release to create reservation
           </p>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() => {
-                setDateSelect(null);
-                setReserveMode(false);
-              }}
-            >
-              Cancel
-            </button>
-            <button type="button" className="btn-primary" onClick={confirmDateSelection}>
-              Create reservation
-            </button>
-          </div>
         </div>
       ) : null}
 
@@ -1977,8 +1976,9 @@ export default function Schedule() {
                           cell.date >= dateSelect.start &&
                           cell.date <= (dateSelect.end || dateSelect.start);
                         if (inSelectRange) cellBg = 'bg-sky-200/90';
-                        const cellClickable =
-                          !isPast && (canEditPrice || (reserveMode && canBookFromGrid));
+                        const canStartBook =
+                          canBookFromGrid && !isPast && !blockSrc && !otaLook;
+                        const cellClickable = canStartBook || (canEditPrice && !isPast);
                         return (
                           <td
                             key={j}
@@ -1986,6 +1986,8 @@ export default function Schedule() {
                               minWidth: CELL_W,
                               width: CELL_W,
                               ...(hatch ? { backgroundImage: hatch } : {}),
+                              userSelect: 'none',
+                              touchAction: canStartBook ? 'none' : undefined,
                             }}
                             className={`border-r border-slate-100 p-0 text-center align-middle ${cellBg} ${
                               otaLook ? otaLook.ringClass : ''
@@ -1996,10 +1998,22 @@ export default function Schedule() {
                             } ${cellClickable ? 'cursor-pointer group hover:brightness-[0.98]' : ''} ${
                               inSelectRange ? 'ring-1 ring-inset ring-sky-500' : ''
                             }`}
-                            onClick={() => cellClickable && handleCellReserveClick(unit, cell.date)}
+                            onPointerDown={(e) => {
+                              if (!canStartBook || e.button !== 0) return;
+                              startDragSelect(unit, cell.date, e);
+                            }}
+                            onPointerEnter={() => {
+                              if (dragSelectRef.current) extendDragSelect(unit, cell.date);
+                            }}
+                            onClick={(e) => {
+                              if (dragSelectRef.current) return;
+                              if (canEditPrice && !isPast && !canStartBook) {
+                                handlePriceClick(unit, cell.date);
+                              }
+                            }}
                             title={
-                              reserveMode && canBookFromGrid
-                                ? `Select for reservation · ${formatDate(cell.date)}`
+                              canStartBook
+                                ? `Drag to book · ${formatDate(cell.date)}`
                                 : blockSrc
                                   ? `${
                                     otaLook
@@ -2010,14 +2024,14 @@ export default function Schedule() {
                                           ? 'Reservation'
                                           : 'Admin'
                                   } · ${formatDate(cell.date)}${
-                                    canEditPrice && !isPast ? ' · Click to manage' : ''
+                                    canEditPrice && !isPast ? ' · Click pencil to manage' : ''
                                   }`
                                 : isPriced
                                   ? `${currency(price)} · ${formatDate(cell.date)}${
-                                      canEditPrice && !isPast ? ' · Click to price or block' : ''
+                                      canEditPrice && !isPast ? ' · Click pencil to price' : ''
                                     }`
                                   : `No price — guests see unavailable · ${formatDate(cell.date)}${
-                                      canEditPrice && !isPast ? ' · Click to price or block' : ''
+                                      canEditPrice && !isPast ? ' · Click pencil to price' : ''
                                     }`
                             }
                           >
@@ -2058,7 +2072,18 @@ export default function Schedule() {
                                 <span className="text-[10px] font-semibold">—</span>
                               )}
                               {canEditPrice && !isPast && (
-                                <Edit2 className="absolute bottom-1 right-1 h-2.5 w-2.5 text-soul-blue opacity-0 transition group-hover:opacity-50" />
+                                <button
+                                  type="button"
+                                  className="absolute bottom-0.5 right-0.5 rounded p-0.5 text-soul-blue opacity-0 transition group-hover:opacity-80 hover:bg-white/80"
+                                  title="Edit price / block"
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handlePriceClick(unit, cell.date);
+                                  }}
+                                >
+                                  <Edit2 className="h-2.5 w-2.5" />
+                                </button>
                               )}
                             </div>
                           </td>

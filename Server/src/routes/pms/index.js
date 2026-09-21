@@ -2851,7 +2851,7 @@ router.get('/reservations/:id', async (req, res, next) => {
 
     const { rows: payments } = await query(
       `SELECT * FROM payments
-       WHERE reservation_id = $1 OR ($2::int IS NOT NULL AND booking_id = $2)
+       WHERE reservation_id = $1 OR ($2::uuid IS NOT NULL AND booking_id = $2)
        ORDER BY payment_date DESC NULLS LAST, created_at DESC`,
       [req.params.id, row.booking_id || null]
     );
