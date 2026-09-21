@@ -44,6 +44,10 @@ const { beachAccessPersistValues } = require('../../lib/beachAccess');
 const { normalizeProjectName } = require('../../lib/projectNames');
 const { guestsFromBedrooms } = require('../../lib/guestCapacity');
 const { logAudit } = require('../../lib/audit');
+const {
+  isPartnerFeedUnit,
+  queuePartnerInventoryNotify,
+} = require('../../services/partnerWebhooks');
 const { calcReservationFinancials } = require('../../lib/commission');
 const {
   isHrTeamRole,
@@ -1140,6 +1144,7 @@ router.post('/units', requireRoles(...UNIT_EDITOR_ROLES), async (req, res, next)
       entityId: rows[0].id,
       details: { title, status },
     });
+    queuePartnerInventoryNotify({ unitId: rows[0].id, previousEligible: false });
     res.status(201).json(payload);
   } catch (e) {
     next(e);
@@ -1419,6 +1424,10 @@ async function updateUnitHandler(req, res, next) {
       entityId: req.params.id,
       details: { listing_type: listingType, title: payload.title || payload.name },
     });
+    queuePartnerInventoryNotify({
+      unitId: req.params.id,
+      previousEligible: isPartnerFeedUnit(existingRows[0]),
+    });
     res.json(payload);
   } catch (e) {
     next(e);
@@ -1455,6 +1464,10 @@ router.patch('/units/:id/unpublish', requireRoles(...UNIT_EDITOR_ROLES), async (
       action: 'UNPUBLISH_UNIT',
       entityType: 'unit',
       entityId: req.params.id,
+    });
+    queuePartnerInventoryNotify({
+      unitId: req.params.id,
+      previousEligible: isPartnerFeedUnit(existing[0]),
     });
     res.json(mapUnitRow(rows[0]));
   } catch (e) {
@@ -1499,6 +1512,10 @@ router.patch('/units/:id/publish', requireRoles(...UNIT_EDITOR_ROLES), async (re
       entityType: 'unit',
       entityId: req.params.id,
     });
+    queuePartnerInventoryNotify({
+      unitId: req.params.id,
+      previousEligible: isPartnerFeedUnit(existing[0]),
+    });
     res.json(payload);
   } catch (e) {
     next(e);
@@ -1517,13 +1534,16 @@ router.delete('/units/:id', requireRoles('admin', 'resale', 'resale_manager', ..
       req.query?.delete_reservations === 'true';
 
     const { rows: existing } = await query(
-      `SELECT id, wp_post_id, COALESCE(listing_type, 'rent') AS listing_type FROM units WHERE id = $1`,
+      `SELECT id, slug, status, wp_post_id, COALESCE(listing_type, 'rent') AS listing_type
+       FROM units WHERE id = $1`,
       [unitId]
     );
     if (!existing[0]) return res.status(404).json({ error: 'Not found' });
     if (isResaleStaff(req.user) && existing[0].listing_type !== 'sale') {
       return res.status(403).json({ error: 'Resale can only delete for-sale units' });
     }
+    const wasOnPartnerFeed = isPartnerFeedUnit(existing[0]);
+    const removedSlug = existing[0].slug || null;
 
     const { rows: reservationIds } = await query(
       `SELECT id FROM reservations WHERE unit_id = $1`,
@@ -1579,6 +1599,13 @@ router.delete('/units/:id', requireRoles('admin', 'resale', 'resale_manager', ..
         entityId: unitId,
         details: { delete_reservations: !!deleteReservations, reservation_count: resIds.length },
       });
+      if (wasOnPartnerFeed) {
+        queuePartnerInventoryNotify({
+          unitId,
+          forceRemoved: true,
+          removedSlug,
+        });
+      }
       res.json({ id: rows[0].id, deleted: true, reservations_deleted: deleteReservations ? resIds.length : 0 });
     } catch (inner) {
       await query('ROLLBACK');

@@ -2,6 +2,8 @@
 
 Private feed of **published rental** units for an external website. Details only (no availability calendar).
 
+**Access model:** read-only pull + optional outbound webhooks. Partners cannot create, edit, or delete units in Soul, and webhook payloads never include fields beyond this public inventory shape (no owner, commission, ops, or scrape internals).
+
 ## Setup (Soul)
 
 1. Set a long random secret in the server environment:
@@ -14,9 +16,16 @@ PARTNER_INVENTORY_API_KEY=replace-with-a-long-random-secret
 
 3. Give the partner the **base URL** of your API (e.g. `https://api.example.com`) and the key. They must call from **their backend** — never put the key in browser JavaScript.
 
+4. (Optional) Enable outbound inventory webhooks so Soul pushes changes to the partner:
+
+```bash
+PARTNER_WEBHOOK_URL=https://partner.example.com/webhooks/soul-inventory
+PARTNER_WEBHOOK_SECRET=replace-with-a-long-random-secret
+```
+
 ## Auth
 
-Send the key on every request:
+Send the key on every **pull** request:
 
 ```http
 Authorization: Bearer YOUR_KEY
@@ -74,6 +83,82 @@ curl -sS \
   "https://YOUR_API_HOST/api/partners/v1/inventory/some-unit-slug"
 ```
 
+## Outbound webhooks (Soul → partner)
+
+Soul can POST signed events to your `PARTNER_WEBHOOK_URL` when a published rental unit enters, changes on, or leaves the inventory feed.
+
+This is **outbound only**. Receiving a webhook does **not** grant write access to Soul.
+
+### Events
+
+| Event | Meaning |
+|-------|---------|
+| `inventory.unit.upserted` | Unit is on the partner feed (create / update / publish) |
+| `inventory.unit.removed` | Unit left the feed (unpublish / delete / no longer published rent) |
+
+### Headers
+
+```http
+Content-Type: application/json
+X-Soul-Event: inventory.unit.upserted
+X-Soul-Delivery-Id: 11111111-2222-3333-4444-555555555555
+X-Soul-Signature: sha256=<hmac-sha256-hex-of-raw-body>
+```
+
+Verify `X-Soul-Signature` with `PARTNER_WEBHOOK_SECRET` over the **raw request body**. Reject unsigned or invalid requests. Use `X-Soul-Delivery-Id` for idempotency.
+
+### Example payload (`upserted`)
+
+```json
+{
+  "id": "11111111-2222-3333-4444-555555555555",
+  "event": "inventory.unit.upserted",
+  "created_at": "2026-09-21T10:00:00.000Z",
+  "data": {
+    "unit_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "slug": "marassi-apt-12",
+    "unit": {
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "slug": "marassi-apt-12",
+      "title": "Sea-view apartment · Marassi",
+      "listing_type": "rent",
+      "status": "published",
+      "compound": "Marassi",
+      "area": "North Coast",
+      "beds": 2,
+      "baths": 2,
+      "guests": 4,
+      "cover_url": "https://…/cover.jpg",
+      "photo_urls": ["https://…/1.jpg"],
+      "from_price": 9200,
+      "price_currency": "EGP"
+    }
+  }
+}
+```
+
+`data.unit` uses the **same public inventory fields** as `GET /inventory/:id`. On `inventory.unit.removed`, `data.unit` is `null` — remove that listing from your cache (or treat a later detail `404` as gone).
+
+### Partner handler sketch (Node)
+
+```js
+const crypto = require('crypto');
+
+function verifySoulSignature(rawBody, signatureHeader, secret) {
+  const expected =
+    'sha256=' + crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+  const got = String(signatureHeader || '');
+  return (
+    got.length === expected.length &&
+    crypto.timingSafeEqual(Buffer.from(got), Buffer.from(expected))
+  );
+}
+
+// Express: app.post('/webhooks/soul-inventory', express.raw({ type: 'application/json' }), ...)
+```
+
+Soul retries failed deliveries a few times on network/5xx errors. Prefer acknowledging with `2xx` quickly, then process asynchronously.
+
 ## Unit fields
 
 Payload matches the guest-site public unit shape (owner, commission, ops, and scrape fields are stripped). Useful fields include:
@@ -95,4 +180,5 @@ Partner routes are rate-limited (about 120 requests per 15 minutes per IP), on t
 
 ## Revoking access
 
-Rotate or remove `PARTNER_INVENTORY_API_KEY` and restart the server. Old keys stop working immediately.
+- Rotate or remove `PARTNER_INVENTORY_API_KEY` and restart — pull access stops.
+- Clear or rotate `PARTNER_WEBHOOK_URL` / `PARTNER_WEBHOOK_SECRET` — outbound pushes stop.
