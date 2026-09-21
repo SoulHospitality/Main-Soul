@@ -418,3 +418,19 @@ input[type="number"]::-webkit-inner-spin-button {
   margin: 0;
 }
 input[type="number"] { -moz-appearance: textfield; }
+
+/* Schedule drag-to-book: paint via DOM class so highlight stays smooth */
+body.sched-dragging {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+body.sched-dragging * {
+  cursor: grabbing !important;
+}
+td.sched-drag-hit {
+  background-color: rgb(186 230 253) !important;
+  box-shadow: inset 0 0 0 1px rgb(14 165 233);
+}
+td.sched-drag-hit > div {
+  color: rgb(3 105 161) !important;
+}

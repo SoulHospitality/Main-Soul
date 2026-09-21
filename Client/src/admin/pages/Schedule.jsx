@@ -873,8 +873,10 @@ export default function Schedule() {
   const [createDrawer, setCreateDrawer] = useState(false);
   const [createForm, setCreateForm] = useState({ ...EMPTY_MANUAL_RESERVATION_FORM });
   const [createProof, setCreateProof] = useState(null);
-  const [dateSelect, setDateSelect] = useState(null);
   const dragSelectRef = useRef(null);
+  const dragHintRef = useRef(null);
+  const dragRafRef = useRef(0);
+  const suppressClickRef = useRef(false);
 
   
   const [filterBedrooms,  setFilterBedrooms]  = useState('');
@@ -1153,7 +1155,6 @@ export default function Schedule() {
     });
     setCreateProof(null);
     setCreateDrawer(true);
-    setDateSelect(null);
     dragSelectRef.current = null;
   };
 
@@ -1272,34 +1273,105 @@ export default function Schedule() {
     isReservationsManager ||
     isAdmin;
 
+  const clearDragPaint = useCallback(() => {
+    document.querySelectorAll('td.sched-drag-hit').forEach((el) => {
+      el.classList.remove('sched-drag-hit');
+    });
+    if (dragHintRef.current) dragHintRef.current.hidden = true;
+  }, []);
+
+  const paintDragRange = useCallback((unitId, start, end) => {
+    const lo = start <= end ? start : end;
+    const hi = start <= end ? end : start;
+    document.querySelectorAll('td.sched-drag-hit').forEach((el) => {
+      el.classList.remove('sched-drag-hit');
+    });
+    document
+      .querySelectorAll(`td[data-sched-unit="${CSS.escape(String(unitId))}"][data-sched-date]`)
+      .forEach((td) => {
+        const d = td.getAttribute('data-sched-date');
+        if (!d) return;
+        const span = Number(td.getAttribute('data-sched-span') || 1);
+        const cellEnd = span > 1 ? addDays(d, span - 1) : d;
+        if (d <= hi && cellEnd >= lo) td.classList.add('sched-drag-hit');
+      });
+    if (dragHintRef.current) {
+      const nights = Math.max(
+        1,
+        Math.round((new Date(`${hi}T00:00:00`) - new Date(`${lo}T00:00:00`)) / 86400000) + 1
+      );
+      dragHintRef.current.textContent =
+        nights === 1
+          ? `${formatDate(lo)} · release to create`
+          : `${formatDate(lo)} → ${formatDate(hi)} · ${nights} nights · release to create`;
+      dragHintRef.current.hidden = false;
+    }
+  }, []);
+
   const finishDragSelect = useCallback(() => {
+    if (dragRafRef.current) {
+      cancelAnimationFrame(dragRafRef.current);
+      dragRafRef.current = 0;
+    }
     const drag = dragSelectRef.current;
     dragSelectRef.current = null;
-    if (!drag?.unitId || !drag.start) {
-      setDateSelect(null);
-      return;
-    }
+    clearDragPaint();
+    document.body.classList.remove('sched-dragging');
+    if (!drag?.unitId || !drag.start) return;
     const start = drag.start <= drag.end ? drag.start : drag.end;
     const end = drag.start <= drag.end ? drag.end : drag.start;
+    suppressClickRef.current = true;
+    window.setTimeout(() => {
+      suppressClickRef.current = false;
+    }, 250);
     openCreateDrawer({
       unit_id: String(drag.unitId),
       check_in: start,
       check_out: addDays(end, 1),
     });
-  }, [isAdmin, user?.id]);
+  }, [clearDragPaint, isAdmin, user?.id]);
 
   useEffect(() => {
+    const onMove = (e) => {
+      const drag = dragSelectRef.current;
+      if (!drag) return;
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const td = el?.closest?.('td[data-sched-date][data-sched-unit]');
+      if (!td) return;
+      if (td.getAttribute('data-sched-unit') !== String(drag.unitId)) return;
+      let dateStr = td.getAttribute('data-sched-date');
+      const span = Number(td.getAttribute('data-sched-span') || 1);
+      if (span > 1 && dateStr) {
+        const rect = td.getBoundingClientRect();
+        const ratio = rect.width > 0 ? (e.clientX - rect.left) / rect.width : 0;
+        const offset = Math.min(span - 1, Math.max(0, Math.floor(ratio * span)));
+        dateStr = addDays(dateStr, offset);
+      }
+      if (!dateStr || dateStr < TODAY) return;
+      if (drag.end === dateStr) return;
+      drag.end = dateStr;
+      if (dragRafRef.current) return;
+      dragRafRef.current = requestAnimationFrame(() => {
+        dragRafRef.current = 0;
+        const cur = dragSelectRef.current;
+        if (!cur) return;
+        paintDragRange(cur.unitId, cur.start, cur.end);
+      });
+    };
     const onUp = () => {
       if (!dragSelectRef.current) return;
       finishDragSelect();
     };
+    window.addEventListener('pointermove', onMove, { passive: true });
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onUp);
     return () => {
+      window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
+      if (dragRafRef.current) cancelAnimationFrame(dragRafRef.current);
     };
-  }, [finishDragSelect]);
+  }, [finishDragSelect, paintDragRange, TODAY]);
 
   const startDragSelect = useCallback(
     (unit, dateStr, event) => {
@@ -1308,22 +1380,19 @@ export default function Schedule() {
       event.stopPropagation();
       const next = { unitId: unit.id, start: dateStr, end: dateStr };
       dragSelectRef.current = next;
-      setDateSelect(next);
+      document.body.classList.add('sched-dragging');
+      try {
+        event.currentTarget.setPointerCapture?.(event.pointerId);
+      } catch {
+        /* ignore */
+      }
+      paintDragRange(unit.id, dateStr, dateStr);
     },
-    [canBookFromGrid, TODAY]
+    [canBookFromGrid, TODAY, paintDragRange]
   );
 
-  const extendDragSelect = useCallback((unit, dateStr) => {
-    const drag = dragSelectRef.current;
-    if (!drag || drag.unitId !== unit.id || dateStr < TODAY) return;
-    if (drag.end === dateStr) return;
-    drag.end = dateStr;
-    const start = drag.start <= dateStr ? drag.start : dateStr;
-    const end = drag.start <= dateStr ? dateStr : drag.start;
-    setDateSelect({ unitId: drag.unitId, start, end });
-  }, [TODAY]);
-
   const handleResClick = useCallback((res) => {
+    if (suppressClickRef.current || dragSelectRef.current) return;
     
     if (res.is_hold || res.status === 'hold') {
       setHoldDetailId(res.id);
@@ -1562,17 +1631,11 @@ export default function Schedule() {
         </div>
       </div>
 
-      {dateSelect?.unitId && dragSelectRef.current ? (
-        <div className="sticky top-2 z-20 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 shadow-sm pointer-events-none">
-          <p className="text-sm text-sky-900">
-            {formatDate(dateSelect.start)}
-            {dateSelect.end && dateSelect.end !== dateSelect.start
-              ? ` → ${formatDate(dateSelect.end)}`
-              : ''}{' '}
-            · release to create reservation
-          </p>
-        </div>
-      ) : null}
+      <div
+        ref={dragHintRef}
+        hidden
+        className="sticky top-2 z-20 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-medium text-sky-900 shadow-sm pointer-events-none"
+      />
 
       
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-soul-line bg-white/90 px-4 py-3 shadow-sm">
@@ -1970,24 +2033,21 @@ export default function Schedule() {
                         else if (blockSrc) cellBg = 'bg-slate-50';
                         else if (isPriced) cellBg = 'bg-emerald-50/90';
                         else if (!isPast) cellBg = 'bg-rose-50/80';
-                        const inSelectRange =
-                          dateSelect &&
-                          dateSelect.unitId === unit.id &&
-                          cell.date >= dateSelect.start &&
-                          cell.date <= (dateSelect.end || dateSelect.start);
-                        if (inSelectRange) cellBg = 'bg-sky-200/90';
                         const canStartBook =
                           canBookFromGrid && !isPast && !blockSrc && !otaLook;
                         const cellClickable = canStartBook || (canEditPrice && !isPast);
                         return (
                           <td
                             key={j}
+                            data-sched-unit={unit.id}
+                            data-sched-date={cell.date}
+                            data-sched-bookable={canStartBook ? '1' : '0'}
                             style={{
                               minWidth: CELL_W,
                               width: CELL_W,
                               ...(hatch ? { backgroundImage: hatch } : {}),
                               userSelect: 'none',
-                              touchAction: canStartBook ? 'none' : undefined,
+                              touchAction: canBookFromGrid && !isPast ? 'none' : undefined,
                             }}
                             className={`border-r border-slate-100 p-0 text-center align-middle ${cellBg} ${
                               otaLook ? otaLook.ringClass : ''
@@ -1995,15 +2055,10 @@ export default function Schedule() {
                               isPast ? 'opacity-45' : ''
                             } ${isToday ? 'ring-1 ring-inset ring-[var(--pms-accent,#283f5e)]/35' : ''} ${
                               hasCheckinTomorrow && !blockSrc ? 'bg-orange-50' : ''
-                            } ${cellClickable ? 'cursor-pointer group hover:brightness-[0.98]' : ''} ${
-                              inSelectRange ? 'ring-1 ring-inset ring-sky-500' : ''
-                            }`}
+                            } ${cellClickable ? 'cursor-pointer group hover:brightness-[0.98]' : ''}`}
                             onPointerDown={(e) => {
                               if (!canStartBook || e.button !== 0) return;
                               startDragSelect(unit, cell.date, e);
-                            }}
-                            onPointerEnter={() => {
-                              if (dragSelectRef.current) extendDragSelect(unit, cell.date);
                             }}
                             onClick={(e) => {
                               if (dragSelectRef.current) return;
@@ -2098,6 +2153,8 @@ export default function Schedule() {
                         return (
                           <td
                             key={j}
+                            data-sched-unit={unit.id}
+                            data-sched-date={cell.date}
                             style={{ minWidth: CELL_W, width: CELL_W }}
                             className="border-r border-slate-100 p-0 align-middle"
                           >
@@ -2126,6 +2183,8 @@ export default function Schedule() {
                         return (
                           <td
                             key={j}
+                            data-sched-unit={unit.id}
+                            data-sched-date={cell.date}
                             style={{ minWidth: CELL_W, width: CELL_W }}
                             className="border-r border-slate-100 p-0 align-middle"
                           >
@@ -2166,6 +2225,9 @@ export default function Schedule() {
                         return (
                           <td
                             key={j}
+                            data-sched-unit={unit.id}
+                            data-sched-date={cell.date}
+                            data-sched-span={cell.span}
                             colSpan={cell.span}
                             style={{ minWidth: CELL_W * cell.span }}
                             className="border-r border-slate-100 p-0 align-middle"
@@ -2199,6 +2261,8 @@ export default function Schedule() {
                         return (
                           <td
                             key={j}
+                            data-sched-unit={unit.id}
+                            data-sched-date={cell.date}
                             style={{ minWidth: CELL_W, width: CELL_W }}
                             className="border-r border-slate-100 p-0 align-middle bg-emerald-50/90"
                           >
