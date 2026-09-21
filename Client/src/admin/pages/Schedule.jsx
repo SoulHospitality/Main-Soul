@@ -168,6 +168,8 @@ function PriceEditorModal({
   unitId,
   unitName,
   dateStr,
+  presetFrom,
+  presetTo,
   currentPrice,
   blockSource,
   onSave,
@@ -184,10 +186,13 @@ function PriceEditorModal({
   
   useEffect(() => {
     setPrice(currentPrice ? String(currentPrice) : '');
-    setApplyTo('day');
-    setRangeFrom(dateStr);
-    setRangeTo(dateStr);
-  }, [open, dateStr, currentPrice]);
+    const from = presetFrom || dateStr || '';
+    const to = presetTo || dateStr || '';
+    const multi = from && to && from !== to;
+    setApplyTo(multi ? 'range' : 'day');
+    setRangeFrom(from);
+    setRangeTo(to);
+  }, [open, dateStr, currentPrice, presetFrom, presetTo]);
 
   const getRange = () => {
     if (applyTo === 'day')    return { from: dateStr, to: dateStr };
@@ -877,6 +882,7 @@ export default function Schedule() {
   const dragHintRef = useRef(null);
   const dragRafRef = useRef(0);
   const suppressClickRef = useRef(false);
+  const [rangeAction, setRangeAction] = useState(null);
 
   
   const [filterBedrooms,  setFilterBedrooms]  = useState('');
@@ -1254,12 +1260,15 @@ export default function Schedule() {
   const hasFilters = filterBedrooms || filterProject || filterFrom || filterTo || filterColor || filterUnits.length || filterFloor || filterPriceMin || filterPriceMax || filterAvailable;
   const clearFilters = () => { setFilterBedrooms(''); setFilterProject(''); setFilterFrom(''); setFilterTo(''); setFilterColor(''); setFilterUnits([]); setFilterFloor(''); setFilterPriceMin(''); setFilterPriceMax(''); setFilterAvailable(false); };
 
-  const handlePriceClick = useCallback((unit, dateStr) => {
+  const handlePriceClick = useCallback((unit, dateStr, rangeEnd = null) => {
     if (!canEditSchedulePricing) return;
+    const end = rangeEnd || dateStr;
     setPriceCell({
       unitId: unit.id,
       unitName: unit.name,
       dateStr,
+      presetFrom: dateStr,
+      presetTo: end,
       currentPrice: getUnitDayPrice(unit, dateStr),
       blockSource: blockMap[unit.id]?.[dateStr] || null,
     });
@@ -1302,39 +1311,112 @@ export default function Schedule() {
       );
       dragHintRef.current.textContent =
         nights === 1
-          ? `${formatDate(lo)} · release to create`
-          : `${formatDate(lo)} → ${formatDate(hi)} · ${nights} nights · release to create`;
+          ? `${formatDate(lo)} · release to choose`
+          : `${formatDate(lo)} → ${formatDate(hi)} · ${nights} nights · release to choose`;
       dragHintRef.current.hidden = false;
     }
   }, []);
 
-  const finishDragSelect = useCallback(() => {
+  const clearRangeAction = useCallback(() => {
+    setRangeAction(null);
+    clearDragPaint();
+  }, [clearDragPaint]);
+
+  const finishCellGesture = useCallback(() => {
     if (dragRafRef.current) {
       cancelAnimationFrame(dragRafRef.current);
       dragRafRef.current = 0;
     }
     const drag = dragSelectRef.current;
     dragSelectRef.current = null;
-    clearDragPaint();
     document.body.classList.remove('sched-dragging');
-    if (!drag?.unitId || !drag.start) return;
+    if (!drag?.unitId || !drag.start) {
+      clearDragPaint();
+      return;
+    }
+
     const start = drag.start <= drag.end ? drag.start : drag.end;
     const end = drag.start <= drag.end ? drag.end : drag.start;
+
+    // Click (no drag) → edit when possible, otherwise single-night reserve
+    if (!drag.moved) {
+      clearDragPaint();
+      if (drag.canEdit && drag.unit) {
+        handlePriceClick(drag.unit, start);
+      } else if (drag.canBook) {
+        openCreateDrawer({
+          unit_id: String(drag.unitId),
+          check_in: start,
+          check_out: addDays(end, 1),
+        });
+      }
+      return;
+    }
+
+    // Drag → choose edit or reserve
     suppressClickRef.current = true;
     window.setTimeout(() => {
       suppressClickRef.current = false;
     }, 250);
-    openCreateDrawer({
-      unit_id: String(drag.unitId),
-      check_in: start,
-      check_out: addDays(end, 1),
-    });
-  }, [clearDragPaint, isAdmin, user?.id]);
+
+    if (drag.canEdit && drag.canBook) {
+      paintDragRange(drag.unitId, start, end);
+      setRangeAction({
+        unitId: drag.unitId,
+        unit: drag.unit,
+        start,
+        end,
+        canEdit: true,
+        canBook: true,
+      });
+      if (dragHintRef.current) dragHintRef.current.hidden = true;
+      return;
+    }
+
+    clearDragPaint();
+    if (drag.canBook) {
+      openCreateDrawer({
+        unit_id: String(drag.unitId),
+        check_in: start,
+        check_out: addDays(end, 1),
+      });
+    } else if (drag.canEdit && drag.unit) {
+      handlePriceClick(drag.unit, start, end);
+    }
+  }, [clearDragPaint, handlePriceClick, paintDragRange, isAdmin, user?.id]);
 
   useEffect(() => {
+    const DRAG_THRESHOLD_PX = 6;
     const onMove = (e) => {
       const drag = dragSelectRef.current;
       if (!drag) return;
+
+      if (!drag.moved) {
+        const dx = e.clientX - drag.originX;
+        const dy = e.clientY - drag.originY;
+        const farEnough = dx * dx + dy * dy >= DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX;
+        if (!farEnough) {
+          // Still check if pointer already entered another day cell
+          const peek = document.elementFromPoint(e.clientX, e.clientY);
+          const peekTd = peek?.closest?.('td[data-sched-date][data-sched-unit]');
+          const peekDate = peekTd?.getAttribute('data-sched-date');
+          if (
+            !peekTd ||
+            peekTd.getAttribute('data-sched-unit') !== String(drag.unitId) ||
+            !peekDate ||
+            peekDate === drag.start
+          ) {
+            return;
+          }
+        }
+        if (!drag.canBook && !drag.canEdit) {
+          return;
+        }
+        drag.moved = true;
+        document.body.classList.add('sched-dragging');
+        paintDragRange(drag.unitId, drag.start, drag.end);
+      }
+
       const el = document.elementFromPoint(e.clientX, e.clientY);
       const td = el?.closest?.('td[data-sched-date][data-sched-unit]');
       if (!td) return;
@@ -1354,13 +1436,13 @@ export default function Schedule() {
       dragRafRef.current = requestAnimationFrame(() => {
         dragRafRef.current = 0;
         const cur = dragSelectRef.current;
-        if (!cur) return;
+        if (!cur?.moved) return;
         paintDragRange(cur.unitId, cur.start, cur.end);
       });
     };
     const onUp = () => {
       if (!dragSelectRef.current) return;
-      finishDragSelect();
+      finishCellGesture();
     };
     window.addEventListener('pointermove', onMove, { passive: true });
     window.addEventListener('pointerup', onUp);
@@ -1371,24 +1453,33 @@ export default function Schedule() {
       window.removeEventListener('pointercancel', onUp);
       if (dragRafRef.current) cancelAnimationFrame(dragRafRef.current);
     };
-  }, [finishDragSelect, paintDragRange, TODAY]);
+  }, [finishCellGesture, paintDragRange, TODAY]);
 
-  const startDragSelect = useCallback(
-    (unit, dateStr, event) => {
-      if (!canBookFromGrid || dateStr < TODAY) return;
+  const startCellGesture = useCallback(
+    (unit, dateStr, event, { canEdit, canBook }) => {
+      if (dateStr < TODAY) return;
+      if (!canEdit && !canBook) return;
+      if (event.button !== 0) return;
       event.preventDefault();
       event.stopPropagation();
-      const next = { unitId: unit.id, start: dateStr, end: dateStr };
-      dragSelectRef.current = next;
-      document.body.classList.add('sched-dragging');
+      dragSelectRef.current = {
+        unitId: unit.id,
+        unit,
+        start: dateStr,
+        end: dateStr,
+        originX: event.clientX,
+        originY: event.clientY,
+        moved: false,
+        canEdit: Boolean(canEdit),
+        canBook: Boolean(canBook),
+      };
       try {
         event.currentTarget.setPointerCapture?.(event.pointerId);
       } catch {
         /* ignore */
       }
-      paintDragRange(unit.id, dateStr, dateStr);
     },
-    [canBookFromGrid, TODAY, paintDragRange]
+    [TODAY]
   );
 
   const handleResClick = useCallback((res) => {
@@ -1573,11 +1664,13 @@ export default function Schedule() {
             {filterFrom || filterTo
               ? `${formatDate(fromStr)} — ${filterTo ? formatDate(filterTo) : formatDate(addDays(toStr, -1))}`
               : monthLabel}
-            {canBookFromGrid
-              ? ' · Drag across open nights to create a reservation'
-              : canEditPrice
-                ? ' · Tap the pencil on an open night to price or clear it'
-                : ''}
+            {canEditPrice && canBookFromGrid
+              ? ' · Click to edit · Drag for Edit or Reserve'
+              : canBookFromGrid
+                ? ' · Drag across open nights to create a reservation'
+                : canEditPrice
+                  ? ' · Click or drag nights to edit prices'
+                  : ''}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -1636,6 +1729,54 @@ export default function Schedule() {
         hidden
         className="sticky top-2 z-20 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-medium text-sky-900 shadow-sm pointer-events-none"
       />
+
+      {rangeAction ? (
+        <div className="sticky top-2 z-20 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 shadow-sm">
+          <p className="text-sm font-medium text-sky-900">
+            {formatDate(rangeAction.start)}
+            {rangeAction.end !== rangeAction.start ? ` → ${formatDate(rangeAction.end)}` : ''}
+            {' · '}
+            what do you want to do?
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="btn-secondary" onClick={clearRangeAction}>
+              Cancel
+            </button>
+            {rangeAction.canEdit ? (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => {
+                  const { unit, start, end } = rangeAction;
+                  clearRangeAction();
+                  if (unit) handlePriceClick(unit, start, end);
+                }}
+              >
+                <DollarSign className="w-4 h-4" />
+                Edit prices / block
+              </button>
+            ) : null}
+            {rangeAction.canBook ? (
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => {
+                  const { unitId, start, end } = rangeAction;
+                  clearRangeAction();
+                  openCreateDrawer({
+                    unit_id: String(unitId),
+                    check_in: start,
+                    check_out: addDays(end, 1),
+                  });
+                }}
+              >
+                <Plus className="w-4 h-4" />
+                Create reservation
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-soul-line bg-white/90 px-4 py-3 shadow-sm">
@@ -2033,21 +2174,22 @@ export default function Schedule() {
                         else if (blockSrc) cellBg = 'bg-slate-50';
                         else if (isPriced) cellBg = 'bg-emerald-50/90';
                         else if (!isPast) cellBg = 'bg-rose-50/80';
-                        const canStartBook =
+                        const canEditCell = canEditPrice && !isPast;
+                        const canBookCell =
                           canBookFromGrid && !isPast && !blockSrc && !otaLook;
-                        const cellClickable = canStartBook || (canEditPrice && !isPast);
+                        const cellClickable = canEditCell || canBookCell;
                         return (
                           <td
                             key={j}
                             data-sched-unit={unit.id}
                             data-sched-date={cell.date}
-                            data-sched-bookable={canStartBook ? '1' : '0'}
+                            data-sched-bookable={canBookCell ? '1' : '0'}
                             style={{
                               minWidth: CELL_W,
                               width: CELL_W,
                               ...(hatch ? { backgroundImage: hatch } : {}),
                               userSelect: 'none',
-                              touchAction: canBookFromGrid && !isPast ? 'none' : undefined,
+                              touchAction: cellClickable ? 'none' : undefined,
                             }}
                             className={`border-r border-slate-100 p-0 text-center align-middle ${cellBg} ${
                               otaLook ? otaLook.ringClass : ''
@@ -2057,18 +2199,18 @@ export default function Schedule() {
                               hasCheckinTomorrow && !blockSrc ? 'bg-orange-50' : ''
                             } ${cellClickable ? 'cursor-pointer group hover:brightness-[0.98]' : ''}`}
                             onPointerDown={(e) => {
-                              if (!canStartBook || e.button !== 0) return;
-                              startDragSelect(unit, cell.date, e);
-                            }}
-                            onClick={(e) => {
-                              if (dragSelectRef.current) return;
-                              if (canEditPrice && !isPast && !canStartBook) {
-                                handlePriceClick(unit, cell.date);
-                              }
+                              startCellGesture(unit, cell.date, e, {
+                                canEdit: canEditCell,
+                                canBook: canBookCell,
+                              });
                             }}
                             title={
-                              canStartBook
-                                ? `Drag to book · ${formatDate(cell.date)}`
+                              canEditCell && canBookCell
+                                ? `Click to edit · Drag to choose Edit or Reserve · ${formatDate(cell.date)}`
+                                : canBookCell
+                                  ? `Drag to book · ${formatDate(cell.date)}`
+                                  : canEditCell
+                                    ? `Click or drag to edit · ${formatDate(cell.date)}`
                                 : blockSrc
                                   ? `${
                                     otaLook
@@ -2078,16 +2220,10 @@ export default function Schedule() {
                                         : blockSrc === 'reservation' || blockSrc === 'booking'
                                           ? 'Reservation'
                                           : 'Admin'
-                                  } · ${formatDate(cell.date)}${
-                                    canEditPrice && !isPast ? ' · Click pencil to manage' : ''
-                                  }`
+                                  } · ${formatDate(cell.date)}`
                                 : isPriced
-                                  ? `${currency(price)} · ${formatDate(cell.date)}${
-                                      canEditPrice && !isPast ? ' · Click pencil to price' : ''
-                                    }`
-                                  : `No price — guests see unavailable · ${formatDate(cell.date)}${
-                                      canEditPrice && !isPast ? ' · Click pencil to price' : ''
-                                    }`
+                                  ? `${currency(price)} · ${formatDate(cell.date)}`
+                                  : `No price — guests see unavailable · ${formatDate(cell.date)}`
                             }
                           >
                             <div
@@ -2339,6 +2475,8 @@ export default function Schedule() {
         unitId={priceCell?.unitId}
         unitName={priceCell?.unitName}
         dateStr={priceCell?.dateStr}
+        presetFrom={priceCell?.presetFrom}
+        presetTo={priceCell?.presetTo}
         currentPrice={priceCell?.currentPrice}
         blockSource={priceCell?.blockSource}
         saving={priceMutation.isPending || blockMutation.isPending}
