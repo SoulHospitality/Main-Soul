@@ -10,8 +10,6 @@ import { housekeepingFeeForUnit } from '../../utils/housekeeping';
 import {
   computeBeachAccessFee,
   getGuestLoad,
-  isFreeBeachProject,
-  isHaciendaWestUnit,
 } from '../../utils/beachAccess';
 import SearchableSelect from './ui/SearchableSelect';
 import {
@@ -148,9 +146,8 @@ export default function ManualReservationForm({
   const beachAccessFees = Number(beachFeeInfo.fee) || 0;
   const beachIsFlat =
     beachFeeInfo.beach?.billing === 'flat' ||
-    beachFeeInfo.beach?.mode === 'hacienda_flat' ||
-    isHaciendaWestUnit(selectedUnit || {}) ||
-    isFreeBeachProject(selectedUnit || {});
+    beachFeeInfo.beach?.mode === 'flat' ||
+    beachFeeInfo.beach?.mode === 'free';
   const total = Number(form.total_amount) || 0;
   const downPayment = Number(form.down_payment) || 0;
   const insurance = Number(form.insurance) || 0;

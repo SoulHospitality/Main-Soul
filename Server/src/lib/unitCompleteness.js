@@ -1,12 +1,9 @@
-
-
 const { isGaiaUnit } = require('./minStay');
-const { isFreeBeachProject, beachAccessRequiresManualEntry } = require('./beachAccess');
+const { beachAccessRequiresManualEntry } = require('./beachAccess');
 
 function hasText(v) {
   return String(v || '').trim().length > 0;
 }
-
 
 function hasNumberSet(v) {
   if (v === undefined || v === null || v === '') return false;
@@ -28,22 +25,9 @@ function descriptionText(unit) {
   return unit.the_property || unit.description || unit.short_description || '';
 }
 
-function beachAdult(unit) {
-  return unit.access_fee_per_adult_egp ?? unit.beach_access_price;
-}
-
-function beachExtra(unit) {
-  return unit.access_fee_per_teen_egp ?? unit.beach_access_extra_guest;
-}
-
-function beachDays(unit) {
-  return unit.access_card_count_included ?? unit.beach_access_days;
-}
-
 function isSaleUnit(unit) {
   return String(unit?.listing_type || 'rent').toLowerCase() === 'sale';
 }
-
 
 function assessUnitCompleteness(unit, { hasPrice = false } = {}) {
   const missing = [];
@@ -69,11 +53,7 @@ function assessUnitCompleteness(unit, { hasPrice = false } = {}) {
       missing.push('price (fallback or daily rates)');
     }
     if (!hasNumberSet(unit.utilities_cost)) missing.push('utilities cost');
-    if (beachAccessRequiresManualEntry(unit)) {
-      if (!hasNumberSet(beachAdult(unit))) missing.push('beach access price');
-      if (!hasNumberSet(beachExtra(unit))) missing.push('beach access extra guest');
-      if (!(Number(beachDays(unit)) >= 1)) missing.push('beach access period');
-    }
+    // Beach access is configured on the project, not the unit.
   }
 
   if (!hasText(descriptionText(unit))) missing.push('description');
@@ -84,11 +64,7 @@ function assessUnitCompleteness(unit, { hasPrice = false } = {}) {
   return { complete: missing.length === 0, missing };
 }
 
-
-function resolveListingStatus({
-  unit,
-  hasPrice = false,
-} = {}) {
+function resolveListingStatus({ unit, hasPrice = false } = {}) {
   const assessment = assessUnitCompleteness(unit, { hasPrice });
   return {
     status: assessment.complete ? 'published' : 'draft',
@@ -99,9 +75,6 @@ function resolveListingStatus({
 module.exports = {
   assessUnitCompleteness,
   resolveListingStatus,
-  hasPhotos,
-  isSaleUnit,
   isGaiaUnit,
-  isFreeBeachProject,
   beachAccessRequiresManualEntry,
 };

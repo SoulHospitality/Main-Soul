@@ -3,6 +3,7 @@ const { query } = require('../config/db');
 const { quoteStay, getBlockedDates, getStayCheckoutDates, todayIsoBusiness, toIsoDate, nightsBetween } = require('../services/pricing');
 const { GUEST_AVAILABILITY_MONTHS } = require('../lib/calendarOccupancy');
 const { DEFAULT_MIN_STAY_NIGHTS } = require('../lib/minStay');
+const { enrichUnitsWithBeachPolicy, withBeachPolicy } = require('../lib/beachAccess');
 
 const router = express.Router();
 
@@ -280,7 +281,7 @@ router.get('/', async (req, res, next) => {
     }
 
     const sql = `
-      SELECT u.id, u.slug, u.title, u.status, u.compound, u.area, u.city, u.beds, u.baths, u.guests,
+      SELECT u.id, u.slug, u.title, u.status, u.compound, u.project, u.area, u.city, u.beds, u.baths, u.guests,
              u.cover_url,
              CASE
                WHEN u.photo_urls IS NULL THEN NULL
@@ -303,8 +304,11 @@ router.get('/', async (req, res, next) => {
     );
     const facilitiesByProject = await projectFacilitiesMap(rows.map((r) => r.compound || r.project));
     const { today, map: todayPriceByWp } = await loadTodayPriceMap(rows.map((r) => r.wp_post_id));
+    const items = await enrichUnitsWithBeachPolicy(
+      rows.map((r) => attachFacilities(r, facilitiesByProject, todayPriceByWp, today))
+    );
     res.json({
-      items: rows.map((r) => attachFacilities(r, facilitiesByProject, todayPriceByWp, today)),
+      items,
       total: countRes.rows[0].c,
     });
   } catch (err) {
@@ -338,7 +342,9 @@ router.get('/:idOrSlug', async (req, res, next) => {
       rows[0].compound || rows[0].project,
     ]);
     const { today, map: todayPriceByWp } = await loadTodayPriceMap([rows[0].wp_post_id]);
-    res.json(attachFacilities(rows[0], facilitiesByProject, todayPriceByWp, today));
+    res.json(
+      await withBeachPolicy(attachFacilities(rows[0], facilitiesByProject, todayPriceByWp, today))
+    );
   } catch (err) {
     next(err);
   }

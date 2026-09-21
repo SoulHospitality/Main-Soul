@@ -5,7 +5,6 @@ const { requireRoles } = require('../../middleware/auth');
 const { logAudit } = require('../../lib/audit');
 const { syncReservationPaymentStatus } = require('../../lib/syncReservationPayment');
 const { DEFAULT_CHECKLIST, ensurePreArrivalTasks } = require('../../jobs/housekeepingTasks');
-const { computeFees } = require('../../services/pricing');
 
 const router = express.Router();
 
@@ -197,28 +196,11 @@ function paymentBreakdown(row) {
   }
 
   let serviceFees = 0;
-  let serviceFeePercent = 0;
-  let securityDeposit = 0;
+  let serviceFeePercent = 15;
+  let securityDeposit = Number(row.security_deposit_egp) || 0;
   try {
-    const unitCtx = {
-      property_type: row.property_type,
-      cleaning_fee_egp: row.cleaning_fee_egp,
-      access_fee_per_adult_egp: row.access_fee_per_adult_egp,
-      access_fee_per_teen_egp: row.access_fee_per_teen_egp,
-      access_card_count_included: row.access_card_count_included,
-      security_deposit_egp: row.security_deposit_egp,
-      project: row.project,
-      compound: row.compound || row.project,
-    };
-    const fees = computeFees(unitCtx, {
-      nights,
-      subtotal: accommodation > 0 ? accommodation : Number(row.total_amount) || 0,
-      adults: adults > 0 ? adults : 0,
-      teens: children,
-    });
-    serviceFees = Number(fees.service_fee_egp) || 0;
-    serviceFeePercent = Number(fees.service_fee_percent) || 0;
-    securityDeposit = Number(fees.security_deposit_egp) || 0;
+    const subtotal = accommodation > 0 ? accommodation : Number(row.total_amount) || 0;
+    serviceFees = Math.round(Number(subtotal || 0) * (serviceFeePercent / 100));
   } catch {}
 
   const parts = {

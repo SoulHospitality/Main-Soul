@@ -53,13 +53,13 @@ export default function ListingBookingCard({
         : { adults: 1, children: 0, infants: 0 };
 
   const beachSummary = (() => {
-    if (isFreeBeachProject(unit) || beach.mode === 'free') {
+    if (beach.mode === 'free' || isFreeBeachProject(unit)) {
       return t('listing.beachFree');
     }
-    if (isHaciendaWestUnit(unit) || beach.mode === 'hacienda_flat') {
+    if (beach.mode === 'flat' || isHaciendaWestUnit(unit)) {
       return t('listing.beachFlatStay', { amount: money(beach.flat || beach.adult) });
     }
-    if (isGaiaUnit(unit) || beach.mode === 'gaia') {
+    if (beach.mode === 'gaia_tiers' || isGaiaUnit(unit)) {
       return t('listing.gaiaBeachSummary');
     }
     if (!(beach.adult > 0)) return null;

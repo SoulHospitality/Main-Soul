@@ -91,11 +91,11 @@ async function getDailyPriceMap(wpPostId, from, to) {
   return { map, rows };
 }
 
-function computeFees(unit, { nights, subtotal, adults = 1, teens = 0 }) {
+async function computeFees(unit, { nights, subtotal, adults = 1, teens = 0 }) {
   const { housekeepingFeeForUnit } = require('../lib/housekeeping');
   const { computeBeachAccessFee } = require('../lib/beachAccess');
   const cleaning = housekeepingFeeForUnit(unit);
-  const { fee: access, beach } = computeBeachAccessFee(unit, { nights, adults, teens });
+  const { fee: access, beach } = await computeBeachAccessFee(unit, { nights, adults, teens });
   
   const servicePct = 15;
   const service = Math.round(Number(subtotal || 0) * (servicePct / 100));
@@ -184,7 +184,7 @@ async function quoteStay({
     });
   }
 
-  const fees = computeFees(unit, { nights, subtotal, adults, teens });
+  const fees = await computeFees(unit, { nights, subtotal, adults, teens });
   const total = subtotal + fees.fees_total;
 
   return {

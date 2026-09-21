@@ -1,11 +1,221 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { ImagePlus, MapPin, Pencil, Plus, Trash2, Upload } from 'lucide-react';
+import { ImagePlus, MapPin, Pencil, Plus, Trash2, Upload, Waves } from 'lucide-react';
 
 import { PROJECT_CATALOG_KEY } from '../../hooks/useProjectCatalog';
 import TagSelect from '../components/ui/TagSelect';
 import { FACILITY_SUGGESTIONS } from '../utils/facilitySuggestions';
+
+const BEACH_MODES = [
+  { value: 'per_guest', label: 'Per guest' },
+  { value: 'flat', label: 'Flat per stay' },
+  { value: 'free', label: 'Free' },
+  { value: 'gaia_tiers', label: 'GAIA night tiers' },
+];
+
+const BEACH_PERIODS = [
+  { value: 1, label: 'Every 1 day' },
+  { value: 3, label: 'Every 3 days' },
+  { value: 7, label: 'Every 7 days' },
+  { value: 14, label: 'Every 14 days' },
+];
+
+const EMPTY_BEACH = {
+  beach_access_enabled: false,
+  beach_access_mode: 'per_guest',
+  beach_access_adult_egp: '',
+  beach_access_extra_egp: '',
+  beach_access_days: 7,
+  beach_access_flat_egp: '',
+  beach_access_flat_studio_egp: '',
+};
+
+function beachFromRow(row) {
+  if (!row?.beach_access_enabled) return { ...EMPTY_BEACH };
+  return {
+    beach_access_enabled: true,
+    beach_access_mode: row.beach_access_mode || 'per_guest',
+    beach_access_adult_egp: row.beach_access_adult_egp ?? '',
+    beach_access_extra_egp: row.beach_access_extra_egp ?? '',
+    beach_access_days: Number(row.beach_access_days) || 7,
+    beach_access_flat_egp: row.beach_access_flat_egp ?? '',
+    beach_access_flat_studio_egp: row.beach_access_flat_studio_egp ?? '',
+  };
+}
+
+function appendBeachFields(fd, beach) {
+  fd.append('beach_access_enabled', beach.beach_access_enabled ? 'true' : 'false');
+  if (!beach.beach_access_enabled) return;
+  fd.append('beach_access_mode', beach.beach_access_mode || 'per_guest');
+  fd.append('beach_access_days', String(beach.beach_access_days || 7));
+  if (beach.beach_access_mode === 'per_guest') {
+    if (beach.beach_access_adult_egp !== '' && beach.beach_access_adult_egp != null) {
+      fd.append('beach_access_adult_egp', String(beach.beach_access_adult_egp));
+    }
+    if (beach.beach_access_extra_egp !== '' && beach.beach_access_extra_egp != null) {
+      fd.append('beach_access_extra_egp', String(beach.beach_access_extra_egp));
+    }
+  }
+  if (beach.beach_access_mode === 'flat') {
+    if (beach.beach_access_flat_egp !== '' && beach.beach_access_flat_egp != null) {
+      fd.append('beach_access_flat_egp', String(beach.beach_access_flat_egp));
+    }
+    if (beach.beach_access_flat_studio_egp !== '' && beach.beach_access_flat_studio_egp != null) {
+      fd.append('beach_access_flat_studio_egp', String(beach.beach_access_flat_studio_egp));
+    }
+  }
+}
+
+function beachSummary(row) {
+  if (!row?.beach_access_enabled) return null;
+  const mode = row.beach_access_mode || 'per_guest';
+  if (mode === 'free') return 'Free beach access';
+  if (mode === 'gaia_tiers') return 'GAIA night-tiered rates';
+  if (mode === 'flat') {
+    const flat = Number(row.beach_access_flat_egp) || 0;
+    const studio = Number(row.beach_access_flat_studio_egp) || flat;
+    return `Flat stay: ${flat.toLocaleString('en-US')} EGP (studio ${studio.toLocaleString('en-US')})`;
+  }
+  const adult = Number(row.beach_access_adult_egp) || 0;
+  const extra = Number(row.beach_access_extra_egp) || 0;
+  const days = Number(row.beach_access_days) || 7;
+  return `Per guest: ${adult.toLocaleString('en-US')} EGP` +
+    (extra > 0 ? ` · extra ${extra.toLocaleString('en-US')}` : '') +
+    ` / ${days} day${days === 1 ? '' : 's'}`;
+}
+
+function BeachAccessEditor({ beach, setBeach }) {
+  if (!beach.beach_access_enabled) {
+    return (
+      <div className="md:col-span-2">
+        <button
+          type="button"
+          className="btn-secondary text-sm"
+          onClick={() => setBeach((b) => ({ ...b, beach_access_enabled: true }))}
+        >
+          <Plus className="h-3.5 w-3.5" /> Add beach access
+        </button>
+        <p className="mt-1.5 text-xs text-gray-500">
+          Optional. Applies to every unit in this project.
+        </p>
+      </div>
+    );
+  }
+
+  const mode = beach.beach_access_mode || 'per_guest';
+  return (
+    <div className="md:col-span-2 space-y-3 rounded-xl border border-sky-100 bg-sky-50/60 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold text-sky-950 inline-flex items-center gap-2">
+          <Waves className="h-4 w-4" /> Beach access
+        </p>
+        <button
+          type="button"
+          className="text-xs font-medium text-red-600 hover:underline"
+          onClick={() => setBeach({ ...EMPTY_BEACH })}
+        >
+          Remove beach access
+        </button>
+      </div>
+      <div className="form-grid">
+        <div>
+          <label className="label">Pricing mode</label>
+          <select
+            className="input"
+            value={mode}
+            onChange={(e) => setBeach((b) => ({ ...b, beach_access_mode: e.target.value }))}
+          >
+            {BEACH_MODES.map((m) => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
+          </select>
+        </div>
+        {mode !== 'gaia_tiers' && mode !== 'free' ? (
+          <div>
+            <label className="label">Access period</label>
+            <select
+              className="input"
+              value={beach.beach_access_days || 7}
+              onChange={(e) => setBeach((b) => ({ ...b, beach_access_days: Number(e.target.value) }))}
+            >
+              {BEACH_PERIODS.map((p) => (
+                <option key={p.value} value={p.value}>{p.label}</option>
+              ))}
+            </select>
+          </div>
+        ) : null}
+        {mode === 'per_guest' ? (
+          <>
+            <div>
+              <label className="label">Adult / guest (EGP)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className="input"
+                value={beach.beach_access_adult_egp}
+                onChange={(e) => setBeach((b) => ({ ...b, beach_access_adult_egp: e.target.value }))}
+                placeholder="Per person / period"
+              />
+            </div>
+            <div>
+              <label className="label">Extra guest (EGP)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className="input"
+                value={beach.beach_access_extra_egp}
+                onChange={(e) => setBeach((b) => ({ ...b, beach_access_extra_egp: e.target.value }))}
+                placeholder="Optional"
+              />
+            </div>
+          </>
+        ) : null}
+        {mode === 'flat' ? (
+          <>
+            <div>
+              <label className="label">Flat fee (EGP)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className="input"
+                value={beach.beach_access_flat_egp}
+                onChange={(e) => setBeach((b) => ({ ...b, beach_access_flat_egp: e.target.value }))}
+                placeholder="Non-studio units"
+              />
+            </div>
+            <div>
+              <label className="label">Studio flat fee (EGP)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className="input"
+                value={beach.beach_access_flat_studio_egp}
+                onChange={(e) => setBeach((b) => ({ ...b, beach_access_flat_studio_egp: e.target.value }))}
+                placeholder="Studios"
+              />
+            </div>
+          </>
+        ) : null}
+        {mode === 'gaia_tiers' ? (
+          <p className="sm:col-span-2 text-xs text-sky-900">
+            Automatic by stay length: 3 nights → 1,900 / extra 2,500 · 4 nights → 2,500 / extra 3,100 ·
+            5+ nights → 3,500 / extra 4,100.
+          </p>
+        ) : null}
+        {mode === 'free' ? (
+          <p className="sm:col-span-2 text-xs text-sky-900">
+            No beach fees are charged for units in this project.
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 async function catalogFetch(path, options = {}) {
   const token = localStorage.getItem('pms_token');
@@ -42,12 +252,14 @@ export default function Projects() {
   const [projectNameInput, setProjectNameInput] = useState('');
   const [createFacilities, setCreateFacilities] = useState([]);
   const [createMinNights, setCreateMinNights] = useState(4);
+  const [createBeach, setCreateBeach] = useState({ ...EMPTY_BEACH });
   const [createImageFile, setCreateImageFile] = useState(null);
   const [createImagePreview, setCreateImagePreview] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState('');
   const [editFacilities, setEditFacilities] = useState([]);
   const [editMinNights, setEditMinNights] = useState(4);
+  const [editBeach, setEditBeach] = useState({ ...EMPTY_BEACH });
   const [editImageFile, setEditImageFile] = useState(null);
   const [editImagePreview, setEditImagePreview] = useState('');
   const [editingDestination, setEditingDestination] = useState(false);
@@ -76,12 +288,13 @@ export default function Projects() {
   }, [projectsByDestination, selectedDestination]);
 
   const createMutation = useMutation({
-    mutationFn: ({ destination, name, facilities, minNights, imageFile }) => {
+    mutationFn: ({ destination, name, facilities, minNights, beach, imageFile }) => {
       const fd = new FormData();
       fd.append('destination', destination);
       fd.append('name', name);
       fd.append('facilities', JSON.stringify(facilities || []));
       fd.append('min_nights', String(minNights));
+      appendBeachFields(fd, beach || EMPTY_BEACH);
       if (imageFile) fd.append('image', imageFile);
       return catalogFetch('/projects', { method: 'POST', body: fd });
     },
@@ -91,6 +304,7 @@ export default function Projects() {
       setDestinationInput('');
       setCreateFacilities([]);
       setCreateMinNights(4);
+      setCreateBeach({ ...EMPTY_BEACH });
       clearCreateImage();
       refetch();
       qc.invalidateQueries({ queryKey: PROJECT_CATALOG_KEY });
@@ -101,11 +315,12 @@ export default function Projects() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, name, facilities, minNights, imageFile }) => {
+    mutationFn: ({ id, name, facilities, minNights, beach, imageFile }) => {
       const fd = new FormData();
       if (name) fd.append('name', name);
       fd.append('facilities', JSON.stringify(facilities || []));
       fd.append('min_nights', String(minNights));
+      appendBeachFields(fd, beach || EMPTY_BEACH);
       if (imageFile) fd.append('image', imageFile);
       return catalogFetch(`/projects/${id}`, { method: 'PUT', body: fd });
     },
@@ -115,6 +330,7 @@ export default function Projects() {
       setEditName('');
       setEditFacilities([]);
       setEditMinNights(4);
+      setEditBeach({ ...EMPTY_BEACH });
       clearEditImage();
       refetch();
       qc.invalidateQueries({ queryKey: PROJECT_CATALOG_KEY });
@@ -237,6 +453,7 @@ export default function Projects() {
       name,
       facilities: createFacilities,
       minNights,
+      beach: createBeach,
       imageFile: createImageFile,
     });
     setSelectedDestination(destination);
@@ -256,6 +473,7 @@ export default function Projects() {
     setEditName(row.name || '');
     setEditFacilities(Array.isArray(row.facilities) ? row.facilities : []);
     setEditMinNights(Math.max(1, Number(row.min_nights) || 4));
+    setEditBeach(beachFromRow(row));
     clearEditImage();
   }
 
@@ -291,8 +509,8 @@ export default function Projects() {
       <div className="page-header">
         <h1 className="page-title">Destinations & Projects</h1>
         <p className="page-subtitle">
-          Manage destination → project mappings, minimum stays, homepage slide photos, and shared
-          compound facilities.
+          Manage destination → project mappings, minimum stays, optional beach access, homepage
+          slide photos, and shared compound facilities.
         </p>
       </div>
 
@@ -397,6 +615,7 @@ export default function Projects() {
             selectedTags={createFacilities}
             onTagsChange={setCreateFacilities}
           />
+          <BeachAccessEditor beach={createBeach} setBeach={setCreateBeach} />
         </div>
         <button type="submit" className="btn-primary" disabled={createMutation.isPending}>
           {createMutation.isPending ? 'Saving…' : 'Add project'}
@@ -569,6 +788,13 @@ export default function Projects() {
                           <p className="mt-1 text-xs font-medium text-gray-600">
                             Min stay: {Number(row.min_nights) || 4} nights
                           </p>
+                          {beachSummary(row) ? (
+                            <p className="mt-1 text-xs font-medium text-sky-800">
+                              Beach: {beachSummary(row)}
+                            </p>
+                          ) : (
+                            <p className="mt-1 text-xs text-gray-400">No beach access</p>
+                          )}
                           {!row.image_url && !editImagePreview ? (
                             <p className="mt-1 text-xs text-amber-700">No homepage slide photo yet</p>
                           ) : null}
@@ -600,6 +826,7 @@ export default function Projects() {
                                   name,
                                   facilities: editFacilities,
                                   minNights: Math.max(1, parseInt(editMinNights, 10) || 4),
+                                  beach: editBeach,
                                   imageFile: editImageFile,
                                 });
                               }}
@@ -614,6 +841,7 @@ export default function Projects() {
                                 setEditName('');
                                 setEditFacilities([]);
                                 setEditMinNights(4);
+                                setEditBeach({ ...EMPTY_BEACH });
                                 clearEditImage();
                               }}
                             >
@@ -686,6 +914,7 @@ export default function Projects() {
                           selectedTags={editFacilities}
                           onTagsChange={setEditFacilities}
                         />
+                        <BeachAccessEditor beach={editBeach} setBeach={setEditBeach} />
                       </div>
                     ) : facilities.length ? (
                       <div className="flex flex-wrap gap-1.5">

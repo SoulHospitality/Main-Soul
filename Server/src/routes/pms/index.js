@@ -40,7 +40,7 @@ const {
   isAdmin,
 } = require('../../lib/reservationScope');
 const { lookupProjectMinNights } = require('../../lib/minStay');
-const { beachAccessPersistValues } = require('../../lib/beachAccess');
+const { beachAccessPersistValues, enrichUnitsWithBeachPolicy, withBeachPolicy, computeBeachAccessFee } = require('../../lib/beachAccess');
 const { normalizeProjectName } = require('../../lib/projectNames');
 const { guestsFromBedrooms } = require('../../lib/guestCapacity');
 const { logAudit } = require('../../lib/audit');
@@ -925,7 +925,7 @@ router.get('/units', async (req, res, next) => {
        ORDER BY created_at DESC`,
       params
     );
-    sendList(res, rows.map(mapUnitRow));
+    sendList(res, await enrichUnitsWithBeachPolicy(rows.map(mapUnitRow)));
   } catch (e) {
     next(e);
   }
@@ -974,35 +974,11 @@ router.post('/units', requireRoles(...UNIT_EDITOR_ROLES), async (req, res, next)
     const amenities = normalizeTagList(b.amenities);
     
     const facilities = undefined;
-    let beachPrice =
-      listingType === 'sale'
-        ? null
-        : toNum(b.beach_access_price ?? b.access_fee_per_adult_egp, { int: true });
-    let beachExtra =
-      listingType === 'sale'
-        ? null
-        : toNum(b.beach_access_extra_guest ?? b.access_fee_per_teen_egp, { int: true });
-    let beachDays =
-      listingType === 'sale'
-        ? null
-        : toNum(b.beach_access_days ?? b.access_card_count_included, { int: true, fallback: 7 });
-
-    const beachOverride = beachAccessPersistValues(
-      { listing_type: listingType },
-      {
-        project: toText(b.project || b.projectName || b.compound, compound),
-        compound,
-        area,
-        property_type: propertyType,
-        type: propertyType,
-        beds,
-      }
-    );
-    if (beachOverride) {
-      beachPrice = beachOverride.adult;
-      beachExtra = beachOverride.extra;
-      beachDays = beachOverride.days;
-    }
+    // Beach access is configured on the project, not the unit.
+    const beachOverride = beachAccessPersistValues();
+    const beachPrice = beachOverride.adult;
+    const beachExtra = beachOverride.extra;
+    const beachDays = beachOverride.days;
     let photoUrls = Array.isArray(b.photo_urls) ? b.photo_urls : [];
     let coverUrl = null;
     let coverDriveLink = null;
@@ -1051,12 +1027,6 @@ router.post('/units', requireRoles(...UNIT_EDITOR_ROLES), async (req, res, next)
         min_nights: minNights,
         price_fallback: priceFallback,
         utilities_cost: utilitiesCost,
-        access_fee_per_adult_egp: beachPrice,
-        access_fee_per_teen_egp: beachExtra,
-        access_card_count_included: beachDays,
-        beach_access_price: beachPrice,
-        beach_access_extra_guest: beachExtra,
-        beach_access_days: beachDays,
         the_property: description,
         description,
         amenities,
@@ -1133,7 +1103,7 @@ router.post('/units', requireRoles(...UNIT_EDITOR_ROLES), async (req, res, next)
         disableAutomaticReservations,
       ]
     );
-    const payload = mapUnitRow(rows[0]);
+    const payload = await withBeachPolicy(mapUnitRow(rows[0]));
     payload.listing_completeness = {
       complete: completeness.complete,
       missing: completeness.missing,
@@ -1167,21 +1137,20 @@ async function updateUnitHandler(req, res, next) {
     const opsStatus = b.ops_status
       || (['available', 'occupied', 'maintenance'].includes(b.status) ? b.status : null);
 
-    let beachPrice = b.beach_access_price !== undefined || b.access_fee_per_adult_egp !== undefined
-      ? toNum(b.beach_access_price ?? b.access_fee_per_adult_egp, { int: true })
-      : null;
-    let beachExtra = b.beach_access_extra_guest !== undefined || b.access_fee_per_teen_egp !== undefined
-      ? toNum(b.beach_access_extra_guest ?? b.access_fee_per_teen_egp, { int: true })
-      : null;
-    let beachDays = b.beach_access_days !== undefined || b.access_card_count_included !== undefined
-      ? toNum(b.beach_access_days ?? b.access_card_count_included, { int: true })
-      : null;
+    let beachPrice = null;
+    let beachExtra = null;
+    let beachDays = null;
+    const beachOverride = beachAccessPersistValues();
+    if (beachOverride) {
+      beachPrice = beachOverride.adult;
+      beachExtra = beachOverride.extra;
+      beachDays = beachOverride.days;
+    }
 
     const { rows: existingRows } = await query(
       `SELECT other_details, price_fallback, wp_post_id, property_type, status,
               project, compound, area, beds, listing_type, size_m2,
-              utilities_cost, access_fee_per_adult_egp, access_fee_per_teen_egp,
-              access_card_count_included, cover_url, photo_urls
+              utilities_cost, cover_url, photo_urls
        FROM units WHERE id = $1`,
       [req.params.id]
     );
@@ -1231,22 +1200,6 @@ async function updateUnitHandler(req, res, next) {
       b.beds !== undefined || b.bedrooms !== undefined
         ? toNum(b.beds ?? b.bedrooms, { int: true })
         : existingRows[0].beds;
-    const beachOverride = beachAccessPersistValues(
-      { listing_type: listingType },
-      {
-        project: nextProject,
-        compound: nextCompound,
-        area: nextArea,
-        property_type: propertyType,
-        type: propertyType,
-        beds: nextBeds,
-      }
-    );
-    if (beachOverride) {
-      beachPrice = beachOverride.adult;
-      beachExtra = beachOverride.extra;
-      beachDays = beachOverride.days;
-    }
     let photoUrls = b.photo_urls ?? null;
     let coverUrl = null;
     let coverDriveLink;
@@ -1411,7 +1364,7 @@ async function updateUnitHandler(req, res, next) {
     );
     if (!rows[0]) return res.status(404).json({ error: 'Not found' });
     const synced = await syncUnitListingStatus(req.params.id);
-    const payload = mapUnitRow(synced || rows[0]);
+    const payload = await withBeachPolicy(mapUnitRow(synced || rows[0]));
     if (synced?._completeness) {
       payload.listing_completeness = {
         complete: synced._completeness.complete,
@@ -1471,7 +1424,7 @@ router.patch('/units/:id/unpublish', requireRoles(...UNIT_EDITOR_ROLES), async (
       unitId: req.params.id,
       previousEligible: isPartnerFeedUnit(existing[0]),
     });
-    res.json(mapUnitRow(rows[0]));
+    res.json(await withBeachPolicy(mapUnitRow(rows[0])));
   } catch (e) {
     next(e);
   }
@@ -1500,7 +1453,7 @@ router.patch('/units/:id/publish', requireRoles(...UNIT_EDITOR_ROLES), async (re
       [otherDetails, req.params.id]
     );
     const synced = await syncUnitListingStatus(req.params.id);
-    const payload = mapUnitRow(synced || existing[0]);
+    const payload = await withBeachPolicy(mapUnitRow(synced || existing[0]));
     if (synced?._completeness) {
       payload.listing_completeness = {
         complete: synced._completeness.complete,
@@ -1887,12 +1840,13 @@ router.post(
       if (isOwnerResEarly || truthyFlag(b.is_hold) || !unitRow) {
         beachAccessFees = 0;
       } else {
-        const { computeBeachAccessFee } = require('../../lib/beachAccess');
-        beachAccessFees = computeBeachAccessFee(unitRow, {
-          nights,
-          adults: party.adults,
-          teens: party.children,
-        }).fee;
+        beachAccessFees = (
+          await computeBeachAccessFee(unitRow, {
+            nights,
+            adults: party.adults,
+            teens: party.children,
+          })
+        ).fee;
       }
     }
 
@@ -2652,7 +2606,7 @@ router.get('/reservations/schedule', async (req, res, next) => {
        ORDER BY COALESCE(project, compound), title`,
       unitParams
     );
-    const units = unitRows.map(mapUnitRow);
+    const units = await enrichUnitsWithBeachPolicy(unitRows.map(mapUnitRow));
     const unitIds = units.map((u) => u.id);
     if (unitIds.length === 0) return res.json({ units: [], reservations: [] });
 

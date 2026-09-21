@@ -15,16 +15,6 @@ import { currency, UNIT_TYPES, normalizePropertyType, unitDisplay } from '../uti
 import SearchableSelect from '../components/ui/SearchableSelect';
 import { useProjectCatalog } from '../../hooks/useProjectCatalog';
 import { normalizeProjectName } from '../../utils/projectNames';
-import {
-  beachAccessFormDefaults,
-  beachAccessRequiresManualEntry,
-  isFreeBeachProject,
-  isHaciendaWestUnit,
-  isIlMonteGalalaUnit,
-  isFoukaBayUnit,
-  HACIENDA_WEST_BEACH,
-} from '../../utils/beachAccess';
-import { isGaiaUnit } from '../../utils/bookingRules';
 import TagSelect from '../components/ui/TagSelect';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 
@@ -48,13 +38,6 @@ const VIEW_OPTIONS = [
   'Back View',
   'Garden View',
   'Lagoon View',
-];
-
-const BEACH_ACCESS_PERIODS = [
-  { value: 1, label: 'Every 1 day' },
-  { value: 3, label: 'Every 3 days' },
-  { value: 7, label: 'Every 7 days' },
-  { value: 14, label: 'Every 14 days' },
 ];
 
 
@@ -136,9 +119,6 @@ const EMPTY_FORM = {
   description: '',
   amenities: [],
   location_link: '',
-  beach_access_price: '',
-  beach_access_days: 7,
-  beach_access_extra_guest: '',
   unit_area: '',
 };
 
@@ -245,21 +225,12 @@ function UnitForm({ form, setForm, listingType = 'rent' }) {
   const isSale = listingType === 'sale';
   const { destinations, projectsByDestination } = useProjectCatalog();
   const projectOptions = projectsByDestination[form.destination] || [];
-  const projectCtx = { project: form.project, compound: form.project, listing_type: listingType };
-  const showBeachFields = !isSale && beachAccessRequiresManualEntry(projectCtx);
-  const gaiaProject = !isSale && isGaiaUnit(projectCtx);
-  const galalaProject = !isSale && isIlMonteGalalaUnit(projectCtx);
-  const haciendaWest = !isSale && isHaciendaWestUnit(projectCtx);
-  const freeBeach = !isSale && isFreeBeachProject(projectCtx);
-  const foukaBay = !isSale && isFoukaBayUnit(projectCtx);
 
   function applyProjectChange(project) {
-    const beachDefaults = beachAccessFormDefaults(project);
     setForm((f) => ({
       ...f,
       project,
       compound: project,
-      ...(beachDefaults || {}),
     }));
   }
 
@@ -439,57 +410,9 @@ function UnitForm({ form, setForm, listingType = 'rent' }) {
               <label className="label">Utilities Cost Per Night (EGP)</label>
               <input type="number" min="0" step="0.01" className="input" value={form.utilities_cost} onChange={e => setForm(f => ({ ...f, utilities_cost: e.target.value }))} placeholder="0.00" />
             </div>
-            {showBeachFields ? (
-              <>
-                <div>
-                  <label className="label">Beach access price (EGP)</label>
-                  <input type="number" min="0" step="0.01" className="input" value={form.beach_access_price} onChange={e => setForm(f => ({ ...f, beach_access_price: e.target.value }))} placeholder="Per person / period" />
-                </div>
-                <div>
-                  <label className="label">Beach access period</label>
-                  <select
-                    className="input"
-                    value={form.beach_access_days || 7}
-                    onChange={e => setForm(f => ({ ...f, beach_access_days: Number(e.target.value) }))}
-                  >
-                    {BEACH_ACCESS_PERIODS.map((p) => (
-                      <option key={p.value} value={p.value}>{p.label}</option>
-                    ))}
-                  </select>
-                </div>
-                {foukaBay ? (
-                  <div className="sm:col-span-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-900">
-                    <strong>Fouka Bay:</strong> beach access is free for children — only adults are charged.
-                  </div>
-                ) : (
-                  <div>
-                    <label className="label">Beach access — extra guest (EGP)</label>
-                    <input type="number" min="0" step="0.01" className="input" value={form.beach_access_extra_guest} onChange={e => setForm(f => ({ ...f, beach_access_extra_guest: e.target.value }))} placeholder="Per extra guest / period" />
-                  </div>
-                )}
-              </>
-            ) : gaiaProject ? (
-              <div className="sm:col-span-2 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2.5 text-sm text-sky-900">
-                <strong>GAIA beach access</strong> is automatic by stay length (no fields needed):
-                3 nights → 1,900 / extra 2,500 · 4 nights → 2,500 / extra 3,100 · 5+ nights → 3,500 / extra 4,100 (per 7 nights).
-              </div>
-            ) : galalaProject ? (
-              <div className="sm:col-span-2 rounded-lg border border-cyan-100 bg-cyan-50 px-3 py-2.5 text-sm text-cyan-950">
-                <strong>IL Monte Galala beach access</strong> is automatic:
-                750 EGP per guest / 7 days · Extra person 1,000 EGP.
-              </div>
-            ) : haciendaWest ? (
-              <div className="sm:col-span-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2.5 text-sm text-amber-950">
-                <strong>Hacienda West beach access</strong> is automatic (flat per stay, not per person):
-                Studio → {HACIENDA_WEST_BEACH.studio.toLocaleString('en-US')} EGP ·
-                Anything else → {HACIENDA_WEST_BEACH.other.toLocaleString('en-US')} EGP.
-                Guest count / capacity does not change the fee.
-              </div>
-            ) : freeBeach ? (
-              <div className="sm:col-span-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-900">
-                <strong>Free beach access</strong> for this project (D-Bay). No beach fees are charged.
-              </div>
-            ) : null}
+            <p className="sm:col-span-2 text-xs text-gray-500">
+              Beach access is set on the project (Destinations &amp; Projects), not per unit.
+            </p>
           </>
         )}
       </div>
@@ -604,7 +527,7 @@ function UnitForm({ form, setForm, listingType = 'rent' }) {
               Auto — published when every field is filled, otherwise draft
             </div>
             <p className="text-xs text-gray-400 mt-1">
-              Status is set automatically. Missing required fields keeps the unit as draft and hidden from guests. GAIA, IL Monte Galala, Hacienda West, and free-beach projects do not need beach access fields.
+              Status is set automatically. Missing required fields keeps the unit as draft and hidden from guests. Beach access is configured on the project.
             </p>
           </div>
         </div>
@@ -790,9 +713,6 @@ export default function Units({ listingType = 'rent' }) {
       photo_urls: Array.isArray(u.photo_urls) ? u.photo_urls : [],
       price_per_night: u.price_per_night ?? u.price_fallback ?? '',
       utilities_cost: u.utilities_cost ?? '',
-      beach_access_price: u.beach_access_price ?? u.access_fee_per_adult_egp ?? '',
-      beach_access_days: u.beach_access_days ?? u.access_card_count_included ?? 7,
-      beach_access_extra_guest: u.beach_access_extra_guest ?? u.access_fee_per_teen_egp ?? '',
       unit_area: u.unit_area ?? u.size_m2 ?? '',
       ops_status: u.ops_status || 'available',
       view: u.view || '',
@@ -818,24 +738,6 @@ export default function Units({ listingType = 'rent' }) {
       return;
     }
     const projectName = normalizeProjectName(form.project);
-    const beachDefaults = !isSale ? beachAccessFormDefaults(projectName) : null;
-    const beachPrice = isSale
-      ? null
-      : beachDefaults
-        ? (beachDefaults.beach_access_price === '' ? null : beachDefaults.beach_access_price)
-        : (form.beach_access_price === '' ? null : form.beach_access_price);
-    const beachExtra = isSale
-      ? null
-      : isFoukaBayUnit({ project: projectName, compound: projectName })
-        ? 0
-        : beachDefaults
-          ? (beachDefaults.beach_access_extra_guest === '' ? null : beachDefaults.beach_access_extra_guest)
-          : (form.beach_access_extra_guest === '' ? null : form.beach_access_extra_guest);
-    const beachDays = isSale
-      ? null
-      : beachDefaults
-        ? beachDefaults.beach_access_days
-        : (form.beach_access_days === '' ? null : form.beach_access_days);
 
     saveMutation.mutate({
       listing_type: listingType,
@@ -877,12 +779,6 @@ export default function Units({ listingType = 'rent' }) {
       cover_url: form.cover_url || '',
       unit_area: isSale ? form.unit_area : null,
       size_m2: isSale ? form.unit_area : form.unit_area || null,
-      access_fee_per_adult_egp: isSale ? null : beachPrice,
-      access_fee_per_teen_egp: isSale ? null : beachExtra,
-      access_card_count_included: isSale ? null : beachDays,
-      beach_access_price: isSale ? null : beachPrice,
-      beach_access_days: isSale ? null : beachDays,
-      beach_access_extra_guest: isSale ? null : beachExtra,
       price_per_night: isSale ? null : (form.price_per_night === '' ? null : form.price_per_night),
       utilities_cost: isSale ? null : (form.utilities_cost === '' ? null : form.utilities_cost),
     });

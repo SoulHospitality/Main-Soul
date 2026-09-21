@@ -87,11 +87,13 @@ async function priceTransferStay({ source, unit, checkIn, checkOut }) {
     : housekeepingFeeForUnit(unit);
   const beach = quote?.available
     ? Number(quote.access_fee_egp) || 0
-    : computeBeachAccessFee(unit, {
-        nights,
-        adults: adults > 0 ? adults : 1,
-        teens: children,
-      }).fee;
+    : (
+        await computeBeachAccessFee(unit, {
+          nights,
+          adults: adults > 0 ? adults : 1,
+          teens: children,
+        })
+      ).fee;
   const utilitiesPerNight = Number(unit.utilities_cost) || 0;
   const utilities = utilitiesPerNight > 0 ? roundMoney(utilitiesPerNight * nights) : 0;
 

@@ -1,41 +1,20 @@
+const { query } = require('../config/db');
 
+const GAIA_TIERS = [
+  { maxNights: 3, adult: 1900, extra: 2500, days: 3 },
+  { maxNights: 4, adult: 2500, extra: 3100, days: 4 },
+  { maxNights: Infinity, adult: 3500, extra: 4100, days: 7 },
+];
 
-const { isGaiaUnit } = require('./minStay');
-
-const GALALA_BEACH = { adult: 750, extra: 1000, days: 7 };
-const HACIENDA_WEST_BEACH = { studio: 10000, other: 12000 };
-
-function projectText(unit = {}) {
+function projectNameCandidates(unit = {}) {
   return [
-    unit.project,
-    unit.projectName,
-    unit.project_name,
-    unit.compound,
-  ]
-    .map((v) => String(v || '').trim().toLowerCase())
-    .filter(Boolean)
-    .join(' ');
+    ...new Set(
+      [unit.project, unit.projectName, unit.project_name, unit.compound]
+        .map((v) => String(v || '').trim().toLowerCase())
+        .filter(Boolean)
+    ),
+  ];
 }
-
-function isIlMonteGalalaUnit(unit = {}) {
-  const s = projectText(unit);
-  if (!s) return false;
-  
-  return /(?:il\s*)?monte\s*galala|ilmonte\s*galala/.test(s);
-}
-
-function isFoukaBayUnit(unit = {}) {
-  const s = projectText(unit);
-  if (!s) return false;
-  return /fouka/.test(s);
-}
-
-function isHaciendaWestUnit(unit = {}) {
-  const s = projectText(unit);
-  if (!s) return false;
-  return /hacienda\s*west/.test(s);
-}
-
 
 function isStudioUnit(unit = {}) {
   const type = String(unit.property_type || unit.type || '').trim().toLowerCase();
@@ -45,81 +24,194 @@ function isStudioUnit(unit = {}) {
   return false;
 }
 
-function isFreeBeachProject(unit = {}) {
-  const s = projectText(unit);
-  if (!s) return false;
-  
-  if (/\bd[-\s]?bay\b/.test(s)) return true;
+function policyFromRow(row) {
+  if (!row) {
+    return {
+      enabled: false,
+      mode: 'none',
+      adult: 0,
+      extra: 0,
+      days: 7,
+      flat: 0,
+      flat_studio: 0,
+    };
+  }
+  const enabled = Boolean(row.beach_access_enabled);
+  const mode = enabled ? String(row.beach_access_mode || 'per_guest') : 'none';
+  return {
+    enabled,
+    mode: mode === 'none' && enabled ? 'per_guest' : mode,
+    adult: Number(row.beach_access_adult_egp) || 0,
+    extra: Number(row.beach_access_extra_egp) || 0,
+    days: Number(row.beach_access_days) || 7,
+    flat: Number(row.beach_access_flat_egp) || 0,
+    flat_studio: Number(row.beach_access_flat_studio_egp) || 0,
+  };
+}
+
+function normalizeIncomingPolicy(body = {}) {
+  const enabled =
+    body.beach_access_enabled === true ||
+    body.beach_access_enabled === 'true' ||
+    body.beach_access_enabled === '1' ||
+    body.beach_access_enabled === 1;
+
+  if (!enabled) {
+    return {
+      beach_access_enabled: false,
+      beach_access_mode: 'none',
+      beach_access_adult_egp: null,
+      beach_access_extra_egp: null,
+      beach_access_days: null,
+      beach_access_flat_egp: null,
+      beach_access_flat_studio_egp: null,
+    };
+  }
+
+  let mode = String(body.beach_access_mode || 'per_guest').trim().toLowerCase();
+  if (!['per_guest', 'flat', 'free', 'gaia_tiers'].includes(mode)) mode = 'per_guest';
+
+  const num = (v) => {
+    if (v === undefined || v === null || v === '') return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  return {
+    beach_access_enabled: true,
+    beach_access_mode: mode,
+    beach_access_adult_egp: mode === 'per_guest' ? num(body.beach_access_adult_egp ?? body.beach_access_price) : null,
+    beach_access_extra_egp: mode === 'per_guest' ? num(body.beach_access_extra_egp ?? body.beach_access_extra_guest) : null,
+    beach_access_days: num(body.beach_access_days) || 7,
+    beach_access_flat_egp: mode === 'flat' ? num(body.beach_access_flat_egp ?? body.beach_access_adult_egp) : null,
+    beach_access_flat_studio_egp:
+      mode === 'flat' ? num(body.beach_access_flat_studio_egp) : null,
+  };
+}
+
+async function lookupProjectBeachAccess({ project, compound } = {}) {
+  const candidates = projectNameCandidates({ project, compound });
+  if (!candidates.length) return policyFromRow(null);
+
+  try {
+    const { rows } = await query(
+      `SELECT beach_access_enabled, beach_access_mode,
+              beach_access_adult_egp, beach_access_extra_egp, beach_access_days,
+              beach_access_flat_egp, beach_access_flat_studio_egp,
+              normalized_name
+       FROM location_projects
+       WHERE normalized_name = ANY($1::text[])
+       ORDER BY CASE WHEN normalized_name = $2 THEN 0 ELSE 1 END, id ASC
+       LIMIT 1`,
+      [candidates, candidates[0]]
+    );
+    return policyFromRow(rows[0]);
+  } catch (err) {
+    if (/beach_access_/i.test(err.message)) return policyFromRow(null);
+    throw err;
+  }
+}
+
+async function withBeachPolicy(unit) {
+  if (!unit) return unit;
+  if (unit.beach_policy && typeof unit.beach_policy === 'object') return unit;
+  const policy = await lookupProjectBeachAccess({
+    project: unit.project || unit.compound,
+    compound: unit.compound,
+  });
+  return { ...unit, beach_policy: policy };
+}
+
+async function enrichUnitsWithBeachPolicy(units) {
+  const list = Array.isArray(units) ? units : [];
+  if (!list.length) return list;
+  const names = [
+    ...new Set(list.flatMap((u) => projectNameCandidates(u))),
+  ];
+  let map = new Map();
+  if (names.length) {
+    try {
+      const { rows } = await query(
+        `SELECT normalized_name, beach_access_enabled, beach_access_mode,
+                beach_access_adult_egp, beach_access_extra_egp, beach_access_days,
+                beach_access_flat_egp, beach_access_flat_studio_egp
+         FROM location_projects
+         WHERE normalized_name = ANY($1::text[])`,
+        [names]
+      );
+      for (const row of rows) map.set(row.normalized_name, policyFromRow(row));
+    } catch (err) {
+      if (!/beach_access_/i.test(err.message)) throw err;
+    }
+  }
+  return list.map((u) => {
+    const candidates = projectNameCandidates(u);
+    let policy = policyFromRow(null);
+    for (const c of candidates) {
+      if (map.has(c)) {
+        policy = map.get(c);
+        break;
+      }
+    }
+    return { ...u, beach_policy: policy };
+  });
+}
+
+/** Units no longer carry beach policy — always false. */
+function beachAccessRequiresManualEntry() {
   return false;
 }
 
-function haciendaWestFlatFee(unit = {}) {
-  return isStudioUnit(unit) ? HACIENDA_WEST_BEACH.studio : HACIENDA_WEST_BEACH.other;
-}
-
-
-function beachAccessRequiresManualEntry(unit = {}) {
-  if (String(unit?.listing_type || 'rent').toLowerCase() === 'sale') return false;
-  if (isGaiaUnit(unit)) return false;
-  if (isIlMonteGalalaUnit(unit)) return false;
-  if (isHaciendaWestUnit(unit)) return false;
-  if (isFreeBeachProject(unit)) return false;
-  return true;
-}
-
-
 function resolveBeachAccessRates(unit = {}, nights = 0) {
-  if (isFreeBeachProject(unit)) {
-    return { adult: 0, extra: 0, days: 7, mode: 'free', billing: 'flat', flat: 0 };
+  const policy = unit.beach_policy || policyFromRow(null);
+
+  if (!policy.enabled || policy.mode === 'none') {
+    return { adult: 0, extra: 0, days: 7, mode: 'none', billing: 'flat', flat: 0 };
   }
 
-  if (isHaciendaWestUnit(unit)) {
-    const flat = haciendaWestFlatFee(unit);
+  if (policy.mode === 'free') {
+    return { adult: 0, extra: 0, days: policy.days || 7, mode: 'free', billing: 'flat', flat: 0 };
+  }
+
+  if (policy.mode === 'flat') {
+    const flat = isStudioUnit(unit)
+      ? Number(policy.flat_studio || policy.flat) || 0
+      : Number(policy.flat || policy.adult) || 0;
     return {
       adult: flat,
       extra: 0,
-      days: 7,
-      mode: 'hacienda_flat',
+      days: policy.days || 7,
+      mode: 'flat',
       billing: 'flat',
       flat,
     };
   }
 
-  if (isGaiaUnit(unit)) {
+  if (policy.mode === 'gaia_tiers') {
     const n = Math.max(0, Number(nights) || 0);
-    if (n <= 3) {
-      return { adult: 1900, extra: 2500, days: 3, mode: 'gaia', billing: 'per_guest' };
-    }
-    if (n === 4) {
-      return { adult: 2500, extra: 3100, days: 4, mode: 'gaia', billing: 'per_guest' };
-    }
-    
-    return { adult: 3500, extra: 4100, days: 7, mode: 'gaia', billing: 'per_guest' };
+    const tier = GAIA_TIERS.find((t) => n <= t.maxNights) || GAIA_TIERS[GAIA_TIERS.length - 1];
+    return {
+      adult: tier.adult,
+      extra: tier.extra,
+      days: tier.days,
+      mode: 'gaia_tiers',
+      billing: 'per_guest',
+    };
   }
 
-  if (isIlMonteGalalaUnit(unit)) {
-    return { ...GALALA_BEACH, mode: 'galala', billing: 'per_guest' };
-  }
-
-  const adult = Number(unit.access_fee_per_adult_egp ?? unit.beach_access_price ?? 0);
-  
-  const extra = isFoukaBayUnit(unit)
-    ? 0
-    : Number(unit.access_fee_per_teen_egp ?? unit.beach_access_extra_guest ?? 0);
-  const days = Number(unit.access_card_count_included ?? unit.beach_access_days ?? 7) || 7;
+  // per_guest
   return {
-    adult: Number.isFinite(adult) ? adult : 0,
-    extra: Number.isFinite(extra) ? extra : 0,
-    days,
-    mode: isFoukaBayUnit(unit) ? 'fouka' : 'manual',
+    adult: Number(policy.adult) || 0,
+    extra: Number(policy.extra) || 0,
+    days: Number(policy.days) || 7,
+    mode: 'per_guest',
     billing: 'per_guest',
   };
 }
 
-
-function computeBeachAccessFee(unit = {}, { nights = 0, adults = 1, teens = 0 } = {}) {
+function computeBeachAccessFeeSync(unit = {}, { nights = 0, adults = 1, teens = 0 } = {}) {
   const beach = resolveBeachAccessRates(unit, nights);
-  if (beach.billing === 'flat' || beach.mode === 'hacienda_flat' || beach.mode === 'free') {
+  if (beach.billing === 'flat' || beach.mode === 'free' || beach.mode === 'none') {
     const fee = Number(beach.flat != null ? beach.flat : beach.adult) || 0;
     return { fee, beach };
   }
@@ -128,48 +220,27 @@ function computeBeachAccessFee(unit = {}, { nights = 0, adults = 1, teens = 0 } 
   return { fee: accessAdult + accessTeen, beach };
 }
 
+async function computeBeachAccessFee(unit = {}, opts = {}) {
+  const enriched = await withBeachPolicy(unit);
+  return computeBeachAccessFeeSync(enriched, opts);
+}
 
-function beachAccessPersistValues(unit = {}, incoming = {}) {
-  if (String(unit?.listing_type || incoming.listing_type || 'rent').toLowerCase() === 'sale') {
-    return { adult: null, extra: null, days: null };
-  }
-  const ctx = { ...unit, ...incoming };
-  if (isGaiaUnit(ctx)) {
-    return { adult: null, extra: null, days: null };
-  }
-  if (isIlMonteGalalaUnit(ctx)) {
-    return { adult: GALALA_BEACH.adult, extra: GALALA_BEACH.extra, days: GALALA_BEACH.days };
-  }
-  if (isHaciendaWestUnit(ctx)) {
-    const flat = haciendaWestFlatFee(ctx);
-    return { adult: flat, extra: 0, days: 7 };
-  }
-  if (isFreeBeachProject(ctx)) {
-    return { adult: 0, extra: 0, days: 7 };
-  }
-  if (isFoukaBayUnit(ctx)) {
-    const adult = Number(ctx.access_fee_per_adult_egp ?? ctx.beach_access_price ?? 0);
-    const days = Number(ctx.access_card_count_included ?? ctx.beach_access_days ?? 7) || 7;
-    return {
-      adult: Number.isFinite(adult) ? adult : 0,
-      extra: 0,
-      days,
-    };
-  }
-  return null; 
+/** Stop writing beach rates onto units. */
+function beachAccessPersistValues() {
+  return { adult: null, extra: null, days: null };
 }
 
 module.exports = {
-  isFreeBeachProject,
-  isFoukaBayUnit,
-  isHaciendaWestUnit,
   isStudioUnit,
-  isIlMonteGalalaUnit,
+  policyFromRow,
+  normalizeIncomingPolicy,
+  lookupProjectBeachAccess,
+  withBeachPolicy,
+  enrichUnitsWithBeachPolicy,
   beachAccessRequiresManualEntry,
   resolveBeachAccessRates,
   computeBeachAccessFee,
+  computeBeachAccessFeeSync,
   beachAccessPersistValues,
-  haciendaWestFlatFee,
-  GALALA_BEACH,
-  HACIENDA_WEST_BEACH,
+  GAIA_TIERS,
 };

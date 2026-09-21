@@ -183,11 +183,13 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
               ? Number(booking.adults)
               : Number(booking.guests) || 1;
             const partyChildren = Number(booking.children) || 0;
-            beachAccessFees = computeBeachAccessFee(unit, {
-              nights,
-              adults: partyAdults,
-              teens: partyChildren,
-            }).fee;
+            beachAccessFees = (
+              await computeBeachAccessFee(unit, {
+                nights,
+                adults: partyAdults,
+                teens: partyChildren,
+              })
+            ).fee;
           } catch (_) {}
         }
       }

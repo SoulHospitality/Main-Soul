@@ -7,6 +7,7 @@ const {
   DEFAULT_MIN_STAY_NIGHTS,
   syncUnitsMinNightsForProject,
 } = require('../lib/minStay');
+const { normalizeIncomingPolicy } = require('../lib/beachAccess');
 const {
   upload,
   attachCloudinaryUrls,
@@ -80,14 +81,42 @@ function buildCatalog(rows) {
 }
 
 async function loadCatalogRows() {
-  const { rows } = await query(
-    `SELECT id, destination, name, image_url, sort_order,
-            COALESCE(facilities, '{}'::text[]) AS facilities,
-            COALESCE(min_nights, ${DEFAULT_MIN_STAY_NIGHTS}) AS min_nights
-     FROM location_projects
-     ORDER BY sort_order ASC, destination ASC, name ASC`
-  );
-  return rows;
+  try {
+    const { rows } = await query(
+      `SELECT id, destination, name, image_url, sort_order,
+              COALESCE(facilities, '{}'::text[]) AS facilities,
+              COALESCE(min_nights, ${DEFAULT_MIN_STAY_NIGHTS}) AS min_nights,
+              COALESCE(beach_access_enabled, false) AS beach_access_enabled,
+              COALESCE(beach_access_mode, 'none') AS beach_access_mode,
+              beach_access_adult_egp,
+              beach_access_extra_egp,
+              beach_access_days,
+              beach_access_flat_egp,
+              beach_access_flat_studio_egp
+       FROM location_projects
+       ORDER BY sort_order ASC, destination ASC, name ASC`
+    );
+    return rows;
+  } catch (err) {
+    if (!/beach_access_/i.test(String(err.message || ''))) throw err;
+    const { rows } = await query(
+      `SELECT id, destination, name, image_url, sort_order,
+              COALESCE(facilities, '{}'::text[]) AS facilities,
+              COALESCE(min_nights, ${DEFAULT_MIN_STAY_NIGHTS}) AS min_nights
+       FROM location_projects
+       ORDER BY sort_order ASC, destination ASC, name ASC`
+    );
+    return rows.map((r) => ({
+      ...r,
+      beach_access_enabled: false,
+      beach_access_mode: 'none',
+      beach_access_adult_egp: null,
+      beach_access_extra_egp: null,
+      beach_access_days: null,
+      beach_access_flat_egp: null,
+      beach_access_flat_studio_egp: null,
+    }));
+  }
 }
 
 function catalogResponse(rows) {
@@ -153,6 +182,7 @@ router.post(
         req.body?.min_nights ?? req.body?.minNights,
         DEFAULT_MIN_STAY_NIGHTS
       );
+      const beach = normalizeIncomingPolicy(req.body || {});
 
       const existing = await query(
         `SELECT id FROM location_projects
@@ -165,8 +195,10 @@ router.post(
 
       await query(
         `INSERT INTO location_projects
-           (destination, name, normalized_destination, normalized_name, image_url, sort_order, facilities, min_nights)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+           (destination, name, normalized_destination, normalized_name, image_url, sort_order, facilities, min_nights,
+            beach_access_enabled, beach_access_mode, beach_access_adult_egp, beach_access_extra_egp,
+            beach_access_days, beach_access_flat_egp, beach_access_flat_studio_egp)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
         [
           destination,
           name,
@@ -176,6 +208,13 @@ router.post(
           Number(req.body?.sort_order) || 0,
           facilities,
           minNights,
+          beach.beach_access_enabled,
+          beach.beach_access_mode,
+          beach.beach_access_adult_egp,
+          beach.beach_access_extra_egp,
+          beach.beach_access_days,
+          beach.beach_access_flat_egp,
+          beach.beach_access_flat_studio_egp,
         ]
       );
 
@@ -312,6 +351,26 @@ router.put(
         imageChanged = true;
       }
 
+      const beachTouched =
+        req.body?.beach_access_enabled !== undefined ||
+        req.body?.beach_access_mode !== undefined ||
+        req.body?.beach_access_adult_egp !== undefined ||
+        req.body?.beach_access_extra_egp !== undefined ||
+        req.body?.beach_access_days !== undefined ||
+        req.body?.beach_access_flat_egp !== undefined ||
+        req.body?.beach_access_flat_studio_egp !== undefined ||
+        req.body?.beach_access_price !== undefined;
+      const beach = beachTouched
+        ? normalizeIncomingPolicy({
+            ...existing[0],
+            ...req.body,
+            beach_access_enabled:
+              req.body?.beach_access_enabled !== undefined
+                ? req.body.beach_access_enabled
+                : existing[0].beach_access_enabled,
+          })
+        : null;
+
       await query(
         `UPDATE location_projects SET
            name = COALESCE($2, name),
@@ -319,9 +378,31 @@ router.put(
            image_url = CASE WHEN $3::boolean THEN $4 ELSE image_url END,
            facilities = COALESCE($5, facilities),
            min_nights = COALESCE($6, min_nights),
+           beach_access_enabled = COALESCE($7, beach_access_enabled),
+           beach_access_mode = COALESCE($8, beach_access_mode),
+           beach_access_adult_egp = CASE WHEN $9::boolean THEN $10 ELSE beach_access_adult_egp END,
+           beach_access_extra_egp = CASE WHEN $9::boolean THEN $11 ELSE beach_access_extra_egp END,
+           beach_access_days = CASE WHEN $9::boolean THEN $12 ELSE beach_access_days END,
+           beach_access_flat_egp = CASE WHEN $9::boolean THEN $13 ELSE beach_access_flat_egp END,
+           beach_access_flat_studio_egp = CASE WHEN $9::boolean THEN $14 ELSE beach_access_flat_studio_egp END,
            updated_at = now()
          WHERE id = $1`,
-        [id, name, imageChanged, imageUrl, facilities, minNights]
+        [
+          id,
+          name,
+          imageChanged,
+          imageUrl,
+          facilities,
+          minNights,
+          beach ? beach.beach_access_enabled : null,
+          beach ? beach.beach_access_mode : null,
+          Boolean(beach),
+          beach ? beach.beach_access_adult_egp : null,
+          beach ? beach.beach_access_extra_egp : null,
+          beach ? beach.beach_access_days : null,
+          beach ? beach.beach_access_flat_egp : null,
+          beach ? beach.beach_access_flat_studio_egp : null,
+        ]
       );
 
       if (
