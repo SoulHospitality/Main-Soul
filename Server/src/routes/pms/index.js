@@ -1109,6 +1109,18 @@ router.post('/units', requireRoles(...UNIT_EDITOR_ROLES), async (req, res, next)
       missing: completeness.missing,
       status,
     };
+    if (listingType !== 'sale' && Number(priceFallback) > 0 && rows[0].wp_post_id) {
+      try {
+        const { seedUnitFallbackHorizon } = require('../../lib/seedFallbackPrices');
+        const seeded = await seedUnitFallbackHorizon(rows[0], {
+          months: 3,
+          source: 'unit-create-fallback',
+        });
+        payload.schedule_prices_seeded = seeded.seeded || 0;
+      } catch (seedErr) {
+        console.warn('[units] fallback schedule seed failed:', seedErr.message);
+      }
+    }
     await logAudit({
       userId: req.user.id,
       action: 'CREATE_UNIT',
