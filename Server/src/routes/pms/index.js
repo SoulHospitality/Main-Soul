@@ -49,6 +49,8 @@ const {
   queuePartnerInventoryNotify,
 } = require('../../services/partnerWebhooks');
 const { calcReservationFinancials } = require('../../lib/commission');
+const { normalizeBookingSource } = require('../../lib/bookingSources');
+const { channelRevenueSummary } = require('../../lib/channelManager');
 const {
   isHrTeamRole,
   assertCanEditStaffCompensation,
@@ -1993,7 +1995,7 @@ router.post(
         totalAmount,
         amountPaid,
         paymentStatus,
-        b.booking_source || null,
+        normalizeBookingSource(b.booking_source, { hasBookingId: Boolean(b.booking_id) }),
         salesPersonId,
         truthyFlag(b.is_owner_reservation) ? 1 : 0,
         status,
@@ -2226,7 +2228,9 @@ router.patch(
         b.check_in || b.check_out ? nights : null,
         b.total_amount != null && b.total_amount !== '' ? parseFloat(b.total_amount) : null,
         b.price_per_night != null && b.price_per_night !== '' ? parseFloat(b.price_per_night) : null,
-        b.booking_source ?? null,
+        b.booking_source !== undefined && b.booking_source !== null
+          ? normalizeBookingSource(b.booking_source, { hasBookingId: Boolean(b.booking_id || existing.booking_id) })
+          : null,
         b.sales_person_id || null,
         b.is_owner_reservation !== undefined ? (truthyFlag(b.is_owner_reservation) ? 1 : 0) : null,
         b.housekeeping_fees != null && b.housekeeping_fees !== '' ? parseFloat(b.housekeeping_fees) : null,
@@ -2721,7 +2725,7 @@ router.get('/reservations/schedule', async (req, res, next) => {
         id: `web-${b.id}`,
         is_owner_reservation: 0,
         sales_person_name: null,
-        booking_source: 'website',
+        booking_source: 'Website',
       });
     }
 
@@ -3287,7 +3291,7 @@ router.get('/dashboard/stats', async (req, res, next) => {
       Math.round((new Date(`${kpiTo}T00:00:00Z`) - new Date(`${kpiFrom}T00:00:00Z`)) / 86400000) + 1
     );
 
-    const [{ rows: nightRows }, { rows: notReadyRows }, { rows: ownerFinRows }] =
+    const [{ rows: nightRows }, { rows: notReadyRows }, { rows: ownerFinRows }, channelRevenue] =
       await Promise.all([
         query(
           `SELECT
@@ -3355,6 +3359,10 @@ router.get('/dashboard/stats', async (req, res, next) => {
              AND ($2::int IS NULL OR r.sales_person_id = $2 OR r.created_by = $2)`,
           [FINANCIAL_EPOCH, agentId]
         ).catch(() => ({ rows: [] })),
+        channelRevenueSummary({ from: monthStart, to: today, agentId }).catch(() => ({
+          channels: [],
+          totals: { count: 0, gross: 0, commission: 0, net: 0 },
+        })),
       ]);
 
     const bookedNights = Number(nightRows[0]?.booked_nights) || 0;
@@ -3463,6 +3471,7 @@ router.get('/dashboard/stats', async (req, res, next) => {
       },
       projectStats,
       monthlyRevenue,
+      revenueByChannel: channelRevenue,
       recentReservations: recentRes.rows,
     });
   } catch (e) {

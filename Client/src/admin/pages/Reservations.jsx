@@ -1644,7 +1644,15 @@ export default function Reservations() {
                   const idPhotos = Array.isArray(r.id_photo_urls) ? r.id_photo_urls.filter(Boolean) : [];
                   const isCancelled = r.status === 'cancelled';
                   return (
-                    <tr key={r.id} className={isCancelled ? 'bg-red-100/90 text-red-950' : undefined}>
+                    <tr
+                      key={r.id}
+                      className={`${isCancelled ? 'bg-red-100/90 text-red-950' : ''} ${
+                        canView ? 'cursor-pointer hover:bg-soul-blue-50/40' : ''
+                      }`}
+                      onClick={() => {
+                        if (canView) setViewRes(r.id);
+                      }}
+                    >
                       <td className="whitespace-nowrap">{formatDate(r.check_in)}</td>
                       <td className="whitespace-nowrap">{formatDate(r.check_out)}</td>
                       <td className="whitespace-nowrap font-medium text-gray-800">{r.unit_number || '—'}</td>
@@ -1717,7 +1725,7 @@ export default function Reservations() {
                       </td>
                         </>
                       )}
-                      <td>
+                      <td onClick={(e) => e.stopPropagation()}>
                         <div className="flex gap-1 flex-wrap">
                           {canView && (
                             <button onClick={() => setViewRes(r.id)} className="p-1.5 rounded text-gray-400 hover:text-primary-600 hover:bg-primary-50" title="View">

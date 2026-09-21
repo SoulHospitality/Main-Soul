@@ -33,7 +33,16 @@ export const STATUS_CONFIG = {
 export const getStatusConfig = (status) =>
   STATUS_CONFIG[status] || { label: status, className: 'badge-gray' };
 
-export const BOOKING_SOURCES = ['Private', 'Broker', 'Campaign', 'Facebook Post'];
+export const BOOKING_SOURCES = [
+  'Website',
+  'Airbnb',
+  'Booking.com',
+  'Manual',
+  'Private',
+  'Broker',
+  'Campaign',
+  'Facebook Post',
+];
 export const PAYMENT_METHODS = ['cash', 'instapay', 'bank_transfer', 'credit_card', 'online'];
 export const MANUAL_PAYMENT_METHODS = ['cash', 'instapay'];
 export const PAYMENT_METHOD_LABELS = {

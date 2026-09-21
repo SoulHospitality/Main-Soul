@@ -77,6 +77,14 @@ async function listApiConnections() {
     );
     return rows.map((c) => {
       const provider = getProvider(c.provider_key);
+      const creds = c.credentials && typeof c.credentials === 'object' ? c.credentials : {};
+      const hasCredentials = Boolean(
+        creds.api_key ||
+          creds.access_token ||
+          creds.client_id ||
+          creds.client_secret ||
+          (creds.base_url && Object.keys(creds).length > 1)
+      );
       return {
         id: c.id,
         kind: 'api_connection',
@@ -91,8 +99,10 @@ async function listApiConnections() {
         last_sync_error: c.last_sync_error,
         mappings: c.mappings || [],
         capabilities: provider?.capabilities || [],
-        configured: provider?.configured !== false,
-        has_credentials: Boolean(c.credentials && Object.keys(c.credentials).length),
+        config: c.config || {},
+        credential_keys: Object.keys(creds),
+        configured: hasCredentials,
+        has_credentials: hasCredentials,
       };
     });
   } catch (err) {
@@ -205,35 +215,81 @@ async function syncApiConnection(connectionId) {
 
   try {
     const outcomes = {};
+    await provider.authenticate(connection);
+
+    if (provider.supports(CAPABILITIES.AVAILABILITY_PUSH)) {
+      try {
+        outcomes.availability_push = await provider.pushAvailability(connection);
+      } catch (err) {
+        outcomes.availability_push = { error: err.message };
+      }
+    }
+    if (provider.supports(CAPABILITIES.RATES_PUSH)) {
+      try {
+        outcomes.rates_push = await provider.pushRates(connection);
+      } catch (err) {
+        outcomes.rates_push = { error: err.message };
+      }
+    }
     if (provider.supports(CAPABILITIES.AVAILABILITY_PULL)) {
-      outcomes.availability = await provider.pullAvailability(connection);
+      try {
+        outcomes.availability_pull = await provider.pullAvailability(connection);
+      } catch (err) {
+        outcomes.availability_pull = { error: err.message };
+      }
     }
     if (provider.supports(CAPABILITIES.RESERVATIONS_PULL)) {
       outcomes.reservations = await provider.pullReservations(connection);
     }
     if (provider.supports(CAPABILITIES.CANCELLATIONS_PULL)) {
-      outcomes.cancellations = await provider.pullCancellations(connection);
+      try {
+        outcomes.cancellations = await provider.pullCancellations(connection);
+      } catch (err) {
+        outcomes.cancellations = { error: err.message };
+      }
     }
     if (provider.supports(CAPABILITIES.MODIFICATIONS_PULL)) {
-      outcomes.modifications = await provider.pullModifications(connection);
+      try {
+        outcomes.modifications = await provider.pullModifications(connection);
+      } catch (err) {
+        outcomes.modifications = { error: err.message };
+      }
     }
+    if (provider.supports(CAPABILITIES.MESSAGES_PULL)) {
+      try {
+        const { ingestProviderMessages } = require('./messaging');
+        const raw = await provider.pullMessages(connection);
+        outcomes.messages = await ingestProviderMessages(connection, raw);
+      } catch (err) {
+        outcomes.messages = { error: err.message };
+      }
+    }
+
+    const hardFail =
+      outcomes.reservations?.error ||
+      (outcomes.availability_push?.error && outcomes.rates_push?.error);
 
     await query(
       `UPDATE channel_connections
-       SET sync_status = 'connected', last_sync_at = now(), last_sync_error = NULL, updated_at = now()
+       SET sync_status = $2, last_sync_at = now(),
+           last_sync_error = $3, updated_at = now()
        WHERE id = $1`,
-      [connectionId]
+      [
+        connectionId,
+        hardFail ? 'failed' : 'connected',
+        hardFail ? String(hardFail) : null,
+      ]
     );
     await writeSyncLog({
       connectionId,
       providerKey: connection.provider_key,
       direction: 'inbound',
       operation: 'full_sync',
-      status: 'success',
-      message: 'API sync completed',
+      status: hardFail ? 'error' : 'success',
+      message: hardFail ? String(hardFail) : 'API sync completed',
       details: outcomes,
     });
-    return { ok: true, result: outcomes, status: 'connected' };
+    return { ok: !hardFail, result: outcomes, status: hardFail ? 'failed' : 'connected' };
   } catch (err) {
     await query(
       `UPDATE channel_connections
@@ -260,7 +316,20 @@ async function syncApiConnection(connectionId) {
 async function runChannelSync({ unitId = null, feedId = null, connectionId = null } = {}) {
   if (feedId) return syncIcalFeed(feedId);
   if (connectionId) return syncApiConnection(connectionId);
-  return syncAllIcal({ unitId });
+  const ical = await syncAllIcal({ unitId });
+  const { rows: apiRows } = await query(
+    `SELECT id FROM channel_connections WHERE enabled = true AND sync_enabled = true AND connection_type = 'api'`
+  );
+  const apiResults = [];
+  for (const row of apiRows) {
+    apiResults.push({ connection_id: row.id, ...(await syncApiConnection(row.id)) });
+  }
+  return {
+    ...ical,
+    api_connections: apiRows.length,
+    api_errors: apiResults.filter((r) => !r.ok).length,
+    api_results: apiResults,
+  };
 }
 
 async function upsertApiConnection({
@@ -287,6 +356,51 @@ async function upsertApiConnection({
       JSON.stringify(config || {}),
       enabled !== false,
       syncEnabled !== false,
+    ]
+  );
+  return rows[0];
+}
+
+async function updateApiConnection(
+  connectionId,
+  {
+    displayName = undefined,
+    credentials = undefined,
+    config = undefined,
+    enabled = undefined,
+    syncEnabled = undefined,
+  } = {}
+) {
+  const { rows: existing } = await query(`SELECT * FROM channel_connections WHERE id = $1`, [
+    connectionId,
+  ]);
+  const row = existing[0];
+  if (!row) throw new Error('Connection not found');
+
+  const nextCreds =
+    credentials && typeof credentials === 'object'
+      ? { ...(row.credentials || {}), ...credentials }
+      : row.credentials;
+  const nextConfig =
+    config && typeof config === 'object' ? { ...(row.config || {}), ...config } : row.config;
+
+  const { rows } = await query(
+    `UPDATE channel_connections SET
+       display_name = COALESCE($2, display_name),
+       credentials = $3::jsonb,
+       config = $4::jsonb,
+       enabled = COALESCE($5, enabled),
+       sync_enabled = COALESCE($6, sync_enabled),
+       updated_at = now()
+     WHERE id = $1
+     RETURNING *`,
+    [
+      connectionId,
+      displayName ?? null,
+      JSON.stringify(nextCreds || {}),
+      JSON.stringify(nextConfig || {}),
+      enabled === undefined ? null : Boolean(enabled),
+      syncEnabled === undefined ? null : Boolean(syncEnabled),
     ]
   );
   return rows[0];
@@ -339,6 +453,7 @@ module.exports = {
   syncAllIcal,
   syncApiConnection,
   upsertApiConnection,
+  updateApiConnection,
   upsertUnitMapping,
   updateIcalFeedMapping,
   listSyncLogs,

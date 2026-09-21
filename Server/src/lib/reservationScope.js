@@ -100,7 +100,8 @@ function hasOwnOnlyReservationAccess(user) {
 function isWebsiteOriginReservation(reservation) {
   if (!reservation) return false;
   if (reservation.booking_id) return true;
-  return String(reservation.booking_source || '').trim().toLowerCase() === 'website';
+  const src = String(reservation.booking_source || '').trim().toLowerCase();
+  return src === 'website' || src === 'web';
 }
 
 function assertNotAdminReservationHandler(user, action = 'manage reservations') {
@@ -158,7 +159,7 @@ function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
     return {
       clause: ` AND (
         ${alias}.booking_id IS NOT NULL
-        OR lower(COALESCE(${alias}.booking_source, '')) = 'website'
+        OR lower(trim(COALESCE(${alias}.booking_source, ''))) IN ('website', 'web')
       )`,
       params: [],
       nextIndex: paramIndex,
@@ -275,7 +276,7 @@ function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
   )`;
 
   if (user.role === 'reservations_manual') {
-    clause += ` AND ${alias}.booking_id IS NULL AND LOWER(COALESCE(${alias}.booking_source, '')) <> 'website'`;
+    clause += ` AND ${alias}.booking_id IS NULL AND LOWER(trim(COALESCE(${alias}.booking_source, ''))) NOT IN ('website', 'web')`;
   }
 
   return { clause, params, nextIndex };

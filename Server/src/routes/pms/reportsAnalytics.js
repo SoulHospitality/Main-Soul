@@ -21,7 +21,7 @@ const RESERVATIONS_TEAM_ROLES = ['reservations', 'reservations_web', 'reservatio
 
 const WEBSITE_CHANNEL_SQL = `
   r.booking_id IS NOT NULL
-  OR lower(btrim(COALESCE(r.booking_source, ''))) = 'website'
+  OR lower(btrim(COALESCE(r.booking_source, ''))) IN ('website', 'web')
 `;
 
 const ACTIVE_STAY_SQL = `

@@ -11,6 +11,8 @@ const CAPABILITIES = {
   MODIFICATIONS_PULL: 'modifications_pull',
   UNIT_MAPPING: 'unit_mapping',
   RATE_PLAN_MAPPING: 'rate_plan_mapping',
+  MESSAGES_PULL: 'messages_pull',
+  MESSAGES_SEND: 'messages_send',
 };
 
 const ICAL_CAPABILITIES = [
@@ -31,6 +33,8 @@ const FULL_API_CAPABILITIES = [
   CAPABILITIES.MODIFICATIONS_PULL,
   CAPABILITIES.UNIT_MAPPING,
   CAPABILITIES.RATE_PLAN_MAPPING,
+  CAPABILITIES.MESSAGES_PULL,
+  CAPABILITIES.MESSAGES_SEND,
 ];
 
 module.exports = {

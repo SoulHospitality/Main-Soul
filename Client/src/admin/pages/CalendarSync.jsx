@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
   Check,
@@ -8,6 +9,8 @@ import {
   Plug,
   RefreshCw,
   Unplug,
+  MessageSquare,
+  DollarSign,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
@@ -15,10 +18,16 @@ import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
 import SearchFilter from '../components/ui/SearchFilter';
 import Modal from '../components/ui/Modal';
+import { currency } from '../utils/formatters';
 
 const PLATFORMS = [
   { id: 'airbnb', label: 'Airbnb' },
   { id: 'booking', label: 'Booking.com' },
+];
+
+const API_PROVIDERS = [
+  { key: 'booking_api', label: 'Booking.com (API)' },
+  { key: 'airbnb_api', label: 'Airbnb (API)' },
 ];
 
 const STATUS_STYLES = {
@@ -215,12 +224,287 @@ function UnitDetailsModal({ unit, open, onClose, focusPlatform }) {
   );
 }
 
+function ApiConnectionModal({ open, onClose, connection, units, providerKey: initialProvider }) {
+  const qc = useQueryClient();
+  const isEdit = Boolean(connection?.id);
+  const [providerKey, setProviderKey] = useState(initialProvider || 'booking_api');
+  const [displayName, setDisplayName] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [clientId, setClientId] = useState('');
+  const [clientSecret, setClientSecret] = useState('');
+  const [hotelId, setHotelId] = useState('');
+  const [enabled, setEnabled] = useState(true);
+  const [mapUnitId, setMapUnitId] = useState('');
+  const [mapListingId, setMapListingId] = useState('');
+  const [mapRoomType, setMapRoomType] = useState('');
+  const [mapRatePlan, setMapRatePlan] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setProviderKey(connection?.provider_key || initialProvider || 'booking_api');
+    setDisplayName(connection?.display_name || '');
+    setBaseUrl('');
+    setApiKey('');
+    setClientId('');
+    setClientSecret('');
+    setHotelId('');
+    setEnabled(connection?.enabled !== false);
+    setMapUnitId('');
+    setMapListingId('');
+    setMapRoomType('');
+    setMapRatePlan('');
+  }, [open, connection, initialProvider]);
+
+  async function saveConnection() {
+    setSaving(true);
+    try {
+      const credentials = {};
+      if (baseUrl.trim()) credentials.base_url = baseUrl.trim();
+      if (apiKey.trim()) credentials.api_key = apiKey.trim();
+      if (clientId.trim()) credentials.client_id = clientId.trim();
+      if (clientSecret.trim()) credentials.client_secret = clientSecret.trim();
+      if (hotelId.trim()) credentials.hotel_id = hotelId.trim();
+
+      if (isEdit) {
+        await api.patch(`/channel-manager/connections/api/${connection.id}`, {
+          display_name: displayName || undefined,
+          credentials: Object.keys(credentials).length ? credentials : undefined,
+          enabled,
+          sync_enabled: enabled,
+        });
+        toast.success('Connection updated');
+      } else {
+        if (!credentials.base_url || !(credentials.api_key || credentials.client_id)) {
+          toast.error('Base URL and API key (or client id) are required');
+          setSaving(false);
+          return;
+        }
+        await api.post('/channel-manager/connections/api', {
+          provider_key: providerKey,
+          display_name: displayName || undefined,
+          credentials,
+          enabled,
+          sync_enabled: enabled,
+        });
+        toast.success('API connection created');
+      }
+      qc.invalidateQueries({ queryKey: ['channel-manager'] });
+      onClose();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Could not save connection');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveMapping() {
+    if (!connection?.id) {
+      toast.error('Save the connection first, then add mappings');
+      return;
+    }
+    if (!mapUnitId || !mapListingId.trim()) {
+      toast.error('Unit and external listing ID are required');
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.put(`/channel-manager/connections/api/${connection.id}/mappings`, {
+        unit_id: mapUnitId,
+        external_listing_id: mapListingId.trim(),
+        external_room_type_id: mapRoomType.trim() || null,
+        external_rate_plan_id: mapRatePlan.trim() || null,
+      });
+      toast.success('Unit mapping saved');
+      qc.invalidateQueries({ queryKey: ['channel-manager'] });
+      setMapUnitId('');
+      setMapListingId('');
+      setMapRoomType('');
+      setMapRatePlan('');
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Could not save mapping');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={isEdit ? `Edit ${connection?.display_name || 'API connection'}` : 'Add API connection'}
+      size="lg"
+      footer={
+        <>
+          <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>
+            Close
+          </button>
+          <button type="button" className="btn-primary" disabled={saving} onClick={saveConnection}>
+            {saving ? 'Saving…' : isEdit ? 'Update credentials' : 'Create connection'}
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <p className="text-xs text-soul-muted">
+          Enter Connectivity credentials from Booking.com or Airbnb. Paths can be customized later via
+          credential keys (availability_path, rates_path, reservations_path, messages_path).
+        </p>
+        {!isEdit ? (
+          <div>
+            <label className="label">Provider</label>
+            <select
+              className="input"
+              value={providerKey}
+              onChange={(e) => setProviderKey(e.target.value)}
+            >
+              {API_PROVIDERS.map((p) => (
+                <option key={p.key} value={p.key}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
+        <div>
+          <label className="label">Display name</label>
+          <input
+            className="input"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            placeholder="e.g. Booking.com production"
+          />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <label className="label">Base URL</label>
+            <input
+              className="input font-mono text-xs"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder={isEdit ? 'Leave blank to keep existing' : 'https://…'}
+            />
+          </div>
+          <div>
+            <label className="label">API key / access token</label>
+            <input
+              className="input font-mono text-xs"
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder={isEdit ? 'Leave blank to keep' : ''}
+              autoComplete="off"
+            />
+          </div>
+          <div>
+            <label className="label">Hotel / account ID</label>
+            <input
+              className="input font-mono text-xs"
+              value={hotelId}
+              onChange={(e) => setHotelId(e.target.value)}
+              placeholder="Optional"
+            />
+          </div>
+          <div>
+            <label className="label">Client ID</label>
+            <input
+              className="input font-mono text-xs"
+              value={clientId}
+              onChange={(e) => setClientId(e.target.value)}
+              placeholder="OAuth (optional)"
+              autoComplete="off"
+            />
+          </div>
+          <div>
+            <label className="label">Client secret</label>
+            <input
+              className="input font-mono text-xs"
+              type="password"
+              value={clientSecret}
+              onChange={(e) => setClientSecret(e.target.value)}
+              placeholder="OAuth (optional)"
+              autoComplete="off"
+            />
+          </div>
+        </div>
+        <label className="flex items-center gap-2 text-sm text-soul-blue">
+          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+          Enabled for sync
+        </label>
+
+        {isEdit ? (
+          <div className="rounded-xl border border-soul-line p-3 space-y-3">
+            <p className="text-sm font-semibold text-soul-blue">Unit ↔ listing mapping</p>
+            <p className="text-xs text-soul-muted">
+              Map Soul units to external listing / room / rate-plan IDs for ARI and reservation import.
+            </p>
+            {(connection.mappings || []).length > 0 ? (
+              <ul className="space-y-1 text-xs text-soul-muted">
+                {connection.mappings.map((m) => {
+                  const u = (units || []).find((x) => x.id === m.unit_id);
+                  return (
+                    <li key={m.id} className="flex justify-between gap-2">
+                      <span>
+                        {u ? unitCode(u) : m.unit_id} → {m.external_listing_id}
+                        {m.external_rate_plan_id ? ` · rate ${m.external_rate_plan_id}` : ''}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="text-xs text-soul-muted">No mappings yet.</p>
+            )}
+            <div className="grid gap-2 sm:grid-cols-2">
+              <select
+                className="input text-xs"
+                value={mapUnitId}
+                onChange={(e) => setMapUnitId(e.target.value)}
+              >
+                <option value="">Select unit…</option>
+                {(units || []).map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {unitCode(u)}
+                  </option>
+                ))}
+              </select>
+              <input
+                className="input text-xs"
+                value={mapListingId}
+                onChange={(e) => setMapListingId(e.target.value)}
+                placeholder="External listing ID"
+              />
+              <input
+                className="input text-xs"
+                value={mapRoomType}
+                onChange={(e) => setMapRoomType(e.target.value)}
+                placeholder="Room type ID (optional)"
+              />
+              <input
+                className="input text-xs"
+                value={mapRatePlan}
+                onChange={(e) => setMapRatePlan(e.target.value)}
+                placeholder="Rate plan ID (optional)"
+              />
+            </div>
+            <button type="button" className="btn-secondary text-xs" disabled={saving} onClick={saveMapping}>
+              Add / update mapping
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </Modal>
+  );
+}
+
 export default function CalendarSync() {
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(null);
   const [focusPlatform, setFocusPlatform] = useState(null);
   const [tab, setTab] = useState('units');
+  const [apiModal, setApiModal] = useState(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['channel-manager'],
@@ -236,6 +520,7 @@ export default function CalendarSync() {
   const units = data?.units || [];
   const providers = data?.providers || [];
   const apiConnections = data?.connections?.api || [];
+  const revenueChannels = data?.revenue?.channels || [];
 
   const refreshAllMutation = useMutation({
     mutationFn: () => api.post('/channel-manager/sync', {}),
@@ -243,7 +528,7 @@ export default function CalendarSync() {
       qc.invalidateQueries({ queryKey: ['channel-manager'] });
       qc.invalidateQueries({ queryKey: ['channel-manager-logs'] });
       qc.invalidateQueries({ queryKey: ['calendar-blocks'] });
-      const errCount = res.data?.errors || 0;
+      const errCount = (res.data?.errors || 0) + (res.data?.api_errors || 0);
       if (errCount > 0) {
         toast.error(`Sync finished with ${errCount} error${errCount === 1 ? '' : 's'}`);
       } else {
@@ -262,6 +547,17 @@ export default function CalendarSync() {
       else toast.success('Feed synced');
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Sync failed'),
+  });
+
+  const syncApiMutation = useMutation({
+    mutationFn: (connectionId) => api.post('/channel-manager/sync', { connection_id: connectionId }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['channel-manager'] });
+      qc.invalidateQueries({ queryKey: ['channel-manager-logs'] });
+      if (res.data?.ok === false) toast.error(res.data.error || 'API sync failed');
+      else toast.success('API connection synced');
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'API sync failed'),
   });
 
   const q = search.trim().toLowerCase();
@@ -292,31 +588,58 @@ export default function CalendarSync() {
     [units]
   );
 
+  const liveApiConnection =
+    apiModal?.connectionId &&
+    apiConnections.find((c) => c.id === apiModal.connectionId);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="page-title">Channel Manager</h1>
           <p className="page-subtitle">
-            Central sync for OTAs. iCal is a limited availability fallback — API providers can add
-            rates, reservations, and cancellations when credentials are configured.
+            Central sync for OTAs. Configure API credentials for full ARI and reservations; iCal remains
+            an availability-only fallback.
           </p>
         </div>
-        <button
-          type="button"
-          className="btn-secondary"
-          disabled={refreshAllMutation.isPending}
-          onClick={() => refreshAllMutation.mutate()}
-        >
-          <RefreshCw className={`w-4 h-4 ${refreshAllMutation.isPending ? 'animate-spin' : ''}`} />
-          Sync now
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <Link to="/admin/ota-inbox" className="btn-secondary">
+            <MessageSquare className="w-4 h-4" />
+            OTA Inbox
+          </Link>
+          <button
+            type="button"
+            className="btn-secondary"
+            disabled={refreshAllMutation.isPending}
+            onClick={() => refreshAllMutation.mutate()}
+          >
+            <RefreshCw className={`w-4 h-4 ${refreshAllMutation.isPending ? 'animate-spin' : ''}`} />
+            Sync now
+          </button>
+        </div>
       </div>
+
+      {revenueChannels.length > 0 ? (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {revenueChannels.map((ch) => (
+            <div key={ch.channel} className="rounded-2xl border border-soul-line bg-white p-4">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-soul-muted">
+                <DollarSign className="w-3.5 h-3.5" />
+                {ch.channel}
+              </div>
+              <p className="mt-1 text-lg font-semibold text-soul-blue">{currency(ch.gross)}</p>
+              <p className="text-xs text-soul-muted">
+                {ch.count} stays · commission {currency(ch.commission)} · net {currency(ch.net)}
+              </p>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       <div className="flex flex-wrap gap-2">
         {[
           { id: 'units', label: 'Unit mapping' },
-          { id: 'providers', label: 'Providers' },
+          { id: 'providers', label: 'API connections' },
           { id: 'logs', label: 'Sync logs' },
         ].map((t) => (
           <button
@@ -352,50 +675,86 @@ export default function CalendarSync() {
 
       {tab === 'providers' ? (
         <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-soul-muted">
+              API providers push availability/rates and pull reservations and messages when credentials
+              are set.
+            </p>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => setApiModal({ connectionId: null, providerKey: 'booking_api' })}
+            >
+              Add API connection
+            </button>
+          </div>
           <div className="grid gap-3 md:grid-cols-2">
-            {providers.map((p) => (
-              <div key={p.key} className="rounded-2xl border border-soul-line bg-white p-4 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="font-semibold text-soul-blue">{p.label}</p>
-                  <span className="text-[11px] uppercase tracking-wide text-soul-muted">
-                    {p.connection_type}
-                  </span>
+            {providers
+              .filter((p) => p.connection_type === 'api')
+              .map((p) => (
+                <div key={p.key} className="rounded-2xl border border-soul-line bg-white p-4 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-semibold text-soul-blue">{p.label}</p>
+                    <span className="text-[11px] uppercase tracking-wide text-soul-muted">API</span>
+                  </div>
+                  <p className="text-[11px] text-soul-muted">
+                    Capabilities: {(p.capabilities || []).join(', ') || 'none'}
+                  </p>
+                  <button
+                    type="button"
+                    className="text-xs text-soul-blue hover:underline"
+                    onClick={() => setApiModal({ connectionId: null, providerKey: p.key })}
+                  >
+                    Connect credentials
+                  </button>
                 </div>
-                <p className="text-xs text-soul-muted">
-                  {p.configured
-                    ? 'Ready to use.'
-                    : 'API stub — connect credentials later. Use iCal for availability until then.'}
-                </p>
-                <p className="text-[11px] text-soul-muted">
-                  Capabilities: {(p.capabilities || []).join(', ') || 'none'}
-                </p>
-              </div>
-            ))}
+              ))}
           </div>
           {apiConnections.length > 0 ? (
             <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
               <div className="px-4 py-2.5 border-b border-soul-line text-[11px] uppercase tracking-wider text-soul-muted font-semibold">
-                API connections
+                Configured connections
               </div>
               <ul className="divide-y divide-soul-line">
                 {apiConnections.map((c) => (
-                  <li key={c.id} className="px-4 py-3 flex items-center justify-between gap-3">
-                    <div>
+                  <li key={c.id} className="px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+                    <div className="min-w-0">
                       <p className="font-medium text-soul-blue">{c.display_name}</p>
+                      <p className="text-xs text-soul-muted">
+                        {c.provider_label} · {c.has_credentials ? 'Credentials set' : 'Missing credentials'} ·{' '}
+                        {(c.mappings || []).length} mapping{(c.mappings || []).length === 1 ? '' : 's'}
+                      </p>
                       <p className="text-xs text-soul-muted">
                         Last sync: {formatWhen(c.last_sync_at)}
                         {c.last_sync_error ? ` — ${c.last_sync_error}` : ''}
                       </p>
                     </div>
-                    <StatusBadge status={c.status} />
+                    <div className="flex items-center gap-2">
+                      <StatusBadge status={c.status} />
+                      <button
+                        type="button"
+                        className="text-xs text-soul-blue hover:underline"
+                        onClick={() => setApiModal({ connectionId: c.id })}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="text-xs text-soul-blue hover:underline"
+                        disabled={syncApiMutation.isPending}
+                        onClick={() => syncApiMutation.mutate(c.id)}
+                      >
+                        Sync
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>
             </div>
           ) : (
             <p className="text-sm text-soul-muted">
-              No API connections yet. Add Booking.com / Airbnb API credentials when available; until
-              then configure iCal per unit under Unit mapping.
+              No API connections yet. Add Booking.com / Airbnb credentials above; until then configure
+              iCal per unit under Unit mapping.
             </p>
           )}
         </div>
@@ -522,6 +881,16 @@ export default function CalendarSync() {
           }}
         />
       )}
+
+      {apiModal ? (
+        <ApiConnectionModal
+          open
+          connection={liveApiConnection || null}
+          units={units}
+          providerKey={apiModal.providerKey}
+          onClose={() => setApiModal(null)}
+        />
+      ) : null}
     </div>
   );
 }

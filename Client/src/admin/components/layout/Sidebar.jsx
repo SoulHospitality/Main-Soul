@@ -27,6 +27,7 @@ import {
   Trophy,
   ListTodo,
   Gauge,
+  MessageSquare,
 } from 'lucide-react';
 
 const NAV_SECTIONS = [
@@ -61,6 +62,7 @@ const NAV_SECTIONS = [
       { path: '/admin/website-bookings', label: 'Website Requests', icon: Globe, page: 'website_bookings', badge: 'website_pending' },
       { path: '/admin/schedule', label: 'Schedule', icon: CalendarRange, page: 'schedule' },
       { path: '/admin/calendar-sync', label: 'Channel Manager', icon: Link2, page: 'calendar_sync' },
+      { path: '/admin/ota-inbox', label: 'OTA Inbox', icon: MessageSquare, page: 'calendar_sync', badge: 'ota_unread' },
       { path: '/admin/performance', label: 'Performance', icon: Trophy, page: 'performance', excludeRoles: ['resale_manager'] },
       { path: '/admin/reservation-audit', label: 'Reservation Audit', icon: ClipboardList, page: 'reservation_audit' },
     ],
@@ -127,6 +129,7 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
   const showWebsitePending = canAccess('website_bookings');
   const showReviewPending = canSeeRequestQueue(user);
   const showJobPending = canAccess('job_offers');
+  const showOtaInbox = canAccess('calendar_sync');
   const acknowledgedLeave = useAcknowledgedRequestIds('leave', user?.id);
   const acknowledgedLoans = useAcknowledgedRequestIds('loan', user?.id);
   const acknowledgedWfh = useAcknowledgedRequestIds('wfh', user?.id);
@@ -147,6 +150,13 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
   const pendingWebsiteCount = Array.isArray(pendingBookings) ? pendingBookings.length : 0;
   const unassignedWebsiteCount = Array.isArray(unassignedBookings) ? unassignedBookings.length : 0;
   const websiteNeedsReviewCount = pendingWebsiteCount + unassignedWebsiteCount;
+  const { data: otaUnreadData } = useQuery({
+    queryKey: ['ota-unread'],
+    queryFn: () => api.get('/channel-manager/messages/unread-count').then((r) => r.data),
+    enabled: showOtaInbox,
+    refetchInterval: 45000,
+  });
+  const otaUnreadCount = Number(otaUnreadData?.count) || 0;
   const { data: pendingLeave = [] } = useQuery({
     queryKey: ['hr-leave-requests', user?.id, 'pending'],
     queryFn: () =>
@@ -288,7 +298,9 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
                             ? pendingWfhCount
                             : item.badge === 'job_pending'
                               ? pendingJobCount
-                              : 0;
+                              : item.badge === 'ota_unread'
+                                ? otaUnreadCount
+                                : 0;
                   const navTo =
                     item.badge === 'requests_pending' && pendingRequestsCount > 0
                       ? pendingLeaveCount > 0

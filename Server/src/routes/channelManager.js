@@ -6,9 +6,15 @@ const {
   listProviders,
   runChannelSync,
   upsertApiConnection,
+  updateApiConnection,
   upsertUnitMapping,
   updateIcalFeedMapping,
   listSyncLogs,
+  listThreads,
+  getThread,
+  replyToThread,
+  unreadCount,
+  channelRevenueSummary,
 } = require('../lib/channelManager');
 const {
   normalizeOtaPlatform,
@@ -30,6 +36,17 @@ router.get('/connections', async (_req, res, next) => {
   try {
     const data = await listConnections();
     res.json(data);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/channel-stats', async (req, res, next) => {
+  try {
+    const from = req.query.from || null;
+    const to = req.query.to || null;
+    const summary = await channelRevenueSummary({ from, to });
+    res.json(summary);
   } catch (e) {
     next(e);
   }
@@ -70,7 +87,10 @@ router.get('/overview', async (_req, res, next) => {
         provider_label: `${OTA_PLATFORM_LABELS[feed.platform] || feed.platform} (iCal)`,
       });
     }
-    const connections = await listConnections();
+    const [connections, revenue] = await Promise.all([
+      listConnections(),
+      channelRevenueSummary({}).catch(() => ({ channels: [], totals: {} })),
+    ]);
     res.json({
       units: units.map((unit) => ({
         ...unit,
@@ -79,6 +99,7 @@ router.get('/overview', async (_req, res, next) => {
       })),
       connections,
       providers: listProviders(),
+      revenue,
     });
   } catch (e) {
     next(e);
@@ -137,6 +158,31 @@ router.post('/connections/api', async (req, res, next) => {
   }
 });
 
+router.patch('/connections/api/:id', async (req, res, next) => {
+  try {
+    const {
+      display_name: displayName,
+      credentials,
+      config,
+      enabled,
+      sync_enabled: syncEnabled,
+    } = req.body || {};
+    const row = await updateApiConnection(req.params.id, {
+      displayName,
+      credentials,
+      config,
+      enabled,
+      syncEnabled,
+    });
+    res.json({ connection: row });
+  } catch (e) {
+    if (/Connection not found/i.test(e.message)) {
+      return res.status(404).json({ error: e.message });
+    }
+    next(e);
+  }
+});
+
 router.put('/connections/api/:id/mappings', async (req, res, next) => {
   try {
     const {
@@ -155,6 +201,68 @@ router.put('/connections/api/:id/mappings', async (req, res, next) => {
     res.json({ mapping });
   } catch (e) {
     if (/required/i.test(e.message)) return res.status(400).json({ error: e.message });
+    next(e);
+  }
+});
+
+router.delete('/connections/api/:id/mappings/:mappingId', async (req, res, next) => {
+  try {
+    await query(`DELETE FROM channel_unit_mappings WHERE id = $1 AND connection_id = $2`, [
+      req.params.mappingId,
+      req.params.id,
+    ]);
+    res.json({ ok: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/messages/unread-count', async (_req, res, next) => {
+  try {
+    const count = await unreadCount();
+    res.json({ count });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/messages/threads', async (req, res, next) => {
+  try {
+    const threads = await listThreads({
+      limit: req.query.limit,
+      connectionId: req.query.connection_id || null,
+    });
+    res.json({ threads });
+  } catch (e) {
+    if (/channel_message_threads/i.test(e.message)) {
+      return res.json({ threads: [] });
+    }
+    next(e);
+  }
+});
+
+router.get('/messages/threads/:id', async (req, res, next) => {
+  try {
+    const thread = await getThread(req.params.id);
+    if (!thread) return res.status(404).json({ error: 'Thread not found' });
+    await query(
+      `UPDATE channel_message_threads SET unread_count = 0, updated_at = now() WHERE id = $1`,
+      [req.params.id]
+    ).catch(() => {});
+    res.json({ thread: { ...thread, unread_count: 0 } });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/messages/threads/:id/reply', async (req, res, next) => {
+  try {
+    const message = await replyToThread(req.params.id, req.body?.body, req.user);
+    res.status(201).json({ message });
+  } catch (e) {
+    if (/required|not found|does not support/i.test(e.message)) {
+      return res.status(400).json({ error: e.message });
+    }
     next(e);
   }
 });

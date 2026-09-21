@@ -61,6 +61,14 @@ class BaseChannelProvider {
   async pullModifications(_connection, _opts) {
     throw new Error(`${this.key}: modifications pull not implemented`);
   }
+
+  async pullMessages(_connection, _opts) {
+    throw new Error(`${this.key}: messages pull not implemented`);
+  }
+
+  async sendMessage(_connection, _opts) {
+    throw new Error(`${this.key}: messages send not implemented`);
+  }
 }
 
 module.exports = { BaseChannelProvider };

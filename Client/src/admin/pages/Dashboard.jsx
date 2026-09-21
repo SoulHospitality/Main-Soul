@@ -216,6 +216,45 @@ export default function Dashboard() {
         </div>
       )}
 
+      {canSeeFinance && (data?.revenueByChannel?.channels || []).length > 0 && (
+        <div className="card p-5 space-y-4">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="font-semibold text-gray-900">Revenue by channel (MTD)</h3>
+            <p className="text-xs text-soul-muted">
+              Gross {currency(data.revenueByChannel.totals?.gross)} · Commission{' '}
+              {currency(data.revenueByChannel.totals?.commission)} · Net{' '}
+              {currency(data.revenueByChannel.totals?.net)}
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+            {data.revenueByChannel.channels.map((ch) => (
+              <div key={ch.channel} className="rounded-xl border border-soul-line p-3">
+                <p className="text-xs uppercase tracking-wide text-soul-muted font-medium">{ch.channel}</p>
+                <p className="text-lg font-semibold text-soul-blue font-num">{currency(ch.gross)}</p>
+                <p className="text-xs text-soul-muted">
+                  {ch.count} stays · fee {currency(ch.commission)} · net {currency(ch.net)}
+                </p>
+              </div>
+            ))}
+          </div>
+          <div className="h-48">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={data.revenueByChannel.channels}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="channel" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip formatter={(v) => currency(v)} />
+                <Bar dataKey="gross" name="Gross" radius={[6, 6, 0, 0]}>
+                  {data.revenueByChannel.channels.map((ch, i) => (
+                    <Cell key={ch.channel} fill={PROJECT_COLORS[i % PROJECT_COLORS.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
       
       {projectStats.length > 0 && (
         <div className="card p-0 overflow-hidden">

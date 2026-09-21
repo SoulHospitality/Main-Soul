@@ -159,7 +159,7 @@ const COLOR_FILTERS = [
   { value: 'past', label: 'Past stays' },
 ];
 
-const CELL_W = 32;
+const CELL_W = 40;
 
 
 function PriceEditorModal({
@@ -873,6 +873,8 @@ export default function Schedule() {
   const [createDrawer, setCreateDrawer] = useState(false);
   const [createForm, setCreateForm] = useState({ ...EMPTY_MANUAL_RESERVATION_FORM });
   const [createProof, setCreateProof] = useState(null);
+  const [reserveMode, setReserveMode] = useState(false);
+  const [dateSelect, setDateSelect] = useState(null);
 
   
   const [filterBedrooms,  setFilterBedrooms]  = useState('');
@@ -1142,14 +1144,27 @@ export default function Schedule() {
     onError: (e) => toast.error(e.response?.data?.error || 'Error creating reservation'),
   });
 
-  const openCreateDrawer = () => {
+  const openCreateDrawer = (prefill = {}) => {
     setCreateForm({
       ...EMPTY_MANUAL_RESERVATION_FORM,
       sales_person_id: !isAdmin && user?.id ? String(user.id) : '',
       payment_method: 'cash',
+      ...prefill,
     });
     setCreateProof(null);
     setCreateDrawer(true);
+    setDateSelect(null);
+    setReserveMode(false);
+  };
+
+  const confirmDateSelection = () => {
+    if (!dateSelect?.unitId || !dateSelect.start) return;
+    const checkOut = addDays(dateSelect.end || dateSelect.start, 1);
+    openCreateDrawer({
+      unit_id: String(dateSelect.unitId),
+      check_in: dateSelect.start,
+      check_out: checkOut,
+    });
   };
 
   const handleCreateReservation = () => {
@@ -1259,6 +1274,31 @@ export default function Schedule() {
     });
     setPriceModal(true);
   }, [canEditSchedulePricing, priceMap, blockMap]);
+
+  const canBookFromGrid =
+    canWriteSchedule ||
+    isManualReservations ||
+    isWebsiteReservations ||
+    isReservationsManager ||
+    isAdmin;
+
+  const handleCellReserveClick = useCallback(
+    (unit, dateStr) => {
+      if (reserveMode && canBookFromGrid) {
+        setDateSelect((prev) => {
+          if (!prev || prev.unitId !== unit.id) {
+            return { unitId: unit.id, start: dateStr, end: dateStr };
+          }
+          const start = prev.start <= dateStr ? prev.start : dateStr;
+          const end = prev.start <= dateStr ? dateStr : prev.start;
+          return { unitId: unit.id, start, end };
+        });
+        return;
+      }
+      if (canEditSchedulePricing) handlePriceClick(unit, dateStr);
+    },
+    [reserveMode, canBookFromGrid, canEditSchedulePricing, handlePriceClick]
+  );
 
   const handleResClick = useCallback((res) => {
     
@@ -1447,7 +1487,7 @@ export default function Schedule() {
         <div className="flex flex-wrap items-center gap-2">
           {canWrite && (
             <>
-              <button onClick={openCreateDrawer} className="btn-primary flex items-center gap-2">
+              <button onClick={() => openCreateDrawer()} className="btn-primary flex items-center gap-2">
                 <Plus className="w-4 h-4" />
                 <span className="hidden sm:inline">New reservation</span>
                 <span className="sm:hidden">New</span>
@@ -1460,6 +1500,19 @@ export default function Schedule() {
                 <span className="hidden sm:inline">Hold</span>
               </button>
             </>
+          )}
+          {canBookFromGrid && (
+            <button
+              type="button"
+              onClick={() => {
+                setReserveMode((v) => !v);
+                setDateSelect(null);
+              }}
+              className={`btn-secondary flex items-center gap-2 ${reserveMode ? 'ring-2 ring-[var(--pms-accent,#283f5e)]' : ''}`}
+            >
+              <CalendarRange className="w-4 h-4" />
+              <span className="hidden sm:inline">{reserveMode ? 'Selecting dates…' : 'Select dates'}</span>
+            </button>
           )}
           <div className="flex items-center rounded-xl border border-soul-line bg-white p-0.5 shadow-sm">
             {[1, 2, 3].map((n) => (
@@ -1494,6 +1547,33 @@ export default function Schedule() {
           </div>
         </div>
       </div>
+
+      {dateSelect?.unitId && reserveMode ? (
+        <div className="sticky top-2 z-20 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 shadow-sm">
+          <p className="text-sm text-sky-900">
+            Selected {formatDate(dateSelect.start)}
+            {dateSelect.end && dateSelect.end !== dateSelect.start
+              ? ` → ${formatDate(dateSelect.end)}`
+              : ''}{' '}
+            · checkout {formatDate(addDays(dateSelect.end || dateSelect.start, 1))}
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => {
+                setDateSelect(null);
+                setReserveMode(false);
+              }}
+            >
+              Cancel
+            </button>
+            <button type="button" className="btn-primary" onClick={confirmDateSelection}>
+              Create reservation
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-soul-line bg-white/90 px-4 py-3 shadow-sm">
@@ -1891,6 +1971,14 @@ export default function Schedule() {
                         else if (blockSrc) cellBg = 'bg-slate-50';
                         else if (isPriced) cellBg = 'bg-emerald-50/90';
                         else if (!isPast) cellBg = 'bg-rose-50/80';
+                        const inSelectRange =
+                          dateSelect &&
+                          dateSelect.unitId === unit.id &&
+                          cell.date >= dateSelect.start &&
+                          cell.date <= (dateSelect.end || dateSelect.start);
+                        if (inSelectRange) cellBg = 'bg-sky-200/90';
+                        const cellClickable =
+                          !isPast && (canEditPrice || (reserveMode && canBookFromGrid));
                         return (
                           <td
                             key={j}
@@ -1905,10 +1993,14 @@ export default function Schedule() {
                               isPast ? 'opacity-45' : ''
                             } ${isToday ? 'ring-1 ring-inset ring-[var(--pms-accent,#283f5e)]/35' : ''} ${
                               hasCheckinTomorrow && !blockSrc ? 'bg-orange-50' : ''
-                            } ${canEditPrice && !isPast ? 'cursor-pointer group hover:brightness-[0.98]' : ''}`}
-                            onClick={() => canEditPrice && !isPast && handlePriceClick(unit, cell.date)}
+                            } ${cellClickable ? 'cursor-pointer group hover:brightness-[0.98]' : ''} ${
+                              inSelectRange ? 'ring-1 ring-inset ring-sky-500' : ''
+                            }`}
+                            onClick={() => cellClickable && handleCellReserveClick(unit, cell.date)}
                             title={
-                              blockSrc
+                              reserveMode && canBookFromGrid
+                                ? `Select for reservation · ${formatDate(cell.date)}`
+                                : blockSrc
                                   ? `${
                                     otaLook
                                       ? otaLook.label
@@ -1984,7 +2076,7 @@ export default function Schedule() {
                             style={{ minWidth: CELL_W, width: CELL_W }}
                             className="border-r border-slate-100 p-0 align-middle"
                           >
-                            <div className="flex h-9 items-center">
+                            <div className="flex h-11 items-center">
                               <div
                                 className={`h-6 w-1/2 cursor-pointer rounded-r-full shadow-sm ring-1 ${outColors.bg} ${outColors.hover} ${outColors.ring} transition`}
                                 title={outTip}
@@ -2012,7 +2104,7 @@ export default function Schedule() {
                             style={{ minWidth: CELL_W, width: CELL_W }}
                             className="border-r border-slate-100 p-0 align-middle"
                           >
-                            <div className="flex h-9 items-center overflow-hidden">
+                            <div className="flex h-11 items-center overflow-hidden">
                               <div
                                 className={`flex h-full w-1/2 items-center justify-center bg-emerald-50/90 ${
                                   canEditPrice && !isPastOpen
@@ -2085,7 +2177,7 @@ export default function Schedule() {
                             style={{ minWidth: CELL_W, width: CELL_W }}
                             className="border-r border-slate-100 p-0 align-middle bg-emerald-50/90"
                           >
-                            <div className="flex h-9 items-center overflow-hidden">
+                            <div className="flex h-11 items-center overflow-hidden">
                               <div
                                 className={`h-6 w-1/2 cursor-pointer rounded-r-full shadow-sm ring-1 ${bg} ${hover} ${ring} transition`}
                                 title={tipText}
