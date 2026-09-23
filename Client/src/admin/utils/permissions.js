@@ -348,6 +348,8 @@ const PERMISSIONS = {
     'owner:payouts',
   ],
   owners_relations: [
+    'units:read',
+    'units:write',
     'reservations:read',
     'reservations:or_checklist',
     'owner_statement:read',
@@ -386,7 +388,7 @@ const PAGE_ACCESS = {
   resale_manager: RESALE_MANAGER_PAGE_ACCESS,
   hr: HR_AGENT_PAGE_ACCESS,
   hr_supervisor: HR_SUPERVISOR_PAGE_ACCESS,
-  owners_relations: new Set(['reservations', 'owner_statement', 'tasks', ...STAFF_HR_TABS]),
+  owners_relations: new Set(['units', 'reservations', 'owner_statement', 'tasks', ...STAFF_HR_TABS]),
   finance: FINANCE_PAGE_ACCESS,
   finance_manager: FINANCE_MANAGER_PAGE_ACCESS,
   marketing_pr: MARKETING_PR_PAGE_ACCESS,
@@ -533,6 +535,7 @@ export function canManageUnits(user) {
       user.role === 'reservations_web' ||
       user.role === 'reservations_manual' ||
       user.role === 'reservations' ||
+      user.role === 'owners_relations' ||
       isFinanceStaff(user) ||
       isUnitAcquisitionRole(user))
   );

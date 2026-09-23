@@ -35,6 +35,7 @@ function isRentOnlyUnitEditor(userOrRole) {
     role === 'reservations_web' ||
     role === 'reservations_manual' ||
     role === 'reservations' ||
+    role === 'owners_relations' ||
     isUnitAcquisitionRole(role)
   );
 }

@@ -82,6 +82,7 @@ const UNIT_EDITOR_ROLES = [
   'reservations_web',
   'reservations_manual',
   'reservations',
+  'owners_relations',
   'finance',
   'finance_manager',
   ...UNIT_ACQUISITION_ROLES,

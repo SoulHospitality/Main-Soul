@@ -49,7 +49,7 @@ const PERMS = {
   finance_manager: ['financial_system', 'finance_audit', 'units', 'reservations', 'schedule', 'tasks'],
   operations: ['operations', 'housekeeping', 'reservations', 'schedule', 'tasks'],
   operations_supervisor: ['operations', 'housekeeping', 'reservations', 'schedule', 'tasks'],
-  owners_relations: ['reservations', 'owner_statement', 'tasks'],
+  owners_relations: ['units', 'reservations', 'owner_statement', 'tasks'],
 };
 
 function can(user, permission) {
