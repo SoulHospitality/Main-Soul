@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
+import { useAuth } from '../context/AuthContext';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import { currency, unitSelectLabel } from '../utils/formatters';
@@ -10,15 +11,17 @@ const localISO = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 export default function OwnerDateBlocks() {
+  const { user } = useAuth();
   const qc = useQueryClient();
   const today = localISO(new Date());
   const [unitId, setUnitId] = useState('');
   const [from, setFrom] = useState(today);
   const [to, setTo] = useState(today);
   const [preview, setPreview] = useState(null);
+  const isStaffHelper = user?.role === 'owners_relations' || user?.role === 'admin';
 
   const { data: units = [], isLoading } = useQuery({
-    queryKey: ['owner-units'],
+    queryKey: ['owner-units', user?.role],
     queryFn: () => api.get('/owner/units').then((r) => r.data),
   });
 
@@ -48,7 +51,7 @@ export default function OwnerDateBlocks() {
     mutationFn: () =>
       api.post('/owner/blocks', { unit_id: unitId, from_date: from, to_date: to }).then((r) => r.data),
     onSuccess: () => {
-      toast.success('Dates blocked for personal use');
+      toast.success(isStaffHelper ? 'Owner nights blocked' : 'Dates blocked for personal use');
       setPreview(null);
       qc.invalidateQueries({ queryKey: ['owner-blocks'] });
     },
@@ -85,9 +88,13 @@ export default function OwnerDateBlocks() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Block personal-use dates</h1>
+        <h1 className="text-2xl font-bold text-gray-900">
+          {isStaffHelper ? 'Block owner nights' : 'Block personal-use dates'}
+        </h1>
         <p className="text-sm text-gray-500">
-          Preview estimated revenue impact before blocking. Conflicts with guest bookings are rejected.
+          {isStaffHelper
+            ? 'Block rental nights for an owner’s personal use. Preview revenue impact first; guest conflicts are rejected.'
+            : 'Preview estimated revenue impact before blocking. Conflicts with guest bookings are rejected.'}
         </p>
       </div>
 

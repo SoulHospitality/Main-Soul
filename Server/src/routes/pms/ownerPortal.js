@@ -404,9 +404,35 @@ router.get('/owner/reservations', requireRoles('owner', 'admin'), async (req, re
   }
 });
 
-router.get('/owner/units', requireRoles('owner', 'admin'), async (req, res, next) => {
+router.get('/owner/units', requireRoles('owner', 'admin', 'owners_relations'), async (req, res, next) => {
   try {
-    const ownerId = req.user.role === 'owner' ? req.user.id : Number(req.query.owner_id) || req.user.id;
+    if (req.user.role === 'admin' || req.user.role === 'owners_relations') {
+      const ownerId = Number(req.query.owner_id);
+      const params = [];
+      let where = `COALESCE(u.listing_type, 'rent') = 'rent'`;
+      if (Number.isFinite(ownerId) && ownerId > 0) {
+        params.push(ownerId);
+        where += ` AND EXISTS (
+          SELECT 1 FROM owner_units ou WHERE ou.unit_id = u.id AND ou.owner_id = $1
+        )`;
+      }
+      const { rows } = await query(
+        `SELECT u.id, u.title, u.unit_number, u.project, u.compound, u.area, u.status, u.ops_status
+         FROM units u
+         WHERE ${where}
+         ORDER BY u.unit_number NULLS LAST, u.title`,
+        params
+      );
+      return res.json(
+        rows.map((u) => ({
+          ...u,
+          name: u.unit_number || u.title,
+          project: u.project || u.compound,
+        }))
+      );
+    }
+
+    const ownerId = req.user.id;
     const { rows } = await query(
       `SELECT u.id, u.title, u.unit_number, u.project, u.compound, u.area, u.status, u.ops_status
        FROM owner_units ou
@@ -497,7 +523,7 @@ const {
 const { generateOwnerSettlement } = require('../../lib/ownerSettlements');
 
 async function assertOwnerUnitAccess(req, unitId) {
-  if (req.user.role === 'admin') return true;
+  if (req.user.role === 'admin' || req.user.role === 'owners_relations') return true;
   const { rows } = await query(
     `SELECT 1 FROM owner_units WHERE owner_id = $1 AND unit_id = $2`,
     [req.user.id, unitId]
@@ -505,7 +531,7 @@ async function assertOwnerUnitAccess(req, unitId) {
   return Boolean(rows[0]);
 }
 
-router.post('/owner/blocks/preview', requireRoles('owner', 'admin'), async (req, res, next) => {
+router.post('/owner/blocks/preview', requireRoles('owner', 'admin', 'owners_relations'), async (req, res, next) => {
   try {
     const { unit_id, from_date, to_date } = req.body;
     if (!unit_id || !from_date || !to_date) {
@@ -522,7 +548,7 @@ router.post('/owner/blocks/preview', requireRoles('owner', 'admin'), async (req,
   }
 });
 
-router.post('/owner/blocks', requireRoles('owner', 'admin'), async (req, res, next) => {
+router.post('/owner/blocks', requireRoles('owner', 'admin', 'owners_relations'), async (req, res, next) => {
   try {
     const { unit_id, from_date, to_date } = req.body;
     if (!unit_id || !from_date || !to_date) {
@@ -553,7 +579,7 @@ router.post('/owner/blocks', requireRoles('owner', 'admin'), async (req, res, ne
   }
 });
 
-router.delete('/owner/blocks', requireRoles('owner', 'admin'), async (req, res, next) => {
+router.delete('/owner/blocks', requireRoles('owner', 'admin', 'owners_relations'), async (req, res, next) => {
   try {
     const unit_id = req.body.unit_id || req.query.unit_id;
     const from_date = req.body.from_date || req.query.from_date;
@@ -579,7 +605,7 @@ router.delete('/owner/blocks', requireRoles('owner', 'admin'), async (req, res, 
   }
 });
 
-router.get('/owner/blocks', requireRoles('owner', 'admin'), async (req, res, next) => {
+router.get('/owner/blocks', requireRoles('owner', 'admin', 'owners_relations'), async (req, res, next) => {
   try {
     const unitId = req.query.unit_id;
     if (!unitId) return res.status(400).json({ error: 'unit_id required' });

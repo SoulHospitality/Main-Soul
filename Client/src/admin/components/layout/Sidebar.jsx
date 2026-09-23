@@ -51,6 +51,7 @@ const NAV_SECTIONS = [
       { path: '/admin/performance', label: 'Performance', icon: Trophy, page: 'performance', roles: ['resale_manager'] },
       { path: '/admin/acquisition-audit', label: 'Audit', icon: ClipboardList, page: 'acquisition_audit' },
       { path: '/admin/owner-statement', label: 'Owner Statement', icon: FileBarChart2, page: 'owner_statement', roles: ['unit_acquisition_manager', 'owners_relations'] },
+      { path: '/admin/owner/blocks', label: 'Owner blocks', icon: CalendarDays, page: 'owner_blocks', roles: ['owners_relations'] },
       { path: '/admin/users', label: 'Owners', icon: UserCircle, page: 'owners', roles: ['unit_acquisition_manager'] },
     ],
   },
