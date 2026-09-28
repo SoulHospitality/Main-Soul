@@ -454,6 +454,8 @@ async function leaveSnapshot(staffUserId) {
 }
 
 async function insertDeduction(db, values) {
+  // staff_salary_deductions requires amount > 0; staff with no base salary compute to 0.
+  if (!(Number(values[1]) > 0)) return null;
   const q = db ? (sql, params) => db.query(sql, params) : query;
   const { rows } = await q(
     `INSERT INTO staff_salary_deductions
@@ -2006,7 +2008,7 @@ router.post('/hr/loans/:id/review', async (req, res, next) => {
         return {
           deduct_year: next.year,
           deduct_month: next.month,
-          deduction_id: inserted.id,
+          deduction_id: inserted?.id ?? null,
         };
       },
     });
@@ -2112,7 +2114,7 @@ router.post('/hr/wfh/:id/review', async (req, res, next) => {
           computed.daily_rate,
           computed.days_factor,
         ]);
-        return { deduction_id: inserted.id };
+        return { deduction_id: inserted?.id ?? null };
       },
     });
     res.json(updated);
