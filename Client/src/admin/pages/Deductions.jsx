@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { MinusCircle, Plus, Trash2 } from 'lucide-react';
+import { MinusCircle, Pencil, Plus, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
+import { usePermissions } from '../hooks/usePermissions';
 import Modal from '../components/ui/Modal';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
@@ -22,6 +23,8 @@ const EMPTY = {
   kind: 'deduction',
 };
 
+const MANUAL_CATEGORIES = ['other', 'penalty', 'performance', 'advance'];
+
 function todayIso() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -29,10 +32,33 @@ function todayIso() {
 
 export default function Deductions() {
   const qc = useQueryClient();
+  const { isAdmin, isHr } = usePermissions();
+  const canEditDeductions = isAdmin || isHr;
   const [search, setSearch] = useState('');
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState({ ...EMPTY, deduction_date: todayIso() });
+  const [editingId, setEditingId] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
+  const categoryEditable = !editingId || MANUAL_CATEGORIES.includes(form.category);
+
+  const openCreate = (kind = 'deduction') => {
+    setEditingId(null);
+    setForm({ ...EMPTY, kind, deduction_date: todayIso() });
+    setModal(true);
+  };
+
+  const openEdit = (r) => {
+    setEditingId(r.id);
+    setForm({
+      staff_user_id: String(r.staff_user_id),
+      category: r.category || 'other',
+      amount: String(r.amount ?? ''),
+      reason: r.reason || '',
+      deduction_date: String(r.deduction_date || '').slice(0, 10),
+      kind: 'deduction',
+    });
+    setModal(true);
+  };
 
   const { data: users = [] } = useQuery({
     queryKey: ['users'],
@@ -54,20 +80,25 @@ export default function Deductions() {
   });
 
   const saveMutation = useMutation({
-    mutationFn: (payload) =>
-      payload.kind === 'bonus'
+    mutationFn: ({ id, ...payload }) => {
+      if (id) return api.put(`/hr/salary-deductions/${id}`, payload);
+      return payload.kind === 'bonus'
         ? api.post('/hr/salary-bonuses', payload)
-        : api.post('/hr/salary-deductions', payload),
+        : api.post('/hr/salary-deductions', payload);
+    },
     onSuccess: (_, payload) => {
       qc.invalidateQueries({ queryKey: ['hr-deductions'] });
       qc.invalidateQueries({ queryKey: ['hr-bonuses'] });
       qc.invalidateQueries({ queryKey: ['hr-payroll'] });
       qc.invalidateQueries({ queryKey: ['hr-payslip'] });
-      toast.success(payload.kind === 'bonus' ? 'Bonus added' : 'Deduction applied');
+      toast.success(
+        payload.id ? 'Deduction updated' : payload.kind === 'bonus' ? 'Bonus added' : 'Deduction applied'
+      );
       setModal(false);
+      setEditingId(null);
       setForm({ ...EMPTY, deduction_date: todayIso() });
     },
-    onError: (e) => toast.error(e.response?.data?.error || 'Could not apply deduction'),
+    onError: (e) => toast.error(e.response?.data?.error || 'Could not save deduction'),
   });
 
   const deleteMutation = useMutation({
@@ -119,10 +150,11 @@ export default function Deductions() {
     if (!(Number(form.amount) > 0)) return toast.error('Enter an amount greater than 0');
     if (!String(form.reason || '').trim()) return toast.error('Enter a reason');
     saveMutation.mutate({
+      id: editingId || undefined,
       staff_user_id: Number(form.staff_user_id),
       deduction_date: form.deduction_date,
       bonus_date: form.deduction_date,
-      category: form.kind === 'bonus' ? undefined : form.category,
+      category: form.kind === 'bonus' || !categoryEditable ? undefined : form.category,
       amount: Number(form.amount),
       reason: form.reason.trim(),
       kind: form.kind,
@@ -140,25 +172,11 @@ export default function Deductions() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={() => {
-              setForm({ ...EMPTY, deduction_date: todayIso() });
-              setModal(true);
-            }}
-          >
+          <button type="button" className="btn-primary" onClick={() => openCreate()}>
             <Plus className="h-4 w-4" />
             Other deduction
           </button>
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={() => {
-              setForm({ ...EMPTY, kind: 'bonus', deduction_date: todayIso() });
-              setModal(true);
-            }}
-          >
+          <button type="button" className="btn-secondary" onClick={() => openCreate('bonus')}>
             <Plus className="h-4 w-4" />
             Add bonus
           </button>
@@ -174,14 +192,7 @@ export default function Deductions() {
           icon={MinusCircle}
           title="No deductions yet"
           action={
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={() => {
-                setForm({ ...EMPTY, deduction_date: todayIso() });
-                setModal(true);
-              }}
-            >
+            <button type="button" className="btn-primary" onClick={() => openCreate()}>
               Add deduction
             </button>
           }
@@ -229,13 +240,28 @@ export default function Deductions() {
                       {currency(r.amount)}
                     </td>
                     <td>
-                      <button
-                        type="button"
-                        className="btn-secondary text-xs px-2 py-1 text-rose-700"
-                        onClick={() => setDeleteId({ id: r.id, kind: r.kind })}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      <div className="flex justify-end gap-1.5">
+                        {r.kind === 'deduction' && canEditDeductions ? (
+                          <button
+                            type="button"
+                            className="btn-secondary text-xs px-2 py-1"
+                            title="Edit deduction"
+                            aria-label="Edit deduction"
+                            onClick={() => openEdit(r)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="btn-secondary text-xs px-2 py-1 text-rose-700"
+                          title="Delete"
+                          aria-label="Delete"
+                          onClick={() => setDeleteId({ id: r.id, kind: r.kind })}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -248,7 +274,7 @@ export default function Deductions() {
       <Modal
         open={modal}
         onClose={() => setModal(false)}
-        title={form.kind === 'bonus' ? 'Add bonus' : 'Other deduction'}
+        title={editingId ? 'Edit deduction' : form.kind === 'bonus' ? 'Add bonus' : 'Other deduction'}
         size="md"
         footer={
           <>
@@ -256,7 +282,7 @@ export default function Deductions() {
               Cancel
             </button>
             <button type="button" className="btn-primary" disabled={saveMutation.isPending} onClick={handleSave}>
-              {saveMutation.isPending ? 'Saving…' : 'Apply'}
+              {saveMutation.isPending ? 'Saving…' : editingId ? 'Save' : 'Apply'}
             </button>
           </>
         }
@@ -268,6 +294,7 @@ export default function Deductions() {
               value={String(form.staff_user_id)}
               onChange={(v) => setForm((f) => ({ ...f, staff_user_id: v }))}
               placeholder="Select staff…"
+              disabled={!!editingId}
               options={staffOptions.map((u) => ({
                 value: String(u.id),
                 label: `${u.full_name}${u.staff_code ? ` · ${u.staff_code}` : ''}`,
@@ -283,16 +310,24 @@ export default function Deductions() {
             {form.kind !== 'bonus' ? (
             <div>
               <label className="label">Type *</label>
-              <select
-                className="input"
-                value={form.category}
-                onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
-              >
-                <option value="other">Other</option>
-                <option value="penalty">Penalty</option>
-                <option value="performance">Performance</option>
-                <option value="advance">Advance</option>
-              </select>
+              {categoryEditable ? (
+                <select
+                  className="input"
+                  value={form.category}
+                  onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
+                >
+                  <option value="other">Other</option>
+                  <option value="penalty">Penalty</option>
+                  <option value="performance">Performance</option>
+                  <option value="advance">Advance</option>
+                </select>
+              ) : (
+                <input
+                  className="input bg-gray-50"
+                  value={DEDUCTION_TYPE_LABELS[form.category] || form.category}
+                  readOnly
+                />
+              )}
             </div>
             ) : null}
             <div>
@@ -324,6 +359,12 @@ export default function Deductions() {
               onChange={(e) => setForm((f) => ({ ...f, reason: e.target.value }))}
             />
           </div>
+          {editingId && ['lateness', 'absence'].includes(form.category) ? (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              This deduction comes from attendance. If attendance for this day is recalculated, it
+              will be regenerated and this edit will be replaced.
+            </p>
+          ) : null}
         </div>
       </Modal>
 

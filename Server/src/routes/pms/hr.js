@@ -1412,6 +1412,46 @@ router.post('/hr/salary-deductions', requireRoles(...HR_ROLES), async (req, res,
   }
 });
 
+router.put('/hr/salary-deductions/:id', requireRoles('admin', 'hr', 'hr_supervisor'), async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const { rows: existing } = await query(
+      `SELECT id, category FROM staff_salary_deductions WHERE id = $1`,
+      [req.params.id]
+    );
+    if (!existing[0]) return res.status(404).json({ error: 'Deduction not found' });
+
+    const deductionDate = String(b.deduction_date || '').slice(0, 10);
+    const amount = parseFloat(b.amount);
+    const reason = String(b.reason || '').trim();
+    if (!deductionDate) return res.status(400).json({ error: 'Date is required' });
+    if (Number.isNaN(amount) || amount <= 0 || !reason) {
+      return res.status(400).json({ error: 'Amount and reason are required' });
+    }
+
+    const manual = new Set(['performance', 'advance', 'other', 'penalty']);
+    let category = existing[0].category;
+    const requested = String(b.category || '').trim();
+    if (requested && requested !== category) {
+      if (!manual.has(category) || !manual.has(requested)) {
+        return res.status(400).json({ error: 'This deduction type cannot be changed' });
+      }
+      category = requested;
+    }
+
+    const { rows } = await query(
+      `UPDATE staff_salary_deductions
+         SET amount = $2, reason = $3, deduction_date = $4::date, category = $5
+       WHERE id = $1
+       RETURNING *`,
+      [req.params.id, amount, reason, deductionDate, category]
+    );
+    res.json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.delete('/hr/salary-deductions/:id', requireRoles(...HR_ROLES), async (req, res, next) => {
   try {
     const { rowCount } = await query(`DELETE FROM staff_salary_deductions WHERE id = $1`, [
