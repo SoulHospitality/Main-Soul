@@ -12,6 +12,7 @@ import {
   getGuestLoad,
 } from '../../utils/beachAccess';
 import SearchableSelect from './ui/SearchableSelect';
+import { usePermissions } from '../hooks/usePermissions';
 import {
   BOOKING_SOURCES,
   MANUAL_PAYMENT_METHODS,
@@ -87,6 +88,12 @@ export default function ManualReservationForm({
   submitting = false,
 }) {
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const { canReserveLongTermUnits } = usePermissions();
+  const bookableUnits = useMemo(
+    () =>
+      canReserveLongTermUnits ? units : units.filter((unit) => unit.listing_type !== 'long_term'),
+    [units, canReserveLongTermUnits]
+  );
   const selectedUnit = units.find((unit) => String(unit.id) === String(form.unit_id));
   // Staff bookings skip the project minimum stay; long-term units keep their own (holds/owner stays exempt).
   const minNights =
@@ -245,7 +252,7 @@ export default function ManualReservationForm({
               placeholder="Search or select a unit…"
               options={[
                 { value: '', label: 'Select a unit…' },
-                ...units.map((unit) => ({
+                ...bookableUnits.map((unit) => ({
                   value: String(unit.id),
                   label: unitSelectLabel(unit),
                 })),

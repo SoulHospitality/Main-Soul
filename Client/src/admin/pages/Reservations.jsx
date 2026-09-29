@@ -1012,6 +1012,7 @@ export default function Reservations() {
     isOwnersRelations,
     isReservationsManager,
     canManageReservations,
+    canReserveLongTermUnits,
     canEditOrChecklist,
     canAccessFinance,
     canAccessFinancialSystem,
@@ -1095,6 +1096,10 @@ export default function Reservations() {
   });
 
   const { data: units = [] } = useQuery({ queryKey: ['units'], queryFn: () => api.get('/units').then(r => r.data) });
+  const bookableUnits = useMemo(
+    () => (canReserveLongTermUnits ? units : units.filter(u => u.listing_type !== 'long_term')),
+    [units, canReserveLongTermUnits]
+  );
   const { projectNames: catalogProjects } = useProjectCatalog();
   const { data: users = [] } = useQuery({ queryKey: ['users-sales'], queryFn: () => api.get('/users/sales').then(r => r.data) });
   const salesUsers = useMemo(() => salesUsersForActor(users, user), [users, user]);
@@ -1876,7 +1881,7 @@ export default function Reservations() {
               value={blockForm.unit_id}
               onChange={v => setBlockForm(f => ({ ...f, unit_id: v }))}
               placeholder="Select unit…"
-              options={[{ value: '', label: 'Select unit…' }, ...units.map(u => ({ value: String(u.id), label: unitSelectLabel(u) }))]}
+              options={[{ value: '', label: 'Select unit…' }, ...bookableUnits.map(u => ({ value: String(u.id), label: unitSelectLabel(u) }))]}
             />
           </div>
           <div>
@@ -1936,7 +1941,7 @@ export default function Reservations() {
           </button>
         </>}
       >
-        <ReservationForm form={form} setForm={setForm} units={units} users={salesUsers}
+        <ReservationForm form={form} setForm={setForm} units={bookableUnits} users={salesUsers}
           isNew={false} editId={editId} transferProof={transferProof} onTransferProofChange={setTransferProof}
           allowPastDates={allowPastDates}
           lockSalesPerson={!isAdmin}

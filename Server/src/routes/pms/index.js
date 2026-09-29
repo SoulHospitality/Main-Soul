@@ -69,7 +69,13 @@ const {
   asStaffDeleteError,
 } = require('../../lib/staffUserCleanup');
 const { isUnitAcquisitionRole, UNIT_ACQUISITION_ROLES } = require('../../lib/unitAcquisition');
-const { LONG_TERM, normalizeListingType } = require('../../lib/listingType');
+const {
+  LONG_TERM,
+  normalizeListingType,
+  isLongTermUnit,
+  canManageLongTermUnits,
+  canReserveLongTermUnits,
+} = require('../../lib/listingType');
 const UNIT_EDITOR_ROLES = [
   'admin',
   'reservations_manager',
@@ -81,6 +87,34 @@ const UNIT_EDITOR_ROLES = [
   'finance_manager',
   ...UNIT_ACQUISITION_ROLES,
 ];
+const LONG_TERM_UNIT_FORBIDDEN =
+  'Only admin, reservations, Owner Experience and unit acquisition staff can add or edit long-term units';
+const LONG_TERM_RESERVATION_FORBIDDEN =
+  'Only admin, reservations and unit acquisition staff can add or edit long-term reservations';
+
+async function guardLongTermUnit(req, res, next) {
+  if (canManageLongTermUnits(req.user)) return next();
+  try {
+    const { rows } = await query(`SELECT listing_type FROM units WHERE id = $1`, [req.params.id]);
+    if (rows[0] && isLongTermUnit(rows[0])) {
+      return res.status(403).json({ error: LONG_TERM_UNIT_FORBIDDEN });
+    }
+    next();
+  } catch (e) {
+    next(e);
+  }
+}
+
+async function blocksLongTermReservation(user, unitIds) {
+  if (canReserveLongTermUnits(user)) return false;
+  const ids = unitIds.filter((id) => id != null && id !== '').map(String);
+  if (!ids.length) return false;
+  const { rows } = await query(
+    `SELECT 1 FROM units WHERE id::text = ANY($1::text[]) AND listing_type = $2 LIMIT 1`,
+    [ids, LONG_TERM]
+  );
+  return !!rows[0];
+}
 
 const HR_ROUTE_ROLES = ['admin', 'hr', 'hr_supervisor'];
 const USER_ACCOUNT_ROLES = ['hr', 'hr_supervisor', 'unit_acquisition_manager'];
@@ -952,6 +986,9 @@ router.post('/units', requireRoles(...UNIT_EDITOR_ROLES), async (req, res, next)
     const cleaningFee = housekeepingFeeForType(propertyType);
     const listingType = normalizeListingType(b.listing_type);
     const isLongTerm = listingType === LONG_TERM;
+    if (isLongTerm && !canManageLongTermUnits(req.user)) {
+      return res.status(403).json({ error: LONG_TERM_UNIT_FORBIDDEN });
+    }
     const sizeM2 = toNum(b.size_m2 || b.area_sqft || b.unit_area, { int: true });
     const priceFallback = isLongTerm
       ? null
@@ -1393,10 +1430,10 @@ async function updateUnitHandler(req, res, next) {
   }
 }
 
-router.patch('/units/:id', requireRoles(...UNIT_EDITOR_ROLES), updateUnitHandler);
-router.put('/units/:id', requireRoles(...UNIT_EDITOR_ROLES), updateUnitHandler);
+router.patch('/units/:id', requireRoles(...UNIT_EDITOR_ROLES), guardLongTermUnit, updateUnitHandler);
+router.put('/units/:id', requireRoles(...UNIT_EDITOR_ROLES), guardLongTermUnit, updateUnitHandler);
 
-router.patch('/units/:id/unpublish', requireRoles(...UNIT_EDITOR_ROLES), async (req, res, next) => {
+router.patch('/units/:id/unpublish', requireRoles(...UNIT_EDITOR_ROLES), guardLongTermUnit, async (req, res, next) => {
   try {
     const { rows: existing } = await query(
       `SELECT id, listing_type, status, other_details FROM units WHERE id = $1`,
@@ -1425,7 +1462,7 @@ router.patch('/units/:id/unpublish', requireRoles(...UNIT_EDITOR_ROLES), async (
   }
 });
 
-router.patch('/units/:id/publish', requireRoles(...UNIT_EDITOR_ROLES), async (req, res, next) => {
+router.patch('/units/:id/publish', requireRoles(...UNIT_EDITOR_ROLES), guardLongTermUnit, async (req, res, next) => {
   try {
     const { rows: existing } = await query(
       `SELECT id, listing_type, other_details FROM units WHERE id = $1`,
@@ -1557,6 +1594,7 @@ router.delete('/units/:id', requireRoles('admin', ...UNIT_ACQUISITION_ROLES), as
 router.post(
   '/units/:id/photos',
   requireRoles(...UNIT_EDITOR_ROLES),
+  guardLongTermUnit,
   upload.array('photos', 20),
   setCloudinaryFolder(FOLDER_UNITS),
   attachCloudinaryUrls,
@@ -1791,6 +1829,9 @@ router.post(
       );
       unitRow = units[0] || null;
       const unitIsLongTerm = normalizeListingType(unitRow?.listing_type) === LONG_TERM;
+      if (unitIsLongTerm && !canReserveLongTermUnits(req.user)) {
+        return res.status(403).json({ error: LONG_TERM_RESERVATION_FORBIDDEN });
+      }
       const unitMinNights = Number(unitRow?.min_nights) || 0;
       if (
         unitIsLongTerm &&
@@ -2106,6 +2147,9 @@ router.patch(
     await assertReservationOwned(req.user, existing);
 
     const b = req.body;
+    if (await blocksLongTermReservation(req.user, [existing.unit_id, b.unit_id])) {
+      return res.status(403).json({ error: LONG_TERM_RESERVATION_FORBIDDEN });
+    }
     if (req.user.role !== 'admin') {
       b.sales_person_id = req.user.id;
     }
@@ -2346,6 +2390,9 @@ router.post(
       const existing = await loadReservationAccess(req.params.id);
       if (!existing) return res.status(404).json({ error: 'Not found' });
       await assertReservationOwned(req.user, existing);
+      if (await blocksLongTermReservation(req.user, [req.body?.unit_id])) {
+        return res.status(403).json({ error: LONG_TERM_RESERVATION_FORBIDDEN });
+      }
       const { previewTransfer } = require('../../lib/transferReservation');
       const preview = await previewTransfer(req.params.id, req.body || {});
       res.json(preview);
@@ -2371,6 +2418,9 @@ router.post(
       const existing = await loadReservationAccess(req.params.id);
       if (!existing) return res.status(404).json({ error: 'Not found' });
       await assertReservationOwned(req.user, existing);
+      if (await blocksLongTermReservation(req.user, [req.body?.unit_id])) {
+        return res.status(403).json({ error: LONG_TERM_RESERVATION_FORBIDDEN });
+      }
       const { executeTransfer } = require('../../lib/transferReservation');
       const result = await executeTransfer(req.params.id, req.body || {}, req.user);
       res.status(201).json(result);

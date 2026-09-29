@@ -311,7 +311,7 @@ function bookingAssigneeClause(user, alias = 'b', paramIndex = 1) {
 
 async function loadReservationAccess(id) {
   const { rows } = await query(
-    `SELECT id, sales_person_id, created_by, booking_id, booking_source, status, sales_label
+    `SELECT id, unit_id, sales_person_id, created_by, booking_id, booking_source, status, sales_label
      FROM reservations WHERE id = $1`,
     [id]
   );

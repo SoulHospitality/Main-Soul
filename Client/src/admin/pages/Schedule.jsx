@@ -864,7 +864,7 @@ function BulkPriceModal({ open, onClose, unitCount, onSave, saving }) {
 export default function Schedule() {
   const qc = useQueryClient();
   const { user } = useAuth();
-  const { canEditSchedulePricing, canManageReservations, canWriteSchedule, isManualReservations, isWebsiteReservations, isReservationsManager, isAdmin } = usePermissions();
+  const { canEditSchedulePricing, canManageReservations, canReserveLongTermUnits, canWriteSchedule, isManualReservations, isWebsiteReservations, isReservationsManager, isAdmin } = usePermissions();
   const TODAY = todayStr();
   const TOMORROW = addDays(TODAY, 1);
   const now = new Date();
@@ -1047,6 +1047,10 @@ export default function Schedule() {
 
   const { projectNames: projectsList } = useProjectCatalog();
   const { data: unitsList     = [] } = useQuery({ queryKey: ['units'],    queryFn: () => api.get('/units').then(r => r.data) });
+  const bookableUnitsList = useMemo(
+    () => (canReserveLongTermUnits ? unitsList : unitsList.filter((u) => u.listing_type !== 'long_term')),
+    [unitsList, canReserveLongTermUnits]
+  );
   const { data: usersList     = [] } = useQuery({ queryKey: ['users-sales'], queryFn: () => api.get('/users/sales').then(r => r.data) });
   const salesUsers = useMemo(() => salesUsersForActor(usersList, user), [usersList, user]);
 
@@ -2179,7 +2183,11 @@ export default function Schedule() {
                         else if (!isPast) cellBg = 'bg-rose-50/80';
                         const canEditCell = canEditPrice && !isPast;
                         const canBookCell =
-                          canBookFromGrid && !isPast && !blockSrc && !otaLook;
+                          canBookFromGrid &&
+                          (!isLongTermUnit || canReserveLongTermUnits) &&
+                          !isPast &&
+                          !blockSrc &&
+                          !otaLook;
                         const cellClickable = canEditCell || canBookCell;
                         return (
                           <td
@@ -2565,7 +2573,7 @@ export default function Schedule() {
         editId={editId}
         editForm={editForm}
         setEditForm={setEditForm}
-        unitsList={unitsList}
+        unitsList={bookableUnitsList}
         usersList={salesUsers}
         saving={editMutation.isPending}
         onSave={() => editMutation.mutate()}
@@ -2577,7 +2585,7 @@ export default function Schedule() {
         prefillUnit={holdPrefill.unitId}
         prefillCheckIn={holdPrefill.checkIn}
         prefillCheckOut={holdPrefill.checkOut}
-        unitsList={unitsList}
+        unitsList={bookableUnitsList}
         saving={holdMutation.isPending}
         onSave={(data) => holdMutation.mutate(data)}
       />

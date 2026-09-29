@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import api from '../api/axios';
 import Modal from './ui/Modal';
 import SearchableSelect from './ui/SearchableSelect';
+import { usePermissions } from '../hooks/usePermissions';
 import { currency, formatDate, unitDisplay, unitSelectLabel } from '../utils/formatters';
 
 export default function TransferReservationModal({
@@ -31,10 +32,13 @@ export default function TransferReservationModal({
     setReason('');
   }, [open, reservation?.id]);
 
+  const { canReserveLongTermUnits } = usePermissions();
   const unitOptions = useMemo(
     () =>
-      (units || []).map((u) => ({ value: String(u.id), label: unitSelectLabel(u) })),
-    [units]
+      (units || [])
+        .filter((u) => canReserveLongTermUnits || u.listing_type !== 'long_term')
+        .map((u) => ({ value: String(u.id), label: unitSelectLabel(u) })),
+    [units, canReserveLongTermUnits]
   );
 
   const previewEnabled = open && Boolean(reservation?.id && unitId && checkIn && checkOut);

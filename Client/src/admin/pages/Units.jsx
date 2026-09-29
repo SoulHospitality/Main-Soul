@@ -584,7 +584,7 @@ function CommissionBadge({ unit }) {
 
 export default function Units({ listingType = 'rent' }) {
   const qc = useQueryClient();
-  const { canDeleteUnits, canManageUnits } = usePermissions();
+  const { canDeleteUnits, canManageUnits, canManageLongTermUnits } = usePermissions();
   const { destinations: catalogDestinations, projectsByDestination, projectNames: catalogProjects } =
     useProjectCatalog();
   const isLongTerm = listingType === 'long_term';
@@ -830,7 +830,7 @@ export default function Units({ listingType = 'rent' }) {
       utilities_cost: form.utilities_cost === '' ? null : form.utilities_cost,
     });
   };
-  const canWrite = canManageUnits;
+  const canWrite = isLongTerm ? canManageLongTermUnits : canManageUnits;
   const { sorted, sortKey, sortDir, handleSort } = useSortableTable(units, 'name', 'asc');
 
   return (

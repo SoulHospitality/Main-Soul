@@ -520,6 +520,27 @@ export function canManageUnits(user) {
   );
 }
 
+export function canManageLongTermUnits(user) {
+  return (
+    !!user &&
+    (user.role === 'admin' ||
+      isReservationsTeam(user) ||
+      isReservationsManager(user) ||
+      user.role === 'owners_relations' ||
+      isUnitAcquisitionRole(user))
+  );
+}
+
+export function canReserveLongTermUnits(user) {
+  return (
+    !!user &&
+    (user.role === 'admin' ||
+      isReservationsTeam(user) ||
+      isReservationsManager(user) ||
+      isUnitAcquisitionRole(user))
+  );
+}
+
 export function canDeleteUnits(user) {
   return (
     !!user &&
