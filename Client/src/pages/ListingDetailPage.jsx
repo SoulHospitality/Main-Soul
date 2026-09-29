@@ -4,7 +4,7 @@ import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
 import ListingCard from '../components/ListingCard';
 import ListingBookingCard from '../components/listing/ListingBookingCard';
-import ListingSaleCard from '../components/listing/ListingSaleCard';
+import ListingLongTermCard from '../components/listing/ListingLongTermCard';
 import AddReviewForm from '../components/reviews/AddReviewForm';
 import UnitReviewsDisplay from '../components/reviews/UnitReviewsDisplay';
 import { useAuth } from '../context/AuthContext';
@@ -16,6 +16,8 @@ import BrandLoader from '../components/ui/BrandLoader';
 
 const localISO = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+const isLongTermUnit = (unit) => String(unit?.listing_type || 'rent').toLowerCase() === 'long_term';
 
 function parseFacilities(unit) {
   if (Array.isArray(unit?.facilities) && unit.facilities.length) return unit.facilities;
@@ -113,7 +115,7 @@ export default function ListingDetailPage() {
   }, [slug]);
 
   useEffect(() => {
-    if (!unit || String(unit.listing_type || 'rent').toLowerCase() === 'sale') return undefined;
+    if (!unit) return undefined;
     let cancelled = false;
     const from = localISO(new Date());
     const toDate = new Date();
@@ -133,12 +135,14 @@ export default function ListingDetailPage() {
       })
       .catch(() => {});
 
-    api
-      .get(`/units/${slug}/pricing`, { params: { from, to } })
-      .then((r) => {
-        if (!cancelled) setPrices(r.data.prices || {});
-      })
-      .catch(() => {});
+    if (!isLongTermUnit(unit)) {
+      api
+        .get(`/units/${slug}/pricing`, { params: { from, to } })
+        .then((r) => {
+          if (!cancelled) setPrices(r.data.prices || {});
+        })
+        .catch(() => {});
+    }
 
     return () => {
       cancelled = true;
@@ -148,7 +152,7 @@ export default function ListingDetailPage() {
   useEffect(() => {
     if (!unit) return undefined;
     let cancelled = false;
-    const listingType = String(unit.listing_type || 'rent').toLowerCase() === 'sale' ? 'sale' : 'rent';
+    const listingType = isLongTermUnit(unit) ? 'long_term' : 'rent';
     api
       .get('/units', {
         params: {
@@ -171,7 +175,7 @@ export default function ListingDetailPage() {
 
   useEffect(() => {
     if (!unit?.id && !unit?.slug) return undefined;
-    if (String(unit.listing_type || 'rent').toLowerCase() === 'sale') return undefined;
+    if (isLongTermUnit(unit)) return undefined;
     let cancelled = false;
     setReviewsLoading(true);
     setReviewsError('');
@@ -264,8 +268,8 @@ export default function ListingDetailPage() {
             {t('listing.browseStays')}
           </Link>
           <span className="mx-2 text-soul-muted">·</span>
-          <Link to="/for-sale" className="text-soul-blue font-semibold underline">
-            {t('listing.browseSale')}
+          <Link to="/long-term" className="text-soul-blue font-semibold underline">
+            {t('listing.browseLongTerm')}
           </Link>
         </main>
         <Footer />
@@ -283,25 +287,19 @@ export default function ListingDetailPage() {
     );
   }
 
-  const isSale = String(unit.listing_type || 'rent').toLowerCase() === 'sale';
-  const browsePath = isSale ? '/for-sale' : '/search';
+  const isLongTerm = isLongTermUnit(unit);
+  const browsePath = isLongTerm ? '/long-term' : '/search';
   const sizeM2 = Number(unit.size_m2 || unit.unit_area || 0);
 
-  const detailRows = isSale
-    ? [
-        { label: t('listing.specBedrooms'), value: String(unit.beds ?? '—') },
-        { label: t('listing.specBaths'), value: String(unit.baths ?? '—') },
-        ...(sizeM2 > 0 ? [{ label: t('listing.specArea'), value: `${sizeM2} m²` }] : []),
-        ...(unit.property_type ? [{ label: t('listing.specPropertyType'), value: unit.property_type }] : []),
-      ]
-    : [
-        { label: t('listing.specGuests'), value: String(unit.guests || '—') },
-        { label: t('listing.specBedrooms'), value: String(unit.beds ?? '—') },
-        { label: t('listing.specBaths'), value: String(unit.baths ?? '—') },
-        { label: t('listing.specCheckIn'), value: t('listing.specCheckInValue') },
-        { label: t('listing.specCheckOut'), value: t('listing.specCheckOutValue') },
-        ...(unit.property_type ? [{ label: t('listing.specPropertyType'), value: unit.property_type }] : []),
-      ];
+  const detailRows = [
+    { label: t('listing.specGuests'), value: String(unit.guests || '—') },
+    { label: t('listing.specBedrooms'), value: String(unit.beds ?? '—') },
+    { label: t('listing.specBaths'), value: String(unit.baths ?? '—') },
+    ...(isLongTerm && sizeM2 > 0 ? [{ label: t('listing.specArea'), value: `${sizeM2} m²` }] : []),
+    { label: t('listing.specCheckIn'), value: t('listing.specCheckInValue') },
+    { label: t('listing.specCheckOut'), value: t('listing.specCheckOutValue') },
+    ...(unit.property_type ? [{ label: t('listing.specPropertyType'), value: unit.property_type }] : []),
+  ];
 
   return (
     <div>
@@ -330,7 +328,7 @@ export default function ListingDetailPage() {
             <div>
               {locationParts[0] && (
                 <p className="soul-eyebrow text-soul-teal mb-2.5">
-                  {isSale ? t('listing.forSale', { place: locationParts[0] }) : locationParts[0]}
+                  {isLongTerm ? t('listing.longTermIn', { place: locationParts[0] }) : locationParts[0]}
                 </p>
               )}
               <h1 className="font-display text-[clamp(28px,3.5vw,40px)] font-semibold mb-2.5 text-soul-blue">
@@ -340,7 +338,7 @@ export default function ListingDetailPage() {
                 <strong className="text-soul-blue">{locationParts[0] || t('listing.egypt')}</strong>
                 {locationParts.length > 1 ? `, ${locationParts.slice(1).join(', ')}` : ''}
               </div>
-              {!isSale && Number(unit.review_count || 0) > 0 ? (
+              {!isLongTerm && Number(unit.review_count || 0) > 0 ? (
                 <p className="mt-2 text-sm text-soul-blue">
                   <span className="font-semibold text-amber-600">★ {Number(unit.average_rating || 0).toFixed(1)}</span>
                   <span className="text-soul-muted"> · {t('listing.reviewCount', { count: unit.review_count })}</span>
@@ -418,7 +416,7 @@ export default function ListingDetailPage() {
               <a href="#features" className="py-3 hover:text-soul-blue transition-colors">
                 {t('listing.amenitiesHeading')}
               </a>
-              {!isSale && (
+              {!isLongTerm && (
                 <>
                   <a href="#reviews" className="py-3 hover:text-soul-blue transition-colors">
                     {t('listing.reviews')}
@@ -435,19 +433,9 @@ export default function ListingDetailPage() {
             <div>
               <section className="pb-8 border-b border-soul-line mb-8">
                 <div className="grid grid-cols-3 gap-3.5">
-                  {isSale ? (
-                    <>
-                      <Spec num={String(unit.beds ?? '—')} label={t('listing.specBedrooms')} />
-                      <Spec num={String(unit.baths ?? '—')} label={t('listing.specBaths')} />
-                      <Spec num={sizeM2 > 0 ? `${sizeM2}` : '—'} label={sizeM2 > 0 ? 'm²' : t('listing.specArea')} />
-                    </>
-                  ) : (
-                    <>
-                      <Spec num={String(unit.guests || '—')} label={t('listing.specGuests')} />
-                      <Spec num={String(unit.beds ?? '—')} label={t('listing.specBedrooms')} />
-                      <Spec num={String(unit.baths ?? '—')} label={t('listing.specBaths')} />
-                    </>
-                  )}
+                  <Spec num={String(unit.guests || '—')} label={t('listing.specGuests')} />
+                  <Spec num={String(unit.beds ?? '—')} label={t('listing.specBedrooms')} />
+                  <Spec num={String(unit.baths ?? '—')} label={t('listing.specBaths')} />
                 </div>
               </section>
 
@@ -511,7 +499,7 @@ export default function ListingDetailPage() {
                 )}
               </section>
 
-              {!isSale && (
+              {!isLongTerm && (
               <section id="reviews" className="scroll-mt-[130px] pb-8 border-b border-soul-line mb-8">
                 <h2 className="font-display text-2xl font-semibold mb-5 text-soul-blue">{t('listing.reviews')}</h2>
                 <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
@@ -550,7 +538,7 @@ export default function ListingDetailPage() {
                 <section className="pb-8 border-b border-soul-line mb-8">
                   <div className="flex justify-between items-center mb-3.5 flex-wrap gap-3.5">
                     <h2 className="font-display text-2xl font-semibold m-0 text-soul-blue">
-                      {isSale ? t('listing.similarSale') : t('listing.similarRent')}
+                      {isLongTerm ? t('listing.similarLongTerm') : t('listing.similarRent')}
                     </h2>
                     <Link to={browsePath} className="text-soul-blue font-semibold text-sm hover:underline">
                       {t('listing.viewAll')}
@@ -561,22 +549,18 @@ export default function ListingDetailPage() {
                       <ListingCard
                         key={l.id}
                         listing={l}
-                        carryDates={
-                          isSale
-                            ? undefined
-                            : {
-                                checkin: params.get('checkin') || undefined,
-                                checkout: params.get('checkout') || undefined,
-                                guests: params.get('guests') || undefined,
-                              }
-                        }
+                        carryDates={{
+                          checkin: params.get('checkin') || undefined,
+                          checkout: params.get('checkout') || undefined,
+                          guests: params.get('guests') || undefined,
+                        }}
                       />
                     ))}
                   </div>
                 </section>
               )}
 
-              {!isSale && (
+              {!isLongTerm && (
                 <>
                   <section id="rules" className="scroll-mt-[130px] pb-8 border-b border-soul-line mb-8">
                     <h2 className="font-display text-2xl font-semibold mb-3.5 text-soul-blue">{t('listing.houseRules')}</h2>
@@ -617,8 +601,14 @@ export default function ListingDetailPage() {
             </div>
 
             <aside>
-              {isSale ? (
-                <ListingSaleCard unit={unit} />
+              {isLongTerm ? (
+                <ListingLongTermCard
+                  unit={unit}
+                  blockedDates={blocked}
+                  checkoutDates={checkoutDates}
+                  initialCheckin={params.get('checkin') || undefined}
+                  initialCheckout={params.get('checkout') || undefined}
+                />
               ) : (
                 <ListingBookingCard
                   unit={unit}

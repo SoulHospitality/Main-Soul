@@ -37,7 +37,7 @@ export default function PropertyFiltersSidebar({
   mode = 'rent',
 }) {
   const { t } = useLocale();
-  const isSale = mode === 'sale';
+  const isLongTerm = mode === 'long_term';
   const { destinations, projectsByDestination } = useProjectCatalog();
   const [destination, setDestination] = useState('');
   const [checkin, setCheckin] = useState('');
@@ -106,12 +106,11 @@ export default function PropertyFiltersSidebar({
       priceMin: min || undefined,
       priceMax: max || undefined,
     };
-    if (isSale) return base;
     return {
       ...base,
       checkin: cin || undefined,
       checkout: cout || undefined,
-      guests: g,
+      ...(isLongTerm ? {} : { guests: g }),
     };
   }
 
@@ -188,17 +187,17 @@ export default function PropertyFiltersSidebar({
         </select>
       </Field>
 
-      {!isSale && (
-        <>
-          <div>
-            <DateRangeFieldLabel />
-            <DateRangePicker
-              checkin={checkin}
-              checkout={checkout}
-              onChange={setDatesLive}
-            />
-          </div>
+      <div>
+        <DateRangeFieldLabel />
+        <DateRangePicker
+          checkin={checkin}
+          checkout={checkout}
+          onChange={setDatesLive}
+        />
+      </div>
 
+      {!isLongTerm && (
+        <>
           <Field label={t('home.searchGuests')} icon={Users}>
             <div className="flex items-center justify-between gap-3 rounded-xl border border-soul-line bg-white px-3 py-2.5">
               <button
@@ -242,7 +241,7 @@ export default function PropertyFiltersSidebar({
         </div>
       </Field>
 
-      <Field label={isSale ? t('search.propertyType') : t('search.rentalType')} icon={Building2}>
+      <Field label={t('search.rentalType')} icon={Building2}>
         <div className="space-y-2 rounded-xl border border-soul-line bg-white px-3.5 py-3">
           {RENTAL_TYPES.map((type) => {
             const checked = rentalTypes.includes(type);
@@ -264,12 +263,12 @@ export default function PropertyFiltersSidebar({
         </div>
       </Field>
 
-      <Field label={isSale ? t('search.priceRange') : t('search.priceRangeNight')} icon={Wallet}>
+      <Field label={isLongTerm ? t('search.priceRangeMonth') : t('search.priceRangeNight')} icon={Wallet}>
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
           <input
             type="number"
             min={0}
-            step={isSale ? 100000 : 500}
+            step={isLongTerm ? 5000 : 500}
             className={inputCls}
             value={priceMin || ''}
             placeholder={t('search.min')}
@@ -280,7 +279,7 @@ export default function PropertyFiltersSidebar({
           <input
             type="number"
             min={0}
-            step={isSale ? 100000 : 500}
+            step={isLongTerm ? 5000 : 500}
             className={inputCls}
             value={priceMax || ''}
             placeholder={t('search.max')}
@@ -376,12 +375,13 @@ function Field({ label, icon: Icon, children }) {
 
 export function MobileSearchPill({ values, onOpen, filterCount = 0, mode = 'rent' }) {
   const { t, localeTag } = useLocale();
-  const isSale = mode === 'sale';
+  const isLongTerm = mode === 'long_term';
   const place = values.where || t('search.anywhere');
   const guests = Number(values.guests) || 1;
   const dateStr = useMemo(() => {
-    if (isSale) return t('search.forSale');
-    if (!values.checkin || !values.checkout) return t('search.anyDates');
+    if (!values.checkin || !values.checkout) {
+      return isLongTerm ? t('search.longTerm') : t('search.anyDates');
+    }
     try {
       const da = new Date(`${values.checkin}T00:00:00`);
       const db = new Date(`${values.checkout}T00:00:00`);
@@ -391,7 +391,7 @@ export function MobileSearchPill({ values, onOpen, filterCount = 0, mode = 'rent
     } catch {
       return t('search.anyDates');
     }
-  }, [values.checkin, values.checkout, isSale, localeTag, t]);
+  }, [values.checkin, values.checkout, isLongTerm, localeTag, t]);
 
   return (
     <button
@@ -404,7 +404,7 @@ export function MobileSearchPill({ values, onOpen, filterCount = 0, mode = 'rent
       </span>
       <div className="min-w-0 flex-1">
         <div className="truncate text-[14px] font-bold text-soul-blue">
-          {isSale ? place : `${place} · ${t('home.guestsLower', { count: guests })}`}
+          {isLongTerm ? place : `${place} · ${t('home.guestsLower', { count: guests })}`}
         </div>
         <div className="truncate text-[12px] text-soul-muted">{dateStr}</div>
       </div>

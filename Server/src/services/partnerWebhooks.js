@@ -19,7 +19,7 @@ function webhookConfigured() {
 function isPartnerFeedUnit(row) {
   if (!row) return false;
   if (String(row.status || '') !== 'published') return false;
-  return String(row.listing_type || 'rent').toLowerCase() !== 'sale';
+  return String(row.listing_type || 'rent').toLowerCase() === 'rent';
 }
 
 function signBody(rawBody, secret) {

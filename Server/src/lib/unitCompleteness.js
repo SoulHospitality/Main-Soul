@@ -1,5 +1,6 @@
 const { isGaiaUnit } = require('./minStay');
 const { beachAccessRequiresManualEntry } = require('./beachAccess');
+const { isLongTermUnit } = require('./listingType');
 
 function hasText(v) {
   return String(v || '').trim().length > 0;
@@ -25,13 +26,9 @@ function descriptionText(unit) {
   return unit.the_property || unit.description || unit.short_description || '';
 }
 
-function isSaleUnit(unit) {
-  return String(unit?.listing_type || 'rent').toLowerCase() === 'sale';
-}
-
 function assessUnitCompleteness(unit, { hasPrice = false } = {}) {
   const missing = [];
-  const sale = isSaleUnit(unit);
+  const longTerm = isLongTermUnit(unit);
 
   if (!hasText(unit.title || unit.name)) missing.push('title');
   if (!hasText(unit.compound || unit.project)) missing.push('project');
@@ -44,10 +41,9 @@ function assessUnitCompleteness(unit, { hasPrice = false } = {}) {
   if (unit.floor == null || unit.floor === '' || Number.isNaN(Number(unit.floor))) missing.push('floor');
   if (!(Number(unit.guests) >= 1)) missing.push('guests');
 
-  if (sale) {
-    if (!(Number(unit.size_m2 || unit.area_sqft || unit.unit_area) > 0)) {
-      missing.push('area (m²)');
-    }
+  if (longTerm) {
+    if (!(Number(unit.price_monthly_egp ?? unit.price_monthly) > 0)) missing.push('monthly price');
+    if (!(Number(unit.min_nights) >= 1)) missing.push('minimum stay');
   } else {
     if (!hasPrice && !(Number(unit.price_fallback || unit.price_per_night) > 0)) {
       missing.push('price (fallback or daily rates)');

@@ -33,9 +33,7 @@ export default function TransferReservationModal({
 
   const unitOptions = useMemo(
     () =>
-      (units || [])
-        .filter((u) => String(u.listing_type || 'rent').toLowerCase() !== 'sale')
-        .map((u) => ({ value: String(u.id), label: unitSelectLabel(u) })),
+      (units || []).map((u) => ({ value: String(u.id), label: unitSelectLabel(u) })),
     [units]
   );
 

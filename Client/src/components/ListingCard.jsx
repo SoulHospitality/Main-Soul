@@ -12,7 +12,7 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
   const { t } = useLocale();
   const { has, toggle, remove } = useWishlist();
   const removeFromWishlist = onRemove || remove;
-  const isSale = String(listing.listing_type || 'rent').toLowerCase() === 'sale';
+  const isLongTerm = String(listing.listing_type || 'rent').toLowerCase() === 'long_term';
   const photos = (() => {
     const list = [];
     if (listing.cover_url) list.push(listing.cover_url);
@@ -33,11 +33,9 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
     || 'North Coast, Egypt';
 
   const params = new URLSearchParams();
-  if (!isSale) {
-    if (carryDates?.checkin) params.set('checkin', carryDates.checkin);
-    if (carryDates?.checkout) params.set('checkout', carryDates.checkout);
-    if (carryDates?.guests) params.set('guests', carryDates.guests);
-  }
+  if (carryDates?.checkin) params.set('checkin', carryDates.checkin);
+  if (carryDates?.checkout) params.set('checkout', carryDates.checkout);
+  if (!isLongTerm && carryDates?.guests) params.set('guests', carryDates.guests);
   const qs = params.toString();
   const href = `/listings/${listing.slug}${qs ? `?${qs}` : ''}`;
 
@@ -76,9 +74,9 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
           <div className="grid h-full w-full place-items-center text-sm text-soul-muted">{t('listing.noPhoto')}</div>
         )}
 
-        {isSale && (
+        {isLongTerm && (
           <span className="absolute start-3 top-3 rounded-full bg-soul-blue px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-white">
-            {t('listing.forSaleBadge')}
+            {t('listing.longTermBadge')}
           </span>
         )}
 
@@ -135,7 +133,7 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
         </h3>
         <div className="truncate text-[13px] text-soul-muted">{location}</div>
 
-        {!isSale && (
+        {!isLongTerm && (
           <div className="mt-1.5 flex flex-wrap items-center gap-2">
             {Number(listing.review_count || listing.reviewCount || 0) > 0 ? (
               <>
@@ -163,10 +161,12 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
               <span className="font-num text-[19px] font-semibold leading-tight text-soul-blue">
                 {priceCore}
               </span>
-              {!isSale && <span className="text-[12.5px] text-soul-muted">{t('listing.perNightShort')}</span>}
+              <span className="text-[12.5px] text-soul-muted">
+                {isLongTerm ? t('listing.perMonthShort') : t('listing.perNightShort')}
+              </span>
             </>
           ) : (
-            <span className="text-[13px] text-soul-muted">{isSale ? t('listing.inquireForPrice') : t('listing.viewPricing')}</span>
+            <span className="text-[13px] text-soul-muted">{isLongTerm ? t('listing.inquireForPrice') : t('listing.viewPricing')}</span>
           )}
         </div>
 
@@ -177,9 +177,8 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
           {(listing.baths ?? 0) > 0 && (
             <Spec icon={Bath} value={listing.baths} />
           )}
-          {isSale
-            ? sizeM2 > 0 && <Spec icon={Maximize2} value={`${sizeM2} m²`} />
-            : (listing.guests ?? 0) > 0 && <Spec icon={Users} value={listing.guests} />}
+          {(listing.guests ?? 0) > 0 && <Spec icon={Users} value={listing.guests} />}
+          {isLongTerm && sizeM2 > 0 && <Spec icon={Maximize2} value={`${sizeM2} m²`} />}
         </div>
       </div>
     </Link>

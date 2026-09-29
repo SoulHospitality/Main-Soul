@@ -1783,6 +1783,7 @@ export default function Schedule() {
         {[
           { swatch: 'bg-emerald-50 border border-emerald-200', label: 'Priced' },
           { swatch: 'bg-rose-50 border border-rose-200', label: 'Unpriced' },
+          { swatch: 'bg-sky-50 border border-sky-200', label: 'Long-term (LT)' },
           { swatch: 'bg-[#2a9d8f]', label: 'Guest stay' },
           { swatch: 'bg-red-600', label: 'Cancelled' },
           { swatch: 'bg-amber-400', label: 'Hold' },
@@ -2159,6 +2160,7 @@ export default function Schedule() {
                         const isToday = cell.date === TODAY;
                         const isPast = cell.date < TODAY;
                         const isPriced = price != null && price > 0;
+                        const isLongTermUnit = unit.listing_type === 'long_term';
                         const hasCheckinTomorrow =
                           cell.date === TODAY &&
                           allReservations.some(
@@ -2173,6 +2175,7 @@ export default function Schedule() {
                         if (otaLook) cellBg = otaLook.cellBg;
                         else if (blockSrc) cellBg = 'bg-slate-50';
                         else if (isPriced) cellBg = 'bg-emerald-50/90';
+                        else if (isLongTermUnit) cellBg = 'bg-sky-50/70';
                         else if (!isPast) cellBg = 'bg-rose-50/80';
                         const canEditCell = canEditPrice && !isPast;
                         const canBookCell =
@@ -2223,7 +2226,9 @@ export default function Schedule() {
                                   } · ${formatDate(cell.date)}`
                                 : isPriced
                                   ? `${currency(price)} · ${formatDate(cell.date)}`
-                                  : `No price — guests see unavailable · ${formatDate(cell.date)}`
+                                  : isLongTermUnit
+                                    ? `Long-term${unit.price_monthly > 0 ? ` · ${currency(unit.price_monthly)} / month` : ''} · ${formatDate(cell.date)}`
+                                    : `No price — guests see unavailable · ${formatDate(cell.date)}`
                             }
                           >
                             <div
@@ -2234,7 +2239,9 @@ export default function Schedule() {
                                     ? 'text-orange-700'
                                     : isPriced
                                       ? 'text-emerald-700'
-                                      : 'text-rose-300'
+                                      : isLongTermUnit
+                                        ? 'text-sky-600'
+                                        : 'text-rose-300'
                               }`}
                             >
                               {hasCheckinTomorrow && !otaLook && (
@@ -2259,6 +2266,8 @@ export default function Schedule() {
                                     ? `${(price / 1000).toFixed(price % 1000 === 0 ? 0 : 1)}k`
                                     : price}
                                 </span>
+                              ) : isLongTermUnit ? (
+                                <span className="text-[9px] font-bold uppercase tracking-wide">LT</span>
                               ) : (
                                 <span className="text-[10px] font-semibold">—</span>
                               )}

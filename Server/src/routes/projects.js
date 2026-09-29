@@ -18,8 +18,6 @@ const {
 
 const PROJECT_EDITOR_ROLES = [
   'admin',
-  'resale',
-  'resale_manager',
   'reservations_manager',
   'reservations_web',
   'reservations_manual',

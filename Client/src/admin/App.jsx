@@ -9,7 +9,7 @@ import { defaultAdminPage, ADMIN_LOGIN, ADMIN_CHANGE_PASSWORD } from './utils/ad
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Units = lazy(() => import('./pages/Units'));
-const UnitsForSale = lazy(() => import('./pages/UnitsForSale'));
+const UnitsLongTerm = lazy(() => import('./pages/UnitsLongTerm'));
 const Reservations = lazy(() => import('./pages/Reservations'));
 const ReservationsChecklist = lazy(() => import('./pages/ReservationsChecklist'));
 const WebsiteBookings = lazy(() => import('./pages/WebsiteBookings'));
@@ -122,7 +122,8 @@ function AppRoutes() {
       />
       <Route path="dashboard" element={<ProtectedRoute page="dashboard"><Dashboard /></ProtectedRoute>} />
       <Route path="units" element={<ProtectedRoute page="units"><Units /></ProtectedRoute>} />
-      <Route path="units-for-sale" element={<ProtectedRoute page="units_sale"><UnitsForSale /></ProtectedRoute>} />
+      <Route path="units-long-term" element={<ProtectedRoute page="units_long_term"><UnitsLongTerm /></ProtectedRoute>} />
+      <Route path="units-for-sale" element={<Navigate to="/admin/units-long-term" replace />} />
       <Route path="projects" element={<ProtectedRoute page="projects"><Projects /></ProtectedRoute>} />
       <Route path="reservations" element={<ProtectedRoute page="reservations"><Reservations /></ProtectedRoute>} />
       <Route path="reservations/checklist" element={<ProtectedRoute page="reservations"><ReservationsChecklist /></ProtectedRoute>} />

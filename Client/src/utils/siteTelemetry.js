@@ -28,7 +28,7 @@ export function guestSessionId() {
 export function eventFromPath(pathname, search = '') {
   const path = String(pathname || '/');
   if (path === '/' || path === '/home') return { event: 'view_home' };
-  if (path === '/search' || path === '/for-sale') return { event: 'view_search' };
+  if (path === '/search' || path === '/long-term') return { event: 'view_search' };
   const listing = path.match(/^\/listings\/([^/]+)/);
   if (listing) return { event: 'view_listing', unit_slug: listing[1] };
   if (path === '/checkout/payment/callback') return { event: 'view_payment_callback' };

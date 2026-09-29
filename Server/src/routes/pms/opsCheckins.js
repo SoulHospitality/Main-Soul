@@ -1129,7 +1129,7 @@ router.get('/housekeeping/unit-cleans-summary', requireRoles(...HK_READ_ROLES), 
   try {
     const q = String(req.query.q || '').trim();
     const params = [];
-    const filters = [`COALESCE(u.listing_type, 'rent') = 'rent'`];
+    const filters = [`COALESCE(u.listing_type, 'rent') IN ('rent', 'long_term')`];
 
     if (q) {
       params.push(`%${q}%`);

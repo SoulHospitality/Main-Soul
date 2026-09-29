@@ -368,7 +368,7 @@ router.get(
 
 router.get(
   '/commissions/resale-breakdown',
-  requireRoles('admin', 'resale', 'resale_manager'),
+  requireRoles('admin'),
   async (req, res, next) => {
     try {
       const from_date = clampFromDate(req.query.from_date);

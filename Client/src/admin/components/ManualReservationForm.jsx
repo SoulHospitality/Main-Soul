@@ -88,8 +88,11 @@ export default function ManualReservationForm({
 }) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const selectedUnit = units.find((unit) => String(unit.id) === String(form.unit_id));
-  // Staff / reservation-team bookings: no project minimum stay (guests still have one).
-  const minNights = 1;
+  // Staff bookings skip the project minimum stay; long-term units keep their own (holds/owner stays exempt).
+  const minNights =
+    selectedUnit?.listing_type === 'long_term' && !form.is_owner_reservation && !form.is_hold
+      ? Math.max(1, Number(selectedUnit.min_nights) || 1)
+      : 1;
 
   const { data: reservedRanges = [], isLoading: availabilityLoading } = useQuery({
     queryKey: ['manual-blocked-dates', form.unit_id],

@@ -42,7 +42,7 @@ async function createDraftUnitFromLead(lead, { actorId } = {}) {
        $1,$2,'draft','manual',$3,$3,COALESCE($4,'North Coast'),
        $5,$6,$7,$8,$9,
        $10,$11,$12,$13,$13,
-       $14,'available',$15,'{}'::text[],'{}'::text[],'sale'
+       $14,'available',$15,'{}'::text[],'{}'::text[],'rent'
      ) RETURNING *`,
     [
       slug,

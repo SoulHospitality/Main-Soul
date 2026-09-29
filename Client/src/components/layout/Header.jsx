@@ -14,11 +14,11 @@ const NAV_KEYS = [
 
 const PROPERTY_LINK_KEYS = [
   { labelKey: 'nav.propertiesForRent', to: '/search' },
-  { labelKey: 'nav.propertiesForSale', to: '/for-sale' },
+  { labelKey: 'nav.propertiesLongTerm', to: '/long-term' },
 ];
 
 function isPropertiesPath(pathname) {
-  return pathname.startsWith('/search') || pathname.startsWith('/for-sale') || pathname.startsWith('/listings');
+  return pathname.startsWith('/search') || pathname.startsWith('/long-term') || pathname.startsWith('/listings');
 }
 
 function LanguageToggle({ className = '' }) {
@@ -139,7 +139,7 @@ export default function Header({ overHero = false }) {
                     const active =
                       pathname === item.to ||
                       (item.to === '/search' && pathname.startsWith('/search')) ||
-                      (item.to === '/for-sale' && pathname.startsWith('/for-sale'));
+                      (item.to === '/long-term' && pathname.startsWith('/long-term'));
                     return (
                       <Link
                         key={item.to}

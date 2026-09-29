@@ -40,13 +40,11 @@ async function setOwnerUnits(ownerId, unitIds) {
 
   if (ids.length) {
     const { rows: units } = await query(
-      `SELECT id FROM units
-       WHERE id = ANY($1::uuid[])
-         AND COALESCE(listing_type, 'rent') <> 'sale'`,
+      `SELECT id FROM units WHERE id = ANY($1::uuid[])`,
       [ids]
     );
     if (units.length !== ids.length) {
-      const err = new Error('One or more units are invalid or listed for sale');
+      const err = new Error('One or more units are invalid');
       err.status = 400;
       throw err;
     }
@@ -118,8 +116,7 @@ async function listLinkableUnits(ownerId) {
             COALESCE(u.project, u.compound) AS project_label
      FROM units u
      LEFT JOIN owner_units ou ON ou.unit_id = u.id
-     WHERE COALESCE(u.listing_type, 'rent') <> 'sale'
-       AND ${ownerFilter}
+     WHERE ${ownerFilter}
      ORDER BY COALESCE(u.project, u.compound) NULLS LAST,
               u.unit_number NULLS LAST,
               u.title`,

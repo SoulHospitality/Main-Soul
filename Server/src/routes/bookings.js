@@ -3,6 +3,7 @@ const { query } = require('../config/db');
 const { quoteStay } = require('../services/pricing');
 const { initializePaymobCheckout } = require('../config/paymob');
 const { authGuest } = require('../middleware/auth');
+const { isLongTermUnit } = require('../lib/listingType');
 const { upload, attachCloudinaryUrls } = require('../config/cloudinary');
 
 const router = express.Router();
@@ -34,7 +35,7 @@ router.post('/checkout', authGuest, upload.array('id_photos', 10), attachCloudin
     const { rows: units } = await query(`SELECT * FROM units WHERE slug = $1 AND status = 'published'`, [slug]);
     const unit = units[0];
     if (!unit) return res.status(404).json({ error: 'Listing not found' });
-    if (unit.disable_automatic_reservations) {
+    if (isLongTermUnit(unit) || unit.disable_automatic_reservations) {
       return res.status(403).json({
         error: 'Online reservations are disabled for this unit. Please inquire on WhatsApp.',
       });

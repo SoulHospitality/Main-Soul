@@ -4,6 +4,7 @@ const { quoteStay, getBlockedDates, getStayCheckoutDates, todayIsoBusiness, toIs
 const { GUEST_AVAILABILITY_MONTHS } = require('../lib/calendarOccupancy');
 const { DEFAULT_MIN_STAY_NIGHTS } = require('../lib/minStay');
 const { enrichUnitsWithBeachPolicy, withBeachPolicy } = require('../lib/beachAccess');
+const { LONG_TERM, normalizeListingType, isLongTermUnit } = require('../lib/listingType');
 
 const router = express.Router();
 
@@ -11,7 +12,15 @@ const router = express.Router();
  * Guest search: unit must be free for [checkin, checkout) and priced every night.
  * Half-open stays — checkout morning is free for the next arrival.
  */
-function appendStayAvailabilityFilters(where, params, i, checkinIso, checkoutIso, stayNights) {
+function appendStayAvailabilityFilters(
+  where,
+  params,
+  i,
+  checkinIso,
+  checkoutIso,
+  stayNights,
+  { requireNightlyPrices = true } = {}
+) {
   const ci = i;
   params.push(checkinIso);
   i += 1;
@@ -55,13 +64,15 @@ function appendStayAvailabilityFilters(where, params, i, checkinIso, checkoutIso
       AND bk.checkout > $${ci}::date
   )`);
 
-  where.push(`(
-    SELECT COUNT(*)::int
-    FROM unit_daily_prices p
-    WHERE p.wp_post_id = u.wp_post_id
-      AND p.date >= $${ci}::date AND p.date < $${co}::date
-      AND COALESCE(p.price, 0) > 0
-  ) = $${nightsIdx}`);
+  if (requireNightlyPrices) {
+    where.push(`(
+      SELECT COUNT(*)::int
+      FROM unit_daily_prices p
+      WHERE p.wp_post_id = u.wp_post_id
+        AND p.date >= $${ci}::date AND p.date < $${co}::date
+        AND COALESCE(p.price, 0) > 0
+    ) = $${nightsIdx}`);
+  }
 
   return i;
 }
@@ -106,6 +117,14 @@ function toPublicUnit(row) {
   if (out.price_fallback != null && Number(out.price_fallback) > 0) {
     out.price_fallback = applyGuestTenantMarkup(out.price_fallback, row);
   }
+  out.listing_type = normalizeListingType(row.listing_type);
+  if (out.listing_type === LONG_TERM) {
+    const monthly = Number(row.price_monthly_egp);
+    out.price_monthly = monthly > 0 ? applyGuestTenantMarkup(monthly, row) : null;
+    out.price_fallback = null;
+    out.inquiry_only = true;
+  }
+  delete out.price_monthly_egp;
   return out;
 }
 
@@ -170,8 +189,7 @@ function attachFacilities(row, facilitiesByProject, todayPriceByWp = null, price
   out.facilities = fromProject.length ? fromProject : fromUnit;
 
   
-  const listingType = String(row.listing_type || 'rent').toLowerCase();
-  if (listingType !== 'sale' && todayPriceByWp && row.wp_post_id != null) {
+  if (!isLongTermUnit(row) && todayPriceByWp && row.wp_post_id != null) {
     const rawToday = todayPriceByWp.get(Number(row.wp_post_id));
     if (rawToday > 0) {
       const { applyGuestTenantMarkup } = require('../lib/commission');
@@ -208,7 +226,7 @@ router.get('/', async (req, res, next) => {
       offset = 0,
     } = req.query;
 
-    const listingType = String(listingTypeParam || 'rent').toLowerCase() === 'sale' ? 'sale' : 'rent';
+    const listingType = normalizeListingType(listingTypeParam);
     const where = ["u.status = $1", `COALESCE(u.listing_type, 'rent') = $2`];
     const params = [status, listingType];
     let i = 3;
@@ -258,12 +276,14 @@ router.get('/', async (req, res, next) => {
       params.push(...typeList);
     }
 
-    const checkinIso = listingType === 'rent' ? toIsoDate(checkin) : null;
-    const checkoutIso = listingType === 'rent' ? toIsoDate(checkout) : null;
+    const checkinIso = toIsoDate(checkin);
+    const checkoutIso = toIsoDate(checkout);
     const stayNights =
       checkinIso && checkoutIso ? nightsBetween(checkinIso, checkoutIso) : 0;
     if (checkinIso && checkoutIso && Number.isFinite(stayNights) && stayNights > 0) {
-      i = appendStayAvailabilityFilters(where, params, i, checkinIso, checkoutIso, stayNights);
+      i = appendStayAvailabilityFilters(where, params, i, checkinIso, checkoutIso, stayNights, {
+        requireNightlyPrices: listingType !== LONG_TERM,
+      });
     }
 
     params.push(Number(limit), Number(offset));
@@ -288,7 +308,7 @@ router.get('/', async (req, res, next) => {
                ELSE u.photo_urls[1:5]
              END AS photo_urls,
              u.wp_post_id, u.featured, u.price_currency, u.property_type, u.price_fallback,
-             u.size_m2, u.listing_type, u.created_at,
+             u.size_m2, u.listing_type, u.price_monthly_egp, u.min_nights, u.created_at,
              u.commission_mode, u.commission_tenant_pct,
              COALESCE(u.average_rating, 0) AS average_rating,
              COALESCE(u.review_count, 0) AS review_count
@@ -358,7 +378,9 @@ router.get('/:idOrSlug/availability', async (req, res, next) => {
     const toDate = new Date(`${from}T00:00:00`);
     toDate.setMonth(toDate.getMonth() + GUEST_AVAILABILITY_MONTHS);
     const to = req.query.to || `${toDate.getFullYear()}-${String(toDate.getMonth() + 1).padStart(2, '0')}-${String(toDate.getDate()).padStart(2, '0')}`;
-    const blocked = await getBlockedDates(unit.wp_post_id, from, to);
+    const blocked = await getBlockedDates(unit.wp_post_id, from, to, {
+      includeUnpriced: !isLongTermUnit(unit),
+    });
     const occupied = new Set(blocked.map((b) => b.date));
     const checkoutDates = (await getStayCheckoutDates(unit.wp_post_id, from, to)).filter(
       (d) => !occupied.has(d)
@@ -410,6 +432,11 @@ router.get('/:idOrSlug/quote', async (req, res, next) => {
     const { checkin, checkout, adults, teens, guests } = req.query;
     const unit = await loadUnit(req.params.idOrSlug);
     if (!unit?.wp_post_id) return res.status(404).json({ error: 'Unit not found' });
+    if (isLongTermUnit(unit)) {
+      return res.status(403).json({
+        error: 'Long-term units can only be reserved by inquiry. Please contact us on WhatsApp.',
+      });
+    }
     if (unit.disable_automatic_reservations) {
       return res.status(403).json({
         error: 'Online reservations are disabled for this unit. Please inquire on WhatsApp.',

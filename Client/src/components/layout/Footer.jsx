@@ -59,7 +59,7 @@ export default function Footer() {
             </p>
             <div className="flex flex-col gap-3">
               <FooterLink label={t('nav.propertiesForRent')} href="/search" />
-              <FooterLink label={t('nav.propertiesForSale')} href="/for-sale" />
+              <FooterLink label={t('nav.propertiesLongTerm')} href="/long-term" />
               <FooterLink label={t('nav.about')} href="/about" />
               <FooterLink label={t('nav.faq')} href="/faq" />
               <FooterLink label={t('nav.becomeAHost')} href="/owners" />

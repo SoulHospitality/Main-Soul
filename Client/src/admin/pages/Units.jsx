@@ -112,6 +112,8 @@ const EMPTY_FORM = {
   cover_drive_url: '',
   cover_url: '',
   price_per_night: '',
+  price_monthly: '',
+  min_nights: '',
   utilities_cost: '',
   ops_status: 'available',
   listing_status: 'published',
@@ -222,7 +224,7 @@ function CommissionSection({ form, setForm }) {
 function UnitForm({ form, setForm, listingType = 'rent' }) {
   const { isAdmin, canManageUnits } = usePermissions();
   const canSeeOwner = isAdmin || canManageUnits;
-  const isSale = listingType === 'sale';
+  const isLongTerm = listingType === 'long_term';
   const { destinations, projectsByDestination } = useProjectCatalog();
   const projectOptions = projectsByDestination[form.destination] || [];
 
@@ -347,7 +349,7 @@ function UnitForm({ form, setForm, listingType = 'rent' }) {
             </p>
           </div>
         </div>
-        {!isSale ? (
+        {!isLongTerm ? (
           <div className="sm:col-span-2 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2.5">
             <input
               id="disable_automatic_reservations"
@@ -387,19 +389,56 @@ function UnitForm({ form, setForm, listingType = 'rent' }) {
             Auto: {form.has_nanny_room ? '2 × bedrooms + 1 nanny' : '2 × bedrooms'} (studio = 2)
           </p>
         </div>
-        {isSale ? (
-          <div>
-            <label className="label">Area (m²) *</label>
-            <input
-              type="number"
-              min="1"
-              step="1"
-              className="input"
-              value={form.unit_area}
-              onChange={(e) => setForm((f) => ({ ...f, unit_area: e.target.value }))}
-              placeholder="e.g. 145"
-            />
-          </div>
+        {isLongTerm ? (
+          <>
+            <div>
+              <label className="label">Monthly rent (EGP) *</label>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                className="input"
+                value={form.price_monthly}
+                onChange={(e) => setForm((f) => ({ ...f, price_monthly: e.target.value }))}
+                placeholder="e.g. 45000"
+              />
+            </div>
+            <div>
+              <label className="label">Minimum stay (nights) *</label>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                className="input"
+                value={form.min_nights}
+                onChange={(e) => setForm((f) => ({ ...f, min_nights: e.target.value }))}
+                placeholder="e.g. 30"
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                Set on this unit only — the project minimum stay does not apply.
+              </p>
+            </div>
+            <div>
+              <label className="label">Area (m²)</label>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                className="input"
+                value={form.unit_area}
+                onChange={(e) => setForm((f) => ({ ...f, unit_area: e.target.value }))}
+                placeholder="e.g. 145"
+              />
+            </div>
+            <div>
+              <label className="label">Utilities Cost Per Night (EGP)</label>
+              <input type="number" min="0" step="0.01" className="input" value={form.utilities_cost} onChange={e => setForm(f => ({ ...f, utilities_cost: e.target.value }))} placeholder="Optional" />
+            </div>
+            <p className="sm:col-span-2 text-xs text-gray-500">
+              Guests can see available dates and send a WhatsApp inquiry, but cannot book this unit
+              online. Reservations are made from the Schedule or Reservations page.
+            </p>
+          </>
         ) : (
           <>
             <div>
@@ -418,7 +457,7 @@ function UnitForm({ form, setForm, listingType = 'rent' }) {
       </div>
 
       <div className="border-t border-gray-100 pt-4 space-y-3">
-        <h4 className="text-sm font-semibold text-gray-700">{isSale ? 'Listing details' : 'Guest listing'}</h4>
+        <h4 className="text-sm font-semibold text-gray-700">Guest listing</h4>
         <div>
           <label className="label">Description</label>
           <textarea className="input resize-none" rows={3} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="The property…" />
@@ -545,10 +584,10 @@ function CommissionBadge({ unit }) {
 
 export default function Units({ listingType = 'rent' }) {
   const qc = useQueryClient();
-  const { canDeleteUnits, canManageUnits, isResale } = usePermissions();
+  const { canDeleteUnits, canManageUnits } = usePermissions();
   const { destinations: catalogDestinations, projectsByDestination, projectNames: catalogProjects } =
     useProjectCatalog();
-  const isSale = listingType === 'sale';
+  const isLongTerm = listingType === 'long_term';
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterOpsStatus, setFilterOpsStatus] = useState('');
@@ -571,7 +610,7 @@ export default function Units({ listingType = 'rent' }) {
         listing_type: listingType,
         search: search || undefined,
         status: filterStatus || undefined,
-        ops_status: !isSale ? (filterOpsStatus || undefined) : undefined,
+        ops_status: filterOpsStatus || undefined,
         destination: filterDestination || undefined,
         project: filterProject || undefined,
         bedrooms: filterBedrooms || undefined,
@@ -712,6 +751,8 @@ export default function Units({ listingType = 'rent' }) {
       cover_url: u.cover_url || '',
       photo_urls: Array.isArray(u.photo_urls) ? u.photo_urls : [],
       price_per_night: u.price_per_night ?? u.price_fallback ?? '',
+      price_monthly: u.price_monthly ?? '',
+      min_nights: u.min_nights ?? '',
       utilities_cost: u.utilities_cost ?? '',
       unit_area: u.unit_area ?? u.size_m2 ?? '',
       ops_status: u.ops_status || 'available',
@@ -733,8 +774,8 @@ export default function Units({ listingType = 'rent' }) {
       toast.error('Project is required');
       return;
     }
-    if (isSale && !(Number(form.unit_area) > 0)) {
-      toast.error('Area (m²) is required for sale units');
+    if (isLongTerm && !(Number(form.min_nights) >= 1)) {
+      toast.error('Minimum stay (nights) is required for long-term units');
       return;
     }
     const projectName = normalizeProjectName(form.project);
@@ -777,10 +818,16 @@ export default function Units({ listingType = 'rent' }) {
       photos_folder_url: form.photos_folder_url || '',
       cover_drive_url: form.cover_drive_url || '',
       cover_url: form.cover_url || '',
-      unit_area: isSale ? form.unit_area : null,
-      size_m2: isSale ? form.unit_area : form.unit_area || null,
-      price_per_night: isSale ? null : (form.price_per_night === '' ? null : form.price_per_night),
-      utilities_cost: isSale ? null : (form.utilities_cost === '' ? null : form.utilities_cost),
+      unit_area: form.unit_area || null,
+      size_m2: form.unit_area || null,
+      price_per_night: isLongTerm ? null : (form.price_per_night === '' ? null : form.price_per_night),
+      ...(isLongTerm
+        ? {
+            price_monthly_egp: form.price_monthly === '' ? null : form.price_monthly,
+            min_nights: form.min_nights,
+          }
+        : {}),
+      utilities_cost: form.utilities_cost === '' ? null : form.utilities_cost,
     });
   };
   const canWrite = canManageUnits;
@@ -794,7 +841,7 @@ export default function Units({ listingType = 'rent' }) {
             <strong>{handoffUnit.name || handoffUnit.title}</strong> saved as draft
             {handoffUnit.listing_completeness?.missing?.length
               ? ` (missing: ${handoffUnit.listing_completeness.missing.join(', ')})`
-              : ''}. Complete the listing{isSale ? '' : ', then it can appear to guests'}.
+              : ''}. Complete the listing, then it can appear to guests.
           </span>
           <div className="flex gap-2">
             <button type="button" className="text-xs underline" onClick={() => setHandoffUnit(null)}>Dismiss</button>
@@ -803,10 +850,10 @@ export default function Units({ listingType = 'rent' }) {
       )}
       <div className="flex items-center justify-between">
         <div className="page-header mb-0">
-          <h1 className="page-title">{isSale ? (isResale ? 'Units' : 'Units for Sale') : 'Units'}</h1>
+          <h1 className="page-title">{isLongTerm ? 'Units (Long Term)' : 'Units (Short Term)'}</h1>
           <p className="page-subtitle">
-            {units.length} {isSale ? 'for-sale' : ''} unit{units.length !== 1 ? 's' : ''}
-            {isSale ? ' · managed by resale' : ' for rent'}
+            {units.length} unit{units.length !== 1 ? 's' : ''}
+            {isLongTerm ? ' for long-term rent · inquiry only on the website' : ' for short-term rent'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -818,8 +865,7 @@ export default function Units({ listingType = 'rent' }) {
         </div>
       </div>
 
-      {!isSale ? (
-        <div className="flex gap-1.5 overflow-x-auto whitespace-nowrap pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex gap-1.5 overflow-x-auto whitespace-nowrap pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {[
             { value: '', label: 'All' },
             { value: 'published', label: 'Published' },
@@ -842,31 +888,18 @@ export default function Units({ listingType = 'rent' }) {
               </button>
             );
           })}
-        </div>
-      ) : null}
+      </div>
 
       <SearchFilter value={search} onChange={setSearch} placeholder="Search units, projects, owners...">
-        {isSale ? (
-          <SearchableSelect className="w-40" value={filterStatus} onChange={setFilterStatus}
-            placeholder="All Status"
-            options={[
-              { value: '', label: 'All Status' },
-              { value: 'draft', label: 'Draft' },
-              { value: 'published', label: 'Published' },
-              { value: 'unpublished', label: 'Unpublished' },
-            ]}
-          />
-        ) : (
-          <SearchableSelect className="w-40" value={filterOpsStatus} onChange={setFilterOpsStatus}
-            placeholder="Ops status"
-            options={[
-              { value: '', label: 'All ops status' },
-              { value: 'available', label: 'Ops: Available' },
-              { value: 'occupied', label: 'Ops: Occupied' },
-              { value: 'maintenance', label: 'Ops: Maintenance' },
-            ]}
-          />
-        )}
+        <SearchableSelect className="w-40" value={filterOpsStatus} onChange={setFilterOpsStatus}
+          placeholder="Ops status"
+          options={[
+            { value: '', label: 'All ops status' },
+            { value: 'available', label: 'Ops: Available' },
+            { value: 'occupied', label: 'Ops: Occupied' },
+            { value: 'maintenance', label: 'Ops: Maintenance' },
+          ]}
+        />
         <SearchableSelect
           className="w-44"
           value={filterDestination}
@@ -924,21 +957,23 @@ export default function Units({ listingType = 'rent' }) {
                   <Eye className="w-3.5 h-3.5" />{u.view}
                 </div>
               )}
-              {(isSale
-                ? (u.unit_area || u.size_m2 || u.area_sqft)
+              {(isLongTerm
+                ? u.price_monthly > 0
                 : (u.price_per_night > 0 || u.price_fallback > 0)) && (
                 <div className="flex items-center gap-1.5 text-sm text-emerald-700 font-medium mb-2">
-                  {isSale ? (
-                    <>{u.unit_area || u.size_m2 || u.area_sqft} m²</>
-                  ) : (
-                    <><DollarSign className="w-4 h-4" />{currency(u.price_per_night || u.price_fallback)} / night</>
-                  )}
+                  <DollarSign className="w-4 h-4" />
+                  {isLongTerm
+                    ? <>{currency(u.price_monthly)} / month</>
+                    : <>{currency(u.price_per_night || u.price_fallback)} / night</>}
                 </div>
+              )}
+              {isLongTerm && u.min_nights > 0 && (
+                <p className="text-xs text-gray-500 mb-2">Min stay: {u.min_nights} nights</p>
               )}
               <div className="flex items-center justify-between pt-3 border-t border-gray-100 gap-2">
                 <CommissionBadge unit={u} />
                 <div className="flex items-center gap-1 flex-wrap justify-end">
-                  {!isSale && guestListingPath(u) ? (
+                  {guestListingPath(u) ? (
                     <a
                       href={guestListingPath(u)}
                       target="_blank"
@@ -997,9 +1032,12 @@ export default function Units({ listingType = 'rent' }) {
                   <SortTh col="project" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>Project</SortTh>
                   <SortTh col="type" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>Type</SortTh>
                   <th>Beds/Bath</th>
-                  <SortTh col={isSale ? 'size_m2' : 'price_per_night'} sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>
-                    {isSale ? 'Area (m²)' : 'Price/Night'}
+                  <SortTh col={isLongTerm ? 'price_monthly' : 'price_per_night'} sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>
+                    {isLongTerm ? 'Price/Month' : 'Price/Night'}
                   </SortTh>
+                  {isLongTerm && (
+                    <SortTh col="min_nights" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>Min stay</SortTh>
+                  )}
                   <SortTh col="owner_name" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>Owner</SortTh>
                   <th>Commission</th><th>Photos</th>
                   <SortTh col="status" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>Status</SortTh>
@@ -1015,10 +1053,11 @@ export default function Units({ listingType = 'rent' }) {
                     <td>{u.type || u.property_type}</td>
                     <td>{u.bedrooms ?? u.beds}B/{u.bathrooms ?? u.baths}Ba</td>
                     <td>
-                      {isSale
-                        ? ((u.unit_area || u.size_m2 || u.area_sqft) ? `${u.unit_area || u.size_m2 || u.area_sqft} m²` : '—')
+                      {isLongTerm
+                        ? (u.price_monthly > 0 ? currency(u.price_monthly) : '—')
                         : ((u.price_per_night || u.price_fallback) > 0 ? currency(u.price_per_night || u.price_fallback) : '—')}
                     </td>
+                    {isLongTerm && <td>{u.min_nights ? `${u.min_nights} nights` : '—'}</td>}
                     <td>{u.owner_name || '—'}</td>
                     <td><CommissionBadge unit={u} /></td>
                     <td>
@@ -1029,7 +1068,7 @@ export default function Units({ listingType = 'rent' }) {
                     <td><Badge status={u.status} /></td>
                     <td>
                         <div className="flex gap-1 items-center">
-                          {!isSale && guestListingPath(u) ? (
+                          {guestListingPath(u) ? (
                             <a
                               href={guestListingPath(u)}
                               target="_blank"
@@ -1082,17 +1121,17 @@ export default function Units({ listingType = 'rent' }) {
         open={modal === 'add' || modal === 'edit'}
         onClose={() => setModal(null)}
         title={modal === 'edit'
-          ? (isSale ? 'Edit Sale Unit' : 'Edit Unit')
-          : (isSale ? 'Add Unit for Sale' : 'Add New Unit')}
+          ? (isLongTerm ? 'Edit Long-Term Unit' : 'Edit Unit')
+          : (isLongTerm ? 'Add Long-Term Unit' : 'Add New Unit')}
         size="lg"
         footer={<>
           <button onClick={() => setModal(null)} className="btn-secondary">Cancel</button>
           <button
             onClick={handleSave}
-            disabled={saveMutation.isPending || !form.name || !form.destination || !form.project || (isSale && !form.unit_area)}
+            disabled={saveMutation.isPending || !form.name || !form.destination || !form.project || (isLongTerm && !form.min_nights)}
             className="btn-primary"
           >
-            {saveMutation.isPending ? 'Saving...' : modal === 'edit' ? 'Save Changes' : (isSale ? 'Create sale unit' : 'Create draft')}
+            {saveMutation.isPending ? 'Saving...' : modal === 'edit' ? 'Save Changes' : 'Create draft'}
           </button>
         </>}
       >

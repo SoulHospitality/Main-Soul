@@ -63,8 +63,9 @@ async function syncUnitsMinNightsForProject({ name, previousName, minNights } = 
   const result = await query(
     `UPDATE units
      SET min_nights = $1, updated_at = now()
-     WHERE lower(trim(COALESCE(project, ''))) = ANY($2::text[])
-        OR lower(trim(COALESCE(compound, ''))) = ANY($2::text[])`,
+     WHERE COALESCE(listing_type, 'rent') <> 'long_term'
+       AND (lower(trim(COALESCE(project, ''))) = ANY($2::text[])
+         OR lower(trim(COALESCE(compound, ''))) = ANY($2::text[]))`,
     [nights, names]
   );
   return { rowCount: result.rowCount || 0 };

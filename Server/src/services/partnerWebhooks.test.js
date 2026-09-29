@@ -10,7 +10,7 @@ describe('partnerWebhooks', () => {
   it('only treats published rent units as partner-feed eligible', () => {
     assert.equal(isPartnerFeedUnit({ status: 'published', listing_type: 'rent' }), true);
     assert.equal(isPartnerFeedUnit({ status: 'published' }), true);
-    assert.equal(isPartnerFeedUnit({ status: 'published', listing_type: 'sale' }), false);
+    assert.equal(isPartnerFeedUnit({ status: 'published', listing_type: 'long_term' }), false);
     assert.equal(isPartnerFeedUnit({ status: 'draft', listing_type: 'rent' }), false);
     assert.equal(isPartnerFeedUnit(null), false);
   });

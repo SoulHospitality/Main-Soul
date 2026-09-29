@@ -44,11 +44,10 @@ const NAV_SECTIONS = [
     id: 'inventory',
     label: 'Inventory',
     items: [
-      { path: '/admin/units', label: 'Units (Rent)', icon: Building2, page: 'units' },
-      { path: '/admin/units-for-sale', label: 'Units for Sale', icon: Building2, page: 'units_sale', resaleLabel: 'Units' },
+      { path: '/admin/units', label: 'Units (Short Term)', icon: Building2, page: 'units' },
+      { path: '/admin/units-long-term', label: 'Units (Long Term)', icon: Building2, page: 'units_long_term' },
       { path: '/admin/projects', label: 'Destinations', icon: Building, page: 'projects' },
-      { path: '/admin/acquisition', label: 'Owner leads', icon: Briefcase, page: 'acquisition', resaleLabel: 'Owners requests' },
-      { path: '/admin/performance', label: 'Performance', icon: Trophy, page: 'performance', roles: ['resale_manager'] },
+      { path: '/admin/acquisition', label: 'Owner leads', icon: Briefcase, page: 'acquisition' },
       { path: '/admin/acquisition-audit', label: 'Audit', icon: ClipboardList, page: 'acquisition_audit' },
       { path: '/admin/owner-statement', label: 'Owner Statement', icon: FileBarChart2, page: 'owner_statement', roles: ['unit_acquisition_manager', 'owners_relations'] },
       { path: '/admin/owner/blocks', label: 'Owner blocks', icon: CalendarDays, page: 'owner_blocks', roles: ['owners_relations'] },
@@ -64,7 +63,7 @@ const NAV_SECTIONS = [
       { path: '/admin/schedule', label: 'Schedule', icon: CalendarRange, page: 'schedule' },
       { path: '/admin/calendar-sync', label: 'Channel Manager', icon: Link2, page: 'calendar_sync' },
       { path: '/admin/ota-inbox', label: 'OTA Inbox', icon: MessageSquare, page: 'calendar_sync', badge: 'ota_unread' },
-      { path: '/admin/performance', label: 'Performance', icon: Trophy, page: 'performance', excludeRoles: ['resale_manager'] },
+      { path: '/admin/performance', label: 'Performance', icon: Trophy, page: 'performance' },
       { path: '/admin/reservation-audit', label: 'Reservation Audit', icon: ClipboardList, page: 'reservation_audit' },
     ],
   },
@@ -270,21 +269,15 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
               <div className="space-y-0.5">
                 {section.items.map((item) => {
                   const label =
-                    (user?.role === 'resale' || user?.role === 'resale_manager') && item.resaleLabel
-                      ? item.resaleLabel
-                      : item.managerLabel && user?.role === 'reservations_manager'
+                    item.managerLabel && user?.role === 'reservations_manager'
                         ? item.managerLabel
                       : item.page === 'requests' && item.agentLabel && !showReviewPending
                         ? item.agentLabel
                       : item.agentLabel &&
                           (user?.role === 'reservations_web' ||
                             user?.role === 'reservations_manual' ||
-                            user?.role === 'reservations' ||
-                            user?.role === 'resale' ||
-                            user?.role === 'resale_manager')
-                        ? user?.role === 'resale_manager' && item.managerLabel
-                          ? item.managerLabel
-                          : item.agentLabel
+                            user?.role === 'reservations')
+                        ? item.agentLabel
                         : item.label;
                   const pendingCount =
                     item.badge === 'website_pending'

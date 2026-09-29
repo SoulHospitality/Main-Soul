@@ -76,7 +76,7 @@ async function seedFallbackDailyPrices({
 /** Seed from start date through the next N months using the unit fallback price. */
 async function seedUnitFallbackHorizon(unit, { from = null, months = 3, source = 'unit-create-fallback' } = {}) {
   if (!unit) return { seeded: 0 };
-  if (String(unit.listing_type || 'rent').toLowerCase() === 'sale') return { seeded: 0 };
+  if (String(unit.listing_type || 'rent').toLowerCase() !== 'rent') return { seeded: 0 };
 
   const price = Number(unit.price_fallback || unit.price_per_night);
   const wp = unit.wp_post_id;

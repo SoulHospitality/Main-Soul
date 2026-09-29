@@ -26,7 +26,7 @@ function defaultRange() {
   return { from: fromDt.toISOString().slice(0, 10), to };
 }
 
-router.get('/resale-performance', requireRoles('admin', 'resale_manager'), async (req, res, next) => {
+router.get('/resale-performance', requireRoles('admin'), async (req, res, next) => {
   try {
     if (!isAdmin(req.user) && !isResaleManager(req.user)) {
       return res.status(403).json({ error: 'Forbidden' });

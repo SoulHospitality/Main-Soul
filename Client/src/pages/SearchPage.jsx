@@ -28,8 +28,8 @@ function buildApiParams(sp, { limit, offset, listingType }) {
   const destination = sp.get('destination') || sp.get('area') || '';
   const compound = sp.get('compound') || sp.get('project') || '';
   const types = sp.get('types') || '';
-  const checkin = listingType === 'sale' ? '' : sp.get('checkin') || '';
-  const checkout = listingType === 'sale' ? '' : sp.get('checkout') || '';
+  const checkin = sp.get('checkin') || '';
+  const checkout = sp.get('checkout') || '';
   const sort = sp.get('sort') || '';
 
   return {
@@ -37,7 +37,7 @@ function buildApiParams(sp, { limit, offset, listingType }) {
     destination: destination || undefined,
     compound: compound || undefined,
     beds: sp.get('beds') || undefined,
-    guests: listingType === 'sale' ? undefined : sp.get('guests') || undefined,
+    guests: listingType === 'long_term' ? undefined : sp.get('guests') || undefined,
     types: types || undefined,
     listing_type: listingType,
     checkin: checkin && checkout ? checkin : undefined,
@@ -50,8 +50,8 @@ function buildApiParams(sp, { limit, offset, listingType }) {
 
 export default function SearchPage({ listingType = 'rent' }) {
   const { t } = useLocale();
-  const isSale = listingType === 'sale';
-  const basePath = isSale ? '/for-sale' : '/search';
+  const isLongTerm = listingType === 'long_term';
+  const basePath = isLongTerm ? '/long-term' : '/search';
   const [params, setParams] = useSearchParams();
   const { destinations, projectsByDestination } = useProjectCatalog();
   const [items, setItems] = useState([]);
@@ -67,8 +67,8 @@ export default function SearchPage({ listingType = 'rent' }) {
     [t]
   );
   const sort = SORT_KEYS[params.get('sort')] ? params.get('sort') : 'recommended';
-  const nounPlural = isSale ? t('search.properties') : t('search.homes');
-  const nounSingular = isSale ? t('search.property') : t('search.home');
+  const nounPlural = t('search.homes');
+  const nounSingular = t('search.home');
 
   const filterValues = useMemo(
     () => ({
@@ -196,8 +196,8 @@ export default function SearchPage({ listingType = 'rent' }) {
 
   const filterCount = [
     params.get('compound') || params.get('destination') || params.get('area') || params.get('where'),
-    !isSale && params.get('checkin'),
-    !isSale && params.get('guests') && Number(params.get('guests')) > 1 ? params.get('guests') : null,
+    params.get('checkin'),
+    !isLongTerm && params.get('guests') && Number(params.get('guests')) > 1 ? params.get('guests') : null,
     params.get('beds'),
     params.get('types'),
     params.get('priceMin') || params.get('priceMax'),
@@ -313,11 +313,11 @@ export default function SearchPage({ listingType = 'rent' }) {
             <div>
               <h1 className="font-display text-2xl font-semibold text-soul-blue sm:text-3xl">
                 {filterValues.where
-                  ? isSale
-                    ? t('search.forSaleIn', { where: filterValues.where })
+                  ? isLongTerm
+                    ? t('search.longTermIn', { where: filterValues.where })
                     : t('search.staysIn', { where: filterValues.where })
-                  : isSale
-                    ? t('search.propertiesForSale')
+                  : isLongTerm
+                    ? t('search.longTermAll')
                     : t('search.allStays')}
               </h1>
               <p className="mt-1 text-sm text-soul-muted">
@@ -385,11 +385,11 @@ export default function SearchPage({ listingType = 'rent' }) {
           ) : displayed.length === 0 ? (
             <div className="mx-auto max-w-md py-16 text-center">
               <h3 className="font-display text-2xl font-semibold text-soul-blue">
-                {isSale ? t('search.emptySale') : t('search.emptyHomes')}
+                {isLongTerm ? t('search.emptyLongTerm') : t('search.emptyHomes')}
               </h3>
               <p className="mb-5 mt-2 leading-relaxed text-soul-muted">
-                {isSale
-                  ? t('search.emptyHintSale')
+                {isLongTerm
+                  ? t('search.emptyHintLongTerm')
                   : t('search.emptyHintRent')}
                 {total > 0 ? ` ${t('search.liveOverall', { count: total, noun: nounPlural })}` : ''}
               </p>

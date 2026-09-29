@@ -1,5 +1,6 @@
 const { query } = require('../config/db');
 const { resolveListingStatus } = require('./unitCompleteness');
+const { isLongTermUnit } = require('./listingType');
 
 function parseOtherDetails(otherDetails) {
   if (!otherDetails) return {};
@@ -43,8 +44,8 @@ async function syncUnitListingStatus(unitId) {
   if (!unit) return null;
 
   const hasPrice =
-    String(unit.listing_type || 'rent').toLowerCase() === 'sale'
-      ? true
+    isLongTermUnit(unit)
+      ? Number(unit.price_monthly_egp) > 0
       : await unitHasPrice(unitId, {
           priceFallback: unit.price_fallback,
           wpPostId: unit.wp_post_id,

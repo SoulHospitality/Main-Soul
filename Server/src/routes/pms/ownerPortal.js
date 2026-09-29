@@ -409,7 +409,7 @@ router.get('/owner/units', requireRoles('owner', 'admin', 'owners_relations'), a
     if (req.user.role === 'admin' || req.user.role === 'owners_relations') {
       const ownerId = Number(req.query.owner_id);
       const params = [];
-      let where = `COALESCE(u.listing_type, 'rent') = 'rent'`;
+      let where = `COALESCE(u.listing_type, 'rent') IN ('rent', 'long_term')`;
       if (Number.isFinite(ownerId) && ownerId > 0) {
         params.push(ownerId);
         where += ` AND EXISTS (

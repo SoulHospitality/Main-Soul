@@ -39,7 +39,6 @@
   "nav": {
     "properties": "Properties",
     "propertiesForRent": "Properties For Rent",
-    "propertiesForSale": "Properties For Sale",
     "about": "About Soul",
     "faq": "FAQ",
     "becomeAHost": "Become a Host",
@@ -50,7 +49,8 @@
     "closeMenu": "Close menu",
     "whatsappUs": "WhatsApp us",
     "switchToAr": "العربية",
-    "switchToEn": "English"
+    "switchToEn": "English",
+    "propertiesLongTerm": "Long-Term Rentals"
   },
   "footer": {
     "tagline": "Boutique hospitality curated with premium restraint, direct booking clarity, and a calm editorial luxury tone.",
@@ -118,9 +118,7 @@
   },
   "search": {
     "allStays": "All stays",
-    "propertiesForSale": "Properties for sale",
     "staysIn": "Stays in {{where}}",
-    "forSaleIn": "For sale in {{where}}",
     "available": "{{count}} {{noun}} available",
     "home": "home",
     "homes": "homes",
@@ -136,9 +134,7 @@
     "sortNewest": "Newest",
     "allDestination": "All {{destination}}",
     "emptyHomes": "No homes match",
-    "emptySale": "No properties match",
     "emptyHintRent": "Try clearing filters or widening your dates.",
-    "emptyHintSale": "Try clearing filters or choosing another destination.",
     "liveOverall": "{{count}} {{noun}} are live overall.",
     "resetFilters": "Reset filters",
     "showMore": "Show more",
@@ -152,14 +148,12 @@
     "destination": "Destination",
     "anywhere": "Anywhere",
     "anyDates": "Any dates",
-    "forSale": "For sale",
     "bedrooms": "Bedrooms",
     "any": "Any",
     "bedsPlus": "{{n}}+",
     "rentalType": "Rental type",
     "propertyType": "Property type",
     "priceRangeNight": "Price range (EGP / night)",
-    "priceRange": "Price range (EGP)",
     "min": "Min",
     "max": "Max",
     "fromEgp": "From EGP {{amount}}",
@@ -170,14 +164,18 @@
     "typeVilla": "Villa",
     "typePenthouse": "Penthouse",
     "priceRangeBoth": "EGP {{min}} – {{max}}",
-    "closeFilters": "Close filters"
+    "closeFilters": "Close filters",
+    "longTermAll": "Long-term rentals",
+    "longTermIn": "Long-term rentals in {{where}}",
+    "emptyLongTerm": "No long-term rentals match",
+    "emptyHintLongTerm": "Try clearing filters or choosing another destination.",
+    "longTerm": "Long-term rent",
+    "priceRangeMonth": "Price range (EGP / month)"
   },
   "listing": {
     "notFound": "Listing not found",
     "browseStays": "Browse all stays",
-    "browseSale": "Browse properties for sale",
     "loading": "Loading listing…",
-    "forSale": "For sale · {{place}}",
     "readMore": "Read more",
     "showLess": "Show less",
     "description": "Description",
@@ -189,7 +187,6 @@
     "signInToReview": "Please sign in to submit a review for this unit.",
     "signIn": "sign in",
     "similarRent": "Similar homes you might like",
-    "similarSale": "Similar properties for sale",
     "viewAll": "View all →",
     "houseRules": "House rules",
     "checkInAfter": "Check-in after 3:00 PM",
@@ -211,7 +208,6 @@
     "guestSingular": "guest",
     "guestPlural": "guests",
     "noPhoto": "No photo",
-    "forSaleBadge": "For sale",
     "specGuests": "Guests",
     "specBedrooms": "Bedrooms",
     "specBaths": "Baths",
@@ -268,12 +264,18 @@
     "gaiaBeachSummary": "By stay length — 3 nights: 1,900 (extra 2,500) · 4 nights: 2,500 (extra 3,100) · 5+: 3,500 / 7 nights (extra 4,100)",
     "beachBaseExtra": "{{adult}} base, {{extra}} extra guest / {{days}} {{dayLabel}}",
     "beachPerGuest": "{{adult}} per guest / {{days}} {{dayLabel}}",
-    "saleType": "Type",
-    "saleCompound": "Compound",
-    "saleInquire": "Inquire on WhatsApp",
-    "saleInquireNote": "Our team will share details and arrange a viewing.",
-    "saleInquireForPrice": "Inquire for price",
-    "starRatingOutOf": "{{count}} out of 5 stars"
+    "starRatingOutOf": "{{count}} out of 5 stars",
+    "browseLongTerm": "Browse long-term rentals",
+    "longTermIn": "Long-term rent · {{place}}",
+    "similarLongTerm": "Similar long-term rentals",
+    "longTermBadge": "Long-term",
+    "longTermRent": "Long-term rent",
+    "perMonthShort": "/ month",
+    "monthlyOnRequest": "Monthly rate on request",
+    "minStayNights": "Minimum stay: {{count}} nights",
+    "seeAvailableDates": "See available dates",
+    "changeDates": "Change dates",
+    "longTermNote": "Long-term units can't be booked online. Pick your dates and send us an inquiry on WhatsApp."
   },
   "booking": {
     "drawerEyebrow": "Reservation Drawer",
@@ -682,6 +684,9 @@
       "exportFromMonth": "From month",
       "exportToMonth": "To month",
       "months": {
+        "10": "October",
+        "11": "November",
+        "12": "December",
         "01": "January",
         "02": "February",
         "03": "March",
@@ -690,10 +695,7 @@
         "06": "June",
         "07": "July",
         "08": "August",
-        "09": "September",
-        "10": "October",
-        "11": "November",
-        "12": "December"
+        "09": "September"
       },
       "back": "Back",
       "open": "open",
@@ -941,8 +943,7 @@
         "unit": "Unit",
         "checkIn": "Check-in",
         "days": "Days",
-        "due": "Due",
-        "openAccount": "Open 105000"
+        "due": "Due"
       },
       "insurance": {
         "description": "Guest insurance is held on account {{code}} at check-in. Record a custom payout on checkout — refund any amount and retain the rest as damage revenue ({{damageCode}}).",

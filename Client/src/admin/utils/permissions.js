@@ -63,22 +63,14 @@ const RESERVATIONS_WEB_PAGE_ACCESS = new Set([
   ...STAFF_HR_TABS,
 ]);
 
-const RESALE_PAGE_ACCESS = new Set(['units_sale', 'acquisition', 'commissions', 'profile', ...STAFF_HR_TABS.filter((p) => p !== 'profile'), 'tasks']);
+const RESALE_PAGE_ACCESS = new Set(['tasks', ...STAFF_HR_TABS]);
 
-const RESALE_MANAGER_PAGE_ACCESS = new Set([
-  'units_sale',
-  'acquisition',
-  'commissions',
-  'performance',
-  'tasks',
-  ...STAFF_HR_TABS,
-]);
+const RESALE_MANAGER_PAGE_ACCESS = new Set(['tasks', ...STAFF_HR_TABS]);
 
 const FINANCE_PAGE_ACCESS = new Set([
   'tasks',
   'financial_system',
   'units',
-  'units_sale',
   'reservations',
   'schedule',
   ...STAFF_HR_TABS,
@@ -89,7 +81,6 @@ const FINANCE_MANAGER_PAGE_ACCESS = new Set([
   'financial_system',
   'finance_audit',
   'units',
-  'units_sale',
   'reservations',
   'schedule',
   ...STAFF_HR_TABS,
@@ -288,29 +279,8 @@ const PERMISSIONS = {
     'documents:read',
     'documents:write',
   ],
-  resale: [
-    'units:read',
-    'units:write',
-    'units:delete',
-    'acquisition:read',
-    'acquisition:write',
-    'commissions:read',
-    'notifications:read',
-    'documents:read',
-    'documents:write',
-  ],
-  resale_manager: [
-    'units:read',
-    'units:write',
-    'units:delete',
-    'acquisition:read',
-    'acquisition:write',
-    'commissions:read',
-    'performance:read',
-    'notifications:read',
-    'documents:read',
-    'documents:write',
-  ],
+  resale: ['tasks:read', 'notifications:read', 'profile:read'],
+  resale_manager: ['tasks:read', 'notifications:read', 'profile:read'],
   hr: HR_PERMISSIONS,
   hr_supervisor: [...HR_PERMISSIONS, 'holiday_access:write'],
   operations: [
@@ -530,6 +500,8 @@ export function canAccess(user, page) {
   }
   const allowed = PAGE_ACCESS[user.role];
   if (allowed === true) return true;
+  // Long-term units share access with the short-term units page.
+  if (page === 'units_long_term') page = 'units';
   if (allowed instanceof Set) return allowed.has(page);
   return false;
 }
@@ -538,7 +510,6 @@ export function canManageUnits(user) {
   return (
     !!user &&
     (user.role === 'admin' ||
-      isResaleStaff(user) ||
       user.role === 'reservations_manager' ||
       user.role === 'reservations_web' ||
       user.role === 'reservations_manual' ||
@@ -552,7 +523,7 @@ export function canManageUnits(user) {
 export function canDeleteUnits(user) {
   return (
     !!user &&
-    (user.role === 'admin' || isResaleStaff(user) || isUnitAcquisitionRole(user))
+    (user.role === 'admin' || isUnitAcquisitionRole(user))
   );
 }
 
@@ -597,7 +568,7 @@ export function isOwnersRelationsRole(user) {
 }
 
 export function canViewOwnCommissions(user) {
-  return !!user && (user.role === 'admin' || isReservationsTeam(user) || isResaleStaff(user));
+  return !!user && (user.role === 'admin' || isReservationsTeam(user));
 }
 
 export function isResaleRole(user) {

@@ -206,12 +206,6 @@ async function buildTransferPlan(source, { unit_id, check_in, check_out, promo_c
     err.status = 404;
     throw err;
   }
-  if (String(unit.listing_type || 'rent').toLowerCase() === 'sale') {
-    const err = new Error('Cannot transfer onto a sale listing');
-    err.status = 400;
-    throw err;
-  }
-
   await assertNewUnitAvailable(unit, checkIn, checkOut, {
     excludeReservationId: source.id,
   });

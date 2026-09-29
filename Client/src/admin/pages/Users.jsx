@@ -706,7 +706,7 @@ function OwnerDetailsView({ owner, units, loading }) {
                     </td>
                     <td>{u.project || u.compound || u.project_label || '—'}</td>
                     <td>{u.area || '—'}</td>
-                    <td className="capitalize">{u.listing_type || 'rent'}</td>
+                    <td>{u.listing_type === 'long_term' ? 'Long term' : 'Short term'}</td>
                   </tr>
                 ))}
               </tbody>

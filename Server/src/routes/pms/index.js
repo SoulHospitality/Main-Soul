@@ -68,16 +68,10 @@ const {
   detachStaffUserReferences,
   asStaffDeleteError,
 } = require('../../lib/staffUserCleanup');
-const {
-  isUnitAcquisitionRole,
-  isRentOnlyUnitEditor,
-  UNIT_ACQUISITION_ROLES,
-} = require('../../lib/unitAcquisition');
-const { isResaleStaff } = require('../../lib/resaleScope');
+const { isUnitAcquisitionRole, UNIT_ACQUISITION_ROLES } = require('../../lib/unitAcquisition');
+const { LONG_TERM, normalizeListingType } = require('../../lib/listingType');
 const UNIT_EDITOR_ROLES = [
   'admin',
-  'resale',
-  'resale_manager',
   'reservations_manager',
   'reservations_web',
   'reservations_manual',
@@ -215,12 +209,18 @@ function mapUnitRow(u) {
     beach_access_price: u.access_fee_per_adult_egp,
     beach_access_extra_guest: u.access_fee_per_teen_egp,
     beach_access_days: u.access_card_count_included || 7,
-    listing_type: u.listing_type || 'rent',
+    listing_type: normalizeListingType(u.listing_type),
+    price_monthly: u.price_monthly_egp != null ? Number(u.price_monthly_egp) : null,
     unit_area: u.size_m2,
     has_nanny_room: !!u.has_nanny_room,
     disable_automatic_reservations: !!u.disable_automatic_reservations,
     listing_unpublished: details.listing_unpublished === true,
   };
+}
+
+function parseUnitMinNights(v) {
+  const n = Math.floor(Number(v));
+  return Number.isFinite(n) && n >= 1 ? Math.min(n, 3650) : null;
 }
 
 function truthyNanny(v) {
@@ -900,17 +900,11 @@ router.get('/units', async (req, res, next) => {
       where.push(`beds = $${i++}`);
       params.push(Number(bedrooms));
     }
-    
-    const listingType =
-      isResaleStaff(req.user)
-        ? 'sale'
-        : isUnitAcquisitionRole(req.user)
-          ? 'rent'
-          : String(listing_type || 'rent').toLowerCase() === 'sale'
-            ? 'sale'
-            : 'rent';
-    where.push(`COALESCE(listing_type, 'rent') = $${i++}`);
-    params.push(listingType);
+    // No listing_type = every unit (short- and long-term both take PMS reservations).
+    if (listing_type && String(listing_type).toLowerCase() !== 'all') {
+      where.push(`COALESCE(listing_type, 'rent') = $${i++}`);
+      params.push(normalizeListingType(listing_type));
+    }
 
     const { rows } = await query(
       `SELECT id, slug, title, status, ops_status, compound, project, area, beds, baths, guests,
@@ -920,7 +914,8 @@ router.get('/units', async (req, res, next) => {
               commission_tenant_pct, utilities_cost, internal_code, unit_number, price_fallback,
               cleaning_fee_egp, service_fee_percent, security_deposit_egp,
               access_fee_per_adult_egp, access_fee_per_teen_egp, access_card_count_included,
-              min_nights, ical_url, notes, listing_type, has_nanny_room, created_at
+              min_nights, ical_url, notes, listing_type, has_nanny_room, price_monthly_egp,
+              disable_automatic_reservations, created_at
        FROM units
        WHERE ${where.join(' AND ')}
        ORDER BY created_at DESC`,
@@ -955,16 +950,13 @@ router.post('/units', requireRoles(...UNIT_EDITOR_ROLES), async (req, res, next)
     const { housekeepingFeeForType } = require('../../lib/housekeeping');
     const propertyType = normalizePropertyType(toText(b.property_type || b.type));
     const cleaningFee = housekeepingFeeForType(propertyType);
-    let listingType = String(b.listing_type || 'rent').toLowerCase() === 'sale' ? 'sale' : 'rent';
-    if (isResaleStaff(req.user)) {
-      listingType = 'sale';
-    }
-    if (isRentOnlyUnitEditor(req.user)) {
-      listingType = 'rent';
-    }
+    const listingType = normalizeListingType(b.listing_type);
+    const isLongTerm = listingType === LONG_TERM;
     const sizeM2 = toNum(b.size_m2 || b.area_sqft || b.unit_area, { int: true });
-    const priceFallback =
-      listingType === 'sale' ? null : toNum(b.price_per_night || b.price_fallback, { int: true });
+    const priceFallback = isLongTerm
+      ? null
+      : toNum(b.price_per_night || b.price_fallback, { int: true });
+    const priceMonthly = isLongTerm ? toNum(b.price_monthly_egp ?? b.price_monthly) : null;
     const beds = toNum(b.beds ?? b.bedrooms, { int: true, fallback: 1 });
     const baths = toNum(b.baths ?? b.bathrooms, { int: true, fallback: 1 });
     const hasNannyRoom = truthyNanny(b.has_nanny_room);
@@ -998,11 +990,13 @@ router.post('/units', requireRoles(...UNIT_EDITOR_ROLES), async (req, res, next)
     photoUrls = ensureCoverInGallery(coverUrl, photoUrls);
     if (!coverUrl && photoUrls.length) coverUrl = photoUrls[0];
 
-    const minNights = await lookupProjectMinNights({
-      project: toText(b.project || b.projectName || b.compound, compound),
-      compound,
-    });
-    const utilitiesCost = listingType === 'sale' ? null : toNum(b.utilities_cost);
+    const minNights = isLongTerm
+      ? parseUnitMinNights(b.min_nights)
+      : await lookupProjectMinNights({
+          project: toText(b.project || b.projectName || b.compound, compound),
+          compound,
+        });
+    const utilitiesCost = toNum(b.utilities_cost);
     const unitNumber = normalizeUnitNumber(b.unit_number);
     const view = toText(b.view);
     const floorRaw = b.floor != null && b.floor !== '' ? b.floor : null;
@@ -1027,6 +1021,7 @@ router.post('/units', requireRoles(...UNIT_EDITOR_ROLES), async (req, res, next)
         size_m2: sizeM2,
         min_nights: minNights,
         price_fallback: priceFallback,
+        price_monthly_egp: priceMonthly,
         utilities_cost: utilitiesCost,
         the_property: description,
         description,
@@ -1036,7 +1031,7 @@ router.post('/units', requireRoles(...UNIT_EDITOR_ROLES), async (req, res, next)
         cover_url: coverUrl,
         photo_urls: photoUrls,
       },
-      hasPrice: listingType === 'sale' ? true : Number(priceFallback) > 0,
+      hasPrice: isLongTerm ? Number(priceMonthly) > 0 : Number(priceFallback) > 0,
     });
     const status = completeness.status;
 
@@ -1049,12 +1044,12 @@ router.post('/units', requireRoles(...UNIT_EDITOR_ROLES), async (req, res, next)
          utilities_cost, ops_status, unit_number, internal_code, created_by_staff, price_fallback,
          property_type, view, floor, source_url, min_nights, cleaning_fee_egp,
          access_fee_per_adult_egp, access_fee_per_teen_egp, access_card_count_included,
-         listing_type, has_nanny_room, disable_automatic_reservations
+         listing_type, has_nanny_room, disable_automatic_reservations, price_monthly_egp
        ) VALUES (
          $1,$2,COALESCE($3,'draft'),'manual',$4,COALESCE($5,$4),COALESCE($6,'North Coast'),
          $7,$8,$9,$10,$11,COALESCE($12::text[], '{}'::text[]),COALESCE($13::text[], '{}'::text[]),$14,$15,$16,
          $17,$18,$19,$20,$21,$22,$23,$24,COALESCE($25,'available'),$26,$27,$28,$29,
-         $30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41
+         $30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42
        ) RETURNING *`,
       [
         slug,
@@ -1094,14 +1089,15 @@ router.post('/units', requireRoles(...UNIT_EDITOR_ROLES), async (req, res, next)
         view,
         floorRaw != null ? String(floorRaw) : null,
         locationLink,
-        listingType === 'sale' ? 1 : minNights,
-        listingType === 'sale' ? 0 : cleaningFee,
+        minNights,
+        cleaningFee,
         beachPrice,
         beachExtra,
         beachDays,
         listingType,
         hasNannyRoom,
-        disableAutomaticReservations,
+        isLongTerm ? false : disableAutomaticReservations,
+        priceMonthly,
       ]
     );
     const payload = await withBeachPolicy(mapUnitRow(rows[0]));
@@ -1110,7 +1106,7 @@ router.post('/units', requireRoles(...UNIT_EDITOR_ROLES), async (req, res, next)
       missing: completeness.missing,
       status,
     };
-    if (listingType !== 'sale' && Number(priceFallback) > 0 && rows[0].wp_post_id) {
+    if (!isLongTerm && Number(priceFallback) > 0 && rows[0].wp_post_id) {
       try {
         const { seedUnitFallbackHorizon } = require('../../lib/seedFallbackPrices');
         const seeded = await seedUnitFallbackHorizon(rows[0], {
@@ -1163,31 +1159,14 @@ async function updateUnitHandler(req, res, next) {
     const { rows: existingRows } = await query(
       `SELECT other_details, price_fallback, wp_post_id, property_type, status,
               project, compound, area, beds, listing_type, size_m2,
-              utilities_cost, cover_url, photo_urls
+              utilities_cost, cover_url, photo_urls, min_nights
        FROM units WHERE id = $1`,
       [req.params.id]
     );
     if (!existingRows[0]) return res.status(404).json({ error: 'Not found' });
 
-    const existingListingType =
-      String(existingRows[0].listing_type || 'rent').toLowerCase() === 'sale' ? 'sale' : 'rent';
-    if (isResaleStaff(req.user) && existingListingType !== 'sale') {
-      return res.status(403).json({ error: 'Resale can only manage for-sale units' });
-    }
-    if (isRentOnlyUnitEditor(req.user) && existingListingType !== 'rent') {
-      return res.status(403).json({ error: 'This role can only manage rental units' });
-    }
-
-    let listingType =
-      String(b.listing_type || existingRows[0].listing_type || 'rent').toLowerCase() === 'sale'
-        ? 'sale'
-        : 'rent';
-    if (isResaleStaff(req.user)) {
-      listingType = 'sale';
-    }
-    if (isRentOnlyUnitEditor(req.user)) {
-      listingType = 'rent';
-    }
+    const listingType = normalizeListingType(existingRows[0].listing_type);
+    const isLongTerm = listingType === LONG_TERM;
 
     const propertyType = normalizePropertyType(
       toText(b.property_type || b.type) || existingRows[0].property_type
@@ -1204,10 +1183,19 @@ async function updateUnitHandler(req, res, next) {
         existingRows[0].project
     );
     const nextArea = toText(b.area || b.destination) || existingRows[0].area;
-    const minNights = await lookupProjectMinNights({
-      project: nextProject,
-      compound: nextCompound,
-    });
+    const minNights = isLongTerm
+      ? b.min_nights !== undefined
+        ? parseUnitMinNights(b.min_nights)
+        : existingRows[0].min_nights
+      : await lookupProjectMinNights({
+          project: nextProject,
+          compound: nextCompound,
+        });
+    const priceMonthlyProvided =
+      isLongTerm && (b.price_monthly_egp !== undefined || b.price_monthly !== undefined);
+    const priceMonthly = priceMonthlyProvided
+      ? toNum(b.price_monthly_egp ?? b.price_monthly)
+      : null;
 
     const nextBeds =
       b.beds !== undefined || b.bedrooms !== undefined
@@ -1311,6 +1299,7 @@ async function updateUnitHandler(req, res, next) {
          cleaning_fee_egp = $36,
          has_nanny_room = COALESCE($38, has_nanny_room),
          disable_automatic_reservations = COALESCE($39, disable_automatic_reservations),
+         price_monthly_egp = CASE WHEN $40::boolean THEN $41::numeric ELSE price_monthly_egp END,
          updated_at = now()
        WHERE id = $37 RETURNING *`,
       [
@@ -1370,9 +1359,11 @@ async function updateUnitHandler(req, res, next) {
         cleaningFee,
         req.params.id,
         b.has_nanny_room !== undefined ? truthyNanny(b.has_nanny_room) : null,
-        b.disable_automatic_reservations !== undefined
+        !isLongTerm && b.disable_automatic_reservations !== undefined
           ? truthyFlag(b.disable_automatic_reservations)
           : null,
+        priceMonthlyProvided,
+        priceMonthly,
       ]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Not found' });
@@ -1413,15 +1404,6 @@ router.patch('/units/:id/unpublish', requireRoles(...UNIT_EDITOR_ROLES), async (
     );
     if (!existing[0]) return res.status(404).json({ error: 'Not found' });
 
-    const listingType =
-      String(existing[0].listing_type || 'rent').toLowerCase() === 'sale' ? 'sale' : 'rent';
-    if (isResaleStaff(req.user) && listingType !== 'sale') {
-      return res.status(403).json({ error: 'Resale can only manage for-sale units' });
-    }
-    if (isRentOnlyUnitEditor(req.user) && listingType !== 'rent') {
-      return res.status(403).json({ error: 'This role can only manage rental units' });
-    }
-
     const otherDetails = setListingUnpublishedFlag(existing[0].other_details, true);
     const { rows } = await query(
       `UPDATE units SET status = 'draft', other_details = $1, updated_at = now() WHERE id = $2 RETURNING *`,
@@ -1450,15 +1432,6 @@ router.patch('/units/:id/publish', requireRoles(...UNIT_EDITOR_ROLES), async (re
       [req.params.id]
     );
     if (!existing[0]) return res.status(404).json({ error: 'Not found' });
-
-    const listingType =
-      String(existing[0].listing_type || 'rent').toLowerCase() === 'sale' ? 'sale' : 'rent';
-    if (isResaleStaff(req.user) && listingType !== 'sale') {
-      return res.status(403).json({ error: 'Resale can only manage for-sale units' });
-    }
-    if (isRentOnlyUnitEditor(req.user) && listingType !== 'rent') {
-      return res.status(403).json({ error: 'This role can only manage rental units' });
-    }
 
     const otherDetails = setListingUnpublishedFlag(existing[0].other_details, false);
     await query(
@@ -1490,7 +1463,7 @@ router.patch('/units/:id/publish', requireRoles(...UNIT_EDITOR_ROLES), async (re
   }
 });
 
-router.delete('/units/:id', requireRoles('admin', 'resale', 'resale_manager', ...UNIT_ACQUISITION_ROLES), async (req, res, next) => {
+router.delete('/units/:id', requireRoles('admin', ...UNIT_ACQUISITION_ROLES), async (req, res, next) => {
   try {
     const unitId = req.params.id;
     const deleteReservations =
@@ -1507,9 +1480,6 @@ router.delete('/units/:id', requireRoles('admin', 'resale', 'resale_manager', ..
       [unitId]
     );
     if (!existing[0]) return res.status(404).json({ error: 'Not found' });
-    if (isResaleStaff(req.user) && existing[0].listing_type !== 'sale') {
-      return res.status(403).json({ error: 'Resale can only delete for-sale units' });
-    }
     const wasOnPartnerFeed = isPartnerFeedUnit(existing[0]);
     const removedSlug = existing[0].slug || null;
 
@@ -1815,11 +1785,25 @@ router.post(
         `SELECT utilities_cost, property_type, wp_post_id, guests, has_nanny_room,
                 min_nights, project, compound, area, beds,
                 access_fee_per_adult_egp, access_fee_per_teen_egp, access_card_count_included,
-                cleaning_fee_egp, security_deposit_egp
+                cleaning_fee_egp, security_deposit_egp, listing_type
          FROM units WHERE id = $1`,
         [b.unit_id]
       );
       unitRow = units[0] || null;
+      const unitIsLongTerm = normalizeListingType(unitRow?.listing_type) === LONG_TERM;
+      const unitMinNights = Number(unitRow?.min_nights) || 0;
+      if (
+        unitIsLongTerm &&
+        unitMinNights > 1 &&
+        nights < unitMinNights &&
+        !truthyFlag(b.is_hold) &&
+        !truthyFlag(b.is_owner_reservation)
+      ) {
+        return res.status(400).json({
+          error: `This long-term unit requires a minimum stay of ${unitMinNights} nights`,
+          min_nights: unitMinNights,
+        });
+      }
       const { housekeepingFeeForUnit } = require('../../lib/housekeeping');
       housekeepingFees = b.housekeeping_fees != null && b.housekeeping_fees !== ''
         ? parseFloat(b.housekeeping_fees) || housekeepingFeeForUnit(unitRow)
@@ -1866,7 +1850,7 @@ router.post(
     
     if (wpPostId) {
       const blocked = await getBlockedDates(wpPostId, b.check_in, b.check_out, {
-        includeUnpriced: true,
+        includeUnpriced: normalizeListingType(unitRow?.listing_type) !== LONG_TERM,
       });
       const blockedSet = new Set(blocked.map((x) => x.date));
       const start = new Date(`${b.check_in}T00:00:00`);
@@ -2596,10 +2580,13 @@ router.get('/reservations/schedule', async (req, res, next) => {
 
     const unitWhere = [
       `COALESCE(status, 'draft') NOT IN ('archived', 'cancelled', 'delisted')`,
-      `COALESCE(listing_type, 'rent') = 'rent'`,
     ];
     const unitParams = [];
     let i = 1;
+    if (req.query.listing_type && String(req.query.listing_type).toLowerCase() !== 'all') {
+      unitWhere.push(`COALESCE(listing_type, 'rent') = $${i++}`);
+      unitParams.push(normalizeListingType(req.query.listing_type));
+    }
     if (bedrooms !== undefined && bedrooms !== '') {
       unitWhere.push(`beds = $${i++}`);
       unitParams.push(Number(bedrooms));
@@ -2613,7 +2600,8 @@ router.get('/reservations/schedule', async (req, res, next) => {
     const { rows: unitRows } = await query(
       `SELECT id, slug, title, status, ops_status, compound, project, area, beds, baths, guests,
               size_m2, floor, view, property_type, wp_post_id, cover_url, unit_number,
-              internal_code, price_fallback, other_details, min_nights, has_nanny_room
+              internal_code, price_fallback, other_details, min_nights, has_nanny_room,
+              listing_type, price_monthly_egp
        FROM units
        WHERE ${unitWhere.join(' AND ')}
        ORDER BY COALESCE(project, compound), title`,
