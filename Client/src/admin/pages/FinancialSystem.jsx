@@ -137,71 +137,83 @@ function monthBounds(ym) {
   return { from, to };
 }
 
-function DateFilters({ periodYm, onPeriodYm }) {
+function clampDate(value) {
+  const raw = String(value || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return FINANCIAL_EPOCH;
+  return raw < FINANCIAL_EPOCH ? FINANCIAL_EPOCH : raw;
+}
+
+function presetRange(id) {
+  const ym = cairoYearMonth();
+  const [y, m] = ym.split('-').map(Number);
+  if (id === 'last_month') {
+    return monthBounds(m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`);
+  }
+  if (id === 'this_year') return { from: clampDate(`${y}-01-01`), to: `${y}-12-31` };
+  return monthBounds(ym);
+}
+
+function DateFilters({ fromDate, toDate, basis, onChange }) {
   const { t } = useFinLocale();
-  const epochYm = FINANCIAL_EPOCH.slice(0, 7);
-  const years = [];
-  const nowY = Number(cairoYearMonth().slice(0, 4));
-  const epochY = Number(epochYm.slice(0, 4));
-  for (let y = nowY + 1; y >= epochY; y -= 1) years.push(y);
-  const [year, month] = String(periodYm || cairoYearMonth()).split('-');
-  const months = [
-    ['01', t('pms.fin.months.01')],
-    ['02', t('pms.fin.months.02')],
-    ['03', t('pms.fin.months.03')],
-    ['04', t('pms.fin.months.04')],
-    ['05', t('pms.fin.months.05')],
-    ['06', t('pms.fin.months.06')],
-    ['07', t('pms.fin.months.07')],
-    ['08', t('pms.fin.months.08')],
-    ['09', t('pms.fin.months.09')],
-    ['10', t('pms.fin.months.10')],
-    ['11', t('pms.fin.months.11')],
-    ['12', t('pms.fin.months.12')],
+  const presets = [
+    ['this_month', t('pms.fin.presetThisMonth')],
+    ['last_month', t('pms.fin.presetLastMonth')],
+    ['this_year', t('pms.fin.presetThisYear')],
   ];
 
-  function setYm(nextY, nextM) {
-    let ym = `${nextY}-${nextM}`;
-    if (ym < epochYm) ym = epochYm;
-    onPeriodYm(ym);
-  }
-
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="text-xs text-gray-500 mr-1">{t('pms.fin.byCreatedMonth')}</span>
-      <label className="text-xs text-gray-500">{t('pms.fin.month')}</label>
-      <select
-        className="input w-36 text-sm py-1.5"
-        value={month}
-        onChange={(e) => setYm(year, e.target.value)}
-      >
-        {months.map(([val, label]) => (
-          <option key={val} value={val} disabled={`${year}-${val}` < epochYm}>
+    <div className="flex flex-wrap items-end gap-2">
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">{t('pms.fin.countBy')}</label>
+        <select
+          className="input w-36 text-sm py-1.5"
+          value={basis}
+          onChange={(e) => onChange({ basis: e.target.value })}
+        >
+          <option value="stay">{t('pms.fin.basisStay')}</option>
+          <option value="created">{t('pms.fin.basisCreated')}</option>
+        </select>
+      </div>
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">{t('pms.fin.dateFrom')}</label>
+        <input
+          type="date"
+          className="input w-40 text-sm py-1.5"
+          min={FINANCIAL_EPOCH}
+          value={fromDate}
+          onChange={(e) => onChange({ from: clampDate(e.target.value) })}
+        />
+      </div>
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">{t('pms.fin.dateTo')}</label>
+        <input
+          type="date"
+          className="input w-40 text-sm py-1.5"
+          min={fromDate || FINANCIAL_EPOCH}
+          value={toDate}
+          onChange={(e) => onChange({ to: e.target.value || '' })}
+        />
+      </div>
+      <div className="flex gap-1">
+        {presets.map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            className="btn-secondary text-xs px-2.5 py-1.5"
+            onClick={() => onChange(presetRange(id))}
+          >
             {label}
-          </option>
+          </button>
         ))}
-      </select>
-      <label className="text-xs text-gray-500">{t('pms.fin.year')}</label>
-      <select
-        className="input w-24 text-sm py-1.5"
-        value={year}
-        onChange={(e) => setYm(e.target.value, month)}
-      >
-        {years.map((y) => (
-          <option key={y} value={String(y)}>
-            {y}
-          </option>
-        ))}
-      </select>
+      </div>
     </div>
   );
 }
 
-function ExportPeriodModal({ open, defaultYm, onClose, onConfirm, exporting }) {
+function ExportPeriodModal({ open, defaultFrom, defaultTo, onClose, onConfirm, exporting }) {
   const { t } = useFinLocale();
-  const epochYm = FINANCIAL_EPOCH.slice(0, 7);
-  const [fromYm, setFromYm] = useState(defaultYm);
-  const [toYm, setToYm] = useState(defaultYm);
+  const [fromDate, setFromDate] = useState(defaultFrom);
+  const [toDate, setToDate] = useState(defaultTo);
 
   if (!open) return null;
 
@@ -214,23 +226,23 @@ function ExportPeriodModal({ open, defaultYm, onClose, onConfirm, exporting }) {
         </div>
         <div className="space-y-3">
           <div>
-            <label className="label text-xs">{t('pms.fin.exportFromMonth')}</label>
+            <label className="label text-xs">{t('pms.fin.dateFrom')}</label>
             <input
-              type="month"
+              type="date"
               className="input text-sm"
-              min={epochYm}
-              value={fromYm}
-              onChange={(e) => setFromYm(e.target.value || epochYm)}
+              min={FINANCIAL_EPOCH}
+              value={fromDate}
+              onChange={(e) => setFromDate(clampDate(e.target.value))}
             />
           </div>
           <div>
-            <label className="label text-xs">{t('pms.fin.exportToMonth')}</label>
+            <label className="label text-xs">{t('pms.fin.dateTo')}</label>
             <input
-              type="month"
+              type="date"
               className="input text-sm"
-              min={epochYm}
-              value={toYm}
-              onChange={(e) => setToYm(e.target.value || fromYm)}
+              min={fromDate || FINANCIAL_EPOCH}
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value || fromDate)}
             />
           </div>
         </div>
@@ -243,8 +255,8 @@ function ExportPeriodModal({ open, defaultYm, onClose, onConfirm, exporting }) {
             className="btn-primary text-sm"
             disabled={exporting}
             onClick={() => {
-              const from = fromYm < epochYm ? epochYm : fromYm;
-              const to = toYm < from ? from : toYm;
+              const from = clampDate(fromDate);
+              const to = toDate && toDate >= from ? toDate : from;
               onConfirm(from, to);
             }}
           >
@@ -302,11 +314,11 @@ function useFinanceNav() {
   return { view, group, code, txn, tool, go, searchParams, setSearchParams };
 }
 
-function rangeParams(fromDate, toDate) {
-  return { from_date: fromDate || undefined, to_date: toDate || undefined };
+function rangeParams(fromDate, toDate, basis) {
+  return { from_date: fromDate || undefined, to_date: toDate || undefined, basis: basis || undefined };
 }
 
-function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool, onExport, exporting }) {
+function HomeView({ data, basisLabel, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool, onExport, exporting }) {
   const { t } = useFinLocale();
   const groups = data?.groups || [];
   const treasury = data?.treasury || [];
@@ -319,8 +331,8 @@ function HomeView({ data, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-gray-500">
           {data?.to_date
-            ? t('pms.fin.home.periodRange', { from: data?.from_date, to: data.to_date })
-            : t('pms.fin.home.periodOpen', { from: data?.from_date })}
+            ? t('pms.fin.home.periodRange', { from: data?.from_date, to: data.to_date, basis: basisLabel })
+            : t('pms.fin.home.periodOpen', { from: data?.from_date, basis: basisLabel })}
         </p>
         <button type="button" className="btn-secondary text-sm" onClick={onExport} disabled={exporting}>
           <Download className="w-4 h-4" />
@@ -627,9 +639,9 @@ function GroupView({ groupId, data, onOpenAccount }) {
   );
 }
 
-function AccountView({ code, fromDate, toDate, onOpenTxn }) {
+function AccountView({ code, fromDate, toDate, basis, onOpenTxn }) {
   const { t } = useFinLocale();
-  const params = rangeParams(fromDate, toDate);
+  const params = rangeParams(fromDate, toDate, basis);
   const { data, isLoading } = useQuery({
     queryKey: ['financial-system-account', code, params],
     queryFn: () => api.get(`/financial-system/accounts/${code}`, { params }).then((r) => r.data),
@@ -699,9 +711,9 @@ function AccountView({ code, fromDate, toDate, onOpenTxn }) {
   );
 }
 
-function TransactionView({ txnId, fromDate, toDate }) {
+function TransactionView({ txnId, fromDate, toDate, basis }) {
   const { t } = useFinLocale();
-  const params = rangeParams(fromDate, toDate);
+  const params = rangeParams(fromDate, toDate, basis);
   const { data, isLoading, error } = useQuery({
     queryKey: ['financial-system-txn', txnId, params],
     queryFn: () =>
@@ -1078,7 +1090,7 @@ function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
   });
   const q = { ...params, unit_id: unitId || undefined };
   const { data, isLoading } = useQuery({
-    queryKey: ['financial-system-owners', fromDate, toDate, unitId],
+    queryKey: ['financial-system-owners', fromDate, toDate, params.basis, unitId],
     queryFn: () => api.get('/financial-system/owner-statements', { params: q }).then((r) => r.data),
   });
   const settle = useMutation({
@@ -1096,7 +1108,7 @@ function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
       api.post(
         `/financial-system/owners/${ownerId}/settle`,
         { amount, notes },
-        { params: { from_date: fromDate || undefined, to_date: toDate || undefined } }
+        { params }
       ),
     onSuccess: (res) => {
       toast.success(t('pms.fin.owners.settledFor', { amount: currency(res.data?.amount), name: res.data?.owner?.full_name || t('pms.fin.owners.ownerFallback') }));
@@ -5034,32 +5046,38 @@ function FixedAssetsTool() {
 function FinancialSystemInner() {
   const { t, locale, toggleLocale, isRtl } = useFinLocale();
   const { view, group, code, txn, tool, go } = useFinanceNav();
-  const [periodYm, setPeriodYm] = useState(() => clampYearMonth(cairoYearMonth()));
+  const [period, setPeriod] = useState(() => ({ ...monthBounds(cairoYearMonth()), basis: 'stay' }));
   const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const { from: fromDate, to: toDate } = monthBounds(periodYm);
-  const params = rangeParams(fromDate, toDate);
+  const { from: fromDate, to: toDate, basis } = period;
+  const params = rangeParams(fromDate, toDate, basis);
+  const basisLabel = basis === 'created' ? t('pms.fin.basisCreated') : t('pms.fin.basisStay');
+
+  function updatePeriod(patch) {
+    setPeriod((prev) => {
+      const next = { ...prev, ...patch };
+      if (next.to && next.to < next.from) next.to = next.from;
+      return next;
+    });
+  }
 
   const { data, isLoading } = useQuery({
-    queryKey: ['financial-system-portal', fromDate, toDate],
+    queryKey: ['financial-system-portal', fromDate, toDate, basis],
     queryFn: () => api.get('/financial-system/portal', { params }).then((r) => r.data),
     refetchInterval: 60_000,
   });
 
-  async function exportReport(fromYm, toYm) {
+  async function exportReport(from, to) {
     try {
       setExporting(true);
-      const fromBounds = monthBounds(fromYm);
-      const toBounds = monthBounds(toYm);
-      const exportParams = rangeParams(fromBounds.from, toBounds.to);
       const res = await api.get('/financial-system/export', {
-        params: exportParams,
+        params: rangeParams(from, to, basis),
         responseType: 'blob',
       });
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const a = document.createElement('a');
       a.href = url;
-      a.download = `soul-financial-system-${fromYm}_to_${toYm}.xlsx`;
+      a.download = `soul-financial-system-${from}_to_${to}.xlsx`;
       a.click();
       window.URL.revokeObjectURL(url);
       setExportOpen(false);
@@ -5143,14 +5161,15 @@ function FinancialSystemInner() {
             <Globe className="w-4 h-4" />
             {locale === 'en' ? 'العربية' : 'English'}
           </button>
-          <DateFilters periodYm={periodYm} onPeriodYm={setPeriodYm} />
+          <DateFilters fromDate={fromDate} toDate={toDate} basis={basis} onChange={updatePeriod} />
         </div>
       </div>
 
       <ExportPeriodModal
-        key={exportOpen ? `export-${periodYm}` : 'export-closed'}
+        key={exportOpen ? `export-${fromDate}-${toDate}` : 'export-closed'}
         open={exportOpen}
-        defaultYm={periodYm}
+        defaultFrom={fromDate}
+        defaultTo={toDate}
         exporting={exporting}
         onClose={() => setExportOpen(false)}
         onConfirm={exportReport}
@@ -5176,6 +5195,7 @@ function FinancialSystemInner() {
       ) : showHome ? (
         <HomeView
           data={data}
+          basisLabel={basisLabel}
           onOpenGroup={(id) => go({ view: 'group', group: id, code: '', txn: '', tool: '' })}
           onOpenAccount={(c) => go({ view: 'account', code: c, group: getAccount(c)?.group || '', txn: '', tool: '' })}
           onOpenTreasury={(c) => go({ view: 'account', code: c, group: 'assets', txn: '', tool: '' })}
@@ -5184,12 +5204,13 @@ function FinancialSystemInner() {
           exporting={exporting}
         />
       ) : showTxn ? (
-        <TransactionView txnId={txn} fromDate={fromDate} toDate={toDate} />
+        <TransactionView txnId={txn} fromDate={fromDate} toDate={toDate} basis={basis} />
       ) : showAccount ? (
         <AccountView
           code={code}
           fromDate={fromDate}
           toDate={toDate}
+          basis={basis}
           onOpenTxn={(id) => go({ view: 'txn', txn: id, code, group: getAccount(code)?.group || group })}
         />
       ) : showGroup ? (

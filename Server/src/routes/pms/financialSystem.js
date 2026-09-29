@@ -35,6 +35,12 @@ const {
   buildCashFlowStatement,
 } = require('../../lib/finance/ledgerEngine');
 const { buildFinancialWorkbook, workbookToBuffer } = require('../../lib/finance/financialExport');
+const {
+  CREATED,
+  runWithPeriodBasis,
+  currentPeriodBasis,
+  reservationPeriodSql,
+} = require('../../lib/finance/periodBasis');
 
 const router = express.Router();
 
@@ -97,15 +103,18 @@ async function assertPeriodOpen(date) {
   }
 }
 
+router.use('/financial-system', (req, _res, next) => runWithPeriodBasis(req.query.basis, next));
+
 function dateRange(req) {
   const from = clampFromDate(req.query.from_date);
   const to = req.query.to_date || null;
   const params = [from];
-  // Period filter is by created/booked date for reservations and other ledger sources.
-  let resSql = `r.status <> 'cancelled' AND r.created_at::date >= $1::date`;
+  // Reservations fall into a period by check-in (default) or created date; other ledger sources by created date.
+  const period = reservationPeriodSql('r');
+  let resSql = `r.status <> 'cancelled' AND ${period} >= $1::date`;
   if (to) {
     params.push(to);
-    resSql += ` AND r.created_at::date <= $${params.length}::date`;
+    resSql += ` AND ${period} <= $${params.length}::date`;
   }
   return { from, to, params, resSql };
 }
@@ -127,13 +136,14 @@ async function computeOwnerPeriodBalance(ownerId, from, to) {
     };
   }
 
+  const period = reservationPeriodSql('r');
   const resParams = [unitIds, from];
   let resSql = `r.unit_id = ANY($1::uuid[])
        AND r.status <> 'cancelled'
-       AND r.created_at::date >= $2::date`;
+       AND ${period} >= $2::date`;
   if (to) {
     resParams.push(to);
-    resSql += ` AND r.created_at::date <= $3::date`;
+    resSql += ` AND ${period} <= $3::date`;
   }
   const { rows: resRows } = await query(
     `SELECT r.nights, r.price_per_night, r.total_amount, r.utilities_amount,
@@ -206,11 +216,12 @@ async function computeOwnerPeriodBalance(ownerId, from, to) {
  * One-pass load for owner statements / settle-by-owner (avoids N+1 per unit/owner).
  */
 async function loadOwnerStatementData(from, to, unitId = null) {
+  const period = reservationPeriodSql('r');
   const resParams = [from];
-  let resWhere = `r.status <> 'cancelled' AND r.created_at::date >= $1::date`;
+  let resWhere = `r.status <> 'cancelled' AND ${period} >= $1::date`;
   if (to) {
     resParams.push(to);
-    resWhere += ` AND r.created_at::date <= $${resParams.length}::date`;
+    resWhere += ` AND ${period} <= $${resParams.length}::date`;
   }
   if (unitId) {
     resParams.push(unitId);
@@ -543,7 +554,7 @@ function reservationJournalEntry(r, fin, split) {
 
   return {
     id: ref,
-    date: r.created_at || r.check_in,
+    date: currentPeriodBasis() === CREATED ? r.created_at || r.check_in : r.check_in || r.created_at,
     type: 'booking',
     reference: ref,
     description: `${r.guest_name} — ${r.unit_name}`,

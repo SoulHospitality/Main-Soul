@@ -13,6 +13,7 @@ const {
   signedBalance,
 } = require('./chartOfAccounts');
 const { bookingSplit, withholdingTax, extractInputVat } = require('./taxEngine');
+const { reservationPeriodSql } = require('./periodBasis');
 
 function isoDate(value) {
   if (value == null || value === '') return '';
@@ -30,9 +31,9 @@ function isoDate(value) {
   return matched ? matched[1] : '';
 }
 
-/** Financial period date for a reservation = when it was booked/created. */
+/** Financial period date for a reservation (check-in or created date, per the active period basis). */
 function reservationBookedDate(r) {
-  return isoDate(r?.created_at) || isoDate(r?.check_in);
+  return isoDate(r?.period_date) || isoDate(r?.created_at) || isoDate(r?.check_in);
 }
 
 function inRange(date, from, to) {
@@ -260,7 +261,7 @@ function bookingEntry(r, asOf) {
       unit_name: r.unit_name,
       project: r.project,
       unit_id: r.unit_id,
-      created_at: booked,
+      created_at: isoDate(r.created_at) || booked,
       check_in: checkIn,
       check_out: isoDate(r.check_out),
       nights: r.nights,
@@ -696,9 +697,10 @@ function prepaidAmount(r, payments) {
 }
 
 async function loadPortalData(from, to) {
+  const period = reservationPeriodSql('r');
   const resParams = [from];
   let resSql = `(
-      r.created_at::date >= $1::date
+      ${period} >= $1::date
       OR (COALESCE(r.insurance, 0) > 0.009 AND r.check_out >= $1::date)
       OR (
         r.insurance_refund_status IN ('refunded', 'partial', 'forfeited')
@@ -713,7 +715,7 @@ async function loadPortalData(from, to) {
   if (to) {
     resParams.push(to);
     resSql = `(
-      (r.created_at::date >= $1::date AND r.created_at::date <= $2::date)
+      (${period} >= $1::date AND ${period} <= $2::date)
       OR (
         COALESCE(r.insurance, 0) > 0.009
         AND r.check_out >= $1::date
@@ -735,6 +737,7 @@ async function loadPortalData(from, to) {
 
   const { rows: reservations } = await query(
     `SELECT r.*,
+            to_char(${period}, 'YYYY-MM-DD') AS period_date,
             to_char(r.created_at, 'YYYY-MM-DD') AS created_at,
             to_char(r.check_in, 'YYYY-MM-DD') AS check_in,
             to_char(r.check_out, 'YYYY-MM-DD') AS check_out,
@@ -753,11 +756,12 @@ async function loadPortalData(from, to) {
     resParams
   );
 
+  const totPeriod = reservationPeriodSql();
   const totParams = [from];
-  let totSql = `LOWER(COALESCE(status::text, '')) <> 'cancelled' AND created_at::date >= $1::date`;
+  let totSql = `LOWER(COALESCE(status::text, '')) <> 'cancelled' AND ${totPeriod} >= $1::date`;
   if (to) {
     totParams.push(to);
-    totSql += ` AND created_at::date <= $2::date`;
+    totSql += ` AND ${totPeriod} <= $2::date`;
   }
   const { rows: totalRows } = await query(
     `SELECT COALESCE(SUM(total_amount), 0)::float AS stays,
@@ -1052,6 +1056,7 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
         },
         r
       );
+      if (!inRange(synth.date, from, to)) continue;
       journal.push(synth);
       if (synth.meta?.unearned) {
         prepaidByRes[r.id] = round2((prepaidByRes[r.id] || 0) + missing);
