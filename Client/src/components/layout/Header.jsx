@@ -90,32 +90,21 @@ export default function Header({ overHero = false }) {
         }`}
       >
         <div
-          className={`relative mx-auto flex h-16 max-w-wide items-center justify-between gap-3 rounded-full pe-2 ps-4 transition-all duration-500 ease-soul sm:ps-5 ${
+          className={`relative mx-auto flex h-16 max-w-wide items-center justify-between gap-3 rounded-full pe-2 ps-4 transition-all duration-500 ease-soul sm:ps-5 lg:grid lg:grid-cols-[1fr_auto_1fr] lg:ps-2 ${
             solid
               ? 'border border-soul-line bg-white/80 shadow-[0_18px_48px_-28px_rgba(22,35,58,0.55)] backdrop-blur-xl'
               : 'border border-white/15 bg-white/[0.07] backdrop-blur-md'
           }`}
         >
-          <Link to="/" className="relative z-10 flex shrink-0 items-center" aria-label={brand.name}>
-            <img
-              src="/soul-brand/soul-logo.png"
-              alt={brand.name}
-              className={`h-11 w-auto transition duration-500 ${solid ? '' : 'brightness-0 invert'}`}
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-              }}
-            />
-          </Link>
-
-          <nav className="pointer-events-none absolute inset-x-0 hidden justify-center lg:flex">
-            <div className="pointer-events-auto flex items-center gap-0.5">
+          <nav className="hidden justify-self-start lg:flex">
+            <div className="flex items-center gap-0.5">
               {NAV.map((item) => {
                 const active = item.match(pathname);
                 return (
                   <Link
                     key={item.to}
                     to={item.to}
-                    className={`rounded-full px-4 py-2 text-[13px] font-medium transition-colors duration-300 ${
+                    className={`whitespace-nowrap rounded-full px-3 py-2 text-[13px] font-medium transition-colors duration-300 xl:px-4 ${
                       solid
                         ? active
                           ? 'bg-soul-blue-50 text-soul-blue'
@@ -132,7 +121,18 @@ export default function Header({ overHero = false }) {
             </div>
           </nav>
 
-          <div className="relative z-10 flex items-center gap-1 sm:gap-1.5">
+          <Link to="/" className="relative z-10 flex shrink-0 items-center lg:justify-self-center" aria-label={brand.name}>
+            <img
+              src="/soul-brand/soul-logo.png"
+              alt={brand.name}
+              className={`h-11 w-auto transition duration-500 ${solid ? '' : 'brightness-0 invert'}`}
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+          </Link>
+
+          <div className="relative z-10 flex items-center gap-1 justify-self-end sm:gap-1.5">
             <button
               type="button"
               onClick={toggleLocale}
