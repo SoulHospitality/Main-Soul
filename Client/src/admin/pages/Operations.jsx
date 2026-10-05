@@ -1,5 +1,13 @@
 import { useSearchParams } from 'react-router-dom';
-import { KeyRound, History, MessageSquareText, LogOut, SprayCan, Building2 } from 'lucide-react';
+import {
+  KeyRound,
+  History,
+  MessageSquareText,
+  LogOut,
+  SprayCan,
+  Building2,
+  ClipboardCheck,
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { canAccess } from '../utils/permissions';
 import { CheckinsTodaySection } from './OpsCheckinsToday';
@@ -9,6 +17,7 @@ import { CheckoutsTodaySection } from './OpsCheckoutsToday';
 import { TodayCleansSection } from './HkTodayCleans';
 import { CleansHistorySection } from './HkCleansHistory';
 import { UnitCleansSummarySection } from './HkUnitCleansSummary';
+import { UnitInspectionsSection } from './OpsUnitInspections';
 
 const TABS = [
   { id: 'today', label: 'Check-ins', icon: KeyRound, page: 'ops_checkins' },
@@ -18,6 +27,7 @@ const TABS = [
   { id: 'unit-cleans', label: 'Unit cleans', icon: Building2, page: 'hk_today' },
   { id: 'history', label: 'Check-ins history', icon: History, page: 'ops_checkins' },
   { id: 'comments', label: 'Check-in comments', icon: MessageSquareText, page: 'ops_comments' },
+  { id: 'inspections', label: 'New unit inspections', icon: ClipboardCheck, page: 'unit_inspections' },
 ];
 
 const TAB_ALIASES = {
@@ -34,6 +44,8 @@ const TAB_ALIASES = {
   'checkins-history': 'history',
   comments: 'comments',
   'checkin-comments': 'comments',
+  inspections: 'inspections',
+  'unit-inspections': 'inspections',
 };
 
 export default function Operations() {
@@ -56,8 +68,7 @@ export default function Operations() {
       <div className="page-header mb-0">
         <h1 className="page-title">Operations</h1>
         <p className="page-subtitle">
-          Check-ins, checkouts, cleans, history, and agent comments — filter by today, tomorrow, this
-          week, or this month
+          Check-ins, checkouts, cleans, history, agent comments, and new unit inspections
         </p>
       </div>
 
@@ -90,6 +101,7 @@ export default function Operations() {
       {resolvedTab === 'unit-cleans' ? <UnitCleansSummarySection embedded /> : null}
       {resolvedTab === 'history' ? <CheckinsHistorySection embedded /> : null}
       {resolvedTab === 'comments' ? <CheckinCommentsSection embedded /> : null}
+      {resolvedTab === 'inspections' ? <UnitInspectionsSection /> : null}
     </div>
   );
 }

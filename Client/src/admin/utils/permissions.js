@@ -123,6 +123,7 @@ const OPERATIONS_PAGE_ACCESS = new Set([
   'operations',
   'ops_checkins',
   'hk_today',
+  'unit_inspections',
   'reservations',
   'schedule',
   ...STAFF_HR_TABS,
@@ -134,6 +135,7 @@ const OPERATIONS_SUPERVISOR_PAGE_ACCESS = new Set([
   'ops_checkins',
   'ops_comments',
   'hk_today',
+  'unit_inspections',
   'reservations',
   'schedule',
   ...STAFF_HR_TABS,
@@ -377,6 +379,7 @@ const PAGE_ACCESS = {
     'owner_statement',
     'owner_payouts',
     'owner_blocks',
+    'owner_inspections',
     'profile',
   ]),
 };

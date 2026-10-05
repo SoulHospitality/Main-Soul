@@ -1,6 +1,16 @@
 import { NavLink, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../context/AuthContext';
-import { Building, LogOut, LayoutDashboard, CalendarDays, FileBarChart2, Wallet } from 'lucide-react';
+import api from '../../api/axios';
+import {
+  Building,
+  LogOut,
+  LayoutDashboard,
+  CalendarDays,
+  FileBarChart2,
+  Wallet,
+  ClipboardCheck,
+} from 'lucide-react';
 
 const NAV = [
   { to: '/admin/owner', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -8,11 +18,19 @@ const NAV = [
   { to: '/admin/owner/blocks', label: 'Block dates', icon: CalendarDays },
   { to: '/admin/owner/statement', label: 'Statement', icon: FileBarChart2 },
   { to: '/admin/owner/payouts', label: 'Payouts', icon: Wallet },
+  { to: '/admin/owner/inspections', label: 'Inspections', icon: ClipboardCheck, badge: 'inspections' },
 ];
 
 export default function OwnerLayout({ children }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const { data: inspections } = useQuery({
+    queryKey: ['owner-inspections'],
+    queryFn: async () => (await api.get('/owner/inspections')).data,
+    enabled: user?.role === 'owner',
+    staleTime: 60_000,
+  });
+  const badges = { inspections: inspections?.unread || 0 };
 
   const handleLogout = () => {
     logout();
@@ -33,7 +51,7 @@ export default function OwnerLayout({ children }) {
         </div>
 
         <nav className="hidden md:flex items-center gap-1">
-          {NAV.map(({ to, label, icon: Icon, end }) => (
+          {NAV.map(({ to, label, icon: Icon, end, badge }) => (
             <NavLink
               key={to}
               to={to}
@@ -46,6 +64,11 @@ export default function OwnerLayout({ children }) {
             >
               <Icon className="w-4 h-4" />
               {label}
+              {badge && badges[badge] ? (
+                <span className="ml-0.5 min-w-[1.1rem] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold text-center">
+                  {badges[badge]}
+                </span>
+              ) : null}
             </NavLink>
           ))}
         </nav>
@@ -67,7 +90,7 @@ export default function OwnerLayout({ children }) {
 
       <main className="pt-16 min-h-screen">
         <div className="md:hidden flex gap-2 px-4 pt-3 overflow-x-auto">
-          {NAV.map(({ to, label, end }) => (
+          {NAV.map(({ to, label, end, badge }) => (
             <NavLink
               key={to}
               to={to}
@@ -79,6 +102,11 @@ export default function OwnerLayout({ children }) {
               }
             >
               {label}
+              {badge && badges[badge] ? (
+                <span className="ml-1 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold">
+                  {badges[badge]}
+                </span>
+              ) : null}
             </NavLink>
           ))}
         </div>

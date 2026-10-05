@@ -25,6 +25,10 @@ const NOTIFICATION_ICONS = {
 function notificationHref(n) {
   if (n.type === 'new_booking') return '/admin/website-bookings/unassigned';
   if (n.entity_type === 'booking') return '/admin/website-bookings';
+  if (n.entity_type === 'unit_inspection') {
+    if (n.type === 'owner_unit_inspection') return '/admin/owner/inspections';
+    return `/admin/operations?tab=inspections${n.entity_id ? `&inspection=${n.entity_id}` : ''}`;
+  }
   if (n.entity_type === 'reservation' && n.entity_id) {
     return `/admin/reservations?view=${n.entity_id}`;
   }

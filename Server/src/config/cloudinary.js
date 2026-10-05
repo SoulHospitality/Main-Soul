@@ -19,6 +19,23 @@ const FOLDER_SITE = 'soul-hospitality/site';
 
 const FOLDER_PROJECTS = 'soul-hospitality/projects';
 
+const FOLDER_INSPECTIONS = 'soul-hospitality/inspections';
+
+/** Signed params for a direct browser upload (videos are too large to proxy through the API). */
+function signDirectUpload({ folder, publicId }) {
+  const timestamp = Math.round(Date.now() / 1000);
+  const params = { folder, public_id: publicId, timestamp };
+  const signature = cloudinary.utils.api_sign_request(params, process.env.CLOUDINARY_API_SECRET);
+  return {
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    folder,
+    public_id: publicId,
+    timestamp,
+    signature,
+  };
+}
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024 },
@@ -238,4 +255,6 @@ module.exports = {
   FOLDER_PAYMENTS,
   FOLDER_SITE,
   FOLDER_PROJECTS,
+  FOLDER_INSPECTIONS,
+  signDirectUpload,
 };
