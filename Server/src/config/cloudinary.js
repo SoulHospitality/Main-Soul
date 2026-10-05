@@ -21,19 +21,38 @@ const FOLDER_PROJECTS = 'soul-hospitality/projects';
 
 const FOLDER_INSPECTIONS = 'soul-hospitality/inspections';
 
+/**
+ * 720p H.264 MP4 rendition of inspection videos. Must stay identical to
+ * INSPECTION_PLAYBACK_TRANSFORM in the client so playback hits the pre-built file.
+ */
+const INSPECTION_PLAYBACK_TRANSFORM = 'c_limit,h_1280,w_1280,q_auto,vc_h264';
+
 /** Signed params for a direct browser upload (videos are too large to proxy through the API). */
-function signDirectUpload({ folder, publicId }) {
+function signDirectUpload({ folder, publicId, eager }) {
   const timestamp = Math.round(Date.now() / 1000);
   const params = { folder, public_id: publicId, timestamp };
+  if (eager) {
+    params.eager = eager;
+    params.eager_async = true;
+  }
   const signature = cloudinary.utils.api_sign_request(params, process.env.CLOUDINARY_API_SECRET);
   return {
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
     api_key: process.env.CLOUDINARY_API_KEY,
-    folder,
-    public_id: publicId,
-    timestamp,
+    ...params,
     signature,
   };
+}
+
+async function destroyCloudinaryVideo(publicId) {
+  const id = String(publicId || '').replace(/\.[^./]+$/, '');
+  if (!id) return false;
+  try {
+    const result = await cloudinary.uploader.destroy(id, { resource_type: 'video', invalidate: true });
+    return result?.result === 'ok';
+  } catch {
+    return false;
+  }
 }
 
 const upload = multer({
@@ -256,5 +275,7 @@ module.exports = {
   FOLDER_SITE,
   FOLDER_PROJECTS,
   FOLDER_INSPECTIONS,
+  INSPECTION_PLAYBACK_TRANSFORM,
   signDirectUpload,
+  destroyCloudinaryVideo,
 };

@@ -6,8 +6,10 @@ const { logAudit } = require('../../lib/audit');
 const { notifyStaff } = require('../../services/pmsNotifications');
 const {
   FOLDER_INSPECTIONS,
+  INSPECTION_PLAYBACK_TRANSFORM,
   signDirectUpload,
   parseCloudinaryDeliveryUrl,
+  destroyCloudinaryVideo,
 } = require('../../config/cloudinary');
 
 const router = express.Router();
@@ -423,6 +425,19 @@ router.post(
   }
 );
 
+function parseInspectionVideo(inspectionId, rawUrl) {
+  const videoUrl = String(rawUrl || '').trim();
+  const info = parseCloudinaryDeliveryUrl(videoUrl);
+  if (
+    !info ||
+    info.resourceType !== 'video' ||
+    !info.publicId.startsWith(`${FOLDER_INSPECTIONS}/insp-${inspectionId}-`)
+  ) {
+    return null;
+  }
+  return { videoUrl, publicId: info.publicId };
+}
+
 router.post('/ops/inspections/:id/video-upload', requireRoles(...INSPECTION_ROLES), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
@@ -430,13 +445,55 @@ router.post('/ops/inspections/:id/video-upload', requireRoles(...INSPECTION_ROLE
     if (!row) return res.status(404).json({ error: 'Inspection not found' });
     const denied = assertCanAct(req, row);
     if (denied) return res.status(403).json({ error: denied });
-    if (row.inspection_status !== 'checklist_approved') {
-      return res.status(409).json({ error: 'The checklist must be approved before uploading the video' });
+    if (row.inspection_status === 'completed') {
+      return res.status(409).json({ error: 'This inspection is already finished' });
     }
     if (!process.env.CLOUDINARY_API_SECRET || !process.env.CLOUDINARY_CLOUD_NAME) {
       return res.status(503).json({ error: 'Video uploads are not configured' });
     }
-    res.json(signDirectUpload({ folder: FOLDER_INSPECTIONS, publicId: `insp-${id}-${Date.now()}` }));
+    res.json(
+      signDirectUpload({
+        folder: FOLDER_INSPECTIONS,
+        publicId: `insp-${id}-${Date.now()}`,
+        eager: `${INSPECTION_PLAYBACK_TRANSFORM}/mp4`,
+      })
+    );
+  } catch (e) {
+    next(e);
+  }
+});
+
+/** Attach an uploaded video to an inspection that is still in progress (replaces any earlier one). */
+router.post('/ops/inspections/:id/video', requireRoles(...INSPECTION_ROLES), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const row = await loadByInspection(id);
+    if (!row) return res.status(404).json({ error: 'Inspection not found' });
+    const denied = assertCanAct(req, row);
+    if (denied) return res.status(403).json({ error: denied });
+    if (row.inspection_status === 'completed') {
+      return res.status(409).json({ error: 'This inspection is already finished' });
+    }
+    const video = parseInspectionVideo(id, req.body?.video_url);
+    if (!video) return res.status(400).json({ error: 'Invalid inspection video' });
+
+    const { rows: prev } = await query(`SELECT video_public_id FROM unit_inspections WHERE id = $1`, [id]);
+    await query(
+      `UPDATE unit_inspections SET video_url = $2, video_public_id = $3, updated_at = now() WHERE id = $1`,
+      [id, video.videoUrl, video.publicId]
+    );
+    const oldId = prev[0]?.video_public_id;
+    if (oldId && oldId !== video.publicId) await destroyCloudinaryVideo(oldId);
+
+    await logAudit({
+      userId: req.user.id,
+      action: 'UNIT_INSPECTION_VIDEO',
+      entityType: 'unit_inspection',
+      entityId: id,
+      details: { replaced: !!oldId },
+    });
+
+    res.json(mapRow(await loadByInspection(id)));
   } catch (e) {
     next(e);
   }
@@ -453,13 +510,8 @@ router.post('/ops/inspections/:id/complete', requireRoles(...INSPECTION_ROLES), 
       return res.status(409).json({ error: 'The checklist must be approved before finishing' });
     }
 
-    const videoUrl = String(req.body?.video_url || '').trim();
-    const info = parseCloudinaryDeliveryUrl(videoUrl);
-    if (
-      !info ||
-      info.resourceType !== 'video' ||
-      !info.publicId.startsWith(`${FOLDER_INSPECTIONS}/insp-${id}-`)
-    ) {
+    const video = parseInspectionVideo(id, req.body?.video_url || row.video_url);
+    if (!video) {
       return res.status(400).json({ error: 'Upload the inspection video before finishing' });
     }
 
@@ -495,7 +547,7 @@ router.post('/ops/inspections/:id/complete', requireRoles(...INSPECTION_ROLES), 
          completed_at = now(),
          updated_at = now()
        WHERE id = $1`,
-      [id, JSON.stringify(checklist), videoUrl, info.publicId, notes, req.user.id]
+      [id, JSON.stringify(checklist), video.videoUrl, video.publicId, notes, req.user.id]
     );
 
     const issues = checklist.filter((it) => it.result === 'issue').length;

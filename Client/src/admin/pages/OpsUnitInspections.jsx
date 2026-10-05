@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ClipboardCheck, Plus, Trash2, Upload, Video } from 'lucide-react';
+import { CheckCircle2, ClipboardCheck, Plus, Trash2, Upload, Video } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import Modal from '../components/ui/Modal';
+import InspectionVideo from '../components/InspectionVideo';
 import { useAuth } from '../context/AuthContext';
 import { formatDate, formatDateTime } from '../utils/formatters';
 
@@ -75,6 +76,10 @@ async function uploadVideo(file, sig, onProgress) {
     fd.append('signature', sig.signature);
     fd.append('folder', sig.folder);
     fd.append('public_id', sig.public_id);
+    if (sig.eager) {
+      fd.append('eager', sig.eager);
+      fd.append('eager_async', String(sig.eager_async));
+    }
     result = await postChunk(
       url,
       fd,
@@ -278,9 +283,7 @@ function UnitDetails({ unit, portalOwners }) {
 function InspectionResults({ inspection }) {
   return (
     <div className="space-y-4">
-      {inspection.video_url ? (
-        <video src={inspection.video_url} controls className="w-full rounded-xl bg-black max-h-[60vh]" />
-      ) : null}
+      <InspectionVideo url={inspection.video_url} />
       <ul className="divide-y border rounded-xl">
         {inspection.checklist.map((item) => (
           <li key={item.id} className="px-3 py-2 text-sm flex items-start gap-3">
@@ -326,7 +329,6 @@ function InspectionModal({ unitId, onClose, agents, isSupervisor, isAgent }) {
   const [managerNote, setManagerNote] = useState('');
   const [results, setResults] = useState({});
   const [agentNotes, setAgentNotes] = useState('');
-  const [videoFile, setVideoFile] = useState(null);
   const [uploadPct, setUploadPct] = useState(null);
 
   useEffect(() => {
@@ -382,16 +384,30 @@ function InspectionModal({ unitId, onClose, agents, isSupervisor, isAgent }) {
     onError: onError('Could not approve checklist'),
   });
 
-  const completeMutation = useMutation({
-    mutationFn: async () => {
-      if (!videoFile) throw new Error('Choose the inspection video first');
-      const missing = inspection.checklist.filter((it) => !results[it.id]?.result);
-      if (missing.length) throw new Error(`Mark every item as OK or Issue (${missing.length} left)`);
+  const videoMutation = useMutation({
+    mutationFn: async (file) => {
       const sig = (await api.post(`/ops/inspections/${inspection.inspection_id}/video-upload`)).data;
       setUploadPct(0);
-      const uploaded = await uploadVideo(videoFile, sig, setUploadPct);
+      const uploaded = await uploadVideo(file, sig, setUploadPct);
+      return api.post(`/ops/inspections/${inspection.inspection_id}/video`, { video_url: uploaded.secure_url });
+    },
+    onSuccess: () => {
+      toast.success('Video uploaded and saved');
+      setUploadPct(null);
+      refresh();
+    },
+    onError: (e) => {
+      setUploadPct(null);
+      onError('Video upload failed')(e);
+    },
+  });
+
+  const completeMutation = useMutation({
+    mutationFn: async () => {
+      if (!inspection.video_url) throw new Error('Upload the inspection video first');
+      const missing = inspection.checklist.filter((it) => !results[it.id]?.result);
+      if (missing.length) throw new Error(`Mark every item as OK or Issue (${missing.length} left)`);
       return api.post(`/ops/inspections/${inspection.inspection_id}/complete`, {
-        video_url: uploaded.secure_url,
         notes: agentNotes,
         results: inspection.checklist.map((it) => ({
           id: it.id,
@@ -402,14 +418,9 @@ function InspectionModal({ unitId, onClose, agents, isSupervisor, isAgent }) {
     },
     onSuccess: () => {
       toast.success('Inspection finished — video sent to the owner and the operations manager');
-      setVideoFile(null);
-      setUploadPct(null);
       refresh();
     },
-    onError: (e) => {
-      setUploadPct(null);
-      onError('Could not finish inspection')(e);
-    },
+    onError: onError('Could not finish inspection'),
   });
 
   const title = inspection
@@ -419,7 +430,10 @@ function InspectionModal({ unitId, onClose, agents, isSupervisor, isAgent }) {
   const canEditChecklist = isAgent && ['assigned', 'checklist_submitted'].includes(status);
   const canApprove = isSupervisor && status === 'checklist_submitted';
   const canInspect = status === 'checklist_approved';
-  const busy = completeMutation.isPending;
+  const canUploadVideo = isAgent && ['assigned', 'checklist_submitted', 'checklist_approved'].includes(status);
+  const uploading = videoMutation.isPending;
+  const finishing = completeMutation.isPending;
+  const busy = finishing || uploading;
 
   return (
     <Modal open={!!unitId} onClose={busy ? () => {} : onClose} title={title} size="xl">
@@ -473,6 +487,54 @@ function InspectionModal({ unitId, onClose, agents, isSupervisor, isAgent }) {
 
           {status === 'assigned' && !isAgent ? (
             <p className="text-sm text-gray-600">Waiting for the agent to send the inspection checklist.</p>
+          ) : null}
+
+          {canUploadVideo ? (
+            <section className="card p-4 space-y-3">
+              <div>
+                <h3 className="flex items-center gap-2 font-semibold text-gray-900">
+                  <Video className="w-4 h-4" /> Inspection video
+                </h3>
+                <p className="text-xs text-gray-500">
+                  You can upload the walkthrough video anytime — while preparing or doing the checklist. It is saved
+                  right away and shared with the owner when you finish.
+                </p>
+              </div>
+              {inspection.video_url && !uploading ? <InspectionVideo url={inspection.video_url} /> : null}
+              {uploading ? (
+                <div className="space-y-1">
+                  <p className="text-xs text-gray-600">
+                    {uploadPct != null && uploadPct < 100 ? `Uploading ${uploadPct}%…` : 'Saving video…'}
+                  </p>
+                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-soul-blue transition-all" style={{ width: `${uploadPct ?? 0}%` }} />
+                  </div>
+                </div>
+              ) : (
+                <label className="btn-secondary text-sm inline-flex items-center gap-2 cursor-pointer w-fit">
+                  <Upload className="w-4 h-4" />
+                  {inspection.video_url ? 'Replace video' : 'Upload video'}
+                  <input
+                    type="file"
+                    accept="video/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = '';
+                      if (file) videoMutation.mutate(file);
+                    }}
+                  />
+                </label>
+              )}
+            </section>
+          ) : !isAgent && status !== 'completed' && inspection.video_url ? (
+            <section className="card p-4 space-y-3">
+              <h3 className="flex items-center gap-2 font-semibold text-gray-900">
+                <Video className="w-4 h-4" /> Inspection video (in progress)
+              </h3>
+              <InspectionVideo url={inspection.video_url} />
+            </section>
           ) : null}
 
           {canEditChecklist ? (
@@ -537,8 +599,8 @@ function InspectionModal({ unitId, onClose, agents, isSupervisor, isAgent }) {
               <div>
                 <h3 className="font-semibold text-gray-900">Inspect the unit</h3>
                 <p className="text-xs text-gray-500">
-                  Checklist approved by {inspection.approved_by_name || 'the operations manager'}. Mark each item,
-                  then upload a walkthrough video to finish.
+                  Checklist approved by {inspection.approved_by_name || 'the operations manager'}. Mark each item
+                  and upload the walkthrough video (above), then finish.
                 </p>
                 {inspection.manager_note ? (
                   <p className="mt-2 text-sm bg-indigo-50 text-indigo-900 rounded-lg px-3 py-2">
@@ -563,7 +625,7 @@ function InspectionModal({ unitId, onClose, agents, isSupervisor, isAgent }) {
                             <button
                               key={value}
                               type="button"
-                              disabled={busy}
+                              disabled={finishing}
                               onClick={() => setR({ result: value })}
                               className={`px-3 py-1 rounded-lg text-xs font-semibold border ${
                                 r.result === value
@@ -583,7 +645,7 @@ function InspectionModal({ unitId, onClose, agents, isSupervisor, isAgent }) {
                           className="input text-sm py-1.5"
                           placeholder="Describe the issue"
                           value={r.note || ''}
-                          disabled={busy}
+                          disabled={finishing}
                           onChange={(e) => setR({ note: e.target.value })}
                         />
                       ) : null}
@@ -596,43 +658,24 @@ function InspectionModal({ unitId, onClose, agents, isSupervisor, isAgent }) {
                 className="input text-sm min-h-[4rem]"
                 placeholder="General notes (optional)"
                 value={agentNotes}
-                disabled={busy}
+                disabled={finishing}
                 onChange={(e) => setAgentNotes(e.target.value)}
               />
 
-              <div className="space-y-2">
-                <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                  <Video className="w-4 h-4" /> Inspection video
-                </label>
-                <input
-                  type="file"
-                  accept="video/*"
-                  capture="environment"
-                  disabled={busy}
-                  onChange={(e) => setVideoFile(e.target.files?.[0] || null)}
-                  className="block text-sm"
-                />
-                {videoFile ? (
-                  <p className="text-xs text-gray-500">
-                    {videoFile.name} · {(videoFile.size / (1024 * 1024)).toFixed(1)} MB
-                  </p>
+              <div className="flex items-center justify-end gap-3 flex-wrap">
+                {!inspection.video_url ? (
+                  <span className="text-xs text-amber-700">
+                    {uploading ? `Video uploading ${uploadPct ?? 0}% — you can keep filling the checklist` : 'Upload the inspection video to finish'}
+                  </span>
                 ) : null}
-                {uploadPct != null ? (
-                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-soul-blue transition-all" style={{ width: `${uploadPct}%` }} />
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="flex justify-end">
                 <button
                   type="button"
                   className="btn-primary text-sm inline-flex items-center gap-2"
-                  disabled={busy || !videoFile}
+                  disabled={finishing || uploading || !inspection.video_url}
                   onClick={() => completeMutation.mutate()}
                 >
-                  <Upload className="w-4 h-4" />
-                  {busy ? (uploadPct != null && uploadPct < 100 ? `Uploading ${uploadPct}%…` : 'Finishing…') : 'Upload video & finish'}
+                  <CheckCircle2 className="w-4 h-4" />
+                  {finishing ? 'Finishing…' : 'Finish inspection'}
                 </button>
               </div>
             </section>

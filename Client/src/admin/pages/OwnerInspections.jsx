@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ClipboardCheck } from 'lucide-react';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
+import InspectionVideo from '../components/InspectionVideo';
 import { formatDateTime } from '../utils/formatters';
 
 export default function OwnerInspections() {
@@ -71,9 +72,7 @@ export default function OwnerInspections() {
                 </span>
               </div>
 
-              {insp.video_url ? (
-                <video src={insp.video_url} controls className="w-full rounded-xl bg-black max-h-[60vh]" />
-              ) : null}
+              <InspectionVideo url={insp.video_url} />
 
               <ul className="divide-y border rounded-xl">
                 {insp.checklist.map((item) => (
