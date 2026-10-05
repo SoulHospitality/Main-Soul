@@ -27,7 +27,7 @@ export default function WhatsAppFAB({ message }) {
       rel="noopener noreferrer"
       aria-label={label}
       title={label}
-      className="group fixed end-5 bottom-5 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-[#25d366] shadow-[0_8px_24px_-6px_rgba(37,211,102,0.45)] transition-colors hover:bg-[#1ebe5a] md:end-6 md:bottom-6 md:h-[60px] md:w-[60px]"
+      className="group fixed end-5 bottom-5 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-soul-blue shadow-[0_10px_28px_-8px_rgba(22,35,58,0.6)] ring-1 ring-white/25 transition-colors hover:bg-[#16233a] md:end-6 md:bottom-6 md:h-[60px] md:w-[60px]"
     >
       <svg
         width="30"
