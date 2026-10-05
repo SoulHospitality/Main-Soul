@@ -12,6 +12,7 @@ import api from '../api/http';
 import { getDisplayPriceEgp } from '../utils/displayPrice';
 import { useLocale } from '../context/LocaleContext';
 import BrandLoader from '../components/ui/BrandLoader';
+import { Reveal } from '../components/ui/Editorial';
 
 const PAGE_SIZE = 18;
 
@@ -286,57 +287,69 @@ export default function SearchPage({ listingType = 'rent' }) {
   const hasMore = items.length < total;
   const activeCompound = params.get('compound') || '';
 
+  const pageTitle = filterValues.where
+    ? isLongTerm
+      ? t('search.longTermIn', { where: filterValues.where })
+      : t('search.staysIn', { where: filterValues.where })
+    : isLongTerm
+      ? t('search.longTermAll')
+      : t('search.allStays');
+
   return (
-    <div className="min-h-screen bg-[#faf9f7]">
+    <div className="min-h-screen bg-soul-paper">
       <Header />
 
-      
-      <div className="sticky top-[88px] z-30 border-b border-soul-line bg-white/90 px-4 py-3 backdrop-blur-md lg:hidden">
-        <MobileSearchPill
-          values={filterValues}
-          filterCount={filterCount}
-          mode={listingType}
-          onOpen={() => setSheetOpen(true)}
-        />
-      </div>
+      <section className="g-shell pb-6 pt-6 md:pb-10 md:pt-10">
+        <div className="soul-fade-up mb-5 flex items-center gap-3 text-soul-muted">
+          <span className="g-dot" />
+          <span className="g-index">Soul</span>
+          <span className="h-px w-6 bg-soul-blue/25" />
+          <span className="g-index">{isLongTerm ? t('nav.longTerm') : t('nav.stays')}</span>
+        </div>
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0">
+            <h1 className="g-display soul-fade-up text-[clamp(44px,6.6vw,104px)] text-soul-blue" style={{ animationDelay: '0.08s' }}>
+              {pageTitle}
+              {!loading ? (
+                <sup className="g-index ms-3 align-top text-[13px] text-soul-muted">({total})</sup>
+              ) : null}
+            </h1>
+            <p className="soul-fade-up mt-4 text-sm text-soul-muted" style={{ animationDelay: '0.16s' }}>
+              {loading
+                ? t('common.loading')
+                : t('search.available', { count: total, noun: total === 1 ? nounSingular : nounPlural })}
+            </p>
+          </div>
 
-      <div className="mx-auto grid max-w-soul gap-8 px-4 py-6 sm:px-6 lg:grid-cols-[280px_minmax(0,1fr)] lg:items-start lg:py-8 xl:grid-cols-[300px_minmax(0,1fr)]">
-        <PropertyFiltersSidebar
-          values={filterValues}
-          onApply={applyFilters}
-          onClear={clearFilters}
-          mode={listingType}
-        />
-
-        <main className="min-w-0 pb-24 lg:pb-8">
-          <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h1 className="font-display text-2xl font-semibold text-soul-blue sm:text-3xl">
-                {filterValues.where
-                  ? isLongTerm
-                    ? t('search.longTermIn', { where: filterValues.where })
-                    : t('search.staysIn', { where: filterValues.where })
-                  : isLongTerm
-                    ? t('search.longTermAll')
-                    : t('search.allStays')}
-              </h1>
-              <p className="mt-1 text-sm text-soul-muted">
-                {loading
-                  ? t('common.loading')
-                  : t('search.available', { count: total, noun: total === 1 ? nounSingular : nounPlural })}
-              </p>
+          <div className="soul-fade-up flex flex-wrap items-center gap-3" style={{ animationDelay: '0.2s' }}>
+            <div className="inline-flex rounded-full border border-soul-line bg-white p-1">
+              {[
+                { to: '/search', label: t('nav.stays'), on: !isLongTerm },
+                { to: '/long-term', label: t('nav.longTerm'), on: isLongTerm },
+              ].map((tab) => (
+                <Link
+                  key={tab.to}
+                  to={tab.to}
+                  className={`rounded-full px-4 py-2 text-[13px] font-semibold transition-colors duration-300 ${
+                    tab.on ? 'bg-soul-blue text-white' : 'text-soul-blue/70 hover:text-soul-blue'
+                  }`}
+                >
+                  {tab.label}
+                </Link>
+              ))}
             </div>
 
             <div className="relative hidden sm:block">
               <button
                 type="button"
                 onClick={() => setSortOpen((o) => !o)}
-                className="inline-flex items-center gap-2 rounded-full border border-soul-line bg-white px-3.5 py-2 text-[13.5px] font-semibold text-soul-blue hover:border-soul-blue"
+                className="inline-flex h-[42px] items-center gap-2 rounded-full border border-soul-line bg-white px-4 text-[13px] font-semibold text-soul-blue transition-colors hover:border-soul-blue"
               >
-                {t('search.sortPrefix', { label: t(SORT_KEYS[sort]) })} ▾
+                {t('search.sortPrefix', { label: t(SORT_KEYS[sort]) })}
+                <span className={`text-soul-muted transition-transform ${sortOpen ? 'rotate-180' : ''}`}>▾</span>
               </button>
               {sortOpen && (
-                <div className="absolute end-0 top-full z-40 mt-2 min-w-[220px] rounded-[14px] border border-soul-line bg-white p-1.5 shadow-[0_18px_50px_rgba(40,63,94,0.16)]">
+                <div className="absolute end-0 top-full z-40 mt-2 min-w-[230px] rounded-[20px] border border-soul-line bg-white p-1.5 shadow-[0_30px_80px_-30px_rgba(22,35,58,0.45)]">
                   {Object.entries(SORT_KEYS).map(([key, labelKey]) => (
                     <button
                       key={key}
@@ -345,10 +358,10 @@ export default function SearchPage({ listingType = 'rent' }) {
                         setSort(key);
                         setSortOpen(false);
                       }}
-                      className={`block w-full rounded-[10px] px-3.5 py-2 text-start text-sm font-medium ${
+                      className={`block w-full rounded-2xl px-4 py-2.5 text-start text-sm font-medium ${
                         sort === key
                           ? 'bg-soul-blue-50 font-semibold text-soul-blue'
-                          : 'hover:bg-soul-blue-50/60'
+                          : 'text-soul-blue/80 hover:bg-soul-blue-50/60'
                       }`}
                     >
                       {t(labelKey)}
@@ -358,9 +371,29 @@ export default function SearchPage({ listingType = 'rent' }) {
               )}
             </div>
           </div>
+        </div>
+      </section>
 
+      <div className="sticky top-[88px] z-30 border-y border-soul-line bg-soul-paper/90 px-4 py-3 backdrop-blur-md lg:hidden">
+        <MobileSearchPill
+          values={filterValues}
+          filterCount={filterCount}
+          mode={listingType}
+          onOpen={() => setSheetOpen(true)}
+        />
+      </div>
+
+      <div className="g-shell grid gap-10 border-soul-line py-6 lg:grid-cols-[290px_minmax(0,1fr)] lg:items-start lg:border-t lg:py-10 xl:grid-cols-[310px_minmax(0,1fr)]">
+        <PropertyFiltersSidebar
+          values={filterValues}
+          onApply={applyFilters}
+          onClear={clearFilters}
+          mode={listingType}
+        />
+
+        <main className="min-w-0 pb-24 lg:pb-8">
           {projectChips.length > 0 && (
-            <div className="mb-5 flex gap-1.5 overflow-x-auto whitespace-nowrap pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="g-noscrollbar mb-8 flex gap-2 overflow-x-auto whitespace-nowrap pb-1">
               <Chip active={!activeCompound} onClick={() => setCompoundChip('')}>
                 {t('search.allDestination', { destination: chipDestination })}
               </Chip>
@@ -377,44 +410,44 @@ export default function SearchPage({ listingType = 'rent' }) {
           )}
 
           {loading ? (
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-x-6 gap-y-12 sm:grid-cols-2 xl:grid-cols-3">
               {Array.from({ length: 6 }).map((_, i) => (
                 <ListingCardSkeleton key={i} />
               ))}
             </div>
           ) : displayed.length === 0 ? (
-            <div className="mx-auto max-w-md py-16 text-center">
-              <h3 className="font-display text-2xl font-semibold text-soul-blue">
+            <div className="mx-auto max-w-lg py-20 text-center">
+              <span className="g-index text-soul-muted">(0)</span>
+              <h3 className="g-display mt-4 text-[clamp(36px,4vw,56px)] text-soul-blue">
                 {isLongTerm ? t('search.emptyLongTerm') : t('search.emptyHomes')}
               </h3>
-              <p className="mb-5 mt-2 leading-relaxed text-soul-muted">
+              <p className="mb-8 mt-4 leading-relaxed text-soul-muted">
                 {isLongTerm
                   ? t('search.emptyHintLongTerm')
                   : t('search.emptyHintRent')}
                 {total > 0 ? ` ${t('search.liveOverall', { count: total, noun: nounPlural })}` : ''}
               </p>
-              <Link
-                to={basePath}
-                className="inline-block rounded-full bg-soul-blue px-5 py-2.5 font-semibold text-white"
-              >
+              <Link to={basePath} className="g-btn g-btn-primary">
                 {t('search.resetFilters')}
               </Link>
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
-                {displayed.map((u) => (
-                  <ListingCard key={u.id} listing={u} carryDates={carryDates} />
+              <div className="grid grid-cols-1 gap-x-6 gap-y-12 sm:grid-cols-2 xl:grid-cols-3">
+                {displayed.map((u, i) => (
+                  <Reveal key={u.id} delay={(i % 3) * 80}>
+                    <ListingCard listing={u} carryDates={carryDates} />
+                  </Reveal>
                 ))}
               </div>
 
-              <div className="mt-12 flex flex-col items-center gap-3">
+              <div className="mt-16 flex flex-col items-center gap-4">
                 {hasMore && (
                   <button
                     type="button"
                     onClick={showMore}
                     disabled={loadingMore}
-                    className="rounded-full border border-soul-blue bg-white px-6 py-3 text-sm font-semibold text-soul-blue transition-colors hover:bg-soul-blue hover:text-white disabled:cursor-default disabled:opacity-60"
+                    className="g-btn g-btn-ghost disabled:cursor-default"
                   >
                     {loadingMore ? (
                       <span className="inline-flex items-center gap-2">
@@ -426,7 +459,7 @@ export default function SearchPage({ listingType = 'rent' }) {
                     )}
                   </button>
                 )}
-                <span className="text-sm text-soul-muted">
+                <span className="g-index text-soul-muted">
                   {hasMore
                     ? t('search.showingOf', { shown: displayed.length, total, noun: nounPlural })
                     : t('search.showingAll', { count: displayed.length, noun: nounPlural })}
@@ -466,9 +499,9 @@ function Chip({ active, onClick, children }) {
     <button
       type="button"
       onClick={onClick}
-      className={`inline-block flex-none rounded-full border px-3 py-1.5 text-[12.5px] font-semibold transition-colors ${
+      className={`inline-block flex-none rounded-full border px-4 py-2 text-[13px] font-medium transition-colors duration-300 ${
         active
-          ? 'border-soul-blue bg-soul-blue-50 text-soul-blue'
+          ? 'border-soul-blue bg-soul-blue text-white'
           : 'border-soul-line bg-white text-soul-blue hover:border-soul-blue'
       }`}
     >

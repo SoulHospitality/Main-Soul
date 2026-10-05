@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
 import PartnersSection from '../components/home/PartnersSection';
+import { ArrowDot, PageHero, Reveal, RevealLines, SectionHead } from '../components/ui/Editorial';
 import { brand } from '../theme/brand';
 import { useLocale } from '../context/LocaleContext';
 
@@ -18,6 +20,7 @@ const VALUE_KEYS = ['quality', 'teamwork', 'respect', 'integrity', 'responsibili
 
 export default function AboutPage() {
   const { t } = useLocale();
+  const [active, setActive] = useState(0);
   const storyParagraphs = [t('about.story1'), t('about.story2')];
   const values = VALUE_KEYS.map((key, i) => ({
     title: t(`about.${key}Title`),
@@ -26,86 +29,124 @@ export default function AboutPage() {
   }));
 
   return (
-    <div className="bg-white">
+    <div className="bg-soul-paper">
       <Header overHero />
 
-      
-      <section className="relative isolate min-h-[72svh] overflow-hidden md:min-h-[78svh]">
-        <img
-          src="/soul-brand/coast-hero-2.jpg"
-          alt=""
-          className="absolute inset-0 h-full w-full object-cover"
-        />
-        <div className="absolute inset-0 bg-soul-ink/45" />
-        <div className="absolute inset-0 bg-gradient-to-r from-soul-ink/70 via-soul-ink/35 to-transparent" />
+      <PageHero
+        image="/soul-brand/coast-hero-2.jpg"
+        eyebrow={brand.name}
+        lead={t('about.titleBefore')}
+        em={t('about.titleEm')}
+        body={t('about.heroBody')}
+      >
+        <div className="flex flex-wrap gap-3">
+          <Link to="/careers" className="g-btn g-btn-light">
+            {t('about.workWithUs')}
+            <ArrowDot />
+          </Link>
+          <Link to="/contact" className="g-btn g-btn-glass">
+            {t('about.contact')}
+          </Link>
+        </div>
+      </PageHero>
 
-        <div className="relative mx-auto flex min-h-[72svh] max-w-soul flex-col justify-end px-5 pb-14 pt-32 sm:px-8 md:min-h-[78svh] md:pb-20">
-          <p className="soul-eyebrow mb-4 text-white/70">{brand.name}</p>
-          <h1
-            className="font-display font-semibold leading-[0.95] text-white"
-            style={{ fontSize: 'clamp(40px, 7vw, 80px)' }}
-          >
-            {t('about.titleBefore')} <em className="italic font-normal">{t('about.titleEm')}</em>
-          </h1>
-          <p className="mt-5 max-w-lg text-base leading-relaxed text-white/85 md:text-lg">
-            {t('about.heroBody')}
-          </p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link
-              to="/careers"
-              className="btn-pill inline-flex items-center justify-center bg-white px-6 py-3 text-sm font-semibold text-soul-blue transition hover:-translate-y-0.5 hover:bg-soul-ivory"
-            >
-              {t('about.workWithUs')}
-            </Link>
-            <Link
-              to="/contact"
-              className="btn-pill inline-flex items-center justify-center border border-white/40 bg-white/10 px-6 py-3 text-sm font-semibold text-white backdrop-blur-sm transition hover:-translate-y-0.5 hover:bg-white/20"
-            >
-              {t('about.contact')}
-            </Link>
+      <section className="g-shell grid gap-12 py-24 md:py-32 lg:grid-cols-[minmax(0,3fr)_minmax(0,9fr)] lg:gap-16">
+        <Reveal className="flex items-center gap-3 self-start text-soul-muted">
+          <span className="g-index">(01)</span>
+          <span className="h-px w-8 bg-soul-blue/25" />
+          <span className="g-index">{t('about.storyEyebrow')}</span>
+        </Reveal>
+        <div>
+          <RevealLines
+            className="g-display text-[clamp(40px,5.4vw,84px)] text-soul-blue"
+            lines={[t('about.storyTitleBefore'), <em key="em">{t('about.storyTitleEm')}</em>]}
+          />
+          <div className="mt-12 grid gap-8 border-t border-soul-line pt-10 md:grid-cols-2 md:gap-12">
+            {storyParagraphs.map((paragraph, i) => (
+              <Reveal
+                key={paragraph.slice(0, 24)}
+                as="p"
+                delay={i * 120}
+                className="text-[15px] leading-[1.85] text-soul-muted md:text-base"
+              >
+                {paragraph}
+              </Reveal>
+            ))}
           </div>
         </div>
       </section>
 
-      
-      <section className="mx-auto max-w-soul px-5 py-16 sm:px-8 md:py-20">
-        <p className="soul-eyebrow text-soul-muted mb-2">{t('about.storyEyebrow')}</p>
-        <h2 className="font-display text-3xl text-soul-blue md:text-4xl">
-          {t('about.storyTitleBefore')}{' '}
-          <em className="italic font-normal">{t('about.storyTitleEm')}</em>
-        </h2>
-        <div className="mt-8 grid gap-8 md:grid-cols-2 md:gap-12">
-          {storyParagraphs.map((paragraph) => (
-            <p key={paragraph.slice(0, 24)} className="text-sm leading-relaxed text-soul-muted md:text-[15px] md:leading-7">
-              {paragraph}
-            </p>
-          ))}
-        </div>
-      </section>
+      <section className="g-grain relative isolate overflow-hidden bg-soul-blue-dark py-24 text-white md:py-32">
+        <div className="g-shell relative z-[2]">
+          <SectionHead
+            dark
+            index="02"
+            eyebrow={t('about.valuesEyebrow')}
+            lead={t('about.valuesTitle')}
+          />
 
-      
-      <section className="border-t border-soul-line bg-soul-ivory/60 py-16 md:py-20">
-        <div className="mx-auto max-w-soul px-5 sm:px-8">
-          <p className="soul-eyebrow text-soul-muted mb-2">{t('about.valuesEyebrow')}</p>
-          <h2 className="font-display text-3xl text-soul-blue md:text-4xl">
-            {t('about.valuesTitle')}
-          </h2>
+          <div className="mt-16 grid gap-12 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] lg:gap-20">
+            <ul className="border-t border-white/10">
+              {values.map((item, i) => {
+                const on = i === active;
+                return (
+                  <Reveal
+                    as="li"
+                    key={item.title}
+                    delay={i * 60}
+                    className="border-b border-white/10"
+                    onMouseEnter={() => setActive(i)}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setActive(i)}
+                      onFocus={() => setActive(i)}
+                      className="grid w-full grid-cols-[2.5rem_1fr] gap-4 py-6 text-start"
+                    >
+                      <span className={`g-index pt-3 transition-colors ${on ? 'text-soul-accent' : 'text-white/40'}`}>
+                        {String(i + 1).padStart(2, '0')}
+                      </span>
+                      <span>
+                        <span
+                          className={`g-display block text-[clamp(34px,3.6vw,56px)] transition-all duration-700 ease-soul ${
+                            on ? 'italic text-white' : 'text-white/45'
+                          }`}
+                        >
+                          {item.title}
+                        </span>
+                        <span
+                          className={`grid transition-all duration-700 ease-soul ${
+                            on ? 'mt-3 grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+                          }`}
+                        >
+                          <span className="overflow-hidden text-[15px] leading-relaxed text-white/65">{item.body}</span>
+                        </span>
+                      </span>
+                    </button>
+                  </Reveal>
+                );
+              })}
+            </ul>
 
-          <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3 lg:gap-7">
-            {values.map((item) => (
-              <article key={item.title} className="group">
-                <div className="relative aspect-[4/3] overflow-hidden rounded-2xl">
+            <div className="relative hidden lg:block">
+              <div className="sticky top-28 aspect-[4/5] overflow-hidden rounded-[32px]">
+                {values.map((item, i) => (
                   <img
+                    key={item.image}
                     src={item.image}
-                    alt={item.title}
-                    className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                    alt={i === active ? item.title : ''}
                     loading="lazy"
+                    className={`absolute inset-0 h-full w-full object-cover transition-all duration-[1100ms] ease-soul ${
+                      i === active ? 'scale-100 opacity-100' : 'scale-110 opacity-0'
+                    }`}
                   />
-                </div>
-                <h3 className="mt-4 font-display text-xl text-soul-blue">{item.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-soul-muted">{item.body}</p>
-              </article>
-            ))}
+                ))}
+                <div className="absolute inset-0 bg-gradient-to-t from-soul-ink/60 via-transparent to-transparent" />
+                <span className="g-index absolute bottom-6 end-6 text-white/75">
+                  {String(active + 1).padStart(2, '0')} / {String(values.length).padStart(2, '0')}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </section>

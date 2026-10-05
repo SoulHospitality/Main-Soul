@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowUpRight } from 'lucide-react';
 import { useProjectCatalog } from '../../hooks/useProjectCatalog';
 import { useLocale } from '../../context/LocaleContext';
+import { Reveal, SectionHead } from '../ui/Editorial';
 
-const AUTO_MS = 5500;
-const GAP_PX = 20;
 const PROJECT_PHRASE_KEYS = [
   'home.projectPhrase0',
   'home.projectPhrase1',
@@ -23,31 +22,13 @@ function phraseKeyForName(name = '') {
   return PROJECT_PHRASE_KEYS[hash];
 }
 
-function useVisibleCount() {
-  const [visible, setVisible] = useState(3);
+const hrefFor = (c) =>
+  `/search?destination=${encodeURIComponent(c.destination)}&compound=${encodeURIComponent(c.name)}`;
 
-  useEffect(() => {
-    const update = () => {
-      const w = window.innerWidth;
-      if (w < 640) setVisible(1);
-      else if (w < 1024) setVisible(2);
-      else setVisible(3);
-    };
-    update();
-    window.addEventListener('resize', update);
-    return () => window.removeEventListener('resize', update);
-  }, []);
-
-  return visible;
-}
-
-export default function CompoundGrid() {
-  const { t, isRtl } = useLocale();
+export default function CompoundGrid({ index, showHead = true }) {
+  const { t } = useLocale();
   const { projectCards } = useProjectCatalog();
-  const visible = useVisibleCount();
-  const [index, setIndex] = useState(0);
-  const [paused, setPaused] = useState(false);
-  const touchStartX = useRef(null);
+  const [active, setActive] = useState(0);
 
   const cards = useMemo(() => {
     const mapped = projectCards.map((p) => ({
@@ -63,155 +44,121 @@ export default function CompoundGrid() {
     return [fouka, ...mapped];
   }, [projectCards]);
 
-  const count = cards.length;
-  const maxIndex = Math.max(0, count - visible);
-  const pageCount = maxIndex + 1;
-  const canSlide = count > visible;
-
-  const goTo = useCallback(
-    (next) => {
-      if (!count) return;
-      setIndex(Math.min(maxIndex, Math.max(0, next)));
-    },
-    [count, maxIndex]
+  const head = !showHead ? null : (
+    <SectionHead
+      index={index}
+      eyebrow={t('home.destEyebrow')}
+      lead={t('home.destTitleLead')}
+      em={t('home.destTitleEm')}
+      body={t('home.destBody')}
+    />
   );
 
-  const goPrev = useCallback(() => {
-    setIndex((i) => (i <= 0 ? maxIndex : i - 1));
-  }, [maxIndex]);
-
-  const goNext = useCallback(() => {
-    setIndex((i) => (i >= maxIndex ? 0 : i + 1));
-  }, [maxIndex]);
-
-  useEffect(() => {
-    if (index > maxIndex) setIndex(maxIndex);
-  }, [index, maxIndex]);
-
-  useEffect(() => {
-    if (paused || !canSlide) return undefined;
-    const id = window.setInterval(() => {
-      setIndex((i) => (i >= maxIndex ? 0 : i + 1));
-    }, AUTO_MS);
-    return () => window.clearInterval(id);
-  }, [paused, canSlide, maxIndex]);
-
-  function onTouchStart(e) {
-    touchStartX.current = e.touches[0]?.clientX ?? null;
-  }
-
-  function onTouchEnd(e) {
-    if (touchStartX.current == null) return;
-    const dx = (e.changedTouches[0]?.clientX ?? 0) - touchStartX.current;
-    touchStartX.current = null;
-    if (Math.abs(dx) < 48) return;
-    if (dx > 0) goPrev();
-    else goNext();
-  }
-
-  if (!count) {
+  if (!cards.length) {
     return (
-      <section className="mx-auto max-w-soul px-5 sm:px-8 py-16 md:py-20">
-        <div className="text-center">
-          <h2 className="font-display text-3xl md:text-4xl text-soul-blue">
-            {t('home.findSoul')}
-          </h2>
+      <section className="bg-soul-paper py-24 md:py-32">
+        <div className="g-shell">
+          {head}
+          <p className="mt-10 text-soul-muted">{t('home.projectsEmpty')}</p>
         </div>
-        <p className="mt-4 text-center text-soul-muted">{t('home.projectsEmpty')}</p>
       </section>
     );
   }
 
-  const cardBasis = `calc((100% - ${(visible - 1) * GAP_PX}px) / ${visible})`;
-  const transform = isRtl
-    ? `translateX(calc(${index} * (${cardBasis} + ${GAP_PX}px)))`
-    : `translateX(calc(-${index} * (${cardBasis} + ${GAP_PX}px)))`;
+  const current = cards[Math.min(active, cards.length - 1)];
 
   return (
-    <section className="mx-auto max-w-soul px-5 sm:px-8 py-16 md:py-20">
-      <div className="relative mb-6 md:mb-8">
-        <div className="text-center">
-          <h2 className="font-display text-3xl md:text-4xl text-soul-blue">
-            {t('home.findSoul')}
-          </h2>
-        </div>
-        {canSlide ? (
-          <div className="mt-4 flex items-center justify-center gap-2 sm:absolute sm:end-0 sm:top-1/2 sm:mt-0 sm:-translate-y-1/2">
-            <button
-              type="button"
-              onClick={goPrev}
-              aria-label={t('home.prevProjects')}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-soul-line bg-white text-soul-blue transition hover:border-soul-blue/40 hover:bg-soul-sand/40"
-            >
-              <ChevronLeft className="h-5 w-5 rtl:rotate-180" />
-            </button>
-            <button
-              type="button"
-              onClick={goNext}
-              aria-label={t('home.nextProjects')}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-soul-line bg-white text-soul-blue transition hover:border-soul-blue/40 hover:bg-soul-sand/40"
-            >
-              <ChevronRight className="h-5 w-5 rtl:rotate-180" />
-            </button>
-          </div>
-        ) : null}
+    <section className={`bg-soul-paper ${showHead ? 'py-24 md:py-32' : 'pb-24 md:pb-32'}`}>
+      {head ? <div className="g-shell">{head}</div> : null}
+
+      <div className={`g-rail md:hidden ${head ? 'mt-12' : ''}`}>
+        {cards.map((c, i) => (
+          <Link key={c.id} to={hrefFor(c)} className="group relative w-[78%] shrink-0 overflow-hidden rounded-[26px]">
+            <div className="relative aspect-[4/5]">
+              <img src={c.image} alt={c.name} loading="lazy" decoding="async" className="absolute inset-0 h-full w-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-soul-ink/80 via-soul-ink/10 to-transparent" />
+              <div className="absolute inset-x-5 top-5 flex items-center justify-between text-white/80">
+                <span className="g-index">{String(i + 1).padStart(2, '0')}</span>
+                <span className="g-index">{c.destination}</span>
+              </div>
+              <div className="absolute inset-x-5 bottom-5 text-white">
+                <div className="g-display text-4xl">{c.name}</div>
+                <div className="mt-2 text-sm text-white/75">{t(c.phraseKey)}</div>
+              </div>
+            </div>
+          </Link>
+        ))}
       </div>
 
-      <div
-        className="relative overflow-hidden"
-        onMouseEnter={() => setPaused(true)}
-        onMouseLeave={() => setPaused(false)}
-        onTouchStart={onTouchStart}
-        onTouchEnd={onTouchEnd}
-      >
-        <div
-          className="flex transition-transform duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]"
-          style={{ gap: GAP_PX, transform }}
-        >
-          {cards.map((c) => (
-            <Link
-              key={c.id}
-              to={`/search?destination=${encodeURIComponent(c.destination)}&compound=${encodeURIComponent(c.name)}`}
-              className="group relative aspect-[4/3] shrink-0 overflow-hidden rounded-2xl"
-              style={{ flex: `0 0 ${cardBasis}` }}
-            >
+      <div className={`g-shell hidden gap-12 md:grid md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:gap-20 ${head ? 'mt-16' : ''}`}>
+        <div className="relative">
+          <Reveal variant="mask" className="sticky top-28 aspect-[4/5] overflow-hidden rounded-[32px] bg-soul-sand">
+            <div className="absolute inset-0">
+            {cards.map((c, i) => (
               <img
+                key={c.id}
                 src={c.image}
-                alt={c.name}
+                alt={i === active ? c.name : ''}
                 loading="lazy"
                 decoding="async"
-                className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                className={`absolute inset-0 h-full w-full object-cover transition-all duration-[1100ms] ease-soul ${
+                  i === active ? 'scale-100 opacity-100' : 'scale-[1.08] opacity-0'
+                }`}
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-soul-ink/75 via-soul-ink/15 to-transparent" />
-              <div className="absolute inset-x-0 bottom-0 p-4 sm:p-5 text-white">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/75">
-                  {c.destination}
+            ))}
+            </div>
+            <div className="absolute inset-0 bg-gradient-to-t from-soul-ink/70 via-transparent to-transparent" />
+            <div className="absolute inset-x-7 bottom-7 flex items-end justify-between gap-6 text-white">
+              <div>
+                <div className="g-index text-white/70">{current.destination}</div>
+                <div key={current.id} className="soul-fade-up mt-2 text-lg text-white/90">
+                  {t(current.phraseKey)}
                 </div>
-                <div className="mt-0.5 font-display text-xl sm:text-2xl">{c.name}</div>
-                <div className="mt-1 text-sm text-white/80">{t(c.phraseKey)}</div>
               </div>
-            </Link>
-          ))}
+              <span className="g-index shrink-0 text-white/70">
+                {String(active + 1).padStart(2, '0')} / {String(cards.length).padStart(2, '0')}
+              </span>
+            </div>
+          </Reveal>
         </div>
-      </div>
 
-      {canSlide ? (
-        <div className="mt-5 flex items-center justify-center gap-2" role="tablist" aria-label={t('home.findSoul')}>
-          {Array.from({ length: pageCount }).map((_, i) => (
-            <button
-              key={i}
-              type="button"
-              role="tab"
-              aria-selected={i === index}
-              aria-label={`${i + 1}`}
-              onClick={() => goTo(i)}
-              className={`h-1.5 rounded-full transition-all duration-300 ${
-                i === index ? 'w-8 bg-soul-blue' : 'w-1.5 bg-soul-line hover:bg-soul-muted'
-              }`}
-            />
-          ))}
-        </div>
-      ) : null}
+        <ul className="self-center border-t border-soul-line">
+          {cards.map((c, i) => {
+            const on = i === active;
+            return (
+              <Reveal as="li" key={c.id} delay={Math.min(i, 8) * 60} className="border-b border-soul-line">
+                <Link
+                  to={hrefFor(c)}
+                  onMouseEnter={() => setActive(i)}
+                  onFocus={() => setActive(i)}
+                  className="group grid grid-cols-[2.5rem_1fr_auto] items-center gap-4 py-6 lg:py-7"
+                >
+                  <span className={`g-index transition-colors duration-500 ${on ? 'text-soul-accent' : 'text-soul-muted/60'}`}>
+                    {String(i + 1).padStart(2, '0')}
+                  </span>
+                  <span className="min-w-0">
+                    <span
+                      className={`g-display block truncate text-[clamp(34px,3.6vw,58px)] transition-all duration-700 ease-soul ${
+                        on ? 'translate-x-2 italic text-soul-blue rtl:-translate-x-2' : 'text-soul-blue/55'
+                      }`}
+                    >
+                      {c.name}
+                    </span>
+                    <span className="g-index mt-1 block text-soul-muted">{c.destination}</span>
+                  </span>
+                  <span
+                    className={`grid h-12 w-12 place-items-center rounded-full border transition-all duration-500 ease-soul ${
+                      on ? 'border-soul-blue bg-soul-blue text-white' : 'border-soul-line text-soul-blue'
+                    }`}
+                  >
+                    <ArrowUpRight size={18} className={`transition-transform duration-500 rtl:-scale-x-100 ${on ? 'rotate-45' : ''}`} />
+                  </span>
+                </Link>
+              </Reveal>
+            );
+          })}
+        </ul>
+      </div>
     </section>
   );
 }

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { ArrowUpRight, Minus, Plus, Search } from 'lucide-react';
 import { useProjectCatalog } from '../../hooks/useProjectCatalog';
 import DateRangePicker from '../ui/DateRangePicker';
 import { useLocale } from '../../context/LocaleContext';
@@ -10,6 +11,8 @@ const isAfterDay = (a, b) => {
   return sa > sb;
 };
 
+const POPOVER =
+  'absolute inset-x-0 top-full z-[130] mt-3 rounded-[22px] border border-soul-line bg-white p-2 shadow-[0_30px_80px_-30px_rgba(2,6,23,0.45)] lg:bottom-full lg:top-auto lg:mb-4 lg:mt-0';
 
 export default function HeroSearch() {
   const navigate = useNavigate();
@@ -50,8 +53,6 @@ export default function HeroSearch() {
     return () => document.removeEventListener('mousedown', onOutside);
   }, []);
 
-  const projectLabel = criteria.project || t('home.whichProject');
-
   const hasValidRange =
     criteria.checkin &&
     criteria.checkout &&
@@ -68,48 +69,44 @@ export default function HeroSearch() {
     navigate(`/search?${params.toString()}`);
   }
 
+  const segment =
+    'flex h-full w-full cursor-pointer flex-col justify-center rounded-2xl px-5 py-3 text-start transition-colors lg:rounded-full';
+
   return (
     <form
       ref={capsuleRef}
       onSubmit={handleSubmit}
-      className="relative z-[60] flex w-full flex-col gap-4 overflow-visible rounded-[1.6rem] border border-white/25 bg-white/10 p-4 shadow-[0_24px_70px_rgba(0,0,0,0.18)] backdrop-blur-xl sm:gap-5 sm:rounded-[2rem] sm:p-6 lg:p-8"
+      className="relative z-[60] grid w-full gap-1 rounded-[28px] border border-white/40 bg-white/95 p-2 text-soul-blue shadow-[0_40px_100px_-40px_rgba(2,6,23,0.75)] backdrop-blur-xl lg:h-[76px] lg:grid-cols-[1.15fr_1.7fr_0.95fr_auto] lg:items-stretch lg:rounded-full"
     >
-      
-      <div className="relative">
+      <div className="relative lg:after:absolute lg:after:end-0 lg:after:top-1/2 lg:after:h-8 lg:after:w-px lg:after:-translate-y-1/2 lg:after:bg-soul-line">
         <button
           type="button"
           onClick={() => {
             setProjectOpen((o) => !o);
             setGuestOpen(false);
           }}
-          className="flex w-full cursor-pointer flex-col gap-2 rounded-2xl border border-white/25 bg-white/10 px-5 py-4 text-start transition-colors hover:bg-white/20"
+          className={`${segment} ${projectOpen ? 'bg-soul-blue-50' : 'hover:bg-soul-blue-50/60'}`}
         >
-          <span className="text-[11px] font-bold uppercase tracking-wider text-white/70">
-            {t('home.project')}
-          </span>
-          <span
-            className={`truncate text-sm font-medium ${
-              criteria.project ? 'text-white' : 'text-white/55'
-            }`}
-          >
-            {projectLabel}
+          <span className="g-index text-soul-muted">{t('home.project')}</span>
+          <span className={`mt-1 truncate text-[15px] font-medium ${criteria.project ? 'text-soul-blue' : 'text-soul-muted/70'}`}>
+            {criteria.project || t('home.whichProject')}
           </span>
         </button>
 
         {projectOpen ? (
-          <div className="absolute inset-x-0 top-full z-[130] mt-3 max-h-64 overflow-y-auto rounded-2xl border border-white/25 bg-white/95 p-2 shadow-2xl backdrop-blur-xl sm:inset-inline-start-0 sm:inset-inline-end-auto sm:w-80">
+          <div className={`${POPOVER} max-h-72 overflow-y-auto lg:w-[340px] lg:end-auto`}>
             <button
               type="button"
               onClick={() => {
                 setCriteria((c) => ({ ...c, project: '', destination: '' }));
                 setProjectOpen(false);
               }}
-              className="flex w-full items-center justify-between border-b border-soul-line px-4 py-3 text-start text-sm text-soul-blue last:border-b-0 hover:bg-soul-blue-50/70"
+              className="group flex w-full items-center justify-between rounded-2xl px-4 py-3 text-start text-sm text-soul-blue hover:bg-soul-blue-50/70"
             >
-              <span>{t('home.anyProject')}</span>
-              <span className="text-soul-muted/50">→</span>
+              <span className="font-medium">{t('home.anyProject')}</span>
+              <ArrowUpRight size={15} className="text-soul-muted/50 transition group-hover:text-soul-blue rtl:-scale-x-100" />
             </button>
-            {projects.map((option) => (
+            {projects.map((option, i) => (
               <button
                 key={option.id || option.name}
                 type="button"
@@ -121,15 +118,16 @@ export default function HeroSearch() {
                   }));
                   setProjectOpen(false);
                 }}
-                className="flex w-full items-center justify-between border-b border-soul-line px-4 py-3 text-start text-sm text-soul-blue last:border-b-0 hover:bg-soul-blue-50/70"
+                className="group flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-start text-sm text-soul-blue hover:bg-soul-blue-50/70"
               >
-                <span className="min-w-0">
+                <span className="g-index w-6 shrink-0 text-soul-muted/60">{String(i + 1).padStart(2, '0')}</span>
+                <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium">{option.name}</span>
                   {option.destination ? (
                     <span className="block truncate text-[11px] text-soul-muted">{option.destination}</span>
                   ) : null}
                 </span>
-                <span className="shrink-0 text-soul-muted/50">→</span>
+                <ArrowUpRight size={15} className="shrink-0 text-soul-muted/40 transition group-hover:text-soul-blue rtl:-scale-x-100" />
               </button>
             ))}
             {projects.length === 0 ? (
@@ -139,23 +137,23 @@ export default function HeroSearch() {
         ) : null}
       </div>
 
-      
-      <DateRangePicker
-        variant="hero"
-        checkin={criteria.checkin}
-        checkout={criteria.checkout}
-        onChange={({ checkin, checkout }) =>
-          setCriteria((c) => ({ ...c, checkin: checkin || '', checkout: checkout || '' }))
-        }
-        onOpenChange={(open) => {
-          if (open) {
-            setProjectOpen(false);
-            setGuestOpen(false);
+      <div className="relative lg:after:absolute lg:after:end-0 lg:after:top-1/2 lg:after:h-8 lg:after:w-px lg:after:-translate-y-1/2 lg:after:bg-soul-line">
+        <DateRangePicker
+          variant="bar"
+          checkin={criteria.checkin}
+          checkout={criteria.checkout}
+          onChange={({ checkin, checkout }) =>
+            setCriteria((c) => ({ ...c, checkin: checkin || '', checkout: checkout || '' }))
           }
-        }}
-      />
+          onOpenChange={(open) => {
+            if (open) {
+              setProjectOpen(false);
+              setGuestOpen(false);
+            }
+          }}
+        />
+      </div>
 
-      
       <div className="relative">
         <button
           type="button"
@@ -163,35 +161,37 @@ export default function HeroSearch() {
             setGuestOpen((o) => !o);
             setProjectOpen(false);
           }}
-          className="flex w-full cursor-pointer flex-col gap-2 rounded-2xl border border-white/25 bg-white/10 px-5 py-4 text-start transition-colors hover:bg-white/20"
+          className={`${segment} ${guestOpen ? 'bg-soul-blue-50' : 'hover:bg-soul-blue-50/60'}`}
         >
-          <span className="text-[11px] font-bold uppercase tracking-wider text-white/70">{t('home.searchGuests')}</span>
-          <span className="truncate text-sm font-medium text-white">
+          <span className="g-index text-soul-muted">{t('home.searchGuests')}</span>
+          <span className="mt-1 truncate text-[15px] font-medium text-soul-blue">
             {t('common.guestsCount', { count: criteria.guests })}
           </span>
         </button>
 
         {guestOpen ? (
-          <div className="absolute inset-x-0 top-full z-[130] mt-3 rounded-2xl border border-white/25 bg-white/95 p-4 shadow-2xl backdrop-blur-xl sm:inset-inline-start-0 sm:inset-inline-end-auto sm:w-[340px]">
+          <div className={`${POPOVER} p-4 lg:w-[300px] lg:start-auto`}>
             <div className="flex items-center justify-between gap-3">
               <button
                 type="button"
-                onClick={() =>
-                  setCriteria((c) => ({ ...c, guests: Math.max(1, c.guests - 1) }))
-                }
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-soul-line text-xl font-semibold text-soul-blue transition-all hover:-translate-y-0.5 hover:bg-soul-blue hover:text-white active:scale-[0.98]"
+                onClick={() => setCriteria((c) => ({ ...c, guests: Math.max(1, c.guests - 1) }))}
+                disabled={criteria.guests <= 1}
+                className="grid h-11 w-11 place-items-center rounded-full border border-soul-line text-soul-blue transition-colors hover:border-soul-blue hover:bg-soul-blue hover:text-white disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-soul-blue"
+                aria-label="-"
               >
-                −
+                <Minus size={16} />
               </button>
-              <span className="text-sm font-semibold uppercase tracking-[0.18em] text-soul-blue">
-                {t('home.guestsLower', { count: criteria.guests })}
+              <span className="text-center">
+                <span className="g-display block text-4xl">{criteria.guests}</span>
+                <span className="g-index text-soul-muted">{t('home.searchGuests')}</span>
               </span>
               <button
                 type="button"
                 onClick={() => setCriteria((c) => ({ ...c, guests: c.guests + 1 }))}
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-soul-line text-xl font-semibold text-soul-blue transition-all hover:-translate-y-0.5 hover:bg-soul-blue hover:text-white active:scale-[0.98]"
+                className="grid h-11 w-11 place-items-center rounded-full border border-soul-line text-soul-blue transition-colors hover:border-soul-blue hover:bg-soul-blue hover:text-white"
+                aria-label="+"
               >
-                +
+                <Plus size={16} />
               </button>
             </div>
           </div>
@@ -201,9 +201,12 @@ export default function HeroSearch() {
       <button
         type="submit"
         disabled={criteria.checkin && criteria.checkout ? !hasValidRange : false}
-        className="w-full rounded-xl border border-white/30 bg-white/90 py-3.5 text-[11px] font-bold uppercase tracking-[0.2em] text-soul-blue transition-all duration-300 hover:-translate-y-0.5 hover:bg-white hover:shadow-lg hover:shadow-soul-ink/20 active:translate-y-0 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 sm:py-4 sm:text-xs"
+        className="group mt-1 inline-flex h-14 items-center justify-center gap-3 rounded-2xl bg-soul-blue px-7 text-[13px] font-semibold tracking-[0.04em] text-white transition-all duration-500 ease-soul hover:bg-soul-blue-dark disabled:cursor-not-allowed disabled:opacity-60 lg:mt-0 lg:h-full lg:rounded-full"
       >
-        {t('home.searchStays')}
+        <span className="grid h-8 w-8 place-items-center rounded-full bg-soul-accent transition-transform duration-500 ease-soul group-hover:rotate-90">
+          <Search size={15} strokeWidth={2.4} />
+        </span>
+        <span>{t('home.searchStays')}</span>
       </button>
     </form>
   );

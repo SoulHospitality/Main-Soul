@@ -1,4 +1,5 @@
 import { useLocale } from '../../context/LocaleContext';
+import { Marquee, Reveal } from '../ui/Editorial';
 
 const PARTNERS = [
   {
@@ -29,28 +30,30 @@ export default function PartnersSection({ eyebrow, title, className = '' }) {
   const resolvedTitle = title ?? t('home.partnersTitle');
 
   return (
-    <section className={`py-16 md:py-20 ${className}`.trim()}>
-      <div className="mx-auto max-w-soul px-5 sm:px-8">
-        <p className="soul-eyebrow mb-2 text-soul-muted">{resolvedEyebrow}</p>
-        <h2 className="font-display text-3xl text-soul-blue md:text-4xl">{resolvedTitle}</h2>
-
-        <div className="mt-10 grid grid-cols-2 items-center justify-items-center gap-8 border-t border-soul-line pt-10 sm:grid-cols-3 md:grid-cols-5 md:gap-10">
-          {PARTNERS.map((partner) => (
-            <div
-              key={partner.label}
-              className="flex h-20 w-full max-w-[160px] items-center justify-center md:h-24"
-            >
-              <img
-                src={partner.src}
-                alt={partner.label}
-                className="max-h-full max-w-full object-contain"
-                loading="lazy"
-                decoding="async"
-              />
-            </div>
-          ))}
-        </div>
+    <section className={`border-y border-soul-line bg-soul-paper py-20 md:py-24 ${className}`.trim()}>
+      <div className="g-shell flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <Reveal>
+          <div className="mb-4 flex items-center gap-3 text-soul-muted">
+            <span className="g-dot" />
+            <span className="g-index">{resolvedEyebrow}</span>
+          </div>
+          <h2 className="g-display text-[clamp(36px,4.2vw,60px)] text-soul-blue">{resolvedTitle}</h2>
+        </Reveal>
       </div>
+
+      <Marquee duration={32} gap="5rem" className="mt-14">
+        {[...PARTNERS, ...PARTNERS].map((partner, i) => (
+          <div key={`${partner.label}-${i}`} className="flex h-20 w-[170px] shrink-0 items-center justify-center md:h-24">
+            <img
+              src={partner.src}
+              alt={partner.label}
+              className="max-h-full max-w-full object-contain opacity-60 grayscale transition duration-500 hover:opacity-100 hover:grayscale-0"
+              loading="lazy"
+              decoding="async"
+            />
+          </div>
+        ))}
+      </Marquee>
     </section>
   );
 }

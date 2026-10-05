@@ -11,6 +11,7 @@ export default {
           'blue-100': '#dbe3ef',
           muted: '#5c6b83',
           ivory: '#f5f1e9',
+          paper: '#fbf9f4',
           sand: '#efe9dc',
           teal: '#134e5e',
           ink: '#020617',
@@ -34,6 +35,10 @@ export default {
         display: ['"Cormorant Garamond"', 'Georgia', 'Times New Roman', 'serif'],
         sans: ['"Outfit"', 'system-ui', 'sans-serif'],
         num: ['"Outfit"', 'system-ui', 'sans-serif'],
+        tech: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+      },
+      transitionTimingFunction: {
+        soul: 'cubic-bezier(0.22, 1, 0.36, 1)',
       },
       letterSpacing: {
         royal: '0.08em',
@@ -44,6 +49,7 @@ export default {
       },
       maxWidth: {
         soul: '1280px',
+        wide: '1360px',
       },
     },
   },

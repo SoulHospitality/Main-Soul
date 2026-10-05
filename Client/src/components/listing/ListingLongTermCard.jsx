@@ -65,15 +65,16 @@ export default function ListingLongTermCard({
 
   return (
     <>
-      <div className="md:sticky md:top-[116px] flex flex-col gap-4 rounded-3xl border border-soul-line bg-white p-6 shadow-[0_30px_70px_-35px_rgba(40,63,94,0.4)]">
-        <div className="space-y-2 border-b border-soul-line pb-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-soul-muted">
-            {t('listing.longTermRent')}
+      <div className="flex flex-col gap-5 rounded-[28px] border border-soul-line bg-white p-7 shadow-[0_40px_90px_-50px_rgba(22,35,58,0.55)] md:sticky md:top-[104px]">
+        <div className="space-y-3 border-b border-soul-line pb-6">
+          <p className="flex items-center gap-2.5 text-soul-muted">
+            <span className="g-dot" />
+            <span className="g-index">{t('listing.longTermRent')}</span>
           </p>
           <div className="flex flex-wrap items-baseline gap-1.5">
             {monthlyLabel ? (
               <>
-                <span className="font-num text-3xl font-semibold text-soul-blue">{monthlyLabel}</span>
+                <span className="font-num text-[34px] font-semibold leading-none text-soul-blue">{monthlyLabel}</span>
                 <span className="text-sm text-soul-muted">{t('listing.perMonthShort')}</span>
               </>
             ) : (
@@ -85,7 +86,7 @@ export default function ListingLongTermCard({
         </div>
 
         {range.start && range.end ? (
-          <div className="rounded-2xl border border-soul-line bg-soul-ivory/40 px-4 py-3 text-sm text-soul-blue">
+          <div className="rounded-2xl border border-soul-line bg-soul-paper px-4 py-3 text-sm text-soul-blue">
             {t('listing.rangeSummary', { start: fmt(range.start), end: fmt(range.end), nights })}
           </div>
         ) : null}
@@ -95,7 +96,7 @@ export default function ListingLongTermCard({
             ref={desktopAnchorRef}
             type="button"
             onClick={() => openPicker(desktopAnchorRef)}
-            className="inline-flex w-full items-center justify-center rounded-full border border-soul-blue px-6 py-3.5 text-sm font-semibold uppercase tracking-[0.16em] text-soul-blue transition-colors hover:bg-soul-blue-50"
+            className="g-btn g-btn-ghost w-full !py-4"
           >
             {datesButtonLabel}
           </button>
@@ -103,7 +104,7 @@ export default function ListingLongTermCard({
             href={inquiryHref}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#25d366] px-6 py-3.5 text-sm font-semibold text-white shadow-[0_12px_28px_-10px_rgba(37,211,102,0.55)] transition-colors hover:bg-[#1ebe5a]"
+            className="g-btn w-full !py-4 bg-[#25d366] text-white hover:bg-[#1ebe5a]"
           >
             <WhatsAppIcon />
             {t('listing.whatsappInquiry')}
@@ -111,7 +112,7 @@ export default function ListingLongTermCard({
         </div>
       </div>
 
-      <div className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t border-soul-line px-4 py-3 flex flex-col gap-2 shadow-[0_-8px_24px_-12px_rgba(15,28,46,.18)]">
+      <div className="fixed inset-x-0 bottom-0 z-40 flex flex-col gap-2 border-t border-soul-line bg-white/90 px-4 py-3 shadow-[0_-12px_30px_-16px_rgba(15,28,46,.25)] backdrop-blur-xl md:hidden">
         <div className="flex items-center gap-3">
           <div className="flex-1 min-w-0">
             <div className="font-bold text-[17px] leading-tight truncate text-soul-blue">
@@ -130,7 +131,7 @@ export default function ListingLongTermCard({
             ref={mobileAnchorRef}
             type="button"
             onClick={() => openPicker(mobileAnchorRef)}
-            className="rounded-[12px] border border-soul-blue px-4 py-3 text-xs font-semibold uppercase tracking-wide text-soul-blue whitespace-nowrap"
+            className="whitespace-nowrap rounded-full border border-soul-blue px-4 py-3 text-xs font-semibold tracking-wide text-soul-blue"
           >
             {datesButtonLabel}
           </button>
@@ -139,7 +140,7 @@ export default function ListingLongTermCard({
           href={inquiryHref}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex w-full items-center justify-center gap-2 rounded-[12px] bg-[#25d366] px-5 py-3 text-sm font-semibold text-white"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#25d366] px-5 py-3 text-sm font-semibold text-white"
         >
           <WhatsAppIcon />
           {t('listing.whatsappInquiry')}

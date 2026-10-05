@@ -64,7 +64,9 @@ export default function DateRangePicker({
     const seed = checkin || checkout;
     return seed ? new Date(`${seed}T00:00:00`) : new Date();
   });
+  const isBar = variant === 'bar';
   const isHero = variant === 'hero';
+  const heroCopy = isHero || isBar;
 
   useLayoutEffect(() => {
     if (!open) {
@@ -80,9 +82,15 @@ export default function DateRangePicker({
       if (left + width > window.innerWidth - 12) {
         left = Math.max(12, window.innerWidth - width - 12);
       }
+      const height = popoverRef.current?.offsetHeight || 380;
+      let top = rect.bottom + 12;
+      if (top + height > window.innerHeight - 12) {
+        const above = rect.top - 12 - height;
+        top = above >= 12 ? above : Math.max(12, window.innerHeight - height - 12);
+      }
       setPopoverStyle({
         position: 'fixed',
-        top: rect.bottom + 12,
+        top,
         left,
         width,
         zIndex: 400,
@@ -171,27 +179,40 @@ export default function DateRangePicker({
   const arriveDate = checkin ? new Date(`${checkin}T00:00:00`) : null;
   const departDate = checkout ? new Date(`${checkout}T00:00:00`) : null;
 
-  const shellCls = isHero
-    ? 'grid grid-cols-2 overflow-hidden rounded-2xl border border-white/25 bg-white/10'
-    : 'grid grid-cols-2 overflow-hidden rounded-xl border border-soul-line bg-white';
-  const labelCls = isHero
-    ? 'block text-[11px] font-bold uppercase tracking-wider text-white/70'
-    : 'block text-[10px] font-bold uppercase tracking-wider text-soul-muted';
+  const shellCls = isBar
+    ? 'grid h-full grid-cols-2 gap-1'
+    : isHero
+      ? 'grid grid-cols-2 overflow-hidden rounded-2xl border border-white/25 bg-white/10'
+      : 'grid grid-cols-2 overflow-hidden rounded-2xl border border-soul-line bg-white';
+  const labelCls = isBar
+    ? 'g-index block text-soul-muted'
+    : isHero
+      ? 'block text-[11px] font-bold uppercase tracking-wider text-white/70'
+      : 'block text-[10px] font-bold uppercase tracking-wider text-soul-muted';
   const valueCls = (filled) =>
-    isHero
-      ? `mt-0.5 block truncate text-sm font-medium ${filled ? 'text-white' : 'text-white/55'}`
-      : `mt-0.5 block truncate text-sm font-medium ${filled ? 'text-soul-blue' : 'text-soul-muted'}`;
+    isBar
+      ? `mt-1 block truncate text-[15px] font-medium ${filled ? 'text-soul-blue' : 'text-soul-muted/70'}`
+      : isHero
+        ? `mt-0.5 block truncate text-sm font-medium ${filled ? 'text-white' : 'text-white/55'}`
+        : `mt-0.5 block truncate text-sm font-medium ${filled ? 'text-soul-blue' : 'text-soul-muted'}`;
   const halfActive = (field) =>
-    isHero
+    isBar
       ? open && activeField === field
-        ? 'bg-white/20'
-        : 'hover:bg-white/15'
-      : open && activeField === field
-        ? 'bg-soul-blue-50/70'
-        : 'hover:bg-soul-blue-50/40';
+        ? 'bg-soul-blue-50'
+        : 'hover:bg-soul-blue-50/60'
+      : isHero
+        ? open && activeField === field
+          ? 'bg-white/20'
+          : 'hover:bg-white/15'
+        : open && activeField === field
+          ? 'bg-soul-blue-50/70'
+          : 'hover:bg-soul-blue-50/40';
+  const halfCls = isBar
+    ? 'h-full rounded-2xl px-5 py-3 lg:rounded-full'
+    : `${isHero ? 'px-5 py-4' : 'px-3.5 py-2.5'}`;
   const popoverCls = isHero
     ? 'rounded-2xl border border-white/25 bg-white/95 p-4 shadow-2xl backdrop-blur-xl sm:p-6'
-    : 'rounded-2xl border border-soul-line bg-white p-4 shadow-[0_18px_50px_rgba(40,63,94,0.18)]';
+    : 'rounded-[24px] border border-soul-line bg-white p-5 shadow-[0_30px_80px_-30px_rgba(2,6,23,0.45)]';
 
   const calendarPanel = open && popoverStyle ? (
     <div ref={popoverRef} className={popoverCls} style={popoverStyle}>
@@ -206,7 +227,7 @@ export default function DateRangePicker({
                 : 'text-soul-muted hover:text-soul-blue'
             }`}
           >
-            {isHero ? t('home.arrive') : t('common.from')}
+            {heroCopy ? t('home.arrive') : t('common.from')}
           </button>
           <button
             type="button"
@@ -217,7 +238,7 @@ export default function DateRangePicker({
                 : 'text-soul-muted hover:text-soul-blue'
             }`}
           >
-            {isHero ? t('home.depart') : t('common.to')}
+            {heroCopy ? t('home.depart') : t('common.to')}
           </button>
         </div>
         {(checkin || checkout) && (
@@ -301,26 +322,26 @@ export default function DateRangePicker({
   ) : null;
 
   return (
-    <div ref={rootRef} className="relative z-10">
+    <div ref={rootRef} className={`relative z-10 ${isBar ? 'h-full' : ''}`}>
       <div className={shellCls}>
         <button
           type="button"
           onClick={() => openPicker('arrive')}
-          className={`border-e ${isHero ? 'border-white/20' : 'border-soul-line'} ${isHero ? 'px-5 py-4' : 'px-3.5 py-2.5'} text-start transition ${halfActive('arrive')}`}
+          className={`${isBar ? '' : `border-e ${isHero ? 'border-white/20' : 'border-soul-line'}`} ${halfCls} text-start transition ${halfActive('arrive')}`}
         >
-          <span className={labelCls}>{isHero ? t('home.arrive') : t('common.from')}</span>
+          <span className={labelCls}>{heroCopy ? t('home.arrive') : t('common.from')}</span>
           <span className={valueCls(!!checkin)}>
-            {formatStayDate(checkin, isHero ? t('common.selectDate') : t('common.addDate'), localeTag)}
+            {formatStayDate(checkin, heroCopy ? t('common.selectDate') : t('common.addDate'), localeTag)}
           </span>
         </button>
         <button
           type="button"
           onClick={() => openPicker('depart')}
-          className={`${isHero ? 'px-5 py-4' : 'px-3.5 py-2.5'} text-start transition ${halfActive('depart')}`}
+          className={`${halfCls} text-start transition ${halfActive('depart')}`}
         >
-          <span className={labelCls}>{isHero ? t('home.depart') : t('common.to')}</span>
+          <span className={labelCls}>{heroCopy ? t('home.depart') : t('common.to')}</span>
           <span className={valueCls(!!checkout)}>
-            {formatStayDate(checkout, isHero ? t('common.selectDate') : t('common.addDate'), localeTag)}
+            {formatStayDate(checkout, heroCopy ? t('common.selectDate') : t('common.addDate'), localeTag)}
           </span>
         </button>
       </div>
@@ -335,8 +356,8 @@ export default function DateRangePicker({
 export function DateRangeFieldLabel() {
   const { t } = useLocale();
   return (
-    <span className="mb-1.5 flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wider text-soul-muted">
-      <CalendarDays size={13} strokeWidth={2} />
+    <span className="g-index mb-2 flex items-center gap-1.5 text-soul-muted">
+      <CalendarDays size={13} strokeWidth={1.8} />
       {t('common.dates')}
     </span>
   );

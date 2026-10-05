@@ -50,7 +50,17 @@
     "whatsappUs": "WhatsApp us",
     "switchToAr": "العربية",
     "switchToEn": "English",
-    "propertiesLongTerm": "Long-Term Rentals"
+    "propertiesLongTerm": "Long-Term Rentals",
+    "stays": "Stays",
+    "longTerm": "Long-term",
+    "destinations": "Destinations",
+    "contact": "Contact",
+    "menu": "Menu",
+    "close": "Close",
+    "yourStay": "Your stay",
+    "preferences": "Preferences",
+    "talkToUs": "Talk to us",
+    "localTime": "Cairo"
   },
   "footer": {
     "tagline": "Boutique hospitality curated with premium restraint, direct booking clarity, and a calm editorial luxury tone.",
@@ -63,7 +73,15 @@
     "followUs": "Follow Us",
     "facebook": "Facebook",
     "instagram": "Instagram",
-    "contact": "Contact"
+    "contact": "Contact",
+    "ctaEyebrow": "Plan your stay",
+    "ctaLead": "The coast is",
+    "ctaEm": "calling.",
+    "ctaBody": "Tell us your dates and the kind of stay you have in mind. Our team will find the right home for you.",
+    "explore": "Explore",
+    "company": "Company",
+    "reachUs": "Reach us",
+    "backToTop": "Back to top"
   },
   "fab": {
     "whatsapp": "Chat with us on WhatsApp"
@@ -114,7 +132,29 @@
     "hostTitle": "Earn hassle-free rental income.",
     "hostBody": "Let us manage your coastal villa — guest care, pricing, and stays handled with Soul.",
     "hostCta": "List your property",
-    "hostImageAlt": "Coastal villa"
+    "hostImageAlt": "Coastal villa",
+    "heroExplore": "Explore stays",
+    "heroLongTerm": "Long-term living",
+    "heroScroll": "Scroll",
+    "manifestoIndex": "Our approach",
+    "manifesto": "We believe a holiday home should feel considered, not crowded. Every Soul home is hand-picked, prepared with hotel discipline, and handed over with the warmth of someone who knows the coast by heart.",
+    "manifestoNote": "Boutique hospitality across Egypt’s most loved coastal destinations.",
+    "manifestoLink": "Our story",
+    "statHomes": "Homes to book",
+    "statProjects": "Projects",
+    "statDestinations": "Destinations",
+    "destEyebrow": "Destinations",
+    "destTitleLead": "Find your",
+    "destTitleEm": "Soul.",
+    "destBody": "From the North Coast to the Red Sea, pick the project that matches your pace.",
+    "featuredLead": "Homes worth",
+    "featuredEm": "the drive.",
+    "trustLead": "Booked like a hotel,",
+    "trustEm": "felt like home.",
+    "interludeLead": "Slow mornings,",
+    "interludeEm": "salt air.",
+    "hostTitleLead": "Your home,",
+    "hostTitleEm": "our care."
   },
   "search": {
     "allStays": "All stays",

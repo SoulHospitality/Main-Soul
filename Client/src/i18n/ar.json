@@ -50,7 +50,17 @@
     "whatsappUs": "تواصل عبر واتساب",
     "switchToAr": "العربية",
     "switchToEn": "English",
-    "propertiesLongTerm": "إيجار طويل المدة"
+    "propertiesLongTerm": "إيجار طويل المدة",
+    "stays": "الإقامات",
+    "longTerm": "إيجار طويل",
+    "destinations": "الوجهات",
+    "contact": "تواصل معنا",
+    "menu": "القائمة",
+    "close": "إغلاق",
+    "yourStay": "إقامتك",
+    "preferences": "التفضيلات",
+    "talkToUs": "تحدث إلينا",
+    "localTime": "القاهرة"
   },
   "footer": {
     "tagline": "ضيافة راقية بذوق هادئ، وحجز مباشر بوضوح، ونبرة فاخرة هادئة.",
@@ -63,7 +73,15 @@
     "followUs": "تابعنا",
     "facebook": "فيسبوك",
     "instagram": "إنستغرام",
-    "contact": "تواصل معنا"
+    "contact": "تواصل معنا",
+    "ctaEyebrow": "خطط لإقامتك",
+    "ctaLead": "الساحل",
+    "ctaEm": "ينتظرك.",
+    "ctaBody": "أخبرنا بمواعيدك ونوع الإقامة التي تفكر بها، وسيجد فريقنا البيت المناسب لك.",
+    "explore": "استكشف",
+    "company": "الشركة",
+    "reachUs": "تواصل معنا",
+    "backToTop": "العودة للأعلى"
   },
   "fab": {
     "whatsapp": "تواصل معنا عبر واتساب"
@@ -114,7 +132,29 @@
     "hostTitle": "ادخل دخلاً إيجارياً بلا متاعب.",
     "hostBody": "دعنا ندير فيلتك الساحلية — رعاية الضيوف والتسعير والإقامات بأسلوب سول.",
     "hostCta": "أدرج عقارك",
-    "hostImageAlt": "فيلا ساحلية"
+    "hostImageAlt": "فيلا ساحلية",
+    "heroExplore": "استكشف الإقامات",
+    "heroLongTerm": "السكن طويل المدة",
+    "heroScroll": "مرّر",
+    "manifestoIndex": "نهجنا",
+    "manifesto": "نؤمن بأن بيت العطلة يجب أن يكون مدروساً لا مزدحماً. كل بيت من سول مختار بعناية، ومجهّز بانضباط الفنادق، ويُسلَّم بدفء من يعرف الساحل عن ظهر قلب.",
+    "manifestoNote": "ضيافة راقية في أحب الوجهات الساحلية في مصر.",
+    "manifestoLink": "قصتنا",
+    "statHomes": "بيت متاح للحجز",
+    "statProjects": "مشروع",
+    "statDestinations": "وجهة",
+    "destEyebrow": "الوجهات",
+    "destTitleLead": "اعثر على",
+    "destTitleEm": "سول الخاص بك.",
+    "destBody": "من الساحل الشمالي إلى البحر الأحمر، اختر المشروع الذي يناسب إيقاعك.",
+    "featuredLead": "بيوت تستحق",
+    "featuredEm": "الرحلة.",
+    "trustLead": "احجز كالفندق،",
+    "trustEm": "واشعر وكأنك في بيتك.",
+    "interludeLead": "صباحات هادئة،",
+    "interludeEm": "ونسيم البحر.",
+    "hostTitleLead": "بيتك،",
+    "hostTitleEm": "برعايتنا."
   },
   "search": {
     "allStays": "كل الإقامات",

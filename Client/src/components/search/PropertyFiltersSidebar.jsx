@@ -25,7 +25,7 @@ const RENTAL_TYPE_KEYS = {
 };
 
 const inputCls =
-  'w-full rounded-xl border border-soul-line bg-white px-3.5 py-2.5 text-sm text-soul-blue outline-none focus:border-soul-blue focus:ring-2 focus:ring-soul-blue/10 disabled:cursor-not-allowed disabled:opacity-55';
+  'w-full rounded-2xl border border-soul-line bg-white px-4 py-3 text-sm text-soul-blue outline-none transition focus:border-soul-blue focus:ring-4 focus:ring-soul-blue/5 disabled:cursor-not-allowed disabled:opacity-55';
 
 
 export default function PropertyFiltersSidebar({
@@ -199,19 +199,19 @@ export default function PropertyFiltersSidebar({
       {!isLongTerm && (
         <>
           <Field label={t('home.searchGuests')} icon={Users}>
-            <div className="flex items-center justify-between gap-3 rounded-xl border border-soul-line bg-white px-3 py-2.5">
+            <div className="flex items-center justify-between gap-3 rounded-2xl border border-soul-line bg-white px-3 py-2.5">
               <button
                 type="button"
-                className="grid h-8 w-8 place-items-center rounded-full border border-soul-line text-soul-blue disabled:opacity-40"
+                className="grid h-9 w-9 place-items-center rounded-full border border-soul-line text-soul-blue transition-colors hover:border-soul-blue disabled:opacity-40"
                 disabled={guests <= 1}
                 onClick={() => setGuestsLive(Math.max(1, guests - 1))}
               >
                 −
               </button>
-              <span className="text-sm font-semibold text-soul-blue">{guests}</span>
+              <span className="g-display text-2xl text-soul-blue">{guests}</span>
               <button
                 type="button"
-                className="grid h-8 w-8 place-items-center rounded-full border border-soul-line text-soul-blue disabled:opacity-40"
+                className="grid h-9 w-9 place-items-center rounded-full border border-soul-line text-soul-blue transition-colors hover:border-soul-blue disabled:opacity-40"
                 disabled={guests >= 16}
                 onClick={() => setGuestsLive(Math.min(16, guests + 1))}
               >
@@ -229,7 +229,7 @@ export default function PropertyFiltersSidebar({
               key={n}
               type="button"
               onClick={() => setBedsLive(n)}
-              className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+              className={`rounded-full border px-3.5 py-2 text-xs font-semibold transition duration-300 ${
                 beds === n
                   ? 'border-soul-blue bg-soul-blue text-white'
                   : 'border-soul-line bg-white text-soul-blue hover:border-soul-blue'
@@ -242,7 +242,7 @@ export default function PropertyFiltersSidebar({
       </Field>
 
       <Field label={t('search.rentalType')} icon={Building2}>
-        <div className="space-y-2 rounded-xl border border-soul-line bg-white px-3.5 py-3">
+        <div className="space-y-2.5 rounded-2xl border border-soul-line bg-white px-4 py-3.5">
           {RENTAL_TYPES.map((type) => {
             const checked = rentalTypes.includes(type);
             return (
@@ -302,7 +302,7 @@ export default function PropertyFiltersSidebar({
 
   if (variant === 'sheet') {
     return (
-      <div className="fixed inset-0 z-[210] flex flex-col bg-[#f7f5f1] lg:hidden">
+      <div className="g-menu-in fixed inset-0 z-[210] flex flex-col bg-soul-paper lg:hidden">
         <div className="flex items-center gap-3 border-b border-soul-line bg-white px-4 py-3">
           <button
             type="button"
@@ -313,7 +313,7 @@ export default function PropertyFiltersSidebar({
             <X size={20} className="text-soul-blue" />
           </button>
           <div className="min-w-0 flex-1">
-            <div className="font-display text-lg font-semibold text-soul-blue">{t('search.filters')}</div>
+            <div className="g-display text-2xl text-soul-blue">{t('search.filters')}</div>
             <div className="truncate text-xs text-soul-muted">{t('search.filtersLive')}</div>
           </div>
           <button type="button" onClick={clearAll} className="text-sm font-semibold text-soul-muted">
@@ -322,14 +322,14 @@ export default function PropertyFiltersSidebar({
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 pb-28">
-          <div className="space-y-4 rounded-2xl border border-soul-line bg-white p-4 shadow-sm">{fields}</div>
+          <div className="space-y-5 rounded-[24px] border border-soul-line bg-white p-5">{fields}</div>
         </div>
 
         <div className="border-t border-soul-line bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-soul-blue py-3.5 text-sm font-bold text-white"
+            className="g-btn g-btn-primary w-full !py-4"
           >
             {t('common.done')}
           </button>
@@ -340,18 +340,21 @@ export default function PropertyFiltersSidebar({
 
   return (
     <aside className="relative z-40 hidden lg:block">
-      <div className="sticky top-[104px] z-40 max-h-[calc(100vh-120px)] overflow-visible rounded-2xl border border-soul-line bg-white p-5 shadow-[0_12px_40px_rgba(40,63,94,0.08)]">
-        <div className="mb-4">
-          <p className="text-[10.5px] font-bold uppercase tracking-[0.18em] text-soul-muted">{t('search.filters')}</p>
-          <h2 className="mt-1 font-display text-xl font-semibold text-soul-blue">{t('search.findStay')}</h2>
-          <p className="mt-1 text-xs text-soul-muted">{t('search.resultsUpdate')}</p>
+      <div className="sticky top-[104px] z-40 max-h-[calc(100vh-120px)] overflow-visible rounded-[28px] border border-soul-line bg-white/70 p-6 backdrop-blur-sm">
+        <div className="mb-6 border-b border-soul-line pb-5">
+          <div className="flex items-center gap-2 text-soul-muted">
+            <span className="g-dot" />
+            <p className="g-index">{t('search.filters')}</p>
+          </div>
+          <h2 className="g-display mt-3 text-3xl text-soul-blue">{t('search.findStay')}</h2>
+          <p className="mt-1.5 text-xs text-soul-muted">{t('search.resultsUpdate')}</p>
         </div>
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-5">
           {fields}
           <button
             type="button"
             onClick={clearAll}
-            className="mt-1 w-full rounded-xl border border-soul-line py-2.5 text-sm font-semibold text-soul-muted transition hover:border-soul-blue hover:text-soul-blue"
+            className="g-btn g-btn-ghost mt-1 w-full"
           >
             {t('search.clearFilters')}
           </button>
@@ -364,8 +367,8 @@ export default function PropertyFiltersSidebar({
 function Field({ label, icon: Icon, children }) {
   return (
     <label className="block">
-      <span className="mb-1.5 flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wider text-soul-muted">
-        {Icon ? <Icon size={13} strokeWidth={2} /> : null}
+      <span className="g-index mb-2 flex items-center gap-1.5 text-soul-muted">
+        {Icon ? <Icon size={13} strokeWidth={1.8} /> : null}
         {label}
       </span>
       {children}
@@ -397,9 +400,9 @@ export function MobileSearchPill({ values, onOpen, filterCount = 0, mode = 'rent
     <button
       type="button"
       onClick={onOpen}
-      className="flex w-full items-center gap-3 rounded-full border border-soul-line bg-white px-4 py-3 text-start shadow-[0_2px_8px_rgba(15,28,46,0.06)]"
+      className="flex w-full items-center gap-3 rounded-full border border-soul-line bg-white px-3 py-2.5 text-start shadow-[0_10px_30px_-18px_rgba(22,35,58,0.4)]"
     >
-      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-soul-blue-50 text-soul-blue">
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-soul-blue text-white">
         <Search size={16} />
       </span>
       <div className="min-w-0 flex-1">
@@ -451,7 +454,7 @@ export function FloatingFilterSort({ filterCount, sort, sortLabels, onOpenFilter
           ))}
         </div>
       )}
-      <div className="flex items-center overflow-hidden rounded-full bg-soul-blue text-sm font-bold text-white shadow-[0_12px_36px_-8px_rgba(40,63,94,0.55)]">
+      <div className="flex items-center overflow-hidden rounded-full border border-white/10 bg-soul-ink/90 text-sm font-semibold text-white shadow-[0_20px_50px_-12px_rgba(2,6,23,0.6)] backdrop-blur-xl">
         <button type="button" onClick={onOpenFilters} className="inline-flex items-center gap-2 px-5 py-3.5">
           {t('search.filters')}{filterCount > 0 ? ` · ${filterCount}` : ''}
         </button>

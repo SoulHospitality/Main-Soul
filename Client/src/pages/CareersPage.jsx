@@ -1,11 +1,17 @@
 import { useEffect, useState } from 'react';
+import { X } from 'lucide-react';
 import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
 import api from '../api/http';
 import { useLocale } from '../context/LocaleContext';
 import BrandLoader from '../components/ui/BrandLoader';
+import { ArrowDot, PageHero, Reveal } from '../components/ui/Editorial';
 
 const emptyForm = { fullName: '', email: '', phone: '' };
+
+const labelCls = 'grid gap-2 g-index text-soul-muted';
+const inputCls =
+  'rounded-2xl border border-soul-line bg-soul-paper px-4 py-3.5 font-sans text-[15px] normal-case tracking-normal text-soul-blue outline-none transition focus:border-soul-blue focus:bg-white';
 
 function ApplicationModal({ job, onClose }) {
   const { t } = useLocale();
@@ -49,67 +55,68 @@ function ApplicationModal({ job, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-soul-ink/60 p-4 backdrop-blur-sm">
+      <div className="soul-fade-up max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-[32px] bg-white p-7 shadow-2xl sm:p-9">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-soul-muted">{t('careers.applyFor')}</p>
-            <h2 className="mt-1 font-display text-xl text-soul-blue">{job.title}</h2>
+            <p className="g-index text-soul-muted">{t('careers.applyFor')}</p>
+            <h2 className="g-display mt-2 text-[34px] text-soul-blue">{job.title}</h2>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full border border-soul-line px-3 py-1 text-sm text-soul-muted hover:bg-soul-blue-50"
+            aria-label={t('careers.cancel')}
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-soul-line text-soul-blue transition hover:bg-soul-blue hover:text-white"
           >
-            ✕
+            <X size={16} />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-          <label className="grid gap-2 text-xs uppercase tracking-[0.18em] text-soul-muted">
+        <form onSubmit={handleSubmit} className="mt-7 space-y-4">
+          <label className={labelCls}>
             {t('careers.fullName')}
             <input
               type="text"
               value={form.fullName}
               onChange={(e) => updateField('fullName', e.target.value)}
-              className="rounded-xl border border-soul-line px-4 py-3 text-sm text-soul-blue outline-none focus:border-soul-blue"
+              className={inputCls}
               required
             />
           </label>
-          <label className="grid gap-2 text-xs uppercase tracking-[0.18em] text-soul-muted">
+          <label className={labelCls}>
             {t('careers.email')}
             <input
               type="email"
               value={form.email}
               onChange={(e) => updateField('email', e.target.value)}
-              className="rounded-xl border border-soul-line px-4 py-3 text-sm text-soul-blue outline-none focus:border-soul-blue"
+              className={inputCls}
               required
             />
           </label>
-          <label className="grid gap-2 text-xs uppercase tracking-[0.18em] text-soul-muted">
+          <label className={labelCls}>
             {t('careers.phone')}
             <input
               type="tel"
               value={form.phone}
               onChange={(e) => updateField('phone', e.target.value)}
-              className="rounded-xl border border-soul-line px-4 py-3 text-sm text-soul-blue outline-none focus:border-soul-blue"
+              className={inputCls}
               required
             />
           </label>
-          <label className="grid gap-2 text-xs uppercase tracking-[0.18em] text-soul-muted">
+          <label className={labelCls}>
             {t('careers.cv')}
             <input
               type="file"
               accept=".pdf,.doc,.docx"
               onChange={(e) => setCvFile(e.target.files?.[0] || null)}
-              className="rounded-xl border border-soul-line px-4 py-3 text-sm text-soul-blue outline-none"
+              className={`${inputCls} file:me-3 file:rounded-full file:border-0 file:bg-soul-blue file:px-4 file:py-1.5 file:text-xs file:font-semibold file:text-white`}
               required
             />
           </label>
 
           {status ? (
             <div
-              className={`rounded-xl border p-3 text-sm ${
+              className={`rounded-2xl border p-3 text-sm ${
                 status.type === 'success'
                   ? 'border-green-200 bg-green-50 text-green-700'
                   : 'border-red-200 bg-red-50 text-red-700'
@@ -119,20 +126,13 @@ function ApplicationModal({ job, onClose }) {
             </div>
           ) : null}
 
-          <div className="flex justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-xl border border-soul-line px-5 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-soul-blue"
-            >
+          <div className="flex flex-wrap justify-end gap-3 pt-3">
+            <button type="button" onClick={onClose} className="g-btn g-btn-ghost">
               {t('careers.cancel')}
             </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="btn-pill bg-soul-blue px-6 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-white disabled:opacity-70"
-            >
+            <button type="submit" disabled={submitting} className="g-btn g-btn-primary disabled:opacity-70">
               {submitting ? t('careers.submitting') : t('careers.submit')}
+              <ArrowDot />
             </button>
           </div>
         </form>
@@ -167,66 +167,68 @@ export default function CareersPage() {
   }, []);
 
   return (
-    <div>
+    <div className="bg-soul-paper">
       <Header />
-      <main className="mx-auto max-w-soul px-5 py-16">
-        <section className="mx-auto max-w-4xl space-y-4 text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-soul-muted">{t('careers.eyebrow')}</p>
-          <h1 className="font-display text-4xl text-soul-blue">{t('careers.title')}</h1>
-          <p className="text-sm leading-7 text-soul-muted">
-            {t('careers.subtitle')}
-          </p>
-        </section>
+      <main>
+        <PageHero index="✦" eyebrow={t('careers.eyebrow')} lead={t('careers.title')} body={t('careers.subtitle')} compact />
 
-        {loading ? (
-          <div className="mt-10 flex justify-center py-8">
-            <BrandLoader size="md" label={t('careers.loading')} />
-          </div>
-        ) : null}
+        <section className="g-shell pb-24">
+          {loading ? (
+            <div className="flex justify-center py-12">
+              <BrandLoader size="md" label={t('careers.loading')} />
+            </div>
+          ) : null}
 
-        {error ? (
-          <div className="mx-auto mt-10 max-w-2xl border border-soul-line bg-soul-blue-50/40 p-4 text-center text-sm text-soul-muted">
-            {error}
-          </div>
-        ) : null}
+          {error ? (
+            <div className="rounded-[24px] border border-soul-line bg-white p-6 text-center text-sm text-soul-muted">
+              {error}
+            </div>
+          ) : null}
 
-        {!loading && !error && !jobs.length ? (
-          <div className="mx-auto mt-10 max-w-2xl border border-soul-line bg-soul-blue-50/40 p-4 text-center text-sm text-soul-muted">
-            {t('careers.empty')}
-          </div>
-        ) : null}
+          {!loading && !error && !jobs.length ? (
+            <div className="rounded-[24px] border border-soul-line bg-white p-10 text-center">
+              <p className="g-display text-3xl italic text-soul-blue/70">{t('careers.empty')}</p>
+            </div>
+          ) : null}
 
-        <div className="mx-auto mt-10 grid max-w-4xl gap-6">
-          {jobs.map((job) => (
-            <article
-              key={job.id}
-              className="border border-soul-line bg-white p-6 shadow-[0_18px_60px_rgba(40,63,94,0.06)] rounded-2xl"
-            >
-              <h2 className="font-display text-xl text-soul-blue">{job.title}</h2>
-              {(job.department || job.location) && (
-                <p className="mt-1 text-sm text-soul-muted">
-                  {[job.department, job.location].filter(Boolean).join(' · ')}
-                </p>
-              )}
-              <p className="mt-3 text-sm leading-7 text-soul-muted whitespace-pre-line">{job.description}</p>
-              {job.requirements ? (
-                <p className="mt-3 text-sm leading-7 text-soul-muted/90 whitespace-pre-line">
-                  <span className="font-medium text-soul-blue">{t('careers.requirements')} </span>
-                  {job.requirements}
-                </p>
-              ) : null}
-              <div className="mt-5">
-                <button
-                  type="button"
-                  onClick={() => setSelectedJob(job)}
-                  className="btn-pill bg-soul-blue px-6 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-white"
+          {jobs.length ? (
+            <ul className="border-t border-soul-line">
+              {jobs.map((job, i) => (
+                <Reveal
+                  as="li"
+                  key={job.id}
+                  delay={Math.min(i, 6) * 70}
+                  className="grid gap-6 border-b border-soul-line py-10 md:grid-cols-[3rem_minmax(0,1fr)_auto] md:gap-10"
                 >
-                  {t('careers.applyNow')}
-                </button>
-              </div>
-            </article>
-          ))}
-        </div>
+                  <span className="g-index pt-3 text-soul-accent">{String(i + 1).padStart(2, '0')}</span>
+                  <div className="min-w-0">
+                    <h2 className="g-display text-[clamp(32px,3.4vw,52px)] text-soul-blue">{job.title}</h2>
+                    {(job.department || job.location) && (
+                      <p className="g-index mt-2 text-soul-muted">
+                        {[job.department, job.location].filter(Boolean).join(' · ')}
+                      </p>
+                    )}
+                    <p className="mt-5 max-w-3xl whitespace-pre-line text-[15px] leading-[1.8] text-soul-muted">
+                      {job.description}
+                    </p>
+                    {job.requirements ? (
+                      <p className="mt-4 max-w-3xl whitespace-pre-line text-[15px] leading-[1.8] text-soul-muted/90">
+                        <span className="font-medium text-soul-blue">{t('careers.requirements')} </span>
+                        {job.requirements}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="md:pt-2">
+                    <button type="button" onClick={() => setSelectedJob(job)} className="g-btn g-btn-primary">
+                      {t('careers.applyNow')}
+                      <ArrowDot />
+                    </button>
+                  </div>
+                </Reveal>
+              ))}
+            </ul>
+          ) : null}
+        </section>
 
         <ApplicationModal job={selectedJob} onClose={() => setSelectedJob(null)} />
       </main>

@@ -1,112 +1,160 @@
-import { Link } from 'react-router-dom';
-import { brand } from '../../theme/brand';
+import { Link, useLocation } from 'react-router-dom';
+import { ArrowUp } from 'lucide-react';
+import { brand, whatsappHref, listingWhatsAppMessage } from '../../theme/brand';
 import { useLocale } from '../../context/LocaleContext';
-
-const FacebookIcon = (props) => (
-  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
-    <path d="M13.5 22v-8.2h2.75l.42-3.2H13.5V8.55c0-.93.26-1.56 1.63-1.56h1.74V4.13c-.3-.04-1.33-.13-2.53-.13-2.5 0-4.21 1.53-4.21 4.34v2.44H7.37v3.2h2.76V22h3.37Z" />
-  </svg>
-);
-
-const InstagramIcon = (props) => (
-  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
-    <path d="M12 7.2A4.8 4.8 0 1 0 12 16.8 4.8 4.8 0 0 0 12 7.2Zm0 7.9a3.1 3.1 0 1 1 0-6.2 3.1 3.1 0 0 1 0 6.2Zm6.1-8.05a1.12 1.12 0 1 0 0 2.24 1.12 1.12 0 0 0 0-2.24ZM12 2.2c3.2 0 3.58.01 4.84.07 1.25.06 2.1.26 2.9.58a4.92 4.92 0 0 1 1.78 1.16 4.92 4.92 0 0 1 1.16 1.78c.32.8.52 1.65.58 2.9.06 1.26.07 1.64.07 4.84s-.01 3.58-.07 4.84c-.06 1.25-.26 2.1-.58 2.9a4.92 4.92 0 0 1-1.16 1.78 4.92 4.92 0 0 1-1.78 1.16c-.8.32-1.65.52-2.9.58-1.26.06-1.64.07-4.84.07s-3.58-.01-4.84-.07c-1.25-.06-2.1-.26-2.9-.58a4.92 4.92 0 0 1-1.78-1.16A4.92 4.92 0 0 1 .32 18.37c-.32-.8-.52-1.65-.58-2.9C-.32 14.22-.33 13.84-.33 10.64s.01-3.58.07-4.84c.06-1.25.26-2.1.58-2.9A4.92 4.92 0 0 1 1.48 1.12 4.92 4.92 0 0 1 3.26-.04c.8-.32 1.65-.52 2.9-.58C7.42-.68 7.8-.69 11-.69h1Zm0 1.7c-3.16 0-3.5.01-4.75.07-1.11.05-1.71.24-2.11.39-.53.2-.91.45-1.31.85-.4.4-.65.78-.85 1.31-.15.4-.34 1-.39 2.11-.06 1.25-.07 1.59-.07 4.75s.01 3.5.07 4.75c.05 1.11.24 1.71.39 2.11.2.53.45.91.85 1.31.4.4.78.65 1.31.85.4.15 1 .34 2.11.39 1.25.06 1.59.07 4.75.07s3.5-.01 4.75-.07c1.11-.05 1.71-.24 2.11-.39.53-.2.91-.45 1.31-.85.4-.4.65-.78.85-1.31.15-.4.34-1 .39-2.11.06-1.25.07-1.59.07-4.75s-.01-3.5-.07-4.75c-.05-1.11-.24-1.71-.39-2.11-.2-.53-.45-.91-.85-1.31-.4-.4-.78-.65-1.31-.85-.4-.15-1-.34-2.11-.39-1.25-.06-1.59-.07-4.75-.07h-1Z" />
-  </svg>
-);
+import { ArrowDot, Reveal, RevealLines, useCairoTime } from '../ui/Editorial';
+import { FacebookIcon, InstagramIcon, WhatsAppIcon } from './SocialIcons';
 
 function FooterLink({ label, href }) {
   return (
-    <Link
-      to={href}
-      className="group relative inline-flex text-sm font-medium text-slate-400 transition-colors duration-300 hover:text-white"
-    >
+    <Link to={href} className="g-link w-fit text-[15px] text-white/70 transition-colors hover:text-white">
       {label}
-      <span className="absolute -bottom-1 start-0 h-[1.5px] w-full origin-left scale-x-0 bg-soul-blue transition-transform duration-300 group-hover:scale-x-100 rtl:origin-right" />
     </Link>
+  );
+}
+
+function FooterColumn({ title, children }) {
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="g-index mb-2 text-white/40">{title}</p>
+      {children}
+    </div>
   );
 }
 
 export default function Footer() {
   const { t } = useLocale();
+  const { pathname } = useLocation();
+  const time = useCairoTime();
 
   return (
-    <footer className="mt-14 bg-[#172331] text-white sm:mt-16">
-      <div className="mx-auto max-w-soul px-5 sm:px-8 py-12 sm:py-16">
-        <div className="grid gap-8 sm:gap-10 lg:grid-cols-[1.15fr_0.85fr_0.85fr_1fr]">
-          <div className="space-y-4">
+    <footer className="g-grain relative mt-20 overflow-hidden bg-soul-ink text-white sm:mt-24">
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            'radial-gradient(1100px 600px at 100% 0%, rgba(40,63,94,0.75), transparent 60%), radial-gradient(800px 480px at 0% 100%, rgba(242,140,40,0.10), transparent 60%)',
+        }}
+      />
+
+      <div className="g-shell relative z-[2]">
+        <div className="grid gap-10 border-b border-white/10 py-20 md:py-28 lg:grid-cols-[1.4fr_1fr] lg:items-end">
+          <div>
+            <Reveal className="mb-6 flex items-center gap-3 text-white/55">
+              <span className="g-dot" />
+              <span className="g-index">{t('footer.ctaEyebrow')}</span>
+            </Reveal>
+            <RevealLines
+              className="g-display text-[clamp(48px,7.4vw,118px)]"
+              lines={[t('footer.ctaLead'), <em key="em">{t('footer.ctaEm')}</em>]}
+            />
+          </div>
+          <Reveal delay={200} className="flex flex-col gap-6 lg:items-end lg:text-end">
+            <p className="max-w-md text-[15px] leading-relaxed text-white/65">{t('footer.ctaBody')}</p>
+            <div className="flex flex-wrap gap-3 lg:justify-end">
+              <a
+                href={whatsappHref(listingWhatsAppMessage(pathname))}
+                target="_blank"
+                rel="noreferrer"
+                className="g-btn g-btn-light"
+              >
+                <WhatsAppIcon className="h-4 w-4 text-[#25d366]" />
+                {t('nav.whatsappUs')}
+                <ArrowDot />
+              </a>
+              <Link to="/contact" className="g-btn g-btn-glass">
+                {t('footer.contact')}
+              </Link>
+            </div>
+          </Reveal>
+        </div>
+
+        <div className="grid grid-cols-2 gap-10 py-14 md:grid-cols-4 lg:grid-cols-[1.3fr_1fr_1fr_1fr]">
+          <div className="col-span-2 flex flex-col gap-5 md:col-span-4 lg:col-span-1">
             <img
               src="/soul-brand/soul-logo.png"
               alt={brand.name}
-              className="h-20 w-auto object-contain brightness-0 invert sm:h-24"
+              className="h-16 w-auto self-start object-contain brightness-0 invert"
             />
-            <p className="max-w-md text-sm leading-7 text-white/75">{t('footer.tagline')}</p>
-            <div className="space-y-2 text-sm text-white/75">
-              <p>{brand.address}</p>
-              <p>{brand.phoneDisplay}</p>
-              <p>{brand.email}</p>
-            </div>
-            <Link
-              to="/careers"
-              className="inline-flex rounded-full border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-white/10"
-            >
-              {t('footer.workWithUs')}
-            </Link>
-          </div>
-
-          <div>
-            <p className="mb-4 text-xs font-semibold uppercase tracking-[0.22em] text-white/60">
-              {t('footer.hospitality')}
-            </p>
-            <div className="flex flex-col gap-3">
-              <FooterLink label={t('nav.propertiesForRent')} href="/search" />
-              <FooterLink label={t('nav.propertiesLongTerm')} href="/long-term" />
-              <FooterLink label={t('nav.about')} href="/about" />
-              <FooterLink label={t('nav.faq')} href="/faq" />
-              <FooterLink label={t('nav.becomeAHost')} href="/owners" />
-              <FooterLink label={t('footer.contact')} href="/contact" />
-            </div>
-          </div>
-
-          <div>
-            <p className="mb-4 text-xs font-semibold uppercase tracking-[0.22em] text-white/60">
-              {t('footer.support')}
-            </p>
-            <div className="space-y-3 text-sm text-white/75">
-              <p>{t('footer.supportCalm')}</p>
-              <p>{t('footer.supportBooking')}</p>
-              <p>{t('footer.supportCare')}</p>
-            </div>
-          </div>
-
-          <div>
-            <p className="mb-4 text-xs font-semibold uppercase tracking-[0.22em] text-white/60">
-              {t('footer.followUs')}
-            </p>
-            <div className="flex items-center gap-3">
-              <a
-                href={brand.social.facebook}
-                target="_blank"
-                rel="noreferrer"
-                aria-label={t('footer.facebook')}
-                className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white transition-colors hover:bg-white/10"
-              >
-                <FacebookIcon className="h-5 w-5" />
-              </a>
+            <p className="max-w-sm text-sm leading-7 text-white/55">{t('footer.tagline')}</p>
+            <div className="flex items-center gap-2">
               <a
                 href={brand.social.instagram}
                 target="_blank"
                 rel="noreferrer"
                 aria-label={t('footer.instagram')}
-                className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white transition-colors hover:bg-white/10"
+                className="grid h-10 w-10 place-items-center rounded-full border border-white/15 text-white/80 transition-colors hover:bg-white hover:text-soul-ink"
               >
-                <InstagramIcon className="h-5 w-5" />
+                <InstagramIcon className="h-4 w-4" />
+              </a>
+              <a
+                href={brand.social.facebook}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={t('footer.facebook')}
+                className="grid h-10 w-10 place-items-center rounded-full border border-white/15 text-white/80 transition-colors hover:bg-white hover:text-soul-ink"
+              >
+                <FacebookIcon className="h-4 w-4" />
               </a>
             </div>
           </div>
-        </div>
 
-        <div className="mt-10 flex flex-col gap-3 border-t border-white/10 pt-6 text-[10px] uppercase tracking-[0.16em] text-white/55 sm:mt-12 sm:text-xs sm:tracking-[0.18em]">
-          <span>{brand.copyright}</span>
+          <FooterColumn title={t('footer.explore')}>
+            <FooterLink label={t('nav.stays')} href="/search" />
+            <FooterLink label={t('nav.longTerm')} href="/long-term" />
+            <FooterLink label={t('nav.destinations')} href="/compounds" />
+            <FooterLink label={t('nav.wishlist')} href="/wishlist" />
+          </FooterColumn>
+
+          <FooterColumn title={t('footer.company')}>
+            <FooterLink label={t('nav.about')} href="/about" />
+            <FooterLink label={t('nav.becomeAHost')} href="/owners" />
+            <FooterLink label={t('footer.workWithUs')} href="/careers" />
+            <FooterLink label={t('nav.faq')} href="/faq" />
+            <FooterLink label={t('footer.contact')} href="/contact" />
+          </FooterColumn>
+
+          <FooterColumn title={t('footer.reachUs')}>
+            <a href={brand.mapsUrl} target="_blank" rel="noreferrer" className="g-link w-fit text-[15px] text-white/70 hover:text-white">
+              {brand.address}
+            </a>
+            <a href={`tel:${brand.phoneDisplay}`} className="g-link w-fit font-num text-[15px] text-white/70 hover:text-white">
+              {brand.phoneDisplay}
+            </a>
+            <a href={`mailto:${brand.email}`} className="g-link w-fit text-[15px] text-white/70 hover:text-white">
+              {brand.email}
+            </a>
+          </FooterColumn>
+        </div>
+      </div>
+
+      <div className="relative z-[2] overflow-hidden">
+        <div className="g-ghost select-none whitespace-nowrap text-center text-[clamp(140px,31vw,520px)]" aria-hidden="true">
+          Soul
+        </div>
+      </div>
+
+      <div className="g-shell relative z-[2]">
+        <div className="flex flex-col gap-4 border-t border-white/10 py-6 text-white/45 sm:flex-row sm:items-center sm:justify-between">
+          <span className="g-index">{brand.copyright}</span>
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+            <Link to="/terms" className="g-index g-link hover:text-white">{t('legal.terms')}</Link>
+            <Link to="/privacy" className="g-index g-link hover:text-white">{t('legal.privacy')}</Link>
+            <Link to="/refund-policy" className="g-index g-link hover:text-white">{t('legal.refund')}</Link>
+            <span className="g-index">
+              {t('nav.localTime')} · {time}
+            </span>
+            <button
+              type="button"
+              onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+              className="g-index inline-flex items-center gap-2 text-white/70 transition-colors hover:text-white"
+            >
+              {t('footer.backToTop')}
+              <span className="grid h-8 w-8 place-items-center rounded-full border border-white/20">
+                <ArrowUp size={14} />
+              </span>
+            </button>
+          </div>
         </div>
       </div>
     </footer>

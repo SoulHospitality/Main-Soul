@@ -6,6 +6,7 @@ import { useProjectCatalog } from '../hooks/useProjectCatalog';
 import { AREAS } from '../data/compounds';
 import { UNIT_TYPES } from '../admin/utils/formatters';
 import { useLocale } from '../context/LocaleContext';
+import { ArrowDot, PageHero, Reveal } from '../components/ui/Editorial';
 
 const FURNISHING_OPTIONS = [
   { value: 'Fully Furnished', key: 'fullyFurnished' },
@@ -51,7 +52,7 @@ const EMPTY = {
 };
 
 const fieldClass =
-  'w-full rounded-xl border border-soul-line bg-white px-4 py-3 text-sm text-soul-blue outline-none transition focus:border-soul-blue';
+  'w-full rounded-2xl border border-soul-line bg-soul-paper px-4 py-3.5 font-sans text-[15px] normal-case tracking-normal text-soul-blue outline-none transition focus:border-soul-blue focus:bg-white disabled:opacity-60';
 
 export default function BecomeAHostPage() {
   const { t } = useLocale();
@@ -126,60 +127,56 @@ export default function BecomeAHostPage() {
   }
 
   return (
-    <div>
-      <Header />
+    <div className="bg-soul-paper">
+      <Header overHero />
       <main>
-        <section className="relative overflow-hidden bg-soul-blue-dark text-white">
-          <div className="absolute inset-0">
-            <img
-              src="/soul-brand/coast-hero-2.jpg"
-              alt=""
-              className="h-full w-full object-cover opacity-45"
-            />
-            <div className="absolute inset-0 bg-gradient-to-r from-soul-blue-dark/95 via-soul-blue-dark/80 to-soul-blue-dark/55" />
-          </div>
-          <div className="relative mx-auto max-w-soul px-5 sm:px-8 py-16 md:py-20">
-            <p className="soul-eyebrow text-white/55">{t('owners.eyebrow')}</p>
-            <h1 className="mt-3 max-w-2xl font-display text-4xl font-medium leading-tight sm:text-5xl">
-              {t('owners.title')}
-            </h1>
-            <p className="mt-4 max-w-xl text-base leading-relaxed text-white/75 sm:text-lg">
-              {t('owners.subtitle')}
-            </p>
-          </div>
-        </section>
+        <PageHero
+          image="/soul-brand/coast-hero-2.jpg"
+          eyebrow={t('owners.eyebrow')}
+          lead={t('owners.title')}
+          body={t('owners.subtitle')}
+        >
+          <a href="#host-form" className="g-btn g-btn-light">
+            {t('owners.formTitle')}
+            <ArrowDot />
+          </a>
+        </PageHero>
 
-        <section className="mx-auto max-w-soul px-5 sm:px-8 py-12 md:py-16">
-          <div className="grid gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-14">
-            <div className="space-y-5">
-              <h2 className="font-display text-2xl text-soul-blue sm:text-3xl">
+        <section id="host-form" className="g-shell scroll-mt-28 py-20 md:py-28">
+          <div className="grid gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:gap-20">
+            <div className="lg:sticky lg:top-28 lg:self-start">
+              <div className="flex items-center gap-3 text-soul-muted">
+                <span className="g-index">(01)</span>
+                <span className="h-px w-8 bg-soul-blue/25" />
+                <span className="g-index">{t('owners.eyebrow')}</span>
+              </div>
+              <h2 className="g-display mt-6 text-[clamp(40px,4.6vw,68px)] text-soul-blue">
                 {t('owners.formTitle')}
               </h2>
-              <p className="text-sm leading-7 text-soul-muted sm:text-base">
+              <p className="mt-5 max-w-md text-[15px] leading-[1.8] text-soul-muted">
                 {t('owners.formBody')}
               </p>
-              <ul className="space-y-3 text-sm text-soul-blue/90">
-                <li className="flex gap-3">
-                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-soul-blue" />
-                  {t('owners.bullet0')}
-                </li>
-                <li className="flex gap-3">
-                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-soul-blue" />
-                  {t('owners.bullet1')}
-                </li>
-                <li className="flex gap-3">
-                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-soul-blue" />
-                  {t('owners.bullet2')}
-                </li>
-              </ul>
+              <ol className="mt-10 border-t border-soul-line">
+                {['owners.bullet0', 'owners.bullet1', 'owners.bullet2'].map((key, i) => (
+                  <Reveal
+                    as="li"
+                    key={key}
+                    delay={i * 90}
+                    className="grid grid-cols-[3rem_1fr] items-baseline gap-4 border-b border-soul-line py-5"
+                  >
+                    <span className="g-display text-3xl italic text-soul-accent">{String(i + 1).padStart(2, '0')}</span>
+                    <span className="text-[15px] leading-relaxed text-soul-blue">{t(key)}</span>
+                  </Reveal>
+                ))}
+              </ol>
             </div>
 
             <form
               onSubmit={handleSubmit}
-              className="rounded-3xl border border-soul-line bg-white p-6 shadow-[0_24px_60px_-40px_rgba(40,63,94,0.45)] sm:p-8"
+              className="rounded-[32px] border border-soul-line bg-white p-6 shadow-[0_40px_90px_-60px_rgba(22,35,58,0.55)] sm:p-10"
             >
               <div className="grid gap-4 sm:grid-cols-2">
-                <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-soul-muted sm:col-span-2">
+                <label className="grid gap-2 g-index text-soul-muted sm:col-span-2">
                   {t('owners.fullName')}
                   <input
                     type="text"
@@ -191,7 +188,7 @@ export default function BecomeAHostPage() {
                   />
                 </label>
 
-                <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-soul-muted sm:col-span-2">
+                <label className="grid gap-2 g-index text-soul-muted sm:col-span-2">
                   {t('owners.email')}
                   <input
                     type="email"
@@ -204,7 +201,7 @@ export default function BecomeAHostPage() {
                 </label>
 
                 <div className="sm:col-span-2">
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-soul-muted">
+                  <p className="mb-2 g-index text-soul-muted">
                     {t('owners.phone')}
                   </p>
                   <div className="flex flex-col gap-3 sm:flex-row">
@@ -237,7 +234,7 @@ export default function BecomeAHostPage() {
                   </div>
                 </div>
 
-                <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-soul-muted">
+                <label className="grid gap-2 g-index text-soul-muted">
                   {t('owners.destination')}
                   <select
                     value={form.destination}
@@ -257,7 +254,7 @@ export default function BecomeAHostPage() {
                   </select>
                 </label>
 
-                <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-soul-muted">
+                <label className="grid gap-2 g-index text-soul-muted">
                   {t('owners.project')}
                   <select
                     value={form.project}
@@ -278,7 +275,7 @@ export default function BecomeAHostPage() {
                   </select>
                 </label>
 
-                <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-soul-muted">
+                <label className="grid gap-2 g-index text-soul-muted">
                   {t('owners.propertyType')}
                   <select
                     value={form.propertyType}
@@ -295,7 +292,7 @@ export default function BecomeAHostPage() {
                   </select>
                 </label>
 
-                <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-soul-muted">
+                <label className="grid gap-2 g-index text-soul-muted">
                   {t('owners.furnishing')}
                   <select
                     value={form.furnishingStatus}
@@ -312,7 +309,7 @@ export default function BecomeAHostPage() {
                   </select>
                 </label>
 
-                <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-soul-muted sm:col-span-2">
+                <label className="grid gap-2 g-index text-soul-muted sm:col-span-2">
                   {t('owners.contactTime')}
                   <select
                     value={form.preferredContactTime}
@@ -332,7 +329,7 @@ export default function BecomeAHostPage() {
 
               {status && (
                 <p
-                  className={`mt-5 rounded-xl px-4 py-3 text-sm ${
+                  className={`mt-6 rounded-2xl px-4 py-3 text-sm ${
                     status.type === 'success'
                       ? 'border border-emerald-200 bg-emerald-50 text-emerald-800'
                       : 'border border-rose-200 bg-rose-50 text-rose-800'
@@ -346,9 +343,10 @@ export default function BecomeAHostPage() {
               <button
                 type="submit"
                 disabled={!canSubmit || submitting}
-                className="mt-6 inline-flex w-full items-center justify-center rounded-full bg-soul-blue px-6 py-3.5 text-sm font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-soul-blue-dark disabled:cursor-not-allowed disabled:opacity-50"
+                className="g-btn g-btn-primary mt-8 w-full !justify-between !py-4 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {submitting ? t('owners.sending') : t('owners.submit')}
+                <ArrowDot />
               </button>
             </form>
           </div>
