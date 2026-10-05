@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import { usePermissions } from '../hooks/usePermissions';
-import { salesUsersForActor } from '../utils/permissions';
+import { canDeleteReservations as canDeleteReservationsFor, salesUsersForActor } from '../utils/permissions';
 import { useSortableTable } from '../hooks/useSortableTable';
 import Modal from '../components/ui/Modal';
 import Badge from '../components/ui/Badge';
@@ -1028,10 +1028,11 @@ export default function Reservations() {
     user?.role !== 'finance_manager' &&
     user?.role !== 'hr_supervisor' &&
     user?.role !== 'unit_acquisition_manager' &&
+    user?.role !== 'resale_manager' &&
     (isWebsiteReservations ||
       isManualReservations ||
       isReservations ||
-      ['hr', 'marketing_pr', 'unit_acquisition_agent', 'operations', 'operations_supervisor'].includes(
+      ['hr', 'marketing_pr', 'unit_acquisition_agent', 'operations', 'operations_supervisor', 'resale'].includes(
         user?.role
       ));
   const pageTitle = agentOnly ? 'My Reservations' : 'Reservations';
@@ -1370,6 +1371,7 @@ export default function Reservations() {
   };
 
   const canWrite = canManageReservations;
+  const canDeleteReservations = canDeleteReservationsFor(user);
   const canPay = canAccessFinance || isManualReservations || isAdmin;
   const canApprove = isAdmin;
   const canView = canWrite || isAdmin || isReservations || isOwnersRelations;
@@ -1757,7 +1759,7 @@ export default function Reservations() {
                               <ArrowRightLeft className="w-3.5 h-3.5" />
                             </button>
                           )}
-                          {canWrite && (
+                          {canDeleteReservations && (
                             <button onClick={() => setCancelId(r.id)} className="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50" title="Delete reservation">
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>

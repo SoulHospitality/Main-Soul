@@ -76,21 +76,11 @@ const {
   canManageLongTermUnits,
   canReserveLongTermUnits,
 } = require('../../lib/listingType');
-const UNIT_EDITOR_ROLES = [
-  'admin',
-  'reservations_manager',
-  'reservations_web',
-  'reservations_manual',
-  'reservations',
-  'owners_relations',
-  'finance',
-  'finance_manager',
-  ...UNIT_ACQUISITION_ROLES,
-];
-const LONG_TERM_UNIT_FORBIDDEN =
-  'Only admin, reservations, Owner Experience and unit acquisition staff can add or edit long-term units';
-const LONG_TERM_RESERVATION_FORBIDDEN =
-  'Only admin, reservations and unit acquisition staff can add or edit long-term reservations';
+const { STAFF_EDITOR_ROLES } = require('../../lib/staffEditorRoles');
+const UNIT_EDITOR_ROLES = STAFF_EDITOR_ROLES;
+const RESERVATION_EDITOR_ROLES = STAFF_EDITOR_ROLES;
+const LONG_TERM_UNIT_FORBIDDEN = 'Your role cannot add or edit long-term units';
+const LONG_TERM_RESERVATION_FORBIDDEN = 'Your role cannot add or edit long-term reservations';
 
 async function guardLongTermUnit(req, res, next) {
   if (canManageLongTermUnits(req.user)) return next();
@@ -1777,22 +1767,7 @@ router.get('/reservations', async (req, res, next) => {
 
 router.post(
   '/reservations',
-  requireRoles(
-    'reservations_manager',
-    'reservations_manual',
-    'reservations_web',
-    'reservations',
-    'operations',
-    'operations_supervisor',
-    'hr',
-    'hr_supervisor',
-    'marketing_pr',
-    'finance',
-    'finance_manager',
-    'unit_acquisition_agent',
-    'unit_acquisition_manager',
-    'admin'
-  ),
+  requireRoles(...RESERVATION_EDITOR_ROLES),
   upload.single('transfer_proof'),
   setCloudinaryFolder(FOLDER_PAYMENTS),
   attachCloudinaryUrls,
@@ -2125,22 +2100,7 @@ function truthyFlag(v) {
 
 router.patch(
   '/reservations/:id',
-  requireRoles(
-    'reservations_manager',
-    'reservations_manual',
-    'reservations_web',
-    'reservations',
-    'operations',
-    'operations_supervisor',
-    'hr',
-    'hr_supervisor',
-    'marketing_pr',
-    'finance',
-    'finance_manager',
-    'unit_acquisition_agent',
-    'unit_acquisition_manager',
-    'admin'
-  ),
+  requireRoles(...RESERVATION_EDITOR_ROLES),
   async (req, res, next) => {
 
   try {
@@ -2286,15 +2246,7 @@ router.patch(
 
 router.post(
   '/reservations/:id/id-documents',
-  requireRoles(
-    'reservations_manager',
-    'reservations_manual',
-    'reservations_web',
-    'reservations',
-    'operations',
-    'operations_supervisor',
-    'admin'
-  ),
+  requireRoles(...RESERVATION_EDITOR_ROLES),
   upload.array('id_photos', 10),
   setCloudinaryFolder(FOLDER_ID_DOCS),
   attachCloudinaryUrls,
@@ -2336,15 +2288,7 @@ router.post(
 
 router.delete(
   '/reservations/:id/id-documents',
-  requireRoles(
-    'reservations_manager',
-    'reservations_manual',
-    'reservations_web',
-    'reservations',
-    'operations',
-    'operations_supervisor',
-    'admin'
-  ),
+  requireRoles(...RESERVATION_EDITOR_ROLES),
   async (req, res, next) => {
     try {
       const existing = await loadReservationAccess(req.params.id);
@@ -2378,15 +2322,7 @@ router.delete(
 
 router.post(
   '/reservations/:id/transfer/preview',
-  requireRoles(
-    'reservations_manager',
-    'reservations_manual',
-    'reservations_web',
-    'reservations',
-    'operations',
-    'operations_supervisor',
-    'admin'
-  ),
+  requireRoles(...RESERVATION_EDITOR_ROLES),
   async (req, res, next) => {
     try {
       const existing = await loadReservationAccess(req.params.id);
@@ -2406,15 +2342,7 @@ router.post(
 
 router.post(
   '/reservations/:id/transfer',
-  requireRoles(
-    'reservations_manager',
-    'reservations_manual',
-    'reservations_web',
-    'reservations',
-    'operations',
-    'operations_supervisor',
-    'admin'
-  ),
+  requireRoles(...RESERVATION_EDITOR_ROLES),
   async (req, res, next) => {
     try {
       const existing = await loadReservationAccess(req.params.id);
@@ -2499,15 +2427,7 @@ router.delete(
 
 router.post(
   '/reservations/:id/cancel-request',
-  requireRoles(
-    'reservations_manager',
-    'reservations_manual',
-    'reservations_web',
-    'reservations',
-    'operations',
-    'operations_supervisor',
-    'admin'
-  ),
+  requireRoles(...RESERVATION_EDITOR_ROLES),
   async (req, res, next) => {
 
   try {

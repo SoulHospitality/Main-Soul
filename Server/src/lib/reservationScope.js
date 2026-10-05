@@ -68,6 +68,7 @@ const TEAM_RESERVATION_ROLES = new Set([
   'hr_supervisor',
   'unit_acquisition_manager',
   'operations_supervisor',
+  'resale_manager',
 ]);
 
 /** Staff who only see reservations they own / created / labeled as themselves. */
@@ -79,6 +80,7 @@ const OWN_ONLY_RESERVATION_ROLES = new Set([
   'marketing_pr',
   'unit_acquisition_agent',
   'operations',
+  'resale',
 ]);
 
 function hasBroadReservationAccess(user) {
@@ -200,7 +202,7 @@ function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
         OR EXISTS (
           SELECT 1 FROM staff_users s
           WHERE s.manager_id = $${paramIndex}
-            AND s.role IN ('reservations', 'reservations_web', 'reservations_manual', 'hr', 'unit_acquisition_agent')
+            AND s.role IN ('reservations', 'reservations_web', 'reservations_manual', 'hr', 'unit_acquisition_agent', 'resale')
             AND ${alias}.sales_label IS NOT NULL
             AND btrim(${alias}.sales_label) <> ''
             AND lower(regexp_replace(btrim(${alias}.sales_label), '\\s+', ' ', 'g'))

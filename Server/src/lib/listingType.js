@@ -2,16 +2,10 @@ const RENT = 'rent';
 const LONG_TERM = 'long_term';
 const LISTING_TYPES = [RENT, LONG_TERM];
 
-const RESERVATIONS_TEAM_ROLES = [
-  'reservations_manager',
-  'reservations_web',
-  'reservations_manual',
-  'reservations',
-];
-const ACQUISITION_ROLES = ['unit_acquisition_agent', 'unit_acquisition_manager'];
+const { STAFF_EDITOR_ROLES } = require('./staffEditorRoles');
 
-const LONG_TERM_UNIT_ROLES = ['admin', ...RESERVATIONS_TEAM_ROLES, 'owners_relations', ...ACQUISITION_ROLES];
-const LONG_TERM_RESERVATION_ROLES = ['admin', ...RESERVATIONS_TEAM_ROLES, ...ACQUISITION_ROLES];
+const LONG_TERM_UNIT_ROLES = STAFF_EDITOR_ROLES;
+const LONG_TERM_RESERVATION_ROLES = STAFF_EDITOR_ROLES;
 
 function normalizeListingType(value, fallback = RENT) {
   const v = String(value || '').trim().toLowerCase().replace(/-/g, '_');
