@@ -230,7 +230,7 @@ export default function Profile() {
             <h3 className="font-semibold text-soul-blue">Time off</h3>
           </div>
           <p className="text-sm text-soul-muted mb-4">
-            Casual and annual leave can be requested for any date (including past shifts). No salary deduction when approved.
+            Holidays, excuses, and work-from-home can be requested anytime, for any date (past, today, or future). Casual and annual leave have no salary deduction when approved.
             Unpaid leave deducts 1× daily rate; no show is 2× daily rate.
             Unpaid leave: unlimited (1× daily rate per approved day). Daily rate = base salary ÷ 30.
             Paid excuses: 2/month, max 2 hours each (manager or HR approval, no deduction).

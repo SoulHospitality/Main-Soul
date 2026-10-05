@@ -2036,10 +2036,6 @@ router.post('/hr/wfh', async (req, res, next) => {
     const workDate = String(req.body?.work_date || '').slice(0, 10);
     const reason = String(req.body?.reason || '').trim();
     if (!workDate) return res.status(400).json({ error: 'Work date is required' });
-    const cairo = cairoParts();
-    if (workDate < cairo.date) {
-      return res.status(400).json({ error: 'Work from home cannot be requested for a past date' });
-    }
     let staffUserId = req.user.id;
     if (isHrActor(req.user) && req.body?.staff_user_id) {
       staffUserId = Number(req.body.staff_user_id);
