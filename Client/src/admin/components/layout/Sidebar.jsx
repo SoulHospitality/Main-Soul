@@ -27,6 +27,7 @@ import {
   Trophy,
   ListTodo,
   Gauge,
+  MessageSquareText,
 } from 'lucide-react';
 
 const NAV_SECTIONS = [
@@ -51,6 +52,7 @@ const NAV_SECTIONS = [
       { path: '/admin/owner-statement', label: 'Owner Statement', icon: FileBarChart2, page: 'owner_statement', roles: ['unit_acquisition_manager', 'owners_relations'] },
       { path: '/admin/owner/blocks', label: 'Owner blocks', icon: CalendarDays, page: 'owner_blocks', roles: ['owners_relations'] },
       { path: '/admin/users', label: 'Owners', icon: UserCircle, page: 'owners', roles: ['unit_acquisition_manager'] },
+      { path: '/admin/owner-comments', label: 'Owner comments', icon: MessageSquareText, page: 'owner_comments', badge: 'owner_comments_unread' },
     ],
   },
   {
@@ -189,6 +191,13 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
     refetchInterval: 30000,
   });
   const pendingJobCount = jobSummary?.pendingApplications || 0;
+  const { data: ownerCommentsSummary } = useQuery({
+    queryKey: ['owner-comments-unread'],
+    queryFn: () => api.get('/owner-comments', { params: { status: 'open' } }).then((r) => r.data),
+    enabled: canAccess('owner_comments'),
+    refetchInterval: 30000,
+  });
+  const ownerCommentsUnread = ownerCommentsSummary?.counts?.unread || 0;
 
   const handleLogout = () => {
     logout();
@@ -282,7 +291,9 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
                             ? pendingWfhCount
                             : item.badge === 'job_pending'
                               ? pendingJobCount
-                              : 0;
+                              : item.badge === 'owner_comments_unread'
+                                ? ownerCommentsUnread
+                                : 0;
                   const navTo =
                     item.badge === 'requests_pending' && pendingRequestsCount > 0
                       ? pendingLeaveCount > 0

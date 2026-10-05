@@ -137,6 +137,7 @@ router.use(require('./financialSystem'));
 router.use(housekeepingOps);
 router.use(require('./opsCheckins'));
 router.use(require('./unitInspections'));
+router.use(require('./ownerComments'));
 router.use(ownerPortal);
 router.use(roadmapScaffold);
 router.use(require('./promoCodesAdmin'));

@@ -10,6 +10,7 @@ import {
   FileBarChart2,
   Wallet,
   ClipboardCheck,
+  MessageSquareText,
 } from 'lucide-react';
 
 const NAV = [
@@ -19,6 +20,7 @@ const NAV = [
   { to: '/admin/owner/statement', label: 'Statement', icon: FileBarChart2 },
   { to: '/admin/owner/payouts', label: 'Payouts', icon: Wallet },
   { to: '/admin/owner/inspections', label: 'Inspections', icon: ClipboardCheck, badge: 'inspections' },
+  { to: '/admin/owner/comments', label: 'Comments', icon: MessageSquareText, badge: 'comments' },
 ];
 
 export default function OwnerLayout({ children }) {
@@ -30,7 +32,13 @@ export default function OwnerLayout({ children }) {
     enabled: user?.role === 'owner',
     staleTime: 60_000,
   });
-  const badges = { inspections: inspections?.unread || 0 };
+  const { data: comments } = useQuery({
+    queryKey: ['owner-portal-comments'],
+    queryFn: async () => (await api.get('/owner/comments')).data,
+    enabled: user?.role === 'owner',
+    refetchInterval: 60000,
+  });
+  const badges = { inspections: inspections?.unread || 0, comments: comments?.unread || 0 };
 
   const handleLogout = () => {
     logout();

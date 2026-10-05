@@ -101,6 +101,7 @@ const RESERVATIONS_MANAGER_PAGE_ACCESS = new Set([
 const UNIT_ACQUISITION_AGENT_PAGE_ACCESS = new Set([
   'tasks',
   'units',
+  'owner_comments',
   'reservations',
   'schedule',
   ...STAFF_HR_TABS,
@@ -115,6 +116,7 @@ const UNIT_ACQUISITION_MANAGER_PAGE_ACCESS = new Set([
   'acquisition_audit',
   'owner_statement',
   'owners',
+  'owner_comments',
   ...STAFF_HR_TABS,
 ]);
 
@@ -366,6 +368,7 @@ const PAGE_ACCESS = {
     'reservations',
     'owner_statement',
     'owner_blocks',
+    'owner_comments',
     'tasks',
     ...STAFF_HR_TABS,
   ]),
@@ -380,6 +383,7 @@ const PAGE_ACCESS = {
     'owner_payouts',
     'owner_blocks',
     'owner_inspections',
+    'owner_portal_comments',
     'profile',
   ]),
 };
