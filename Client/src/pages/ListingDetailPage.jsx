@@ -328,7 +328,9 @@ export default function ListingDetailPage() {
             <Link to="/" className="g-index g-link hover:text-soul-blue">
               {t('listing.egypt')}
             </Link>
-            {locationParts.map((part) => (
+            {locationParts
+              .filter((part) => part.toLowerCase() !== String(t('listing.egypt')).toLowerCase())
+              .map((part) => (
               <span key={part} className="flex items-center gap-2">
                 <span className="g-index opacity-50">/</span>
                 <Link to={`${browsePath}?area=${encodeURIComponent(part)}`} className="g-index g-link hover:text-soul-blue">

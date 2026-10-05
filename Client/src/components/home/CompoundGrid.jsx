@@ -25,7 +25,7 @@ function phraseKeyForName(name = '') {
 const hrefFor = (c) =>
   `/search?destination=${encodeURIComponent(c.destination)}&compound=${encodeURIComponent(c.name)}`;
 
-export default function CompoundGrid({ index, showHead = true }) {
+export default function CompoundGrid({ index, showHead = true, limit = 0 }) {
   const { t } = useLocale();
   const { projectCards } = useProjectCatalog();
   const [active, setActive] = useState(0);
@@ -65,14 +65,17 @@ export default function CompoundGrid({ index, showHead = true }) {
     );
   }
 
-  const current = cards[Math.min(active, cards.length - 1)];
+  const allCards = cards;
+  const visible = limit > 0 ? allCards.slice(0, limit) : allCards;
+  const hiddenCount = allCards.length - visible.length;
+  const current = visible[Math.min(active, visible.length - 1)];
 
   return (
-    <section className={`bg-soul-paper ${showHead ? 'py-24 md:py-32' : 'pb-24 md:pb-32'}`}>
+    <section className={`g-guides bg-soul-paper ${showHead ? 'py-24 md:py-32' : 'pb-24 md:pb-32'}`}>
       {head ? <div className="g-shell">{head}</div> : null}
 
       <div className={`g-rail md:hidden ${head ? 'mt-12' : ''}`}>
-        {cards.map((c, i) => (
+        {visible.map((c, i) => (
           <Link key={c.id} to={hrefFor(c)} className="group relative w-[78%] shrink-0 overflow-hidden rounded-[26px]">
             <div className="relative aspect-[4/5]">
               <img src={c.image} alt={c.name} loading="lazy" decoding="async" className="absolute inset-0 h-full w-full object-cover" />
@@ -94,7 +97,7 @@ export default function CompoundGrid({ index, showHead = true }) {
         <div className="relative">
           <Reveal variant="mask" className="sticky top-28 aspect-[4/5] overflow-hidden rounded-[32px] bg-soul-sand">
             <div className="absolute inset-0">
-            {cards.map((c, i) => (
+            {visible.map((c, i) => (
               <img
                 key={c.id}
                 src={c.image}
@@ -116,14 +119,14 @@ export default function CompoundGrid({ index, showHead = true }) {
                 </div>
               </div>
               <span className="g-index shrink-0 text-white/70">
-                {String(active + 1).padStart(2, '0')} / {String(cards.length).padStart(2, '0')}
+                {String(active + 1).padStart(2, '0')} / {String(visible.length).padStart(2, '0')}
               </span>
             </div>
           </Reveal>
         </div>
 
         <ul className="self-center border-t border-soul-line">
-          {cards.map((c, i) => {
+          {visible.map((c, i) => {
             const on = i === active;
             return (
               <Reveal as="li" key={c.id} delay={Math.min(i, 8) * 60} className="border-b border-soul-line">
@@ -159,6 +162,17 @@ export default function CompoundGrid({ index, showHead = true }) {
           })}
         </ul>
       </div>
+
+      {hiddenCount > 0 ? (
+        <div className="g-shell mt-14 md:mt-20">
+          <Reveal className="g-divider">
+            <Link to="/compounds" className="g-btn g-btn-ghost">
+              {t('home.viewAllDestinations')}
+              <span className="g-index opacity-60">({allCards.length})</span>
+            </Link>
+          </Reveal>
+        </div>
+      ) : null}
     </section>
   );
 }

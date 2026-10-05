@@ -340,7 +340,7 @@ export default function PropertyFiltersSidebar({
 
   return (
     <aside className="relative z-40 hidden lg:block">
-      <div className="sticky top-[104px] z-40 max-h-[calc(100vh-120px)] overflow-visible rounded-[28px] border border-soul-line bg-white/70 p-6 backdrop-blur-sm">
+      <div className="g-noscrollbar sticky top-[104px] z-40 max-h-[calc(100vh-120px)] overflow-y-auto overscroll-contain rounded-[28px] border border-soul-line bg-white p-6">
         <div className="mb-6 border-b border-soul-line pb-5">
           <div className="flex items-center gap-2 text-soul-muted">
             <span className="g-dot" />

@@ -5,11 +5,15 @@ const prefersReducedMotion = () =>
   typeof window !== 'undefined' &&
   window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
-export function useInView(ref, { once = true, rootMargin = '0px 0px -12% 0px', threshold = 0.12 } = {}) {
+export function useInView(
+  ref,
+  { once = true, rootMargin = '0px 0px -12% 0px', threshold = 0.12, observeParent = false } = {}
+) {
   const [inView, setInView] = useState(false);
 
   useEffect(() => {
-    const el = ref.current;
+    // Chrome never reports a fully clip-pathed target as intersecting, so masks watch their parent.
+    const el = observeParent ? ref.current?.parentElement : ref.current;
     if (!el) return undefined;
     if (typeof IntersectionObserver === 'undefined' || prefersReducedMotion()) {
       setInView(true);
@@ -28,7 +32,7 @@ export function useInView(ref, { once = true, rootMargin = '0px 0px -12% 0px', t
     );
     io.observe(el);
     return () => io.disconnect();
-  }, [ref, once, rootMargin, threshold]);
+  }, [ref, once, rootMargin, threshold, observeParent]);
 
   return inView;
 }
@@ -41,7 +45,7 @@ const VARIANT_CLASS = {
 
 export function Reveal({ as = 'div', variant = 'up', delay = 0, className = '', style, children, ...rest }) {
   const ref = useRef(null);
-  const inView = useInView(ref);
+  const inView = useInView(ref, { observeParent: variant === 'mask' });
   return createElement(
     as,
     {
@@ -105,9 +109,12 @@ export function SectionHead({
   titleClassName = '',
 }) {
   const muted = dark ? 'text-white/55' : 'text-soul-muted';
+  const side = body || action;
   return (
-    <div className={`flex flex-col gap-8 md:flex-row md:items-end md:justify-between ${className}`}>
-      <div className="max-w-3xl">
+    <div
+      className={`grid gap-8 lg:grid-cols-12 lg:items-end lg:gap-12 ${className}`}
+    >
+      <div className={side ? 'lg:col-span-7' : 'lg:col-span-12'}>
         <Reveal className={`mb-5 flex items-center gap-3 ${muted}`}>
           {index ? <span className="g-index">({index})</span> : null}
           {index && eyebrow ? <span className={`h-px w-8 ${dark ? 'bg-white/25' : 'bg-soul-blue/25'}`} /> : null}
@@ -117,16 +124,20 @@ export function SectionHead({
           className={`g-display ${dark ? 'text-white' : 'text-soul-blue'} ${titleClassName || 'text-[clamp(40px,5.6vw,84px)]'}`}
           lines={[lead, em ? <em key="em">{em}</em> : null]}
         />
-        {body ? (
-          <Reveal delay={200} as="p" className={`mt-6 max-w-xl text-[15px] leading-relaxed md:text-base ${muted}`}>
-            {body}
-          </Reveal>
-        ) : null}
       </div>
-      {action ? (
-        <Reveal delay={250} className="shrink-0">
-          {action}
-        </Reveal>
+      {side ? (
+        <div className="flex flex-col gap-6 lg:col-span-5 lg:items-end lg:pb-3 lg:text-end">
+          {body ? (
+            <Reveal delay={200} as="p" className={`max-w-md text-[15px] leading-relaxed md:text-base ${muted}`}>
+              {body}
+            </Reveal>
+          ) : null}
+          {action ? (
+            <Reveal delay={250} className="shrink-0">
+              {action}
+            </Reveal>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );

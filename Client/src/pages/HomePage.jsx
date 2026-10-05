@@ -17,6 +17,7 @@ import {
   RevealLines,
   ScrollText,
   SectionHead,
+  useCairoTime,
 } from '../components/ui/Editorial';
 import api from '../api/http';
 import { brand } from '../theme/brand';
@@ -24,15 +25,72 @@ import { useLocale } from '../context/LocaleContext';
 import { useProjectCatalog } from '../hooks/useProjectCatalog';
 
 const SLIDE_MS = 8000;
-const STAT_COLS = { 1: 'sm:grid-cols-1', 2: 'sm:grid-cols-2', 3: 'sm:grid-cols-3' };
+const STAT_COLS = { 1: 'grid-cols-1', 2: 'grid-cols-2', 3: 'grid-cols-3' };
+const INTRO_KEY = 'soul-intro-seen';
+
+function IntroCurtain() {
+  const { t } = useLocale();
+  const time = useCairoTime();
+  const [show, setShow] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return false;
+    try {
+      return !window.sessionStorage.getItem(INTRO_KEY);
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    if (!show) return undefined;
+    try {
+      window.sessionStorage.setItem(INTRO_KEY, '1');
+    } catch {
+      /* storage unavailable */
+    }
+    const id = window.setTimeout(() => setShow(false), 2150);
+    return () => window.clearTimeout(id);
+  }, [show]);
+
+  if (!show) return null;
+
+  return (
+    <div className="g-intro" onClick={() => setShow(false)} aria-hidden="true">
+      <div className="flex flex-col items-center gap-7 px-6 text-center">
+        <img
+          src="/soul-brand/soul-logo.png"
+          alt=""
+          className="h-9 w-auto brightness-0 invert"
+          onError={(e) => {
+            e.currentTarget.style.display = 'none';
+          }}
+        />
+        <div className="g-display g-intro__words text-[clamp(48px,8vw,112px)] italic font-light">
+          <span>
+            <span>{t('home.introWord1')}</span>
+            <span>{t('home.introWord2')}</span>
+            <span>{t('home.introWord3')}</span>
+          </span>
+        </div>
+        <div className="g-intro__bar w-44">
+          <span />
+        </div>
+        <span className="g-index text-white/55">
+          {brand.name} · {t('nav.localTime')} {time}
+        </span>
+      </div>
+    </div>
+  );
+}
 const HERO_SLIDES = [
   { src: '/soul-brand/coast-hero-2.jpg', captionKey: 'home.heroPhrase1' },
   { src: '/soul-brand/coast-hero-1.jpg', captionKey: 'home.heroPhrase2' },
   { src: '/soul-brand/coast-hero-3.jpg', captionKey: 'home.regions' },
 ];
 
-function Hero() {
+function Hero({ homes }) {
   const { t } = useLocale();
+  const time = useCairoTime();
   const [index, setIndex] = useState(0);
   const [cycle, setCycle] = useState(0);
 
@@ -78,11 +136,20 @@ function Hero() {
       </div>
 
       <div className="g-shell relative z-[2] flex w-full flex-1 flex-col justify-end pb-8 pt-32 md:pb-10">
-        <div className="soul-fade-up mb-8 flex items-center gap-3 text-white/75" style={{ animationDelay: '0.2s' }}>
-          <span className="g-dot" />
-          <span className="g-index">{brand.name}</span>
+        <div
+          className="soul-fade-up mb-8 flex flex-wrap items-center gap-x-3 gap-y-2 text-white/75"
+          style={{ animationDelay: '0.2s' }}
+        >
+          <span className="g-live" />
+          <span className="g-index tabular-nums">
+            {homes ? t('home.liveHomes', { count: homes.toLocaleString('en-US') }) : brand.name}
+          </span>
           <span className="h-px w-10 bg-white/30" />
-          <span className="g-index hidden sm:inline">{t('home.regions')}</span>
+          <span className="g-index tabular-nums">
+            {t('nav.localTime')} {time}
+          </span>
+          <span className="hidden h-px w-10 bg-white/30 md:inline-block" />
+          <span className="g-index hidden md:inline">{t('home.regions')}</span>
         </div>
 
         <div className="grid gap-8 lg:grid-cols-[1fr_auto] lg:items-end">
@@ -175,7 +242,7 @@ function ProjectMarquee() {
   const list = names.length < 6 ? [...names, ...names] : names;
 
   return (
-    <section className="border-b border-soul-line bg-soul-paper py-8 md:py-10" aria-hidden="true">
+    <section className="border-y border-soul-line bg-soul-paper py-8 md:py-10" aria-hidden="true">
       <Marquee duration={Math.max(28, list.length * 6)} gap="2.5rem">
         {list.map((name, i) => (
           <span key={`${name}-${i}`} className="flex items-center gap-10">
@@ -194,23 +261,9 @@ function ProjectMarquee() {
   );
 }
 
-function Manifesto() {
+function Manifesto({ homes }) {
   const { t } = useLocale();
   const { projectCards, destinations } = useProjectCatalog();
-  const [homes, setHomes] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .get('/units', { params: { status: 'published', listing_type: 'rent', limit: 1 } })
-      .then((r) => {
-        if (!cancelled) setHomes(Number(r.data?.total) || null);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const projectCount = new Set(projectCards.map((p) => String(p.name).toLowerCase())).size;
   const stats = [
@@ -220,7 +273,7 @@ function Manifesto() {
   ].filter(Boolean);
 
   return (
-    <section className="bg-soul-paper">
+    <section className="g-guides bg-soul-paper">
       <div className="g-shell grid gap-12 py-24 md:py-36 lg:grid-cols-[minmax(0,3fr)_minmax(0,9fr)] lg:gap-16">
         <Reveal className="flex flex-col gap-6 lg:pt-4">
           <div className="flex items-center gap-3 text-soul-muted">
@@ -246,13 +299,13 @@ function Manifesto() {
                 <Reveal
                   key={s.label}
                   delay={i * 120}
-                  className={`flex flex-col gap-3 py-8 sm:px-8 sm:py-10 ${
-                    i ? 'border-t border-soul-line sm:border-s sm:border-t-0' : 'sm:ps-0'
+                  className={`flex min-w-0 flex-col gap-2 px-3 py-7 sm:gap-3 sm:px-8 sm:py-10 ${
+                    i ? 'border-s border-soul-line' : 'ps-0 sm:ps-0'
                   }`}
                 >
                   <span className="g-index text-soul-muted">{String(i + 1).padStart(2, '0')}</span>
-                  <CountUp value={s.value} className="g-display text-[clamp(64px,7vw,112px)] text-soul-blue" />
-                  <span className="text-sm text-soul-muted">{s.label}</span>
+                  <CountUp value={s.value} className="g-display text-[clamp(44px,7vw,112px)] text-soul-blue" />
+                  <span className="text-xs text-soul-muted sm:text-sm">{s.label}</span>
                 </Reveal>
               ))}
             </div>
@@ -283,7 +336,7 @@ function FeaturedRail({ items, loading }) {
   };
 
   return (
-    <section className="bg-soul-paper py-24 md:py-32">
+    <section className="g-guides bg-soul-paper py-24 md:py-32">
       <div className="g-shell">
         <SectionHead
           index="03"
@@ -412,6 +465,20 @@ function Interlude() {
 export default function HomePage() {
   const [featured, setFeatured] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [homes, setHomes] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get('/units', { params: { status: 'published', listing_type: 'rent', limit: 1 } })
+      .then((r) => {
+        if (!cancelled) setHomes(Number(r.data?.total) || null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -445,15 +512,16 @@ export default function HomePage() {
 
   return (
     <div className="bg-soul-paper">
+      <IntroCurtain />
       <Header overHero />
-      <Hero />
+      <Hero homes={homes} />
+      <PartnersSection variant="strip" />
+      <Manifesto homes={homes} />
+      <CompoundGrid index="02" limit={8} />
       <ProjectMarquee />
-      <Manifesto />
-      <CompoundGrid index="02" />
       <FeaturedRail items={featured} loading={loading} />
       <TrustSection />
       <Interlude />
-      <PartnersSection />
       <HostCta />
       <Footer />
     </div>

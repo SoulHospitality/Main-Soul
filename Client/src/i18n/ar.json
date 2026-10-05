@@ -154,7 +154,13 @@
     "interludeLead": "صباحات هادئة،",
     "interludeEm": "ونسيم البحر.",
     "hostTitleLead": "بيتك،",
-    "hostTitleEm": "برعايتنا."
+    "hostTitleEm": "برعايتنا.",
+    "liveHomes": "{{count}} بيت متاح الآن",
+    "partnersStrip": "بثقة كبار المطورين في مصر",
+    "viewAllDestinations": "عرض كل الوجهات",
+    "introWord1": "ساحلي.",
+    "introWord2": "منتقى.",
+    "introWord3": "سول."
   },
   "search": {
     "allStays": "كل الإقامات",

@@ -24,10 +24,49 @@ const PARTNERS = [
   },
 ];
 
-export default function PartnersSection({ eyebrow, title, className = '' }) {
+function PartnerLogo({ partner, className = '' }) {
+  return (
+    <img
+      src={partner.src}
+      alt={partner.label}
+      className={`max-h-full max-w-full object-contain opacity-55 grayscale transition duration-500 hover:opacity-100 hover:grayscale-0 ${className}`}
+      loading="lazy"
+      decoding="async"
+    />
+  );
+}
+
+export default function PartnersSection({ eyebrow, title, className = '', variant = 'section' }) {
   const { t } = useLocale();
   const resolvedEyebrow = eyebrow ?? t('home.partnersEyebrow');
   const resolvedTitle = title ?? t('home.partnersTitle');
+
+  if (variant === 'strip') {
+    return (
+      <section className={`g-guides border-b border-soul-line bg-soul-paper ${className}`.trim()}>
+        <div className="g-shell grid items-center gap-6 py-8 lg:grid-cols-[minmax(0,240px)_1fr] lg:gap-12 lg:py-10">
+          <p className="g-index flex items-center gap-3 text-soul-muted">
+            <span className="g-dot shrink-0" />
+            {t('home.partnersStrip')}
+          </p>
+          <div className="hidden items-center justify-between gap-10 lg:flex">
+            {PARTNERS.map((partner) => (
+              <div key={partner.label} className="flex h-14 w-[150px] items-center justify-center">
+                <PartnerLogo partner={partner} />
+              </div>
+            ))}
+          </div>
+          <Marquee duration={26} gap="3.5rem" className="g-fade-x lg:hidden">
+            {PARTNERS.map((partner) => (
+              <div key={partner.label} className="flex h-12 w-[120px] shrink-0 items-center justify-center">
+                <PartnerLogo partner={partner} />
+              </div>
+            ))}
+          </Marquee>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className={`border-y border-soul-line bg-soul-paper py-20 md:py-24 ${className}`.trim()}>
@@ -44,13 +83,7 @@ export default function PartnersSection({ eyebrow, title, className = '' }) {
       <Marquee duration={32} gap="5rem" className="mt-14">
         {[...PARTNERS, ...PARTNERS].map((partner, i) => (
           <div key={`${partner.label}-${i}`} className="flex h-20 w-[170px] shrink-0 items-center justify-center md:h-24">
-            <img
-              src={partner.src}
-              alt={partner.label}
-              className="max-h-full max-w-full object-contain opacity-60 grayscale transition duration-500 hover:opacity-100 hover:grayscale-0"
-              loading="lazy"
-              decoding="async"
-            />
+            <PartnerLogo partner={partner} />
           </div>
         ))}
       </Marquee>

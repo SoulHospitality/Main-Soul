@@ -7,7 +7,7 @@ export default function HostCta() {
   const points = [t('owners.bullet0'), t('owners.bullet1'), t('owners.bullet2')];
 
   return (
-    <section className="bg-soul-paper py-24 md:py-32">
+    <section className="g-guides bg-soul-paper py-24 md:py-32">
       <div className="g-shell grid items-center gap-12 lg:grid-cols-[1.05fr_1fr] lg:gap-20">
         <Reveal variant="mask" className="relative aspect-[5/6] overflow-hidden rounded-[32px] sm:aspect-[4/3] lg:aspect-[5/6]">
           <img

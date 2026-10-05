@@ -18,7 +18,7 @@ export default function TrustSection() {
   ];
 
   return (
-    <section className="g-grain relative isolate overflow-hidden bg-soul-blue-dark py-24 text-white md:py-32">
+    <section className="g-grain g-guides g-guides-dark relative isolate overflow-hidden bg-soul-blue-dark py-24 text-white md:py-32">
       <div
         className="pointer-events-none absolute inset-0 -z-10"
         style={{

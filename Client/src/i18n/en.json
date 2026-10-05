@@ -154,7 +154,13 @@
     "interludeLead": "Slow mornings,",
     "interludeEm": "salt air.",
     "hostTitleLead": "Your home,",
-    "hostTitleEm": "our care."
+    "hostTitleEm": "our care.",
+    "liveHomes": "{{count}} homes live now",
+    "partnersStrip": "Trusted by Egypt’s leading developers",
+    "viewAllDestinations": "View all destinations",
+    "introWord1": "Coastal.",
+    "introWord2": "Curated.",
+    "introWord3": "Soul."
   },
   "search": {
     "allStays": "All stays",
