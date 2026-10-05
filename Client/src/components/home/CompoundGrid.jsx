@@ -136,7 +136,7 @@ export default function CompoundGrid({ index, showHead = true, limit = 0 }) {
                   onFocus={() => setActive(i)}
                   className="group grid grid-cols-[2.5rem_1fr_auto] items-center gap-4 py-6 lg:py-7"
                 >
-                  <span className={`g-index transition-colors duration-500 ${on ? 'text-soul-accent' : 'text-soul-muted/60'}`}>
+                  <span className={`g-index transition-colors duration-500 ${on ? 'text-soul-blue' : 'text-soul-muted/60'}`}>
                     {String(i + 1).padStart(2, '0')}
                   </span>
                   <span className="min-w-0">

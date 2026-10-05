@@ -47,7 +47,7 @@ export default function HostCta() {
                 delay={200 + i * 90}
                 className="flex items-baseline gap-5 border-b border-soul-line py-4 text-[15px] text-soul-blue"
               >
-                <span className="g-index text-soul-accent">{String(i + 1).padStart(2, '0')}</span>
+                <span className="g-index text-soul-muted">{String(i + 1).padStart(2, '0')}</span>
                 {point}
               </Reveal>
             ))}

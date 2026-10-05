@@ -25,7 +25,7 @@ export default function BookingRequestSuccess({
         aria-hidden
         style={{
           background:
-            'radial-gradient(900px 420px at 50% 18%, rgba(242, 140, 40, 0.16), transparent 58%), radial-gradient(700px 380px at 80% 90%, rgba(40, 63, 94, 0.08), transparent 55%), linear-gradient(180deg, #fff8f0 0%, #f7f4ee 42%, #ffffff 100%)',
+            'radial-gradient(900px 420px at 50% 18%, rgba(40, 63, 94, 0.12), transparent 58%), radial-gradient(700px 380px at 80% 90%, rgba(40, 63, 94, 0.08), transparent 55%), linear-gradient(180deg, #f5f1e9 0%, #f7f4ee 42%, #ffffff 100%)',
         }}
       />
 
@@ -35,12 +35,12 @@ export default function BookingRequestSuccess({
             <span
               className="absolute inset-0 rounded-full"
               style={{
-                background: 'radial-gradient(circle at 35% 30%, #ffe8cc, #F28C28 72%)',
-                boxShadow: '0 18px 40px rgba(242, 140, 40, 0.28)',
+                background: 'radial-gradient(circle at 35% 30%, #6b8cae, #283f5e 72%)',
+                boxShadow: '0 18px 40px rgba(40, 63, 94, 0.28)',
               }}
             />
             <span className="absolute inset-[7px] rounded-full bg-white" />
-            <Check className="relative h-12 w-12 text-[#F28C28] sm:h-14 sm:w-14" strokeWidth={2.75} />
+            <Check className="relative h-12 w-12 text-soul-blue sm:h-14 sm:w-14" strokeWidth={2.75} />
           </div>
 
           <div className="soul-success-pop-delay relative mb-1 flex h-16 w-16 items-center justify-center sm:mb-2 sm:h-20 sm:w-20">

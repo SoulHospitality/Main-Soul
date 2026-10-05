@@ -88,9 +88,8 @@ const HERO_SLIDES = [
   { src: '/soul-brand/coast-hero-3.jpg', captionKey: 'home.regions' },
 ];
 
-function Hero({ homes }) {
+function Hero() {
   const { t } = useLocale();
-  const time = useCairoTime();
   const [index, setIndex] = useState(0);
   const [cycle, setCycle] = useState(0);
 
@@ -131,27 +130,11 @@ function Hero({ homes }) {
         <div className="absolute inset-0 bg-gradient-to-b from-soul-ink/55 via-soul-ink/10 to-soul-ink/80" />
         <div
           className="absolute inset-0"
-          style={{ background: 'radial-gradient(70% 55% at 88% 105%, rgba(242,140,40,0.28), transparent 60%)' }}
+          style={{ background: 'radial-gradient(70% 55% at 88% 105%, rgba(40,63,94,0.55), transparent 60%)' }}
         />
       </div>
 
       <div className="g-shell relative z-[2] flex w-full flex-1 flex-col justify-end pb-8 pt-32 md:pb-10">
-        <div
-          className="soul-fade-up mb-8 flex flex-wrap items-center gap-x-3 gap-y-2 text-white/75"
-          style={{ animationDelay: '0.2s' }}
-        >
-          <span className="g-live" />
-          <span className="g-index tabular-nums">
-            {homes ? t('home.liveHomes', { count: homes.toLocaleString('en-US') }) : brand.name}
-          </span>
-          <span className="h-px w-10 bg-white/30" />
-          <span className="g-index tabular-nums">
-            {t('nav.localTime')} {time}
-          </span>
-          <span className="hidden h-px w-10 bg-white/30 md:inline-block" />
-          <span className="g-index hidden md:inline">{t('home.regions')}</span>
-        </div>
-
         <div className="grid gap-8 lg:grid-cols-[1fr_auto] lg:items-end">
           <RevealLines
             as="h1"
@@ -253,7 +236,7 @@ function ProjectMarquee() {
             >
               {name}
             </span>
-            <span className="text-2xl text-soul-accent">✦</span>
+            <span className="text-2xl text-soul-blue/30">✦</span>
           </span>
         ))}
       </Marquee>
@@ -514,7 +497,7 @@ export default function HomePage() {
     <div className="bg-soul-paper">
       <IntroCurtain />
       <Header overHero />
-      <Hero homes={homes} />
+      <Hero />
       <PartnersSection variant="strip" />
       <Manifesto homes={homes} />
       <CompoundGrid index="02" limit={8} />

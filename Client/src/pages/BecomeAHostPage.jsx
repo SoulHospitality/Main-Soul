@@ -164,7 +164,7 @@ export default function BecomeAHostPage() {
                     delay={i * 90}
                     className="grid grid-cols-[3rem_1fr] items-baseline gap-4 border-b border-soul-line py-5"
                   >
-                    <span className="g-display text-3xl italic text-soul-accent">{String(i + 1).padStart(2, '0')}</span>
+                    <span className="g-display text-3xl italic text-soul-blue/40">{String(i + 1).padStart(2, '0')}</span>
                     <span className="text-[15px] leading-relaxed text-soul-blue">{t(key)}</span>
                   </Reveal>
                 ))}

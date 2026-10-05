@@ -97,7 +97,6 @@ h1, h2, h3, h4, .font-display {
 /* ── Guest editorial system ── */
 :root {
   --ease-soul: cubic-bezier(0.22, 1, 0.36, 1);
-  --soul-accent: #f28c28;
   --soul-paper: #fbf9f4;
   --g-gutter: 1.25rem;
 }
@@ -142,7 +141,7 @@ h1, h2, h3, h4, .font-display {
 .g-em-accent {
   font-style: italic;
   font-weight: 300;
-  color: var(--soul-accent);
+  opacity: 0.7;
 }
 
 .g-dot {
@@ -150,8 +149,8 @@ h1, h2, h3, h4, .font-display {
   width: 6px;
   height: 6px;
   border-radius: 999px;
-  background: var(--soul-accent);
-  box-shadow: 0 0 0 4px rgba(242, 140, 40, 0.16);
+  background: currentColor;
+  box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 16%, transparent);
 }
 
 /* Buttons */
@@ -176,18 +175,20 @@ h1, h2, h3, h4, .font-display {
 }
 .g-btn:active { transform: scale(0.98); }
 .g-btn:disabled { opacity: 0.55; cursor: not-allowed; }
-.g-btn-primary { background: #283f5e; color: #fff; }
+.g-btn-primary { background: #283f5e; color: #fff; --arrow-bg: #fff; --arrow-ink: #283f5e; }
 .g-btn-primary:hover { background: #16233a; box-shadow: 0 18px 40px -18px rgba(22, 35, 58, 0.7); }
 .g-btn-light { background: #fff; color: #283f5e; }
 .g-btn-light:hover { background: var(--soul-paper); box-shadow: 0 18px 40px -18px rgba(2, 6, 23, 0.5); }
 .g-btn-ghost { border: 1px solid rgba(40, 63, 94, 0.22); color: #283f5e; background: transparent; }
-.g-btn-ghost:hover { border-color: #283f5e; background: #283f5e; color: #fff; }
+.g-btn-ghost:hover { border-color: #283f5e; background: #283f5e; color: #fff; --arrow-bg: #fff; --arrow-ink: #283f5e; }
 .g-btn-glass {
   border: 1px solid rgba(255, 255, 255, 0.3);
   background: rgba(255, 255, 255, 0.1);
   color: #fff;
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
+  --arrow-bg: #fff;
+  --arrow-ink: #283f5e;
 }
 .g-btn-glass:hover { background: rgba(255, 255, 255, 0.2); border-color: rgba(255, 255, 255, 0.55); }
 
@@ -198,10 +199,10 @@ h1, h2, h3, h4, .font-display {
   height: 1.75rem;
   margin-inline-end: -0.65rem;
   border-radius: 999px;
-  background: var(--soul-accent);
-  color: #fff;
+  background: var(--arrow-bg, #283f5e);
+  color: var(--arrow-ink, #fff);
   overflow: hidden;
-  transition: transform 0.5s var(--ease-soul);
+  transition: transform 0.5s var(--ease-soul), background-color 0.45s var(--ease-soul), color 0.45s var(--ease-soul);
 }
 .g-btn__arrow svg { transition: transform 0.5s var(--ease-soul); }
 .g-btn:hover .g-btn__arrow svg { transform: translateX(2px) rotate(-45deg); }
@@ -348,7 +349,7 @@ h1, h2, h3, h4, .font-display {
   z-index: -1;
   opacity: 0;
   transition: opacity 0.5s ease;
-  background: radial-gradient(420px circle at var(--mx, 50%) var(--my, 50%), rgba(242, 140, 40, 0.16), transparent 45%);
+  background: radial-gradient(420px circle at var(--mx, 50%) var(--my, 50%), rgba(255, 255, 255, 0.09), transparent 45%);
 }
 .g-spot:hover::before { opacity: 1; }
 
@@ -417,28 +418,6 @@ h1, h2, h3, h4, .font-display {
   background: var(--soul-line);
 }
 
-/* Live status dot */
-.g-live {
-  position: relative;
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: var(--soul-accent);
-}
-.g-live::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: var(--soul-accent);
-  animation: gLive 2.2s var(--ease-soul) infinite;
-}
-@keyframes gLive {
-  from { transform: scale(1); opacity: 0.7; }
-  to { transform: scale(3.2); opacity: 0; }
-}
-
 /* First-visit intro curtain */
 .g-intro {
   position: fixed;
@@ -446,7 +425,7 @@ h1, h2, h3, h4, .font-display {
   z-index: 100;
   display: grid;
   place-items: center;
-  background: #020617;
+  background: #16233a;
   color: #fff;
   animation: gIntroOut 0.8s var(--ease-soul) 1.3s both;
 }
@@ -477,7 +456,7 @@ h1, h2, h3, h4, .font-display {
 .g-intro__bar > span {
   display: block;
   height: 100%;
-  background: var(--soul-accent);
+  background: #fff;
   transform-origin: left;
   animation: gIntroBar 1.25s var(--ease-soul) both;
 }
@@ -494,7 +473,6 @@ h1, h2, h3, h4, .font-display {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .g-live::after,
   .g-intro,
   .g-intro__words > span,
   .g-intro__bar > span { animation: none !important; }
@@ -764,8 +742,8 @@ tr.cancelled-row td span[class*="inline-flex"] {
 .soul-brand-loader__glow {
   background: radial-gradient(
     circle,
-    rgba(242, 140, 40, 0.22) 0%,
-    rgba(40, 63, 94, 0.1) 42%,
+    rgba(40, 63, 94, 0.2) 0%,
+    rgba(19, 78, 94, 0.08) 42%,
     transparent 70%
   );
   animation: soulLoaderGlow 2.4s ease-in-out infinite;
@@ -774,12 +752,12 @@ tr.cancelled-row td span[class*="inline-flex"] {
 .soul-brand-loader__orbit {
   border: 1.5px solid transparent;
   border-top-color: rgba(40, 63, 94, 0.45);
-  border-right-color: rgba(242, 140, 40, 0.35);
+  border-right-color: rgba(19, 78, 94, 0.35);
   animation: soulLoaderOrbit 1.35s linear infinite;
 }
 
 .soul-brand-loader__orbit--lag {
-  border-top-color: rgba(242, 140, 40, 0.55);
+  border-top-color: rgba(22, 35, 58, 0.55);
   border-right-color: transparent;
   border-bottom-color: rgba(40, 63, 94, 0.2);
   animation-duration: 2.1s;

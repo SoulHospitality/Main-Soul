@@ -200,7 +200,7 @@ export default function CareersPage() {
                   delay={Math.min(i, 6) * 70}
                   className="grid gap-6 border-b border-soul-line py-10 md:grid-cols-[3rem_minmax(0,1fr)_auto] md:gap-10"
                 >
-                  <span className="g-index pt-3 text-soul-accent">{String(i + 1).padStart(2, '0')}</span>
+                  <span className="g-index pt-3 text-soul-muted">{String(i + 1).padStart(2, '0')}</span>
                   <div className="min-w-0">
                     <h2 className="g-display text-[clamp(32px,3.4vw,52px)] text-soul-blue">{job.title}</h2>
                     {(job.department || job.location) && (

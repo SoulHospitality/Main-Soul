@@ -103,7 +103,7 @@ export default function AboutPage() {
                       onFocus={() => setActive(i)}
                       className="grid w-full grid-cols-[2.5rem_1fr] gap-4 py-6 text-start"
                     >
-                      <span className={`g-index pt-3 transition-colors ${on ? 'text-soul-accent' : 'text-white/40'}`}>
+                      <span className={`g-index pt-3 transition-colors ${on ? 'text-white' : 'text-white/40'}`}>
                         {String(i + 1).padStart(2, '0')}
                       </span>
                       <span>

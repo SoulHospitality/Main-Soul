@@ -54,7 +54,7 @@ function Spec({ num, label, first }) {
 function SectionTitle({ n, children }) {
   return (
     <div className="mb-7 flex items-baseline gap-4">
-      <span className="g-index text-soul-accent">{n}</span>
+      <span className="g-index text-soul-muted">{n}</span>
       <h2 className="g-display text-[clamp(32px,3.4vw,48px)] text-soul-blue">{children}</h2>
     </div>
   );

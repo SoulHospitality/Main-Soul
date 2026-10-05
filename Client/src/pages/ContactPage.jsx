@@ -59,7 +59,7 @@ export default function ContactPage() {
                   rel={rel}
                   className="group grid grid-cols-[2.5rem_1fr_auto] items-center gap-4 py-8 md:grid-cols-[3rem_1.1fr_1fr_auto] md:gap-8 md:py-10"
                 >
-                  <span className="g-index text-soul-muted transition-colors group-hover:text-soul-accent">
+                  <span className="g-index text-soul-muted transition-colors group-hover:text-soul-blue">
                     {String(i + 1).padStart(2, '0')}
                   </span>
                   <span className="min-w-0">

@@ -33,7 +33,7 @@ export default function Footer() {
         className="pointer-events-none absolute inset-0"
         style={{
           background:
-            'radial-gradient(1100px 600px at 100% 0%, rgba(40,63,94,0.75), transparent 60%), radial-gradient(800px 480px at 0% 100%, rgba(242,140,40,0.10), transparent 60%)',
+            'radial-gradient(1100px 600px at 100% 0%, rgba(40,63,94,0.75), transparent 60%), radial-gradient(800px 480px at 0% 100%, rgba(19,78,94,0.28), transparent 60%)',
         }}
       />
 

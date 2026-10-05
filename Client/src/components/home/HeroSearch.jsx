@@ -76,7 +76,7 @@ export default function HeroSearch() {
     <form
       ref={capsuleRef}
       onSubmit={handleSubmit}
-      className="relative z-[60] grid w-full gap-1 rounded-[28px] border border-white/40 bg-white/95 p-2 text-soul-blue shadow-[0_40px_100px_-40px_rgba(2,6,23,0.75)] backdrop-blur-xl lg:h-[76px] lg:grid-cols-[1.15fr_1.7fr_0.95fr_auto] lg:items-stretch lg:rounded-full"
+      className="relative z-[60] grid w-full gap-1 rounded-[28px] border border-white/40 bg-white/95 p-2 text-soul-blue shadow-[0_40px_100px_-40px_rgba(2,6,23,0.75)] backdrop-blur-xl lg:grid-cols-[1.15fr_1.7fr_0.95fr_auto] lg:items-stretch lg:rounded-full"
     >
       <div className="relative lg:after:absolute lg:after:end-0 lg:after:top-1/2 lg:after:h-8 lg:after:w-px lg:after:-translate-y-1/2 lg:after:bg-soul-line">
         <button
@@ -203,7 +203,7 @@ export default function HeroSearch() {
         disabled={criteria.checkin && criteria.checkout ? !hasValidRange : false}
         className="group mt-1 inline-flex h-14 items-center justify-center gap-3 rounded-2xl bg-soul-blue px-7 text-[13px] font-semibold tracking-[0.04em] text-white transition-all duration-500 ease-soul hover:bg-soul-blue-dark disabled:cursor-not-allowed disabled:opacity-60 lg:mt-0 lg:h-full lg:rounded-full"
       >
-        <span className="grid h-8 w-8 place-items-center rounded-full bg-soul-accent transition-transform duration-500 ease-soul group-hover:rotate-90">
+        <span className="grid h-8 w-8 place-items-center rounded-full bg-white text-soul-blue transition-transform duration-500 ease-soul group-hover:rotate-90">
           <Search size={15} strokeWidth={2.4} />
         </span>
         <span>{t('home.searchStays')}</span>

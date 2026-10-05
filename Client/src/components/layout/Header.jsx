@@ -237,7 +237,7 @@ function FullMenu({ onClose, pathname, user, currency, setCurrency }) {
         className="pointer-events-none absolute inset-0 -z-10"
         style={{
           background:
-            'radial-gradient(900px 520px at 85% 110%, rgba(242,140,40,0.16), transparent 60%), radial-gradient(800px 500px at 0% 0%, rgba(40,63,94,0.55), transparent 60%)',
+            'radial-gradient(900px 520px at 85% 110%, rgba(19,78,94,0.35), transparent 60%), radial-gradient(800px 500px at 0% 0%, rgba(40,63,94,0.55), transparent 60%)',
         }}
       />
 
@@ -274,7 +274,7 @@ function FullMenu({ onClose, pathname, user, currency, setCurrency }) {
                   >
                     <span
                       className={`g-index w-8 shrink-0 transition-colors ${
-                        hover === i || (hover == null && activeIndex === i) ? 'text-soul-accent' : 'text-white/45'
+                        hover === i || (hover == null && activeIndex === i) ? 'text-white' : 'text-white/45'
                       }`}
                     >
                       {String(i + 1).padStart(2, '0')}
