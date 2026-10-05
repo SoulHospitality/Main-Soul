@@ -260,7 +260,7 @@ function Manifesto({ homes }) {
       <div className="g-shell grid gap-12 py-24 md:py-36 lg:grid-cols-[minmax(0,3fr)_minmax(0,9fr)] lg:gap-16">
         <Reveal className="flex flex-col gap-6 lg:pt-4">
           <div className="flex items-center gap-3 text-soul-muted">
-            <span className="g-index">(01)</span>
+            <span className="g-index">(05)</span>
             <span className="h-px w-8 bg-soul-blue/25" />
             <span className="g-index">{t('home.manifestoIndex')}</span>
           </div>
@@ -322,7 +322,7 @@ function FeaturedRail({ items, loading }) {
     <section className="g-guides bg-soul-paper py-24 md:py-32">
       <div className="g-shell">
         <SectionHead
-          index="03"
+          index="02"
           eyebrow={t('home.collection')}
           lead={t('home.featuredLead')}
           em={t('home.featuredEm')}
@@ -499,13 +499,13 @@ export default function HomePage() {
       <Header overHero />
       <Hero />
       <PartnersSection variant="strip" />
-      <Manifesto homes={homes} />
-      <CompoundGrid index="02" limit={8} />
+      <CompoundGrid index="01" limit={8} />
       <ProjectMarquee />
       <FeaturedRail items={featured} loading={loading} />
       <TrustSection />
       <Interlude />
       <HostCta />
+      <Manifesto homes={homes} />
       <Footer />
     </div>
   );

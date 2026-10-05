@@ -27,7 +27,7 @@ export default function HostCta() {
 
         <div>
           <Reveal className="mb-6 flex items-center gap-3 text-soul-muted">
-            <span className="g-index">(05)</span>
+            <span className="g-index">(04)</span>
             <span className="h-px w-8 bg-soul-blue/25" />
             <span className="g-index">{t('home.hostEyebrow')}</span>
           </Reveal>

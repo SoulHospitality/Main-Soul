@@ -29,7 +29,7 @@ export default function TrustSection() {
       <div className="g-shell relative z-[2]">
         <SectionHead
           dark
-          index="04"
+          index="03"
           eyebrow={t('home.trustEyebrow')}
           lead={t('home.trustLead')}
           em={t('home.trustEm')}
