@@ -12,6 +12,12 @@ const {
 const { sendStaffTaskAssignedEmail, staffEmailFromUser } = require('../../services/staffTaskEmails');
 const { logAudit } = require('../../lib/audit');
 const { staffTaskTablesReady } = require('../../lib/staffTaskSchema');
+const {
+  upload,
+  attachCloudinaryUrls,
+  setCloudinaryFolder,
+  FOLDER_INSPECTIONS,
+} = require('../../config/cloudinary');
 
 const router = express.Router();
 
@@ -26,6 +32,7 @@ const TASK_SELECT = `
   t.completed_at,
   t.completed_by,
   t.completion_comment,
+  t.completion_photo_url,
   (
     SELECT COUNT(*)::int FROM staff_task_comments c WHERE c.task_id = t.id
   ) AS comment_count,
@@ -165,7 +172,7 @@ router.post('/staff-tasks', async (req, res, next) => {
       return res.status(403).json({ error: 'You can only assign tasks to staff you manage' });
     }
     const assigneeEmail = staffEmailFromUser(assignee);
-    if (!assigneeEmail) {
+    if (!assigneeEmail && assignee.role !== 'operations') {
       return res.status(400).json({
         error: 'This person has no email on Users. Add the email there, then send the task.',
       });
@@ -189,7 +196,7 @@ router.post('/staff-tasks', async (req, res, next) => {
 
     let emailSent = false;
     let emailError = null;
-    try {
+    if (assigneeEmail) try {
       await sendStaffTaskAssignedEmail({
         to: assigneeEmail,
         assigneeName: assignee.full_name,
@@ -218,15 +225,25 @@ router.post('/staff-tasks', async (req, res, next) => {
   }
 });
 
-router.post('/staff-tasks/:id/complete', async (req, res, next) => {
+router.post(
+  '/staff-tasks/:id/complete',
+  upload.single('photo'),
+  setCloudinaryFolder(FOLDER_INSPECTIONS),
+  attachCloudinaryUrls,
+  async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id) || id < 1) {
       return res.status(400).json({ error: 'Invalid task' });
     }
 
+    const photoUrl = req.file ? req.file.secure_url || req.file.path || null : null;
+    const isOps = req.user.role === 'operations';
+    if (isOps && !photoUrl) {
+      return res.status(400).json({ error: 'Take a photo to mark this task done' });
+    }
     const comment = String(req.body?.comment || req.body?.completion_comment || '').trim();
-    if (!comment) {
+    if (!comment && !isOps) {
       return res.status(400).json({ error: 'A completion comment is required' });
     }
 
@@ -247,17 +264,17 @@ router.post('/staff-tasks/:id/complete', async (req, res, next) => {
 
     const { rows: updated } = await query(
       `UPDATE staff_tasks
-       SET completed_at = now(), completed_by = $2, completion_comment = $3
+       SET completed_at = now(), completed_by = $2, completion_comment = $3, completion_photo_url = $4
        WHERE id = $1 AND assignee_id = $2 AND completed_at IS NULL
-       RETURNING id, assignee_id, completed_at, completed_by, completion_comment`,
-      [id, req.user.id, comment]
+       RETURNING id, assignee_id, completed_at, completed_by, completion_comment, completion_photo_url`,
+      [id, req.user.id, comment || null, photoUrl]
     );
     await logAudit({
       userId: req.user.id,
       action: 'COMPLETE_STAFF_TASK',
       entityType: 'staff_task',
       entityId: task.id,
-      details: { title: task.title, completion_comment: comment },
+      details: { title: task.title, completion_comment: comment || null, photo: !!photoUrl },
     });
     res.json({ ok: true, ...updated[0] });
   } catch (e) {

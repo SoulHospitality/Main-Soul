@@ -159,7 +159,54 @@ async function sendCheckoutFeedbackWhatsApp(reservation) {
   }
 }
 
+/** Tells the guest which ops agent will meet them at check-in. */
+async function sendCheckinAgentWhatsApp(reservation, agent) {
+  if (!whatsappConfigured()) return { skipped: true, reason: 'not_configured' };
+
+  const phone = reservation?.guest_phone;
+  if (!toWhatsAppRecipient(phone)) return { skipped: true, reason: 'invalid_phone' };
+
+  const entityId = `${reservation.id}:${agent.id}`;
+  if (await alreadySent('checkin_agent', 'reservation', entityId)) {
+    return { skipped: true, reason: 'already_sent' };
+  }
+
+  const templateName = process.env.WHATSAPP_TEMPLATE_CHECKIN_AGENT || 'checkin_agent';
+  try {
+    const result = await sendWhatsAppTemplate({
+      to: phone,
+      templateName,
+      bodyParams: [
+        reservation.guest_name || 'Guest',
+        agent.full_name || 'Soul Hospitality',
+        agent.phone || '—',
+      ],
+    });
+    if (result.skipped) return result;
+    await recordSend({
+      kind: 'checkin_agent',
+      entityType: 'reservation',
+      entityId,
+      phone: result.recipient,
+      status: 'sent',
+      providerMessageId: result.messageId,
+    });
+    return result;
+  } catch (err) {
+    await recordSend({
+      kind: 'checkin_agent',
+      entityType: 'reservation',
+      entityId,
+      phone: toWhatsAppRecipient(phone),
+      status: 'failed',
+      errorMessage: err.message,
+    });
+    throw err;
+  }
+}
+
 module.exports = {
   sendBookingAcceptedWhatsApp,
   sendCheckoutFeedbackWhatsApp,
+  sendCheckinAgentWhatsApp,
 };

@@ -7,6 +7,9 @@ import {
   SprayCan,
   Building2,
   ClipboardCheck,
+  Camera,
+  Trophy,
+  ShieldAlert,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { canAccess } from '../utils/permissions';
@@ -18,16 +21,22 @@ import { TodayCleansSection } from './HkTodayCleans';
 import { CleansHistorySection } from './HkCleansHistory';
 import { UnitCleansSummarySection } from './HkUnitCleansSummary';
 import { UnitInspectionsSection } from './OpsUnitInspections';
+import { AttendanceSection } from './OpsAttendance';
+import { PerformanceSection } from './OpsPerformance';
+import { DamageReportsSection } from './OpsDamageReports';
 
 const TABS = [
   { id: 'today', label: 'Check-ins', icon: KeyRound, page: 'ops_checkins' },
   { id: 'checkouts', label: 'Checkouts', icon: LogOut, page: 'ops_checkins' },
-  { id: 'cleans', label: "Today's cleans", icon: SprayCan, page: 'hk_today' },
+  { id: 'cleans', label: 'Cleaning', icon: SprayCan, page: 'hk_today' },
   { id: 'cleans-history', label: 'Cleans history', icon: History, page: 'hk_today' },
   { id: 'unit-cleans', label: 'Unit cleans', icon: Building2, page: 'hk_today' },
   { id: 'history', label: 'Check-ins history', icon: History, page: 'ops_checkins' },
   { id: 'comments', label: 'Check-in comments', icon: MessageSquareText, page: 'ops_comments' },
   { id: 'inspections', label: 'New unit inspections', icon: ClipboardCheck, page: 'unit_inspections' },
+  { id: 'damages', label: 'Damage reports', icon: ShieldAlert, page: 'damage_reports' },
+  { id: 'attendance', label: 'Attendance', icon: Camera, page: 'ops_team' },
+  { id: 'performance', label: 'Performance', icon: Trophy, page: 'ops_team' },
 ];
 
 const TAB_ALIASES = {
@@ -46,6 +55,9 @@ const TAB_ALIASES = {
   'checkin-comments': 'comments',
   inspections: 'inspections',
   'unit-inspections': 'inspections',
+  damages: 'damages',
+  attendance: 'attendance',
+  performance: 'performance',
 };
 
 export default function Operations() {
@@ -68,7 +80,7 @@ export default function Operations() {
       <div className="page-header mb-0">
         <h1 className="page-title">Operations</h1>
         <p className="page-subtitle">
-          Check-ins, checkouts, cleans, history, agent comments, and new unit inspections
+          Check-ins, checkouts, cleaning, history, comments, inspections, damage reports, attendance and performance
         </p>
       </div>
 
@@ -102,6 +114,9 @@ export default function Operations() {
       {resolvedTab === 'history' ? <CheckinsHistorySection embedded /> : null}
       {resolvedTab === 'comments' ? <CheckinCommentsSection embedded /> : null}
       {resolvedTab === 'inspections' ? <UnitInspectionsSection /> : null}
+      {resolvedTab === 'damages' ? <DamageReportsSection /> : null}
+      {resolvedTab === 'attendance' ? <AttendanceSection /> : null}
+      {resolvedTab === 'performance' ? <PerformanceSection /> : null}
     </div>
   );
 }

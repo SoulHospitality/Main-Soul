@@ -1,12 +1,21 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, KeyRound, Sparkles } from 'lucide-react';
+import { CalendarRange, CheckCircle2, History, KeyRound, MessageSquarePlus, Sparkles, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import { useAuth } from '../context/AuthContext';
 import { currency } from '../utils/formatters';
 import { OpsDateRangeFilter, formatOpsDay } from '../components/OpsDateRangeFilter';
+import { ProofPicker } from '../components/CameraCapture';
+import {
+  CancelCheckinModal,
+  ChangeStayModal,
+  CheckinHistoryModal,
+  OpsCommentModal,
+  ReassignReasonModal,
+  ReservationContext,
+} from '../components/OpsCheckinActions';
 
 function MoneyLine({ label, value, emphasize = false, showZero = false }) {
   if (value == null || (!showZero && Number(value) === 0)) return null;
@@ -58,7 +67,6 @@ function PaymentDetails({ row }) {
         value={b.service_fees}
       />
       <MoneyLine label="Insurance" value={b.insurance} />
-      <MoneyLine label="Security deposit" value={b.security_deposit} />
       {b.owner_collected_amount > 0 && (
         <MoneyLine
           label={`Owner collected${b.owner_collected_type ? ` (${b.owner_collected_type})` : ''}`}
@@ -88,7 +96,6 @@ const BILL_FIELDS = [
   { key: 'beach_access_fees', label: 'Beach access' },
   { key: 'service_fees', label: 'Service fees' },
   { key: 'insurance', label: 'Insurance' },
-  { key: 'security_deposit', label: 'Security deposit' },
 ];
 
 function seedBillDraft(row) {
@@ -156,6 +163,7 @@ function CollectPaymentMethods({
           <option value="cash">Cash</option>
           <option value="instapay">InstaPay</option>
           <option value="split">Both (cash + InstaPay)</option>
+          <option value="other">Other</option>
         </select>
       </div>
       {isSplit ? (
@@ -191,7 +199,13 @@ function CollectPaymentMethods({
 export function CheckinsTodaySection({ embedded = false }) {
   const { user } = useAuth();
   const qc = useQueryClient();
-  const [range, setRange] = useState('month');
+  const [range, setRange] = useState('today');
+  const [proofDrafts, setProofDrafts] = useState({});
+  const [cancelRow, setCancelRow] = useState(null);
+  const [stayRow, setStayRow] = useState(null);
+  const [historyRow, setHistoryRow] = useState(null);
+  const [commentTarget, setCommentTarget] = useState(null);
+  const [pendingAssign, setPendingAssign] = useState(null);
   const [collectingId, setCollectingId] = useState(null);
   const [collectModes, setCollectModes] = useState({});
   const [billDrafts, setBillDrafts] = useState({});
@@ -234,28 +248,19 @@ export function CheckinsTodaySection({ embedded = false }) {
   });
 
   const collectMutation = useMutation({
-    mutationFn: ({
-      id,
-      collect_mode,
-      amount,
-      payment_method,
-      cash_amount,
-      instapay_amount,
-      bill,
-      comment,
-    }) =>
-      api.post(`/ops/checkins-today/${id}/collect`, {
-        collect_mode,
-        amount,
-        payment_method,
-        cash_amount,
-        instapay_amount,
-        bill,
-        comment,
-      }),
-    onSuccess: () => {
+    mutationFn: ({ id, bill, proof, ...fields }) => {
+      const fd = new FormData();
+      Object.entries(fields).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '') fd.append(k, String(v));
+      });
+      if (bill) fd.append('bill', JSON.stringify(bill));
+      if (proof) fd.append('proof', proof);
+      return api.post(`/ops/checkins-today/${id}/collect`, fd);
+    },
+    onSuccess: (_res, vars) => {
       toast.success('Money marked as collected');
       setCollectingId(null);
+      setProofDrafts((prev) => ({ ...prev, [vars.id]: null }));
       qc.invalidateQueries({ queryKey: ['ops-checkins-today'] });
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Collect failed'),
@@ -282,10 +287,11 @@ export function CheckinsTodaySection({ embedded = false }) {
   });
 
   const assignMutation = useMutation({
-    mutationFn: ({ id, staff_id }) =>
-      api.post(`/ops/checkins-today/${id}/assign`, { staff_id: staff_id || null }),
+    mutationFn: ({ id, staff_id, reason }) =>
+      api.post(`/ops/checkins-today/${id}/assign`, { staff_id: staff_id || null, reason }),
     onSuccess: () => {
       toast.success('Assignment updated');
+      setPendingAssign(null);
       invalidateCheckins();
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Assign failed'),
@@ -421,6 +427,51 @@ export function CheckinsTodaySection({ embedded = false }) {
                           Assigned: {r.ops_assignee_name}
                         </div>
                       ) : null}
+                      <ReservationContext row={r} />
+                      {r.ops_adjust_comment ? (
+                        <div className="mt-1 text-[11px] text-indigo-700">
+                          Stay changed: {r.ops_adjust_amount >= 0 ? 'collect' : 'refund'}{' '}
+                          {currency(Math.abs(r.ops_adjust_amount || 0))}
+                        </div>
+                      ) : null}
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        <button
+                          type="button"
+                          className="btn-secondary text-[11px] px-2 py-1"
+                          onClick={() => setHistoryRow(r)}
+                          title="Check-in history"
+                        >
+                          <History className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-secondary text-[11px] px-2 py-1"
+                          onClick={() => setCommentTarget({ row: r, kind: 'checkin' })}
+                          title="Add comment"
+                        >
+                          <MessageSquarePlus className="w-3.5 h-3.5" />
+                        </button>
+                        {!r.ops_handed_over ? (
+                          <>
+                            <button
+                              type="button"
+                              className="btn-secondary text-[11px] px-2 py-1"
+                              onClick={() => setStayRow(r)}
+                              title="Edit stay dates"
+                            >
+                              <CalendarRange className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-secondary text-[11px] px-2 py-1 text-red-700"
+                              onClick={() => setCancelRow(r)}
+                              title="Cancel check-in"
+                            >
+                              <XCircle className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="py-4 px-4 min-w-[9rem]">
                       <div className="font-semibold text-gray-900">{r.unit_number || '—'}</div>
@@ -448,12 +499,14 @@ export function CheckinsTodaySection({ embedded = false }) {
                           className="input text-sm py-1.5"
                           value={r.ops_assigned_to || ''}
                           disabled={assignMutation.isPending}
-                          onChange={(e) =>
-                            assignMutation.mutate({
-                              id: r.id,
-                              staff_id: e.target.value ? Number(e.target.value) : null,
-                            })
-                          }
+                          onChange={(e) => {
+                            const staffId = e.target.value ? Number(e.target.value) : null;
+                            if (r.ops_assigned_to && Number(r.ops_assigned_to) !== Number(staffId || 0)) {
+                              setPendingAssign({ id: r.id, staff_id: staffId });
+                              return;
+                            }
+                            assignMutation.mutate({ id: r.id, staff_id: staffId });
+                          }}
                         >
                           <option value="">Unassigned</option>
                           {agents.map((a) => (
@@ -607,6 +660,26 @@ export function CheckinsTodaySection({ embedded = false }) {
                                   setInstapayDrafts((prev) => ({ ...prev, [r.id]: v }))
                                 }
                               />
+                              {method === 'other' && !isCustom ? (
+                                <label className="block text-xs space-y-1">
+                                  <span className="text-gray-600 font-medium">
+                                    Comment (required for Other)
+                                  </span>
+                                  <textarea
+                                    className="input text-sm py-1.5 min-h-[3.5rem]"
+                                    value={collectCommentDrafts[r.id] || ''}
+                                    onChange={(e) =>
+                                      setCollectCommentDrafts((prev) => ({ ...prev, [r.id]: e.target.value }))
+                                    }
+                                    placeholder="How was it paid?"
+                                  />
+                                </label>
+                              ) : null}
+                              <ProofPicker
+                                label="Transaction proof"
+                                files={proofDrafts[r.id] || null}
+                                onChange={(file) => setProofDrafts((prev) => ({ ...prev, [r.id]: file }))}
+                              />
 
                               <button
                                 type="button"
@@ -627,6 +700,11 @@ export function CheckinsTodaySection({ embedded = false }) {
                                     toast.error('Add a comment explaining the bill edit');
                                     return;
                                   }
+                                  if (method === 'other' && !comment) {
+                                    toast.error('Add a comment for the Other payment method');
+                                    return;
+                                  }
+                                  const proof = proofDrafts[r.id] || undefined;
 
                                   const bill = isCustom
                                     ? Object.fromEntries(
@@ -655,6 +733,7 @@ export function CheckinsTodaySection({ embedded = false }) {
                                       cash_amount: cash,
                                       instapay_amount: instapay,
                                       bill,
+                                      proof,
                                       comment: comment || undefined,
                                     });
                                     return;
@@ -665,6 +744,7 @@ export function CheckinsTodaySection({ embedded = false }) {
                                     amount,
                                     payment_method: method,
                                     bill,
+                                    proof,
                                     comment: comment || undefined,
                                   });
                                 }}
@@ -764,6 +844,17 @@ export function CheckinsTodaySection({ embedded = false }) {
           </table>
         </div>
       )}
+      <CancelCheckinModal row={cancelRow} onClose={() => setCancelRow(null)} onDone={invalidateCheckins} />
+      <ChangeStayModal row={stayRow} onClose={() => setStayRow(null)} onDone={invalidateCheckins} />
+      <CheckinHistoryModal row={historyRow} onClose={() => setHistoryRow(null)} />
+      <OpsCommentModal target={commentTarget} onClose={() => setCommentTarget(null)} />
+      <ReassignReasonModal
+        open={!!pendingAssign}
+        busy={assignMutation.isPending}
+        onClose={() => setPendingAssign(null)}
+        onConfirm={(reason) => assignMutation.mutate({ ...pendingAssign, reason })}
+        title="Change check-in agent"
+      />
     </div>
   );
 }

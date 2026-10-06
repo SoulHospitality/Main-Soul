@@ -67,6 +67,10 @@ function canAssignTaskTo(actor, assignee) {
   if (actor.role === 'reservations_manager' && isReservationTeamTaskRole(assignee.role)) {
     return true;
   }
+  // The Operations Manager owns the whole operations team.
+  if (actor.role === 'operations_supervisor' && assignee.role === 'operations') {
+    return true;
+  }
   // Other managers may only assign to staff linked to them (manager_id / staff_user_managers).
   return isDirectStaffManager(actor.id, assignee);
 }
@@ -94,6 +98,9 @@ function staffTaskScopeSql(managerParam, staffAlias, actorRole) {
   if (actorRole === 'reservations_manager') {
     return sqlReservationTeamRoles(staffAlias);
   }
+  if (actorRole === 'operations_supervisor') {
+    return `${staffAlias}.role = 'operations'`;
+  }
   return `(
     ${sqlLineManagerTaskScope(managerParam, staffAlias)}
     AND ${sqlTaskRecipientRoles(staffAlias)}
@@ -101,7 +108,9 @@ function staffTaskScopeSql(managerParam, staffAlias, actorRole) {
 }
 
 function staffTaskScopeParams(actorRole, managerId) {
-  if (actorRole === 'admin' || actorRole === 'reservations_manager') return [];
+  if (actorRole === 'admin' || actorRole === 'reservations_manager' || actorRole === 'operations_supervisor') {
+    return [];
+  }
   return [managerId];
 }
 

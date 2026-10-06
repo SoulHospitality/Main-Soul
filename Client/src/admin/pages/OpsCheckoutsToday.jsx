@@ -1,20 +1,41 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, LogOut } from 'lucide-react';
+import { CheckCircle2, History, LogOut, MessageSquarePlus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import { currency } from '../utils/formatters';
+import { useAuth } from '../context/AuthContext';
 import { OpsDateRangeFilter, formatOpsDay } from '../components/OpsDateRangeFilter';
+import { ProofPicker } from '../components/CameraCapture';
+import {
+  CheckinHistoryModal,
+  OpsCommentModal,
+  ReassignReasonModal,
+  ReservationContext,
+} from '../components/OpsCheckinActions';
+
+const SHARE_LABELS = {
+  pending: 'Owner share pending approval',
+  approved: 'Shared with owner',
+  rejected: 'Not shared with owner',
+};
 
 export function CheckoutsTodaySection({ embedded = false }) {
   const qc = useQueryClient();
-  const [range, setRange] = useState('month');
+  const { user } = useAuth();
+  const canAssign = user?.role === 'admin' || user?.role === 'operations_supervisor';
+  const [range, setRange] = useState('today');
   const [refundingId, setRefundingId] = useState(null);
   const [methodDrafts, setMethodDrafts] = useState({});
   const [refundDrafts, setRefundDrafts] = useState({});
   const [damageDrafts, setDamageDrafts] = useState({});
   const [notesDrafts, setNotesDrafts] = useState({});
+  const [photoDrafts, setPhotoDrafts] = useState({});
+  const [shareDrafts, setShareDrafts] = useState({});
+  const [pendingAssign, setPendingAssign] = useState(null);
+  const [historyRow, setHistoryRow] = useState(null);
+  const [commentTarget, setCommentTarget] = useState(null);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['ops-checkouts-today', range],
@@ -32,20 +53,45 @@ export function CheckoutsTodaySection({ embedded = false }) {
   });
   const rows = data?.items || [];
 
+  const { data: agents = [] } = useQuery({
+    queryKey: ['ops-agents'],
+    queryFn: async () => {
+      const r = await api.get('/ops/agents');
+      return Array.isArray(r.data) ? r.data : [];
+    },
+    enabled: canAssign,
+  });
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['ops-checkouts-today'] });
+
   const refundMutation = useMutation({
-    mutationFn: ({ id, payment_method, refunded_amount, damage_amount, notes }) =>
-      api.post(`/ops/checkouts-today/${id}/refund-insurance`, {
-        payment_method,
-        refunded_amount,
-        damage_amount,
-        notes,
-      }),
-    onSuccess: () => {
+    mutationFn: ({ id, payment_method, refunded_amount, notes, photos, share_with_owner }) => {
+      const fd = new FormData();
+      fd.append('payment_method', payment_method);
+      fd.append('refunded_amount', String(refunded_amount));
+      if (notes) fd.append('notes', notes);
+      if (share_with_owner) fd.append('share_with_owner', 'true');
+      (photos || []).forEach((f) => fd.append('damage_photos', f));
+      return api.post(`/ops/checkouts-today/${id}/refund-insurance`, fd);
+    },
+    onSuccess: (_res, vars) => {
       toast.success('Insurance payout recorded');
       setRefundingId(null);
-      qc.invalidateQueries({ queryKey: ['ops-checkouts-today'] });
+      setPhotoDrafts((prev) => ({ ...prev, [vars.id]: [] }));
+      invalidate();
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Could not record insurance payout'),
+  });
+
+  const assignMutation = useMutation({
+    mutationFn: ({ id, staff_id, reason }) =>
+      api.post(`/ops/checkouts-today/${id}/assign`, { staff_id: staff_id || null, reason }),
+    onSuccess: () => {
+      toast.success('Checkout assignment updated');
+      setPendingAssign(null);
+      invalidate();
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Could not assign'),
   });
 
   function openRefund(row) {
@@ -129,6 +175,7 @@ export function CheckoutsTodaySection({ embedded = false }) {
                 <th className="py-3 px-4">Date</th>
                 <th className="py-3 px-4">Guest</th>
                 <th className="py-3 px-4">Unit</th>
+                <th className="py-3 px-4">Checkout agent</th>
                 <th className="py-3 px-4">Insurance</th>
                 <th className="py-3 px-4">Refund status</th>
                 <th className="py-3 px-4">Action</th>
@@ -141,22 +188,72 @@ export function CheckoutsTodaySection({ embedded = false }) {
                 const method = methodDrafts[r.id] || 'cash';
                 const refundAmt = refundDrafts[r.id] ?? String(insurance);
                 const damageAmt = damageDrafts[r.id] ?? '0';
+                const isShort = (parseFloat(refundAmt) || 0) + 0.009 < insurance;
+                const photos = photoDrafts[r.id] || [];
                 return (
                   <tr key={r.id} className="border-b last:border-0 align-top">
                     <td className="py-4 px-4 whitespace-nowrap text-gray-600">
                       {formatOpsDay(r.check_out)}
                     </td>
-                    <td className="py-4 px-4 min-w-[10rem]">
+                    <td className="py-4 px-4 min-w-[12rem]">
                       <div className="font-semibold text-gray-900">{r.guest_name || '—'}</div>
                       {r.guest_phone ? (
                         <div className="text-xs text-gray-500">{r.guest_phone}</div>
                       ) : null}
+                      <ReservationContext row={r} />
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        <button
+                          type="button"
+                          className="btn-secondary text-[11px] px-2 py-1"
+                          onClick={() => setHistoryRow(r)}
+                          title="Stay history"
+                        >
+                          <History className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-secondary text-[11px] px-2 py-1"
+                          onClick={() => setCommentTarget({ row: r, kind: 'checkout' })}
+                          title="Add checkout comment"
+                        >
+                          <MessageSquarePlus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                     <td className="py-4 px-4 min-w-[9rem]">
                       <div className="font-semibold text-gray-900">{r.unit_number || '—'}</div>
                       <div className="text-xs text-gray-500 truncate max-w-[10rem]">
                         {r.unit_title || r.project || ''}
                       </div>
+                    </td>
+                    <td className="py-4 px-4 min-w-[11rem]">
+                      {canAssign ? (
+                        <select
+                          className="input text-xs py-1.5"
+                          value={r.checkout_handler_id || ''}
+                          disabled={assignMutation.isPending}
+                          onChange={(e) => {
+                            const staffId = e.target.value ? Number(e.target.value) : null;
+                            if (r.checkout_handler_id && Number(r.checkout_handler_id) !== Number(staffId || 0)) {
+                              setPendingAssign({ id: r.id, staff_id: staffId });
+                              return;
+                            }
+                            assignMutation.mutate({ id: r.id, staff_id: staffId });
+                          }}
+                        >
+                          <option value="">Unassigned</option>
+                          {agents.map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {a.full_name || a.username}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="text-xs text-gray-700">{r.checkout_handler_name || '—'}</span>
+                      )}
+                      {r.ops_assignee_name && r.checkout_handler_name !== r.ops_assignee_name ? (
+                        <div className="mt-1 text-[11px] text-gray-500">Check-in: {r.ops_assignee_name}</div>
+                      ) : null}
                     </td>
                     <td className="py-4 px-4">
                       {insurance > 0.009 ? (
@@ -189,6 +286,25 @@ export function CheckoutsTodaySection({ embedded = false }) {
                               Damage {currency(r.insurance_damage_amount)}
                             </div>
                           ) : null}
+                          {r.insurance_refund_notes ? (
+                            <div className="text-[11px] text-gray-600 max-w-[14rem] whitespace-pre-line">
+                              {r.insurance_refund_notes}
+                            </div>
+                          ) : null}
+                          {(r.insurance_damage_photo_urls || []).length ? (
+                            <div className="flex flex-wrap gap-1 pt-1">
+                              {r.insurance_damage_photo_urls.map((url) => (
+                                <a key={url} href={url} target="_blank" rel="noreferrer">
+                                  <img src={url} alt="Damage" className="h-10 w-10 rounded object-cover border" />
+                                </a>
+                              ))}
+                            </div>
+                          ) : null}
+                          {r.insurance_damage_share_status ? (
+                            <div className="text-[11px] text-indigo-700">
+                              {SHARE_LABELS[r.insurance_damage_share_status] || r.insurance_damage_share_status}
+                            </div>
+                          ) : null}
                           {r.insurance_refunded_by_name ? (
                             <div className="text-[11px] text-gray-500">
                               by {r.insurance_refunded_by_name}
@@ -203,7 +319,7 @@ export function CheckoutsTodaySection({ embedded = false }) {
                         <span className="text-xs text-gray-400">—</span>
                       )}
                     </td>
-                    <td className="py-4 px-4 min-w-[16rem]">
+                    <td className="py-4 px-4 min-w-[17rem]">
                       {r.can_refund_insurance ? (
                         <div className="space-y-2">
                           {refundingId === r.id ? (
@@ -255,34 +371,75 @@ export function CheckoutsTodaySection({ embedded = false }) {
                                   <option value="instapay">InstaPay</option>
                                   <option value="bank_transfer">Bank transfer</option>
                                 </select>
+                                {method === 'cash' && (parseFloat(refundAmt) || 0) > 0 ? (
+                                  <p className="mt-1 text-[11px] text-amber-700">Recorded as cash out from petty cash.</p>
+                                ) : null}
                               </div>
                               <div>
-                                <label className="text-[10px] uppercase text-gray-500">Notes</label>
-                                <input
-                                  className="input text-sm py-1.5"
+                                <label className="text-[10px] uppercase text-gray-500">
+                                  {isShort ? 'Comment (required)' : 'Notes'}
+                                </label>
+                                <textarea
+                                  className="input text-sm py-1.5 min-h-[3rem]"
                                   value={notesDrafts[r.id] || ''}
                                   onChange={(e) =>
                                     setNotesDrafts((prev) => ({ ...prev, [r.id]: e.target.value }))
                                   }
-                                  placeholder="Optional"
+                                  placeholder={isShort ? 'Why is part of the insurance kept?' : 'Optional'}
                                 />
                               </div>
+                              {isShort ? (
+                                <>
+                                  <ProofPicker
+                                    label="Damage photos"
+                                    required
+                                    multiple
+                                    accept="image/*"
+                                    files={photos}
+                                    onChange={(next) => setPhotoDrafts((prev) => ({ ...prev, [r.id]: next }))}
+                                  />
+                                  <label className="flex items-start gap-2 text-xs text-gray-700">
+                                    <input
+                                      type="checkbox"
+                                      className="mt-0.5"
+                                      checked={!!shareDrafts[r.id]}
+                                      onChange={(e) =>
+                                        setShareDrafts((prev) => ({ ...prev, [r.id]: e.target.checked }))
+                                      }
+                                    />
+                                    <span>
+                                      Share the damage photos with the owner
+                                      {canAssign ? '' : ' (needs Operations Manager approval)'}
+                                    </span>
+                                  </label>
+                                </>
+                              ) : null}
                               <div className="flex gap-2">
                                 <button
                                   type="button"
                                   className="btn-primary text-xs flex-1 justify-center"
                                   disabled={refundMutation.isPending}
-                                  onClick={() =>
+                                  onClick={() => {
+                                    const notes = String(notesDrafts[r.id] || '').trim();
+                                    if (isShort && !notes) {
+                                      toast.error('Add a comment explaining the kept amount');
+                                      return;
+                                    }
+                                    if (isShort && !photos.length) {
+                                      toast.error('Add at least one damage photo');
+                                      return;
+                                    }
                                     refundMutation.mutate({
                                       id: r.id,
                                       payment_method: method,
                                       refunded_amount: parseFloat(refundAmt) || 0,
-                                      damage_amount: parseFloat(damageAmt) || 0,
-                                      notes: notesDrafts[r.id] || undefined,
-                                    })
-                                  }
+                                      notes: notes || undefined,
+                                      photos: isShort ? photos : [],
+                                      share_with_owner: isShort && !!shareDrafts[r.id],
+                                    });
+                                  }}
                                 >
-                                  Confirm payout
+                                  {refundMutation.isPending ? 'Saving…' : 'Confirm payout'}
                                 </button>
                                 <button
                                   type="button"
@@ -315,6 +472,15 @@ export function CheckoutsTodaySection({ embedded = false }) {
           </table>
         </div>
       )}
+      <CheckinHistoryModal row={historyRow} onClose={() => setHistoryRow(null)} />
+      <OpsCommentModal target={commentTarget} onClose={() => setCommentTarget(null)} />
+      <ReassignReasonModal
+        open={!!pendingAssign}
+        busy={assignMutation.isPending}
+        onClose={() => setPendingAssign(null)}
+        onConfirm={(reason) => assignMutation.mutate({ ...pendingAssign, reason })}
+        title="Change checkout agent"
+      />
     </div>
   );
 }

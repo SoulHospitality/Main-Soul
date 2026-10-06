@@ -28,6 +28,7 @@ import {
   ListTodo,
   Gauge,
   MessageSquareText,
+  ShieldAlert,
 } from 'lucide-react';
 
 const NAV_SECTIONS = [
@@ -54,6 +55,7 @@ const NAV_SECTIONS = [
       { path: '/admin/owner/blocks', label: 'Owner blocks', icon: CalendarDays, page: 'owner_blocks', roles: ['owners_relations'] },
       { path: '/admin/users', label: 'Owners', icon: UserCircle, page: 'owners', roles: ['unit_acquisition_manager'] },
       { path: '/admin/owner-comments', label: 'Owner comments', icon: MessageSquareText, page: 'owner_comments', badge: 'owner_comments_unread' },
+      { path: '/admin/damage-reports', label: 'Damage reports', icon: ShieldAlert, page: 'damage_reports', roles: ['owners_relations'] },
     ],
   },
   {

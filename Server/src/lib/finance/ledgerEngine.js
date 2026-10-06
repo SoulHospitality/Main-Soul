@@ -1103,6 +1103,7 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
   }
 
   for (const pc of data.petty || []) {
+    if (pc.source) continue;
     const amt = parseFloat(pc.amount) || 0;
     const outflow = String(pc.entry_type || 'out') === 'out';
     const lines = outflow

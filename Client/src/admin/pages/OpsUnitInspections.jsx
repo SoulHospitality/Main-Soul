@@ -94,64 +94,177 @@ async function uploadVideo(file, sig, onProgress) {
   return result;
 }
 
-function ChecklistEditor({ items, onChange, disabled }) {
-  const [draft, setDraft] = useState('');
-  const add = () => {
-    const label = draft.trim();
+function defaultSectionsFor(unit) {
+  const beds = Math.max(0, Math.min(20, Number(unit?.beds) || 0));
+  const baths = Math.max(0, Math.min(20, Math.ceil(Number(unit?.baths) || 0)));
+  const sections = [];
+  for (let i = 1; i <= beds; i += 1) sections.push(`Bedroom ${i}`);
+  for (let i = 1; i <= baths; i += 1) sections.push(`Bathroom ${i}`);
+  sections.push('Kitchen');
+  if (unit?.has_nanny_room) sections.push('Nanny room');
+  sections.push('General');
+  return sections;
+}
+
+function groupBySection(items, defaults = []) {
+  const order = [...defaults];
+  items.forEach((it) => {
+    const s = it.section || 'General';
+    if (!order.includes(s)) order.push(s);
+  });
+  return order.map((section) => [
+    section,
+    items.map((it, idx) => ({ it, idx })).filter(({ it }) => (it.section || 'General') === section),
+  ]);
+}
+
+function itemText(item) {
+  const qty = Number(item.qty) > 1 ? `${item.qty} × ` : '';
+  return `${qty}${item.label}`;
+}
+
+const EMPTY_DRAFT = { label: '', qty: '1', brand: '' };
+
+function ChecklistEditor({ items, onChange, disabled, defaultSections = ['General'] }) {
+  const [drafts, setDrafts] = useState({});
+  const [extraSections, setExtraSections] = useState([]);
+  const [newSection, setNewSection] = useState('');
+  const groups = groupBySection(items, [...defaultSections, ...extraSections]);
+
+  const update = (idx, patch) => onChange(items.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
+  const add = (section) => {
+    const d = drafts[section] || EMPTY_DRAFT;
+    const label = d.label.trim();
     if (!label) return;
-    onChange([...items, { id: null, label, added_by: null }]);
-    setDraft('');
+    onChange([
+      ...items,
+      { id: null, section, label, qty: Math.max(1, Number(d.qty) || 1), brand: d.brand.trim(), added_by: null },
+    ]);
+    setDrafts((prev) => ({ ...prev, [section]: EMPTY_DRAFT }));
   };
+  const setDraft = (section, patch) =>
+    setDrafts((prev) => ({ ...prev, [section]: { ...(prev[section] || EMPTY_DRAFT), ...patch } }));
+
   return (
-    <div className="space-y-2">
-      {items.length ? (
-        <ol className="space-y-2">
-          {items.map((item, idx) => (
-            <li key={item.id || `new-${idx}`} className="flex items-center gap-2">
-              <span className="w-6 text-right text-xs text-gray-400 tabular-nums">{idx + 1}.</span>
-              <input
-                className="input text-sm py-1.5 flex-1"
-                value={item.label}
-                disabled={disabled}
-                onChange={(e) =>
-                  onChange(items.map((it, i) => (i === idx ? { ...it, label: e.target.value } : it)))
-                }
-              />
-              {item.added_by === 'manager' ? (
-                <span className="text-[10px] uppercase text-indigo-600 font-semibold">Manager</span>
-              ) : null}
-              {!disabled ? (
-                <button
-                  type="button"
-                  className="p-1.5 text-gray-400 hover:text-red-600"
-                  onClick={() => onChange(items.filter((_, i) => i !== idx))}
-                  aria-label="Remove item"
-                >
-                  <Trash2 className="w-4 h-4" />
+    <div className="space-y-4">
+      {groups.map(([section, entries]) => {
+        const d = drafts[section] || EMPTY_DRAFT;
+        return (
+          <div key={section} className="rounded-xl border p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-semibold text-gray-900">{section}</h4>
+              <span className="text-[11px] text-gray-400">{entries.length} item{entries.length === 1 ? '' : 's'}</span>
+            </div>
+            {entries.length ? (
+              <div className="space-y-1.5">
+                <div className="hidden sm:grid grid-cols-[1fr_4.5rem_9rem_2rem] gap-2 text-[10px] uppercase text-gray-400">
+                  <span>Item</span>
+                  <span>Qty</span>
+                  <span>Brand</span>
+                  <span />
+                </div>
+                {entries.map(({ it, idx }) => (
+                  <div key={it.id || `new-${idx}`} className="grid grid-cols-[1fr_4.5rem_9rem_2rem] gap-2 items-center">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <input
+                        className="input text-sm py-1.5 flex-1 min-w-0"
+                        value={it.label}
+                        disabled={disabled}
+                        onChange={(e) => update(idx, { label: e.target.value })}
+                      />
+                      {it.added_by === 'manager' ? (
+                        <span className="text-[10px] uppercase text-indigo-600 font-semibold">Mgr</span>
+                      ) : null}
+                    </div>
+                    <input
+                      type="number"
+                      min="1"
+                      className="input text-sm py-1.5"
+                      value={it.qty ?? 1}
+                      disabled={disabled}
+                      onChange={(e) => update(idx, { qty: e.target.value })}
+                    />
+                    <input
+                      className="input text-sm py-1.5"
+                      value={it.brand || ''}
+                      placeholder="Brand"
+                      disabled={disabled}
+                      onChange={(e) => update(idx, { brand: e.target.value })}
+                    />
+                    {!disabled ? (
+                      <button
+                        type="button"
+                        className="p-1.5 text-gray-400 hover:text-red-600"
+                        onClick={() => onChange(items.filter((_, i) => i !== idx))}
+                        aria-label="Remove item"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    ) : (
+                      <span />
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-gray-400">No items yet.</p>
+            )}
+            {!disabled ? (
+              <div className="grid grid-cols-[1fr_4.5rem_9rem_auto] gap-2 items-center pt-1">
+                <input
+                  className="input text-sm py-1.5"
+                  placeholder={section.startsWith('Bedroom') ? 'e.g. King bed' : section.startsWith('Bathroom') ? 'e.g. Water heater' : 'e.g. Fridge'}
+                  value={d.label}
+                  onChange={(e) => setDraft(section, { label: e.target.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      add(section);
+                    }
+                  }}
+                />
+                <input
+                  type="number"
+                  min="1"
+                  className="input text-sm py-1.5"
+                  value={d.qty}
+                  onChange={(e) => setDraft(section, { qty: e.target.value })}
+                />
+                <input
+                  className="input text-sm py-1.5"
+                  placeholder="Brand"
+                  value={d.brand}
+                  onChange={(e) => setDraft(section, { brand: e.target.value })}
+                />
+                <button type="button" className="btn-secondary text-sm inline-flex items-center gap-1" onClick={() => add(section)}>
+                  <Plus className="w-4 h-4" /> Add
                 </button>
-              ) : null}
-            </li>
-          ))}
-        </ol>
-      ) : (
-        <p className="text-sm text-gray-500">No items yet.</p>
-      )}
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
       {!disabled ? (
-        <div className="flex items-center gap-2 pt-1">
+        <div className="flex items-center gap-2">
           <input
             className="input text-sm py-1.5 flex-1"
-            placeholder="e.g. Check AC units in all bedrooms"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                add();
-              }
-            }}
+            placeholder="Add another area (e.g. Living room, Balcony)"
+            value={newSection}
+            onChange={(e) => setNewSection(e.target.value)}
           />
-          <button type="button" className="btn-secondary text-sm inline-flex items-center gap-1" onClick={add}>
-            <Plus className="w-4 h-4" /> Add
+          <button
+            type="button"
+            className="btn-secondary text-sm"
+            onClick={() => {
+              const name = newSection.trim();
+              if (!name) return;
+              if (!groups.some(([s]) => s.toLowerCase() === name.toLowerCase())) {
+                setExtraSections((prev) => [...prev, name]);
+              }
+              setNewSection('');
+            }}
+          >
+            <Plus className="w-4 h-4" /> Area
           </button>
         </div>
       ) : null}
@@ -284,23 +397,31 @@ function InspectionResults({ inspection }) {
   return (
     <div className="space-y-4">
       <InspectionVideo url={inspection.video_url} />
-      <ul className="divide-y border rounded-xl">
-        {inspection.checklist.map((item) => (
-          <li key={item.id} className="px-3 py-2 text-sm flex items-start gap-3">
-            <span
-              className={`mt-0.5 px-2 py-0.5 rounded-full text-[11px] font-semibold ${
-                item.result === 'issue' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'
-              }`}
-            >
-              {item.result === 'issue' ? 'Issue' : 'OK'}
-            </span>
-            <div>
-              <div className="text-gray-900">{item.label}</div>
-              {item.note ? <div className="text-xs text-gray-600 mt-0.5">{item.note}</div> : null}
-            </div>
-          </li>
-        ))}
-      </ul>
+      {groupBySection(inspection.checklist).filter(([, entries]) => entries.length).map(([section, entries]) => (
+        <div key={section} className="space-y-1">
+          <div className="text-xs font-semibold text-gray-700">{section}</div>
+          <ul className="divide-y border rounded-xl">
+            {entries.map(({ it: item }) => (
+              <li key={item.id} className="px-3 py-2 text-sm flex items-start gap-3">
+                <span
+                  className={`mt-0.5 px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                    item.result === 'issue' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'
+                  }`}
+                >
+                  {item.result === 'issue' ? 'Issue' : 'OK'}
+                </span>
+                <div>
+                  <div className="text-gray-900">
+                    {itemText(item)}
+                    {item.brand ? <span className="text-gray-500"> · {item.brand}</span> : null}
+                  </div>
+                  {item.note ? <div className="text-xs text-gray-600 mt-0.5">{item.note}</div> : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
       {inspection.agent_notes ? (
         <div>
           <div className="text-[10px] uppercase text-gray-500 mb-1">Agent notes</div>
@@ -334,7 +455,16 @@ function InspectionModal({ unitId, onClose, agents, isSupervisor, isAgent }) {
   useEffect(() => {
     if (!inspection) return;
     setAssignee(inspection.assigned_to ? String(inspection.assigned_to) : '');
-    setItems(inspection.checklist.map((it) => ({ id: it.id, label: it.label, added_by: it.added_by })));
+    setItems(
+      inspection.checklist.map((it) => ({
+        id: it.id,
+        section: it.section || 'General',
+        label: it.label,
+        qty: it.qty || 1,
+        brand: it.brand || '',
+        added_by: it.added_by,
+      }))
+    );
     setManagerNote(inspection.manager_note || '');
     setResults(
       Object.fromEntries(
@@ -350,7 +480,16 @@ function InspectionModal({ unitId, onClose, agents, isSupervisor, isAgent }) {
   };
   const onError = (fallback) => (e) => toast.error(e.response?.data?.error || e.message || fallback);
   const payloadItems = () =>
-    items.filter((it) => it.label.trim()).map((it) => ({ id: it.id, label: it.label.trim() }));
+    items
+      .filter((it) => it.label.trim())
+      .map((it) => ({
+        id: it.id,
+        section: it.section || 'General',
+        label: it.label.trim(),
+        qty: Math.max(1, Number(it.qty) || 1),
+        brand: String(it.brand || '').trim() || null,
+      }));
+  const defaultSections = defaultSectionsFor(data?.unit || inspection);
 
   const assignMutation = useMutation({
     mutationFn: () => api.post(`/ops/inspections/unit/${unitId}/assign`, { staff_id: Number(assignee) }),
@@ -447,11 +586,18 @@ function InspectionModal({ unitId, onClose, agents, isSupervisor, isAgent }) {
         <div className="space-y-6">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <StatusBadge status={status} />
-            {inspection.assignee_name ? (
-              <span className="text-sm text-gray-600">
-                Assigned to <span className="font-medium">{inspection.assignee_name}</span>
-              </span>
-            ) : null}
+            <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600">
+              {inspection.unit_added_by_name ? (
+                <span>
+                  Unit added by <span className="font-medium">{inspection.unit_added_by_name}</span>
+                </span>
+              ) : null}
+              {inspection.assignee_name ? (
+                <span>
+                  Assigned to <span className="font-medium">{inspection.assignee_name}</span>
+                </span>
+              ) : null}
+            </div>
           </div>
 
           {isSupervisor && status !== 'completed' ? (
@@ -542,12 +688,12 @@ function InspectionModal({ unitId, onClose, agents, isSupervisor, isAgent }) {
               <div>
                 <h3 className="font-semibold text-gray-900">Inspection checklist</h3>
                 <p className="text-xs text-gray-500">
-                  List everything you will check in this unit. The operations manager approves it before you
-                  inspect.
+                  List what is in each room — item, how many and the brand. The operations manager approves it
+                  before you inspect.
                   {status === 'checklist_submitted' ? ' Sent — you can still edit it until it is approved.' : ''}
                 </p>
               </div>
-              <ChecklistEditor items={items} onChange={setItems} />
+              <ChecklistEditor items={items} onChange={setItems} defaultSections={defaultSections} />
               <div className="flex justify-end">
                 <button
                   type="button"
@@ -574,7 +720,7 @@ function InspectionModal({ unitId, onClose, agents, isSupervisor, isAgent }) {
                   {formatDateTime(inspection.checklist_submitted_at)}. Edit, remove, or add items before approving.
                 </p>
               </div>
-              <ChecklistEditor items={items} onChange={setItems} />
+              <ChecklistEditor items={items} onChange={setItems} defaultSections={defaultSections} />
               <textarea
                 className="input text-sm min-h-[4rem]"
                 placeholder="Note for the agent (optional)"
@@ -609,50 +755,55 @@ function InspectionModal({ unitId, onClose, agents, isSupervisor, isAgent }) {
                 ) : null}
               </div>
 
-              <ul className="space-y-3">
-                {inspection.checklist.map((item, idx) => {
-                  const r = results[item.id] || {};
-                  const setR = (patch) => setResults((prev) => ({ ...prev, [item.id]: { ...r, ...patch } }));
-                  return (
-                    <li key={item.id} className="border rounded-xl p-3 space-y-2">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="text-sm text-gray-900">
-                          <span className="text-gray-400 mr-1">{idx + 1}.</span>
-                          {item.label}
-                        </div>
-                        <div className="flex gap-1 flex-shrink-0">
-                          {['ok', 'issue'].map((value) => (
-                            <button
-                              key={value}
-                              type="button"
+              {groupBySection(inspection.checklist).filter(([, entries]) => entries.length).map(([section, entries]) => (
+                <div key={section} className="space-y-2">
+                  <h4 className="text-sm font-semibold text-gray-800">{section}</h4>
+                  <ul className="space-y-2">
+                    {entries.map(({ it: item }) => {
+                      const r = results[item.id] || {};
+                      const setR = (patch) => setResults((prev) => ({ ...prev, [item.id]: { ...r, ...patch } }));
+                      return (
+                        <li key={item.id} className="border rounded-xl p-3 space-y-2">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="text-sm text-gray-900">
+                              {itemText(item)}
+                              {item.brand ? <span className="text-gray-500"> · {item.brand}</span> : null}
+                            </div>
+                            <div className="flex gap-1 flex-shrink-0">
+                              {['ok', 'issue'].map((value) => (
+                                <button
+                                  key={value}
+                                  type="button"
+                                  disabled={finishing}
+                                  onClick={() => setR({ result: value })}
+                                  className={`px-3 py-1 rounded-lg text-xs font-semibold border ${
+                                    r.result === value
+                                      ? value === 'ok'
+                                        ? 'bg-emerald-600 text-white border-emerald-600'
+                                        : 'bg-red-600 text-white border-red-600'
+                                      : 'bg-white text-gray-600 hover:bg-gray-50'
+                                  }`}
+                                >
+                                  {value === 'ok' ? 'OK' : 'Issue'}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          {r.result === 'issue' ? (
+                            <input
+                              className="input text-sm py-1.5"
+                              placeholder="Describe the issue"
+                              value={r.note || ''}
                               disabled={finishing}
-                              onClick={() => setR({ result: value })}
-                              className={`px-3 py-1 rounded-lg text-xs font-semibold border ${
-                                r.result === value
-                                  ? value === 'ok'
-                                    ? 'bg-emerald-600 text-white border-emerald-600'
-                                    : 'bg-red-600 text-white border-red-600'
-                                  : 'bg-white text-gray-600 hover:bg-gray-50'
-                              }`}
-                            >
-                              {value === 'ok' ? 'OK' : 'Issue'}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      {r.result === 'issue' ? (
-                        <input
-                          className="input text-sm py-1.5"
-                          placeholder="Describe the issue"
-                          value={r.note || ''}
-                          disabled={finishing}
-                          onChange={(e) => setR({ note: e.target.value })}
-                        />
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
+                              onChange={(e) => setR({ note: e.target.value })}
+                            />
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ))}
 
               <textarea
                 className="input text-sm min-h-[4rem]"
@@ -825,7 +976,12 @@ export function UnitInspectionsSection() {
                       </div>
                     </div>
                   </td>
-                  <td className="py-3 px-4 whitespace-nowrap">{formatDate(r.unit_created_at)}</td>
+                  <td className="py-3 px-4 whitespace-nowrap">
+                    {formatDate(r.unit_created_at)}
+                    {r.unit_added_by_name ? (
+                      <div className="text-[11px] text-gray-500">by {r.unit_added_by_name}</div>
+                    ) : null}
+                  </td>
                   <td className="py-3 px-4">
                     <StatusBadge status={r.status} />
                     {r.status === 'completed' ? (

@@ -46,6 +46,7 @@ const OwnerDateBlocks = lazy(() => import('./pages/OwnerDateBlocks'));
 const OwnerInspections = lazy(() => import('./pages/OwnerInspections'));
 const OwnerPortalComments = lazy(() => import('./pages/OwnerPortalComments'));
 const OwnerComments = lazy(() => import('./pages/OwnerComments'));
+const OpsDamageReports = lazy(() => import('./pages/OpsDamageReports'));
 const PromoCodes = lazy(() => import('./pages/PromoCodes'));
 const Reports = lazy(() => import('./pages/Reports'));
 const Performance = lazy(() => import('./pages/Performance'));
@@ -209,6 +210,7 @@ function AppRoutes() {
       <Route path="owner/inspections" element={<ProtectedRoute page="owner_inspections"><OwnerInspections /></ProtectedRoute>} />
       <Route path="owner/comments" element={<ProtectedRoute page="owner_portal_comments"><OwnerPortalComments /></ProtectedRoute>} />
       <Route path="owner-comments" element={<ProtectedRoute page="owner_comments"><OwnerComments /></ProtectedRoute>} />
+      <Route path="damage-reports" element={<ProtectedRoute page="damage_reports"><OpsDamageReports /></ProtectedRoute>} />
       <Route path="profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
       <Route index element={<RoleRedirect />} />
       <Route path="*" element={<RoleRedirect />} />

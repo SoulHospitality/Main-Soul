@@ -12,6 +12,7 @@ import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import { formatDate, formatDateTime } from '../utils/formatters';
+import { CameraPhotoField } from '../components/CameraCapture';
 
 const EMPTY_FORM = { assignee_id: '', title: '', description: '', deadline: '' };
 
@@ -32,6 +33,8 @@ export default function Tasks() {
   const [deleteTask, setDeleteTask] = useState(null);
   const [completeTask, setCompleteTask] = useState(null);
   const [completionComment, setCompletionComment] = useState('');
+  const [completionPhoto, setCompletionPhoto] = useState(null);
+  const photoRequired = user?.role === 'operations';
   const [replyTask, setReplyTask] = useState(null);
   const [replyBody, setReplyBody] = useState('');
 
@@ -150,13 +153,18 @@ export default function Tasks() {
   });
 
   const completeMutation = useMutation({
-    mutationFn: ({ id, comment }) =>
-      api.post(`/staff-tasks/${id}/complete`, { comment }).then((r) => r.data),
+    mutationFn: ({ id, comment, photo }) => {
+      const fd = new FormData();
+      if (comment) fd.append('comment', comment);
+      if (photo) fd.append('photo', photo);
+      return api.post(`/staff-tasks/${id}/complete`, fd).then((r) => r.data);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['staff-tasks'] });
       toast.success('Task marked as done');
       setCompleteTask(null);
       setCompletionComment('');
+      setCompletionPhoto(null);
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Could not mark task done'),
   });
@@ -353,6 +361,7 @@ export default function Tasks() {
                         onClick={() => {
                           setCompleteTask(task);
                           setCompletionComment('');
+                          setCompletionPhoto(null);
                         }}
                       >
                         <Check className="w-3.5 h-3.5" />
@@ -407,6 +416,15 @@ export default function Tasks() {
                   <p className="mt-2 text-xs text-emerald-800 whitespace-pre-wrap">
                     Done note: {task.completion_comment}
                   </p>
+                ) : null}
+                {task.completed_at && task.completion_photo_url ? (
+                  <a href={task.completion_photo_url} target="_blank" rel="noreferrer" className="mt-2 inline-block">
+                    <img
+                      src={task.completion_photo_url}
+                      alt="Completion"
+                      className="h-20 rounded-lg border object-cover"
+                    />
+                  </a>
                 ) : null}
               </li>
             );
@@ -519,11 +537,15 @@ export default function Tasks() {
               disabled={completeMutation.isPending}
               onClick={() => {
                 const comment = String(completionComment || '').trim();
-                if (!comment) {
+                if (photoRequired && !completionPhoto) {
+                  toast.error('Take a photo to mark the task done');
+                  return;
+                }
+                if (!photoRequired && !comment) {
                   toast.error('Add a completion comment');
                   return;
                 }
-                completeMutation.mutate({ id: completeTask.id, comment });
+                completeMutation.mutate({ id: completeTask.id, comment, photo: completionPhoto });
               }}
             >
               {completeMutation.isPending ? 'Saving…' : 'Confirm done'}
@@ -533,10 +555,22 @@ export default function Tasks() {
       >
         <div className="space-y-3">
           <p className="text-sm text-slate-600">
-            {completeTask ? `Add a short note for “${completeTask.title}”.` : ''}
+            {completeTask
+              ? photoRequired
+                ? `Take a photo showing “${completeTask.title}” is done.`
+                : `Add a short note for “${completeTask.title}”.`
+              : ''}
           </p>
+          {photoRequired ? (
+            <CameraPhotoField
+              label="Completion photo"
+              required
+              file={completionPhoto}
+              onChange={setCompletionPhoto}
+            />
+          ) : null}
           <div>
-            <label className="label">Completion comment *</label>
+            <label className="label">Completion comment{photoRequired ? '' : ' *'}</label>
             <textarea
               className="input min-h-[100px]"
               value={completionComment}

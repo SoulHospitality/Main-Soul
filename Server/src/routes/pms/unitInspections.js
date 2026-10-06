@@ -22,7 +22,7 @@ const INSPECTION_SUPER_ROLES = ['admin', OPS_SUPER];
 /** Units created on/after this Cairo date need an inspection; older units were already operating. */
 const INSPECTION_START_DATE = process.env.UNIT_INSPECTION_START_DATE || '2026-10-05';
 
-const MAX_CHECKLIST_ITEMS = 100;
+const MAX_CHECKLIST_ITEMS = 300;
 const MAX_LABEL_LENGTH = 200;
 const MAX_NOTE_LENGTH = 2000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -46,6 +46,8 @@ const LIST_SELECT = `
          u.listing_type,
          u.status AS unit_status,
          u.created_at AS unit_created_at,
+         u.has_nanny_room,
+         adder.full_name AS unit_added_by_name,
          i.id AS inspection_id,
          i.status AS inspection_status,
          i.assigned_to,
@@ -66,6 +68,7 @@ const LIST_SELECT = `
   LEFT JOIN staff_users agent ON agent.id = i.assigned_to
   LEFT JOIN staff_users approver ON approver.id = i.checklist_approved_by
   LEFT JOIN staff_users completer ON completer.id = i.completed_by
+  LEFT JOIN staff_users adder ON adder.id = u.created_by_staff
 `;
 
 function isSupervisor(user) {
@@ -87,6 +90,8 @@ function mapRow(row) {
     listing_type: row.listing_type,
     unit_status: row.unit_status,
     unit_created_at: row.unit_created_at,
+    has_nanny_room: !!row.has_nanny_room,
+    unit_added_by_name: row.unit_added_by_name || null,
     inspection_id: row.inspection_id || null,
     status: row.inspection_status || 'unassigned',
     assigned_to: row.assigned_to || null,
@@ -156,9 +161,13 @@ function buildChecklist(rawItems, existing, addedBy) {
     const label = cleanLabel(typeof raw === 'string' ? raw : raw?.label);
     if (!label) continue;
     const prev = raw && typeof raw === 'object' && raw.id != null ? byId.get(String(raw.id)) : null;
+    const qty = Number(raw?.qty);
     items.push({
       id: prev ? prev.id : newItemId(),
+      section: cleanLabel(raw?.section) || 'General',
       label,
+      qty: Number.isFinite(qty) && qty > 0 ? Math.round(qty) : 1,
+      brand: cleanLabel(raw?.brand) || null,
       added_by: prev ? prev.added_by : addedBy,
       result: null,
       note: null,
@@ -638,7 +647,10 @@ router.get('/owner/inspections', requireRoles('owner'), async (req, res, next) =
           notes: m.agent_notes,
           checklist: m.checklist.map((it) => ({
             id: it.id,
+            section: it.section || null,
             label: it.label,
+            qty: it.qty ?? null,
+            brand: it.brand || null,
             result: it.result,
             note: it.note,
           })),

@@ -133,6 +133,7 @@ router.use(require('./staffTasks'));
 router.use(require('./financialSystem'));
 router.use(housekeepingOps);
 router.use(require('./opsCheckins'));
+router.use(require('./opsTeam'));
 router.use(require('./unitInspections'));
 router.use(require('./ownerComments'));
 router.use(ownerPortal);
