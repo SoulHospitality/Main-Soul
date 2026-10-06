@@ -1448,7 +1448,9 @@
         "delete": "Delete sub-account",
         "deleteTitle": "Delete sub-account?",
         "deleteMessage": "Sub-account {{code}} will be removed. Sub-accounts with transactions cannot be deleted.",
-        "under": "Sub-account of {{parent}}"
+        "under": "Sub-account of {{parent}}",
+        "addUnder": "Add sub-account under this account",
+        "systemLocked": "System account (used automatically, cannot be deleted)"
       }
     }
   }

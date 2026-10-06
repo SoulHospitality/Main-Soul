@@ -346,6 +346,7 @@ function HomeView({ data, basisLabel, onOpenGroup, onOpenAccount, onOpenTreasury
   const kpis = data?.kpis || {};
   const outstanding = data?.outstanding || { amount: 0, count: 0 };
   const receipts = data?.receipts || {};
+  const [addSubOpen, setAddSubOpen] = useState(false);
 
   return (
     <div className="space-y-8">
@@ -467,8 +468,16 @@ function HomeView({ data, basisLabel, onOpenGroup, onOpenAccount, onOpenTreasury
       </section>
 
       <section>
-        <h2 className="text-lg font-semibold text-soul-blue mb-1">{t('pms.fin.home.chartOfAccounts')}</h2>
-        <p className="text-xs text-gray-500 mb-3">{t('pms.fin.home.chartHint')}</p>
+        <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
+          <div>
+            <h2 className="text-lg font-semibold text-soul-blue mb-1">{t('pms.fin.home.chartOfAccounts')}</h2>
+            <p className="text-xs text-gray-500">{t('pms.fin.home.chartHint')}</p>
+          </div>
+          <button type="button" className="btn-primary text-sm" onClick={() => setAddSubOpen(true)}>
+            <Plus className="w-4 h-4" /> {t('pms.fin.subAccount.add')}
+          </button>
+        </div>
+        <SubAccountAddModal key={addSubOpen ? 'open' : 'closed'} open={addSubOpen} onClose={() => setAddSubOpen(false)} />
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {groups.map((g) => {
             const meta = GROUP_META[g.id] || GROUP_META.assets;
@@ -624,48 +633,138 @@ function HomeView({ data, basisLabel, onOpenGroup, onOpenAccount, onOpenTreasury
   );
 }
 
-function GroupView({ groupId, data, onOpenAccount }) {
-  const { t } = useFinLocale();
+function useInvalidateAccounts() {
   const qc = useQueryClient();
-  const meta = GROUP_META[groupId] || GROUP_META.assets;
-  const group = (data?.groups || []).find((g) => g.id === groupId);
-  const Icon = meta.icon;
-  const accounts = group?.accounts || [];
-  const [addOpen, setAddOpen] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newParent, setNewParent] = useState('');
-  const [deleteCode, setDeleteCode] = useState(null);
-
-  const parentOptions = CHART_OF_ACCOUNTS
-    .filter((a) => a.group === groupId && !a.virtual && isBuiltinAccount(a.code))
-    .map((a) => ({ value: a.code, label: `${a.code} — ${a.name}` }));
-
-  const refreshAccounts = () => {
+  return () => {
     qc.invalidateQueries({ queryKey: ['financial-system-custom-accounts'] });
     qc.invalidateQueries({ queryKey: ['financial-system-portal'] });
+    qc.invalidateQueries({ queryKey: ['financial-system-account'] });
   };
+}
+
+function SubAccountAddModal({ open, onClose, groupId = '', defaultParent = '' }) {
+  const { t } = useFinLocale();
+  const invalidate = useInvalidateAccounts();
+  const [name, setName] = useState('');
+  const [parentCode, setParentCode] = useState(defaultParent);
+
+  const parentOptions = CHART_OF_ACCOUNTS
+    .filter((a) => (!groupId || a.group === groupId) && !a.virtual && isBuiltinAccount(a.code))
+    .map((a) => ({
+      value: a.code,
+      label: `${a.code} — ${a.name}`,
+      group: ACCOUNT_GROUPS[a.group] || a.group,
+    }));
 
   const addAccount = useMutation({
     mutationFn: (payload) => api.post('/financial-system/custom-accounts', payload).then((r) => r.data),
     onSuccess: (acct) => {
       toast.success(t('pms.fin.subAccount.added', { code: acct.code }));
-      refreshAccounts();
-      setAddOpen(false);
-      setNewName('');
-      setNewParent('');
+      invalidate();
+      setName('');
+      setParentCode(defaultParent);
+      onClose();
     },
     onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
 
+  const title = groupId
+    ? t('pms.fin.subAccount.addTitle', { group: GROUP_META[groupId]?.label || groupId })
+    : t('pms.fin.subAccount.add');
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={title}
+      footer={
+        <>
+          <button type="button" className="btn-secondary" onClick={onClose}>{t('pms.fin.cancel')}</button>
+          <button type="submit" form="sub-account-form" className="btn-primary" disabled={addAccount.isPending}>
+            {t('pms.fin.save')}
+          </button>
+        </>
+      }
+    >
+      <form
+        id="sub-account-form"
+        className="space-y-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!parentCode) {
+            toast.error(t('pms.fin.subAccount.chooseParent'));
+            return;
+          }
+          if (!name.trim()) {
+            toast.error(t('pms.fin.subAccount.nameRequired'));
+            return;
+          }
+          addAccount.mutate({ parent_code: parentCode, name: name.trim() });
+        }}
+      >
+        <div>
+          <label className="label">{t('pms.fin.subAccount.parent')}</label>
+          <SearchableSelect
+            className="w-full"
+            value={parentCode}
+            onChange={setParentCode}
+            placeholder={t('pms.fin.subAccount.chooseParent')}
+            options={parentOptions}
+            required
+          />
+          <p className="text-[11px] text-gray-400 mt-1">{t('pms.fin.subAccount.codeHint')}</p>
+        </div>
+        <div>
+          <label className="label">{t('pms.fin.subAccount.name')}</label>
+          <input
+            className="input w-full"
+            value={name}
+            maxLength={120}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={t('pms.fin.subAccount.namePlaceholder')}
+            required
+          />
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function SubAccountDeleteDialog({ code, onClose, onDeleted }) {
+  const { t } = useFinLocale();
+  const invalidate = useInvalidateAccounts();
   const removeAccount = useMutation({
-    mutationFn: (code) => api.delete(`/financial-system/custom-accounts/${code}`),
+    mutationFn: (c) => api.delete(`/financial-system/custom-accounts/${c}`),
     onSuccess: () => {
       toast.success(t('pms.fin.subAccount.deleted'));
-      refreshAccounts();
-      setDeleteCode(null);
+      invalidate();
+      onClose();
+      onDeleted?.();
     },
     onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
+  return (
+    <ConfirmDialog
+      open={Boolean(code)}
+      onClose={onClose}
+      title={t('pms.fin.subAccount.deleteTitle')}
+      message={t('pms.fin.subAccount.deleteMessage', { code: code || '' })}
+      confirmText={t('pms.fin.delete')}
+      danger
+      onConfirm={() => removeAccount.mutate(code)}
+      loading={removeAccount.isPending}
+    />
+  );
+}
+
+function GroupView({ groupId, data, onOpenAccount }) {
+  const { t } = useFinLocale();
+  const meta = GROUP_META[groupId] || GROUP_META.assets;
+  const group = (data?.groups || []).find((g) => g.id === groupId);
+  const Icon = meta.icon;
+  const accounts = group?.accounts || [];
+  const [addOpen, setAddOpen] = useState(false);
+  const [deleteCode, setDeleteCode] = useState(null);
 
   return (
     <div className="space-y-6">
@@ -702,7 +801,14 @@ function GroupView({ groupId, data, onOpenAccount }) {
                     <IconFor code={a.parent_code || a.code} group={groupId} />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-[11px] font-mono text-gray-400">{a.code}</p>
+                    <p className="text-[11px] font-mono text-gray-400 flex items-center gap-1">
+                      {a.code}
+                      {!a.custom && (
+                        <span title={t('pms.fin.subAccount.systemLocked')} aria-label={t('pms.fin.subAccount.systemLocked')}>
+                          <Lock className="w-3 h-3 text-gray-300" />
+                        </span>
+                      )}
+                    </p>
                     <p className="font-semibold text-soul-blue leading-snug">{a.name}</p>
                     {a.virtual ? (
                       <p className="text-[11px] text-amber-700 mt-1">{t('pms.fin.group.managementView')}</p>
@@ -721,7 +827,7 @@ function GroupView({ groupId, data, onOpenAccount }) {
                   <p className="text-xs text-gray-400">{t('pms.fin.entries', { count: a.txn_count })}</p>
                 </div>
               </button>
-              {a.custom && (
+              {a.custom ? (
                 <button
                   type="button"
                   className="absolute top-4 end-4 p-1.5 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-50"
@@ -731,83 +837,22 @@ function GroupView({ groupId, data, onOpenAccount }) {
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
-              )}
+              ) : null}
             </div>
           );
         })}
       </div>
 
-      <Modal
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-        title={t('pms.fin.subAccount.addTitle', { group: meta.label })}
-        footer={
-          <>
-            <button type="button" className="btn-secondary" onClick={() => setAddOpen(false)}>{t('pms.fin.cancel')}</button>
-            <button type="submit" form="sub-account-form" className="btn-primary" disabled={addAccount.isPending}>
-              {t('pms.fin.save')}
-            </button>
-          </>
-        }
-      >
-        <form
-          id="sub-account-form"
-          className="space-y-4"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!newParent) {
-              toast.error(t('pms.fin.subAccount.chooseParent'));
-              return;
-            }
-            if (!newName.trim()) {
-              toast.error(t('pms.fin.subAccount.nameRequired'));
-              return;
-            }
-            addAccount.mutate({ parent_code: newParent, name: newName.trim() });
-          }}
-        >
-          <div>
-            <label className="label">{t('pms.fin.subAccount.parent')}</label>
-            <SearchableSelect
-              className="w-full"
-              value={newParent}
-              onChange={setNewParent}
-              placeholder={t('pms.fin.subAccount.chooseParent')}
-              options={parentOptions}
-              required
-            />
-            <p className="text-[11px] text-gray-400 mt-1">{t('pms.fin.subAccount.codeHint')}</p>
-          </div>
-          <div>
-            <label className="label">{t('pms.fin.subAccount.name')}</label>
-            <input
-              className="input w-full"
-              value={newName}
-              maxLength={120}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder={t('pms.fin.subAccount.namePlaceholder')}
-              required
-            />
-          </div>
-        </form>
-      </Modal>
-
-      <ConfirmDialog
-        open={Boolean(deleteCode)}
-        onClose={() => setDeleteCode(null)}
-        title={t('pms.fin.subAccount.deleteTitle')}
-        message={t('pms.fin.subAccount.deleteMessage', { code: deleteCode || '' })}
-        confirmText={t('pms.fin.delete')}
-        danger
-        onConfirm={() => removeAccount.mutate(deleteCode)}
-        loading={removeAccount.isPending}
-      />
+      <SubAccountAddModal key={addOpen ? 'open' : 'closed'} open={addOpen} onClose={() => setAddOpen(false)} groupId={groupId} />
+      <SubAccountDeleteDialog code={deleteCode} onClose={() => setDeleteCode(null)} />
     </div>
   );
 }
 
-function AccountView({ code, fromDate, toDate, basis, onOpenTxn }) {
+function AccountView({ code, fromDate, toDate, basis, onOpenTxn, onDeleted }) {
   const { t } = useFinLocale();
+  const [addOpen, setAddOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const params = rangeParams(fromDate, toDate, basis);
   const { data, isLoading } = useQuery({
     queryKey: ['financial-system-account', code, params],
@@ -835,13 +880,59 @@ function AccountView({ code, fromDate, toDate, basis, onOpenTxn }) {
               {account.virtual ? ` · ${t('pms.fin.account.managementView')}` : ''}
               {account.recurring ? ` · ${t('pms.fin.account.monthlyAutomatic')}` : ''}
             </p>
+            {account.custom && account.parent_code ? (
+              <p className="text-xs text-sky-700 mt-1">
+                {t('pms.fin.subAccount.under', {
+                  parent: `${account.parent_code} — ${getAccount(account.parent_code)?.name || ''}`,
+                })}
+              </p>
+            ) : null}
           </div>
           <div className="text-right">
             <p className="text-xs text-gray-400">{t('pms.fin.balance')}</p>
             <p className="text-3xl font-bold tabular-nums text-soul-blue">{currency(account.balance)}</p>
           </div>
         </div>
+        {!account.virtual && (
+          <div className="mt-4 pt-4 border-t border-soul-line flex flex-wrap items-center gap-3">
+            {account.custom ? (
+              <button
+                type="button"
+                className="btn-secondary text-sm text-rose-700 inline-flex items-center gap-1.5"
+                onClick={() => setDeleteOpen(true)}
+              >
+                <Trash2 className="w-4 h-4" /> {t('pms.fin.subAccount.delete')}
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="btn-secondary text-sm inline-flex items-center gap-1.5"
+                  onClick={() => setAddOpen(true)}
+                >
+                  <Plus className="w-4 h-4" /> {t('pms.fin.subAccount.addUnder')}
+                </button>
+                <span className="text-[11px] text-gray-400 inline-flex items-center gap-1">
+                  <Lock className="w-3 h-3" /> {t('pms.fin.subAccount.systemLocked')}
+                </span>
+              </>
+            )}
+          </div>
+        )}
       </div>
+
+      <SubAccountAddModal
+        key={addOpen ? `open-${code}` : 'closed'}
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        groupId={account.group}
+        defaultParent={account.custom ? '' : code}
+      />
+      <SubAccountDeleteDialog
+        code={deleteOpen ? code : null}
+        onClose={() => setDeleteOpen(false)}
+        onDeleted={onDeleted}
+      />
 
       <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
         <div className="px-6 py-4 border-b border-soul-line">
@@ -5461,6 +5552,10 @@ function FinancialSystemInner() {
           toDate={toDate}
           basis={basis}
           onOpenTxn={(id) => go({ view: 'txn', txn: id, code, group: getAccount(code)?.group || group })}
+          onDeleted={() => {
+            const g = group || getAccount(code)?.group;
+            go(g ? { view: 'group', group: g, code: '', txn: '', tool: '' } : { view: 'home', group: '', code: '', txn: '', tool: '' });
+          }}
         />
       ) : showGroup ? (
         <GroupView
