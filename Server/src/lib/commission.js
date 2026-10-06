@@ -39,11 +39,6 @@ function ownerAccommodationGross(reservation, unit = {}) {
       reservation.total_amount != null ? reservation.total_amount : reservation.total_egp
     ) || 0;
   const hk = parseFloat(reservation.housekeeping_fees) || 0;
-  const utilStored = parseFloat(reservation.utilities_amount);
-  const util =
-    Number.isFinite(utilStored) && utilStored > 0
-      ? utilStored
-      : nights * (parseFloat(unit.utilities_cost || reservation.utilities_cost) || 0);
   const ppn = parseFloat(reservation.price_per_night) || 0;
   const fromPpn = ppn > 0 ? round2(ppn * nights) : 0;
 
@@ -52,9 +47,8 @@ function ownerAccommodationGross(reservation, unit = {}) {
   if (fromPpn > 0) return fromPpn;
 
   
-  const extras = round2(hk + util);
-  if (total > extras) {
-    return round2((total - extras) / (1 + GUEST_SERVICE_FEE_PCT / 100));
+  if (total > hk) {
+    return round2((total - hk) / (1 + GUEST_SERVICE_FEE_PCT / 100));
   }
 
   return round2(total);

@@ -44,7 +44,13 @@ import ConfirmDialog from '../components/ui/ConfirmDialog';
 import Modal from '../components/ui/Modal';
 import { currency, formatDate, formatDateTime } from '../utils/formatters';
 import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
-import { ACCOUNT_GROUPS, CHART_OF_ACCOUNTS, getAccount } from '../../lib/finance/chartOfAccounts';
+import {
+  ACCOUNT_GROUPS,
+  CHART_OF_ACCOUNTS,
+  getAccount,
+  isBuiltinAccount,
+  setCustomAccounts,
+} from '../../lib/finance/chartOfAccounts';
 import { VAT_OUTPUT_PCT, WHT_STANDARD_PCT, WHT_REDUCED_PCT } from '../../lib/finance/taxEngine';
 import { PettyCashSection } from './PettyCash';
 import { FinLocaleProvider, useFinLocale } from '../context/FinLocaleContext';
@@ -87,11 +93,26 @@ const GROUP_META = {
   },
 };
 
-const MANUAL_ACCOUNT_OPTIONS = CHART_OF_ACCOUNTS.filter((a) => !a.virtual).map((a) => ({
-  value: a.code,
-  label: `${a.code} — ${a.name}`,
-  group: ACCOUNT_GROUPS[a.group] || a.group,
-}));
+function manualAccountOptions() {
+  return CHART_OF_ACCOUNTS.filter((a) => !a.virtual).map((a) => ({
+    value: a.code,
+    label: `${a.code} — ${a.name}`,
+    group: ACCOUNT_GROUPS[a.group] || a.group,
+  }));
+}
+
+function useCustomAccounts() {
+  const { data } = useQuery({
+    queryKey: ['financial-system-custom-accounts'],
+    queryFn: () =>
+      api.get('/financial-system/custom-accounts').then((r) => {
+        setCustomAccounts(r.data || []);
+        return r.data || [];
+      }),
+    staleTime: 60_000,
+  });
+  return data || [];
+}
 
 const ACCOUNT_ICONS = {
   '101000': Landmark,
@@ -343,16 +364,35 @@ function HomeView({ data, basisLabel, onOpenGroup, onOpenAccount, onOpenTreasury
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
         {[
           [t('pms.fin.home.collectedInTreasury'), kpis.collected, t('pms.fin.home.collectedHint')],
-          [t('pms.fin.home.outstanding'), outstanding.amount, t('pms.fin.home.outstandingHint', { count: outstanding.count })],
+          [t('pms.fin.home.outstanding'), outstanding.amount, t('pms.fin.home.outstandingHint', { count: outstanding.count }), () => onOpenTool('aging')],
           [t('pms.fin.home.grossRevenue'), kpis.gross_revenue ?? kpis.revenue, t('pms.fin.home.grossRevenueHint', { stays: currency(receipts.stays), custom: currency(receipts.custom) })],
           [t('pms.fin.home.ownerTrust'), kpis.owner_trust, t('pms.fin.home.ownerTrustHint')],
-        ].map(([label, amount, sub]) => (
-          <div key={label} className="rounded-2xl border border-soul-line bg-white px-4 py-4">
-            <p className="text-[11px] uppercase tracking-wider text-gray-400">{label}</p>
-            <p className="text-xl font-bold tabular-nums text-soul-blue mt-1">{currency(amount)}</p>
-            <p className="text-xs text-gray-500 mt-1">{sub}</p>
-          </div>
-        ))}
+        ].map(([label, amount, sub, onClick]) => {
+          const body = (
+            <>
+              <p className="flex items-center justify-between text-[11px] uppercase tracking-wider text-gray-400">
+                {label}
+                {onClick ? <ChevronRight className="w-4 h-4 text-gray-300" /> : null}
+              </p>
+              <p className="text-xl font-bold tabular-nums text-soul-blue mt-1">{currency(amount)}</p>
+              <p className="text-xs text-gray-500 mt-1">{sub}</p>
+            </>
+          );
+          return onClick ? (
+            <button
+              key={label}
+              type="button"
+              onClick={onClick}
+              className="rounded-2xl border border-soul-line bg-white px-4 py-4 text-left transition-colors hover:border-soul-blue/40 hover:bg-soul-blue-50/40"
+            >
+              {body}
+            </button>
+          ) : (
+            <div key={label} className="rounded-2xl border border-soul-line bg-white px-4 py-4">
+              {body}
+            </div>
+          );
+        })}
       </div>
 
       <button
@@ -586,10 +626,46 @@ function HomeView({ data, basisLabel, onOpenGroup, onOpenAccount, onOpenTreasury
 
 function GroupView({ groupId, data, onOpenAccount }) {
   const { t } = useFinLocale();
+  const qc = useQueryClient();
   const meta = GROUP_META[groupId] || GROUP_META.assets;
   const group = (data?.groups || []).find((g) => g.id === groupId);
   const Icon = meta.icon;
   const accounts = group?.accounts || [];
+  const [addOpen, setAddOpen] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newParent, setNewParent] = useState('');
+  const [deleteCode, setDeleteCode] = useState(null);
+
+  const parentOptions = CHART_OF_ACCOUNTS
+    .filter((a) => a.group === groupId && !a.virtual && isBuiltinAccount(a.code))
+    .map((a) => ({ value: a.code, label: `${a.code} — ${a.name}` }));
+
+  const refreshAccounts = () => {
+    qc.invalidateQueries({ queryKey: ['financial-system-custom-accounts'] });
+    qc.invalidateQueries({ queryKey: ['financial-system-portal'] });
+  };
+
+  const addAccount = useMutation({
+    mutationFn: (payload) => api.post('/financial-system/custom-accounts', payload).then((r) => r.data),
+    onSuccess: (acct) => {
+      toast.success(t('pms.fin.subAccount.added', { code: acct.code }));
+      refreshAccounts();
+      setAddOpen(false);
+      setNewName('');
+      setNewParent('');
+    },
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
+  });
+
+  const removeAccount = useMutation({
+    mutationFn: (code) => api.delete(`/financial-system/custom-accounts/${code}`),
+    onSuccess: () => {
+      toast.success(t('pms.fin.subAccount.deleted'));
+      refreshAccounts();
+      setDeleteCode(null);
+    },
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
+  });
 
   return (
     <div className="space-y-6">
@@ -605,36 +681,127 @@ function GroupView({ groupId, data, onOpenAccount }) {
         <p className="ml-auto text-2xl font-bold tabular-nums">{currency(group?.balance)}</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {accounts.map((a) => (
-          <button
-            key={a.code}
-            type="button"
-            onClick={() => onOpenAccount(a.code)}
-            className="rounded-2xl border border-soul-line bg-white p-5 text-left hover:border-soul-blue/40 transition-colors"
-          >
-            <div className="flex items-start gap-3">
-              <div className={`w-10 h-10 rounded-xl ${meta.tint} flex items-center justify-center flex-shrink-0`}>
-                <IconFor code={a.code} group={groupId} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-mono text-gray-400">{a.code}</p>
-                <p className="font-semibold text-soul-blue leading-snug">{a.name}</p>
-                {a.virtual ? (
-                  <p className="text-[11px] text-amber-700 mt-1">{t('pms.fin.group.managementView')}</p>
-                ) : a.recurring ? (
-                  <p className="text-[11px] text-violet-700 mt-1">{t('pms.fin.group.monthlyAutoDeduct')}</p>
-                ) : null}
-              </div>
-              <ChevronRight className="w-4 h-4 text-gray-300 mt-1" />
-            </div>
-            <div className="mt-4 flex items-end justify-between">
-              <p className="text-xl font-bold tabular-nums">{currency(a.balance)}</p>
-              <p className="text-xs text-gray-400">{t('pms.fin.entries', { count: a.txn_count })}</p>
-            </div>
-          </button>
-        ))}
+      <div className="flex justify-end">
+        <button type="button" className="btn-primary text-sm" onClick={() => setAddOpen(true)}>
+          <Plus className="w-4 h-4" /> {t('pms.fin.subAccount.add')}
+        </button>
       </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {accounts.map((a) => {
+          const parent = a.custom && a.parent_code ? getAccount(a.parent_code) : null;
+          return (
+            <div key={a.code} className="relative">
+              <button
+                type="button"
+                onClick={() => onOpenAccount(a.code)}
+                className="w-full h-full rounded-2xl border border-soul-line bg-white p-5 text-left hover:border-soul-blue/40 transition-colors"
+              >
+                <div className="flex items-start gap-3">
+                  <div className={`w-10 h-10 rounded-xl ${meta.tint} flex items-center justify-center flex-shrink-0`}>
+                    <IconFor code={a.parent_code || a.code} group={groupId} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-mono text-gray-400">{a.code}</p>
+                    <p className="font-semibold text-soul-blue leading-snug">{a.name}</p>
+                    {a.virtual ? (
+                      <p className="text-[11px] text-amber-700 mt-1">{t('pms.fin.group.managementView')}</p>
+                    ) : a.recurring ? (
+                      <p className="text-[11px] text-violet-700 mt-1">{t('pms.fin.group.monthlyAutoDeduct')}</p>
+                    ) : a.custom ? (
+                      <p className="text-[11px] text-sky-700 mt-1">
+                        {t('pms.fin.subAccount.under', { parent: parent ? `${parent.code} — ${parent.name}` : a.parent_code || '—' })}
+                      </p>
+                    ) : null}
+                  </div>
+                  {a.custom ? <span className="w-7" /> : <ChevronRight className="w-4 h-4 text-gray-300 mt-1" />}
+                </div>
+                <div className="mt-4 flex items-end justify-between">
+                  <p className="text-xl font-bold tabular-nums">{currency(a.balance)}</p>
+                  <p className="text-xs text-gray-400">{t('pms.fin.entries', { count: a.txn_count })}</p>
+                </div>
+              </button>
+              {a.custom && (
+                <button
+                  type="button"
+                  className="absolute top-4 end-4 p-1.5 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-50"
+                  title={t('pms.fin.subAccount.delete')}
+                  aria-label={t('pms.fin.subAccount.delete')}
+                  onClick={() => setDeleteCode(a.code)}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <Modal
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        title={t('pms.fin.subAccount.addTitle', { group: meta.label })}
+        footer={
+          <>
+            <button type="button" className="btn-secondary" onClick={() => setAddOpen(false)}>{t('pms.fin.cancel')}</button>
+            <button type="submit" form="sub-account-form" className="btn-primary" disabled={addAccount.isPending}>
+              {t('pms.fin.save')}
+            </button>
+          </>
+        }
+      >
+        <form
+          id="sub-account-form"
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!newParent) {
+              toast.error(t('pms.fin.subAccount.chooseParent'));
+              return;
+            }
+            if (!newName.trim()) {
+              toast.error(t('pms.fin.subAccount.nameRequired'));
+              return;
+            }
+            addAccount.mutate({ parent_code: newParent, name: newName.trim() });
+          }}
+        >
+          <div>
+            <label className="label">{t('pms.fin.subAccount.parent')}</label>
+            <SearchableSelect
+              className="w-full"
+              value={newParent}
+              onChange={setNewParent}
+              placeholder={t('pms.fin.subAccount.chooseParent')}
+              options={parentOptions}
+              required
+            />
+            <p className="text-[11px] text-gray-400 mt-1">{t('pms.fin.subAccount.codeHint')}</p>
+          </div>
+          <div>
+            <label className="label">{t('pms.fin.subAccount.name')}</label>
+            <input
+              className="input w-full"
+              value={newName}
+              maxLength={120}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder={t('pms.fin.subAccount.namePlaceholder')}
+              required
+            />
+          </div>
+        </form>
+      </Modal>
+
+      <ConfirmDialog
+        open={Boolean(deleteCode)}
+        onClose={() => setDeleteCode(null)}
+        title={t('pms.fin.subAccount.deleteTitle')}
+        message={t('pms.fin.subAccount.deleteMessage', { code: deleteCode || '' })}
+        confirmText={t('pms.fin.delete')}
+        danger
+        onConfirm={() => removeAccount.mutate(deleteCode)}
+        loading={removeAccount.isPending}
+      />
     </div>
   );
 }
@@ -1391,6 +1558,8 @@ function ManualEntriesTab({ fromDate, toDate, rangeParams: params }) {
     notes: '',
   };
   const [form, setForm] = useState(emptyForm);
+  const customAccounts = useCustomAccounts();
+  const accountOptions = useMemo(() => manualAccountOptions(), [customAccounts]);
   const { data, isLoading } = useQuery({
     queryKey: ['financial-system-manual', fromDate, toDate],
     queryFn: () => api.get('/financial-system/manual-entries', { params }).then((r) => r.data),
@@ -1536,7 +1705,7 @@ function ManualEntriesTab({ fromDate, toDate, rangeParams: params }) {
               value={form.from_account}
               onChange={(v) => setForm((f) => ({ ...f, from_account: v }))}
               placeholder={t('pms.fin.manual.chooseFrom')}
-              options={MANUAL_ACCOUNT_OPTIONS}
+              options={accountOptions}
               required
             />
             <p className="text-[11px] text-gray-400 mt-1">{t('pms.fin.manual.fromHint')}</p>
@@ -1548,7 +1717,7 @@ function ManualEntriesTab({ fromDate, toDate, rangeParams: params }) {
               value={form.to_account}
               onChange={(v) => setForm((f) => ({ ...f, to_account: v }))}
               placeholder={t('pms.fin.manual.chooseTo')}
-              options={MANUAL_ACCOUNT_OPTIONS}
+              options={accountOptions}
               required
             />
             <p className="text-[11px] text-gray-400 mt-1">{t('pms.fin.manual.toHint')}</p>
@@ -1954,8 +2123,65 @@ function ReportsTool({ rangeParams: params }) {
   );
 }
 
+function AgingDetail({ row }) {
+  const { t } = useFinLocale();
+  const lines = [
+    [t('pms.fin.aging.accommodation', { nights: row.nights || 0, rate: currency(row.price_per_night) }), row.accommodation],
+    [t('pms.fin.aging.housekeeping'), row.housekeeping],
+    [t('pms.fin.aging.beach'), row.beach],
+    [t('pms.fin.aging.insurance'), row.insurance],
+  ].filter(([, v]) => Number(v) > 0);
+  return (
+    <div className="grid gap-4 bg-soul-blue-50/30 px-6 py-4 text-sm md:grid-cols-2">
+      <div className="space-y-1">
+        {lines.map(([label, v]) => (
+          <div key={label} className="flex justify-between gap-4">
+            <span className="text-gray-500">{label}</span>
+            <span className="tabular-nums">{currency(v)}</span>
+          </div>
+        ))}
+        <div className="flex justify-between gap-4 border-t border-soul-line pt-1 font-medium">
+          <span>{t('pms.fin.aging.fullBill')}</span>
+          <span className="tabular-nums">{currency(row.full_bill)}</span>
+        </div>
+        {row.owner_collected > 0 && (
+          <div className="flex justify-between gap-4">
+            <span className="text-gray-500">
+              {t('pms.fin.aging.ownerCollected')}
+              {row.owner_collected_type ? ` (${row.owner_collected_type})` : ''}
+            </span>
+            <span className="tabular-nums">− {currency(row.owner_collected)}</span>
+          </div>
+        )}
+        <div className="flex justify-between gap-4">
+          <span className="text-gray-500">{t('pms.fin.aging.paid')}</span>
+          <span className="tabular-nums text-emerald-700">− {currency(row.paid)}</span>
+        </div>
+        <div className="flex justify-between gap-4 border-t border-soul-line pt-1 font-semibold text-red-600">
+          <span>{t('pms.fin.aging.toCollect')}</span>
+          <span className="tabular-nums">{currency(row.amount)}</span>
+        </div>
+      </div>
+      <div className="space-y-1 text-gray-600">
+        <p>{t('pms.fin.aging.stay', { from: formatDate(row.check_in), to: formatDate(row.check_out) })}</p>
+        {row.project ? <p>{row.project}</p> : null}
+        {row.guest_phone ? <p className="tabular-nums">{row.guest_phone}</p> : null}
+        {row.sales_person ? <p>{t('pms.fin.aging.sales', { name: row.sales_person })}</p> : null}
+        {row.payment_status ? <p>{t('pms.fin.aging.paymentStatus', { status: row.payment_status })}</p> : null}
+        <a
+          href={`/admin/reservations?search=${encodeURIComponent(row.guest_name || '')}`}
+          className="inline-flex items-center gap-1 font-medium text-soul-blue hover:underline"
+        >
+          {t('pms.fin.aging.openReservation')} <ChevronRight className="w-3.5 h-3.5" />
+        </a>
+      </div>
+    </div>
+  );
+}
+
 function AgingTool({ rangeParams: params, onOpenAccount }) {
   const { t } = useFinLocale();
+  const [openRow, setOpenRow] = useState(null);
   const { data, isLoading } = useQuery({
     queryKey: ['financial-system-aging', params],
     queryFn: () => api.get('/financial-system/aging', { params }).then((r) => r.data),
@@ -1992,19 +2218,41 @@ function AgingTool({ rangeParams: params, onOpenAccount }) {
                   <th>{t('pms.fin.aging.unit')}</th>
                   <th>{t('pms.fin.aging.checkIn')}</th>
                   <th className="text-right">{t('pms.fin.aging.days')}</th>
-                  <th className="text-right">{t('pms.fin.aging.due')}</th>
+                  <th className="text-right">{t('pms.fin.aging.fullBill')}</th>
+                  <th className="text-right">{t('pms.fin.aging.paid')}</th>
+                  <th className="text-right">{t('pms.fin.aging.toCollect')}</th>
+                  <th className="w-8" />
                 </tr>
               </thead>
               <tbody>
-                {b.rows.map((r) => (
-                  <tr key={r.reservation_id}>
-                    <td>{r.guest_name}</td>
-                    <td>{r.unit_name}</td>
-                    <td>{formatDate(r.check_in)}</td>
-                    <td className="text-right tabular-nums">{r.days}</td>
-                    <td className="text-right tabular-nums font-medium">{currency(r.amount)}</td>
-                  </tr>
-                ))}
+                {b.rows.map((r) => {
+                  const open = openRow === r.reservation_id;
+                  return [
+                    <tr
+                      key={r.reservation_id}
+                      onClick={() => setOpenRow(open ? null : r.reservation_id)}
+                      className="cursor-pointer hover:bg-soul-blue-50/40"
+                    >
+                      <td>{r.guest_name}</td>
+                      <td>{r.unit_name}</td>
+                      <td>{formatDate(r.check_in)}</td>
+                      <td className="text-right tabular-nums">{r.days}</td>
+                      <td className="text-right tabular-nums">{currency(r.full_bill)}</td>
+                      <td className="text-right tabular-nums text-emerald-700">{currency(r.paid)}</td>
+                      <td className="text-right tabular-nums font-semibold text-red-600">{currency(r.amount)}</td>
+                      <td>
+                        <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-90' : ''}`} />
+                      </td>
+                    </tr>,
+                    open ? (
+                      <tr key={`${r.reservation_id}-detail`}>
+                        <td colSpan={8} className="!p-0">
+                          <AgingDetail row={r} />
+                        </td>
+                      </tr>
+                    ) : null,
+                  ];
+                })}
               </tbody>
             </table>
           </div>
@@ -5052,6 +5300,7 @@ function FinancialSystemInner() {
   const { from: fromDate, to: toDate, basis } = period;
   const params = rangeParams(fromDate, toDate, basis);
   const basisLabel = basis === 'created' ? t('pms.fin.basisCreated') : t('pms.fin.basisStay');
+  const customAccounts = useCustomAccounts();
 
   function updatePeriod(patch) {
     setPeriod((prev) => {
@@ -5120,7 +5369,7 @@ function FinancialSystemInner() {
     if (code) items.push({ label: getAccount(code)?.name || code, onClick: () => go({ view: 'account', group: getAccount(code)?.group || group, code, txn: '', tool: '' }) });
     if (txn) items.push({ label: txn });
     return items;
-  }, [tool, group, code, txn, t, go]);
+  }, [tool, group, code, txn, t, go, customAccounts]);
 
   const showHome = view === 'home' && !tool && !code && !txn;
   const showGroup = view === 'group' && group && !code && !txn && !tool;

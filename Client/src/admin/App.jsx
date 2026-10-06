@@ -51,6 +51,7 @@ const Reports = lazy(() => import('./pages/Reports'));
 const Performance = lazy(() => import('./pages/Performance'));
 const SitePerformance = lazy(() => import('./pages/SitePerformance'));
 const Tasks = lazy(() => import('./pages/Tasks'));
+const PettyCash = lazy(() => import('./pages/PettyCash'));
 
 function PageFallback() {
   return (
@@ -94,6 +95,16 @@ function LegacyFinanceRedirect({ tab }) {
   const qs = location.search || (tab ? `?tab=${tab}` : '');
   const suffix = qs.includes('tab=') ? qs : tab ? `?tab=${tab}${location.search ? `&${location.search.slice(1)}` : ''}` : location.search;
   return <Navigate to={`/admin/financial-system${suffix}`} replace />;
+}
+
+function PettyCashRoute() {
+  const { user } = useAuth();
+  if (user?.role === 'admin') return <LegacyFinanceRedirect tab="petty-cash" />;
+  return (
+    <ProtectedRoute page="petty_cash">
+      <PettyCash />
+    </ProtectedRoute>
+  );
 }
 
 function LegacyOpsRedirect({ tab }) {
@@ -149,7 +160,7 @@ function AppRoutes() {
       <Route path="finance" element={<LegacyFinanceRedirect tab="overview" />} />
       <Route path="profit" element={<LegacyFinanceRedirect tab="overview" />} />
       <Route path="expenses" element={<LegacyFinanceRedirect tab="manual" />} />
-      <Route path="petty-cash" element={<LegacyFinanceRedirect tab="petty-cash" />} />
+      <Route path="petty-cash" element={<PettyCashRoute />} />
       <Route path="owner-settlements" element={<LegacyFinanceRedirect tab="owners" />} />
       <Route path="owner-statement" element={<ProtectedRoute page="owner_statement"><OwnerStatement /></ProtectedRoute>} />
       <Route path="utilities" element={<LegacyFinanceRedirect tab="ledger" />} />

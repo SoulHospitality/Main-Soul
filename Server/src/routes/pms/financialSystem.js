@@ -10,7 +10,9 @@ const {
   EXPENSE_CATEGORY_TO_ACCOUNT,
   accountsByGroup,
   getAccount,
+  isBuiltinAccount,
 } = require('../../lib/finance/chartOfAccounts');
+const { refreshCustomAccounts } = require('../../lib/finance/customAccounts');
 const {
   outputVatOnCommission,
   withholdingTax,
@@ -1108,6 +1110,7 @@ router.post('/financial-system/manual-entries', requireRoles('admin', 'finance',
 
     let debitAccount = toAccount;
     let creditAccount = fromAccount;
+    await refreshCustomAccounts();
     if (entryType === 'journal' || hasAccounts) {
       if (!getAccount(debitAccount) || !getAccount(creditAccount)) {
         return res.status(400).json({ error: 'from_account and to_account must be valid chart accounts' });
@@ -1181,6 +1184,7 @@ router.get('/financial-system/accounts/:code', requireRoles('admin', 'finance', 
   try {
     const { from, to } = dateRange(req);
     const code = String(req.params.code || '').trim();
+    await refreshCustomAccounts();
     const acct = getAccount(code);
     if (!acct) return res.status(404).json({ error: 'Unknown account' });
     const built = await buildFinancialPortal(from, to);
@@ -1276,6 +1280,77 @@ router.delete('/financial-system/manual-entries/:id', requireRoles('admin', 'fin
     await assertPeriodOpen(existing[0].entry_date);
     await query(`DELETE FROM financial_manual_entries WHERE id = $1`, [req.params.id]);
     res.json({ ok: true, id: existing[0].id });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/financial-system/custom-accounts', requireRoles('admin', 'finance', 'finance_manager'), async (_req, res, next) => {
+  try {
+    res.json(await refreshCustomAccounts());
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/financial-system/custom-accounts', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    await refreshCustomAccounts();
+    const name = String(req.body.name || '').trim();
+    const parentCode = String(req.body.parent_code || '').trim();
+    if (!name) return res.status(400).json({ error: 'Sub-account name is required' });
+    if (name.length > 120) return res.status(400).json({ error: 'Sub-account name is too long' });
+    const parent = getAccount(parentCode);
+    if (!parent || !isBuiltinAccount(parentCode) || parent.virtual) {
+      return res.status(400).json({ error: 'Choose a main account to add the sub-account under' });
+    }
+    const prefix = parentCode.slice(0, 3);
+    const taken = new Set(CHART_OF_ACCOUNTS.map((a) => a.code));
+    let code = null;
+    for (let n = 1; n <= 999; n += 1) {
+      const candidate = `${prefix}${String(n).padStart(3, '0')}`;
+      if (!taken.has(candidate)) {
+        code = candidate;
+        break;
+      }
+    }
+    if (!code) return res.status(400).json({ error: 'No free sub-account codes left under this account' });
+    const { rows } = await query(
+      `INSERT INTO financial_custom_accounts (code, name, account_group, parent_code, created_by)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING code, name, account_group, parent_code, created_at`,
+      [code, name, parent.group, parentCode, req.user.id]
+    );
+    await refreshCustomAccounts();
+    res.status(201).json({ ...getAccount(code), created_at: rows[0].created_at });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.delete('/financial-system/custom-accounts/:code', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const code = String(req.params.code || '').trim();
+    if (isBuiltinAccount(code)) {
+      return res.status(400).json({ error: 'Built-in accounts cannot be deleted' });
+    }
+    const { rows: existing } = await query(`SELECT code FROM financial_custom_accounts WHERE code = $1`, [code]);
+    if (!existing[0]) return res.status(404).json({ error: 'Sub-account not found' });
+    const { rows: used } = await query(
+      `SELECT
+         (SELECT COUNT(*) FROM financial_manual_entries
+           WHERE debit_account_code = $1 OR credit_account_code = $1)::int
+         + (SELECT COUNT(*) FROM finance_calendar_payments WHERE account_code = $1)::int AS n`,
+      [code]
+    );
+    if ((used[0]?.n || 0) > 0) {
+      return res.status(409).json({
+        error: 'This sub-account has transactions. Delete or move them before deleting the sub-account.',
+      });
+    }
+    await query(`DELETE FROM financial_custom_accounts WHERE code = $1`, [code]);
+    await refreshCustomAccounts();
+    res.json({ ok: true, code });
   } catch (e) {
     next(e);
   }

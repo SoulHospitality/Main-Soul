@@ -91,7 +91,6 @@ function fullBillTotalFromParts(parts) {
       (Number(parts.beach_access_fees) || 0) +
       (Number(parts.service_fees) || 0) +
       (Number(parts.insurance) || 0) +
-      (Number(parts.utilities_amount) || 0) +
       (Number(parts.security_deposit) || 0)
   );
 }
@@ -115,12 +114,11 @@ async function applyCollectBillEdits(reservationId, bill, row) {
   const beach = roundMoney(bill.beach_access_fees);
   const service = roundMoney(bill.service_fees);
   const insurance = roundMoney(bill.insurance);
-  const utilities = roundMoney(bill.utilities_amount);
+  const utilities =
+    bill.utilities_amount != null ? roundMoney(bill.utilities_amount) : roundMoney(row.utilities_amount);
   const security = roundMoney(bill.security_deposit);
 
-  const finalTotal = roundMoney(
-    accommodation + housekeeping + beach + service + insurance + utilities + security
-  );
+  const finalTotal = roundMoney(accommodation + housekeeping + beach + service + insurance + security);
   if (!(finalTotal > 0) && remainingOf(row) > 0.5) {
     const err = new Error('Edited bill total must be greater than zero');
     err.status = 400;

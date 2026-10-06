@@ -2,6 +2,7 @@ const { query } = require('../../config/db');
 const { FINANCIAL_EPOCH } = require('../financialEpoch');
 const { calcReservationFinancials, round2 } = require('../commission');
 const { isWebsiteOriginReservation } = require('../reservationScope');
+const { reservationBill } = require('../reservationBill');
 const {
   CHART_OF_ACCOUNTS,
   EXPENSE_CATEGORY_TO_ACCOUNT,
@@ -12,6 +13,7 @@ const {
   accountsByGroup,
   signedBalance,
 } = require('./chartOfAccounts');
+const { refreshCustomAccounts } = require('./customAccounts');
 const { bookingSplit, withholdingTax, extractInputVat } = require('./taxEngine');
 const { reservationPeriodSql } = require('./periodBasis');
 
@@ -697,6 +699,7 @@ function prepaidAmount(r, payments) {
 }
 
 async function loadPortalData(from, to) {
+  await refreshCustomAccounts();
   const period = reservationPeriodSql('r');
   const resParams = [from];
   let resSql = `(
@@ -1382,9 +1385,7 @@ function summarizeOutstanding(reservations, asOf) {
   for (const r of reservations || []) {
     if (isCancelledStay(r)) continue;
     if (isoDate(r.check_in) > cutoff) continue;
-    const total = parseFloat(r.total_amount) || 0;
-    const paid = parseFloat(r.amount_paid) || 0;
-    const due = round2(Math.max(0, total - paid));
+    const due = reservationBill(r).toCollect;
     if (due > 0.009) {
       amount += due;
       count += 1;
@@ -1405,14 +1406,30 @@ function agingFromReservations(reservations, asOf) {
     if (isCancelledStay(r)) continue;
     const checkIn = isoDate(r.check_in);
     if (!checkIn || checkIn > cutoff) continue;
-    const due = round2(Math.max(0, (parseFloat(r.total_amount) || 0) - (parseFloat(r.amount_paid) || 0)));
+    const bill = reservationBill(r);
+    const due = bill.toCollect;
     if (!(due > 0.009)) continue;
     const days = Math.max(0, Math.floor((new Date(`${cutoff}T00:00:00`) - new Date(`${checkIn}T00:00:00`)) / 86400000));
     const row = {
       reservation_id: r.id,
       guest_name: r.guest_name,
+      guest_phone: r.guest_phone,
       unit_name: r.unit_name,
+      project: r.project,
       check_in: checkIn,
+      check_out: isoDate(r.check_out),
+      nights: bill.nights,
+      price_per_night: bill.pricePerNight,
+      accommodation: bill.accommodation,
+      housekeeping: bill.housekeeping,
+      beach: bill.beach,
+      insurance: bill.insurance,
+      full_bill: bill.total,
+      owner_collected: bill.ownerCollected,
+      owner_collected_type: bill.ownerCollectedType,
+      paid: bill.paid,
+      payment_status: r.payment_status,
+      sales_person: r.sales_person_name,
       days,
       amount: due,
     };

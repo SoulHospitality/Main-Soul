@@ -58,7 +58,6 @@ function PaymentDetails({ row }) {
         value={b.service_fees}
       />
       <MoneyLine label="Insurance" value={b.insurance} />
-      <MoneyLine label="Utilities" value={b.utilities_amount} />
       <MoneyLine label="Security deposit" value={b.security_deposit} />
       {b.owner_collected_amount > 0 && (
         <MoneyLine
@@ -89,7 +88,6 @@ const BILL_FIELDS = [
   { key: 'beach_access_fees', label: 'Beach access' },
   { key: 'service_fees', label: 'Service fees' },
   { key: 'insurance', label: 'Insurance' },
-  { key: 'utilities_amount', label: 'Utilities' },
   { key: 'security_deposit', label: 'Security deposit' },
 ];
 

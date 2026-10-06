@@ -300,8 +300,9 @@ export function PettyCashSection({ embedded = false }) {
   const availableTabs = isAdminFinance
     ? ['north_coast', 'sokhna']
     : userPCL === 'both' ? ['north_coast', 'sokhna']
-    : userPCL ? [userPCL]
-    : ['north_coast'];
+    : ['north_coast', 'sokhna'].includes(userPCL) ? [userPCL]
+    : [];
+  const hasAccess = availableTabs.length > 0;
 
   const TAB_LABELS = { north_coast: 'North Coast', sokhna: 'Sokhna' };
 
@@ -329,11 +330,13 @@ export function PettyCashSection({ embedded = false }) {
     queryFn:  () => api.get('/petty-cash', {
       params: { location, unit_id: filterUnit || undefined, paid_by: filterPaidBy || undefined },
     }).then(r => r.data),
+    enabled: hasAccess,
   });
 
   const { data: settings } = useQuery({
     queryKey: ['petty-cash-settings', location],
     queryFn:  () => api.get('/petty-cash/settings', { params: { location } }).then(r => r.data),
+    enabled: hasAccess,
   });
 
   const { data: units = [] } = useQuery({
@@ -559,6 +562,16 @@ export function PettyCashSection({ embedded = false }) {
     : form.type === 'in'
       ? (form.is_advance ? 'New Entry — عهدة / Advance' : 'New Entry — Cash In')
       : 'New Entry — Cash Out';
+
+  if (!hasAccess) {
+    return (
+      <EmptyState
+        icon={Wallet}
+        title="No petty cash access"
+        subtitle="Ask HR to set which petty cash you can see: North Coast, Sokhna, or both."
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">

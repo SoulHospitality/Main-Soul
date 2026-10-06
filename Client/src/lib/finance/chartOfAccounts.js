@@ -54,10 +54,26 @@ export const CHART_OF_ACCOUNTS = [
   { code: '609000', name: 'Sales Agent Commission Expense', group: 'expenses', type: 'expense' },
 ];
 
-const BY_CODE = Object.fromEntries(CHART_OF_ACCOUNTS.map((a) => [a.code, a]));
+const BUILTIN_ACCOUNTS = CHART_OF_ACCOUNTS.slice();
+const BUILTIN_CODES = new Set(BUILTIN_ACCOUNTS.map((a) => a.code));
+
+let BY_CODE = Object.fromEntries(CHART_OF_ACCOUNTS.map((a) => [a.code, a]));
 
 export function getAccount(code) {
   return BY_CODE[code] || null;
+}
+
+export function isBuiltinAccount(code) {
+  return BUILTIN_CODES.has(String(code));
+}
+
+/** Mutates CHART_OF_ACCOUNTS in place so existing imports see server-defined sub-accounts. */
+export function setCustomAccounts(accounts) {
+  const custom = (accounts || []).filter((a) => a?.code && !BUILTIN_CODES.has(String(a.code)));
+  const merged = [...BUILTIN_ACCOUNTS, ...custom.map((a) => ({ ...a, custom: true }))]
+    .sort((a, b) => a.code.localeCompare(b.code));
+  CHART_OF_ACCOUNTS.splice(0, CHART_OF_ACCOUNTS.length, ...merged);
+  BY_CODE = Object.fromEntries(CHART_OF_ACCOUNTS.map((a) => [a.code, a]));
 }
 
 export function accountsByGroup() {

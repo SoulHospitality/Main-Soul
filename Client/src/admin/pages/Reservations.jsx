@@ -21,6 +21,7 @@ import SortTh from '../components/ui/SortTh';
 import BookingCalendar from '../components/ui/BookingCalendar';
 import { currency, formatDate, formatDateTime, nightsText, BOOKING_SOURCES, PAYMENT_METHODS, PAYMENT_METHOD_LABELS, MANUAL_PAYMENT_METHODS, unitDisplay, unitSelectLabel } from '../utils/formatters';
 import { calcReservationFinancials, commissionModeLabel, appliedPctLabel } from '../utils/commission';
+import { reservationBill } from '../utils/reservationBill';
 import { housekeepingFeeForUnit } from '../../utils/housekeeping';
 import { isoDateOnly } from '../../utils/stayNights';
 import { canonicalSalesName, namesAreAliases, reservationSalesDisplay } from '../utils/salesNameMatch';
@@ -55,20 +56,7 @@ function calcNights(checkIn, checkOut) {
 
 /** Full stay bill (accommodation + fees), not accommodation-only. */
 function reservationFullBill(r) {
-  const nights = Number(r?.nights) || 0;
-  const pricePerNight = parseFloat(r?.price_per_night) || 0;
-  const accommodation =
-    pricePerNight > 0 && nights > 0
-      ? Math.round(pricePerNight * nights * 100) / 100
-      : 0;
-  const storedTotal = parseFloat(r?.total_amount) || 0;
-  const hkFees = parseFloat(r?.housekeeping_fees) || 0;
-  const beachFees = parseFloat(r?.beach_access_fees) || 0;
-  const ins = parseFloat(r?.insurance) || 0;
-  const utilities = parseFloat(r?.utilities_amount) || 0;
-  const lineSum = Math.round((accommodation + hkFees + beachFees + ins + utilities) * 100) / 100;
-  if (accommodation > 0 && Math.abs(storedTotal - accommodation) <= 0.5) return lineSum;
-  return Math.max(storedTotal, lineSum);
+  return reservationBill(r).total;
 }
 
 export function ReservationForm({ form, setForm, units, users, isNew, transferProof, onTransferProofChange, editId, allowPastDates, lockSalesPerson = false, currentUserName = '' }) {
@@ -523,40 +511,19 @@ function ReservationDetail({
   ownerExperienceView = false,
 }) {
   if (!reservation) return null;
-  const nights = Number(reservation.nights) || 0;
-  const pricePerNight = parseFloat(reservation.price_per_night) || 0;
-  const accommodation =
-    pricePerNight > 0 && nights > 0
-      ? Math.round(pricePerNight * nights * 100) / 100
-      : 0;
-  const downPmt   = parseFloat(reservation.down_payment) || 0;
-  const storedTotal = parseFloat(reservation.total_amount) || 0;
-  const hkFees    = parseFloat(reservation.housekeeping_fees) || 0;
-  const beachFees = parseFloat(reservation.beach_access_fees) || 0;
-  const ins       = parseFloat(reservation.insurance) || 0;
-  const utilities = parseFloat(reservation.utilities_amount) || 0;
-  const lineSum = Math.round((accommodation + hkFees + beachFees + ins + utilities) * 100) / 100;
-  // Full stay bill: line items when total_amount is accommodation-only; else prefer stored full total.
-  const total =
-    accommodation > 0 && Math.abs(storedTotal - accommodation) <= 0.5
-      ? lineSum
-      : Math.max(storedTotal, lineSum);
-  const ownerAmt  = parseFloat(reservation.owner_collected_amount) || 0;
+  const bill = reservationBill(reservation);
+  const {
+    accommodation,
+    storedTotal,
+    total,
+    downPayment: downPmt,
+    ownerCollected: ownerAmt,
+    toCollect: amountToPay,
+    remainingAccommodation,
+  } = bill;
   const idPhotos = Array.isArray(reservation.id_photo_urls)
     ? reservation.id_photo_urls.filter(Boolean)
     : [];
-  let amountToPay;
-  if (reservation.owner_collected_type === 'full') {
-    amountToPay = hkFees + ins - downPmt;
-  } else if (reservation.owner_collected_type === 'partial') {
-    amountToPay = total - ownerAmt - downPmt;
-  } else {
-    amountToPay = total - downPmt;
-  }
-  const remainingAccommodation = Math.max(
-    0,
-    Math.round((amountToPay - hkFees - beachFees - ins - utilities) * 100) / 100
-  );
 
   if (ownerExperienceView) {
     return (
@@ -686,7 +653,7 @@ function ReservationDetail({
           <InfoRow label="Housekeeping" value={currency(reservation.housekeeping_fees)} />
           <InfoRow label="Beach Pass" value={currency(reservation.beach_access_fees)} />
           <InfoRow label="Insurance" value={currency(reservation.insurance)} />
-          <InfoRow label="Utilities" value={currency(reservation.utilities_amount)} />
+          <InfoRow label="Utilities (in nightly rate)" value={currency(reservation.utilities_amount)} />
           <InfoRow label="Payment Status" value={reservation.payment_status} />
           <InfoRow label="Status" value={reservation.status} />
         </div>

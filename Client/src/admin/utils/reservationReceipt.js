@@ -23,8 +23,7 @@ function buildBillTotals(reservation) {
   const hkFees = parseFloat(reservation.housekeeping_fees) || 0;
   const beachFees = parseFloat(reservation.beach_access_fees) || 0;
   const ins = parseFloat(reservation.insurance) || 0;
-  const utilities = parseFloat(reservation.utilities_amount) || 0;
-  const lineSum = Math.round((accommodation + hkFees + beachFees + ins + utilities) * 100) / 100;
+  const lineSum = Math.round((accommodation + hkFees + beachFees + ins) * 100) / 100;
   const total =
     accommodation > 0 && Math.abs(storedTotal - accommodation) <= 0.5
       ? lineSum
@@ -43,7 +42,6 @@ function buildBillTotals(reservation) {
     hkFees,
     beachFees,
     ins,
-    utilities,
     total,
     amountPaid,
     balance,
@@ -92,8 +90,6 @@ export function buildReservationReceiptHtml(reservation) {
   if (bill.hkFees > 0) lines.push(`<tr><td>Housekeeping</td><td class="num">${money(bill.hkFees)}</td></tr>`);
   if (bill.beachFees > 0) lines.push(`<tr><td>Beach access</td><td class="num">${money(bill.beachFees)}</td></tr>`);
   if (bill.ins > 0) lines.push(`<tr><td>Insurance / deposit</td><td class="num">${money(bill.ins)}</td></tr>`);
-  if (bill.utilities > 0) lines.push(`<tr><td>Utilities</td><td class="num">${money(bill.utilities)}</td></tr>`);
-
   return `<!DOCTYPE html>
 <html lang="en">
 <head>

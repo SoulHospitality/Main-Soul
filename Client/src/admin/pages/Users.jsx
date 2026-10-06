@@ -62,7 +62,14 @@ const EMPTY_STAFF_FORM = {
   staff_code: '',
   manager_id: '',
   manager_ids: [],
+  petty_cash_location: '',
 };
+
+const PETTY_CASH_SCOPES = [
+  { value: 'north_coast', label: 'North Coast' },
+  { value: 'sokhna', label: 'Sokhna' },
+  { value: 'both', label: 'Both' },
+];
 
 const EMPTY_OWNER_FORM = {
   full_name: '',
@@ -514,6 +521,30 @@ function StaffForm({
         <div className="sm:col-span-2 rounded-xl border border-soul-line bg-slate-50 px-3 py-2 text-sm text-soul-muted">
           Unpaid leave is unlimited for all staff. Each approved day deducts 1× daily rate (salary ÷ 30).
         </div>
+        {form.role === 'operations_supervisor' && (
+          <div className="sm:col-span-2">
+            <label className="label">Petty cash access *</label>
+            <div className="grid grid-cols-3 gap-2">
+              {PETTY_CASH_SCOPES.map((s) => (
+                <button
+                  key={s.value}
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, petty_cash_location: s.value }))}
+                  className={`rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
+                    form.petty_cash_location === s.value
+                      ? 'border-soul-blue bg-soul-blue text-white'
+                      : 'border-soul-line bg-white text-soul-blue hover:border-soul-blue/40'
+                  }`}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-[11px] text-slate-400">
+              Which petty cash drawer this operations manager can see and add entries to.
+            </p>
+          </div>
+        )}
         {showCommission && (
           <div>
             <label className="label">Commission % *</label>
@@ -979,6 +1010,7 @@ export default function Users() {
             ? [u.manager_id]
             : []
         ).map(String),
+        petty_cash_location: u.petty_cash_location || '',
       });
       setModal('edit-staff');
     }
@@ -1013,6 +1045,10 @@ export default function Users() {
       toast.error('Staff ID is required');
       return;
     }
+    if (staffForm.role === 'operations_supervisor' && !staffForm.petty_cash_location) {
+      toast.error('Choose which petty cash this operations manager can see');
+      return;
+    }
     if (usesCommissionPct(staffForm.role)) {
       if (staffForm.sales_commission_pct === '' || staffForm.sales_commission_pct == null) {
         toast.error('Commission % is required for this role');
@@ -1041,6 +1077,8 @@ export default function Users() {
       sales_commission_pct: usesCommissionPct(staffForm.role)
         ? Number(staffForm.sales_commission_pct)
         : Number(staffForm.sales_commission_pct) || 0,
+      petty_cash_location:
+        staffForm.role === 'operations_supervisor' ? staffForm.petty_cash_location : undefined,
     });
   };
 

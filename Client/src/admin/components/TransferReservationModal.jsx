@@ -231,8 +231,8 @@ export default function TransferReservationModal({
               </div>
               {Number(to.utilities_amount) > 0 ? (
                 <div className="flex justify-between gap-3">
-                  <span className="text-gray-600">Utilities</span>
-                  <span className="tabular-nums">{currency(to.utilities_amount)}</span>
+                  <span className="text-gray-600">Utilities (in nightly rate)</span>
+                  <span className="tabular-nums text-gray-500">{currency(to.utilities_amount)}</span>
                 </div>
               ) : null}
               {Number(to.insurance) > 0 ? (

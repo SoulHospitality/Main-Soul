@@ -168,7 +168,7 @@ export default function ManualReservationForm({
     ? 0
     : Number(form.utilities_cost_override || selectedUnit?.utilities_cost) || 0;
   const utilitiesAmount = utilitiesPerNight * nights;
-  const fullBill = Math.round((total + housekeeping + beachAccessFees + insurance + utilitiesAmount) * 100) / 100;
+  const fullBill = Math.round((total + housekeeping + beachAccessFees + insurance) * 100) / 100;
   const commissionFinancials = selectedUnit
     ? calcReservationFinancials(selectedUnit, {
         ...form,
@@ -783,8 +783,8 @@ export default function ManualReservationForm({
             )}
             {utilitiesAmount > 0 && (
               <div className="flex justify-between py-1">
-                <span className="text-[#5b6b80]">Utilities</span>
-                <strong className="text-[#0f1c2e]">{money(utilitiesAmount)}</strong>
+                <span className="text-[#5b6b80]">Utilities (included in nightly rate)</span>
+                <span className="text-[#5b6b80]">{money(utilitiesAmount)}</span>
               </div>
             )}
             <div className="flex justify-between py-1 border-t border-[#e6ebf2] mt-1 pt-2">

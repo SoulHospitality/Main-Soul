@@ -13,6 +13,7 @@ const {
 } = require('../../config/cloudinary');
 const { setOwnerUnits, listLinkableUnits } = require('../../lib/ownerUnits');
 const { UNIT_ACQUISITION_ROLES } = require('../../lib/unitAcquisition');
+const { PETTY_CASH_ROLES, canUsePettyCashLocation } = require('../../lib/pettyCashAccess');
 
 const OWNER_ACCOUNT_ROLES = ['finance', ...UNIT_ACQUISITION_ROLES];
 const OWNER_LINK_ROLES = [...UNIT_ACQUISITION_ROLES];
@@ -98,7 +99,7 @@ router.get('/users/sales', async (_req, res, next) => {
 });
 
 
-router.get('/users/owners', requireRoles(...OWNER_ACCOUNT_ROLES), async (_req, res, next) => {
+router.get('/users/owners', requireRoles(...OWNER_ACCOUNT_ROLES, 'operations_supervisor'), async (_req, res, next) => {
   try {
     const { rows } = await query(
       `SELECT s.id, s.full_name, s.email, s.username, s.is_active, s.created_at,
@@ -134,7 +135,7 @@ router.get('/users/owners/linkable-units', requireRoles(...OWNER_LINK_ROLES), as
   }
 });
 
-router.get('/users/owners/:id/units', requireRoles(...UNIT_ACQUISITION_ROLES), async (req, res, next) => {
+router.get('/users/owners/:id/units', requireRoles(...UNIT_ACQUISITION_ROLES, 'operations_supervisor'), async (req, res, next) => {
   try {
     const { rows } = await query(
       `SELECT u.id, u.title, u.unit_number, u.project, u.compound, u.area,
@@ -1619,9 +1620,12 @@ router.put('/notifications/:id/read', async (req, res, next) => {
   }
 });
 
-router.get('/petty-cash/settings', requireRoles('admin'), async (req, res, next) => {
+router.get('/petty-cash/settings', requireRoles(...PETTY_CASH_ROLES), async (req, res, next) => {
   try {
     const location = req.query.location || 'main';
+    if (req.user.role !== 'admin' && !canUsePettyCashLocation(req.user, location)) {
+      return res.status(403).json({ error: 'No access to this petty cash location' });
+    }
     const { rows } = await query(`SELECT * FROM petty_cash_settings WHERE location = $1`, [location]);
     res.json(rows[0] || { location, opening_balance: 0 });
   } catch (e) {

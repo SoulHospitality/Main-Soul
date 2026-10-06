@@ -988,13 +988,25 @@
         }
       },
       "aging": {
-        "description": "Guest invoices aged from check-in. Book balance on 105000 is {{balance}}.",
+        "description": "Unpaid stays aged from check-in. Each amount matches “We Need to Collect” in the reservation details. Book balance on 105000 is {{balance}}.",
         "openAccount": "Open 105000",
         "guest": "Guest",
         "unit": "Unit",
         "checkIn": "Check-in",
         "days": "Days",
-        "due": "Due"
+        "due": "Due",
+        "accommodation": "Accommodation ({{nights}} × {{rate}})",
+        "housekeeping": "Housekeeping",
+        "beach": "Beach pass",
+        "insurance": "Insurance",
+        "fullBill": "Full bill",
+        "ownerCollected": "Owner collected",
+        "paid": "Paid",
+        "toCollect": "We need to collect",
+        "stay": "Stay {{from}} → {{to}}",
+        "sales": "Sales: {{name}}",
+        "paymentStatus": "Payment: {{status}}",
+        "openReservation": "Open reservation"
       },
       "insurance": {
         "description": "Guest insurance is held on account {{code}} at check-in. Record a custom payout on checkout — refund any amount and retain the rest as damage revenue ({{damageCode}}).",
@@ -1421,6 +1433,22 @@
         "cogsHint": "Housekeeping, owner share, and stay costs",
         "opexHint": "Company running costs",
         "expensesHint": "Direct costs and company running costs"
+      },
+      "subAccount": {
+        "add": "Add sub-account",
+        "addTitle": "New sub-account in {{group}}",
+        "parent": "Main account",
+        "chooseParent": "Choose the main account",
+        "name": "Sub-account name",
+        "namePlaceholder": "e.g. Sokhna maintenance",
+        "nameRequired": "Enter a sub-account name",
+        "codeHint": "The code is assigned automatically under the main account (e.g. 503001).",
+        "added": "Sub-account {{code}} added",
+        "deleted": "Sub-account deleted",
+        "delete": "Delete sub-account",
+        "deleteTitle": "Delete sub-account?",
+        "deleteMessage": "Sub-account {{code}} will be removed. Sub-accounts with transactions cannot be deleted.",
+        "under": "Sub-account of {{parent}}"
       }
     }
   }

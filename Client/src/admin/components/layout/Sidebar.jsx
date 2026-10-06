@@ -72,6 +72,7 @@ const NAV_SECTIONS = [
     label: 'Operations',
     items: [
       { path: '/admin/operations', label: 'Operations', icon: KeyRound, page: 'operations' },
+      { path: '/admin/petty-cash', label: 'Petty Cash', icon: Wallet, page: 'petty_cash', roles: ['operations_supervisor'] },
     ],
   },
   {

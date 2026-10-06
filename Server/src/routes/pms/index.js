@@ -109,6 +109,12 @@ async function blocksLongTermReservation(user, unitIds) {
 const HR_ROUTE_ROLES = ['admin', 'hr', 'hr_supervisor'];
 const USER_ACCOUNT_ROLES = ['hr', 'hr_supervisor', 'unit_acquisition_manager'];
 const { normalizePropertyType } = require('../../lib/propertyType');
+const {
+  PETTY_CASH_ROLES,
+  normalizePettyCashScope,
+  pettyCashLocationsFor,
+  canUsePettyCashLocation,
+} = require('../../lib/pettyCashAccess');
 
 const router = express.Router();
 router.use(authStaff);
@@ -496,6 +502,10 @@ router.post('/users', requireRoles(...USER_ACCOUNT_ROLES), async (req, res, next
     } catch (err) {
       return res.status(err.status || 400).json({ error: err.message });
     }
+    const pettyCashScope = role === 'operations_supervisor' ? normalizePettyCashScope(b.petty_cash_location) : null;
+    if (role === 'operations_supervisor' && !pettyCashScope) {
+      return res.status(400).json({ error: 'Choose which petty cash this operations manager can see' });
+    }
 
     const staff_code = normalizeStaffCode(b.staff_code);
     if (!isOwner && !staff_code) {
@@ -524,8 +534,9 @@ router.post('/users', requireRoles(...USER_ACCOUNT_ROLES), async (req, res, next
       `INSERT INTO staff_users (
          username, password_hash, email, full_name, role, staff_code,
          base_salary, salary_change_status, is_first_login, is_active,
-         sales_commission_pct, leave_casual_days, leave_annual_days, leave_unpaid_days, manager_id
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,'none',1,1,$8,COALESCE($9,0),COALESCE($10,0),COALESCE($11,0),$12)
+         sales_commission_pct, leave_casual_days, leave_annual_days, leave_unpaid_days, manager_id,
+         petty_cash_location
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,'none',1,1,$8,COALESCE($9,0),COALESCE($10,0),COALESCE($11,0),$12,$13)
        RETURNING ${STAFF_SELECT}`,
       [
         username,
@@ -540,6 +551,7 @@ router.post('/users', requireRoles(...USER_ACCOUNT_ROLES), async (req, res, next
         b.leave_annual_days != null && b.leave_annual_days !== '' ? parseInt(b.leave_annual_days, 10) || 0 : 0,
         b.leave_unpaid_days != null && b.leave_unpaid_days !== '' ? parseInt(b.leave_unpaid_days, 10) || 0 : 0,
         managerId ?? null,
+        pettyCashScope,
       ]
     );
 
@@ -734,7 +746,7 @@ router.patch('/users/:id', requireRoles(...USER_ACCOUNT_ROLES), async (req, res,
         b.operation_specialist_pct ?? null,
         b.operation_manager_pct ?? null,
         b.reservation_manager_pct ?? null,
-        b.petty_cash_location !== undefined ? b.petty_cash_location : null,
+        b.petty_cash_location !== undefined ? normalizePettyCashScope(b.petty_cash_location) : null,
         baseSalary,
         pendingSalary,
         salaryStatus,
@@ -3453,12 +3465,16 @@ router.post('/tasks', async (req, res, next) => {
   }
 });
 
-router.get('/petty-cash', requireRoles('admin'), async (req, res, next) => {
+router.get('/petty-cash', requireRoles(...PETTY_CASH_ROLES), async (req, res, next) => {
   try {
     const from = clampFromDate(req.query.from_date);
     const location = req.query.location;
     const unitId = req.query.unit_id || null;
     const paidBy = req.query.paid_by || null;
+    const allowedLocations = pettyCashLocationsFor(req.user);
+    if (location && !allowedLocations.includes(location)) {
+      return res.status(403).json({ error: 'No access to this petty cash location' });
+    }
     const params = [from];
     let sql = `
       SELECT pc.*,
@@ -3475,6 +3491,9 @@ router.get('/petty-cash', requireRoles('admin'), async (req, res, next) => {
     if (location) {
       params.push(location);
       sql += ` AND pc.location = $${params.length}`;
+    } else if (req.user.role !== 'admin') {
+      params.push(allowedLocations);
+      sql += ` AND pc.location = ANY($${params.length}::text[])`;
     }
     if (unitId) {
       params.push(unitId);
@@ -3501,7 +3520,7 @@ router.get('/petty-cash', requireRoles('admin'), async (req, res, next) => {
 
 router.post(
   '/petty-cash',
-  requireRoles('admin'),
+  requireRoles(...PETTY_CASH_ROLES),
   setCloudinaryFolder(FOLDER_PAYMENTS),
   upload.single('transfer_proof'),
   attachCloudinaryUrls,
@@ -3528,6 +3547,9 @@ router.post(
     const proofPath = req.file?.path || req.file?.secure_url || b.transfer_proof_path || null;
     const proofName = req.file?.originalname || b.transfer_proof_name || null;
 
+    if (!canUsePettyCashLocation(req.user, location)) {
+      return res.status(403).json({ error: 'No access to this petty cash location' });
+    }
     if (!description || Number.isNaN(amount) || amount < 0) {
       return res.status(400).json({ error: 'Description and amount are required' });
     }
@@ -3624,7 +3646,7 @@ router.post(
   }
 });
 
-router.patch('/petty-cash/:id', requireRoles('admin'), async (req, res, next) => {
+router.patch('/petty-cash/:id', requireRoles(...PETTY_CASH_ROLES), async (req, res, next) => {
   try {
     const b = req.body || {};
     const { rows: existingRows } = await query(`SELECT * FROM petty_cash WHERE id = $1`, [
@@ -3632,6 +3654,12 @@ router.patch('/petty-cash/:id', requireRoles('admin'), async (req, res, next) =>
     ]);
     const existing = existingRows[0];
     if (!existing) return res.status(404).json({ error: 'Not found' });
+    if (
+      !canUsePettyCashLocation(req.user, existing.location) ||
+      (b.location && !canUsePettyCashLocation(req.user, b.location))
+    ) {
+      return res.status(403).json({ error: 'No access to this petty cash location' });
+    }
     if (existing.status === 'moved') {
       return res.status(400).json({ error: 'Cannot edit an entry that was moved to expenses' });
     }

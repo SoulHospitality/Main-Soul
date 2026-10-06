@@ -60,10 +60,50 @@ const CHART_OF_ACCOUNTS = [
   { code: '609000', name: 'Sales Agent Commission Expense', group: 'expenses', type: 'expense' },
 ];
 
-const BY_CODE = Object.fromEntries(CHART_OF_ACCOUNTS.map((a) => [a.code, a]));
+const GROUP_TYPE = {
+  assets: 'asset',
+  liabilities: 'liability',
+  equity: 'equity',
+  revenue: 'revenue',
+  expenses: 'expense',
+};
+
+const BUILTIN_ACCOUNTS = CHART_OF_ACCOUNTS.slice();
+const BUILTIN_CODES = new Set(BUILTIN_ACCOUNTS.map((a) => a.code));
+
+let BY_CODE = Object.fromEntries(CHART_OF_ACCOUNTS.map((a) => [a.code, a]));
 
 function getAccount(code) {
   return BY_CODE[code] || null;
+}
+
+function isBuiltinAccount(code) {
+  return BUILTIN_CODES.has(String(code));
+}
+
+/** CHART_OF_ACCOUNTS is mutated in place so every module holding the array sees custom sub-accounts. */
+function setCustomAccounts(rows) {
+  const builtinByCode = Object.fromEntries(BUILTIN_ACCOUNTS.map((a) => [a.code, a]));
+  const custom = [];
+  for (const row of rows || []) {
+    const code = String(row.code || '').trim();
+    const group = String(row.account_group || row.group || '');
+    if (!code || BUILTIN_CODES.has(code) || !GROUP_TYPE[group]) continue;
+    const parent = builtinByCode[row.parent_code] || null;
+    custom.push({
+      code,
+      name: String(row.name || code),
+      group,
+      type: parent?.type || GROUP_TYPE[group],
+      ...(parent?.contra ? { contra: true } : {}),
+      parent_code: parent ? parent.code : null,
+      custom: true,
+    });
+  }
+  const merged = [...BUILTIN_ACCOUNTS, ...custom].sort((a, b) => a.code.localeCompare(b.code));
+  CHART_OF_ACCOUNTS.splice(0, CHART_OF_ACCOUNTS.length, ...merged);
+  BY_CODE = Object.fromEntries(CHART_OF_ACCOUNTS.map((a) => [a.code, a]));
+  return custom;
 }
 
 function accountsByGroup() {
@@ -105,11 +145,14 @@ const WHT_SKIP_CATEGORIES = ['salary', 'marketing', 'rent', 'utilities_cost', 'b
 module.exports = {
   ACCOUNT_GROUPS,
   CHART_OF_ACCOUNTS,
+  GROUP_TYPE,
   EXPENSE_CATEGORY_TO_ACCOUNT,
   TREASURY_CODES,
   INPUT_VAT_CATEGORIES,
   WHT_SKIP_CATEGORIES,
   getAccount,
+  isBuiltinAccount,
+  setCustomAccounts,
   accountsByGroup,
   signedBalance,
 };

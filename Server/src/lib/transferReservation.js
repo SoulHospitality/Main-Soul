@@ -122,7 +122,7 @@ async function priceTransferStay({ source, unit, checkIn, checkOut }) {
   }
 
   const stayBeforePromo = roundMoney(
-    accommodation + housekeeping + beach + utilities + serviceFees
+    accommodation + housekeeping + beach + serviceFees
   );
 
   return {
