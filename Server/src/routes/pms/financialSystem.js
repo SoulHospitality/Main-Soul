@@ -2,7 +2,10 @@
 const express = require('express');
 const { query } = require('../../config/db');
 const { requireRoles } = require('../../middleware/auth');
-const { clampFromDate, FINANCIAL_EPOCH } = require('../../lib/financialEpoch');
+const {
+  clampBooksFromDate: clampFromDate,
+  FINANCE_BOOKS_START: FINANCIAL_EPOCH,
+} = require('../../lib/financialEpoch');
 const { calcReservationFinancials, round2 } = require('../../lib/commission');
 const { isWebsiteOriginReservation } = require('../../lib/reservationScope');
 const {

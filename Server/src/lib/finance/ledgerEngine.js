@@ -1,5 +1,5 @@
 const { query } = require('../../config/db');
-const { FINANCIAL_EPOCH } = require('../financialEpoch');
+const { FINANCE_BOOKS_START: FINANCIAL_EPOCH } = require('../financialEpoch');
 const { calcReservationFinancials, round2 } = require('../commission');
 const { isWebsiteOriginReservation } = require('../reservationScope');
 const { reservationBill } = require('../reservationBill');

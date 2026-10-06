@@ -43,7 +43,7 @@ import SearchableSelect from '../components/ui/SearchableSelect';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import Modal from '../components/ui/Modal';
 import { currency, formatDate, formatDateTime } from '../utils/formatters';
-import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
+import { FINANCE_BOOKS_START as FINANCIAL_EPOCH } from '../utils/financialEpoch';
 import {
   ACCOUNT_GROUPS,
   CHART_OF_ACCOUNTS,
