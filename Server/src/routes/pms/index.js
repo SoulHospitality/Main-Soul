@@ -115,6 +115,7 @@ const {
   pettyCashLocationsFor,
   canUsePettyCashLocation,
 } = require('../../lib/pettyCashAccess');
+const { refreshBooksReset, afterReset } = require('../../lib/finance/booksReset');
 
 const router = express.Router();
 router.use(authStaff);
@@ -3475,6 +3476,7 @@ router.get('/petty-cash', requireRoles(...PETTY_CASH_ROLES), async (req, res, ne
     if (location && !allowedLocations.includes(location)) {
       return res.status(403).json({ error: 'No access to this petty cash location' });
     }
+    await refreshBooksReset();
     const params = [from];
     let sql = `
       SELECT pc.*,
@@ -3487,7 +3489,7 @@ router.get('/petty-cash', requireRoles(...PETTY_CASH_ROLES), async (req, res, ne
       FROM petty_cash pc
       LEFT JOIN units u ON u.id = pc.unit_id
       LEFT JOIN staff_users ow ON ow.id = pc.owner_id
-      WHERE pc.entry_date >= $1::date`;
+      WHERE pc.entry_date >= $1::date${afterReset('pc.created_at')}`;
     if (location) {
       params.push(location);
       sql += ` AND pc.location = $${params.length}`;
