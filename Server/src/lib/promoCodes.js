@@ -184,7 +184,33 @@ async function redeemPromo({
     );
   }
 
+  if (promo.sales_person_id && bookingId) {
+    await run(`UPDATE bookings SET assigned_sales_id = $2 WHERE id = $1`, [
+      bookingId,
+      promo.sales_person_id,
+    ]);
+    await run(`UPDATE reservations SET sales_person_id = $2 WHERE booking_id = $1`, [
+      bookingId,
+      promo.sales_person_id,
+    ]);
+  }
+
   return { promo, ...applied, guest_key: key, reused };
+}
+
+/** Salesperson linked to the promo code a booking redeemed, if any. */
+async function promoSalesPersonForBooking(bookingId) {
+  if (!bookingId) return null;
+  const { rows } = await query(
+    `SELECT p.sales_person_id
+     FROM promo_code_redemptions r
+     JOIN promo_codes p ON p.id = r.promo_code_id
+     WHERE r.booking_id = $1 AND p.sales_person_id IS NOT NULL
+     ORDER BY r.created_at DESC
+     LIMIT 1`,
+    [bookingId]
+  );
+  return rows[0]?.sales_person_id || null;
 }
 
 module.exports = {
@@ -195,4 +221,5 @@ module.exports = {
   guestAlreadyRedeemed,
   validatePromo,
   redeemPromo,
+  promoSalesPersonForBooking,
 };

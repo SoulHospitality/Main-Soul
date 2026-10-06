@@ -90,7 +90,9 @@ async function acceptWebsiteBooking(bookingId, staffUser, options = {}) {
     }
   }
 
+  const { promoSalesPersonForBooking } = require('../lib/promoCodes');
   const assignee =
+    (await promoSalesPersonForBooking(bookingId)) ||
     booking.assigned_sales_id ||
     (isWebsiteReservationsAgent(staffUser) || isAdmin(staffUser) ? staffUser?.id : null) ||
     (await pickLeastLoadedReservationsAgent());

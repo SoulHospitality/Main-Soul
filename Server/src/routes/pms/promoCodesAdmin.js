@@ -5,6 +5,11 @@ const { normalizeCode } = require('../../lib/promoCodes');
 
 const router = express.Router();
 
+function salesPersonFrom(value) {
+  const id = parseInt(value, 10);
+  return Number.isFinite(id) && id > 0 ? id : null;
+}
+
 function mapPromo(row) {
   if (!row) return null;
   return {
@@ -22,8 +27,10 @@ router.get('/promo-codes', requireRoles('admin'), async (_req, res, next) => {
   try {
     const { rows } = await query(
       `SELECT p.*,
-              (SELECT count(*)::int FROM promo_code_redemptions r WHERE r.promo_code_id = p.id) AS redemption_count
+              (SELECT count(*)::int FROM promo_code_redemptions r WHERE r.promo_code_id = p.id) AS redemption_count,
+              s.full_name AS sales_person_name
        FROM promo_codes p
+       LEFT JOIN staff_users s ON s.id = p.sales_person_id
        ORDER BY p.created_at DESC`
     );
     res.json(rows.map(mapPromo));
@@ -85,8 +92,8 @@ router.post('/promo-codes', requireRoles('admin'), async (req, res, next) => {
     const { rows } = await query(
       `INSERT INTO promo_codes
          (code, discount_percent, discount_amount, active, expires_at, max_uses,
-          description, once_per_guest, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,now())
+          description, once_per_guest, sales_person_id, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,now())
        RETURNING *`,
       [
         code,
@@ -99,6 +106,7 @@ router.post('/promo-codes', requireRoles('admin'), async (req, res, next) => {
         b.once_per_guest === false || b.once_per_guest === 0 || b.once_per_guest === '0'
           ? false
           : true,
+        salesPersonFrom(b.sales_person_id),
       ]
     );
     res.status(201).json(mapPromo(rows[0]));
@@ -188,6 +196,7 @@ router.put('/promo-codes/:id', requireRoles('admin'), async (req, res, next) => 
          max_uses = $7,
          description = $8,
          once_per_guest = $9,
+         sales_person_id = $10,
          updated_at = now()
        WHERE id = $1
        RETURNING *`,
@@ -205,6 +214,9 @@ router.put('/promo-codes/:id', requireRoles('admin'), async (req, res, next) => 
             : null
           : existing[0].description,
         oncePerGuest,
+        b.sales_person_id !== undefined
+          ? salesPersonFrom(b.sales_person_id)
+          : existing[0].sales_person_id,
       ]
     );
     res.json(mapPromo(rows[0]));

@@ -20,6 +20,7 @@ const EMPTY_FORM = {
   description: '',
   active: true,
   once_per_guest: true,
+  sales_person_id: '',
 };
 
 function toForm(promo) {
@@ -35,6 +36,7 @@ function toForm(promo) {
     description: promo.description || '',
     active: promo.active !== false,
     once_per_guest: promo.once_per_guest !== false,
+    sales_person_id: promo.sales_person_id != null ? String(promo.sales_person_id) : '',
   };
 }
 
@@ -48,6 +50,7 @@ function toPayload(form) {
     description: form.description || null,
     active: form.active,
     once_per_guest: form.once_per_guest,
+    sales_person_id: form.sales_person_id || null,
   };
 }
 
@@ -57,7 +60,7 @@ function discountLabel(promo) {
   return '—';
 }
 
-function PromoForm({ form, setForm }) {
+function PromoForm({ form, setForm, salesUsers = [] }) {
   return (
     <div className="space-y-4">
       <div className="form-grid">
@@ -138,6 +141,22 @@ function PromoForm({ form, setForm }) {
           />
         </div>
         <div className="sm:col-span-2">
+          <label className="label">Sales person (optional)</label>
+          <select
+            className="input"
+            value={form.sales_person_id}
+            onChange={(e) => setForm((f) => ({ ...f, sales_person_id: e.target.value }))}
+          >
+            <option value="">None</option>
+            {salesUsers.map((u) => (
+              <option key={u.id} value={String(u.id)}>{u.full_name}</option>
+            ))}
+          </select>
+          <p className="mt-1 text-[11px] text-gray-500">
+            Bookings that use this code are credited to this sales person.
+          </p>
+        </div>
+        <div className="sm:col-span-2">
           <label className="label">Description / notes</label>
           <textarea
             className="input min-h-[80px]"
@@ -190,6 +209,11 @@ export default function PromoCodes() {
   const { data: promos = [], isLoading } = useQuery({
     queryKey: ['promo-codes'],
     queryFn: () => api.get('/promo-codes').then((r) => r.data),
+  });
+
+  const { data: salesUsers = [] } = useQuery({
+    queryKey: ['users-sales'],
+    queryFn: () => api.get('/users/sales').then((r) => r.data),
   });
 
   const { data: detail, isLoading: detailLoading } = useQuery({
@@ -305,6 +329,9 @@ export default function PromoCodes() {
                       {p.description ? (
                         <div className="text-xs text-gray-500 max-w-[16rem] truncate">{p.description}</div>
                       ) : null}
+                      {p.sales_person_name ? (
+                        <div className="text-[11px] font-medium text-violet-700">Sales: {p.sales_person_name}</div>
+                      ) : null}
                     </td>
                     <td className="whitespace-nowrap font-medium">{discountLabel(p)}</td>
                     <td className="whitespace-nowrap tabular-nums">
@@ -396,7 +423,7 @@ export default function PromoCodes() {
           </>
         }
       >
-        <PromoForm form={form} setForm={setForm} />
+        <PromoForm form={form} setForm={setForm} salesUsers={salesUsers} />
       </Modal>
 
       <Modal

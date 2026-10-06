@@ -1264,7 +1264,9 @@ export default function Schedule() {
     isManualReservations ||
     isWebsiteReservations ||
     isReservationsManager ||
-    isAdmin;
+    isAdmin ||
+    user?.role === 'operations' ||
+    user?.role === 'operations_supervisor';
 
   const clearDragPaint = useCallback(() => {
     document.querySelectorAll('td.sched-drag-hit').forEach((el) => {

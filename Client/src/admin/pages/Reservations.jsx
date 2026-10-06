@@ -1299,6 +1299,7 @@ export default function Reservations() {
   };
 
   const canWrite = canManageReservations;
+  const canCreate = canWrite && user?.role !== 'operations' && user?.role !== 'operations_supervisor';
   const canDeleteReservations = canDeleteReservationsFor(user);
   const canPay = canAccessFinance || isManualReservations || isAdmin;
   const canApprove = isAdmin;
@@ -1423,7 +1424,7 @@ export default function Reservations() {
               <Lock className="w-4 h-4" />Block Nights
             </button>
           )}
-          {canWrite && <button onClick={openAdd} className="btn-primary"><Plus className="w-4 h-4" />New Reservation</button>}
+          {canCreate && <button onClick={openAdd} className="btn-primary"><Plus className="w-4 h-4" />New Reservation</button>}
         </div>
       </div>
 
@@ -1517,7 +1518,7 @@ export default function Reservations() {
 
       {isLoading ? <LoadingSpinner /> : reservations.length === 0 ? (
         <EmptyState icon={CalendarDays} title="No reservations found"
-          action={canWrite && <button onClick={openAdd} className="btn-primary"><Plus className="w-4 h-4" />New Reservation</button>} />
+          action={canCreate && <button onClick={openAdd} className="btn-primary"><Plus className="w-4 h-4" />New Reservation</button>} />
       ) : (
         <div className="card p-0">
           <div className="table-wrapper">
