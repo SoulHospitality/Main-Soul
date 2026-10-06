@@ -14,6 +14,7 @@ const {
   accountsByGroup,
   getAccount,
   isBuiltinAccount,
+  isTreasuryCode,
 } = require('../../lib/finance/chartOfAccounts');
 const { refreshCustomAccounts } = require('../../lib/finance/customAccounts');
 const { refreshBooksReset, afterReset } = require('../../lib/finance/booksReset');
@@ -1561,7 +1562,8 @@ router.get('/financial-system/bank-rec', requireRoles('admin', 'finance', 'finan
   try {
     const { from, to } = dateRange(req);
     const code = String(req.query.account || '101000');
-    if (!['101000', '102000', '103000', '104000'].includes(code)) {
+    await refreshCustomAccounts();
+    if (!isTreasuryCode(code)) {
       return res.status(400).json({ error: 'Treasury account required' });
     }
     const built = await buildFinancialPortal(from, to);

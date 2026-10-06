@@ -50,6 +50,7 @@ import {
   getAccount,
   isBuiltinAccount,
   setCustomAccounts,
+  treasuryCodes,
 } from '../../lib/finance/chartOfAccounts';
 import { VAT_OUTPUT_PCT, WHT_STANDARD_PCT, WHT_REDUCED_PCT } from '../../lib/finance/taxEngine';
 import { PettyCashSection } from './PettyCash';
@@ -134,7 +135,7 @@ const ACCOUNT_ICONS = {
 };
 
 function IconFor({ code, group, className = 'w-5 h-5' }) {
-  const Comp = ACCOUNT_ICONS[code] || GROUP_META[group]?.icon || BookOpen;
+  const Comp = ACCOUNT_ICONS[code] || ACCOUNT_ICONS[getAccount(code)?.parent_code] || GROUP_META[group]?.icon || BookOpen;
   return <Comp className={className} />;
 }
 
@@ -3847,6 +3848,7 @@ function GatewayTool({ rangeParams: params }) {
 function BankRecTool({ rangeParams: params }) {
   const { t } = useFinLocale();
   const qc = useQueryClient();
+  useCustomAccounts();
   const [account, setAccount] = useState('101000');
   const [snap, setSnap] = useState({ statement_date: new Date().toISOString().slice(0, 10), statement_balance: '' });
   const q = { ...params, account };
@@ -3875,14 +3877,15 @@ function BankRecTool({ rangeParams: params }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
-        {['101000', '102000', '103000', '104000'].map((code) => (
+        {treasuryCodes().map((code) => (
           <button
             key={code}
             type="button"
             className={`px-3 py-1.5 rounded-full text-sm ${account === code ? 'bg-soul-blue text-white' : 'bg-white border'}`}
             onClick={() => setAccount(code)}
+            title={getAccount(code)?.name}
           >
-            {code}
+            {getAccount(code)?.custom ? getAccount(code).name.replace(/^Bank - |^Cash - /, '') : code}
           </button>
         ))}
       </div>

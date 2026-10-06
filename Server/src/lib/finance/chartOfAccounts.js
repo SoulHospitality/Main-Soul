@@ -96,6 +96,7 @@ function setCustomAccounts(rows) {
       group,
       type: parent?.type || GROUP_TYPE[group],
       ...(parent?.contra ? { contra: true } : {}),
+      ...(parent?.treasury ? { treasury: parent.treasury, currency: parent.currency } : {}),
       parent_code: parent ? parent.code : null,
       custom: true,
     });
@@ -139,6 +140,18 @@ const EXPENSE_CATEGORY_TO_ACCOUNT = {
 
 const TREASURY_CODES = ['101000', '102000', '103000', '104000'];
 
+/** Treasury accounts plus any custom sub-accounts created under them (e.g. ADIB under Bank EGP). */
+function treasuryCodes() {
+  return [
+    ...TREASURY_CODES,
+    ...CHART_OF_ACCOUNTS.filter((a) => a.custom && TREASURY_CODES.includes(a.parent_code)).map((a) => a.code),
+  ];
+}
+
+function isTreasuryCode(code) {
+  return treasuryCodes().includes(code);
+}
+
 const INPUT_VAT_CATEGORIES = ['professional', 'software', 'rent', 'utilities_cost'];
 const WHT_SKIP_CATEGORIES = ['salary', 'marketing', 'rent', 'utilities_cost', 'buffet', 'gateway_fees'];
 
@@ -148,6 +161,8 @@ module.exports = {
   GROUP_TYPE,
   EXPENSE_CATEGORY_TO_ACCOUNT,
   TREASURY_CODES,
+  treasuryCodes,
+  isTreasuryCode,
   INPUT_VAT_CATEGORIES,
   WHT_SKIP_CATEGORIES,
   getAccount,

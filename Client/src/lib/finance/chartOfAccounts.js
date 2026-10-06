@@ -108,5 +108,13 @@ export const EXPENSE_CATEGORY_TO_ACCOUNT = {
 };
 
 export const TREASURY_CODES = ['101000', '102000', '103000', '104000'];
+
+/** Treasury accounts plus any custom sub-accounts created under them (e.g. ADIB under Bank EGP). */
+export function treasuryCodes() {
+  return [
+    ...TREASURY_CODES,
+    ...CHART_OF_ACCOUNTS.filter((a) => a.custom && TREASURY_CODES.includes(a.parent_code)).map((a) => a.code),
+  ];
+}
 export const KPI_ACCOUNTS = ['owner_trust', 'guest_deposits', 'commission', 'vat_payable', 'wht_payable'];
 export const INPUT_VAT_CATEGORIES = ['professional', 'software', 'rent', 'utilities_cost'];

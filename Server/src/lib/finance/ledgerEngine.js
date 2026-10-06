@@ -7,6 +7,8 @@ const {
   CHART_OF_ACCOUNTS,
   EXPENSE_CATEGORY_TO_ACCOUNT,
   TREASURY_CODES,
+  treasuryCodes,
+  isTreasuryCode,
   INPUT_VAT_CATEGORIES,
   WHT_SKIP_CATEGORIES,
   getAccount,
@@ -1592,18 +1594,6 @@ function balanceSheet(bals, pnlNet) {
       liabilities_and_equity: round2(liabTotal + equityTotal),
     },
   };
-}
-
-/** Treasury accounts plus any custom sub-accounts created under them. */
-function treasuryCodes() {
-  return [
-    ...TREASURY_CODES,
-    ...CHART_OF_ACCOUNTS.filter((a) => a.custom && TREASURY_CODES.includes(a.parent_code)).map((a) => a.code),
-  ];
-}
-
-function isTreasuryCode(code) {
-  return treasuryCodes().includes(code);
 }
 
 function treasuryBalancesFromJournal(journal) {
