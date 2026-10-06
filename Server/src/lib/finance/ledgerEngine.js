@@ -1594,11 +1594,23 @@ function balanceSheet(bals, pnlNet) {
   };
 }
 
+/** Treasury accounts plus any custom sub-accounts created under them. */
+function treasuryCodes() {
+  return [
+    ...TREASURY_CODES,
+    ...CHART_OF_ACCOUNTS.filter((a) => a.custom && TREASURY_CODES.includes(a.parent_code)).map((a) => a.code),
+  ];
+}
+
+function isTreasuryCode(code) {
+  return treasuryCodes().includes(code);
+}
+
 function treasuryBalancesFromJournal(journal) {
   const bals = balancesFromJournal(journal);
   const byCode = {};
   let total = 0;
-  for (const code of TREASURY_CODES) {
+  for (const code of treasuryCodes()) {
     const a = bals.find((x) => x.code === code);
     const balance = a?.balance || 0;
     byCode[code] = {
@@ -1621,7 +1633,7 @@ function entryTreasuryTotals(entry) {
   let debit = 0;
   let credit = 0;
   for (const line of entry.lines || []) {
-    if (!TREASURY_CODES.includes(line.account)) continue;
+    if (!isTreasuryCode(line.account)) continue;
     debit += Number(line.debit) || 0;
     credit += Number(line.credit) || 0;
   }
@@ -1629,12 +1641,12 @@ function entryTreasuryTotals(entry) {
 }
 
 function isPureTreasuryTransfer(entry) {
-  const tLines = (entry.lines || []).filter((l) => TREASURY_CODES.includes(l.account));
+  const tLines = (entry.lines || []).filter((l) => isTreasuryCode(l.account));
   if (tLines.length < 2) return false;
   const hasDebit = tLines.some((l) => (Number(l.debit) || 0) > 0.009);
   const hasCredit = tLines.some((l) => (Number(l.credit) || 0) > 0.009);
   if (!hasDebit || !hasCredit) return false;
-  const other = (entry.lines || []).filter((l) => !TREASURY_CODES.includes(l.account));
+  const other = (entry.lines || []).filter((l) => !isTreasuryCode(l.account));
   const otherAmt = other.reduce((s, l) => s + (Number(l.debit) || 0) + (Number(l.credit) || 0), 0);
   return otherAmt < 0.01;
 }
@@ -1699,8 +1711,9 @@ function cashFlow(periodJournal, opts = {}) {
   let operatingOut = 0;
   let financingOut = 0;
 
+  const cashCodes = treasuryCodes();
   const byAccountFlow = {};
-  for (const code of TREASURY_CODES) {
+  for (const code of cashCodes) {
     byAccountFlow[code] = { inflows: 0, outflows: 0 };
   }
 
@@ -1710,7 +1723,7 @@ function cashFlow(periodJournal, opts = {}) {
     if (Math.abs(debit) < 0.005 && Math.abs(credit) < 0.005) continue;
 
     for (const line of entry.lines || []) {
-      if (!TREASURY_CODES.includes(line.account)) continue;
+      if (!byAccountFlow[line.account]) continue;
       byAccountFlow[line.account].inflows = round2(
         byAccountFlow[line.account].inflows + (Number(line.debit) || 0)
       );
@@ -1795,7 +1808,7 @@ function cashFlow(periodJournal, opts = {}) {
   const endingFromLedger = closingPos.total;
   const variance = round2(endingFromBridge - endingFromLedger);
 
-  const byAccount = TREASURY_CODES.map((code) => {
+  const byAccount = cashCodes.map((code) => {
     const open = openingPos.byCode[code]?.balance || 0;
     const flow = byAccountFlow[code] || { inflows: 0, outflows: 0 };
     const closeLedger = closingPos.byCode[code]?.balance || 0;
@@ -1812,7 +1825,7 @@ function cashFlow(periodJournal, opts = {}) {
 
   return {
     method: 'direct',
-    cash_definition: [...TREASURY_CODES],
+    cash_definition: cashCodes,
     from_date: opts.from || null,
     to_date: opts.to || null,
     opening_cash: openingCash,
@@ -1972,20 +1985,22 @@ function buildPortal(journal, reservations, recurring, extras = {}) {
     };
   });
 
-  const treasury = TREASURY_CODES.map((code) => {
-    const a = byCode[code];
-    const inAmt = a?.debit || 0;
-    const outAmt = a?.credit || 0;
-    return {
-      code,
-      name: a?.name,
-      currency: getAccount(code)?.currency || 'EGP',
-      kind: getAccount(code)?.treasury,
-      balance: a?.balance || 0,
-      inflow: round2(inAmt),
-      outflow: round2(outAmt),
-      txn_count: a?.txn_count || 0,
-    };
+  const treasuryCard = (a, parentCode) => ({
+    code: a.code,
+    name: a.name,
+    currency: getAccount(parentCode)?.currency || 'EGP',
+    kind: getAccount(parentCode)?.treasury,
+    balance: a.balance || 0,
+    inflow: round2(a.debit || 0),
+    outflow: round2(a.credit || 0),
+    txn_count: a.txn_count || 0,
+  });
+  const treasury = TREASURY_CODES.flatMap((code) => {
+    const a = byCode[code] || { code, name: getAccount(code)?.name, balance: 0, debit: 0, credit: 0, txn_count: 0 };
+    const children = bals.filter((b) => b.custom && b.parent_code === code);
+    if (!children.length) return [treasuryCard(a, code)];
+    const parentActive = Math.abs(a.balance || 0) > 0.009 || (a.txn_count || 0) > 0;
+    return [...(parentActive ? [treasuryCard(a, code)] : []), ...children.map((c) => treasuryCard(c, code))];
   });
 
   const outstanding = summarizeOutstanding(reservations);
@@ -1994,6 +2009,8 @@ function buildPortal(journal, reservations, recurring, extras = {}) {
   );
   const inputVat = byCode['107000']?.balance || 0;
   const outputVat = byCode['205000']?.balance || 0;
+  const withChildrenBalance = (code) =>
+    round2(bals.filter((b) => b.code === code || (b.custom && b.parent_code === code)).reduce((s, b) => s + (b.balance || 0), 0));
   const treasuryTotal = round2(treasury.reduce((s, t) => s + (t.balance || 0), 0));
   const treasuryIn = round2(treasury.reduce((s, t) => s + (t.inflow || 0), 0));
 
@@ -2013,8 +2030,8 @@ function buildPortal(journal, reservations, recurring, extras = {}) {
       vat_payable: round2(Math.max(0, outputVat - inputVat)),
       vat_output: outputVat,
       vat_input: inputVat,
-      cash_egp: byCode['103000']?.balance || 0,
-      bank_egp: byCode['101000']?.balance || 0,
+      cash_egp: withChildrenBalance('103000'),
+      bank_egp: withChildrenBalance('101000'),
       gateway_clearing: byCode['106000']?.balance || 0,
       guest_ar: byCode['105000']?.balance || 0,
       gross_revenue: receipts.total,
