@@ -805,7 +805,10 @@
       },
       "group": {
         "managementView": "عرض إداري",
-        "monthlyAutoDeduct": "خصم شهري تلقائي"
+        "monthlyAutoDeduct": "خصم شهري تلقائي",
+        "showEmpty": "عرض {{count}} حسابات فارغة",
+        "hideEmpty": "إخفاء الحسابات الفارغة",
+        "allEmpty": "لا توجد حركة في هذه المجموعة بعد."
       },
       "account": {
         "managementView": "عرض إداري",

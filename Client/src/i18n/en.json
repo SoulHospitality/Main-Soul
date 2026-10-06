@@ -805,7 +805,10 @@
       },
       "group": {
         "managementView": "Management view",
-        "monthlyAutoDeduct": "Monthly auto-deduct"
+        "monthlyAutoDeduct": "Monthly auto-deduct",
+        "showEmpty": "Show {{count}} empty accounts",
+        "hideEmpty": "Hide empty accounts",
+        "allEmpty": "No activity in this group yet."
       },
       "account": {
         "managementView": "management view",

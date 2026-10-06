@@ -9,17 +9,11 @@ const ACCOUNT_GROUPS = {
 
 const CHART_OF_ACCOUNTS = [
   { code: '101000', name: 'Bank - EGP Main Operating Account', group: 'assets', type: 'asset', treasury: 'bank', currency: 'EGP' },
-  { code: '102000', name: 'Bank - USD Foreign Currency Account', group: 'assets', type: 'asset', treasury: 'bank', currency: 'USD' },
   { code: '103000', name: 'Cash - Operations & Field Petty Cash (EGP)', group: 'assets', type: 'asset', treasury: 'cash', currency: 'EGP' },
-  { code: '104000', name: 'Cash - USD Field & Guest Cash', group: 'assets', type: 'asset', treasury: 'cash', currency: 'USD' },
   { code: '105000', name: 'Guest Accounts Receivable', group: 'assets', type: 'asset' },
   { code: '106000', name: 'Payment Gateway Clearing (Paymob / Stripe / Fawry)', group: 'assets', type: 'asset' },
   { code: '107000', name: 'VAT Receivable (Input VAT 14%)', group: 'assets', type: 'asset' },
   { code: '110000', name: 'Accrued Owner Recoverables (Utilities & Maintenance)', group: 'assets', type: 'asset' },
-  { code: '150000', name: 'Fixed Assets - Linens, Towels & Guest Equipment', group: 'assets', type: 'asset' },
-  { code: '151000', name: 'Fixed Assets - Smart Locks & Field Tech Hardware', group: 'assets', type: 'asset' },
-  { code: '159000', name: 'Accumulated Depreciation - Operating Assets', group: 'assets', type: 'asset', contra: true },
-
   { code: '201000', name: 'Vendor Accounts Payable', group: 'liabilities', type: 'liability' },
   { code: '202000', name: 'Owner Accounts Payable (Funds Held in Trust)', group: 'liabilities', type: 'liability' },
   { code: '203000', name: 'Guest Advance Deposits (Unearned Revenue)', group: 'liabilities', type: 'liability' },
@@ -29,7 +23,6 @@ const CHART_OF_ACCOUNTS = [
   { code: '208000', name: 'Broker Accounts Payable', group: 'liabilities', type: 'liability' },
   { code: '209000', name: 'Sales Agent Commission Payable', group: 'liabilities', type: 'liability' },
 
-  { code: '301000', name: 'Share Capital', group: 'equity', type: 'equity' },
   { code: '302000', name: 'Retained Earnings', group: 'equity', type: 'equity' },
   { code: '303000', name: 'Current Year Profit / Loss', group: 'equity', type: 'equity' },
 
@@ -42,10 +35,8 @@ const CHART_OF_ACCOUNTS = [
   { code: '410000', name: 'Insurance Damage Retention Revenue', group: 'revenue', type: 'revenue' },
 
   { code: '501000', name: 'Housekeeping & Laundry Direct Costs', group: 'expenses', type: 'expense' },
-  { code: '502000', name: 'Guest Welcome Amenities & Refreshments', group: 'expenses', type: 'expense' },
   { code: '503000', name: 'Direct Villa Repairs & Maintenance (Soul Cost)', group: 'expenses', type: 'expense' },
   { code: '504000', name: 'Merchant / Payment Gateway Transaction Fees', group: 'expenses', type: 'expense' },
-  { code: '505000', name: 'Master-Lease Rent Expense (Principal Units)', group: 'expenses', type: 'expense' },
   { code: '506000', name: 'Owner Share Expense (Unit % of nightly rate × nights)', group: 'expenses', type: 'expense' },
   { code: '508000', name: 'Staff Buffet & Meals', group: 'expenses', type: 'expense', recurring: 'buffet' },
 
@@ -54,8 +45,6 @@ const CHART_OF_ACCOUNTS = [
   { code: '603000', name: 'Marketing, OTA Promotions & Guest Acquisition', group: 'expenses', type: 'expense' },
   { code: '604000', name: 'Office Rent', group: 'expenses', type: 'expense', recurring: 'rent' },
   { code: '605000', name: 'Professional, CPA & Legal Fees', group: 'expenses', type: 'expense' },
-  { code: '606000', name: 'Depreciation & Amortization', group: 'expenses', type: 'expense' },
-  { code: '607000', name: 'Realized & Unrealized Foreign Exchange Gain/Loss', group: 'expenses', type: 'expense' },
   { code: '608000', name: 'Company Campus Utilities', group: 'expenses', type: 'expense', recurring: 'utilities' },
   { code: '609000', name: 'Sales Agent Commission Expense', group: 'expenses', type: 'expense' },
 ];
@@ -138,7 +127,7 @@ const EXPENSE_CATEGORY_TO_ACCOUNT = {
   other: '503000',
 };
 
-const TREASURY_CODES = ['101000', '102000', '103000', '104000'];
+const TREASURY_CODES = ['101000', '103000'];
 
 /** Treasury accounts plus any custom sub-accounts created under them (e.g. ADIB under Bank EGP). */
 function treasuryCodes() {

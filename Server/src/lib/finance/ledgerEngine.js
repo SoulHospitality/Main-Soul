@@ -971,14 +971,6 @@ async function loadPortalData(from, to) {
     reconciled = [];
   }
 
-  let depreciationEntries = [];
-  try {
-    const { rows } = await query(`SELECT d.*, fa.expense_account, fa.depreciation_account FROM fixed_asset_depreciation d JOIN fixed_assets fa ON fa.id = d.asset_id`);
-    depreciationEntries = rows;
-  } catch (_) {
-    depreciationEntries = [];
-  }
-
   return {
     reservations,
     payments,
@@ -996,7 +988,6 @@ async function loadPortalData(from, to) {
     snapshots,
     reconciled,
     reservationTotals,
-    depreciationEntries,
   };
 }
 
@@ -1250,28 +1241,6 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
           owner_id: hb.owner_id,
           owner_name: hb.owner_name,
         },
-      })
-    );
-  }
-
-  for (const dep of data.depreciationEntries || []) {
-    const depDate = dep.period_month + '-01';
-    if (!inRange(depDate, from, to)) continue;
-    const expAcct = dep.expense_account || '606000';
-    const accmAcct = dep.depreciation_account || '159000';
-    const amt = round2(parseFloat(dep.amount) || 0);
-    if (!(amt > 0.009)) continue;
-    journal.push(
-      makeEntry({
-        id: `DEP-${dep.id}`,
-        date: depDate,
-        type: 'depreciation',
-        description: `Depreciation — asset #${dep.asset_id}`,
-        lines: [
-          journalLine(expAcct, amt, 0, 'Depreciation expense'),
-          journalLine(accmAcct, 0, amt, 'Accumulated depreciation'),
-        ],
-        meta: { depreciation_id: dep.id, asset_id: dep.asset_id, period_month: dep.period_month },
       })
     );
   }
@@ -1616,8 +1585,7 @@ function treasuryBalancesFromJournal(journal) {
   return { byCode, total: round2(total) };
 }
 
-const FIXED_ASSET_CODES = new Set(['150000', '151000', '159000']);
-const FINANCING_EQUITY_CODES = new Set(['301000', '302000']);
+const FINANCING_EQUITY_CODES = new Set(['302000']);
 
 function entryTreasuryTotals(entry) {
   let debit = 0;
@@ -1673,7 +1641,7 @@ function sectionFromLines(lines) {
 }
 
 /**
- * Direct-method Statement of Cash Flows for treasury accounts 101000–104000.
+ * Direct-method Statement of Cash Flows for treasury accounts (bank, cash and their sub-accounts).
  * @param {Array} periodJournal - entries in [from, to]
  * @param {{ openingJournal?: Array, closingJournal?: Array, from?: string, to?: string }} opts
  */
@@ -1690,9 +1658,6 @@ function cashFlow(periodJournal, opts = {}) {
   const opRefunds = makeCfLine('guest_refunds', 'Guest / insurance cash refunds');
   const opOtherOut = makeCfLine('other_payments', 'Other operating payments');
   const opTransfers = makeCfLine('treasury_transfers', 'Treasury transfers (net)');
-
-  const invCapex = makeCfLine('capex', 'Purchase of fixed assets');
-  const invProceeds = makeCfLine('asset_proceeds', 'Proceeds from asset disposals');
 
   const finOwner = makeCfLine('owner_payouts', 'Owner trust settlements');
   const finOther = makeCfLine('other_financing', 'Other financing');
@@ -1741,12 +1706,6 @@ function cashFlow(periodJournal, opts = {}) {
       continue;
     }
 
-    if (touchesCodes(entry, FIXED_ASSET_CODES)) {
-      if (credit > 0.009) pushCfAmount(invCapex, entry, -credit);
-      if (debit > 0.009) pushCfAmount(invProceeds, entry, debit);
-      continue;
-    }
-
     if (touchesCodes(entry, FINANCING_EQUITY_CODES)) {
       if (debit > 0.009) pushCfAmount(finOther, entry, debit);
       if (credit > 0.009) {
@@ -1789,7 +1748,7 @@ function cashFlow(periodJournal, opts = {}) {
     opOtherOut,
     opTransfers,
   ]);
-  const investing = sectionFromLines([invCapex, invProceeds]);
+  const investing = sectionFromLines([]);
   const financing = sectionFromLines([finOwner, finOther]);
 
   const netChange = round2(operating.total + investing.total + financing.total);
@@ -1837,7 +1796,7 @@ function cashFlow(periodJournal, opts = {}) {
     operating_net: operating.total,
     financing_out: financingOut,
     note:
-      'Direct method. Cash = Bank/Cash 101000–104000. Gateway clearing (106000) is not cash until settled. Mixed EGP/USD summed at recorded book amounts.',
+      'Direct method. Cash = Bank 101000 and Cash 103000 plus their sub-accounts. Gateway clearing (106000) is not cash until settled.',
   };
 }
 

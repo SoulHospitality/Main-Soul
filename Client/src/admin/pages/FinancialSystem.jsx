@@ -117,9 +117,7 @@ function useCustomAccounts() {
 
 const ACCOUNT_ICONS = {
   '101000': Landmark,
-  '102000': Landmark,
   '103000': Banknote,
-  '104000': Banknote,
   '105000': CircleDollarSign,
   '106000': CreditCard,
   '107000': Scale,
@@ -133,6 +131,11 @@ const ACCOUNT_ICONS = {
   '608000': Zap,
   '609000': Users,
 };
+
+/** Built-in accounts with no balance and no entries; custom sub-accounts always stay visible. */
+function isEmptyAccount(a) {
+  return !a.custom && Math.abs(Number(a.balance) || 0) < 0.005 && !(Number(a.txn_count) > 0);
+}
 
 function IconFor({ code, group, className = 'w-5 h-5' }) {
   const Comp = ACCOUNT_ICONS[code] || ACCOUNT_ICONS[getAccount(code)?.parent_code] || GROUP_META[group]?.icon || BookOpen;
@@ -501,7 +504,7 @@ function HomeView({ data, basisLabel, onOpenGroup, onOpenAccount, onOpenTreasury
                     </div>
                     <p className="text-xs text-gray-500 mt-0.5">{t(`pms.fin.groupMeta.${g.id}Hint`) || meta.hint}</p>
                     <p className="text-xl font-bold tabular-nums mt-3">{currency(g.balance)}</p>
-                    <p className="text-xs text-gray-400 mt-1">{t('pms.fin.subAccounts', { count: g.account_count })}</p>
+                    <p className="text-xs text-gray-400 mt-1">{t('pms.fin.subAccounts', { count: g.accounts ? g.accounts.filter((a) => !isEmptyAccount(a)).length : g.account_count })}</p>
                   </div>
                 </div>
               </button>
@@ -594,7 +597,6 @@ function HomeView({ data, basisLabel, onOpenGroup, onOpenAccount, onOpenTreasury
         <h2 className="text-lg font-semibold text-soul-blue mb-3">{t('pms.fin.home.workspace')}</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { id: 'assets', labelKey: 'fixedAssets', icon: Landmark },
             { id: 'owners', labelKey: 'ownerPayouts', icon: Users },
             { id: 'insurance', labelKey: 'insurancePayout', icon: Shield },
             { id: 'checkin-audit', labelKey: 'checkinAudit', icon: ClipboardList },
@@ -763,7 +765,11 @@ function GroupView({ groupId, data, onOpenAccount }) {
   const meta = GROUP_META[groupId] || GROUP_META.assets;
   const group = (data?.groups || []).find((g) => g.id === groupId);
   const Icon = meta.icon;
-  const accounts = group?.accounts || [];
+  const allAccounts = group?.accounts || [];
+  const [showEmpty, setShowEmpty] = useState(false);
+  const visibleAccounts = allAccounts.filter((a) => !isEmptyAccount(a));
+  const hiddenCount = allAccounts.length - visibleAccounts.length;
+  const accounts = showEmpty ? allAccounts : visibleAccounts;
   const [addOpen, setAddOpen] = useState(false);
   const [deleteCode, setDeleteCode] = useState(null);
 
@@ -776,12 +782,17 @@ function GroupView({ groupId, data, onOpenAccount }) {
         <div>
           <p className="text-xs uppercase tracking-wider text-gray-400">{groupId}</p>
           <h2 className="text-2xl font-semibold text-soul-blue">{meta.label}</h2>
-          <p className="text-sm text-gray-500">{t(`pms.fin.groupMeta.${groupId}Hint`) || meta.hint} · {t('pms.fin.subAccounts', { count: accounts.length })}</p>
+          <p className="text-sm text-gray-500">{t(`pms.fin.groupMeta.${groupId}Hint`) || meta.hint} · {t('pms.fin.subAccounts', { count: visibleAccounts.length })}</p>
         </div>
         <p className="ml-auto text-2xl font-bold tabular-nums">{currency(group?.balance)}</p>
       </div>
 
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-end gap-3">
+        {hiddenCount > 0 ? (
+          <button type="button" className="text-sm text-soul-blue hover:underline" onClick={() => setShowEmpty((v) => !v)}>
+            {showEmpty ? t('pms.fin.group.hideEmpty') : t('pms.fin.group.showEmpty', { count: hiddenCount })}
+          </button>
+        ) : null}
         <button type="button" className="btn-primary text-sm" onClick={() => setAddOpen(true)}>
           <Plus className="w-4 h-4" /> {t('pms.fin.subAccount.add')}
         </button>
@@ -843,6 +854,9 @@ function GroupView({ groupId, data, onOpenAccount }) {
           );
         })}
       </div>
+      {accounts.length === 0 ? (
+        <p className="text-sm text-gray-500 text-center py-6">{t('pms.fin.group.allEmpty')}</p>
+      ) : null}
 
       <SubAccountAddModal key={addOpen ? 'open' : 'closed'} open={addOpen} onClose={() => setAddOpen(false)} groupId={groupId} />
       <SubAccountDeleteDialog code={deleteCode} onClose={() => setDeleteCode(null)} />
@@ -5035,356 +5049,6 @@ function ArControlsTool({ rangeParams: params }) {
   );
 }
 
-function FixedAssetsTool() {
-  const { t } = useFinLocale();
-  const qc = useQueryClient();
-  const [showForm, setShowForm] = useState(false);
-  const [showRun, setShowRun] = useState(false);
-  const [runMonth, setRunMonth] = useState(new Date().toISOString().slice(0, 7));
-  const [scheduleAsset, setScheduleAsset] = useState(null);
-  const [disposeId, setDisposeId] = useState(null);
-  const [form, setForm] = useState({
-    name: '',
-    category: 'equipment',
-    purchase_date: new Date().toISOString().slice(0, 10),
-    purchase_cost: '',
-    salvage_value: '0',
-    useful_life_months: '36',
-    notes: '',
-  });
-
-  const { data: assets = [], isLoading } = useQuery({
-    queryKey: ['financial-system-fixed-assets'],
-    queryFn: () => api.get('/financial-system/fixed-assets').then((r) => r.data),
-  });
-
-  const { data: scheduleRows = [], isLoading: scheduleLoading } = useQuery({
-    queryKey: ['financial-system-fixed-asset-schedule', scheduleAsset?.id],
-    queryFn: () =>
-      api.get(`/financial-system/fixed-assets/${scheduleAsset.id}/schedule`).then((r) => r.data),
-    enabled: Boolean(scheduleAsset?.id),
-  });
-
-  const createAsset = useMutation({
-    mutationFn: (payload) => api.post('/financial-system/fixed-assets', payload),
-    onSuccess: () => {
-      toast.success(t('pms.fin.assets.assetCreated'));
-      setShowForm(false);
-      qc.invalidateQueries({ queryKey: ['financial-system-fixed-assets'] });
-    },
-    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
-  });
-
-  const disposeAsset = useMutation({
-    mutationFn: (id) => api.post(`/financial-system/fixed-assets/${id}/dispose`),
-    onSuccess: () => {
-      toast.success(t('pms.fin.assets.assetDisposed'));
-      setDisposeId(null);
-      qc.invalidateQueries({ queryKey: ['financial-system-fixed-assets'] });
-    },
-    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
-  });
-
-  const runDep = useMutation({
-    mutationFn: (month) => api.post('/financial-system/fixed-assets/run-depreciation', { month }),
-    onSuccess: (_res, month) => {
-      toast.success(t('pms.fin.assets.depreciationRun', { month }));
-      setShowRun(false);
-      qc.invalidateQueries({ queryKey: ['financial-system-fixed-assets'] });
-      qc.invalidateQueries({ queryKey: ['financial-system-portal'] });
-    },
-    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
-  });
-
-  const categoryLabel = (c) =>
-    t(`pms.fin.assets.${c}`) !== `pms.fin.assets.${c}` ? t(`pms.fin.assets.${c}`) : c;
-
-  const statusLabel = (s) => {
-    if (s === 'active') return t('pms.fin.assets.active');
-    if (s === 'disposed') return t('pms.fin.assets.disposed');
-    if (s === 'fully_depreciated') return t('pms.fin.assets.fullyDepreciated');
-    return s;
-  };
-
-  if (isLoading) return <LoadingSpinner />;
-
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <p className="text-sm text-gray-500 max-w-2xl">{t('pms.fin.assets.hint')}</p>
-        <div className="flex gap-2">
-          <button type="button" className="btn-secondary text-sm" onClick={() => setShowRun(true)}>
-            {t('pms.fin.assets.runDepreciation')}
-          </button>
-          <button type="button" className="btn-primary text-sm" onClick={() => setShowForm(true)}>
-            <Plus className="w-4 h-4" /> {t('pms.fin.assets.addAsset')}
-          </button>
-        </div>
-      </div>
-
-      <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="table text-sm">
-            <thead>
-              <tr>
-                <th>{t('pms.fin.assets.code')}</th>
-                <th>{t('pms.fin.assets.name')}</th>
-                <th>{t('pms.fin.assets.category')}</th>
-                <th>{t('pms.fin.assets.purchaseDate')}</th>
-                <th className="text-right">{t('pms.fin.assets.cost')}</th>
-                <th className="text-right">{t('pms.fin.assets.accumulated')}</th>
-                <th className="text-right">{t('pms.fin.assets.bookValue')}</th>
-                <th>{t('pms.fin.assets.status')}</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {(Array.isArray(assets) ? assets : []).length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="text-center text-gray-400 py-8">
-                    {t('pms.fin.assets.noAssets')}
-                  </td>
-                </tr>
-              ) : (
-                (Array.isArray(assets) ? assets : []).map((a) => {
-                  const cost = Number(a.purchase_cost) || 0;
-                  const accum = Number(a.accumulated_depreciation) || 0;
-                  const book =
-                    a.current_book_value != null
-                      ? Number(a.current_book_value)
-                      : Math.max(0, cost - accum);
-                  return (
-                    <tr key={a.id}>
-                      <td className="font-mono text-xs">{a.asset_code}</td>
-                      <td className="font-medium">{a.name}</td>
-                      <td>{categoryLabel(a.category)}</td>
-                      <td>{formatDate(a.purchase_date)}</td>
-                      <td className="text-right tabular-nums">{currency(cost)}</td>
-                      <td className="text-right tabular-nums">{currency(accum)}</td>
-                      <td className="text-right tabular-nums font-semibold">{currency(book)}</td>
-                      <td className="capitalize">{statusLabel(a.status)}</td>
-                      <td className="text-right space-x-2 rtl:space-x-reverse">
-                        <button
-                          type="button"
-                          className="text-xs text-soul-blue"
-                          onClick={() => setScheduleAsset(a)}
-                        >
-                          {t('pms.fin.assets.schedule')}
-                        </button>
-                        {a.status === 'active' && (
-                          <button
-                            type="button"
-                            className="text-xs text-rose-600"
-                            onClick={() => setDisposeId(a.id)}
-                          >
-                            {t('pms.fin.assets.dispose')}
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <Modal
-        open={showForm}
-        onClose={() => setShowForm(false)}
-        title={t('pms.fin.assets.addAsset')}
-        footer={
-          <>
-            <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>
-              {t('pms.fin.cancel')}
-            </button>
-            <button
-              type="button"
-              className="btn-primary"
-              disabled={createAsset.isPending || !(form.name && parseFloat(form.purchase_cost) > 0)}
-              onClick={() =>
-                createAsset.mutate({
-                  name: form.name.trim(),
-                  category: form.category,
-                  purchase_date: form.purchase_date,
-                  purchase_cost: parseFloat(form.purchase_cost),
-                  salvage_value: parseFloat(form.salvage_value) || 0,
-                  useful_life_months: parseInt(form.useful_life_months, 10) || 36,
-                  notes: form.notes.trim() || undefined,
-                })
-              }
-            >
-              {t('pms.fin.save')}
-            </button>
-          </>
-        }
-      >
-        <div className="space-y-3">
-          <div>
-            <label className="label">{t('pms.fin.assets.name')}</label>
-            <input
-              className="input w-full"
-              value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="label">{t('pms.fin.assets.category')}</label>
-            <select
-              className="input w-full"
-              value={form.category}
-              onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
-            >
-              {['equipment', 'furniture', 'technology', 'vehicle', 'other'].map((c) => (
-                <option key={c} value={c}>
-                  {categoryLabel(c)}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="label">{t('pms.fin.assets.purchaseDate')}</label>
-              <input
-                type="date"
-                className="input w-full"
-                value={form.purchase_date}
-                onChange={(e) => setForm((f) => ({ ...f, purchase_date: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="label">{t('pms.fin.assets.purchaseCost')}</label>
-              <input
-                type="number"
-                min="0.01"
-                step="0.01"
-                className="input w-full"
-                value={form.purchase_cost}
-                onChange={(e) => setForm((f) => ({ ...f, purchase_cost: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="label">{t('pms.fin.assets.salvageValue')}</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                className="input w-full"
-                value={form.salvage_value}
-                onChange={(e) => setForm((f) => ({ ...f, salvage_value: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="label">{t('pms.fin.assets.usefulLifeMonths')}</label>
-              <input
-                type="number"
-                min="1"
-                className="input w-full"
-                value={form.useful_life_months}
-                onChange={(e) => setForm((f) => ({ ...f, useful_life_months: e.target.value }))}
-              />
-            </div>
-          </div>
-          <div>
-            <label className="label">{t('pms.fin.assets.notesOptional')}</label>
-            <input
-              className="input w-full"
-              value={form.notes}
-              onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-            />
-          </div>
-        </div>
-      </Modal>
-
-      <Modal
-        open={showRun}
-        onClose={() => setShowRun(false)}
-        title={t('pms.fin.assets.runDepreciation')}
-        footer={
-          <>
-            <button type="button" className="btn-secondary" onClick={() => setShowRun(false)}>
-              {t('pms.fin.cancel')}
-            </button>
-            <button
-              type="button"
-              className="btn-primary"
-              disabled={runDep.isPending}
-              onClick={() => runDep.mutate(runMonth)}
-            >
-              {t('pms.fin.assets.run')}
-            </button>
-          </>
-        }
-      >
-        <div>
-          <label className="label">{t('pms.fin.assets.runMonth')}</label>
-          <input
-            type="month"
-            className="input w-full"
-            value={runMonth}
-            onChange={(e) => setRunMonth(e.target.value)}
-          />
-        </div>
-      </Modal>
-
-      <Modal
-        open={Boolean(scheduleAsset)}
-        onClose={() => setScheduleAsset(null)}
-        title={
-          scheduleAsset
-            ? `${t('pms.fin.assets.schedule')} — ${scheduleAsset.asset_code}`
-            : t('pms.fin.assets.schedule')
-        }
-      >
-        {scheduleLoading ? (
-          <LoadingSpinner />
-        ) : (
-          <table className="table text-sm">
-            <thead>
-              <tr>
-                <th>{t('pms.fin.assets.period')}</th>
-                <th className="text-right">{t('pms.fin.assets.amount')}</th>
-                <th className="text-right">{t('pms.fin.assets.accumulated')}</th>
-                <th className="text-right">{t('pms.fin.assets.bookValue')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(Array.isArray(scheduleRows) ? scheduleRows : []).length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="text-center text-gray-400 py-6">
-                    {t('pms.fin.assets.noSchedule')}
-                  </td>
-                </tr>
-              ) : (
-                (Array.isArray(scheduleRows) ? scheduleRows : []).map((row) => (
-                  <tr key={row.id || row.period_month}>
-                    <td>{row.period_month}</td>
-                    <td className="text-right tabular-nums">{currency(row.amount)}</td>
-                    <td className="text-right tabular-nums">{currency(row.accumulated)}</td>
-                    <td className="text-right tabular-nums">{currency(row.book_value)}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        )}
-      </Modal>
-
-      <ConfirmDialog
-        open={Boolean(disposeId)}
-        onClose={() => setDisposeId(null)}
-        title={t('pms.fin.assets.dispose')}
-        message={t('pms.fin.assets.disposeConfirm')}
-        confirmText={t('pms.fin.assets.confirmDispose')}
-        danger
-        onConfirm={() => disposeAsset.mutate(disposeId)}
-        loading={disposeAsset.isPending}
-      />
-    </div>
-  );
-}
-
 function FinancialSystemInner() {
   const { t, locale, toggleLocale, isRtl } = useFinLocale();
   const { view, group, code, txn, tool, go } = useFinanceNav();
@@ -5435,7 +5099,6 @@ function FinancialSystemInner() {
     const items = [{ label: t('pms.fin.title'), onClick: () => go({ view: 'home', group: '', code: '', txn: '', tool: '' }) }];
     if (tool) {
       const labels = {
-        assets: t('pms.fin.tools.fixedAssets'),
         owners: t('pms.fin.tools.ownerPayouts'),
         insurance: t('pms.fin.tools.insurancePayout'),
         'checkin-audit': t('pms.fin.tools.checkinAudit'),
@@ -5609,8 +5272,6 @@ function FinancialSystemInner() {
         <ArControlsTool rangeParams={params} />
       ) : tool === 'recurring' ? (
         <RecurringTool />
-      ) : tool === 'assets' ? (
-        <FixedAssetsTool />
       ) : (
         <LoadingSpinner />
       )}
