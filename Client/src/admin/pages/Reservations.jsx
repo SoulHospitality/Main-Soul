@@ -553,6 +553,10 @@ function ReservationDetail({
   } else {
     amountToPay = total - downPmt;
   }
+  const remainingAccommodation = Math.max(
+    0,
+    Math.round((amountToPay - hkFees - beachFees - ins - utilities) * 100) / 100
+  );
 
   if (ownerExperienceView) {
     return (
@@ -705,6 +709,10 @@ function ReservationDetail({
         <div className="flex justify-between">
           <span className="text-gray-500">We Need to Collect</span>
           <span className={`font-semibold ${amountToPay > 0 ? 'text-red-600' : 'text-green-600'}`}>{currency(amountToPay)}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-gray-500">Remaining Accommodation</span>
+          <span>{currency(remainingAccommodation)}</span>
         </div>
         {reservation.housekeeping_fees > 0 && (
           <div className="flex justify-between"><span className="text-gray-500">Housekeeping</span><span>{currency(reservation.housekeeping_fees)}</span></div>
