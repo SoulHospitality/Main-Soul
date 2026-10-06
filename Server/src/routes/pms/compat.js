@@ -227,7 +227,7 @@ router.get(
       `SELECT
          r.id, r.guest_name, r.check_in, r.check_out, r.nights,
          r.total_amount, r.price_per_night, r.utilities_amount, r.housekeeping_fees,
-         r.is_owner_reservation, r.broker_total, r.broker_amount_per_night, r.broker_name,
+         r.is_owner_reservation, r.broker_total, r.broker_amount_per_night, r.broker_name, r.broker_phone,
          r.booking_id, r.booking_source, r.sales_person_id,
          COALESCE(u.unit_number, u.title, 'Unit') AS unit_name,
          COALESCE(u.project, u.compound, 'Unassigned') AS project,
@@ -1973,14 +1973,6 @@ router.put(
       if (!isOwner && adults < 1) {
         return res.status(400).json({ error: 'At least 1 adult is required' });
       }
-      const unitId = b.unit_id || existing.unit_id;
-      const { rows: unitRows } = await query(`SELECT guests FROM units WHERE id = $1`, [unitId]);
-      const cap = Number(unitRows[0]?.guests);
-      if (Number.isFinite(cap) && adults + children + nannyCount > cap) {
-        return res
-          .status(400)
-          .json({ error: `Party size exceeds unit capacity (${cap})` });
-      }
     }
 
     const { rows } = await query(
@@ -2076,6 +2068,13 @@ router.put(
           : null,
       ]
     );
+    if (b.broker_phone !== undefined && rows[0]) {
+      const { rows: bp } = await query(
+        `UPDATE reservations SET broker_phone = $2 WHERE id = $1 RETURNING broker_phone`,
+        [req.params.id, String(b.broker_phone || '').trim() || null]
+      );
+      rows[0].broker_phone = bp[0]?.broker_phone ?? null;
+    }
     try {
       const { resyncReservationBlocks } = require('../../lib/reservationBlocks');
       await resyncReservationBlocks(existing, rows[0]);

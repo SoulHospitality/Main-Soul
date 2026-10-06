@@ -4,6 +4,7 @@ const { requireRoles } = require('../../middleware/auth');
 const { calcReservationFinancials, calcStatementFinancials, ownerPortalFinancials, round2 } = require('../../lib/commission');
 const { FINANCIAL_EPOCH, clampFromDate } = require('../../lib/financialEpoch');
 const { logAudit } = require('../../lib/audit');
+const { STAFF_EDITOR_ROLES } = require('../../lib/staffEditorRoles');
 
 const router = express.Router();
 
@@ -13,7 +14,7 @@ async function ownerUnitIds(ownerId) {
 }
 
 
-router.get('/reports/owner-statement', requireRoles('owner', 'admin', 'finance', 'finance_manager', 'owners_relations', 'unit_acquisition_manager'), async (req, res, next) => {
+router.get('/reports/owner-statement', requireRoles('owner', ...STAFF_EDITOR_ROLES), async (req, res, next) => {
   try {
     const from = clampFromDate(req.query.from_date);
     const to = req.query.to_date || null;

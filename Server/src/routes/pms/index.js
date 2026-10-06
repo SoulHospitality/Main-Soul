@@ -1910,12 +1910,16 @@ router.post(
         ? parseFloat(b.total_amount) || 0
         : parseFloat(b.owner_collected_amount) || 0;
 
-    const allowedMethods = new Set(['cash', 'instapay', 'bank_transfer', 'credit_card', 'online', 'paymob_card']);
+    const allowedMethods = new Set(['cash', 'instapay', 'bank_transfer', 'credit_card', 'online', 'paymob_card', 'other']);
     let paymentMethod = String(b.payment_method || '').toLowerCase() || null;
     if (paymentMethod && !allowedMethods.has(paymentMethod)) paymentMethod = null;
     
-    if (paymentMethod && !['cash', 'instapay'].includes(paymentMethod) && !truthyFlag(b.is_owner_reservation) && !truthyFlag(b.is_hold)) {
+    if (paymentMethod && !['cash', 'instapay', 'other'].includes(paymentMethod) && !truthyFlag(b.is_owner_reservation) && !truthyFlag(b.is_hold)) {
       paymentMethod = 'cash';
+    }
+    const paymentMethodNote = String(b.payment_method_note || '').trim();
+    if (paymentMethod === 'other' && !paymentMethodNote) {
+      return res.status(400).json({ error: 'A comment is required when the payment method is Other' });
     }
 
     const downPayment = parseFloat(b.down_payment) || 0;
@@ -2012,6 +2016,15 @@ router.post(
     );
 
     const reservation = rows[0];
+    const brokerPhone = String(b.broker_phone || '').trim() || null;
+    if (reservation && (brokerPhone || paymentMethodNote)) {
+      await query(
+        `UPDATE reservations SET broker_phone = $2, payment_method_note = $3 WHERE id = $1`,
+        [reservation.id, brokerPhone, paymentMethodNote || null]
+      );
+      reservation.broker_phone = brokerPhone;
+      reservation.payment_method_note = paymentMethodNote || null;
+    }
 
     try {
       const { canonicalOpsAgentFromLabel, matchOpsStaff } = require('../../lib/opsAgentAliases');
@@ -2070,7 +2083,9 @@ router.post(
             reservation.id,
             amountToCollect,
             paymentMethod,
-            'Awaiting collection (manual reservation)',
+            paymentMethod === 'other'
+              ? `Awaiting collection (manual reservation) — Other: ${paymentMethodNote}`
+              : 'Awaiting collection (manual reservation)',
             req.user.id,
           ]
         );
@@ -2232,6 +2247,13 @@ router.patch(
         req.params.id,
       ]
     );
+    if (b.broker_phone !== undefined && rows[0]) {
+      const { rows: bp } = await query(
+        `UPDATE reservations SET broker_phone = $2 WHERE id = $1 RETURNING broker_phone`,
+        [req.params.id, String(b.broker_phone || '').trim() || null]
+      );
+      rows[0].broker_phone = bp[0]?.broker_phone ?? null;
+    }
     try {
       const { resyncReservationBlocks } = require('../../lib/reservationBlocks');
       await resyncReservationBlocks(existing, rows[0]);

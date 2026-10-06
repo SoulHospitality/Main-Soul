@@ -513,6 +513,7 @@ export function canAccess(user, page) {
   }
   const allowed = PAGE_ACCESS[user.role];
   if (allowed === true) return true;
+  if (page === 'owner_statement' && STAFF_EDITOR_ROLES.has(user.role)) return true;
   // Long-term units share access with the short-term units page.
   if (page === 'units_long_term') page = 'units';
   if (allowed instanceof Set) return allowed.has(page);

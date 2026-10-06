@@ -21,6 +21,7 @@ import { useAuth } from '../context/AuthContext';
 import { isoDateOnly } from '../../utils/stayNights';
 import { otaBlockRank, otaBlockLook } from '../utils/otaCalendar';
 import { useProjectCatalog } from '../../hooks/useProjectCatalog';
+import ReservationReceipt, { BrokerDetails } from '../components/ReservationReceipt';
 
 
 
@@ -375,6 +376,7 @@ function ReservationDetailModal({
   onDelete,
   cancelling,
   deleting,
+  showCommission = false,
 }) {
   const isWebsitePending = String(reservationId || '').startsWith('web-');
   const numericId = isWebsitePending ? null : reservationId;
@@ -387,9 +389,6 @@ function ReservationDetailModal({
   });
 
   const res = fetched || (open ? seed : null);
-  const paid = parseFloat(res?.amount_paid) || 0;
-  const total = parseFloat(res?.total_amount) || 0;
-  const remaining = total - paid;
   const cancelled = String(res?.status || '').toLowerCase() === 'cancelled';
   const isOwner = Number(res?.is_owner_reservation) === 1;
   const titleId = isWebsitePending
@@ -510,30 +509,8 @@ function ReservationDetailModal({
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-white border border-gray-200 rounded-xl p-3 text-center">
-              <p className="text-xs text-gray-400 mb-1">Total</p>
-              <p className="font-bold text-gray-900 text-sm">{currency(total)}</p>
-            </div>
-            <div className="bg-green-50 border border-green-100 rounded-xl p-3 text-center">
-              <p className="text-xs text-green-600 mb-1">Paid</p>
-              <p className="font-bold text-green-700 text-sm">{currency(paid)}</p>
-            </div>
-            <div
-              className={`border rounded-xl p-3 text-center ${
-                remaining > 0 ? 'bg-red-50 border-red-100' : 'bg-gray-50 border-gray-100'
-              }`}
-            >
-              <p className={`text-xs mb-1 ${remaining > 0 ? 'text-red-500' : 'text-gray-400'}`}>
-                Remaining
-              </p>
-              <p
-                className={`font-bold text-sm ${remaining > 0 ? 'text-red-600' : 'text-gray-400'}`}
-              >
-                {currency(remaining)}
-              </p>
-            </div>
-          </div>
+          <ReservationReceipt reservation={res} showCommission={showCommission} />
+          <BrokerDetails reservation={res} />
 
           {res.notes && (
             <div className="bg-amber-50 rounded-lg px-4 py-3 text-sm text-amber-800">
@@ -1182,6 +1159,9 @@ export default function Schedule() {
     const nannyCount = Math.max(0, parseInt(createForm.nanny_count, 10) || 0);
     if (!createForm.is_owner_reservation && adults < 1) {
       return toast.error('At least 1 adult is required');
+    }
+    if (!createForm.is_owner_reservation && createForm.payment_method === 'other' && !createForm.payment_method_note?.trim()) {
+      return toast.error('Add a comment for the Other payment method');
     }
     const payload = {
       ...createForm,
@@ -2512,6 +2492,7 @@ export default function Schedule() {
         reservationId={detailResId}
         seed={detailSeed}
         canWrite={canWrite}
+        showCommission={isAdmin}
         cancelling={cancelReservationMutation.isPending}
         deleting={deleteReservationMutation.isPending}
         onMoveUnit={(res) => {

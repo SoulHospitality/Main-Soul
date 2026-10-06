@@ -31,6 +31,7 @@ import TransferReservationModal from '../components/TransferReservationModal';
 import ReservationsNav from '../components/ReservationsNav';
 import { useProjectCatalog } from '../../hooks/useProjectCatalog';
 import { openReservationReceipt } from '../utils/reservationReceipt';
+import ReservationReceipt, { BrokerDetails } from '../components/ReservationReceipt';
 
 export const EMPTY_FORM = {
   unit_id: '', guest_name: '', guest_email: '', guest_phone: '', guest_nationality: '',
@@ -43,8 +44,10 @@ export const EMPTY_FORM = {
   utilities_cost_override: '',
   beach_access_fees: '',
   broker_name: '',
+  broker_phone: '',
   broker_amount_per_night: '',
   payment_method: 'cash',
+  payment_method_note: '',
 };
 const EMPTY_PMT = { amount: '', payment_date: new Date().toISOString().split('T')[0], payment_method: 'cash', reference_number: '', notes: '' };
 
@@ -340,6 +343,16 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
               />
             </div>
             <div>
+              <label className="label text-xs text-purple-700">Broker Phone</label>
+              <input
+                type="tel"
+                className="input"
+                value={form.broker_phone || ''}
+                onChange={e => setForm(f => ({ ...f, broker_phone: e.target.value }))}
+                placeholder="e.g. 01xxxxxxxxx"
+              />
+            </div>
+            <div className="col-span-2">
               <label className="label text-xs text-purple-700">Broker Amount / Night (EGP)</label>
               <input
                 type="number" min="0" step="0.01"
@@ -442,6 +455,18 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
               </label>
             ))}
           </div>
+          {form.payment_method === 'other' && (
+            <div>
+              <label className="label text-xs text-emerald-800">Comment <span className="text-red-500">*</span></label>
+              <textarea
+                className="input resize-none"
+                rows={2}
+                value={form.payment_method_note || ''}
+                onChange={e => setForm(f => ({ ...f, payment_method_note: e.target.value }))}
+                placeholder="How will this be paid?"
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -573,18 +598,6 @@ function ReservationDetail({
     );
   }
 
-  
-  const fin = calcReservationFinancials(
-    {
-      commission_mode:             reservation.commission_mode,
-      company_commission_pct:      reservation.company_commission_pct,
-      company_commission_owner_pct: reservation.company_commission_owner_pct,
-      commission_tenant_pct:       reservation.commission_tenant_pct,
-      utilities_cost:              reservation.unit_utilities_cost,
-    },
-    reservation
-  );
-
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-4 text-sm">
@@ -660,71 +673,8 @@ function ReservationDetail({
       </div>
 
       
-      <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-1.5 text-sm">
-        
-        {reservation.owner_collected_type && (
-          <div className={`flex justify-between rounded-lg px-2 py-1 mb-1
-            ${reservation.owner_collected_type === 'full' ? 'bg-green-50' : 'bg-amber-50'}`}>
-            <span className={reservation.owner_collected_type === 'full' ? 'text-green-700' : 'text-amber-700'}>
-              🏠 Owner collected ({reservation.owner_collected_type === 'full' ? 'full payment' : 'down payment'})
-            </span>
-            <span className={`font-semibold ${reservation.owner_collected_type === 'full' ? 'text-green-700' : 'text-amber-700'}`}>
-              {currency(reservation.owner_collected_amount)}
-            </span>
-          </div>
-        )}
-        <div className="flex justify-between">
-          <span className="text-gray-500">We Need to Collect</span>
-          <span className={`font-semibold ${amountToPay > 0 ? 'text-red-600' : 'text-green-600'}`}>{currency(amountToPay)}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-gray-500">Remaining Accommodation</span>
-          <span>{currency(remainingAccommodation)}</span>
-        </div>
-        {reservation.housekeeping_fees > 0 && (
-          <div className="flex justify-between"><span className="text-gray-500">Housekeeping</span><span>{currency(reservation.housekeeping_fees)}</span></div>
-        )}
-        {Number(reservation.beach_access_fees) > 0 && (
-          <div className="flex justify-between"><span className="text-gray-500">Beach Pass</span><span>{currency(reservation.beach_access_fees)}</span></div>
-        )}
-        {reservation.insurance > 0 && (
-          <div className="flex justify-between"><span className="text-gray-500">Insurance</span><span>{currency(reservation.insurance)}</span></div>
-        )}
-        {fin.utilitiesDeduction > 0 && (
-          <div className="flex justify-between">
-            <span className="text-gray-500">Utilities</span>
-            <span className="text-orange-600">− {currency(fin.utilitiesDeduction)} (from owner nightly rate)</span>
-          </div>
-        )}
-        {showCommission && fin.tenantDeduction > 0 && (
-          <div className="flex justify-between">
-            <span className="text-gray-500">Tenant Commission</span>
-            <span className="text-orange-600">− {currency(fin.tenantDeduction)}</span>
-          </div>
-        )}
-        {fin.brokerDeduction > 0 && (
-          <div className="flex justify-between">
-            <span className="text-gray-500">Broker{reservation.broker_name ? ` (${reservation.broker_name})` : ''}</span>
-            <span className="text-purple-600">− {currency(fin.brokerDeduction)}</span>
-          </div>
-        )}
-        {showCommission && fin.companyCommission > 0 && (
-          <div className="flex justify-between">
-            <span className="text-gray-500">Company Commission <span className="text-xs text-gray-400">({appliedPctLabel(fin, reservation)})</span></span>
-            <span className="text-red-600">− {currency(fin.companyCommission)}</span>
-          </div>
-        )}
-        {showCommission && (
-          <div className="flex justify-between border-t border-gray-200 pt-1.5">
-            <span className="text-gray-500 font-medium">Owner Net</span>
-            <span className="font-semibold text-primary-700">{currency(fin.ownerNet)}</span>
-          </div>
-        )}
-        <div className={`flex justify-between ${showCommission ? '' : 'border-t border-gray-200 pt-1.5'}`}>
-          <span className="text-gray-500">Amount Paid</span>
-          <span className="font-semibold text-green-600">{currency(reservation.amount_paid)}</span>
-        </div>
-      </div>
+      <ReservationReceipt reservation={reservation} showCommission={showCommission} />
+      <BrokerDetails reservation={reservation} />
 
       {reservation.notes && (
         <div className="bg-gray-50 rounded-lg px-4 py-3 text-sm text-gray-600">
@@ -1258,6 +1208,7 @@ export default function Reservations() {
       utilities_cost_override: r.utilities_cost_override != null ? String(r.utilities_cost_override) : '',
       beach_access_fees: r.beach_access_fees != null ? String(r.beach_access_fees) : '',
       broker_name: r.broker_name || '',
+      broker_phone: r.broker_phone || '',
       broker_amount_per_night: r.broker_amount_per_night != null ? String(r.broker_amount_per_night) : '',
     });
     setEditId(r.id); setModal('form');
@@ -1274,6 +1225,8 @@ export default function Reservations() {
     const nannyCount = Math.max(0, parseInt(form.nanny_count, 10) || 0);
     if (!form.is_owner_reservation && adults < 1)
       return toast.error('At least 1 adult is required');
+    if (!editId && !form.is_owner_reservation && form.payment_method === 'other' && !form.payment_method_note?.trim())
+      return toast.error('Add a comment for the Other payment method');
     const payload = {
       ...form,
       adults,

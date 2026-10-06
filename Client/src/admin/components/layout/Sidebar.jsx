@@ -50,7 +50,7 @@ const NAV_SECTIONS = [
       { path: '/admin/projects', label: 'Destinations', icon: Building, page: 'projects' },
       { path: '/admin/acquisition', label: 'Owner leads', icon: Briefcase, page: 'acquisition' },
       { path: '/admin/acquisition-audit', label: 'Audit', icon: ClipboardList, page: 'acquisition_audit' },
-      { path: '/admin/owner-statement', label: 'Owner Statement', icon: FileBarChart2, page: 'owner_statement', roles: ['unit_acquisition_manager', 'owners_relations'] },
+      { path: '/admin/owner-statement', label: 'Owner Statement', icon: FileBarChart2, page: 'owner_statement' },
       { path: '/admin/owner/blocks', label: 'Owner blocks', icon: CalendarDays, page: 'owner_blocks', roles: ['owners_relations'] },
       { path: '/admin/users', label: 'Owners', icon: UserCircle, page: 'owners', roles: ['unit_acquisition_manager'] },
       { path: '/admin/owner-comments', label: 'Owner comments', icon: MessageSquareText, page: 'owner_comments', badge: 'owner_comments_unread' },

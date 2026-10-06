@@ -60,8 +60,10 @@ export const EMPTY_MANUAL_RESERVATION_FORM = {
   utilities_cost_override: '',
   beach_access_fees: '',
   broker_name: '',
+  broker_phone: '',
   broker_amount_per_night: '',
   payment_method: 'cash',
+  payment_method_note: '',
 };
 
 function Label({ children }) {
@@ -534,7 +536,7 @@ export default function ManualReservationForm({
           {!form.is_owner_reservation && (
             <div>
               <Label>Payment method</Label>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 {MANUAL_PAYMENT_METHODS.map((method) => {
                   const active = form.payment_method === method;
                   return (
@@ -553,6 +555,20 @@ export default function ManualReservationForm({
                   );
                 })}
               </div>
+              {form.payment_method === 'other' && (
+                <div className="mt-3">
+                  <Label>Payment comment *</Label>
+                  <textarea
+                    rows={2}
+                    value={form.payment_method_note || ''}
+                    onChange={(event) =>
+                      setForm((cur) => ({ ...cur, payment_method_note: event.target.value }))
+                    }
+                    className={`${fieldClass} resize-none`}
+                    placeholder="How will this be paid?"
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -585,13 +601,25 @@ export default function ManualReservationForm({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div>
               <Label>Broker name</Label>
               <input
                 value={form.broker_name}
                 onChange={(event) =>
                   setForm((cur) => ({ ...cur, broker_name: event.target.value }))
+                }
+                className={fieldClass}
+                placeholder="optional"
+              />
+            </div>
+            <div>
+              <Label>Broker phone</Label>
+              <input
+                type="tel"
+                value={form.broker_phone}
+                onChange={(event) =>
+                  setForm((cur) => ({ ...cur, broker_phone: event.target.value }))
                 }
                 className={fieldClass}
                 placeholder="optional"

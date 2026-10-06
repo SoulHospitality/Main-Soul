@@ -44,8 +44,9 @@ export const BOOKING_SOURCES = [
   'Facebook Post',
 ];
 export const PAYMENT_METHODS = ['cash', 'instapay', 'bank_transfer', 'credit_card', 'online'];
-export const MANUAL_PAYMENT_METHODS = ['cash', 'instapay'];
+export const MANUAL_PAYMENT_METHODS = ['cash', 'instapay', 'other'];
 export const PAYMENT_METHOD_LABELS = {
+  other: 'Other',
   cash: 'Cash',
   instapay: 'InstaPay',
   bank_transfer: 'Bank Transfer',
