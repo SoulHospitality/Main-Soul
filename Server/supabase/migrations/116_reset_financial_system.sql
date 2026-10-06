@@ -1,7 +1,9 @@
--- One-time reset of Financial System data so books restart from 2026-10-01 with fresh figures.
--- Operational data (reservations, payments, expenses, petty cash, housekeeping orders) is kept;
--- the Financial System simply stops counting it before its new start date.
--- Setup is kept: vendor directory, recurring charge settings, financial settings, close checklist templates.
+-- One-time reset: the Financial System starts from zero at the moment this migration runs.
+-- Finance-only records are deleted. Operational records (reservations, payments, expenses,
+-- petty cash, housekeeping orders, owner payout requests) are kept, but the Financial System
+-- ignores anything created before books_reset_at.
+-- Setup is kept: vendor directory, financial settings, close checklist templates.
+-- Monthly recurring charges are switched off so they don't post until re-enabled.
 
 DO $$
 DECLARE
@@ -31,4 +33,12 @@ BEGIN
       EXECUTE format('DELETE FROM public.%I', t);
     END IF;
   END LOOP;
+
+  IF to_regclass('public.financial_recurring_charges') IS NOT NULL THEN
+    UPDATE public.financial_recurring_charges SET is_active = 0, updated_at = now();
+  END IF;
 END $$;
+
+INSERT INTO public.financial_settings (key, value_text, updated_at)
+VALUES ('books_reset_at', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), now())
+ON CONFLICT (key) DO UPDATE SET value_text = EXCLUDED.value_text, updated_at = now();

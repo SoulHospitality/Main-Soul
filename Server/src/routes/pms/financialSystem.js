@@ -16,6 +16,7 @@ const {
   isBuiltinAccount,
 } = require('../../lib/finance/chartOfAccounts');
 const { refreshCustomAccounts } = require('../../lib/finance/customAccounts');
+const { refreshBooksReset, afterReset } = require('../../lib/finance/booksReset');
 const {
   outputVatOnCommission,
   withholdingTax,
@@ -108,7 +109,11 @@ async function assertPeriodOpen(date) {
   }
 }
 
-router.use('/financial-system', (req, _res, next) => runWithPeriodBasis(req.query.basis, next));
+router.use('/financial-system', (req, _res, next) => {
+  refreshBooksReset()
+    .then(() => runWithPeriodBasis(req.query.basis, next))
+    .catch(next);
+});
 
 function dateRange(req) {
   const from = clampFromDate(req.query.from_date);
@@ -116,7 +121,7 @@ function dateRange(req) {
   const params = [from];
   // Reservations fall into a period by check-in (default) or created date; other ledger sources by created date.
   const period = reservationPeriodSql('r');
-  let resSql = `r.status <> 'cancelled' AND ${period} >= $1::date`;
+  let resSql = `r.status <> 'cancelled' AND ${period} >= $1::date${afterReset('r.created_at')}`;
   if (to) {
     params.push(to);
     resSql += ` AND ${period} <= $${params.length}::date`;
@@ -145,7 +150,7 @@ async function computeOwnerPeriodBalance(ownerId, from, to) {
   const resParams = [unitIds, from];
   let resSql = `r.unit_id = ANY($1::uuid[])
        AND r.status <> 'cancelled'
-       AND ${period} >= $2::date`;
+       AND ${period} >= $2::date${afterReset('r.created_at')}`;
   if (to) {
     resParams.push(to);
     resSql += ` AND ${period} <= $3::date`;
@@ -171,7 +176,7 @@ async function computeOwnerPeriodBalance(ownerId, from, to) {
 
   const expParams = [unitIds, from, ownerId];
   let expWhere = `paid_by = 'owner'
-       AND created_at::date >= $2::date
+       AND created_at::date >= $2::date${afterReset('created_at')}
        AND (
          owner_id = $3
          OR (owner_id IS NULL AND unit_id = ANY($1::uuid[]))
@@ -187,7 +192,7 @@ async function computeOwnerPeriodBalance(ownerId, from, to) {
   const maintenance = Number(expRows[0]?.total) || 0;
 
   const payParams = [ownerId, from];
-  let payWhere = `owner_id = $1 AND status = 'paid' AND COALESCE(reviewed_at, created_at)::date >= $2::date`;
+  let payWhere = `owner_id = $1 AND status = 'paid' AND COALESCE(reviewed_at, created_at)::date >= $2::date${afterReset('created_at')}`;
   if (to) {
     payParams.push(to);
     payWhere += ` AND COALESCE(reviewed_at, created_at)::date <= $3::date`;
@@ -223,7 +228,7 @@ async function computeOwnerPeriodBalance(ownerId, from, to) {
 async function loadOwnerStatementData(from, to, unitId = null) {
   const period = reservationPeriodSql('r');
   const resParams = [from];
-  let resWhere = `r.status <> 'cancelled' AND ${period} >= $1::date`;
+  let resWhere = `r.status <> 'cancelled' AND ${period} >= $1::date${afterReset('r.created_at')}`;
   if (to) {
     resParams.push(to);
     resWhere += ` AND ${period} <= $${resParams.length}::date`;
@@ -299,7 +304,7 @@ async function loadOwnerStatementData(from, to, unitId = null) {
   }
 
   const expParams = [from];
-  let expWhere = `paid_by = 'owner' AND created_at::date >= $1::date`;
+  let expWhere = `paid_by = 'owner' AND created_at::date >= $1::date${afterReset('created_at')}`;
   if (to) {
     expParams.push(to);
     expWhere += ` AND created_at::date <= $${expParams.length}::date`;
@@ -345,7 +350,7 @@ async function loadOwnerStatementData(from, to, unitId = null) {
   }
 
   const payParams = [from];
-  let payWhere = `status = 'paid' AND COALESCE(reviewed_at, created_at)::date >= $1::date`;
+  let payWhere = `status = 'paid' AND COALESCE(reviewed_at, created_at)::date >= $1::date${afterReset('created_at')}`;
   if (to) {
     payParams.push(to);
     payWhere += ` AND COALESCE(reviewed_at, created_at)::date <= $${payParams.length}::date`;
@@ -606,7 +611,7 @@ router.get('/financial-system/overview', requireRoles('admin', 'finance', 'finan
     const vat = outputVatOnCommission(commissionRevenue);
 
     const expParams = [from];
-    let expWhere = `created_at::date >= $1::date AND COALESCE(paid_by, 'company') <> 'owner'`;
+    let expWhere = `created_at::date >= $1::date AND COALESCE(paid_by, 'company') <> 'owner'${afterReset('created_at')}`;
     if (to) {
       expParams.push(to);
       expWhere += ` AND created_at::date <= $${expParams.length}::date`;
@@ -630,7 +635,7 @@ router.get('/financial-system/overview', requireRoles('admin', 'finance', 'finan
 
     const pcParams = [from];
     let pcWhere = `entry_type = 'out' AND COALESCE(status, 'open') <> 'moved'
-      AND COALESCE(paid_by, 'company') <> 'owner' AND created_at::date >= $1::date`;
+      AND COALESCE(paid_by, 'company') <> 'owner' AND created_at::date >= $1::date${afterReset('created_at')}`;
     if (to) {
       pcParams.push(to);
       pcWhere += ` AND created_at::date <= $${pcParams.length}::date`;
@@ -645,7 +650,7 @@ router.get('/financial-system/overview', requireRoles('admin', 'finance', 'finan
     try {
       const { rows: payoutRows } = await query(
         `SELECT COALESCE(SUM(amount), 0)::float AS total
-         FROM owner_payout_requests WHERE status IN ('requested', 'approved')`
+         FROM owner_payout_requests WHERE status IN ('requested', 'approved')${afterReset('created_at')}`
       );
       pendingPayouts = Number(payoutRows[0]?.total) || 0;
     } catch (_) {}
@@ -741,6 +746,7 @@ router.get('/financial-system/owner-statements', requireRoles('admin', 'finance'
         `SELECT p.*, su.full_name AS owner_name
          FROM owner_payout_requests p
          LEFT JOIN staff_users su ON su.id = p.owner_id
+         WHERE TRUE${afterReset('p.created_at')}
          ORDER BY p.created_at DESC LIMIT 200`
       );
       payouts = rows;
@@ -902,7 +908,7 @@ router.get('/financial-system/ledger', requireRoles('admin', 'finance', 'finance
     }
 
     const expParams = [from];
-    let expWhere = `created_at::date >= $1::date`;
+    let expWhere = `created_at::date >= $1::date${afterReset('created_at')}`;
     if (to) {
       expParams.push(to);
       expWhere += ` AND created_at::date <= $${expParams.length}::date`;
@@ -992,7 +998,7 @@ router.get('/financial-system/tax', requireRoles('admin', 'finance', 'finance_ma
     }
 
     const expParams = [from];
-    let expWhere = `created_at::date >= $1::date AND COALESCE(paid_by, 'company') <> 'owner'`;
+    let expWhere = `created_at::date >= $1::date AND COALESCE(paid_by, 'company') <> 'owner'${afterReset('created_at')}`;
     if (to) {
       expParams.push(to);
       expWhere += ` AND created_at::date <= $${expParams.length}::date`;
@@ -3269,7 +3275,7 @@ router.get('/financial-system/cash-forecast', requireRoles('admin', 'finance', '
       `SELECT to_char(r.check_in, 'YYYY-MM-DD') AS check_in, SUM(r.total_amount)::float AS total
        FROM reservations r
        WHERE r.status <> 'cancelled'
-         AND r.check_in >= $1::date AND r.check_in <= $2::date
+         AND r.check_in >= $1::date AND r.check_in <= $2::date${afterReset('r.created_at')}
        GROUP BY to_char(r.check_in, 'YYYY-MM-DD')`,
       [weeks[0], lastWeek.toISOString().slice(0, 10)]
     );
@@ -3426,7 +3432,7 @@ router.get('/financial-system/tax-filing-pack/:month', requireRoles('admin', 'fi
       const { rows } = await query(
         `SELECT id, description, amount, category, expense_date
          FROM expenses WHERE created_at::date >= $1::date AND created_at::date <= $2::date
-           AND COALESCE(paid_by, 'company') <> 'owner'`,
+           AND COALESCE(paid_by, 'company') <> 'owner'${afterReset('created_at')}`,
         expParams
       );
       expenses = rows;

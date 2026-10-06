@@ -14,6 +14,7 @@ const {
   signedBalance,
 } = require('./chartOfAccounts');
 const { refreshCustomAccounts } = require('./customAccounts');
+const { refreshBooksReset, booksResetAt, afterReset } = require('./booksReset');
 const { bookingSplit, withholdingTax, extractInputVat } = require('./taxEngine');
 const { reservationPeriodSql } = require('./periodBasis');
 
@@ -700,6 +701,7 @@ function prepaidAmount(r, payments) {
 
 async function loadPortalData(from, to) {
   await refreshCustomAccounts();
+  await refreshBooksReset();
   const period = reservationPeriodSql('r');
   const resParams = [from];
   let resSql = `(
@@ -754,14 +756,14 @@ async function loadPortalData(from, to) {
      FROM reservations r
      JOIN units u ON u.id = r.unit_id
      LEFT JOIN staff_users sp ON sp.id = r.sales_person_id
-     WHERE ${resSql}
+     WHERE ${resSql}${afterReset('r.created_at')}
      ORDER BY r.created_at DESC`,
     resParams
   );
 
   const totPeriod = reservationPeriodSql();
   const totParams = [from];
-  let totSql = `LOWER(COALESCE(status::text, '')) <> 'cancelled' AND ${totPeriod} >= $1::date`;
+  let totSql = `LOWER(COALESCE(status::text, '')) <> 'cancelled' AND ${totPeriod} >= $1::date${afterReset('created_at')}`;
   if (to) {
     totParams.push(to);
     totSql += ` AND ${totPeriod} <= $2::date`;
@@ -779,7 +781,7 @@ async function loadPortalData(from, to) {
   };
 
   const payParams = [from];
-  let paySql = `p.created_at::date >= $1::date`;
+  let paySql = `p.created_at::date >= $1::date${afterReset('p.created_at')}`;
   if (to) {
     payParams.push(to);
     paySql += ` AND p.created_at::date <= $${payParams.length}::date`;
@@ -797,7 +799,7 @@ async function loadPortalData(from, to) {
   if (reservationIds.length) {
     try {
       const { rows: extraPays } = await query(
-        `SELECT p.* FROM payments p WHERE p.reservation_id = ANY($1)`,
+        `SELECT p.* FROM payments p WHERE p.reservation_id = ANY($1)${afterReset('p.created_at')}`,
         [reservationIds]
       );
       const seen = new Set(payments.map((p) => p.id));
@@ -811,7 +813,7 @@ async function loadPortalData(from, to) {
   }
 
   const expParams = [from];
-  let expSql = `created_at::date >= $1::date`;
+  let expSql = `created_at::date >= $1::date${afterReset('created_at')}`;
   if (to) {
     expParams.push(to);
     expSql += ` AND created_at::date <= $${expParams.length}::date`;
@@ -824,7 +826,7 @@ async function loadPortalData(from, to) {
   let hkOrders = [];
   try {
     const hkParams = [from];
-    let hkSql = `status <> 'cancelled' AND created_at::date >= $1::date`;
+    let hkSql = `status <> 'cancelled' AND created_at::date >= $1::date${afterReset('created_at')}`;
     if (to) {
       hkParams.push(to);
       hkSql += ` AND created_at::date <= $${hkParams.length}::date`;
@@ -841,7 +843,7 @@ async function loadPortalData(from, to) {
   let petty = [];
   try {
     const pcParams = [from];
-    let pcSql = `created_at::date >= $1::date AND COALESCE(status, 'open') <> 'moved'`;
+    let pcSql = `created_at::date >= $1::date AND COALESCE(status, 'open') <> 'moved'${afterReset('created_at')}`;
     if (to) {
       pcParams.push(to);
       pcSql += ` AND created_at::date <= $${pcParams.length}::date`;
@@ -880,6 +882,7 @@ async function loadPortalData(from, to) {
       `SELECT p.*, su.full_name AS owner_name
        FROM owner_payout_requests p
        LEFT JOIN staff_users su ON su.id = p.owner_id
+       WHERE TRUE${afterReset('p.created_at')}
        ORDER BY p.created_at DESC
        LIMIT 300`
     );
@@ -1271,9 +1274,10 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
     );
   }
 
+  const resetDay = booksResetAt() ? booksResetAt().slice(0, 10) : '';
   for (const month of monthsInRange(from, to)) {
     for (const rec of data.recurring || []) {
-      journal.push(...recurringEntries(rec, month, from, to));
+      journal.push(...recurringEntries(rec, month, from, to).filter((e) => !resetDay || e.date >= resetDay));
     }
   }
 
