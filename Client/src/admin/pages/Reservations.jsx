@@ -718,7 +718,7 @@ function ReservationDetail({
         {fin.utilitiesDeduction > 0 && (
           <div className="flex justify-between">
             <span className="text-gray-500">Utilities</span>
-            <span className="text-orange-600">{currency(fin.utilitiesDeduction)} (deducted from revenue)</span>
+            <span className="text-orange-600">− {currency(fin.utilitiesDeduction)} (from owner nightly rate)</span>
           </div>
         )}
         {showCommission && fin.tenantDeduction > 0 && (

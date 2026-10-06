@@ -56,7 +56,7 @@ export default function OwnerDashboard() {
           icon={DollarSign}
           title="Owner net (stays)"
           value={currency(data?.owner_net)}
-          sub={`GBV ${currency(data?.gbv)}`}
+          sub={`Gross ${currency(data?.gbv)}`}
         />
         <Card
           icon={Receipt}

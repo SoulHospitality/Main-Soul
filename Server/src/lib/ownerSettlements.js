@@ -34,7 +34,7 @@ async function generateOwnerSettlement({ ownerId, periodStart, periodEnd }) {
       parseFloat(r.utilities_amount) ||
       (Number(r.nights) || 0) * (parseFloat(r.utilities_cost) || 0);
     const fin = calcReservationFinancials(r, { ...r, utilities_amount: utilitiesAmount });
-    gross += fin.grossAmount;
+    gross += fin.ownerGross;
     commission += fin.companyCommission;
     net += fin.ownerNet;
   }

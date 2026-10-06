@@ -72,7 +72,7 @@ router.get('/reports/owner-statement', requireRoles('owner', 'admin', 'finance',
         adjusted_total: fin.ownerNet,
         applied_commission_pct: fin.appliedCommissionPct,
         booking_ref: `SH-${r.id}`,
-        gross: fin.grossAmount,
+        gross: isOwner ? fin.ownerGross : fin.grossAmount,
         commission: fin.companyCommission,
         net: fin.ownerNet,
         status: r.status,
@@ -119,17 +119,21 @@ router.get('/reports/owner-statement', requireRoles('owner', 'admin', 'finance',
       commissionMode: unit.commission_mode || 'A',
       companyCommissionPct: Number(unit.company_commission_pct) || 0,
       tenantCommissionPct: Number(unit.commission_tenant_pct) || 0,
-      totalGross: statement.totalGross,
+      totalGross: isOwner ? statement.totalOwnerGross : statement.totalGross,
       totalTenantDeduction: statement.totalTenantDeduction,
-      totalUtilitiesDeduction: statement.totalUtilitiesDeduction,
-      totalBrokerDeduction: 0,
-      totalHousekeeping: statement.totalHousekeeping,
       totalSubtotal: statement.totalSubtotal,
       totalCompanyCommission: statement.totalCompanyCommission,
       totalOwnerNet: statement.totalOwnerNet,
       ownerExpenses: round2(ownerExpTotal),
       finalDue,
     };
+    if (!isOwner) {
+      Object.assign(summary, {
+        totalUtilitiesDeduction: statement.totalUtilitiesDeduction,
+        totalBrokerDeduction: statement.totalBrokerDeduction,
+        totalHousekeeping: statement.totalHousekeeping,
+      });
+    }
 
     res.json({
       unit: {
@@ -197,7 +201,7 @@ router.get('/owner/dashboard', requireRoles('owner', 'admin'), async (req, res, 
       const nights = Number(r.nights) || 0;
       bookedNights += nights;
       const fin = calcReservationFinancials(r, r);
-      gbv += fin.grossAmount;
+      gbv += fin.ownerGross;
       commission += fin.companyCommission;
       ownerNet += fin.ownerNet;
     }
@@ -278,7 +282,7 @@ router.get('/owner/reservations', requireRoles('owner', 'admin'), async (req, re
               u.company_commission_pct, u.company_commission_owner_pct,
               u.commission_mode, u.commission_tenant_pct, u.utilities_cost,
               r.housekeeping_fees, r.utilities_amount, r.owner_collected_type, r.owner_collected_amount,
-              r.broker_name, r.broker_amount_per_night, r.broker_total,
+              r.broker_amount_per_night, r.broker_total, r.is_owner_reservation,
               r.price_per_night, r.payment_method, r.updated_at, r.created_at
        FROM reservations r
        JOIN units u ON u.id = r.unit_id
@@ -336,14 +340,12 @@ router.get('/owner/reservations', requireRoles('owner', 'admin'), async (req, re
         payment_method: r.payment_method || null,
         owner_collected_type: r.owner_collected_type || null,
         owner_collected_amount: r.owner_collected_amount != null ? Number(r.owner_collected_amount) : null,
-        broker_name: r.broker_name || null,
-        broker_total: r.broker_total != null ? Number(r.broker_total) : null,
         unit_name: r.unit_number || r.unit_name,
         unit_number: r.unit_number,
+        nightly_rate: fin.showMoney ? fin.nightlyRate : null,
         gross: fin.showMoney ? fin.gross : null,
         commission: fin.showMoney ? fin.commission : null,
         net: fin.showMoney ? fin.net : null,
-        broker_deduction: fin.showMoney ? fin.brokerDeduction || 0 : null,
         commission_pct: fin.commissionPct,
         show_money: fin.showMoney,
         sort_at: r.check_in,
@@ -385,6 +387,7 @@ router.get('/owner/reservations', requireRoles('owner', 'admin'), async (req, re
         payment_status: b.payment_status,
         unit_name: b.unit_number || b.unit_name,
         unit_number: b.unit_number,
+        nightly_rate: fin.showMoney ? fin.nightlyRate : null,
         gross: fin.showMoney ? fin.gross : null,
         commission: fin.showMoney ? fin.commission : null,
         net: fin.showMoney ? fin.net : null,

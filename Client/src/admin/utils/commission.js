@@ -39,7 +39,9 @@ export function calcReservationFinancials(unit, reservation) {
   const tenantPct = parseFloat(unit.commission_tenant_pct) || 0;
 
   const base = rentalBase(reservation);
-  const utilitiesDeduction = parseFloat(reservation.utilities_amount) || 0;
+  const utilitiesDeduction = isOwner
+    ? 0
+    : parseFloat(reservation.utilities_amount) || nights * (parseFloat(unit.utilities_cost) || 0) || 0;
   const housekeepingFees = parseFloat(reservation.housekeeping_fees) || 0;
   let brokerDeduction = parseFloat(reservation.broker_total) || 0;
   if (!(brokerDeduction > 0)) {
@@ -54,20 +56,17 @@ export function calcReservationFinancials(unit, reservation) {
     appliedCommissionPct = companyPct;
   }
 
-  const afterBroker = round2(Math.max(0, base - brokerDeduction));
+  const ownerGross = round2(Math.max(0, base - utilitiesDeduction - brokerDeduction));
 
   let tenantDeduction = 0;
   if ((mode === 'B' || mode === 'C') && tenantPct > 0 && !isOwner) {
-    tenantDeduction = round2((afterBroker * tenantPct) / 100);
+    tenantDeduction = round2((ownerGross * tenantPct) / 100);
   }
 
+  const subtotal = round2(Math.max(0, ownerGross - tenantDeduction));
   const companyCommission =
-    appliedCommissionPct > 0
-      ? round2(((afterBroker - tenantDeduction) * appliedCommissionPct) / 100)
-      : 0;
-
-  const subtotal = round2(afterBroker - tenantDeduction);
-  const ownerNet = round2(subtotal - companyCommission - utilitiesDeduction);
+    appliedCommissionPct > 0 ? round2((subtotal * appliedCommissionPct) / 100) : 0;
+  const ownerNet = round2(subtotal - companyCommission);
   const intermediatePricePerNight = nights > 0 ? round2(subtotal / nights) : 0;
   const adjustedPricePerNight = nights > 0 ? round2(ownerNet / nights) : 0;
 
@@ -75,6 +74,7 @@ export function calcReservationFinancials(unit, reservation) {
     mode,
     grossAmount: base,
     rentalBase: base,
+    ownerGross,
     brokerDeduction,
     tenantDeduction,
     utilitiesDeduction,

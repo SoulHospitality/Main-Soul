@@ -17,8 +17,7 @@ export default function OwnerReservations() {
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Reservations</h1>
         <p className="text-sm text-gray-500">
-          Nights amount only (no utilities, housekeeping, or service fees). Guest identity is never
-          shown.
+          Nightly rate after utilities and broker fees. Guest identity is never shown.
         </p>
       </div>
       <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
@@ -31,7 +30,8 @@ export default function OwnerReservations() {
                 <tr>
                   <th className="px-4 py-3 text-left">Unit</th>
                   <th className="px-4 py-3 text-left">Dates</th>
-                  <th className="px-4 py-3 text-right">Gross</th>
+                  <th className="px-4 py-3 text-right">Nightly rate</th>
+                  <th className="px-4 py-3 text-right">Total</th>
                   <th className="px-4 py-3 text-right">Commission</th>
                   <th className="px-4 py-3 text-right">Net</th>
                   <th className="px-4 py-3 text-left">Status</th>
@@ -49,6 +49,16 @@ export default function OwnerReservations() {
                       </td>
                       <td className="px-4 py-3 text-gray-700">
                         {formatDate(r.check_in)} → {formatDate(r.check_out)}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {showMoney ? (
+                          <span>
+                            {currency(r.nightly_rate)}
+                            {r.nights ? <span className="ml-1 text-xs text-gray-400">× {r.nights}</span> : null}
+                          </span>
+                        ) : (
+                          '—'
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right">
                         {showMoney ? currency(r.gross) : '—'}
