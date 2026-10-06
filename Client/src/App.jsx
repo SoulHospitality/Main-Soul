@@ -56,8 +56,8 @@ export default function App() {
                 <Route path="/" element={<HomePage />} />
                 <Route path="/home" element={<Navigate to="/" replace />} />
                 <Route path="/search" element={<SearchPage listingType="rent" />} />
-                <Route path="/long-term" element={<SearchPage listingType="long_term" />} />
-                <Route path="/for-sale" element={<Navigate to="/long-term" replace />} />
+                <Route path="/long-term" element={<Navigate to="/search" replace />} />
+                <Route path="/for-sale" element={<Navigate to="/search" replace />} />
                 <Route path="/listings/:slug" element={<ListingDetailPage />} />
                 <Route path="/checkout" element={<CheckoutPage />} />
                 <Route path="/checkout/payment" element={<PaymentPage />} />

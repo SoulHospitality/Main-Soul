@@ -1,7 +1,7 @@
 import { useLocale } from '../../context/LocaleContext';
 import { Marquee, Reveal } from '../ui/Editorial';
 
-const PARTNERS = [
+const DEFAULT_PARTNERS = [
   {
     label: 'Tatweer Misr',
     src: 'https://res.cloudinary.com/zqhyzmvl/image/upload/v1784205791/Tatweer-Misr-removebg-preview_xjltqj.png',
@@ -36,8 +36,9 @@ function PartnerLogo({ partner, className = '' }) {
   );
 }
 
-export default function PartnersSection({ eyebrow, title, className = '', variant = 'section' }) {
+export default function PartnersSection({ eyebrow, title, className = '', variant = 'section', partners: partnersProp }) {
   const { t } = useLocale();
+  const PARTNERS = partnersProp?.length ? partnersProp.map((p) => ({ label: p.label || '', src: p.src })) : DEFAULT_PARTNERS;
   const resolvedEyebrow = eyebrow ?? t('home.partnersEyebrow');
   const resolvedTitle = title ?? t('home.partnersTitle');
 
@@ -51,14 +52,14 @@ export default function PartnersSection({ eyebrow, title, className = '', varian
           </p>
           <div className="hidden items-center justify-between gap-10 lg:flex">
             {PARTNERS.map((partner) => (
-              <div key={partner.label} className="flex h-14 w-[150px] items-center justify-center">
+              <div key={partner.src} className="flex h-14 w-[150px] items-center justify-center">
                 <PartnerLogo partner={partner} />
               </div>
             ))}
           </div>
           <Marquee duration={26} gap="3.5rem" className="g-fade-x lg:hidden">
             {PARTNERS.map((partner) => (
-              <div key={partner.label} className="flex h-12 w-[120px] shrink-0 items-center justify-center">
+              <div key={partner.src} className="flex h-12 w-[120px] shrink-0 items-center justify-center">
                 <PartnerLogo partner={partner} />
               </div>
             ))}
@@ -82,7 +83,7 @@ export default function PartnersSection({ eyebrow, title, className = '', varian
 
       <Marquee duration={32} gap="5rem" className="mt-14">
         {[...PARTNERS, ...PARTNERS].map((partner, i) => (
-          <div key={`${partner.label}-${i}`} className="flex h-20 w-[170px] shrink-0 items-center justify-center md:h-24">
+          <div key={`${partner.src}-${i}`} className="flex h-20 w-[170px] shrink-0 items-center justify-center md:h-24">
             <PartnerLogo partner={partner} />
           </div>
         ))}

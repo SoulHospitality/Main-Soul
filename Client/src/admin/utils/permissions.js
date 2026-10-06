@@ -160,10 +160,11 @@ const MARKETING_PR_PAGE_ACCESS = new Set([
   'reservations',
   'units',
   'schedule',
+  'website',
   ...STAFF_HR_TABS,
 ]);
 
-const WEB_DEVELOPER_PAGE_ACCESS = new Set(['tasks', 'site_performance', ...STAFF_HR_TABS]);
+const WEB_DEVELOPER_PAGE_ACCESS = new Set(['tasks', 'site_performance', 'website', ...STAFF_HR_TABS]);
 
 const RESERVATIONS_PERMISSIONS = [
   'dashboard:read',

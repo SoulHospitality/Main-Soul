@@ -50,6 +50,7 @@ const PromoCodes = lazy(() => import('./pages/PromoCodes'));
 const Reports = lazy(() => import('./pages/Reports'));
 const Performance = lazy(() => import('./pages/Performance'));
 const SitePerformance = lazy(() => import('./pages/SitePerformance'));
+const WebsiteControl = lazy(() => import('./pages/WebsiteControl'));
 const Tasks = lazy(() => import('./pages/Tasks'));
 const PettyCash = lazy(() => import('./pages/PettyCash'));
 
@@ -195,6 +196,7 @@ function AppRoutes() {
       <Route path="wfh" element={<Navigate to="/admin/requests?type=wfh" replace />} />
       <Route path="payslip" element={<ProtectedRoute page="payslip"><Payslip /></ProtectedRoute>} />
       <Route path="promo-codes" element={<ProtectedRoute page="promo_codes"><PromoCodes /></ProtectedRoute>} />
+      <Route path="website" element={<ProtectedRoute page="website"><WebsiteControl /></ProtectedRoute>} />
       <Route path="acquisition" element={<ProtectedRoute page="acquisition"><AcquisitionPipeline /></ProtectedRoute>} />
       <Route path="acquisition-audit" element={<ProtectedRoute page="acquisition_audit"><AcquisitionAudit /></ProtectedRoute>} />
       <Route path="finance-audit" element={<ProtectedRoute page="finance_audit"><FinanceAudit /></ProtectedRoute>} />

@@ -101,7 +101,6 @@ export default function Footer() {
 
           <FooterColumn title={t('footer.explore')}>
             <FooterLink label={t('nav.stays')} href="/search" />
-            <FooterLink label={t('nav.longTerm')} href="/long-term" />
             <FooterLink label={t('nav.destinations')} href="/compounds" />
             <FooterLink label={t('nav.wishlist')} href="/wishlist" />
           </FooterColumn>

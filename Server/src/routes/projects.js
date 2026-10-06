@@ -8,6 +8,7 @@ const {
   syncUnitsMinNightsForProject,
 } = require('../lib/minStay');
 const { normalizeIncomingPolicy } = require('../lib/beachAccess');
+const { getUnitOrder } = require('../lib/siteSettings');
 const {
   upload,
   attachCloudinaryUrls,
@@ -148,7 +149,16 @@ router.get('/', async (_req, res, next) => {
 router.get('/catalog', async (_req, res, next) => {
   try {
     const rows = await loadCatalogRows();
-    res.json(catalogResponse(rows));
+    const payload = catalogResponse(rows);
+    const unitOrder = await getUnitOrder();
+    if (unitOrder.mode === 'custom' && unitOrder.destinations.length) {
+      const rank = (d) => {
+        const idx = unitOrder.destinations.findIndex((x) => x.toLowerCase() === String(d).toLowerCase());
+        return idx === -1 ? Number.MAX_SAFE_INTEGER : idx;
+      };
+      payload.data.destinations = [...payload.data.destinations].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+    }
+    res.json(payload);
   } catch (err) {
     next(err);
   }

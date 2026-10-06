@@ -17,23 +17,22 @@ const POPOVER =
 export default function HeroSearch() {
   const navigate = useNavigate();
   const { t } = useLocale();
-  const { projectCards } = useProjectCatalog();
+  const { destinations: catalogDestinations, projectsByDestination } = useProjectCatalog();
   const capsuleRef = useRef(null);
 
-  const projects = useMemo(() => {
+  const destinations = useMemo(() => {
     const seen = new Set();
     const list = [];
-    for (const p of projectCards) {
-      const key = String(p.name || '').toLowerCase();
+    for (const name of catalogDestinations || []) {
+      const key = String(name || '').toLowerCase();
       if (!key || seen.has(key)) continue;
       seen.add(key);
-      list.push(p);
+      list.push({ name, projectCount: (projectsByDestination?.[name] || []).length });
     }
     return list;
-  }, [projectCards]);
+  }, [catalogDestinations, projectsByDestination]);
 
   const [criteria, setCriteria] = useState({
-    project: '',
     destination: '',
     checkin: '',
     checkout: '',
@@ -62,7 +61,6 @@ export default function HeroSearch() {
     event.preventDefault();
     const params = new URLSearchParams();
     if (criteria.destination) params.set('destination', criteria.destination);
-    if (criteria.project) params.set('compound', criteria.project);
     if (criteria.checkin) params.set('checkin', criteria.checkin);
     if (criteria.checkout) params.set('checkout', criteria.checkout);
     if (criteria.guests > 0) params.set('guests', String(criteria.guests));
@@ -88,8 +86,8 @@ export default function HeroSearch() {
           className={`${segment} ${projectOpen ? 'bg-soul-blue-50' : 'hover:bg-soul-blue-50/60'}`}
         >
           <span className="g-index text-soul-muted">{t('home.project')}</span>
-          <span className={`mt-1 truncate text-[15px] font-medium ${criteria.project ? 'text-soul-blue' : 'text-soul-muted/70'}`}>
-            {criteria.project || t('home.whichProject')}
+          <span className={`mt-1 truncate text-[15px] font-medium ${criteria.destination ? 'text-soul-blue' : 'text-soul-muted/70'}`}>
+            {criteria.destination || t('home.whichProject')}
           </span>
         </button>
 
@@ -98,7 +96,7 @@ export default function HeroSearch() {
             <button
               type="button"
               onClick={() => {
-                setCriteria((c) => ({ ...c, project: '', destination: '' }));
+                setCriteria((c) => ({ ...c, destination: '' }));
                 setProjectOpen(false);
               }}
               className="group flex w-full items-center justify-between rounded-2xl px-4 py-3 text-start text-sm text-soul-blue hover:bg-soul-blue-50/70"
@@ -106,16 +104,12 @@ export default function HeroSearch() {
               <span className="font-medium">{t('home.anyProject')}</span>
               <ArrowUpRight size={15} className="text-soul-muted/50 transition group-hover:text-soul-blue rtl:-scale-x-100" />
             </button>
-            {projects.map((option, i) => (
+            {destinations.map((option, i) => (
               <button
-                key={option.id || option.name}
+                key={option.name}
                 type="button"
                 onClick={() => {
-                  setCriteria((c) => ({
-                    ...c,
-                    project: option.name,
-                    destination: option.destination || option.area || '',
-                  }));
+                  setCriteria((c) => ({ ...c, destination: option.name }));
                   setProjectOpen(false);
                 }}
                 className="group flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-start text-sm text-soul-blue hover:bg-soul-blue-50/70"
@@ -123,14 +117,16 @@ export default function HeroSearch() {
                 <span className="g-index w-6 shrink-0 text-soul-muted/60">{String(i + 1).padStart(2, '0')}</span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium">{option.name}</span>
-                  {option.destination ? (
-                    <span className="block truncate text-[11px] text-soul-muted">{option.destination}</span>
+                  {option.projectCount ? (
+                    <span className="block truncate text-[11px] text-soul-muted">
+                      {t('home.projectsCount', { count: option.projectCount })}
+                    </span>
                   ) : null}
                 </span>
                 <ArrowUpRight size={15} className="shrink-0 text-soul-muted/40 transition group-hover:text-soul-blue rtl:-scale-x-100" />
               </button>
             ))}
-            {projects.length === 0 ? (
+            {destinations.length === 0 ? (
               <p className="px-4 py-3 text-sm text-soul-muted">{t('home.noProjects')}</p>
             ) : null}
           </div>

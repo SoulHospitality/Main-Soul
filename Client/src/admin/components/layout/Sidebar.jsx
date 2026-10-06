@@ -38,6 +38,7 @@ const NAV_SECTIONS = [
       { path: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard, page: 'dashboard' },
       { path: '/admin/tasks', label: 'Tasks', icon: ListTodo, page: 'tasks', excludeRoles: ['hr', 'hr_supervisor'] },
       { path: '/admin/website-performance', label: 'Website Performance', icon: Gauge, page: 'site_performance' },
+      { path: '/admin/website', label: 'Website', icon: Globe, page: 'website' },
     ],
   },
   {

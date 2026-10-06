@@ -1,9 +1,12 @@
 import { Link } from 'react-router-dom';
 import { useLocale } from '../../context/LocaleContext';
 import { ArrowDot, Reveal, RevealLines } from '../ui/Editorial';
+import { useSiteContent } from '../../hooks/useSiteContent';
 
 export default function HostCta() {
   const { t } = useLocale();
+  const { content, pick } = useSiteContent();
+  const customTitle = pick(content.host, 'title');
   const points = [t('owners.bullet0'), t('owners.bullet1'), t('owners.bullet2')];
 
   return (
@@ -11,7 +14,7 @@ export default function HostCta() {
       <div className="g-shell grid items-center gap-12 lg:grid-cols-[1.05fr_1fr] lg:gap-20">
         <Reveal variant="mask" className="relative aspect-[5/6] overflow-hidden rounded-[32px] sm:aspect-[4/3] lg:aspect-[5/6]">
           <img
-            src="/soul-v2/interlude.jpg"
+            src={content.host?.image || '/soul-v2/interlude.jpg'}
             alt={t('home.hostImageAlt')}
             loading="lazy"
             className="absolute inset-0 h-full w-full object-cover"
@@ -33,7 +36,7 @@ export default function HostCta() {
           </Reveal>
           <RevealLines
             className="g-display text-[clamp(44px,5.4vw,84px)] text-soul-blue"
-            lines={[t('home.hostTitleLead'), <em key="em">{t('home.hostTitleEm')}</em>]}
+            lines={customTitle ? [customTitle] : [t('home.hostTitleLead'), <em key="em">{t('home.hostTitleEm')}</em>]}
           />
           <Reveal delay={150} as="p" className="mt-6 max-w-md text-[15px] leading-relaxed text-soul-muted md:text-base">
             {t('home.hostBody')}

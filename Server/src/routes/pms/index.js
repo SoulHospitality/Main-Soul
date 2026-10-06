@@ -139,6 +139,7 @@ router.use(ownerPortal);
 router.use(roadmapScaffold);
 router.use(require('./promoCodesAdmin'));
 router.use(require('./sitePopupAdmin'));
+router.use(require('./siteSettingsAdmin'));
 router.use(require('./hr'));
 
 function sendList(res, rows) {

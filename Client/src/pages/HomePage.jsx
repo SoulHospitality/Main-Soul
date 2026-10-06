@@ -23,6 +23,7 @@ import api from '../api/http';
 import { brand } from '../theme/brand';
 import { useLocale } from '../context/LocaleContext';
 import { useProjectCatalog } from '../hooks/useProjectCatalog';
+import { useSiteContent } from '../hooks/useSiteContent';
 
 const SLIDE_MS = 8000;
 const STAT_COLS = { 1: 'grid-cols-1', 2: 'grid-cols-2', 3: 'grid-cols-3' };
@@ -89,17 +90,26 @@ const HERO_SLIDES = [
 ];
 
 function Hero() {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
+  const { content, pick } = useSiteContent();
   const [index, setIndex] = useState(0);
   const [cycle, setCycle] = useState(0);
+  const customSlides = (content.hero?.slides || []).filter((s) => s?.src);
+  const slides = customSlides.length
+    ? customSlides.map((s) => ({ src: s.src, caption: s[`caption_${locale}`] || s.caption_en || '' }))
+    : HERO_SLIDES.map((s) => ({ src: s.src, caption: t(s.captionKey) }));
+  const slideIndex = index % slides.length;
+  const titleLight = pick(content.hero, 'title_light') || t('home.heroTitleLight');
+  const titleEm = pick(content.hero, 'title_em') || t('home.heroTitleEm');
+  const subtitle = pick(content.hero, 'subtitle') || t('home.heroSubtitle');
 
   useEffect(() => {
     const id = window.setTimeout(() => {
-      setIndex((i) => (i + 1) % HERO_SLIDES.length);
+      setIndex((i) => (i + 1) % slides.length);
       setCycle((c) => c + 1);
     }, SLIDE_MS);
     return () => window.clearTimeout(id);
-  }, [index, cycle]);
+  }, [index, cycle, slides.length]);
 
   const goTo = (i) => {
     setIndex(i);
@@ -109,21 +119,21 @@ function Hero() {
   return (
     <section className="g-grain relative isolate flex min-h-[100svh] flex-col overflow-hidden bg-soul-ink text-white">
       <div className="absolute inset-0 -z-10">
-        {HERO_SLIDES.map((slide, i) => (
+        {slides.map((slide, i) => (
           <div
             key={slide.src}
             className={`absolute inset-0 transition-opacity duration-[1600ms] ease-soul ${
-              i === index ? 'opacity-100' : 'opacity-0'
+              i === slideIndex ? 'opacity-100' : 'opacity-0'
             }`}
           >
             <img
-              key={i === index ? `${slide.src}-${cycle}` : slide.src}
+              key={i === slideIndex ? `${slide.src}-${cycle}` : slide.src}
               src={slide.src}
               alt=""
               fetchPriority={i === 0 ? 'high' : 'low'}
               loading={i === 0 ? 'eager' : 'lazy'}
               decoding="async"
-              className={`h-full w-full object-cover ${i === index ? 'g-kenburns' : ''}`}
+              className={`h-full w-full object-cover ${i === slideIndex ? 'g-kenburns' : ''}`}
             />
           </div>
         ))}
@@ -142,19 +152,16 @@ function Hero() {
             delay={250}
             className="g-display text-[clamp(56px,10.6vw,170px)] !leading-[0.86]"
             lines={[
-              <span key="l" className="font-light">{t('home.heroTitleLight')}</span>,
-              <em key="e">{t('home.heroTitleEm')}</em>,
+              <span key="l" className="font-light">{titleLight}</span>,
+              <em key="e">{titleEm}</em>,
             ]}
           />
           <div className="soul-fade-up flex max-w-sm flex-col gap-6 lg:mb-4" style={{ animationDelay: '0.75s' }}>
-            <p className="text-[15px] leading-relaxed text-white/80 md:text-base">{t('home.heroSubtitle')}</p>
+            <p className="text-[15px] leading-relaxed text-white/80 md:text-base">{subtitle}</p>
             <div className="flex flex-wrap items-center gap-3">
               <Link to="/search" className="g-btn g-btn-light">
                 {t('home.heroExplore')}
                 <ArrowDot />
-              </Link>
-              <Link to="/long-term" className="g-btn g-btn-glass">
-                {t('home.heroLongTerm')}
               </Link>
             </div>
           </div>
@@ -167,10 +174,10 @@ function Hero() {
         <div className="mt-8 flex items-center justify-between gap-6 text-white/70">
           <div className="flex min-w-0 flex-1 items-center gap-4">
             <span className="g-index shrink-0 tabular-nums">
-              {String(index + 1).padStart(2, '0')} / {String(HERO_SLIDES.length).padStart(2, '0')}
+              {String(slideIndex + 1).padStart(2, '0')} / {String(slides.length).padStart(2, '0')}
             </span>
             <div className="flex w-full max-w-[280px] gap-1.5">
-              {HERO_SLIDES.map((slide, i) => (
+              {slides.map((slide, i) => (
                 <button
                   key={slide.src}
                   type="button"
@@ -179,10 +186,10 @@ function Hero() {
                   className="relative h-6 flex-1"
                 >
                   <span className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 overflow-hidden bg-white/25">
-                    {i < index ? <span className="absolute inset-0 bg-white" /> : null}
-                    {i === index ? (
+                    {i < slideIndex ? <span className="absolute inset-0 bg-white" /> : null}
+                    {i === slideIndex ? (
                       <span
-                        key={`${index}-${cycle}`}
+                        key={`${slideIndex}-${cycle}`}
                         className="g-progress-fill absolute inset-0 bg-white"
                         style={{ '--dur': `${SLIDE_MS}ms` }}
                       />
@@ -191,8 +198,8 @@ function Hero() {
                 </button>
               ))}
             </div>
-            <span key={index} className="g-index soul-fade-in hidden truncate md:inline">
-              {t(HERO_SLIDES[index].captionKey)}
+            <span key={slideIndex} className="g-index soul-fade-in hidden truncate md:inline">
+              {slides[slideIndex]?.caption}
             </span>
           </div>
           <div className="hidden items-center gap-3 sm:flex">
@@ -389,6 +396,7 @@ function FeaturedRail({ items, loading }) {
 
 function Interlude() {
   const { t } = useLocale();
+  const { content, pick } = useSiteContent();
   const ref = useRef(null);
   const imgRef = useRef(null);
 
@@ -421,7 +429,7 @@ function Interlude() {
     <section ref={ref} className="g-grain relative isolate flex min-h-[86svh] items-center overflow-hidden bg-soul-ink text-white">
       <img
         ref={imgRef}
-        src="/soul-v2/interlude.jpg"
+        src={content.interlude?.image || '/soul-v2/interlude.jpg'}
         alt=""
         loading="lazy"
         className="absolute inset-0 -z-10 h-full w-full scale-125 object-cover will-change-transform"
@@ -438,7 +446,10 @@ function Interlude() {
         </Reveal>
         <RevealLines
           className="g-display mx-auto text-[clamp(56px,10vw,168px)] !leading-[0.88]"
-          lines={[t('home.interludeLead'), <em key="em">{t('home.interludeEm')}</em>]}
+          lines={[
+            pick(content.interlude, 'lead') || t('home.interludeLead'),
+            <em key="em">{pick(content.interlude, 'em') || t('home.interludeEm')}</em>,
+          ]}
         />
       </div>
     </section>
@@ -446,6 +457,7 @@ function Interlude() {
 }
 
 export default function HomePage() {
+  const { content, sectionOn } = useSiteContent();
   const [featured, setFeatured] = useState([]);
   const [loading, setLoading] = useState(true);
   const [homes, setHomes] = useState(null);
@@ -498,14 +510,16 @@ export default function HomePage() {
       <IntroCurtain />
       <Header overHero />
       <Hero />
-      <PartnersSection variant="strip" />
-      <CompoundGrid index="01" limit={8} />
-      <ProjectMarquee />
-      <FeaturedRail items={featured} loading={loading} />
-      <TrustSection />
-      <Interlude />
-      <HostCta />
-      <Manifesto homes={homes} />
+      {sectionOn('compounds') ? <CompoundGrid index="01" limit={8} /> : null}
+      {sectionOn('marquee') ? <ProjectMarquee /> : null}
+      {sectionOn('featured') ? <FeaturedRail items={featured} loading={loading} /> : null}
+      {sectionOn('trust') ? <TrustSection /> : null}
+      {sectionOn('interlude') ? <Interlude /> : null}
+      {sectionOn('host') ? <HostCta /> : null}
+      {sectionOn('manifesto') ? <Manifesto homes={homes} /> : null}
+      {sectionOn('partners') ? (
+        <PartnersSection variant="strip" partners={content.partners?.length ? content.partners : undefined} className="border-t" />
+      ) : null}
       <Footer />
     </div>
   );

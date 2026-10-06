@@ -16,7 +16,7 @@ async function getPopupRow() {
   return rows[0] || null;
 }
 
-router.get('/site-popup', requireRoles('admin'), async (_req, res, next) => {
+router.get('/site-popup', requireRoles('admin', 'web_developer', 'marketing_pr'), async (_req, res, next) => {
   try {
     const row = await getPopupRow();
     res.json(row || null);
@@ -28,7 +28,7 @@ router.get('/site-popup', requireRoles('admin'), async (_req, res, next) => {
 
 router.put(
   '/site-popup',
-  requireRoles('admin'),
+  requireRoles('admin', 'web_developer', 'marketing_pr'),
   setCloudinaryFolder(FOLDER_SITE),
   upload.single('image'),
   attachCloudinaryUrls,
@@ -87,7 +87,7 @@ router.put(
   }
 );
 
-router.delete('/site-popup', requireRoles('admin'), async (req, res, next) => {
+router.delete('/site-popup', requireRoles('admin', 'web_developer', 'marketing_pr'), async (req, res, next) => {
   try {
     const existing = await getPopupRow();
     if (!existing) return res.json({ ok: true });

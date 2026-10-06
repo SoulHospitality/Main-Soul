@@ -10,7 +10,6 @@ import { FacebookIcon, InstagramIcon, WhatsAppIcon } from './SocialIcons';
 
 const NAV = [
   { key: 'nav.stays', to: '/search', match: (p) => p.startsWith('/search') || p.startsWith('/listings') },
-  { key: 'nav.longTerm', to: '/long-term', match: (p) => p.startsWith('/long-term') },
   { key: 'nav.about', to: '/about', match: (p) => p.startsWith('/about') },
   { key: 'nav.becomeAHost', to: '/owners', match: (p) => p.startsWith('/owners') || p.startsWith('/host-onboarding') },
   { key: 'nav.faq', to: '/faq', match: (p) => p.startsWith('/faq') },
@@ -18,7 +17,6 @@ const NAV = [
 
 const MENU_ITEMS = [
   { key: 'nav.stays', to: '/search', img: '/soul-brand/coast-hero-1.jpg' },
-  { key: 'nav.longTerm', to: '/long-term', img: '/soul-brand/coast-2.jpg' },
   { key: 'nav.destinations', to: '/compounds', img: '/compounds/fouka-bay.jpg' },
   { key: 'nav.about', to: '/about', img: '/soul-v2/interlude.jpg' },
   { key: 'nav.becomeAHost', to: '/owners', img: '/soul-brand/coast-3.jpg' },

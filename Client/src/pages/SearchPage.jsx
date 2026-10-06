@@ -322,23 +322,6 @@ export default function SearchPage({ listingType = 'rent' }) {
           </div>
 
           <div className="soul-fade-up flex flex-wrap items-center gap-3" style={{ animationDelay: '0.2s' }}>
-            <div className="inline-flex rounded-full border border-soul-line bg-white p-1">
-              {[
-                { to: '/search', label: t('nav.stays'), on: !isLongTerm },
-                { to: '/long-term', label: t('nav.longTerm'), on: isLongTerm },
-              ].map((tab) => (
-                <Link
-                  key={tab.to}
-                  to={tab.to}
-                  className={`rounded-full px-4 py-2 text-[13px] font-semibold transition-colors duration-300 ${
-                    tab.on ? 'bg-soul-blue text-white' : 'text-soul-blue/70 hover:text-soul-blue'
-                  }`}
-                >
-                  {tab.label}
-                </Link>
-              ))}
-            </div>
-
             <div className="relative hidden sm:block">
               <button
                 type="button"

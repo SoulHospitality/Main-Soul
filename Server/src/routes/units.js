@@ -5,6 +5,7 @@ const { GUEST_AVAILABILITY_MONTHS } = require('../lib/calendarOccupancy');
 const { DEFAULT_MIN_STAY_NIGHTS } = require('../lib/minStay');
 const { enrichUnitsWithBeachPolicy, withBeachPolicy } = require('../lib/beachAccess');
 const { LONG_TERM, normalizeListingType, isLongTermUnit } = require('../lib/listingType');
+const { getUnitOrder } = require('../lib/siteSettings');
 
 const router = express.Router();
 
@@ -218,7 +219,6 @@ router.get('/', async (req, res, next) => {
       types,
       property_type,
       status = 'published',
-      listing_type: listingTypeParam,
       checkin,
       checkout,
       sort: sortParam,
@@ -226,7 +226,8 @@ router.get('/', async (req, res, next) => {
       offset = 0,
     } = req.query;
 
-    const listingType = normalizeListingType(listingTypeParam);
+    // Long-term listings are hidden from the guest site.
+    const listingType = 'rent';
     const where = ["u.status = $1", `COALESCE(u.listing_type, 'rent') = $2`];
     const params = [status, listingType];
     let i = 3;
@@ -286,10 +287,9 @@ router.get('/', async (req, res, next) => {
       });
     }
 
-    params.push(Number(limit), Number(offset));
-
+    const whereParams = params.slice();
     const sort = String(sortParam || '').toLowerCase();
-    let orderBy = 'u.featured DESC, u.created_at DESC';
+    let orderBy;
     if (sort === 'reviews-desc') {
       orderBy =
         'COALESCE(u.average_rating, 0) DESC, COALESCE(u.review_count, 0) DESC, u.featured DESC, u.created_at DESC';
@@ -298,7 +298,21 @@ router.get('/', async (req, res, next) => {
         'COALESCE(u.average_rating, 0) ASC, COALESCE(u.review_count, 0) ASC, u.featured DESC, u.created_at DESC';
     } else if (sort === 'newest') {
       orderBy = 'u.created_at DESC, u.featured DESC';
+    } else {
+      const unitOrder = await getUnitOrder();
+      const seedIdx = i++;
+      params.push(new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' }));
+      const shuffle = `md5(u.id::text || $${seedIdx})`;
+      if (unitOrder.mode === 'custom') {
+        const destIdx = i++;
+        params.push(unitOrder.destinations);
+        orderBy = `COALESCE(array_position($${destIdx}::text[], u.area), 2147483647), u.display_order ASC NULLS LAST, ${shuffle}`;
+      } else {
+        orderBy = shuffle;
+      }
     }
+
+    params.push(Number(limit), Number(offset));
 
     const sql = `
       SELECT u.id, u.slug, u.title, u.status, u.compound, u.project, u.area, u.city, u.beds, u.baths, u.guests,
@@ -320,7 +334,7 @@ router.get('/', async (req, res, next) => {
     const { rows } = await query(sql, params);
     const countRes = await query(
       `SELECT count(*)::int AS c FROM units u WHERE ${where.join(' AND ')}`,
-      params.slice(0, -2)
+      whereParams
     );
     const facilitiesByProject = await projectFacilitiesMap(rows.map((r) => r.compound || r.project));
     const { today, map: todayPriceByWp } = await loadTodayPriceMap(rows.map((r) => r.wp_post_id));
@@ -357,7 +371,7 @@ router.get('/:idOrSlug', async (req, res, next) => {
       isUuid ? 'SELECT * FROM units WHERE id = $1' : 'SELECT * FROM units WHERE slug = $1',
       [key]
     );
-    if (!rows[0]) return res.status(404).json({ error: 'Unit not found' });
+    if (!rows[0] || isLongTermUnit(rows[0])) return res.status(404).json({ error: 'Unit not found' });
     const facilitiesByProject = await projectFacilitiesMap([
       rows[0].compound || rows[0].project,
     ]);
