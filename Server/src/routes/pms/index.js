@@ -2578,6 +2578,25 @@ router.post('/reservations/:id/reject-cancel', requireRoles('admin'), async (req
   }
 });
 
+/** Everyone sees every booked night; guest and money details stay with whoever may open the reservation. */
+function maskOutOfScopeScheduleRow(row) {
+  const { in_scope: inScope, ...rest } = row;
+  if (inScope !== false) return rest;
+  return {
+    ...rest,
+    guest_name: rest.is_owner_reservation ? 'Owner stay' : 'Reserved',
+    guest_email: null,
+    guest_phone: null,
+    guest_nationality: null,
+    notes: null,
+    booking_id: null,
+    total_amount: rest.is_owner_reservation && Number(rest.total_amount) === 0 ? 0 : null,
+    amount_paid: null,
+    payment_status: null,
+    restricted: true,
+  };
+}
+
 router.get('/reservations/schedule', async (req, res, next) => {
   try {
     const from =
@@ -2640,14 +2659,15 @@ router.get('/reservations/schedule', async (req, res, next) => {
               u.title AS unit_title,
               u.unit_number,
               r.sales_label,
-              'pms' AS source
+              'pms' AS source,
+              (TRUE${scope.clause}) AS in_scope
        FROM reservations r
        LEFT JOIN units u ON u.id = r.unit_id
        LEFT JOIN staff_users sp ON sp.id = r.sales_person_id
        WHERE r.check_in < $1::date
          AND r.check_out > $2::date
          AND r.unit_id = ANY($3::uuid[])
-         AND r.status IS DISTINCT FROM 'cancelled'${scope.clause}
+         AND r.status IS DISTINCT FROM 'cancelled'
        ORDER BY r.check_in`,
       [to, from, unitIds, ...scope.params]
     );
@@ -2666,7 +2686,8 @@ router.get('/reservations/schedule', async (req, res, next) => {
               CASE WHEN b.status IN ('pending', 'held') THEN 1 ELSE 0 END AS is_hold,
               b.hold_expires_at AS hold_until,
               u.title AS unit_title,
-              'website' AS source
+              'website' AS source,
+              (TRUE${bookingScope.clause}) AS in_scope
        FROM bookings b
        LEFT JOIN units u ON u.id = b.unit_id OR (b.unit_id IS NULL AND u.wp_post_id = b.listing_wp_id)
        WHERE b.status IN ('confirmed', 'pending', 'held')
@@ -2677,7 +2698,7 @@ router.get('/reservations/schedule', async (req, res, next) => {
          AND NOT EXISTS (
            SELECT 1 FROM reservations r
            WHERE r.booking_id = b.id AND r.status <> 'cancelled'
-         )${bookingScope.clause}
+         )
        ORDER BY b.checkin`,
       [to, from, unitIds, ...bookingScope.params]
     ).catch(() => ({ rows: [] }));
@@ -2696,7 +2717,7 @@ router.get('/reservations/schedule', async (req, res, next) => {
       });
     }
 
-    res.json({ units, reservations });
+    res.json({ units, reservations: reservations.map(maskOutOfScopeScheduleRow) });
   } catch (e) {
     next(e);
   }

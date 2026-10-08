@@ -1448,7 +1448,10 @@ export default function Schedule() {
 
   const handleResClick = useCallback((res) => {
     if (suppressClickRef.current || dragSelectRef.current) return;
-    
+    if (res.restricted) {
+      toast(`Booked by ${res.sales_person_name || 'another team member'} — details are private`);
+      return;
+    }
     if (res.is_hold || res.status === 'hold') {
       setHoldDetailId(res.id);
       setHoldDetailModal(true);
@@ -2283,7 +2286,7 @@ export default function Schedule() {
                       }
 
                       const { bg, text, hover, ring, strike } = resColors(cell.res, TODAY);
-                      const tipText = `${cell.res.status === 'cancelled' ? 'CANCELLED · ' : ''}${cell.res.guest_name}\n${formatDate(normDate(cell.res.check_in))} → ${formatDate(normDate(cell.res.check_out))}\n${nightsText(cell.res.nights)} · ${currency(cell.res.total_amount)}`;
+                      const tipText = `${cell.res.status === 'cancelled' ? 'CANCELLED · ' : ''}${cell.res.guest_name}\n${formatDate(normDate(cell.res.check_in))} → ${formatDate(normDate(cell.res.check_out))}\n${nightsText(cell.res.nights)}${cell.res.restricted ? '' : ` · ${currency(cell.res.total_amount)}`}`;
 
                       if (cell.type === 'checkin') {
                         const openPrice = getUnitDayPrice(unit, cell.date);
