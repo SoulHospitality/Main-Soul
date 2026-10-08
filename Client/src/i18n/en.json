@@ -788,6 +788,7 @@
         "cash": "Cash",
         "bank": "Bank",
         "inOut": "In {{inflow}} · Out {{outflow}}",
+        "usdBook": "Booked at {{amount}}",
         "chartOfAccounts": "Chart of accounts",
         "chartHint": "Open a book, then a sub-account. The log lives on the account page.",
         "arTitle": "Assets · Guest accounts receivable 105000",
@@ -806,10 +807,7 @@
       },
       "group": {
         "managementView": "Management view",
-        "monthlyAutoDeduct": "Monthly auto-deduct",
-        "showEmpty": "Show {{count}} empty accounts",
-        "hideEmpty": "Hide empty accounts",
-        "allEmpty": "No activity in this group yet."
+        "monthlyAutoDeduct": "Monthly auto-deduct"
       },
       "account": {
         "managementView": "management view",
@@ -841,7 +839,7 @@
         "notes": "Notes"
       },
       "recurring": {
-        "description": "Each month these accrue to vendor payable, then pay from Bank EGP. Rent and campus utilities pull 14/114 input VAT. Set 0 to skip a month. Owner money is computed from stays — it is not typed here.",
+        "description": "Each month these accrue to vendor payable, then pay from the ADIB bank account. Rent and campus utilities pull 14/114 input VAT. Set 0 to skip a month. Owner money is computed from stays — it is not typed here.",
         "monthlyAmount": "Monthly amount (EGP)",
         "dayOfMonth": "Day of month",
         "saved": "Monthly charge saved"
@@ -1047,7 +1045,9 @@
         "checkout": "Checkout",
         "insuranceCol": "Insurance",
         "statusCol": "Status",
-        "guestStayCheckout": "{{guest}} · {{unit}} · checkout {{date}}"
+        "guestStayCheckout": "{{guest}} · {{unit}} · checkout {{date}}",
+        "paidFromAccount": "Paid from account",
+        "chooseBank": "Choose the ADIB or CIB account the refund is paid from"
       },
       "checkinAudit": {
         "description": "Audit every ops check-in: door collections, bill amounts, payments recorded, and handover events.",
@@ -1154,7 +1154,7 @@
         "monthReopened": "Month reopened"
       },
       "gateway": {
-        "description": "Card / Paymob collections sit on 106000, then settle to Bank EGP net of merchant discount.",
+        "description": "Card / Paymob collections sit on 106000, then settle to the ADIB bank account net of merchant discount.",
         "clearingIn": "Clearing in",
         "settledToBank": "Settled to bank",
         "mdrExpense": "MDR expense",

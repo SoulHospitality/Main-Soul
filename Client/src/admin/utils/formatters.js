@@ -54,6 +54,24 @@ export const PAYMENT_METHOD_LABELS = {
   online: 'Online',
   paymob_card: 'Card (Paymob)',
 };
+export const BANK_ACCOUNTS = ['adib', 'cib'];
+export const BANK_ACCOUNT_LABELS = { adib: 'ADIB', cib: 'CIB' };
+export const RESERVATION_CURRENCIES = ['EGP', 'USD'];
+
+/** USD reservations are stored in EGP at their exchange rate; returns the dollar figure. */
+export function toReservationCurrency(r, egpAmount) {
+  const rate = Number(r?.exchange_rate) || 0;
+  if (String(r?.currency || '').toUpperCase() !== 'USD' || !(rate > 0)) return Number(egpAmount) || 0;
+  return Math.round(((Number(egpAmount) || 0) / rate) * 100) / 100;
+}
+
+/** "USD 120.00 (EGP 6,000.00)" for USD reservations, plain EGP otherwise. */
+export function reservationMoney(r, egpAmount) {
+  if (String(r?.currency || '').toUpperCase() !== 'USD' || !(Number(r?.exchange_rate) > 0)) {
+    return currency(egpAmount);
+  }
+  return `${currency(toReservationCurrency(r, egpAmount), 'USD')} (${currency(egpAmount)})`;
+}
 export const UNIT_TYPES = ['Apartment', 'Studio', 'Villa', 'Penthouse', 'Chalet', 'Hotel Room'];
 
 

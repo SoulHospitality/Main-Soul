@@ -63,12 +63,29 @@ function journalLine(account, debit, credit, memo) {
   };
 }
 
-function treasuryAccountForMethod(method) {
+function bankTreasury(bankAccount) {
+  return String(bankAccount || '').toLowerCase() === 'cib' ? '102000' : '101000';
+}
+
+/** Bank methods land in ADIB or CIB; cash lands in Cash EGP, or Cash USD for USD reservations. */
+function treasuryAccountForMethod(method, { bankAccount, currency } = {}) {
   const m = String(method || '').toLowerCase();
-  if (m === 'instapay' || m === 'bank_transfer') return '101000';
-  if (m === 'cash') return '103000';
+  if (m === 'instapay' || m === 'bank_transfer') return bankTreasury(bankAccount);
   if (m === 'credit_card' || m === 'online' || m === 'paymob_card') return '106000';
-  return '103000';
+  return String(currency || '').toUpperCase() === 'USD' ? '104000' : '103000';
+}
+
+function reservationUsdRate(r) {
+  if (String(r?.currency || '').toUpperCase() !== 'USD') return 0;
+  const rate = parseFloat(r?.exchange_rate);
+  return rate > 0 ? rate : 0;
+}
+
+/** Cash USD lines also carry the dollar amount (EGP book amount ÷ the reservation's rate). */
+function withUsd(line, egpAmount, reservation) {
+  const rate = reservationUsdRate(reservation);
+  if (line.account === '104000' && rate > 0) line.usd = round2(egpAmount / rate);
+  return line;
 }
 
 function isGatewayMethod(method) {
@@ -346,7 +363,10 @@ function insuranceRefundEntry(r) {
   const method = inferredHistorical
     ? 'historical'
     : r.insurance_refund_method || 'cash';
-  const treasury = treasuryAccountForMethod(method);
+  const treasury = treasuryAccountForMethod(method, {
+    bankAccount: r.insurance_refund_bank_account || r.bank_account,
+    currency: r.currency,
+  });
   const date = isoDate(r.insurance_refunded_at) || checkOut || todayIso();
   const historical = String(method).toLowerCase() === 'historical';
   const checkIn = isoDate(r.check_in);
@@ -359,7 +379,7 @@ function insuranceRefundEntry(r) {
     lines.push(journalLine('302000', 0, held, 'Historical insurance settlement (pre-tracking)'));
   } else {
     if (refunded > 0.009) {
-      lines.push(journalLine(treasury, 0, refunded, `Insurance refund to guest (${method})`));
+      lines.push(withUsd(journalLine(treasury, 0, refunded, `Insurance refund to guest (${method})`), refunded, r));
     }
     if (damage > 0.009) {
       lines.push(journalLine('410000', 0, damage, 'Damage retained from insurance'));
@@ -400,7 +420,10 @@ function insuranceRefundEntry(r) {
 function collectionEntry(p, reservation) {
   const amt = round2(parseFloat(p.amount) || 0);
   const method = p.payment_method || reservation?.payment_method || 'cash';
-  const treasury = treasuryAccountForMethod(method);
+  const treasury = treasuryAccountForMethod(method, {
+    bankAccount: p.bank_account || reservation?.bank_account,
+    currency: reservation?.currency,
+  });
   const checkIn = isoDate(reservation?.check_in);
   const payDate = isoDate(p.created_at) || isoDate(p.payment_date || p.paid_at);
   const cancelled = isCancelledStay(reservation);
@@ -417,7 +440,7 @@ function collectionEntry(p, reservation) {
       description: `Refund ${method} — ${reservation?.guest_name || 'Guest'}`,
       lines: [
         journalLine(creditAccount, abs, 0, unearned ? 'Return advance deposit' : 'Reverse guest receivable'),
-        journalLine(treasury, 0, abs, `Treasury out (${method})`),
+        withUsd(journalLine(treasury, 0, abs, `Treasury out (${method})`), abs, reservation),
       ],
       meta: {
         reservation_id: p.reservation_id,
@@ -440,7 +463,7 @@ function collectionEntry(p, reservation) {
     type: 'collection',
     description: `Collected ${method} — ${reservation?.guest_name || 'Guest'}`,
     lines: [
-      journalLine(treasury, abs, 0, `Treasury in (${method})`),
+      withUsd(journalLine(treasury, abs, 0, `Treasury in (${method})`), abs, reservation),
       journalLine(creditAccount, 0, abs, unearned ? 'Advance deposit (unearned)' : 'Settle guest receivable'),
     ],
     meta: {
@@ -515,7 +538,7 @@ function gatewaySettleEntry(collection, mdrPct) {
     type: 'gateway_settle',
     description: `Settle gateway — ${collection.description}`,
     lines: [
-      journalLine('101000', net, 0, 'Bank EGP after MDR'),
+      journalLine('101000', net, 0, 'Bank ADIB after MDR'),
       ...(mdr > 0.009 ? [journalLine('504000', mdr, 0, `Merchant discount ${mdrPct}%`)] : []),
       journalLine('106000', 0, gross, 'Clear Paymob / card clearing'),
     ],
@@ -571,7 +594,7 @@ function expenseEntries(e) {
   ];
   const payLines = [
     journalLine('201000', amt, 0, 'Settle vendor bill'),
-    journalLine(payTreasury, 0, vendorNet, 'Paid from Bank EGP'),
+    journalLine(payTreasury, 0, vendorNet, 'Paid from bank (ADIB)'),
     ...(wht.wht_amount > 0.009 ? [journalLine('206000', 0, wht.wht_amount, 'WHT withheld')] : []),
   ];
 
@@ -632,7 +655,7 @@ function recurringEntries(rec, month, from, to) {
       description: `Pay monthly ${rec.label}`,
       lines: [
         journalLine('201000', amt, 0, 'Settle monthly charge'),
-        journalLine('101000', 0, amt, 'Paid from Bank EGP'),
+        journalLine('101000', 0, amt, 'Paid from bank (ADIB)'),
       ],
       meta: {
         recurring_kind: rec.kind,
@@ -1207,7 +1230,7 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
         description: `Owner payout — ${p.owner_name || 'Owner'}`,
         lines: [
           journalLine('202000', amt, 0, 'Release owner trust'),
-          journalLine('101000', 0, amt, 'Paid from Bank EGP'),
+          journalLine('101000', 0, amt, 'Paid from bank (ADIB)'),
         ],
         meta: {
           payout_id: p.id,
@@ -1795,7 +1818,7 @@ function cashFlow(periodJournal, opts = {}) {
     operating_net: operating.total,
     financing_out: financingOut,
     note:
-      'Direct method. Cash = Bank 101000 and Cash 103000 plus their sub-accounts. Gateway clearing (106000) is not cash until settled.',
+      'Direct method. Cash = Bank ADIB 101000, Bank CIB 102000, Cash EGP 103000 and Cash USD 104000 (booked in EGP) plus their sub-accounts. Gateway clearing (106000) is not cash until settled.',
   };
 }
 
@@ -1943,12 +1966,21 @@ function buildPortal(journal, reservations, recurring, extras = {}) {
     outflow: round2(a.credit || 0),
     txn_count: a.txn_count || 0,
   });
+  const usdByCode = {};
+  for (const entry of journal) {
+    for (const line of entry.lines || []) {
+      if (!line.usd) continue;
+      const sign = (line.debit || 0) > 0 ? 1 : -1;
+      usdByCode[line.account] = round2((usdByCode[line.account] || 0) + sign * line.usd);
+    }
+  }
   const treasury = TREASURY_CODES.flatMap((code) => {
     const a = byCode[code] || { code, name: getAccount(code)?.name, balance: 0, debit: 0, credit: 0, txn_count: 0 };
     const children = bals.filter((b) => b.custom && b.parent_code === code);
-    if (!children.length) return [treasuryCard(a, code)];
-    const parentActive = Math.abs(a.balance || 0) > 0.009 || (a.txn_count || 0) > 0;
-    return [...(parentActive ? [treasuryCard(a, code)] : []), ...children.map((c) => treasuryCard(c, code))];
+    return [a, ...children].map((acct) => ({
+      ...treasuryCard(acct, code),
+      ...(getAccount(code)?.currency === 'USD' ? { usd_balance: usdByCode[acct.code] || 0 } : {}),
+    }));
   });
 
   const outstanding = summarizeOutstanding(reservations);
@@ -1979,7 +2011,11 @@ function buildPortal(journal, reservations, recurring, extras = {}) {
       vat_output: outputVat,
       vat_input: inputVat,
       cash_egp: withChildrenBalance('103000'),
-      bank_egp: withChildrenBalance('101000'),
+      cash_usd_book: withChildrenBalance('104000'),
+      cash_usd: usdByCode['104000'] || 0,
+      bank_adib: withChildrenBalance('101000'),
+      bank_cib: withChildrenBalance('102000'),
+      bank_egp: round2(withChildrenBalance('101000') + withChildrenBalance('102000')),
       gateway_clearing: byCode['106000']?.balance || 0,
       guest_ar: byCode['105000']?.balance || 0,
       gross_revenue: receipts.total,

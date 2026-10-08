@@ -42,6 +42,7 @@ import LoadingSpinner from '../components/ui/LoadingSpinner';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import Modal from '../components/ui/Modal';
+import BankAccountPicker from '../components/BankAccountPicker';
 import { currency, formatDate, formatDateTime } from '../utils/formatters';
 import { FINANCE_BOOKS_START as FINANCIAL_EPOCH } from '../utils/financialEpoch';
 import {
@@ -117,7 +118,9 @@ function useCustomAccounts() {
 
 const ACCOUNT_ICONS = {
   '101000': Landmark,
+  '102000': Landmark,
   '103000': Banknote,
+  '104000': Banknote,
   '105000': CircleDollarSign,
   '106000': CreditCard,
   '107000': Scale,
@@ -131,11 +134,6 @@ const ACCOUNT_ICONS = {
   '608000': Zap,
   '609000': Users,
 };
-
-/** Built-in accounts with no balance and no entries; custom sub-accounts always stay visible. */
-function isEmptyAccount(a) {
-  return !a.custom && Math.abs(Number(a.balance) || 0) < 0.005 && !(Number(a.txn_count) > 0);
-}
 
 function IconFor({ code, group, className = 'w-5 h-5' }) {
   const Comp = ACCOUNT_ICONS[code] || ACCOUNT_ICONS[getAccount(code)?.parent_code] || GROUP_META[group]?.icon || BookOpen;
@@ -461,9 +459,16 @@ function HomeView({ data, basisLabel, onOpenGroup, onOpenAccount, onOpenTreasury
                   {t2.kind === 'cash' ? t('pms.fin.home.cash') : t('pms.fin.home.bank')} · {t2.currency}
                 </p>
                 <p className="font-semibold text-soul-blue mt-1 leading-snug">{t2.name.replace(/^Bank - |^Cash - /, '')}</p>
-                <p className="text-2xl font-bold tabular-nums mt-3">{currency(t2.balance, t2.currency)}</p>
+                {t2.currency === 'USD' ? (
+                  <>
+                    <p className="text-2xl font-bold tabular-nums mt-3">{currency(t2.usd_balance || 0, 'USD')}</p>
+                    <p className="text-xs text-gray-500 mt-1">{t('pms.fin.home.usdBook', { amount: currency(t2.balance) })}</p>
+                  </>
+                ) : (
+                  <p className="text-2xl font-bold tabular-nums mt-3">{currency(t2.balance)}</p>
+                )}
                 <p className="text-xs text-gray-500 mt-2">
-                  {t('pms.fin.home.inOut', { inflow: currency(t2.inflow, t2.currency), outflow: currency(t2.outflow, t2.currency) })}
+                  {t('pms.fin.home.inOut', { inflow: currency(t2.inflow), outflow: currency(t2.outflow) })}
                 </p>
               </button>
             );
@@ -504,7 +509,7 @@ function HomeView({ data, basisLabel, onOpenGroup, onOpenAccount, onOpenTreasury
                     </div>
                     <p className="text-xs text-gray-500 mt-0.5">{t(`pms.fin.groupMeta.${g.id}Hint`) || meta.hint}</p>
                     <p className="text-xl font-bold tabular-nums mt-3">{currency(g.balance)}</p>
-                    <p className="text-xs text-gray-400 mt-1">{t('pms.fin.subAccounts', { count: g.accounts ? g.accounts.filter((a) => !isEmptyAccount(a)).length : g.account_count })}</p>
+                    <p className="text-xs text-gray-400 mt-1">{t('pms.fin.subAccounts', { count: g.accounts ? g.accounts.length : g.account_count })}</p>
                   </div>
                 </div>
               </button>
@@ -765,11 +770,7 @@ function GroupView({ groupId, data, onOpenAccount }) {
   const meta = GROUP_META[groupId] || GROUP_META.assets;
   const group = (data?.groups || []).find((g) => g.id === groupId);
   const Icon = meta.icon;
-  const allAccounts = group?.accounts || [];
-  const [showEmpty, setShowEmpty] = useState(false);
-  const visibleAccounts = allAccounts.filter((a) => !isEmptyAccount(a));
-  const hiddenCount = allAccounts.length - visibleAccounts.length;
-  const accounts = showEmpty ? allAccounts : visibleAccounts;
+  const accounts = group?.accounts || [];
   const [addOpen, setAddOpen] = useState(false);
   const [deleteCode, setDeleteCode] = useState(null);
 
@@ -782,17 +783,12 @@ function GroupView({ groupId, data, onOpenAccount }) {
         <div>
           <p className="text-xs uppercase tracking-wider text-gray-400">{groupId}</p>
           <h2 className="text-2xl font-semibold text-soul-blue">{meta.label}</h2>
-          <p className="text-sm text-gray-500">{t(`pms.fin.groupMeta.${groupId}Hint`) || meta.hint} · {t('pms.fin.subAccounts', { count: visibleAccounts.length })}</p>
+          <p className="text-sm text-gray-500">{t(`pms.fin.groupMeta.${groupId}Hint`) || meta.hint} · {t('pms.fin.subAccounts', { count: accounts.length })}</p>
         </div>
         <p className="ml-auto text-2xl font-bold tabular-nums">{currency(group?.balance)}</p>
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-3">
-        {hiddenCount > 0 ? (
-          <button type="button" className="text-sm text-soul-blue hover:underline" onClick={() => setShowEmpty((v) => !v)}>
-            {showEmpty ? t('pms.fin.group.hideEmpty') : t('pms.fin.group.showEmpty', { count: hiddenCount })}
-          </button>
-        ) : null}
         <button type="button" className="btn-primary text-sm" onClick={() => setAddOpen(true)}>
           <Plus className="w-4 h-4" /> {t('pms.fin.subAccount.add')}
         </button>
@@ -3156,8 +3152,10 @@ function InsuranceRefundsTool({ onOpenAccount }) {
   const [refundedAmount, setRefundedAmount] = useState('');
   const [damageAmount, setDamageAmount] = useState('0');
   const [method, setMethod] = useState('cash');
+  const [bankAccount, setBankAccount] = useState('');
   const [notes, setNotes] = useState('');
   const [refundDate, setRefundDate] = useState('');
+  const needsBank = method === 'instapay' || method === 'bank_transfer';
 
   const { data, isLoading } = useQuery({
     queryKey: ['financial-system-insurance', filter],
@@ -3182,6 +3180,7 @@ function InsuranceRefundsTool({ onOpenAccount }) {
     setRefundedAmount(String(held));
     setDamageAmount('0');
     setMethod('cash');
+    setBankAccount('');
     setNotes('');
     setRefundDate(row.check_out || new Date().toISOString().slice(0, 10));
   }
@@ -3380,6 +3379,9 @@ function InsuranceRefundsTool({ onOpenAccount }) {
                   <option value="credit_card">{t('pms.fin.insurance.cardMethod')}</option>
                 </select>
               </div>
+              {needsBank ? (
+                <BankAccountPicker label={t('pms.fin.insurance.paidFromAccount')} value={bankAccount} onChange={setBankAccount} />
+              ) : null}
               <div>
                 <label className="label">{t('pms.fin.insurance.refundDate')}</label>
                 <input
@@ -3407,18 +3409,23 @@ function InsuranceRefundsTool({ onOpenAccount }) {
                 type="button"
                 className="btn-primary"
                 disabled={settle.isPending}
-                onClick={() =>
+                onClick={() => {
+                  if (needsBank && (parseFloat(refundedAmount) || 0) > 0 && !bankAccount) {
+                    toast.error(t('pms.fin.insurance.chooseBank'));
+                    return;
+                  }
                   settle.mutate({
                     id: settleRow.reservation_id,
                     body: {
                       refunded_amount: parseFloat(refundedAmount) || 0,
                       damage_amount: parseFloat(damageAmount) || 0,
                       payment_method: method,
+                      bank_account: needsBank ? bankAccount || undefined : undefined,
                       refunded_at: refundDate,
                       notes: notes || undefined,
                     },
-                  })
-                }
+                  });
+                }}
               >
                 {t('pms.fin.insurance.confirmSettle')}
               </button>

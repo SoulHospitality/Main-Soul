@@ -8,8 +8,10 @@ const ACCOUNT_GROUPS = {
 };
 
 const CHART_OF_ACCOUNTS = [
-  { code: '101000', name: 'Bank - EGP Main Operating Account', group: 'assets', type: 'asset', treasury: 'bank', currency: 'EGP' },
-  { code: '103000', name: 'Cash - Operations & Field Petty Cash (EGP)', group: 'assets', type: 'asset', treasury: 'cash', currency: 'EGP' },
+  { code: '101000', name: 'Bank - ADIB (EGP)', group: 'assets', type: 'asset', treasury: 'bank', currency: 'EGP' },
+  { code: '102000', name: 'Bank - CIB (EGP)', group: 'assets', type: 'asset', treasury: 'bank', currency: 'EGP' },
+  { code: '103000', name: 'Cash - EGP', group: 'assets', type: 'asset', treasury: 'cash', currency: 'EGP' },
+  { code: '104000', name: 'Cash - USD (booked in EGP)', group: 'assets', type: 'asset', treasury: 'cash', currency: 'USD' },
   { code: '105000', name: 'Guest Accounts Receivable', group: 'assets', type: 'asset' },
   { code: '106000', name: 'Payment Gateway Clearing (Paymob / Stripe / Fawry)', group: 'assets', type: 'asset' },
   { code: '107000', name: 'VAT Receivable (Input VAT 14%)', group: 'assets', type: 'asset' },
@@ -127,9 +129,9 @@ const EXPENSE_CATEGORY_TO_ACCOUNT = {
   other: '503000',
 };
 
-const TREASURY_CODES = ['101000', '103000'];
+const TREASURY_CODES = ['101000', '102000', '103000', '104000'];
 
-/** Treasury accounts plus any custom sub-accounts created under them (e.g. ADIB under Bank EGP). */
+/** Treasury accounts plus any custom sub-accounts created under them. */
 function treasuryCodes() {
   return [
     ...TREASURY_CODES,

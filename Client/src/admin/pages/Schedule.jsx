@@ -14,6 +14,7 @@ import SearchableSelect from '../components/ui/SearchableSelect';
 import AdminReservationDrawer from '../components/AdminReservationDrawer';
 import ManualReservationForm, {
   EMPTY_MANUAL_RESERVATION_FORM,
+  manualReservationPaymentError,
 } from '../components/ManualReservationForm';
 import TransferReservationModal from '../components/TransferReservationModal';
 import { housekeepingFeeForUnit } from '../../utils/housekeeping';
@@ -1141,6 +1142,8 @@ export default function Schedule() {
     if (!createForm.is_owner_reservation && createForm.payment_method === 'other' && !createForm.payment_method_note?.trim()) {
       return toast.error('Add a comment for the Other payment method');
     }
+    const paymentError = manualReservationPaymentError(createForm);
+    if (paymentError) return toast.error(paymentError);
     const payload = {
       ...createForm,
       adults,
@@ -1149,9 +1152,11 @@ export default function Schedule() {
       housekeeping_fees:
         createForm.housekeeping_fees !== '' && createForm.housekeeping_fees != null
           ? Number(createForm.housekeeping_fees) || 0
-          : selectedUnit
-            ? housekeepingFeeForUnit(selectedUnit)
-            : 0,
+          : createForm.currency === 'USD'
+            ? undefined
+            : selectedUnit
+              ? housekeepingFeeForUnit(selectedUnit)
+              : 0,
       beach_access_fees: createForm.is_owner_reservation
         ? 0
         : createForm.beach_access_fees !== '' && createForm.beach_access_fees != null
@@ -2535,7 +2540,13 @@ export default function Schedule() {
         unitsList={bookableUnitsList}
         usersList={salesUsers}
         saving={editMutation.isPending}
-        onSave={() => editMutation.mutate()}
+        onSave={() => {
+          if (editForm?.currency === 'USD' && !(Number(editForm.exchange_rate) > 0)) {
+            toast.error('Enter the USD exchange rate (EGP for 1 USD)');
+            return;
+          }
+          editMutation.mutate();
+        }}
         isAdmin={isAdmin}
         currentUserName={user?.full_name || user?.username || ''}
       />

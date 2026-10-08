@@ -17,6 +17,7 @@ const {
   isTreasuryCode,
 } = require('../../lib/finance/chartOfAccounts');
 const { refreshCustomAccounts } = require('../../lib/finance/customAccounts');
+const { normalizeBankAccount } = require('../../lib/reservationCurrency');
 const { refreshBooksReset, afterReset } = require('../../lib/finance/booksReset');
 const {
   outputVatOnCommission,
@@ -2196,6 +2197,12 @@ router.post('/financial-system/insurance-refunds/:id/settle', requireRoles('admi
     if (!allowedMethods.has(method)) {
       return res.status(400).json({ error: 'Invalid payment_method' });
     }
+    const refundBank = ['instapay', 'bank_transfer'].includes(method)
+      ? normalizeBankAccount(req.body.bank_account)
+      : null;
+    if (refundBank === null && ['instapay', 'bank_transfer'].includes(method) && refunded > 0.009) {
+      return res.status(400).json({ error: 'Choose the ADIB or CIB account the refund is paid from' });
+    }
 
     const refundDate = req.body.refunded_at
       ? String(req.body.refunded_at).slice(0, 10)
@@ -2218,6 +2225,7 @@ router.post('/financial-system/insurance-refunds/:id/settle', requireRoles('admi
          insurance_refund_method = $6,
          insurance_refund_notes = $7,
          insurance_refunded_by = $8,
+         insurance_refund_bank_account = $9,
          updated_at = NOW()
        WHERE id = $1
        RETURNING id, insurance, insurance_refund_status, insurance_refunded_amount,
@@ -2232,6 +2240,7 @@ router.post('/financial-system/insurance-refunds/:id/settle', requireRoles('admi
         method,
         req.body.notes ? String(req.body.notes).slice(0, 2000) : null,
         req.user.id,
+        refundBank,
       ]
     );
 

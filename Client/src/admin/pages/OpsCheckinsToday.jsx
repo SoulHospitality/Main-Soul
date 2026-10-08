@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { currency } from '../utils/formatters';
 import { OpsDateRangeFilter, formatOpsDay } from '../components/OpsDateRangeFilter';
 import { ProofPicker } from '../components/CameraCapture';
+import BankAccountPicker from '../components/BankAccountPicker';
 import {
   CancelCheckinModal,
   ChangeStayModal,
@@ -154,7 +155,10 @@ function CollectPaymentMethods({
   instapayDraft,
   onCashChange,
   onInstapayChange,
+  bankAccount,
+  onBankAccountChange,
 }) {
+  const usesInstapay = method === 'instapay' || (isSplit && Number(instapayDraft) > 0);
   return (
     <>
       <div>
@@ -192,6 +196,9 @@ function CollectPaymentMethods({
           </div>
         </div>
       ) : null}
+      {usesInstapay ? (
+        <BankAccountPicker value={bankAccount} onChange={onBankAccountChange} compact />
+      ) : null}
     </>
   );
 }
@@ -212,6 +219,7 @@ export function CheckinsTodaySection({ embedded = false }) {
   const [methodDrafts, setMethodDrafts] = useState({});
   const [cashDrafts, setCashDrafts] = useState({});
   const [instapayDrafts, setInstapayDrafts] = useState({});
+  const [bankDrafts, setBankDrafts] = useState({});
   const [commentDrafts, setCommentDrafts] = useState({});
   const [collectCommentDrafts, setCollectCommentDrafts] = useState({});
   const canAssign =
@@ -659,6 +667,10 @@ export function CheckinsTodaySection({ embedded = false }) {
                                 onInstapayChange={(v) =>
                                   setInstapayDrafts((prev) => ({ ...prev, [r.id]: v }))
                                 }
+                                bankAccount={bankDrafts[r.id] || ''}
+                                onBankAccountChange={(v) =>
+                                  setBankDrafts((prev) => ({ ...prev, [r.id]: v }))
+                                }
                               />
                               {method === 'other' && !isCustom ? (
                                 <label className="block text-xs space-y-1">
@@ -705,6 +717,13 @@ export function CheckinsTodaySection({ embedded = false }) {
                                     return;
                                   }
                                   const proof = proofDrafts[r.id] || undefined;
+                                  const bankAccount = bankDrafts[r.id] || '';
+                                  const usesInstapay =
+                                    method === 'instapay' || (isSplit && Number(instapayDraft) > 0);
+                                  if (usesInstapay && !bankAccount) {
+                                    toast.error('Choose the ADIB or CIB account for InstaPay');
+                                    return;
+                                  }
 
                                   const bill = isCustom
                                     ? Object.fromEntries(
@@ -732,6 +751,7 @@ export function CheckinsTodaySection({ embedded = false }) {
                                       amount,
                                       cash_amount: cash,
                                       instapay_amount: instapay,
+                                      bank_account: instapay > 0 ? bankAccount : undefined,
                                       bill,
                                       proof,
                                       comment: comment || undefined,
@@ -743,6 +763,7 @@ export function CheckinsTodaySection({ embedded = false }) {
                                     collect_mode: mode,
                                     amount,
                                     payment_method: method,
+                                    bank_account: method === 'instapay' ? bankAccount : undefined,
                                     bill,
                                     proof,
                                     comment: comment || undefined,

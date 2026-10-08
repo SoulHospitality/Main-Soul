@@ -1918,7 +1918,10 @@ router.put(
     if (!existing) return res.status(404).json({ error: 'Not found' });
     await assertReservationOwned(req.user, existing);
 
-    const b = req.body;
+    const { reservationCurrencyFromBody, applyReservationCurrency } = require('../../lib/reservationCurrency');
+    const cur = reservationCurrencyFromBody(req.body);
+    if (cur.error) return res.status(400).json({ error: cur.error });
+    const b = cur.body;
     // Only admins reassign the salesperson; other editors keep whoever booked it.
     if (!isAdmin(req.user)) delete b.sales_person_id;
     const checkIn = b.check_in || existing.check_in;
@@ -2050,6 +2053,10 @@ router.put(
         [req.params.id, String(b.broker_phone || '').trim() || null]
       );
       rows[0].broker_phone = bp[0]?.broker_phone ?? null;
+    }
+    if (rows[0]) {
+      const money = await applyReservationCurrency(query, req.params.id, cur, b);
+      if (money) Object.assign(rows[0], money);
     }
     try {
       const { resyncReservationBlocks } = require('../../lib/reservationBlocks');

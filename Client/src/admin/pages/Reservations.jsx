@@ -19,16 +19,17 @@ import { idDocumentThumbUrl, isPdfUrl } from '../utils/idDocuments';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import SortTh from '../components/ui/SortTh';
 import BookingCalendar from '../components/ui/BookingCalendar';
-import { currency, formatDate, formatDateTime, nightsText, BOOKING_SOURCES, PAYMENT_METHODS, PAYMENT_METHOD_LABELS, MANUAL_PAYMENT_METHODS, unitDisplay, unitSelectLabel } from '../utils/formatters';
+import { currency, formatDate, formatDateTime, nightsText, BOOKING_SOURCES, PAYMENT_METHODS, PAYMENT_METHOD_LABELS, MANUAL_PAYMENT_METHODS, RESERVATION_CURRENCIES, BANK_ACCOUNT_LABELS, reservationMoney, toReservationCurrency, unitDisplay, unitSelectLabel } from '../utils/formatters';
 import { calcReservationFinancials, commissionModeLabel, appliedPctLabel } from '../utils/commission';
 import { reservationBill } from '../utils/reservationBill';
 import { housekeepingFeeForUnit } from '../../utils/housekeeping';
 import { isoDateOnly } from '../../utils/stayNights';
 import { canonicalSalesName, namesAreAliases, reservationSalesDisplay } from '../utils/salesNameMatch';
 import AdminReservationDrawer from '../components/AdminReservationDrawer';
-import ManualReservationForm from '../components/ManualReservationForm';
+import ManualReservationForm, { manualReservationPaymentError } from '../components/ManualReservationForm';
 import TransferReservationModal from '../components/TransferReservationModal';
 import ReservationsNav from '../components/ReservationsNav';
+import BankAccountPicker from '../components/BankAccountPicker';
 import { useProjectCatalog } from '../../hooks/useProjectCatalog';
 import { openReservationReceipt } from '../utils/reservationReceipt';
 import ReservationReceipt, { BrokerDetails } from '../components/ReservationReceipt';
@@ -48,8 +49,11 @@ export const EMPTY_FORM = {
   broker_amount_per_night: '',
   payment_method: 'cash',
   payment_method_note: '',
+  bank_account: '',
+  currency: 'EGP',
+  exchange_rate: '',
 };
-const EMPTY_PMT = { amount: '', payment_date: new Date().toISOString().split('T')[0], payment_method: 'cash', reference_number: '', notes: '' };
+const EMPTY_PMT = { amount: '', payment_date: new Date().toISOString().split('T')[0], payment_method: 'cash', bank_account: '', reference_number: '', notes: '' };
 
 function calcNights(checkIn, checkOut) {
   if (!checkIn || !checkOut) return 0;
@@ -72,7 +76,30 @@ function utilitiesPerNightFor(r) {
   return '';
 }
 
+// Stored in EGP; USD reservations are edited in dollars and the server converts back at the rate.
+const RESERVATION_MONEY_FIELDS = [
+  'price_per_night', 'total_amount', 'down_payment', 'housekeeping_fees', 'insurance',
+  'owner_collected_amount', 'beach_access_fees', 'broker_amount_per_night',
+];
+
 export function reservationToEditForm(r) {
+  const isUsd = String(r.currency || '').toUpperCase() === 'USD' && Number(r.exchange_rate) > 0;
+  const rate = Number(r.exchange_rate) || 0;
+  const form = reservationToEditFormEgp(r);
+  if (isUsd) {
+    for (const key of RESERVATION_MONEY_FIELDS) {
+      if (form[key] !== '' && form[key] != null) form[key] = String(Math.round((Number(form[key]) / rate) * 100) / 100);
+    }
+  }
+  return {
+    ...form,
+    currency: isUsd ? 'USD' : 'EGP',
+    exchange_rate: isUsd ? String(rate) : '',
+    bank_account: r.bank_account || '',
+  };
+}
+
+function reservationToEditFormEgp(r) {
   return {
     unit_id: r.unit_id, guest_name: r.guest_name || '', guest_email: r.guest_email || '',
     guest_phone: r.guest_phone || '', guest_nationality: r.guest_nationality || '',
@@ -133,6 +160,9 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
   
   const selectedUnit = units.find(u => String(u.id) === String(form.unit_id));
   const skipTotalSync = useRef(!isNew);
+  const isUsd = form.currency === 'USD';
+  const cur = isUsd ? 'USD' : 'EGP';
+  const usdRate = Number(form.exchange_rate) || 0;
 
   useEffect(() => {
     if (selectedUnit && isNew && !form.price_per_night) {
@@ -156,7 +186,8 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
 
   const total = parseFloat(form.total_amount) || 0;
   const downPmt = parseFloat(form.down_payment) || 0;
-  const defaultHkFees = selectedUnit ? housekeepingFeeForUnit(selectedUnit) : 0;
+  const unitHkFees = selectedUnit ? housekeepingFeeForUnit(selectedUnit) : 0;
+  const defaultHkFees = isUsd ? (usdRate > 0 ? Math.round((unitHkFees / usdRate) * 100) / 100 : 0) : unitHkFees;
   const hkFees = form.housekeeping_fees !== '' && form.housekeeping_fees != null
     ? (parseFloat(form.housekeeping_fees) || 0)
     : defaultHkFees;
@@ -187,7 +218,15 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
                 ...f,
                 unit_id: v,
                 price_per_night: isNew ? '' : f.price_per_night,
-                housekeeping_fees: next ? String(housekeepingFeeForUnit(next)) : f.housekeeping_fees,
+                housekeeping_fees: next
+                  ? String(
+                      f.currency === 'USD'
+                        ? Number(f.exchange_rate) > 0
+                          ? Math.round((housekeepingFeeForUnit(next) / Number(f.exchange_rate)) * 100) / 100
+                          : ''
+                        : housekeepingFeeForUnit(next)
+                    )
+                  : f.housekeeping_fees,
               }));
             }}
             placeholder="Select unit…"
@@ -275,39 +314,67 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
         <h4 className="text-sm font-semibold text-blue-900">💰 Financial Details</h4>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           <div>
-            <label className="label">Price per Night (EGP) *</label>
+            <label className="label">Currency</label>
+            <select
+              className="input"
+              value={form.currency || 'EGP'}
+              onChange={e => setForm(f => ({
+                ...f,
+                currency: e.target.value,
+                ...(e.target.value === 'USD' ? { payment_method: 'cash', bank_account: '' } : {}),
+              }))}
+            >
+              {RESERVATION_CURRENCIES.map(code => <option key={code} value={code}>{code}</option>)}
+            </select>
+          </div>
+          {isUsd && (
+            <div>
+              <label className="label">Exchange rate (EGP for 1 USD) *</label>
+              <input type="number" min="0" step="0.0001" className="input" value={form.exchange_rate || ''}
+                onChange={e => setForm(f => ({ ...f, exchange_rate: e.target.value }))} placeholder="e.g. 48.50" />
+            </div>
+          )}
+          <div className={isUsd ? '' : 'md:col-span-2'}>
+            <p className="text-xs text-blue-800 mt-6">
+              {isUsd
+                ? 'Amounts below are in USD and paid in cash. The books record the EGP value at this rate.'
+                : 'Amounts below are in EGP.'}
+            </p>
+          </div>
+          <div>
+            <label className="label">Price per Night ({cur}) *</label>
             <input type="number" min="0" step="0.01" className="input" value={form.price_per_night}
               onChange={e => setForm(f => ({ ...f, price_per_night: e.target.value }))} placeholder="0.00" />
           </div>
           <div>
-            <label className="label">Total Amount (EGP) <span className="text-blue-400 text-xs">(auto)</span></label>
+            <label className="label">Total Amount ({cur}) <span className="text-blue-400 text-xs">(auto)</span></label>
             <input type="number" min="0" step="0.01" className="input bg-blue-50" value={form.total_amount}
               onChange={e => setForm(f => ({ ...f, total_amount: e.target.value }))} placeholder="0.00" />
           </div>
           <div>
-            <label className="label">Down Payment collected by us (EGP)</label>
+            <label className="label">Down Payment collected by us ({cur})</label>
             <input type="number" min="0" step="0.01" className="input" value={form.down_payment}
               onChange={e => setForm(f => ({ ...f, down_payment: e.target.value }))} placeholder="0.00" />
           </div>
           <div>
-            <label className="label">Housekeeping Fees (EGP)</label>
+            <label className="label">Housekeeping Fees ({cur})</label>
             <input type="number" min="0" step="0.01" className="input" value={form.housekeeping_fees ?? ''}
               onChange={e => setForm(f => ({ ...f, housekeeping_fees: e.target.value }))}
               placeholder={selectedUnit ? String(defaultHkFees) : '0.00'} />
             {selectedUnit && (
-              <p className="text-xs text-gray-400 mt-1">Unit default EGP {defaultHkFees.toLocaleString('en-EG')}</p>
+              <p className="text-xs text-gray-400 mt-1">Unit default {cur} {defaultHkFees.toLocaleString('en-EG')}</p>
             )}
           </div>
           <div>
-            <label className="label">Insurance (EGP)</label>
+            <label className="label">Insurance ({cur})</label>
             <input type="number" min="0" step="0.01" className="input" value={form.insurance}
               onChange={e => setForm(f => ({ ...f, insurance: e.target.value }))} placeholder="0.00" />
           </div>
           <div>
-            <label className="label">We Still Need to Collect (EGP)</label>
+            <label className="label">We Still Need to Collect ({cur})</label>
             <div className={`input font-semibold ${amountToPay > 0 ? 'text-red-600 bg-red-50' : 'text-green-600 bg-green-50'}`}>
               {total > 0 || form.owner_collected_type === 'full'
-                ? `EGP ${amountToPay.toLocaleString('en-EG', { minimumFractionDigits: 2 })}`
+                ? `${cur} ${amountToPay.toLocaleString('en-EG', { minimumFractionDigits: 2 })}`
                 : '—'}
             </div>
           </div>
@@ -373,7 +440,7 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
                     onChange={e => setForm(f => ({ ...f, owner_collected_amount: e.target.value }))}
                     placeholder="0.00"
                   />
-                  <span className="text-sm text-amber-600">EGP</span>
+                  <span className="text-sm text-amber-600">{cur}</span>
                 </div>
               )}
 
@@ -383,9 +450,9 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
                   ? 'bg-green-100 text-green-800'
                   : 'bg-amber-100 text-amber-800'}`}>
                 {form.owner_collected_type === 'full'
-                  ? `✓ Owner collected full reservation amount. We only collect housekeeping${ins > 0 ? ' + insurance' : ''} = EGP ${(hkFees + ins).toLocaleString('en-EG', { minimumFractionDigits: 2 })}. Commission still charged on full total.`
+                  ? `✓ Owner collected full reservation amount. We only collect housekeeping${ins > 0 ? ' + insurance' : ''} = ${cur} ${(hkFees + ins).toLocaleString('en-EG', { minimumFractionDigits: 2 })}. Commission still charged on full total.`
                   : ownerCollectedAmt > 0
-                    ? `Owner collected EGP ${ownerCollectedAmt.toLocaleString('en-EG', { minimumFractionDigits: 2 })} — deducted from what we collect. Commission still charged on full total.`
+                    ? `Owner collected ${cur} ${ownerCollectedAmt.toLocaleString('en-EG', { minimumFractionDigits: 2 })} — deducted from what we collect. Commission still charged on full total.`
                     : 'Enter amount the owner collected from the tenant.'}
               </div>
             </div>
@@ -428,7 +495,7 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
               />
             </div>
             <div className="col-span-2">
-              <label className="label text-xs text-purple-700">Broker Amount / Night (EGP)</label>
+              <label className="label text-xs text-purple-700">Broker Amount / Night ({cur})</label>
               <input
                 type="number" min="0" step="0.01"
                 className="input"
@@ -440,8 +507,8 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
           </div>
           {form.broker_amount_per_night > 0 && nights > 0 && (
             <div className="text-xs bg-purple-100 text-purple-800 rounded-lg px-3 py-2 space-y-1">
-              <div>🤝 Broker total: <strong>EGP {(parseFloat(form.broker_amount_per_night) * nights).toFixed(2)}</strong> ({nights} nights × EGP {form.broker_amount_per_night})</div>
-              <div>💰 Net price/night (after broker): <strong>EGP {(parseFloat(form.price_per_night || 0) - parseFloat(form.broker_amount_per_night)).toFixed(2)}</strong></div>
+              <div>🤝 Broker total: <strong>{cur} {(parseFloat(form.broker_amount_per_night) * nights).toFixed(2)}</strong> ({nights} nights × {cur} {form.broker_amount_per_night})</div>
+              <div>💰 Net price/night (after broker): <strong>{cur} {(parseFloat(form.price_per_night || 0) - parseFloat(form.broker_amount_per_night)).toFixed(2)}</strong></div>
             </div>
           )}
         </div>
@@ -508,7 +575,7 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
             Reservation stays <strong>pending</strong> until this payment is collected/approved.
           </p>
           <div className="flex flex-wrap gap-3">
-            {MANUAL_PAYMENT_METHODS.map((m) => (
+            {(isUsd ? ['cash'] : MANUAL_PAYMENT_METHODS).map((m) => (
               <label
                 key={m}
                 className={`flex cursor-pointer items-center gap-2 rounded-xl border-2 px-4 py-2.5 text-sm font-medium transition-colors ${
@@ -529,6 +596,12 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
               </label>
             ))}
           </div>
+          {form.payment_method === 'instapay' && !isUsd && (
+            <BankAccountPicker
+              value={form.bank_account || ''}
+              onChange={v => setForm(f => ({ ...f, bank_account: v }))}
+            />
+          )}
           {form.payment_method === 'other' && (
             <div>
               <label className="label text-xs text-emerald-800">Comment <span className="text-red-500">*</span></label>
@@ -557,21 +630,42 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
   );
 }
 
-function PaymentForm({ form, setForm, onFileChange }) {
+function PaymentForm({ form, setForm, onFileChange, reservation }) {
+  const isUsd = String(reservation?.currency || '').toUpperCase() === 'USD';
+  const needsBank = !isUsd && (form.payment_method === 'instapay' || form.payment_method === 'bank_transfer');
   return (
     <div className="space-y-4">
       <div className="form-grid">
-        <div><label className="label">Amount (EGP) *</label><input type="number" min="0" step="0.01" className="input" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" /></div>
+        <div>
+          <label className="label">Amount ({isUsd ? 'USD' : 'EGP'}) *</label>
+          <input type="number" min="0" step="0.01" className="input" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
+          {isUsd ? (
+            <p className="text-xs text-gray-500 mt-1">
+              Booked at {currency((Number(form.amount) || 0) * (Number(reservation.exchange_rate) || 0))} (1 USD = {reservation.exchange_rate} EGP)
+            </p>
+          ) : null}
+        </div>
         <div><label className="label">Date *</label><input type="date" className="input" value={form.payment_date} onChange={e => setForm(f => ({ ...f, payment_date: e.target.value }))} /></div>
         <div>
           <label className="label">Method *</label>
-          <SearchableSelect
-            value={form.payment_method} onChange={v => setForm(f => ({ ...f, payment_method: v }))}
-            options={PAYMENT_METHODS.map(m => ({ value: m, label: PAYMENT_METHOD_LABELS[m] }))}
-          />
+          {isUsd ? (
+            <p className="input bg-gray-50 text-gray-600">Cash (USD reservations are cash only)</p>
+          ) : (
+            <SearchableSelect
+              value={form.payment_method} onChange={v => setForm(f => ({ ...f, payment_method: v }))}
+              options={PAYMENT_METHODS.map(m => ({ value: m, label: PAYMENT_METHOD_LABELS[m] }))}
+            />
+          )}
         </div>
         <div><label className="label">Reference #</label><input className="input" value={form.reference_number} onChange={e => setForm(f => ({ ...f, reference_number: e.target.value }))} /></div>
       </div>
+      {needsBank ? (
+        <BankAccountPicker
+          label={form.payment_method === 'instapay' ? 'InstaPay to account' : 'Bank account'}
+          value={form.bank_account}
+          onChange={v => setForm(f => ({ ...f, bank_account: v }))}
+        />
+      ) : null}
       <div><label className="label">Notes</label><textarea className="input resize-none" rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
       {onFileChange && (
         <div>
@@ -721,25 +815,32 @@ function ReservationDetail({
           <InfoRow label="Check-in" value={formatDate(reservation.check_in)} />
           <InfoRow label="Check-out" value={formatDate(reservation.check_out)} />
           <InfoRow label="Nights" value={nightsText(reservation.nights)} />
-          <InfoRow label="Price/Night" value={reservation.price_per_night > 0 ? currency(reservation.price_per_night) : '—'} />
+          {String(reservation.currency || '').toUpperCase() === 'USD' && (
+            <InfoRow label="Currency" value={`USD · 1 USD = ${reservation.exchange_rate} EGP · cash`} bold />
+          )}
+          {reservation.bank_account && (
+            <InfoRow label="InstaPay to" value={BANK_ACCOUNT_LABELS[reservation.bank_account] || reservation.bank_account} />
+          )}
+          <InfoRow label="Price/Night" value={reservation.price_per_night > 0 ? reservationMoney(reservation, reservation.price_per_night) : '—'} />
           <InfoRow
             label="Accommodation"
-            value={accommodation > 0 ? currency(accommodation) : currency(storedTotal)}
+            value={reservationMoney(reservation, accommodation > 0 ? accommodation : storedTotal)}
           />
-          <InfoRow label="Total (full bill)" value={currency(total)} bold />
-          <InfoRow label="Down Payment" value={currency(downPmt)} />
+          <InfoRow label="Total (full bill)" value={reservationMoney(reservation, total)} bold />
+          <InfoRow label="Down Payment" value={reservationMoney(reservation, downPmt)} />
           <InfoRow
             label="Amt to Pay"
-            value={currency(
+            value={reservationMoney(
+              reservation,
               reservation.amount_to_pay != null
                 ? reservation.amount_to_pay
                 : Math.max(0, total - (parseFloat(reservation.amount_paid) || 0))
             )}
             bold
           />
-          <InfoRow label="Housekeeping" value={currency(reservation.housekeeping_fees)} />
-          <InfoRow label="Beach Pass" value={currency(reservation.beach_access_fees)} />
-          <InfoRow label="Insurance" value={currency(reservation.insurance)} />
+          <InfoRow label="Housekeeping" value={reservationMoney(reservation, reservation.housekeeping_fees)} />
+          <InfoRow label="Beach Pass" value={reservationMoney(reservation, reservation.beach_access_fees)} />
+          <InfoRow label="Insurance" value={reservationMoney(reservation, reservation.insurance)} />
           <InfoRow label="Utilities (in nightly rate)" value={currency(reservation.utilities_amount)} />
           <InfoRow label="Payment Status" value={reservation.payment_status} />
           <InfoRow label="Status" value={reservation.status} />
@@ -853,9 +954,12 @@ function ReservationDetail({
               <div key={p.id} className="bg-gray-50 rounded-lg px-3 py-2 text-sm">
                 <div className="flex items-center justify-between">
                   <div>
-                    <span className="font-medium">{currency(p.amount)}</span>
+                    <span className="font-medium">{reservationMoney(reservation, p.amount)}</span>
                     <span className="text-gray-400 mx-2">·</span>
-                    <span className="text-gray-600">{PAYMENT_METHOD_LABELS[p.payment_method]}</span>
+                    <span className="text-gray-600">
+                      {PAYMENT_METHOD_LABELS[p.payment_method]}
+                      {p.bank_account ? ` (${BANK_ACCOUNT_LABELS[p.bank_account] || p.bank_account})` : ''}
+                    </span>
                     {p.reference_number && <span className="text-gray-400 ml-2">#{p.reference_number}</span>}
                   </div>
                   <div className="flex items-center gap-2">
@@ -1269,6 +1373,8 @@ export default function Reservations() {
     if (!form.guest_phone?.trim())
       return toast.error('Mobile number is required');
     if (editId) {
+      if (form.currency === 'USD' && !(Number(form.exchange_rate) > 0))
+        return toast.error('Enter the USD exchange rate (EGP for 1 USD)');
       saveMutation.mutate(reservationEditPayload(form));
       return;
     }
@@ -1284,6 +1390,8 @@ export default function Reservations() {
       return toast.error('Enter the utilities per night for this stay (0 if none)');
     if (!form.is_owner_reservation && form.payment_method === 'other' && !form.payment_method_note?.trim())
       return toast.error('Add a comment for the Other payment method');
+    const paymentError = manualReservationPaymentError(form);
+    if (paymentError) return toast.error(paymentError);
     const payload = {
       ...form,
       adults,
@@ -1292,9 +1400,11 @@ export default function Reservations() {
       housekeeping_fees:
         form.housekeeping_fees !== '' && form.housekeeping_fees != null
           ? Number(form.housekeeping_fees) || 0
-          : selectedUnit
-            ? housekeepingFeeForUnit(selectedUnit)
-            : 0,
+          : form.currency === 'USD'
+            ? undefined
+            : selectedUnit
+              ? housekeepingFeeForUnit(selectedUnit)
+              : 0,
       beach_access_fees: form.is_owner_reservation
         ? 0
         : form.beach_access_fees !== '' && form.beach_access_fees != null
@@ -1348,9 +1458,18 @@ export default function Reservations() {
   };
   const handleRefundDone = () => refundDoneMutation.mutate({ id: refundDoneId, file: refundFile });
   const handlePmtSave = () => {
+    const isUsd = String(viewDetail?.currency || '').toUpperCase() === 'USD';
+    const method = isUsd ? 'cash' : pmtForm.payment_method;
+    if (method === 'instapay' && !pmtForm.bank_account) { toast.error('Choose the ADIB or CIB account for InstaPay'); return; }
     const fd = new FormData();
     fd.append('reservation_id', viewRes);
-    Object.entries(pmtForm).forEach(([k, v]) => { if (v !== '' && v !== null && v !== undefined) fd.append(k, v); });
+    const body = {
+      ...pmtForm,
+      payment_method: method,
+      bank_account: method === 'instapay' || method === 'bank_transfer' ? pmtForm.bank_account : '',
+      amount_currency: isUsd ? 'USD' : '',
+    };
+    Object.entries(body).forEach(([k, v]) => { if (v !== '' && v !== null && v !== undefined) fd.append(k, v); });
     if (pmtFile) fd.append('document', pmtFile);
     pmtMutation.mutate(fd);
   };
@@ -1672,7 +1791,12 @@ export default function Reservations() {
                         </>
                       ) : (
                         <>
-                      <td className={`text-right whitespace-nowrap font-medium ${isCancelled ? 'line-through opacity-60' : ''}`}>{currency(total)}</td>
+                      <td className={`text-right whitespace-nowrap font-medium ${isCancelled ? 'line-through opacity-60' : ''}`}>
+                        {currency(total)}
+                        {String(r.currency || '').toUpperCase() === 'USD' && (
+                          <div className="text-[10px] font-semibold text-emerald-700">{currency(toReservationCurrency(r, total), 'USD')}</div>
+                        )}
+                      </td>
                       <td className={`text-right whitespace-nowrap ${isCancelled ? 'line-through opacity-60' : ''}`}>{currency(down)}</td>
                       <td className={`text-right font-medium whitespace-nowrap ${isCancelled ? 'line-through opacity-60' : amtToPay > 0 ? 'text-red-600' : 'text-green-600'}`}>
                         {currency(isCancelled ? 0 : amtToPay)}
@@ -1994,7 +2118,7 @@ export default function Reservations() {
           </button>
         </>}
       >
-        <PaymentForm form={pmtForm} setForm={setPmtForm} onFileChange={setPmtFile} />
+        <PaymentForm form={pmtForm} setForm={setPmtForm} onFileChange={setPmtFile} reservation={viewDetail} />
       </Modal>
 
       <ConfirmDialog open={!!cancelId} onClose={() => setCancelId(null)}

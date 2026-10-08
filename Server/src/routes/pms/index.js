@@ -1788,7 +1788,11 @@ router.post(
   attachCloudinaryUrls,
   async (req, res, next) => {
   try {
-    const b = req.body;
+    const { reservationCurrencyFromBody, normalizeBankAccount } = require('../../lib/reservationCurrency');
+    const cur = reservationCurrencyFromBody(req.body);
+    if (cur.error) return res.status(400).json({ error: cur.error });
+    const b = cur.body;
+    const isUsd = cur.currency === 'USD';
     const { getBlockedDates } = require('../../services/pricing');
     const { paymentStatusFrom } = require('../../lib/syncReservationPayment');
     const { isAdmin } = require('../../lib/reservationScope');
@@ -1921,6 +1925,16 @@ router.post(
     if (paymentMethod && !['cash', 'instapay', 'other'].includes(paymentMethod) && !truthyFlag(b.is_owner_reservation) && !truthyFlag(b.is_hold)) {
       paymentMethod = 'cash';
     }
+    if (isUsd && paymentMethod) paymentMethod = 'cash';
+    const bankAccount = paymentMethod === 'instapay' ? normalizeBankAccount(b.bank_account) : null;
+    if (
+      paymentMethod === 'instapay' &&
+      !bankAccount &&
+      !truthyFlag(b.is_owner_reservation) &&
+      !truthyFlag(b.is_hold)
+    ) {
+      return res.status(400).json({ error: 'Choose the ADIB or CIB account for InstaPay' });
+    }
     const paymentMethodNote = String(b.payment_method_note || '').trim();
     if (paymentMethod === 'other' && !paymentMethodNote) {
       return res.status(400).json({ error: 'A comment is required when the payment method is Other' });
@@ -1968,10 +1982,10 @@ router.post(
          owner_collected_type, owner_collected_amount,
          payment_method, transfer_proof_path, transfer_proof_name,
          hold_expires_at, adults, children, nanny_count, sales_label,
-         beach_access_fees, utilities_custom
+         beach_access_fees, utilities_custom, currency, exchange_rate, bank_account
        ) VALUES (
          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,COALESCE($14,0),$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,
-         $25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39
+         $25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42
        )
        RETURNING *`,
       [
@@ -2017,6 +2031,9 @@ router.post(
         })(),
         beachAccessFeesFinal,
         utilitiesCustom,
+        isUsd ? 'USD' : 'EGP',
+        isUsd ? cur.rate : null,
+        bankAccount,
       ]
     );
 
@@ -2082,8 +2099,8 @@ router.post(
         await query(
           `INSERT INTO payments (
              reservation_id, amount, payment_date, payment_method,
-             notes, created_by, status, is_approved
-           ) VALUES ($1,$2,CURRENT_DATE,$3,$4,$5,'pending',0)`,
+             notes, created_by, status, is_approved, bank_account
+           ) VALUES ($1,$2,CURRENT_DATE,$3,$4,$5,'pending',0,$6)`,
           [
             reservation.id,
             amountToCollect,
@@ -2092,6 +2109,7 @@ router.post(
               ? `Awaiting collection (manual reservation) — Other: ${paymentMethodNote}`
               : 'Awaiting collection (manual reservation)',
             req.user.id,
+            bankAccount,
           ]
         );
       }
@@ -2142,7 +2160,10 @@ router.patch(
     if (!existing) return res.status(404).json({ error: 'Not found' });
     await assertReservationOwned(req.user, existing);
 
-    const b = req.body;
+    const { reservationCurrencyFromBody, applyReservationCurrency } = require('../../lib/reservationCurrency');
+    const cur = reservationCurrencyFromBody(req.body);
+    if (cur.error) return res.status(400).json({ error: cur.error });
+    const b = cur.body;
     if (await blocksLongTermReservation(req.user, [existing.unit_id, b.unit_id])) {
       return res.status(403).json({ error: LONG_TERM_RESERVATION_FORBIDDEN });
     }
@@ -2257,6 +2278,10 @@ router.patch(
         [req.params.id, String(b.broker_phone || '').trim() || null]
       );
       rows[0].broker_phone = bp[0]?.broker_phone ?? null;
+    }
+    if (rows[0]) {
+      const money = await applyReservationCurrency(query, req.params.id, cur, b);
+      if (money) Object.assign(rows[0], money);
     }
     try {
       const { resyncReservationBlocks } = require('../../lib/reservationBlocks');
@@ -2912,24 +2937,46 @@ router.post(
   try {
     const b = req.body;
     const doc = req.file?.path || req.file?.secure_url || null;
-    const method = String(b.payment_method || 'cash').toLowerCase();
+    let method = String(b.payment_method || 'cash').toLowerCase();
     const { syncReservationPaymentStatus } = require('../../lib/syncReservationPayment');
+    const { normalizeBankAccount } = require('../../lib/reservationCurrency');
+    let amount = b.amount;
+    if (b.reservation_id) {
+      const { rows: curRows } = await query(
+        'SELECT currency, exchange_rate FROM reservations WHERE id = $1',
+        [b.reservation_id]
+      );
+      const resCur = curRows[0];
+      if (String(resCur?.currency || '').toUpperCase() === 'USD') {
+        method = 'cash';
+        const rate = Number(resCur.exchange_rate) || 0;
+        if (String(b.amount_currency || '').toUpperCase() === 'USD') {
+          if (!(rate > 0)) return res.status(400).json({ error: 'This USD reservation has no exchange rate' });
+          amount = Math.round((Number(b.amount) || 0) * rate * 100) / 100;
+        }
+      }
+    }
+    const isBankMethod = method === 'instapay' || method === 'bank_transfer';
+    const bankAccount = isBankMethod ? normalizeBankAccount(b.bank_account) : null;
+    if (method === 'instapay' && !bankAccount) {
+      return res.status(400).json({ error: 'Choose the ADIB or CIB account for InstaPay' });
+    }
 
     const autoApprove = ['admin', 'finance', 'finance_manager'].includes(req.user.role);
     const { rows } = await query(
       `INSERT INTO payments (
          reservation_id, booking_id, amount, payment_date, payment_method,
          reference_number, notes, document_path, document_name, created_by, status,
-         is_approved, approved_by, approved_at, paid_at
+         is_approved, approved_by, approved_at, paid_at, bank_account
        ) VALUES (
          $1,$2,$3,COALESCE($4,CURRENT_DATE),$5,$6,$7,$8,$9,$10,
-         $11, $12, $13, $14, $15
+         $11, $12, $13, $14, $15, $16
        )
        RETURNING *`,
       [
         b.reservation_id || null,
         b.booking_id || null,
-        b.amount,
+        amount,
         b.payment_date,
         method,
         b.reference_number,
@@ -2942,6 +2989,7 @@ router.post(
         autoApprove ? req.user.id : null,
         autoApprove ? new Date() : null,
         autoApprove ? new Date() : null,
+        bankAccount,
       ]
     );
 

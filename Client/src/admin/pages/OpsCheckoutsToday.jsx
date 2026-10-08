@@ -7,6 +7,7 @@ import LoadingSpinner from '../components/ui/LoadingSpinner';
 import { currency } from '../utils/formatters';
 import { useAuth } from '../context/AuthContext';
 import { OpsDateRangeFilter, formatOpsDay } from '../components/OpsDateRangeFilter';
+import BankAccountPicker from '../components/BankAccountPicker';
 import { ProofPicker } from '../components/CameraCapture';
 import {
   CheckinHistoryModal,
@@ -28,6 +29,7 @@ export function CheckoutsTodaySection({ embedded = false }) {
   const [range, setRange] = useState('today');
   const [refundingId, setRefundingId] = useState(null);
   const [methodDrafts, setMethodDrafts] = useState({});
+  const [bankDrafts, setBankDrafts] = useState({});
   const [refundDrafts, setRefundDrafts] = useState({});
   const [damageDrafts, setDamageDrafts] = useState({});
   const [notesDrafts, setNotesDrafts] = useState({});
@@ -65,9 +67,10 @@ export function CheckoutsTodaySection({ embedded = false }) {
   const invalidate = () => qc.invalidateQueries({ queryKey: ['ops-checkouts-today'] });
 
   const refundMutation = useMutation({
-    mutationFn: ({ id, payment_method, refunded_amount, notes, photos, share_with_owner }) => {
+    mutationFn: ({ id, payment_method, bank_account, refunded_amount, notes, photos, share_with_owner }) => {
       const fd = new FormData();
       fd.append('payment_method', payment_method);
+      if (bank_account) fd.append('bank_account', bank_account);
       fd.append('refunded_amount', String(refunded_amount));
       if (notes) fd.append('notes', notes);
       if (share_with_owner) fd.append('share_with_owner', 'true');
@@ -375,6 +378,14 @@ export function CheckoutsTodaySection({ embedded = false }) {
                                   <p className="mt-1 text-[11px] text-amber-700">Recorded as cash out from petty cash.</p>
                                 ) : null}
                               </div>
+                              {method !== 'cash' ? (
+                                <BankAccountPicker
+                                  label="Paid from account"
+                                  compact
+                                  value={bankDrafts[r.id] || ''}
+                                  onChange={(v) => setBankDrafts((prev) => ({ ...prev, [r.id]: v }))}
+                                />
+                              ) : null}
                               <div>
                                 <label className="text-[10px] uppercase text-gray-500">
                                   {isShort ? 'Comment (required)' : 'Notes'}
@@ -429,9 +440,14 @@ export function CheckoutsTodaySection({ embedded = false }) {
                                       toast.error('Add at least one damage photo');
                                       return;
                                     }
+                                    if (method !== 'cash' && !bankDrafts[r.id]) {
+                                      toast.error('Choose the ADIB or CIB account the refund is paid from');
+                                      return;
+                                    }
                                     refundMutation.mutate({
                                       id: r.id,
                                       payment_method: method,
+                                      bank_account: method !== 'cash' ? bankDrafts[r.id] : undefined,
                                       refunded_amount: parseFloat(refundAmt) || 0,
                                       notes: notes || undefined,
                                       photos: isShort ? photos : [],

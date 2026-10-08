@@ -13,6 +13,7 @@ const {
   FOLDER_INSPECTIONS,
 } = require('../../config/cloudinary');
 const { recordOpsPettyCash } = require('../../lib/opsPettyCash');
+const { normalizeBankAccount } = require('../../lib/reservationCurrency');
 
 const router = express.Router();
 
@@ -686,6 +687,7 @@ router.post(
         return res.status(400).json({ error: `Amount cannot exceed remaining EGP ${remaining}` });
       }
 
+      const instapayAccount = normalizeBankAccount(req.body?.bank_account);
       const splits = [];
       const cashAmt = Number(req.body?.cash_amount);
       const instapayAmt = Number(req.body?.instapay_amount);
@@ -716,6 +718,9 @@ router.post(
         }
         splits.push({ amount, payment_method: method });
       }
+      if (splits.some((s) => s.payment_method === 'instapay') && !instapayAccount) {
+        return res.status(400).json({ error: 'Choose the ADIB or CIB account for InstaPay' });
+      }
 
       const noteBase = collectComment
         ? `[ops check-in] ${collectComment}`
@@ -725,10 +730,10 @@ router.post(
           `INSERT INTO payments (
              reservation_id, amount, payment_date, payment_method,
              notes, created_by, status, is_approved, approved_by, approved_at, paid_at,
-             document_path, document_name
+             document_path, document_name, bank_account
            ) VALUES (
              $1, $2, CURRENT_DATE, $3,
-             $4, $5, 'successful', 1, $5, now(), now(), $6, $7
+             $4, $5, 'successful', 1, $5, now(), now(), $6, $7, $8
            ) RETURNING id`,
           [
             reservationId,
@@ -738,6 +743,7 @@ router.post(
             req.user.id,
             proofUrl,
             proofName,
+            ['instapay', 'bank_transfer'].includes(part.payment_method) ? instapayAccount : null,
           ]
         );
         if (part.payment_method === 'cash') {
@@ -2129,6 +2135,10 @@ router.post(
 
       let method = String(req.body?.payment_method || 'cash').toLowerCase();
       if (!REFUND_METHODS.includes(method)) method = 'cash';
+      const refundBank = method === 'cash' ? null : normalizeBankAccount(req.body?.bank_account);
+      if (method !== 'cash' && !refundBank) {
+        return res.status(400).json({ error: 'Choose the ADIB or CIB account the refund is paid from' });
+      }
 
       const refunded =
         req.body?.refunded_amount != null && req.body.refunded_amount !== ''
@@ -2175,6 +2185,7 @@ router.post(
            insurance_refunded_by = $8,
            insurance_damage_photo_urls = $9::text[],
            insurance_damage_share_status = $10,
+           insurance_refund_bank_account = $11,
            updated_at = now()
          WHERE id = $1
          RETURNING id`,
@@ -2189,6 +2200,7 @@ router.post(
           req.user.id,
           photoUrls,
           shareWithOwner ? (isOpsSupervisor(req.user) ? 'approved' : 'pending') : null,
+          refundBank,
         ]
       );
       if (!updated[0]) return res.status(404).json({ error: 'Reservation not found' });
