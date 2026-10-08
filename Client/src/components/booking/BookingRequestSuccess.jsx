@@ -25,7 +25,7 @@ export default function BookingRequestSuccess({
         aria-hidden
         style={{
           background:
-            'radial-gradient(900px 420px at 50% 18%, rgba(40, 63, 94, 0.12), transparent 58%), radial-gradient(700px 380px at 80% 90%, rgba(40, 63, 94, 0.08), transparent 55%), linear-gradient(180deg, #f5f1e9 0%, #f7f4ee 42%, #ffffff 100%)',
+            'radial-gradient(900px 420px at 50% 18%, rgba(22, 61, 104, 0.12), transparent 58%), radial-gradient(700px 380px at 80% 90%, rgba(22, 61, 104, 0.08), transparent 55%), linear-gradient(180deg, #f3f3f1 0%, #f8f8f7 42%, #ffffff 100%)',
         }}
       />
 
@@ -35,8 +35,8 @@ export default function BookingRequestSuccess({
             <span
               className="absolute inset-0 rounded-full"
               style={{
-                background: 'radial-gradient(circle at 35% 30%, #6b8cae, #283f5e 72%)',
-                boxShadow: '0 18px 40px rgba(40, 63, 94, 0.28)',
+                background: 'radial-gradient(circle at 35% 30%, #83a0e1, #163d68 72%)',
+                boxShadow: '0 18px 40px rgba(22, 61, 104, 0.28)',
               }}
             />
             <span className="absolute inset-[7px] rounded-full bg-white" />
@@ -46,9 +46,9 @@ export default function BookingRequestSuccess({
           <div className="soul-success-pop-delay relative mb-1 flex h-16 w-16 items-center justify-center sm:mb-2 sm:h-20 sm:w-20">
             <span
               className="absolute inset-0 rounded-full bg-soul-blue"
-              style={{ boxShadow: '0 14px 28px rgba(40, 63, 94, 0.22)' }}
+              style={{ boxShadow: '0 14px 28px rgba(22, 61, 104, 0.22)' }}
             />
-            <Smile className="relative h-9 w-9 text-[#ffe8cc] sm:h-10 sm:w-10" strokeWidth={2.2} />
+            <Smile className="relative h-9 w-9 text-[#ffffff] sm:h-10 sm:w-10" strokeWidth={2.2} />
           </div>
         </div>
 

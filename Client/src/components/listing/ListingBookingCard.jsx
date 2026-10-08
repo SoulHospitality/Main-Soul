@@ -97,7 +97,7 @@ export default function ListingBookingCard({
 
   return (
     <>
-      <div className="flex flex-col gap-6 rounded-[28px] border border-soul-line bg-white p-7 shadow-[0_40px_90px_-50px_rgba(22,35,58,0.55)] md:sticky md:top-[104px]">
+      <div className="flex flex-col gap-6 rounded-[28px] border border-soul-line bg-white p-7 shadow-[0_40px_90px_-50px_rgba(15,44,77,0.55)] md:sticky md:top-[104px]">
         <div className="space-y-3 border-b border-soul-line pb-6">
           <p className="flex items-center gap-2.5 text-soul-muted">
             <span className="g-dot" />

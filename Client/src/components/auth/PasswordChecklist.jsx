@@ -11,7 +11,7 @@ export default function PasswordChecklist({ checks, className = '' }) {
   const { t } = useLocale();
   return (
     <div
-      className={`grid gap-2 rounded-xl border border-soul-line bg-[var(--pms-header-tint,rgba(40,63,94,0.04))] p-3 sm:grid-cols-2 ${className}`}
+      className={`grid gap-2 rounded-xl border border-soul-line bg-[var(--pms-header-tint,rgba(22,61,104,0.04))] p-3 sm:grid-cols-2 ${className}`}
     >
       {RULE_KEYS.map((rule) => {
         const passed = checks[rule.key];

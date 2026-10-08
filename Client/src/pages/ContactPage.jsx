@@ -63,7 +63,7 @@ export default function ContactPage() {
                     {String(i + 1).padStart(2, '0')}
                   </span>
                   <span className="min-w-0">
-                    <span className="g-display block text-[clamp(40px,5vw,76px)] text-soul-blue transition-all duration-700 ease-soul group-hover:translate-x-2 group-hover:italic rtl:group-hover:-translate-x-2">
+                    <span className="g-display block text-[clamp(40px,5vw,76px)] text-soul-blue transition-all duration-700 ease-soul group-hover:translate-x-2 group-hover:font-light rtl:group-hover:-translate-x-2">
                       {label}
                     </span>
                     <span className="mt-1 block text-sm text-soul-muted md:hidden">{value}</span>

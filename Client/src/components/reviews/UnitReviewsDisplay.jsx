@@ -57,7 +57,7 @@ export default function UnitReviewsDisplay({
 
   return (
     <section className="space-y-4">
-      <div className="rounded-3xl border border-soul-line bg-white p-5 shadow-[0_20px_50px_-35px_rgba(40,63,94,0.35)]">
+      <div className="rounded-3xl border border-soul-line bg-white p-5 shadow-[0_20px_50px_-35px_rgba(22,61,104,0.35)]">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-soul-muted">{t('listing.guestFeedback')}</p>
         <div className="mt-2 flex flex-wrap items-end gap-3">
           <div className="font-num text-3xl font-semibold text-soul-blue">
@@ -84,7 +84,7 @@ export default function UnitReviewsDisplay({
             return (
               <article
                 key={key}
-                className="rounded-3xl border border-soul-line bg-white p-5 shadow-[0_20px_50px_-35px_rgba(40,63,94,0.35)]"
+                className="rounded-3xl border border-soul-line bg-white p-5 shadow-[0_20px_50px_-35px_rgba(22,61,104,0.35)]"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>

@@ -332,7 +332,7 @@ export default function SearchPage({ listingType = 'rent' }) {
                 <span className={`text-soul-muted transition-transform ${sortOpen ? 'rotate-180' : ''}`}>▾</span>
               </button>
               {sortOpen && (
-                <div className="absolute end-0 top-full z-40 mt-2 min-w-[230px] rounded-[20px] border border-soul-line bg-white p-1.5 shadow-[0_30px_80px_-30px_rgba(22,35,58,0.45)]">
+                <div className="absolute end-0 top-full z-40 mt-2 min-w-[230px] rounded-[20px] border border-soul-line bg-white p-1.5 shadow-[0_30px_80px_-30px_rgba(15,44,77,0.45)]">
                   {Object.entries(SORT_KEYS).map(([key, labelKey]) => (
                     <button
                       key={key}

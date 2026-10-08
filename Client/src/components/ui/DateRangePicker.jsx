@@ -212,7 +212,7 @@ export default function DateRangePicker({
     : `${isHero ? 'px-5 py-4' : 'px-3.5 py-2.5'}`;
   const popoverCls = isHero
     ? 'rounded-2xl border border-white/25 bg-white/95 p-4 shadow-2xl backdrop-blur-xl sm:p-6'
-    : 'rounded-[24px] border border-soul-line bg-white p-5 shadow-[0_30px_80px_-30px_rgba(2,6,23,0.45)]';
+    : 'rounded-[24px] border border-soul-line bg-white p-5 shadow-[0_30px_80px_-30px_rgba(12,36,64,0.45)]';
 
   const calendarPanel = open && popoverStyle ? (
     <div ref={popoverRef} className={popoverCls} style={popoverStyle}>

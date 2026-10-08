@@ -6,6 +6,7 @@ import { useCurrency } from '../../context/CurrencyContext';
 import { useAuth } from '../../context/AuthContext';
 import { useLocale } from '../../context/LocaleContext';
 import { useCairoTime } from '../ui/Editorial';
+import BrandLogo from '../ui/BrandLogo';
 import { FacebookIcon, InstagramIcon, WhatsAppIcon } from './SocialIcons';
 
 const NAV = [
@@ -90,7 +91,7 @@ export default function Header({ overHero = false }) {
         <div
           className={`relative mx-auto flex h-16 max-w-wide items-center justify-between gap-3 rounded-full pe-2 ps-4 transition-all duration-500 ease-soul sm:ps-5 lg:grid lg:grid-cols-[1fr_auto_1fr] lg:ps-2 ${
             solid
-              ? 'border border-soul-line bg-white/80 shadow-[0_18px_48px_-28px_rgba(22,35,58,0.55)] backdrop-blur-xl'
+              ? 'border border-soul-line bg-white/80 shadow-[0_18px_48px_-28px_rgba(15,44,77,0.55)] backdrop-blur-xl'
               : 'border border-white/15 bg-white/[0.07] backdrop-blur-md'
           }`}
         >
@@ -120,14 +121,7 @@ export default function Header({ overHero = false }) {
           </nav>
 
           <Link to="/" className="relative z-10 flex shrink-0 items-center lg:justify-self-center" aria-label={brand.name}>
-            <img
-              src="/soul-brand/soul-logo.png"
-              alt={brand.name}
-              className={`h-11 w-auto transition duration-500 ${solid ? '' : 'brightness-0 invert'}`}
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-              }}
-            />
+            <BrandLogo inverted={!solid} iconClassName="h-10 w-auto" textClassName="hidden sm:inline" />
           </Link>
 
           <div className="relative z-10 flex items-center gap-1 justify-self-end sm:gap-1.5">
@@ -226,7 +220,7 @@ function FullMenu({ onClose, pathname, user, currency, setCurrency }) {
 
   return (
     <div
-      className="g-menu-in g-grain fixed inset-0 z-[70] flex flex-col overflow-y-auto bg-soul-ink text-white"
+      className="g-menu-in g-grain fixed inset-0 z-[70] flex flex-col overflow-y-auto bg-soul-blue text-white"
       role="dialog"
       aria-modal="true"
       aria-label={t('nav.menu')}
@@ -235,13 +229,13 @@ function FullMenu({ onClose, pathname, user, currency, setCurrency }) {
         className="pointer-events-none absolute inset-0 -z-10"
         style={{
           background:
-            'radial-gradient(900px 520px at 85% 110%, rgba(19,78,94,0.35), transparent 60%), radial-gradient(800px 500px at 0% 0%, rgba(40,63,94,0.55), transparent 60%)',
+            'radial-gradient(900px 520px at 85% 110%, rgba(131,160,225,0.35), transparent 60%), radial-gradient(800px 500px at 0% 0%, rgba(22,61,104,0.55), transparent 60%)',
         }}
       />
 
       <div className="g-shell relative z-[2] flex w-full items-center justify-between pt-6">
         <Link to="/" onClick={onClose} aria-label={brand.name}>
-          <img src="/soul-brand/soul-logo.png" alt={brand.name} className="h-11 w-auto brightness-0 invert" />
+          <BrandLogo inverted iconClassName="h-10 w-auto" />
         </Link>
         <button
           type="button"
@@ -277,7 +271,7 @@ function FullMenu({ onClose, pathname, user, currency, setCurrency }) {
                     >
                       {String(i + 1).padStart(2, '0')}
                     </span>
-                    <span className="g-display text-[clamp(38px,6.4vw,92px)] transition-transform duration-700 ease-soul group-hover:translate-x-3 group-hover:italic rtl:group-hover:-translate-x-3">
+                    <span className="g-display text-[clamp(38px,6.4vw,92px)] transition-transform duration-700 ease-soul group-hover:translate-x-3 group-hover:font-light rtl:group-hover:-translate-x-3">
                       {t(item.key)}
                     </span>
                     <ArrowUpRight
@@ -306,7 +300,7 @@ function FullMenu({ onClose, pathname, user, currency, setCurrency }) {
           ))}
           <div className="absolute inset-0 bg-gradient-to-t from-soul-ink/70 via-transparent to-transparent" />
           <div className="absolute inset-x-6 bottom-6 flex items-end justify-between gap-4">
-            <span className="g-display text-4xl italic">{t(MENU_ITEMS[preview].key)}</span>
+            <span className="g-display text-4xl">{t(MENU_ITEMS[preview].key)}</span>
             <span className="g-index text-white/70">
               {String(preview + 1).padStart(2, '0')} / {String(MENU_ITEMS.length).padStart(2, '0')}
             </span>

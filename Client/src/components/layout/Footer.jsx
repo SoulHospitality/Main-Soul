@@ -4,6 +4,7 @@ import { brand, whatsappHref, listingWhatsAppMessage } from '../../theme/brand';
 import { useLocale } from '../../context/LocaleContext';
 import { ArrowDot, Reveal, RevealLines, useCairoTime } from '../ui/Editorial';
 import { FacebookIcon, InstagramIcon, WhatsAppIcon } from './SocialIcons';
+import BrandLogo from '../ui/BrandLogo';
 
 function FooterLink({ label, href }) {
   return (
@@ -28,12 +29,12 @@ export default function Footer() {
   const time = useCairoTime();
 
   return (
-    <footer className="g-grain relative mt-20 overflow-hidden bg-soul-ink text-white sm:mt-24">
+    <footer className="g-grain relative mt-20 overflow-hidden bg-soul-blue text-white sm:mt-24">
       <div
         className="pointer-events-none absolute inset-0"
         style={{
           background:
-            'radial-gradient(1100px 600px at 100% 0%, rgba(40,63,94,0.75), transparent 60%), radial-gradient(800px 480px at 0% 100%, rgba(19,78,94,0.28), transparent 60%)',
+            'radial-gradient(1100px 600px at 100% 0%, rgba(131,160,225,0.16), transparent 60%), radial-gradient(800px 480px at 0% 100%, rgba(12,36,64,0.45), transparent 60%)',
         }}
       />
 
@@ -71,11 +72,7 @@ export default function Footer() {
 
         <div className="grid grid-cols-2 gap-10 py-14 md:grid-cols-4 lg:grid-cols-[1.3fr_1fr_1fr_1fr]">
           <div className="col-span-2 flex flex-col gap-5 md:col-span-4 lg:col-span-1">
-            <img
-              src="/soul-brand/soul-logo.png"
-              alt={brand.name}
-              className="h-16 w-auto self-start object-contain brightness-0 invert"
-            />
+            <BrandLogo layout="stacked" inverted iconClassName="h-14 w-auto" textClassName="text-[15px]" />
             <p className="max-w-sm text-sm leading-7 text-white/55">{t('footer.tagline')}</p>
             <div className="flex items-center gap-2">
               <a
@@ -129,7 +126,7 @@ export default function Footer() {
 
       <div className="relative z-[2] overflow-hidden">
         <div className="g-ghost select-none whitespace-nowrap text-center text-[clamp(140px,31vw,520px)]" aria-hidden="true">
-          Soul
+          SOUL
         </div>
       </div>
 

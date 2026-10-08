@@ -1,12 +1,13 @@
 export const brand = {
   id: 'soul',
   name: 'Soul Hospitality',
-  tagline: 'From booking to your final stroll, Enjoy with Soul.',
+  tagline: 'More than a stay — it’s a hospitality experience.',
   domain: import.meta.env.VITE_SITE_URL || 'https://soulhospitality.co',
   colors: {
-    primary: '#283F5E',
-    accent: '#F28C28',
-    muted: '#5D6A83',
+    primary: '#163D68',
+    accent: '#83A0E1',
+    muted: '#52677E',
+    platinum: '#DFE1E2',
   },
   whatsapp: import.meta.env.VITE_WHATSAPP_NUMBER || '+201500009344',
   phoneDisplay: '01500009344',

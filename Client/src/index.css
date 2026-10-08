@@ -2,15 +2,24 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Neue Montreal (brand typeface) when installed; General Sans is the licensed-free web fallback. */
+@font-face { font-family: 'Neue Montreal'; font-weight: 300; src: local('Neue Montreal Light'), local('NeueMontreal-Light'); }
+@font-face { font-family: 'Neue Montreal'; font-weight: 400; src: local('Neue Montreal Regular'), local('NeueMontreal-Regular'), local('Neue Montreal'); }
+@font-face { font-family: 'Neue Montreal'; font-weight: 500; src: local('Neue Montreal Medium'), local('NeueMontreal-Medium'); }
+@font-face { font-family: 'Neue Montreal'; font-weight: 700; src: local('Neue Montreal Bold'), local('NeueMontreal-Bold'); }
+
 :root {
-  --soul-blue: #283f5e;
-  --soul-blue-dark: #16233a;
-  --soul-blue-50: #eef2f7;
-  --soul-teal: #134e5e;
-  --soul-ivory: #f5f1e9;
-  --soul-muted: #5c6b83;
-  --soul-line: rgba(40, 63, 94, 0.12);
-  --grad-soul: linear-gradient(160deg, #020617 0%, #16233a 45%, #283f5e 100%);
+  --font-brand: 'Neue Montreal', 'General Sans', system-ui, sans-serif;
+  --soul-blue: #163d68;
+  --soul-blue-dark: #0f2c4d;
+  --soul-blue-50: #edf1f7;
+  --soul-teal: #52677e;
+  --soul-platinum: #dfe1e2;
+  --soul-vista: #83a0e1;
+  --soul-ivory: #f3f3f1;
+  --soul-muted: #52677e;
+  --soul-line: rgba(22, 61, 104, 0.12);
+  --grad-soul: linear-gradient(160deg, #0c2440 0%, #0f2c4d 45%, #163d68 100%);
 }
 
 html {
@@ -21,24 +30,24 @@ body {
   margin: 0;
   color: var(--soul-blue);
   background: #fff;
-  font-family: 'Outfit', system-ui, sans-serif;
+  font-family: var(--font-brand);
   font-weight: 400;
-  letter-spacing: 0.01em;
-  line-height: 1.65;
+  letter-spacing: 0;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 h1, h2, h3, h4, .font-display {
-  font-family: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  line-height: 1.15;
+  font-family: var(--font-brand);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
 }
 
-/* Casual sans for prices, ratings, beds/baths, and other figures on the guest site */
+/* Prices, ratings, beds/baths, and other figures on the guest site */
 .font-num {
-  font-family: 'Outfit', system-ui, sans-serif;
+  font-family: var(--font-brand);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.015em;
   line-height: 1.15;
@@ -72,13 +81,13 @@ h1, h2, h3, h4, .font-display {
   background: rgba(255, 255, 255, 0.82);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(40, 63, 94, 0.1);
+  border: 1px solid rgba(22, 61, 104, 0.1);
 }
 
 .soul-eyebrow {
-  font-family: 'Outfit', system-ui, sans-serif;
+  font-family: var(--font-brand);
   font-size: 11px;
-  letter-spacing: 0.28em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   font-weight: 500;
 }
@@ -97,7 +106,7 @@ h1, h2, h3, h4, .font-display {
 /* ── Guest editorial system ── */
 :root {
   --ease-soul: cubic-bezier(0.22, 1, 0.36, 1);
-  --soul-paper: #fbf9f4;
+  --soul-paper: #f8f8f7;
   --g-gutter: 1.25rem;
 }
 @media (min-width: 640px) {
@@ -119,29 +128,43 @@ h1, h2, h3, h4, .font-display {
 }
 
 .g-index {
-  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  font-family: var(--font-brand);
   font-size: 11px;
   font-weight: 500;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   line-height: 1.4;
 }
 
+/* Brand headline: Neue Montreal Bold, uppercase, tight — light weight for the contrasting phrase */
 .g-display {
-  font-family: 'Cormorant Garamond', Georgia, serif;
-  font-weight: 400;
-  letter-spacing: -0.015em;
+  font-family: var(--font-brand);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: -0.035em;
   line-height: 0.95;
 }
+.g-display.font-light,
+.g-display .font-light,
+.g-display.italic,
+.g-display .italic,
 .g-display em,
 .g-em {
-  font-style: italic;
+  font-style: normal;
   font-weight: 300;
 }
 .g-em-accent {
-  font-style: italic;
+  font-style: normal;
   font-weight: 300;
   opacity: 0.7;
+}
+[dir='rtl'] .g-display { letter-spacing: 0; }
+
+/* Long statement copy: brand typeface in sentence case */
+.g-statement {
+  font-family: var(--font-brand);
+  font-weight: 400;
+  letter-spacing: -0.025em;
 }
 
 .g-dot {
@@ -175,12 +198,12 @@ h1, h2, h3, h4, .font-display {
 }
 .g-btn:active { transform: scale(0.98); }
 .g-btn:disabled { opacity: 0.55; cursor: not-allowed; }
-.g-btn-primary { background: #283f5e; color: #fff; --arrow-bg: #fff; --arrow-ink: #283f5e; }
-.g-btn-primary:hover { background: #16233a; box-shadow: 0 18px 40px -18px rgba(22, 35, 58, 0.7); }
-.g-btn-light { background: #fff; color: #283f5e; }
-.g-btn-light:hover { background: var(--soul-paper); box-shadow: 0 18px 40px -18px rgba(2, 6, 23, 0.5); }
-.g-btn-ghost { border: 1px solid rgba(40, 63, 94, 0.22); color: #283f5e; background: transparent; }
-.g-btn-ghost:hover { border-color: #283f5e; background: #283f5e; color: #fff; --arrow-bg: #fff; --arrow-ink: #283f5e; }
+.g-btn-primary { background: #163d68; color: #fff; --arrow-bg: #fff; --arrow-ink: #163d68; }
+.g-btn-primary:hover { background: #0f2c4d; box-shadow: 0 18px 40px -18px rgba(15, 44, 77, 0.7); }
+.g-btn-light { background: #fff; color: #163d68; }
+.g-btn-light:hover { background: var(--soul-paper); box-shadow: 0 18px 40px -18px rgba(12, 36, 64, 0.5); }
+.g-btn-ghost { border: 1px solid rgba(22, 61, 104, 0.22); color: #163d68; background: transparent; }
+.g-btn-ghost:hover { border-color: #163d68; background: #163d68; color: #fff; --arrow-bg: #fff; --arrow-ink: #163d68; }
 .g-btn-glass {
   border: 1px solid rgba(255, 255, 255, 0.3);
   background: rgba(255, 255, 255, 0.1);
@@ -188,7 +211,7 @@ h1, h2, h3, h4, .font-display {
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   --arrow-bg: #fff;
-  --arrow-ink: #283f5e;
+  --arrow-ink: #163d68;
 }
 .g-btn-glass:hover { background: rgba(255, 255, 255, 0.2); border-color: rgba(255, 255, 255, 0.55); }
 
@@ -199,7 +222,7 @@ h1, h2, h3, h4, .font-display {
   height: 1.75rem;
   margin-inline-end: -0.65rem;
   border-radius: 999px;
-  background: var(--arrow-bg, #283f5e);
+  background: var(--arrow-bg, #163d68);
   color: var(--arrow-ink, #fff);
   overflow: hidden;
   transition: transform 0.5s var(--ease-soul), background-color 0.45s var(--ease-soul), color 0.45s var(--ease-soul);
@@ -372,10 +395,11 @@ h1, h2, h3, h4, .font-display {
 
 /* Outline ghost wordmark */
 .g-ghost {
-  font-family: 'Cormorant Garamond', Georgia, serif;
-  font-weight: 300;
+  font-family: var(--font-brand);
+  font-weight: 700;
+  text-transform: uppercase;
   line-height: 0.78;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.05em;
   color: transparent;
   -webkit-text-stroke: 1px rgba(255, 255, 255, 0.16);
   user-select: none;
@@ -396,7 +420,7 @@ h1, h2, h3, h4, .font-display {
   z-index: -1;
   width: min(100%, 1360px);
   transform: translateX(-50%);
-  border-inline: 1px solid rgba(40, 63, 94, 0.08);
+  border-inline: 1px solid rgba(22, 61, 104, 0.08);
   pointer-events: none;
 }
 .g-guides-dark::before { border-color: rgba(255, 255, 255, 0.07); }
@@ -425,7 +449,7 @@ h1, h2, h3, h4, .font-display {
   z-index: 100;
   display: grid;
   place-items: center;
-  background: #16233a;
+  background: #163d68;
   color: #fff;
   animation: gIntroOut 0.8s var(--ease-soul) 1.3s both;
 }
@@ -735,15 +759,15 @@ tr.cancelled-row td span[class*="inline-flex"] {
 
 .soul-brand-loader-page {
   background:
-    radial-gradient(ellipse 70% 55% at 50% 42%, rgba(245, 241, 233, 0.95) 0%, transparent 70%),
-    linear-gradient(180deg, #fff 0%, #f8f6f1 100%);
+    radial-gradient(ellipse 70% 55% at 50% 42%, rgba(223, 225, 226, 0.7) 0%, transparent 70%),
+    linear-gradient(180deg, #fff 0%, #f8f8f7 100%);
 }
 
 .soul-brand-loader__glow {
   background: radial-gradient(
     circle,
-    rgba(40, 63, 94, 0.2) 0%,
-    rgba(19, 78, 94, 0.08) 42%,
+    rgba(22, 61, 104, 0.2) 0%,
+    rgba(131, 160, 225, 0.12) 42%,
     transparent 70%
   );
   animation: soulLoaderGlow 2.4s ease-in-out infinite;
@@ -751,15 +775,15 @@ tr.cancelled-row td span[class*="inline-flex"] {
 
 .soul-brand-loader__orbit {
   border: 1.5px solid transparent;
-  border-top-color: rgba(40, 63, 94, 0.45);
-  border-right-color: rgba(19, 78, 94, 0.35);
+  border-top-color: rgba(22, 61, 104, 0.45);
+  border-right-color: rgba(131, 160, 225, 0.45);
   animation: soulLoaderOrbit 1.35s linear infinite;
 }
 
 .soul-brand-loader__orbit--lag {
-  border-top-color: rgba(22, 35, 58, 0.55);
+  border-top-color: rgba(15, 44, 77, 0.55);
   border-right-color: transparent;
-  border-bottom-color: rgba(40, 63, 94, 0.2);
+  border-bottom-color: rgba(22, 61, 104, 0.2);
   animation-duration: 2.1s;
   animation-direction: reverse;
 }

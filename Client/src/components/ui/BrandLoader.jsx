@@ -32,7 +32,7 @@ export default function BrandLoader({
         className="soul-brand-loader__orbit soul-brand-loader__orbit--lag absolute inset-[10%] rounded-full"
         aria-hidden
       />
-      <span className="soul-brand-loader__mark relative z-[1] flex items-center justify-center rounded-full bg-white/90 shadow-[0_10px_40px_rgba(40,63,94,0.12)] ring-1 ring-[var(--soul-line)] backdrop-blur-sm">
+      <span className="soul-brand-loader__mark relative z-[1] flex items-center justify-center rounded-full bg-white/90 shadow-[0_10px_40px_rgba(22,61,104,0.12)] ring-1 ring-[var(--soul-line)] backdrop-blur-sm">
         <img
           src="/soul-brand/soul-logo.png"
           alt=""
@@ -52,7 +52,7 @@ export default function BrandLoader({
     <div className="soul-brand-loader-page grid min-h-[50vh] place-items-center px-6 py-16">
       <div className="flex flex-col items-center gap-5">
         {mark}
-        <p className="soul-brand-loader__caption font-display text-lg tracking-[0.04em] text-soul-blue/70">
+        <p className="soul-brand-loader__caption text-sm font-bold uppercase tracking-[0.04em] text-soul-blue/80" dir="ltr">
           Soul Hospitality
         </p>
       </div>

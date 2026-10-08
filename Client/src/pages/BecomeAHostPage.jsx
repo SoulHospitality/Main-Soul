@@ -173,7 +173,7 @@ export default function BecomeAHostPage() {
 
             <form
               onSubmit={handleSubmit}
-              className="rounded-[32px] border border-soul-line bg-white p-6 shadow-[0_40px_90px_-60px_rgba(22,35,58,0.55)] sm:p-10"
+              className="rounded-[32px] border border-soul-line bg-white p-6 shadow-[0_40px_90px_-60px_rgba(15,44,77,0.55)] sm:p-10"
             >
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="grid gap-2 g-index text-soul-muted sm:col-span-2">

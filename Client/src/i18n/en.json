@@ -63,7 +63,7 @@
     "localTime": "Cairo"
   },
   "footer": {
-    "tagline": "Boutique hospitality curated with premium restraint, direct booking clarity, and a calm editorial luxury tone.",
+    "tagline": "More than a stay — it’s a hospitality experience. Hotel comfort with the warmth and privacy of home.",
     "workWithUs": "Work with us",
     "hospitality": "Soul Hospitality",
     "support": "Support",
@@ -75,8 +75,8 @@
     "instagram": "Instagram",
     "contact": "Contact",
     "ctaEyebrow": "Plan your stay",
-    "ctaLead": "The coast is",
-    "ctaEm": "calling.",
+    "ctaLead": "Live the moment",
+    "ctaEm": "with your soul.",
     "ctaBody": "Tell us your dates and the kind of stay you have in mind. Our team will find the right home for you.",
     "explore": "Explore",
     "company": "Company",
@@ -87,11 +87,11 @@
     "whatsapp": "Chat with us on WhatsApp"
   },
   "home": {
-    "heroTitleLight": "Experience coastal",
-    "heroTitleEm": "luxury.",
+    "heroTitleLight": "Hotel comfort.",
+    "heroTitleEm": "Home privacy.",
     "heroSubtitle": "Hand-picked homes along Egypt's most beautiful coastlines — Fouka Bay, GAIA, Hacienda West, Marassi and Ain Sokhna.",
     "heroPhrase1": "Where the sea meets stillness",
-    "heroPhrase2": "Curated stays, effortless escapes",
+    "heroPhrase2": "Prime locations. Seamless living.",
     "regions": "North Coast & Red Sea",
     "project": "Destination",
     "whichProject": "Which destination?",
@@ -157,9 +157,9 @@
     "hostTitleEm": "our care.",
     "partnersStrip": "Trusted by Egypt’s leading developers",
     "viewAllDestinations": "View all destinations",
-    "introWord1": "Coastal.",
-    "introWord2": "Curated.",
-    "introWord3": "Soul.",
+    "introWord1": "Discover.",
+    "introWord2": "Live.",
+    "introWord3": "Experience.",
     "projectsCount": "{{count}} projects"
   },
   "search": {

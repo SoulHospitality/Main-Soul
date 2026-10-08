@@ -12,7 +12,7 @@ const isAfterDay = (a, b) => {
 };
 
 const POPOVER =
-  'absolute inset-x-0 top-full z-[130] mt-3 rounded-[22px] border border-soul-line bg-white p-2 shadow-[0_30px_80px_-30px_rgba(2,6,23,0.45)] lg:bottom-full lg:top-auto lg:mb-4 lg:mt-0';
+  'absolute inset-x-0 top-full z-[130] mt-3 rounded-[22px] border border-soul-line bg-white p-2 shadow-[0_30px_80px_-30px_rgba(12,36,64,0.45)] lg:bottom-full lg:top-auto lg:mb-4 lg:mt-0';
 
 export default function HeroSearch() {
   const navigate = useNavigate();
@@ -74,7 +74,7 @@ export default function HeroSearch() {
     <form
       ref={capsuleRef}
       onSubmit={handleSubmit}
-      className="relative z-[60] grid w-full gap-1 rounded-[28px] border border-white/40 bg-white/95 p-2 text-soul-blue shadow-[0_40px_100px_-40px_rgba(2,6,23,0.75)] backdrop-blur-xl lg:grid-cols-[1.15fr_1.7fr_0.95fr_auto] lg:items-stretch lg:rounded-full"
+      className="relative z-[60] grid w-full gap-1 rounded-[28px] border border-white/40 bg-white/95 p-2 text-soul-blue shadow-[0_40px_100px_-40px_rgba(12,36,64,0.75)] backdrop-blur-xl lg:grid-cols-[1.15fr_1.7fr_0.95fr_auto] lg:items-stretch lg:rounded-full"
     >
       <div className="relative lg:after:absolute lg:after:end-0 lg:after:top-1/2 lg:after:h-8 lg:after:w-px lg:after:-translate-y-1/2 lg:after:bg-soul-line">
         <button

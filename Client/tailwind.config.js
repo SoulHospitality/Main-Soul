@@ -1,22 +1,26 @@
 /** @type {import('tailwindcss').Config} */
+const brandSans = ['"Neue Montreal"', '"General Sans"', 'system-ui', 'sans-serif'];
+
 export default {
   content: ['./index.html', './src/**/*.{js,jsx}'],
   theme: {
     extend: {
       colors: {
         soul: {
-          blue: '#283f5e',
-          'blue-dark': '#16233a',
-          'blue-50': '#eef2f7',
-          'blue-100': '#dbe3ef',
-          muted: '#5c6b83',
-          ivory: '#f5f1e9',
-          paper: '#fbf9f4',
-          sand: '#efe9dc',
-          teal: '#134e5e',
-          ink: '#020617',
-          line: 'rgba(40, 63, 94, 0.12)',
-          accent: '#F28C28',
+          blue: '#163d68',
+          'blue-dark': '#0f2c4d',
+          'blue-50': '#edf1f7',
+          'blue-100': '#d6e0ee',
+          muted: '#52677e',
+          platinum: '#dfe1e2',
+          vista: '#83a0e1',
+          ivory: '#f3f3f1',
+          paper: '#f8f8f7',
+          sand: '#ecedee',
+          teal: '#52677e',
+          ink: '#0c2440',
+          line: 'rgba(22, 61, 104, 0.12)',
+          accent: '#83a0e1',
         },
         primary: {
           50: '#eff6ff',
@@ -32,10 +36,10 @@ export default {
         },
       },
       fontFamily: {
-        display: ['"Cormorant Garamond"', 'Georgia', 'Times New Roman', 'serif'],
-        sans: ['"Outfit"', 'system-ui', 'sans-serif'],
-        num: ['"Outfit"', 'system-ui', 'sans-serif'],
-        tech: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+        display: brandSans,
+        sans: brandSans,
+        num: brandSans,
+        tech: brandSans,
       },
       transitionTimingFunction: {
         soul: 'cubic-bezier(0.22, 1, 0.36, 1)',

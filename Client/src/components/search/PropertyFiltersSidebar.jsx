@@ -400,7 +400,7 @@ export function MobileSearchPill({ values, onOpen, filterCount = 0, mode = 'rent
     <button
       type="button"
       onClick={onOpen}
-      className="flex w-full items-center gap-3 rounded-full border border-soul-line bg-white px-3 py-2.5 text-start shadow-[0_10px_30px_-18px_rgba(22,35,58,0.4)]"
+      className="flex w-full items-center gap-3 rounded-full border border-soul-line bg-white px-3 py-2.5 text-start shadow-[0_10px_30px_-18px_rgba(15,44,77,0.4)]"
     >
       <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-soul-blue text-white">
         <Search size={16} />
@@ -436,7 +436,7 @@ export function FloatingFilterSort({ filterCount, sort, sortLabels, onOpenFilter
   return (
     <div ref={ref} className="fixed bottom-5 left-1/2 z-[120] -translate-x-1/2 lg:hidden">
       {sortOpen && (
-        <div className="absolute bottom-[calc(100%+10px)] left-1/2 min-w-[210px] -translate-x-1/2 rounded-[14px] border border-soul-line bg-white p-1.5 shadow-[0_18px_50px_rgba(40,63,94,0.18)]">
+        <div className="absolute bottom-[calc(100%+10px)] left-1/2 min-w-[210px] -translate-x-1/2 rounded-[14px] border border-soul-line bg-white p-1.5 shadow-[0_18px_50px_rgba(22,61,104,0.18)]">
           {Object.entries(sortLabels).map(([key, labelKey]) => (
             <button
               key={key}
@@ -454,7 +454,7 @@ export function FloatingFilterSort({ filterCount, sort, sortLabels, onOpenFilter
           ))}
         </div>
       )}
-      <div className="flex items-center overflow-hidden rounded-full border border-white/10 bg-soul-ink/90 text-sm font-semibold text-white shadow-[0_20px_50px_-12px_rgba(2,6,23,0.6)] backdrop-blur-xl">
+      <div className="flex items-center overflow-hidden rounded-full border border-white/10 bg-soul-ink/90 text-sm font-semibold text-white shadow-[0_20px_50px_-12px_rgba(12,36,64,0.6)] backdrop-blur-xl">
         <button type="button" onClick={onOpenFilters} className="inline-flex items-center gap-2 px-5 py-3.5">
           {t('search.filters')}{filterCount > 0 ? ` · ${filterCount}` : ''}
         </button>

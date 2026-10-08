@@ -66,7 +66,7 @@ function IntroCurtain() {
             e.currentTarget.style.display = 'none';
           }}
         />
-        <div className="g-display g-intro__words text-[clamp(48px,8vw,112px)] italic font-light">
+        <div className="g-display g-intro__words text-[clamp(48px,8vw,112px)]">
           <span>
             <span>{t('home.introWord1')}</span>
             <span>{t('home.introWord2')}</span>
@@ -140,7 +140,7 @@ function Hero() {
         <div className="absolute inset-0 bg-gradient-to-b from-soul-ink/55 via-soul-ink/10 to-soul-ink/80" />
         <div
           className="absolute inset-0"
-          style={{ background: 'radial-gradient(70% 55% at 88% 105%, rgba(40,63,94,0.55), transparent 60%)' }}
+          style={{ background: 'radial-gradient(70% 55% at 88% 105%, rgba(22,61,104,0.55), transparent 60%)' }}
         />
       </div>
 
@@ -150,9 +150,9 @@ function Hero() {
             as="h1"
             immediate
             delay={250}
-            className="g-display text-[clamp(56px,10.6vw,170px)] !leading-[0.86]"
+            className="g-display text-[clamp(46px,8.2vw,136px)] !leading-[0.88]"
             lines={[
-              <span key="l" className="font-light">{titleLight}</span>,
+              <span key="l">{titleLight}</span>,
               <em key="e">{titleEm}</em>,
             ]}
           />
@@ -280,7 +280,7 @@ function Manifesto({ homes }) {
         <div>
           <ScrollText
             text={t('home.manifesto')}
-            className="g-display text-[clamp(32px,4.4vw,66px)] !leading-[1.08] text-soul-blue"
+            className="g-statement text-[clamp(30px,4vw,60px)] !leading-[1.1] text-soul-blue"
           />
 
           {stats.length ? (

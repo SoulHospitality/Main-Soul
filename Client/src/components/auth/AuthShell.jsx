@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { brand } from '../../theme/brand';
 import { useLocale } from '../../context/LocaleContext';
 import { ArrowDot, useCairoTime } from '../ui/Editorial';
+import BrandLogo from '../ui/BrandLogo';
 
 
 export default function AuthShell({
@@ -20,7 +21,7 @@ export default function AuthShell({
       <Link
         to="/"
         aria-label={t('auth.closeGoHome')}
-        className="fixed end-5 top-5 z-50 flex h-11 w-11 items-center justify-center rounded-full border border-soul-line bg-white/85 text-soul-blue shadow-[0_10px_30px_rgba(40,63,94,0.12)] backdrop-blur-md transition-all duration-300 hover:rotate-90 hover:border-soul-blue hover:bg-soul-blue hover:text-white sm:end-6 sm:top-6"
+        className="fixed end-5 top-5 z-50 flex h-11 w-11 items-center justify-center rounded-full border border-soul-line bg-white/85 text-soul-blue shadow-[0_10px_30px_rgba(22,61,104,0.12)] backdrop-blur-md transition-all duration-300 hover:rotate-90 hover:border-soul-blue hover:bg-soul-blue hover:text-white sm:end-6 sm:top-6"
       >
         <X className="h-5 w-5" strokeWidth={2} />
       </Link>
@@ -41,22 +42,14 @@ export default function AuthShell({
           />
 
           <div className="absolute inset-x-8 top-8 z-10 flex items-center justify-between text-white/80 lg:inset-x-10">
-            <Link to="/" className="flex items-center gap-2.5">
-              <img
-                src="/soul-brand/soul-logo.png"
-                alt=""
-                className="h-7 w-auto brightness-0 invert"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                }}
-              />
-              <span className="font-display text-xl font-semibold text-white">Soul</span>
+            <Link to="/" aria-label={brand.name}>
+              <BrandLogo inverted iconClassName="h-8 w-auto" />
             </Link>
             <span className="g-index">Cairo · {time}</span>
           </div>
 
           {variant === 'badge' ? (
-            <div className="absolute bottom-8 start-8 z-10 max-w-sm rounded-[24px] border border-white/40 bg-white/85 px-6 py-5 shadow-[0_18px_50px_rgba(40,63,94,0.16)] backdrop-blur-md">
+            <div className="absolute bottom-8 start-8 z-10 max-w-sm rounded-[24px] border border-white/40 bg-white/85 px-6 py-5 shadow-[0_18px_50px_rgba(22,61,104,0.16)] backdrop-blur-md">
               <p className="g-index text-soul-blue/70">{brand.name}</p>
               <p className="g-display mt-2 text-3xl text-soul-blue">{title}</p>
             </div>
@@ -77,16 +70,8 @@ export default function AuthShell({
 
       <section className="relative flex h-full min-h-screen w-full flex-col justify-center px-6 py-20 sm:px-14 lg:px-24">
         <div className="mx-auto w-full max-w-md animate-[fadeUp_0.55s_ease-out]">
-          <Link to="/" className="mb-10 flex items-center gap-2.5 md:hidden">
-            <img
-              src="/soul-brand/soul-logo.png"
-              alt=""
-              className="h-8 w-auto"
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-              }}
-            />
-            <span className="font-display text-xl font-semibold text-soul-blue">Soul</span>
+          <Link to="/" className="mb-10 flex md:hidden" aria-label={brand.name}>
+            <BrandLogo iconClassName="h-9 w-auto" />
           </Link>
           {children}
         </div>

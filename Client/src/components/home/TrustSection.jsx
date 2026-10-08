@@ -23,7 +23,7 @@ export default function TrustSection() {
         className="pointer-events-none absolute inset-0 -z-10"
         style={{
           background:
-            'radial-gradient(900px 520px at 10% 0%, rgba(40,63,94,0.9), transparent 60%), radial-gradient(700px 420px at 100% 100%, rgba(19,78,94,0.55), transparent 60%)',
+            'radial-gradient(900px 520px at 10% 0%, rgba(22,61,104,0.9), transparent 60%), radial-gradient(700px 420px at 100% 100%, rgba(131,160,225,0.55), transparent 60%)',
         }}
       />
       <div className="g-shell relative z-[2]">

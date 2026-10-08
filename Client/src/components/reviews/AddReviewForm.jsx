@@ -40,7 +40,7 @@ export default function AddReviewForm({ onSubmit, submitting = false }) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="space-y-4 rounded-3xl border border-soul-line bg-white p-5 shadow-[0_20px_50px_-35px_rgba(40,63,94,0.35)]"
+      className="space-y-4 rounded-3xl border border-soul-line bg-white p-5 shadow-[0_20px_50px_-35px_rgba(22,61,104,0.35)]"
     >
       <div className="space-y-2">
         <h3 className="font-display text-lg font-semibold text-soul-blue">{t('listing.addReviewTitle')}</h3>

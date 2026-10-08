@@ -352,7 +352,7 @@ export default function ListingDetailPage() {
                   </span>
                 </p>
               )}
-              <h1 className="g-display soul-fade-up text-[clamp(40px,5.4vw,84px)] text-soul-blue" style={{ animationDelay: '0.08s' }}>
+              <h1 className="g-display soul-fade-up text-[clamp(34px,4.2vw,64px)] text-soul-blue" style={{ animationDelay: '0.08s' }}>
                 {unit.title}
               </h1>
             </div>
@@ -424,7 +424,7 @@ export default function ListingDetailPage() {
               <button
                 type="button"
                 onClick={() => setLightbox(true)}
-                className="absolute bottom-5 end-5 inline-flex items-center gap-2 rounded-full border border-white/40 bg-white/85 px-4 py-2.5 text-[13px] font-semibold text-soul-blue shadow-[0_12px_30px_-12px_rgba(2,6,23,0.45)] backdrop-blur-md transition hover:bg-white"
+                className="absolute bottom-5 end-5 inline-flex items-center gap-2 rounded-full border border-white/40 bg-white/85 px-4 py-2.5 text-[13px] font-semibold text-soul-blue shadow-[0_12px_30px_-12px_rgba(12,36,64,0.45)] backdrop-blur-md transition hover:bg-white"
               >
                 <LayoutGrid size={15} />
                 {t('listing.showAllPhotos', { count: photos.length })}
@@ -437,7 +437,7 @@ export default function ListingDetailPage() {
           )}
 
           <nav className="sticky top-[88px] z-30 mb-10 hidden md:block">
-            <div className="inline-flex gap-1 rounded-full border border-soul-line bg-white/80 p-1 text-[13px] font-medium text-soul-muted shadow-[0_12px_30px_-20px_rgba(22,35,58,0.35)] backdrop-blur-xl">
+            <div className="inline-flex gap-1 rounded-full border border-soul-line bg-white/80 p-1 text-[13px] font-medium text-soul-muted shadow-[0_12px_30px_-20px_rgba(15,44,77,0.35)] backdrop-blur-xl">
               {[
                 { href: '#about', label: t('listing.description') },
                 { href: '#details', label: t('listing.details') },
