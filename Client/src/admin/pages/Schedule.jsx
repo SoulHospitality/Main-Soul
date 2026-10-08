@@ -2542,7 +2542,7 @@ export default function Schedule() {
         saving={editMutation.isPending}
         onSave={() => {
           if (editForm?.currency === 'USD' && !(Number(editForm.exchange_rate) > 0)) {
-            toast.error('Enter the USD exchange rate (EGP for 1 USD)');
+            toast.error('The live USD rate is still loading — try again in a moment');
             return;
           }
           editMutation.mutate();

@@ -6,6 +6,7 @@ import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import { usePermissions } from '../hooks/usePermissions';
+import { useLiveUsdRate } from '../hooks/useLiveUsdRate';
 import { canDeleteReservations as canDeleteReservationsFor, salesUsersForActor } from '../utils/permissions';
 import { useSortableTable } from '../hooks/useSortableTable';
 import Modal from '../components/ui/Modal';
@@ -95,6 +96,7 @@ export function reservationToEditForm(r) {
     ...form,
     currency: isUsd ? 'USD' : 'EGP',
     exchange_rate: isUsd ? String(rate) : '',
+    booked_exchange_rate: isUsd ? String(rate) : '',
     bank_account: r.bank_account || '',
   };
 }
@@ -129,7 +131,7 @@ function reservationToEditFormEgp(r) {
 
 /** Edit payload: blank money fields mean 0; utilities are only sent once entered. */
 export function reservationEditPayload(form) {
-  const { sales_person_name: _salesName, ...rest } = form;
+  const { sales_person_name: _salesName, booked_exchange_rate: _bookedRate, ...rest } = form;
   const num = (v) => (v === '' || v == null ? 0 : Number(v) || 0);
   const int = (v) => Math.max(0, parseInt(v, 10) || 0);
   const payload = {
@@ -163,6 +165,16 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
   const isUsd = form.currency === 'USD';
   const cur = isUsd ? 'USD' : 'EGP';
   const usdRate = Number(form.exchange_rate) || 0;
+  // A USD reservation keeps the rate it was booked at; switching to USD uses the live rate.
+  const bookedRate = Number(form.booked_exchange_rate) || 0;
+  const liveRate = useLiveUsdRate(isUsd && !(bookedRate > 0));
+  const liveRateValue = liveRate.data?.rate;
+  useEffect(() => {
+    if (!isUsd) return;
+    const next = bookedRate > 0 ? bookedRate : liveRateValue;
+    if (!(next > 0)) return;
+    setForm(f => (Number(f.exchange_rate) === next ? f : { ...f, exchange_rate: String(next) }));
+  }, [isUsd, bookedRate, liveRateValue]);
 
   useEffect(() => {
     if (selectedUnit && isNew && !form.price_per_night) {
@@ -329,9 +341,12 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
           </div>
           {isUsd && (
             <div>
-              <label className="label">Exchange rate (EGP for 1 USD) *</label>
-              <input type="number" min="0" step="0.0001" className="input" value={form.exchange_rate || ''}
-                onChange={e => setForm(f => ({ ...f, exchange_rate: e.target.value }))} placeholder="e.g. 48.50" />
+              <label className="label">{bookedRate > 0 ? 'Booked rate (EGP for 1 USD)' : 'Live rate (EGP for 1 USD)'}</label>
+              <div className="input bg-gray-50 font-semibold tabular-nums">
+                {usdRate > 0
+                  ? `1 USD = ${usdRate.toLocaleString('en-EG', { maximumFractionDigits: 4 })} EGP`
+                  : liveRate.isError ? 'Live rate unavailable' : 'Loading live rate…'}
+              </div>
             </div>
           )}
           <div className={isUsd ? '' : 'md:col-span-2'}>
@@ -1374,7 +1389,7 @@ export default function Reservations() {
       return toast.error('Mobile number is required');
     if (editId) {
       if (form.currency === 'USD' && !(Number(form.exchange_rate) > 0))
-        return toast.error('Enter the USD exchange rate (EGP for 1 USD)');
+        return toast.error('The live USD rate is still loading — try again in a moment');
       saveMutation.mutate(reservationEditPayload(form));
       return;
     }

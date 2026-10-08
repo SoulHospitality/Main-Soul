@@ -14,6 +14,7 @@ import {
 import SearchableSelect from './ui/SearchableSelect';
 import BankAccountPicker from './BankAccountPicker';
 import { usePermissions } from '../hooks/usePermissions';
+import { useLiveUsdRate } from '../hooks/useLiveUsdRate';
 import {
   BOOKING_SOURCES,
   MANUAL_PAYMENT_METHODS,
@@ -76,7 +77,7 @@ export const EMPTY_MANUAL_RESERVATION_FORM = {
 /** Currency / InstaPay account checks shared by every manual-create screen. */
 export function manualReservationPaymentError(form) {
   if (form.currency === 'USD' && !(Number(form.exchange_rate) > 0)) {
-    return 'Enter the USD exchange rate (EGP for 1 USD)';
+    return 'The live USD rate is still loading — try again in a moment';
   }
   if (
     !form.is_owner_reservation &&
@@ -160,6 +161,15 @@ export default function ManualReservationForm({
 
   const isUsd = form.currency === 'USD';
   const usdRate = Number(form.exchange_rate) || 0;
+  const liveRate = useLiveUsdRate(isUsd);
+  const liveRateValue = liveRate.data?.rate;
+
+  useEffect(() => {
+    if (!isUsd || !(liveRateValue > 0)) return;
+    setForm((cur) =>
+      Number(cur.exchange_rate) === liveRateValue ? cur : { ...cur, exchange_rate: String(liveRateValue) }
+    );
+  }, [isUsd, liveRateValue, setForm]);
   const cur = isUsd ? 'USD' : 'EGP';
   const fmt = (value) => money(value, cur);
   // Unit fees are priced in EGP; a USD booking shows them in dollars at the entered rate.
@@ -363,19 +373,30 @@ export default function ManualReservationForm({
             </div>
             {isUsd && (
               <div>
-                <Label>Exchange rate (EGP for 1 USD) <span className="text-[#ff7a59]">*</span></Label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.0001"
-                  value={form.exchange_rate}
-                  onChange={(e) => setForm((cur) => ({ ...cur, exchange_rate: e.target.value }))}
-                  className={fieldClass}
-                  placeholder="e.g. 48.50"
-                />
-                <p className="mt-1 text-[11px] text-[#8b97aa]">
-                  USD bookings are cash only. The books record the EGP value at this rate.
-                </p>
+                <Label>Live rate (EGP for 1 USD)</Label>
+                <div className={`${fieldClass} bg-[#f6f8fb] font-semibold tabular-nums`}>
+                  {liveRate.isLoading
+                    ? 'Loading live rate…'
+                    : liveRateValue > 0
+                      ? `1 USD = ${liveRateValue.toLocaleString('en-EG', { maximumFractionDigits: 4 })} EGP`
+                      : 'Live rate unavailable'}
+                </div>
+                {liveRate.isError ? (
+                  <p className="mt-1 text-[11px] text-red-600">
+                    {liveRate.error?.response?.data?.error || 'Could not load the live rate.'}{' '}
+                    <button type="button" className="underline" onClick={() => liveRate.refetch()}>
+                      Retry
+                    </button>
+                  </p>
+                ) : (
+                  <p className="mt-1 text-[11px] text-[#8b97aa]">
+                    Updated automatically
+                    {liveRate.data?.fetched_at
+                      ? ` · ${new Date(liveRate.data.fetched_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`
+                      : ''}
+                    {liveRate.data?.stale ? ' (last known rate)' : ''}. USD bookings are cash only; the books record the EGP value at this rate.
+                  </p>
+                )}
               </div>
             )}
           </div>

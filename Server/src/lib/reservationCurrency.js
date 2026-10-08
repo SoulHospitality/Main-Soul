@@ -17,6 +17,9 @@ const MONEY_FIELDS = [
   'owner_collected_amount',
 ];
 
+const { query } = require('../config/db');
+const { getLiveUsdEgpRate } = require('./usdRate');
+
 const BANK_ACCOUNTS = ['adib', 'cib'];
 
 function normalizeBankAccount(value) {
@@ -27,17 +30,29 @@ function normalizeBankAccount(value) {
 /**
  * Only converts when the payload states its currency, so partial updates that send EGP amounts
  * for an existing USD reservation are left untouched.
- * @returns {{ body: object, given: boolean, currency: string, rate: number|null } | { error: string }}
+ * The rate is never taken from the client: new USD bookings use the live market rate, and an
+ * existing USD reservation keeps the rate it was booked at.
+ * @returns {Promise<{ body: object, given: boolean, currency: string, rate: number|null } | { error: string }>}
  */
-function reservationCurrencyFromBody(body) {
+async function reservationCurrencyFromBody(body, { reservationId } = {}) {
   const given = body?.currency != null && body.currency !== '';
   if (!given) return { body, given: false, currency: null, rate: null };
   const currency = String(body.currency).trim().toUpperCase();
   if (!['EGP', 'USD'].includes(currency)) return { error: 'Currency must be EGP or USD' };
   if (currency === 'EGP') return { body, given: true, currency, rate: null };
 
-  const rate = parseFloat(body.exchange_rate);
-  if (!(rate > 0)) return { error: 'Enter the USD exchange rate (EGP for 1 USD)' };
+  let rate = 0;
+  if (reservationId) {
+    const { rows } = await query('SELECT currency, exchange_rate FROM reservations WHERE id = $1', [reservationId]);
+    if (String(rows[0]?.currency || '').toUpperCase() === 'USD') rate = parseFloat(rows[0].exchange_rate) || 0;
+  }
+  if (!(rate > 0)) {
+    try {
+      rate = (await getLiveUsdEgpRate()).rate;
+    } catch (err) {
+      return { error: err.message };
+    }
+  }
   const out = { ...body };
   for (const field of MONEY_FIELDS) {
     if (out[field] == null || out[field] === '') continue;

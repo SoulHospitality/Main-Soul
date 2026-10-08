@@ -1726,6 +1726,16 @@ router.put('/daily-prices/:unitId', requireRoles('admin'), async (req, res, next
 });
 
 
+router.get('/exchange-rate/usd', async (req, res, next) => {
+  try {
+    const { getLiveUsdEgpRate } = require('../../lib/usdRate');
+    res.json(await getLiveUsdEgpRate());
+  } catch (e) {
+    if (e.status === 503) return res.status(503).json({ error: e.message });
+    next(e);
+  }
+});
+
 router.get('/reservations', async (req, res, next) => {
   try {
     const scope = reservationScopeClause(req.user, 'r', 1);
@@ -1789,7 +1799,7 @@ router.post(
   async (req, res, next) => {
   try {
     const { reservationCurrencyFromBody, normalizeBankAccount } = require('../../lib/reservationCurrency');
-    const cur = reservationCurrencyFromBody(req.body);
+    const cur = await reservationCurrencyFromBody(req.body);
     if (cur.error) return res.status(400).json({ error: cur.error });
     const b = cur.body;
     const isUsd = cur.currency === 'USD';
@@ -2161,7 +2171,7 @@ router.patch(
     await assertReservationOwned(req.user, existing);
 
     const { reservationCurrencyFromBody, applyReservationCurrency } = require('../../lib/reservationCurrency');
-    const cur = reservationCurrencyFromBody(req.body);
+    const cur = await reservationCurrencyFromBody(req.body, { reservationId: req.params.id });
     if (cur.error) return res.status(400).json({ error: cur.error });
     const b = cur.body;
     if (await blocksLongTermReservation(req.user, [existing.unit_id, b.unit_id])) {

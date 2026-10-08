@@ -1919,7 +1919,7 @@ router.put(
     await assertReservationOwned(req.user, existing);
 
     const { reservationCurrencyFromBody, applyReservationCurrency } = require('../../lib/reservationCurrency');
-    const cur = reservationCurrencyFromBody(req.body);
+    const cur = await reservationCurrencyFromBody(req.body, { reservationId: req.params.id });
     if (cur.error) return res.status(400).json({ error: cur.error });
     const b = cur.body;
     // Only admins reassign the salesperson; other editors keep whoever booked it.
