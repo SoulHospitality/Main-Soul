@@ -14,6 +14,7 @@ const {
 const { setOwnerUnits, listLinkableUnits } = require('../../lib/ownerUnits');
 const { UNIT_ACQUISITION_ROLES } = require('../../lib/unitAcquisition');
 const { PETTY_CASH_ROLES, canUsePettyCashLocation } = require('../../lib/pettyCashAccess');
+const { STAFF_EDITOR_ROLES } = require('../../lib/staffEditorRoles');
 
 const OWNER_ACCOUNT_ROLES = ['finance', ...UNIT_ACQUISITION_ROLES];
 const OWNER_LINK_ROLES = [...UNIT_ACQUISITION_ROLES];
@@ -90,7 +91,9 @@ router.get('/users/sales', async (_req, res, next) => {
   try {
     const { rows } = await query(
       `SELECT id, full_name, username, role, sales_commission_pct, manager_id FROM staff_users
-       WHERE is_active = 1 AND role IN ('reservations_manual','reservations_web','reservations','reservations_manager','admin')`
+       WHERE is_active = 1 AND role = ANY($1::text[])
+       ORDER BY full_name NULLS LAST, username`,
+      [STAFF_EDITOR_ROLES]
     );
     res.json(rows);
   } catch (e) {
@@ -226,7 +229,7 @@ router.get(
     const { rows } = await query(
       `SELECT
          r.id, r.guest_name, r.check_in, r.check_out, r.nights,
-         r.total_amount, r.price_per_night, r.utilities_amount, r.housekeeping_fees,
+         r.total_amount, r.price_per_night, r.utilities_amount, r.utilities_custom, r.housekeeping_fees,
          r.is_owner_reservation, r.broker_total, r.broker_amount_per_night, r.broker_name, r.broker_phone,
          r.booking_id, r.booking_source, r.sales_person_id,
          COALESCE(u.unit_number, u.title, 'Unit') AS unit_name,
@@ -245,7 +248,7 @@ router.get(
       params
     );
 
-    const { calcReservationFinancials, round2 } = require('../../lib/commission');
+    const { calcReservationFinancials, reservationUtilitiesAmount, round2 } = require('../../lib/commission');
     const { isWebsiteOriginReservation } = require('../../lib/reservationScope');
     const { agentCommissionFromCompany } = require('../../lib/financeModel');
 
@@ -459,7 +462,7 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
   try {
     const from_date = clampFromDate(req.query.from_date);
     const to_date = req.query.to_date || null;
-    const { calcReservationFinancials, round2 } = require('../../lib/commission');
+    const { calcReservationFinancials, reservationUtilitiesAmount, round2 } = require('../../lib/commission');
     const { isWebsiteOriginReservation } = require('../../lib/reservationScope');
     const { TAX_PCT, agentCommissionFromCompany } = require('../../lib/financeModel');
 
@@ -472,7 +475,7 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
 
     const { rows: reservations } = await query(
       `SELECT
-         r.id, r.nights, r.total_amount, r.price_per_night, r.utilities_amount,
+         r.id, r.nights, r.total_amount, r.price_per_night, r.utilities_amount, r.utilities_custom,
          r.housekeeping_fees, r.is_owner_reservation,
          r.broker_total, r.broker_amount_per_night,
          r.booking_id, r.booking_source, r.sales_person_id,
@@ -499,9 +502,7 @@ router.get('/finance/summary', requireRoles('admin'), async (req, res, next) => 
     let manualCompanyCommission = 0;
 
     for (const r of reservations) {
-      const utilitiesAmount =
-        parseFloat(r.utilities_amount) ||
-        (Number(r.nights) || 0) * (parseFloat(r.utilities_cost) || 0);
+      const utilitiesAmount = reservationUtilitiesAmount(r, r.utilities_cost);
       const fin = calcReservationFinancials(r, {
         ...r,
         utilities_amount: utilitiesAmount,
@@ -893,6 +894,10 @@ router.put('/ota-calendar/:unitId/:platform', requireRoles(...RESERVATIONS_CALEN
     );
     await query(`UPDATE units SET ical_url = $1, updated_at = now() WHERE id = $2`, [url, u[0].id]);
 
+    if (rows[0].enabled === false) {
+      await query(`DELETE FROM unit_ical_blocks WHERE feed_id = $1`, [rows[0].id]);
+      return res.json({ feed: rows[0], sync: { ok: true, skipped: 'disabled' } });
+    }
     const sync = await runChannelSync({ feedId: rows[0].id });
     res.json({ feed: rows[0], sync });
   } catch (e) {
@@ -1701,10 +1706,9 @@ router.get('/utilities', async (req, res, next) => {
          r.check_out,
          r.nights,
          r.total_amount,
-         COALESCE(
-           NULLIF(r.utilities_amount, 0),
-           (r.nights * COALESCE(u.utilities_cost, 0))
-         )::real AS total_utilities_deducted
+         CASE WHEN r.utilities_custom THEN COALESCE(r.utilities_amount, 0)
+              ELSE COALESCE(NULLIF(r.utilities_amount, 0), r.nights * COALESCE(u.utilities_cost, 0))
+         END::real AS total_utilities_deducted
        FROM reservations r
        JOIN units u ON u.id = r.unit_id
        WHERE ${conditions.join(' AND ')}
@@ -1906,15 +1910,7 @@ router.put('/tasks/:id', async (req, res, next) => {
 
 router.put(
   '/reservations/:id',
-  requireRoles(
-    'reservations_manager',
-    'reservations_manual',
-    'reservations_web',
-    'reservations',
-    'operations',
-    'operations_supervisor',
-    'admin'
-  ),
+  requireRoles(...STAFF_EDITOR_ROLES),
   async (req, res, next) => {
   
   try {
@@ -1923,12 +1919,8 @@ router.put(
     await assertReservationOwned(req.user, existing);
 
     const b = req.body;
-    const { isAdmin, assertAssignableSalesPerson } = require('../../lib/reservationScope');
-    
-    if (!isAdmin(req.user)) {
-      b.sales_person_id = req.user.id;
-    }
-    await assertAssignableSalesPerson(req.user, b.sales_person_id);
+    // Only admins reassign the salesperson; other editors keep whoever booked it.
+    if (!isAdmin(req.user)) delete b.sales_person_id;
     const checkIn = b.check_in || existing.check_in;
     const checkOut = b.check_out || existing.check_out;
     const ci = new Date(checkIn);
@@ -1946,33 +1938,20 @@ router.put(
     const clearHold =
       b.is_hold === false || b.is_hold === 0 || b.is_hold === '0' || b.is_hold === 'false';
 
-    if (
-      b.adults !== undefined ||
-      b.children !== undefined ||
-      b.nanny_count !== undefined ||
-      b.nanny !== undefined
-    ) {
-      const adults =
-        b.adults !== undefined && b.adults !== ''
-          ? Math.max(0, parseInt(b.adults, 10) || 0)
-          : Math.max(0, parseInt(existing.adults, 10) || 0);
-      const children =
-        b.children !== undefined && b.children !== ''
-          ? Math.max(0, parseInt(b.children, 10) || 0)
-          : Math.max(0, parseInt(existing.children, 10) || 0);
-      const nannyCount =
-        b.nanny_count !== undefined || b.nanny !== undefined
-          ? Math.max(0, parseInt(b.nanny_count ?? b.nanny, 10) || 0)
-          : Math.max(0, parseInt(existing.nanny_count, 10) || 0);
-      const isOwner =
-        b.is_owner_reservation !== undefined
-          ? b.is_owner_reservation === true ||
-            b.is_owner_reservation === 1 ||
-            b.is_owner_reservation === '1'
-          : !!existing.is_owner_reservation;
-      if (!isOwner && adults < 1) {
-        return res.status(400).json({ error: 'At least 1 adult is required' });
-      }
+    const utilitiesOverrideGiven = b.utilities_cost_override !== undefined;
+    const utilitiesOverride =
+      utilitiesOverrideGiven && b.utilities_cost_override !== '' && b.utilities_cost_override != null
+        ? parseFloat(b.utilities_cost_override)
+        : null;
+    let utilitiesAmountParam = null;
+    let utilitiesCustomParam = null;
+    if (b.utilities_amount != null && b.utilities_amount !== '') {
+      utilitiesAmountParam = parseFloat(b.utilities_amount) || 0;
+      utilitiesCustomParam = true;
+    } else if (utilitiesOverrideGiven) {
+      const perNight = Number.isFinite(utilitiesOverride) ? utilitiesOverride : null;
+      utilitiesAmountParam = perNight != null ? perNight * nights : 0;
+      utilitiesCustomParam = perNight != null;
     }
 
     const { rows } = await query(
@@ -1996,7 +1975,7 @@ router.put(
          housekeeping_fees = COALESCE($17, housekeeping_fees),
          insurance = COALESCE($18, insurance),
          down_payment = COALESCE($19, down_payment),
-         utilities_cost_override = COALESCE($20, utilities_cost_override),
+         utilities_cost_override = CASE WHEN $36::boolean THEN $20::real ELSE utilities_cost_override END,
          broker_name = COALESCE($21, broker_name),
          broker_amount_per_night = COALESCE($22, broker_amount_per_night),
          broker_total = COALESCE($23, broker_total),
@@ -2011,6 +1990,7 @@ router.put(
          sales_label = COALESCE($33, sales_label),
          utilities_amount = COALESCE($34, utilities_amount),
          beach_access_fees = COALESCE($35, beach_access_fees),
+         utilities_custom = COALESCE($37, utilities_custom),
          updated_at = now()
        WHERE id = $29 RETURNING *`,
       [
@@ -2035,11 +2015,7 @@ router.put(
         b.housekeeping_fees != null && b.housekeeping_fees !== '' ? parseFloat(b.housekeeping_fees) : null,
         b.insurance != null && b.insurance !== '' ? parseFloat(b.insurance) : null,
         b.down_payment != null && b.down_payment !== '' ? parseFloat(b.down_payment) : null,
-        b.utilities_cost_override !== undefined
-          ? (b.utilities_cost_override === '' || b.utilities_cost_override == null
-              ? null
-              : parseFloat(b.utilities_cost_override))
-          : null,
+        Number.isFinite(utilitiesOverride) ? utilitiesOverride : null,
         b.broker_name ?? null,
         b.broker_amount_per_night !== undefined ? brokerPerNight : null,
         b.broker_amount_per_night !== undefined || b.broker_total !== undefined ? brokerTotal : null,
@@ -2060,12 +2036,12 @@ router.put(
               return resolveSalesLabel(b.sales_label ?? b.sales_owner ?? '');
             })()
           : null,
-        b.utilities_amount != null && b.utilities_amount !== ''
-          ? parseFloat(b.utilities_amount) || 0
-          : null,
+        utilitiesAmountParam,
         b.beach_access_fees != null && b.beach_access_fees !== ''
           ? parseFloat(b.beach_access_fees) || 0
           : null,
+        utilitiesOverrideGiven,
+        utilitiesCustomParam,
       ]
     );
     if (b.broker_phone !== undefined && rows[0]) {

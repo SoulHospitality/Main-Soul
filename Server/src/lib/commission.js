@@ -96,13 +96,22 @@ function isOwnerReservation(reservation) {
   );
 }
 
+function isCustomUtilities(reservation) {
+  const v = reservation?.utilities_custom;
+  return v === true || v === 1 || v === '1' || v === 't' || v === 'true';
+}
+
+/** Stored utilities when entered for this stay (0 included); otherwise the unit's per-night default. */
+function reservationUtilitiesAmount(reservation, unitUtilitiesCost, nights) {
+  const stored = parseFloat(reservation?.utilities_amount) || 0;
+  if (stored || isCustomUtilities(reservation)) return stored;
+  const n = nights != null ? nights : Number(reservation?.nights) || 0;
+  return n * (parseFloat(unitUtilitiesCost) || 0);
+}
+
 function ownerUtilitiesDeduction(unit, reservation, nights) {
   if (isOwnerReservation(reservation)) return 0;
-  return round2(
-    parseFloat(reservation?.utilities_amount) ||
-      nights * (parseFloat(unit?.utilities_cost) || 0) ||
-      0
-  );
+  return round2(reservationUtilitiesAmount(reservation, unit?.utilities_cost, nights) || 0);
 }
 
 function brokerDeductionFor(reservation, nights) {
@@ -254,6 +263,8 @@ function calcStatementFinancials(unit, reservations) {
 }
 
 module.exports = {
+  reservationUtilitiesAmount,
+  isCustomUtilities,
   calcReservationFinancials,
   calcStatementFinancials,
   ownerAccommodationGross,

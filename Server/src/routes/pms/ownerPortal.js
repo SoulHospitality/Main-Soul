@@ -282,7 +282,7 @@ router.get('/owner/reservations', requireRoles('owner', 'admin'), async (req, re
               r.booking_id, u.title AS unit_name, u.unit_number,
               u.company_commission_pct, u.company_commission_owner_pct,
               u.commission_mode, u.commission_tenant_pct, u.utilities_cost,
-              r.housekeeping_fees, r.utilities_amount, r.owner_collected_type, r.owner_collected_amount,
+              r.housekeeping_fees, r.utilities_amount, r.utilities_custom, r.owner_collected_type, r.owner_collected_amount,
               r.broker_amount_per_night, r.broker_total, r.is_owner_reservation,
               r.price_per_night, r.payment_method, r.updated_at, r.created_at
        FROM reservations r

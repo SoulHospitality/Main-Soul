@@ -166,9 +166,7 @@ export default function ManualReservationForm({
   const ownerCollected = Number(form.owner_collected_amount) || 0;
   const brokerPerNight = Number(form.broker_amount_per_night) || 0;
   const brokerTotal = brokerPerNight * nights;
-  const utilitiesPerNight = form.is_owner_reservation
-    ? 0
-    : Number(form.utilities_cost_override || selectedUnit?.utilities_cost) || 0;
+  const utilitiesPerNight = form.is_owner_reservation ? 0 : Number(form.utilities_cost_override) || 0;
   const utilitiesAmount = utilitiesPerNight * nights;
   const fullBill = Math.round((total + housekeeping + beachAccessFees + insurance) * 100) / 100;
   const commissionFinancials = selectedUnit
@@ -346,6 +344,29 @@ export default function ManualReservationForm({
                 </p>
               )}
             </div>
+            {!form.is_owner_reservation && (
+              <div>
+                <Label>Utilities / night (EGP) <span className="text-[#ff7a59]">*</span></Label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.utilities_cost_override}
+                  onChange={(e) =>
+                    setForm((cur) => ({ ...cur, utilities_cost_override: e.target.value }))
+                  }
+                  className={fieldClass}
+                  placeholder="Enter amount (0 if none)"
+                />
+                <p className="mt-1 text-[11px] text-[#8b97aa]">
+                  {nights > 0 && form.utilities_cost_override !== ''
+                    ? `Total ${money(utilitiesAmount)} for ${nights} night${nights === 1 ? '' : 's'}`
+                    : selectedUnit?.utilities_cost
+                      ? `Unit default is ${money(selectedUnit.utilities_cost)} / night`
+                      : 'Required for every reservation'}
+                </p>
+              </div>
+            )}
           </div>
 
           <hr className="border-[#e6ebf2]" />
@@ -691,7 +712,7 @@ export default function ManualReservationForm({
             onClick={() => setShowAdvanced((value) => !value)}
             className="flex w-full items-center justify-between rounded-[10px] border border-[#e6ebf2] px-3 py-2.5 text-sm font-semibold text-[#1e5fbf] hover:bg-[#eef4ff]"
           >
-            Owner collection & utilities
+            Owner collection
             <ChevronDown className={`h-4 w-4 transition ${showAdvanced ? 'rotate-180' : ''}`} />
           </button>
 
@@ -735,28 +756,6 @@ export default function ManualReservationForm({
                   </div>
                 )}
               </div>
-              {!form.is_owner_reservation && (
-                <div>
-                  <Label>Utilities override / night</Label>
-                  <input
-                    type="number"
-                    min="0"
-                    className={fieldClass}
-                    value={form.utilities_cost_override}
-                    onChange={(event) =>
-                      setForm((cur) => ({
-                        ...cur,
-                        utilities_cost_override: event.target.value,
-                      }))
-                    }
-                    placeholder={
-                      selectedUnit?.utilities_cost
-                        ? `Default ${selectedUnit.utilities_cost}`
-                        : 'Unit default'
-                    }
-                  />
-                </div>
-              )}
             </div>
           )}
 

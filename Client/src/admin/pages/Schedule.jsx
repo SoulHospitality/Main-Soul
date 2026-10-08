@@ -7,7 +7,7 @@ import LoadingSpinner from '../components/ui/LoadingSpinner';
 import Modal from '../components/ui/Modal';
 import Badge from '../components/ui/Badge';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
-import { currency, formatDate, nightsText, BOOKING_SOURCES, unitDisplay, unitSelectLabel } from '../utils/formatters';
+import { currency, formatDate, nightsText, unitDisplay, unitSelectLabel } from '../utils/formatters';
 import { usePermissions } from '../hooks/usePermissions';
 import { salesUsersForActor } from '../utils/permissions';
 import SearchableSelect from '../components/ui/SearchableSelect';
@@ -22,6 +22,7 @@ import { isoDateOnly } from '../../utils/stayNights';
 import { otaBlockRank, otaBlockLook } from '../utils/otaCalendar';
 import { useProjectCatalog } from '../../hooks/useProjectCatalog';
 import ReservationReceipt, { BrokerDetails } from '../components/ReservationReceipt';
+import { ReservationForm, reservationToEditForm, reservationEditPayload } from './Reservations';
 
 
 
@@ -540,60 +541,33 @@ function Info({ label, value, bold }) {
 }
 
 
-function EditReservationModal({ open, onClose, editId, editForm, setEditForm, unitsList, usersList, onSave, saving }) {
+function EditReservationModal({ open, onClose, editId, editForm, setEditForm, unitsList, usersList, onSave, saving, isAdmin, currentUserName }) {
   return (
-    <Modal open={open} onClose={onClose} title={`Edit Reservation #${editId}`} size="lg"
+    <Modal open={open} onClose={onClose} title={`Edit Reservation #${editId}`} size="xl"
       footer={<>
         <button onClick={onClose} className="btn-secondary">Cancel</button>
         <button onClick={onSave} disabled={saving} className="btn-primary">{saving ? 'Saving…' : 'Save Changes'}</button>
       </>}
     >
-      <div className="space-y-4">
-        <div className="form-grid">
-          <div>
-            <label className="label">Unit *</label>
-            <SearchableSelect value={editForm.unit_id} onChange={v => setEditForm(f => ({ ...f, unit_id: v }))}
-              placeholder="Select…"
-              options={[{ value: '', label: 'Select…' }, ...unitsList.map(u => ({ value: String(u.id), label: unitSelectLabel(u) }))]}
-            />
-          </div>
-          <div><label className="label">Tenant Name *</label><input className="input" value={editForm.guest_name} onChange={e => setEditForm(f => ({ ...f, guest_name: e.target.value }))} /></div>
-          <div><label className="label">Phone</label><input className="input" value={editForm.guest_phone} onChange={e => setEditForm(f => ({ ...f, guest_phone: e.target.value }))} /></div>
-          <div>
-            <label className="label">Adults</label>
-            <input type="number" min="0" className="input" value={editForm.adults ?? '2'} onChange={e => setEditForm(f => ({ ...f, adults: e.target.value }))} />
-          </div>
-          <div>
-            <label className="label">Children</label>
-            <input type="number" min="0" className="input" value={editForm.children ?? '0'} onChange={e => setEditForm(f => ({ ...f, children: e.target.value }))} />
-          </div>
-          <div>
-            <label className="label">Nanny</label>
-            <input type="number" min="0" className="input" value={editForm.nanny_count ?? '0'} onChange={e => setEditForm(f => ({ ...f, nanny_count: e.target.value }))} />
-          </div>
-          <div>
-            <label className="label">Booking Source</label>
-            <SearchableSelect value={editForm.booking_source} onChange={v => setEditForm(f => ({ ...f, booking_source: v }))}
-              placeholder="Select…"
-              options={[{ value: '', label: 'Select…' }, ...BOOKING_SOURCES.map(s => ({ value: s, label: s }))]}
-            />
-          </div>
-          <div><label className="label">Check-in *</label><input type="date" className="input" value={editForm.check_in} onChange={e => setEditForm(f => ({ ...f, check_in: e.target.value }))} /></div>
-          <div><label className="label">Check-out *</label><input type="date" className="input" value={editForm.check_out} onChange={e => setEditForm(f => ({ ...f, check_out: e.target.value }))} /></div>
-          <div><label className="label">Total (EGP)</label><input type="number" min="0" step="0.01" className="input" value={editForm.total_amount} onChange={e => setEditForm(f => ({ ...f, total_amount: e.target.value }))} /></div>
-          <div>
-            <label className="label">Status</label>
-            <SearchableSelect value={editForm.status} onChange={v => setEditForm(f => ({ ...f, status: v }))}
-              placeholder="Select…"
-              options={['confirmed','checked_in','checked_out','cancelled'].map(s => ({ value: s, label: s.replace(/_/g,' ') }))}
-            />
-          </div>
+      <div className="space-y-5">
+        <div className="max-w-xs">
+          <label className="label">Status</label>
+          <SearchableSelect value={editForm.status} onChange={v => setEditForm(f => ({ ...f, status: v }))}
+            placeholder="Select…"
+            options={['pending','confirmed','checked_in','checked_out','cancelled'].map(s => ({ value: s, label: s.replace(/_/g,' ') }))}
+          />
         </div>
-        <div className="flex items-center gap-2">
-          <input type="checkbox" id="owner_sched" checked={!!editForm.is_owner_reservation} onChange={e => setEditForm(f => ({ ...f, is_owner_reservation: e.target.checked }))} className="w-4 h-4 rounded border-gray-300 text-primary-600" />
-          <label htmlFor="owner_sched" className="text-sm text-gray-700 font-medium">Owner Reservation</label>
-        </div>
-        <div><label className="label">Notes</label><textarea className="input resize-none" rows={2} value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} /></div>
+        <ReservationForm
+          form={editForm}
+          setForm={setEditForm}
+          units={unitsList}
+          users={usersList}
+          isNew={false}
+          editId={editId}
+          allowPastDates={isAdmin}
+          lockSalesPerson={!isAdmin}
+          currentUserName={currentUserName}
+        />
       </div>
     </Modal>
   );
@@ -979,6 +953,7 @@ export default function Schedule() {
   const { data: calendarBlocks = [] } = useQuery({
     queryKey: ['calendar-blocks', fromStr, toStr],
     queryFn: () => api.get('/calendar-blocks', { params: { from: fromStr, to: toStr } }).then(r => r.data),
+    refetchInterval: 60000,
   });
 
   const blockMap = useMemo(() => {
@@ -1095,7 +1070,7 @@ export default function Schedule() {
   });
 
   const editMutation = useMutation({
-    mutationFn: () => api.put(`/reservations/${editId}`, editForm),
+    mutationFn: () => api.put(`/reservations/${editId}`, reservationEditPayload(editForm)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['schedule'] });
       qc.invalidateQueries({ queryKey: ['reservation-detail', editId] });
@@ -1159,6 +1134,9 @@ export default function Schedule() {
     const nannyCount = Math.max(0, parseInt(createForm.nanny_count, 10) || 0);
     if (!createForm.is_owner_reservation && adults < 1) {
       return toast.error('At least 1 adult is required');
+    }
+    if (!createForm.is_owner_reservation && (createForm.utilities_cost_override ?? '') === '') {
+      return toast.error('Enter the utilities per night for this stay (0 if none)');
     }
     if (!createForm.is_owner_reservation && createForm.payment_method === 'other' && !createForm.payment_method_note?.trim()) {
       return toast.error('Add a comment for the Other payment method');
@@ -1484,22 +1462,17 @@ export default function Schedule() {
   const openEditFromDetail = useCallback(async (res) => {
     try {
       const isHold = !!(res.is_hold || res.status === 'hold');
+      let full = res;
+      try {
+        const { data } = await api.get(`/reservations/${res.id}`);
+        if (data?.id) full = { ...res, ...data };
+      } catch { /* fall back to the schedule row */ }
       setEditForm({
-        unit_id: res.unit_id, guest_name: isHold && res.guest_name === 'Hold' ? '' : (res.guest_name || ''),
-        guest_email: res.guest_email || '',
-        guest_phone: res.guest_phone || '', guest_nationality: res.guest_nationality || '',
-        adults: res.adults != null ? String(res.adults) : '2',
-        children: res.children != null ? String(res.children) : '0',
-        nanny_count: res.nanny_count != null ? String(res.nanny_count) : '0',
-        check_in: normDate(res.check_in), check_out: normDate(res.check_out),
-        total_amount: isHold ? '' : res.total_amount,
-        price_per_night: res.price_per_night || '',
-        booking_source: res.booking_source || '', sales_person_id: res.sales_person_id || '',
-        is_owner_reservation: !!res.is_owner_reservation,
-        
+        ...reservationToEditForm(full),
+        guest_name: isHold && full.guest_name === 'Hold' ? '' : (full.guest_name || ''),
+        total_amount: isHold ? '' : (full.total_amount != null ? String(full.total_amount) : ''),
         is_hold: isHold ? false : undefined,
-        status: isHold ? 'confirmed' : res.status,
-        notes: res.notes || '',
+        status: isHold ? 'confirmed' : full.status,
       });
       setEditId(res.id);
       setHoldDetailModal(false); 
@@ -2560,6 +2533,8 @@ export default function Schedule() {
         usersList={salesUsers}
         saving={editMutation.isPending}
         onSave={() => editMutation.mutate()}
+        isAdmin={isAdmin}
+        currentUserName={user?.full_name || user?.username || ''}
       />
 
       <HoldModal

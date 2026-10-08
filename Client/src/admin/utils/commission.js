@@ -41,7 +41,9 @@ export function calcReservationFinancials(unit, reservation) {
   const base = rentalBase(reservation);
   const utilitiesDeduction = isOwner
     ? 0
-    : parseFloat(reservation.utilities_amount) || nights * (parseFloat(unit.utilities_cost) || 0) || 0;
+    : parseFloat(reservation.utilities_amount) ||
+      (reservation.utilities_custom ? 0 : nights * (parseFloat(unit.utilities_cost) || 0)) ||
+      0;
   const housekeepingFees = parseFloat(reservation.housekeeping_fees) || 0;
   let brokerDeduction = parseFloat(reservation.broker_total) || 0;
   if (!(brokerDeduction > 0)) {

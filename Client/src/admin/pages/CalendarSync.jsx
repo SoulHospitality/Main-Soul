@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   Check,
@@ -218,7 +218,6 @@ function UnitDetailsModal({ unit, open, onClose, focusPlatform }) {
 }
 
 export default function CalendarSync() {
-  const qc = useQueryClient();
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(null);
   const [focusPlatform, setFocusPlatform] = useState(null);
@@ -227,43 +226,18 @@ export default function CalendarSync() {
   const { data, isLoading } = useQuery({
     queryKey: ['channel-manager'],
     queryFn: () => api.get('/channel-manager/overview').then((r) => r.data),
+    refetchInterval: 30000,
   });
 
   const { data: logsData, isLoading: logsLoading } = useQuery({
     queryKey: ['channel-manager-logs'],
     queryFn: () => api.get('/channel-manager/sync-logs?limit=40').then((r) => r.data),
     enabled: tab === 'logs',
+    refetchInterval: 30000,
   });
 
   const units = data?.units || [];
   const revenueChannels = data?.revenue?.channels || [];
-
-  const refreshAllMutation = useMutation({
-    mutationFn: () => api.post('/channel-manager/sync', {}),
-    onSuccess: (res) => {
-      qc.invalidateQueries({ queryKey: ['channel-manager'] });
-      qc.invalidateQueries({ queryKey: ['channel-manager-logs'] });
-      qc.invalidateQueries({ queryKey: ['calendar-blocks'] });
-      const errCount = res.data?.errors || 0;
-      if (errCount > 0) {
-        toast.error(`Sync finished with ${errCount} error${errCount === 1 ? '' : 's'}`);
-      } else {
-        toast.success('Calendar sync complete');
-      }
-    },
-    onError: (e) => toast.error(e.response?.data?.error || 'Sync failed'),
-  });
-
-  const syncFeedMutation = useMutation({
-    mutationFn: (feedId) => api.post('/channel-manager/sync', { feed_id: feedId }),
-    onSuccess: (res) => {
-      qc.invalidateQueries({ queryKey: ['channel-manager'] });
-      qc.invalidateQueries({ queryKey: ['channel-manager-logs'] });
-      if (res.data?.ok === false) toast.error(res.data.error || 'Sync failed');
-      else toast.success('Feed synced');
-    },
-    onError: (e) => toast.error(e.response?.data?.error || 'Sync failed'),
-  });
 
   const q = search.trim().toLowerCase();
   const filtered = useMemo(
@@ -282,6 +256,16 @@ export default function CalendarSync() {
 
   const liveSelected =
     selected && (Array.isArray(units) ? units : []).find((u) => u.id === selected.id);
+
+  const lastSync = useMemo(() => {
+    let latest = null;
+    for (const u of Array.isArray(units) ? units : []) {
+      for (const f of u.feeds || []) {
+        if (f.last_sync_at && (!latest || new Date(f.last_sync_at) > new Date(latest))) latest = f.last_sync_at;
+      }
+    }
+    return latest;
+  }, [units]);
 
   const failedFeeds = useMemo(
     () =>
@@ -302,16 +286,10 @@ export default function CalendarSync() {
             Sync availability with Airbnb and Booking.com through iCal calendar links.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            className="btn-secondary"
-            disabled={refreshAllMutation.isPending}
-            onClick={() => refreshAllMutation.mutate()}
-          >
-            <RefreshCw className={`w-4 h-4 ${refreshAllMutation.isPending ? 'animate-spin' : ''}`} />
-            Sync now
-          </button>
+        <div className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">
+          <RefreshCw className="w-3.5 h-3.5" />
+          Syncs automatically every minute
+          {lastSync ? <span className="text-emerald-700/80">· last {formatWhen(lastSync)}</span> : null}
         </div>
       </div>
 
@@ -377,7 +355,7 @@ export default function CalendarSync() {
           <EmptyState
             icon={Plug}
             title="No sync logs yet"
-            description="Run Sync now to pull channel availability and write logs."
+            description="Changes from Airbnb and Booking.com appear here as soon as they sync."
           />
         ) : (
           <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
@@ -456,16 +434,6 @@ export default function CalendarSync() {
                                 </span>
                               )}
                             </button>
-                            {feed?.id ? (
-                              <button
-                                type="button"
-                                className="text-[11px] text-soul-blue hover:underline"
-                                disabled={syncFeedMutation.isPending}
-                                onClick={() => syncFeedMutation.mutate(feed.id)}
-                              >
-                                Sync
-                              </button>
-                            ) : null}
                           </div>
                         );
                       })}

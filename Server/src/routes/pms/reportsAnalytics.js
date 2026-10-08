@@ -334,7 +334,7 @@ router.get('/reports/by-unit', requireRoles('admin'), async (req, res, next) => 
     const { sql: dateSql, params } = reportFilters(req);
     const { rows } = await query(
       `SELECT
-         r.id, r.nights, r.total_amount, r.utilities_amount,
+         r.id, r.nights, r.total_amount, r.utilities_amount, r.utilities_custom,
          r.price_per_night, r.is_owner_reservation, r.booking_id, r.booking_source,
          r.broker_total, r.broker_amount_per_night, r.housekeeping_fees,
          u.id AS unit_id,

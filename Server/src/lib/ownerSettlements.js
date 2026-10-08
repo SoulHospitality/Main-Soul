@@ -1,5 +1,5 @@
 const { query } = require('../config/db');
-const { calcReservationFinancials, calcStatementFinancials, round2 } = require('./commission');
+const { calcReservationFinancials, calcStatementFinancials, reservationUtilitiesAmount, round2 } = require('./commission');
 const { FINANCIAL_EPOCH, clampFromDate } = require('./financialEpoch');
 
 
@@ -30,9 +30,7 @@ async function generateOwnerSettlement({ ownerId, periodStart, periodEnd }) {
   let commission = 0;
   let net = 0;
   for (const r of reservations) {
-    const utilitiesAmount =
-      parseFloat(r.utilities_amount) ||
-      (Number(r.nights) || 0) * (parseFloat(r.utilities_cost) || 0);
+    const utilitiesAmount = reservationUtilitiesAmount(r, r.utilities_cost);
     const fin = calcReservationFinancials(r, { ...r, utilities_amount: utilitiesAmount });
     gross += fin.ownerGross;
     commission += fin.companyCommission;

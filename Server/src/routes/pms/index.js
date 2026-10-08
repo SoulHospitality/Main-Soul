@@ -48,7 +48,7 @@ const {
   isPartnerFeedUnit,
   queuePartnerInventoryNotify,
 } = require('../../services/partnerWebhooks');
-const { calcReservationFinancials } = require('../../lib/commission');
+const { calcReservationFinancials, reservationUtilitiesAmount } = require('../../lib/commission');
 const { normalizeBookingSource } = require('../../lib/bookingSources');
 const { channelRevenueSummary } = require('../../lib/channelManager');
 const {
@@ -1806,7 +1806,10 @@ router.post(
     const utilitiesOverride = b.utilities_cost_override !== '' && b.utilities_cost_override != null
       ? parseFloat(b.utilities_cost_override)
       : null;
-    let utilitiesAmount = parseFloat(b.utilities_amount) || 0;
+    const utilitiesAmountGiven = b.utilities_amount != null && b.utilities_amount !== '';
+    const utilitiesCustom =
+      utilitiesAmountGiven || (utilitiesOverride != null && !Number.isNaN(utilitiesOverride));
+    let utilitiesAmount = utilitiesAmountGiven ? parseFloat(b.utilities_amount) || 0 : 0;
     let housekeepingFees = 0;
     let wpPostId = null;
     let unitRow = null;
@@ -1839,11 +1842,11 @@ router.post(
       }
       const { housekeepingFeeForUnit } = require('../../lib/housekeeping');
       housekeepingFees = b.housekeeping_fees != null && b.housekeeping_fees !== ''
-        ? parseFloat(b.housekeeping_fees) || housekeepingFeeForUnit(unitRow)
+        ? parseFloat(b.housekeeping_fees) || 0
         : housekeepingFeeForUnit(unitRow);
       wpPostId = unitRow?.wp_post_id || null;
       // PMS / reservation-team creates are not bound by guest project minimum stay.
-      if (!utilitiesAmount) {
+      if (!utilitiesAmountGiven) {
         const costPerNight = utilitiesOverride != null && !Number.isNaN(utilitiesOverride)
           ? utilitiesOverride
           : parseFloat(unitRow?.utilities_cost) || 0;
@@ -1965,10 +1968,10 @@ router.post(
          owner_collected_type, owner_collected_amount,
          payment_method, transfer_proof_path, transfer_proof_name,
          hold_expires_at, adults, children, nanny_count, sales_label,
-         beach_access_fees
+         beach_access_fees, utilities_custom
        ) VALUES (
          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,COALESCE($14,0),$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,
-         $25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38
+         $25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39
        )
        RETURNING *`,
       [
@@ -2013,6 +2016,7 @@ router.post(
           return resolveSalesLabel(b.sales_label || b.sales_owner || '');
         })(),
         beachAccessFeesFinal,
+        utilitiesCustom,
       ]
     );
 
@@ -2142,10 +2146,7 @@ router.patch(
     if (await blocksLongTermReservation(req.user, [existing.unit_id, b.unit_id])) {
       return res.status(403).json({ error: LONG_TERM_RESERVATION_FORBIDDEN });
     }
-    if (req.user.role !== 'admin') {
-      b.sales_person_id = req.user.id;
-    }
-    await assertAssignableSalesPerson(req.user, b.sales_person_id);
+    if (!isAdmin(req.user)) delete b.sales_person_id;
     const checkIn = b.check_in || existing.check_in;
     const checkOut = b.check_out || existing.check_out;
     const ci = new Date(checkIn);
@@ -2199,6 +2200,7 @@ router.patch(
          children = COALESCE($31, children),
          nanny_count = COALESCE($32, nanny_count),
          beach_access_fees = COALESCE($33, beach_access_fees),
+         utilities_custom = CASE WHEN $35::boolean THEN true ELSE utilities_custom END,
          updated_at = now()
        WHERE id = $34 RETURNING *`,
       [
@@ -2246,6 +2248,7 @@ router.patch(
           ? parseFloat(b.beach_access_fees) || 0
           : null,
         req.params.id,
+        b.utilities_amount != null && b.utilities_amount !== '',
       ]
     );
     if (b.broker_phone !== undefined && rows[0]) {
@@ -3338,9 +3341,7 @@ router.get('/dashboard/stats', async (req, res, next) => {
 
     let payoutsDue = 0;
     for (const r of ownerFinRows) {
-      const utilitiesAmount =
-        parseFloat(r.utilities_amount) ||
-        (Number(r.nights) || 0) * (parseFloat(r.utilities_cost) || 0);
+      const utilitiesAmount = reservationUtilitiesAmount(r, r.utilities_cost);
       const fin = calcReservationFinancials(r, { ...r, utilities_amount: utilitiesAmount });
       payoutsDue += fin.ownerNet;
     }

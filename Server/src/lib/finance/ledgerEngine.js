@@ -1,6 +1,6 @@
 const { query } = require('../../config/db');
 const { FINANCE_BOOKS_START: FINANCIAL_EPOCH } = require('../financialEpoch');
-const { calcReservationFinancials, round2 } = require('../commission');
+const { calcReservationFinancials, reservationUtilitiesAmount, round2 } = require('../commission');
 const { isWebsiteOriginReservation } = require('../reservationScope');
 const { reservationBill } = require('../reservationBill');
 const {
@@ -130,9 +130,7 @@ function makeEntry({ id, date, type, description, lines, meta }) {
 }
 
 function reservationFinancials(r) {
-  const utilitiesAmount =
-    parseFloat(r.utilities_amount) ||
-    (Number(r.nights) || 0) * (parseFloat(r.utilities_cost) || 0);
+  const utilitiesAmount = reservationUtilitiesAmount(r, r.utilities_cost);
   const fin = calcReservationFinancials(r, { ...r, utilities_amount: utilitiesAmount });
   return { fin, split: bookingSplit(fin, r) };
 }

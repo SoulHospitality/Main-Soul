@@ -6,7 +6,7 @@ const {
   clampBooksFromDate: clampFromDate,
   FINANCE_BOOKS_START: FINANCIAL_EPOCH,
 } = require('../../lib/financialEpoch');
-const { calcReservationFinancials, round2 } = require('../../lib/commission');
+const { calcReservationFinancials, reservationUtilitiesAmount, round2 } = require('../../lib/commission');
 const { isWebsiteOriginReservation } = require('../../lib/reservationScope');
 const {
   CHART_OF_ACCOUNTS,
@@ -157,7 +157,7 @@ async function computeOwnerPeriodBalance(ownerId, from, to) {
     resSql += ` AND ${period} <= $3::date`;
   }
   const { rows: resRows } = await query(
-    `SELECT r.nights, r.price_per_night, r.total_amount, r.utilities_amount,
+    `SELECT r.nights, r.price_per_night, r.total_amount, r.utilities_amount, r.utilities_custom,
             r.broker_total, r.broker_amount_per_night, r.housekeeping_fees,
             r.insurance, r.beach_access_fees, r.is_owner_reservation, r.status,
             u.commission_mode, u.company_commission_pct,
@@ -241,7 +241,7 @@ async function loadOwnerStatementData(from, to, unitId = null) {
 
   const { rows: reservations } = await query(
     `SELECT r.id, r.unit_id, r.nights, r.price_per_night, r.total_amount,
-            r.utilities_amount, r.broker_total, r.broker_amount_per_night,
+            r.utilities_amount, r.utilities_custom, r.broker_total, r.broker_amount_per_night,
             r.housekeeping_fees, r.insurance, r.beach_access_fees,
             r.is_owner_reservation, r.status,
             COALESCE(u.unit_number, u.title, 'Unit') AS unit_name,
@@ -588,9 +588,7 @@ router.get('/financial-system/overview', requireRoles('admin', 'finance', 'finan
     const today = new Date().toISOString().slice(0, 10);
 
     for (const r of rows) {
-      const utilitiesAmount =
-        parseFloat(r.utilities_amount) ||
-        (Number(r.nights) || 0) * (parseFloat(r.utilities_cost) || 0);
+      const utilitiesAmount = reservationUtilitiesAmount(r, r.utilities_cost);
       const fin = calcReservationFinancials(r, { ...r, utilities_amount: utilitiesAmount });
       const split = bookingSplit(fin, r);
       ownerTrust += split.owner_trust_credit;
@@ -715,9 +713,7 @@ router.get('/financial-system/booking-splits', requireRoles('admin', 'finance', 
   try {
     const rows = await loadReservations(req);
     const splits = rows.map((r) => {
-      const utilitiesAmount =
-        parseFloat(r.utilities_amount) ||
-        (Number(r.nights) || 0) * (parseFloat(r.utilities_cost) || 0);
+      const utilitiesAmount = reservationUtilitiesAmount(r, r.utilities_cost);
       const fin = calcReservationFinancials(r, { ...r, utilities_amount: utilitiesAmount });
       return {
         ...bookingSplit(fin, r),

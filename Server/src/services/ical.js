@@ -46,6 +46,7 @@ function parseIcalBusyDates(ics, fromIso, toIso) {
   const from = fromIso || '1970-01-01';
 
   for (const ev of events.slice(1)) {
+    if (/^STATUS:\s*CANCELL?ED\s*$/im.test(ev)) continue;
     const startMatch = /DTSTART[^:]*:([^\r\n]+)/i.exec(ev);
     const endMatch = /DTEND[^:]*:([^\r\n]+)/i.exec(ev);
     if (!startMatch) continue;
@@ -134,27 +135,40 @@ async function poolMap(items, concurrency, fn) {
   );
 }
 
-async function refreshFeedBlocks(feed, { from, to }) {
+/** Pull one feed and write only the nights that changed. Returns { total, added, removed }. */
+async function refreshFeedBlocksDetailed(feed, { from, to }) {
   const text = await fetchWithTimeout(feed.ical_url);
   if (!looksLikeIcal(text)) {
     throw new Error('Remote response is not a valid iCalendar feed');
   }
   const dates = parseIcalBusyDates(text, from, to);
+  const wanted = new Set(dates);
 
   const client = await pool.connect();
+  let added = [];
+  let removed = [];
   try {
     await client.query('BEGIN');
-    await client.query(
-      `DELETE FROM unit_ical_blocks
+    const { rows: current } = await client.query(
+      `SELECT date::text AS date FROM unit_ical_blocks
        WHERE feed_id = $1 AND date >= $2 AND date < $3`,
       [feed.id, from, to]
     );
-    for (const date of dates) {
+    const have = new Set(current.map((r) => r.date));
+    removed = [...have].filter((d) => !wanted.has(d));
+    added = dates.filter((d) => !have.has(d));
+    if (removed.length) {
+      await client.query(
+        `DELETE FROM unit_ical_blocks WHERE feed_id = $1 AND date = ANY($2::date[])`,
+        [feed.id, removed]
+      );
+    }
+    if (added.length) {
       await client.query(
         `INSERT INTO unit_ical_blocks (feed_id, wp_post_id, platform, date, updated_at)
-         VALUES ($1,$2,$3,$4,now())
+         SELECT $1, $2, $3, d, now() FROM unnest($4::date[]) AS d
          ON CONFLICT (feed_id, date) DO UPDATE SET updated_at = now(), platform = EXCLUDED.platform`,
-        [feed.id, feed.wp_post_id, feed.platform, date]
+        [feed.id, feed.wp_post_id, feed.platform, added]
       );
     }
     await client.query(
@@ -177,7 +191,11 @@ async function refreshFeedBlocks(feed, { from, to }) {
   } finally {
     client.release();
   }
-  return dates.length;
+  return { total: dates.length, added, removed };
+}
+
+async function refreshFeedBlocks(feed, range) {
+  return (await refreshFeedBlocksDetailed(feed, range)).total;
 }
 
 async function refreshIcalBlocks({ monthsAhead = MONTHS_AHEAD, unitId = null } = {}) {
@@ -262,6 +280,8 @@ module.exports = {
   fetchWithTimeout,
   getEnabledOtaFeeds,
   refreshFeedBlocks,
+  refreshFeedBlocksDetailed,
+  poolMap,
   icalSourceForPlatform,
   looksLikeIcal,
   MONTHS_AHEAD,

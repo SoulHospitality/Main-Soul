@@ -62,9 +62,77 @@ function reservationFullBill(r) {
   return reservationBill(r).total;
 }
 
+const toStr = (v) => (v != null && v !== '' ? String(v) : '');
+
+function utilitiesPerNightFor(r) {
+  if (r.utilities_cost_override != null && r.utilities_cost_override !== '') return String(r.utilities_cost_override);
+  const amount = parseFloat(r.utilities_amount) || 0;
+  const n = Number(r.nights) || calcNights(String(r.check_in || '').slice(0, 10), String(r.check_out || '').slice(0, 10));
+  if ((amount || r.utilities_custom) && n > 0) return String(Math.round((amount / n) * 100) / 100);
+  return '';
+}
+
+export function reservationToEditForm(r) {
+  return {
+    unit_id: r.unit_id, guest_name: r.guest_name || '', guest_email: r.guest_email || '',
+    guest_phone: r.guest_phone || '', guest_nationality: r.guest_nationality || '',
+    adults: r.adults != null ? String(r.adults) : '2',
+    children: r.children != null ? String(r.children) : '0',
+    nanny_count: r.nanny_count != null ? String(r.nanny_count) : '0',
+    check_in: String(r.check_in || '').slice(0, 10), check_out: String(r.check_out || '').slice(0, 10),
+    price_per_night: toStr(r.price_per_night),
+    total_amount: toStr(r.total_amount),
+    down_payment: toStr(r.down_payment),
+    housekeeping_fees: toStr(r.housekeeping_fees),
+    insurance: toStr(r.insurance),
+    booking_source: r.booking_source || '',
+    sales_person_id: r.sales_person_id ? String(r.sales_person_id) : '',
+    sales_person_name: r.sales_person_name || '',
+    is_owner_reservation: !!r.is_owner_reservation,
+    notes: r.notes || '', status: r.status,
+    owner_collected_type: r.owner_collected_type || '',
+    owner_collected_amount: toStr(r.owner_collected_amount),
+    utilities_cost_override: utilitiesPerNightFor(r),
+    beach_access_fees: toStr(r.beach_access_fees),
+    broker_name: r.broker_name || '',
+    broker_phone: r.broker_phone || '',
+    broker_amount_per_night: toStr(r.broker_amount_per_night),
+  };
+}
+
+/** Edit payload: blank money fields mean 0; utilities are only sent once entered. */
+export function reservationEditPayload(form) {
+  const { sales_person_name: _salesName, ...rest } = form;
+  const num = (v) => (v === '' || v == null ? 0 : Number(v) || 0);
+  const int = (v) => Math.max(0, parseInt(v, 10) || 0);
+  const payload = {
+    ...rest,
+    adults: int(form.adults),
+    children: int(form.children),
+    nanny_count: int(form.nanny_count),
+    housekeeping_fees: num(form.housekeeping_fees),
+    insurance: num(form.insurance),
+    down_payment: num(form.down_payment),
+    beach_access_fees: form.is_owner_reservation ? 0 : num(form.beach_access_fees),
+    broker_amount_per_night: num(form.broker_amount_per_night),
+    owner_collected_amount: num(form.owner_collected_amount),
+  };
+  const perNight = form.utilities_cost_override ?? '';
+  if (perNight === '') {
+    delete payload.utilities_cost_override;
+    delete payload.utilities_amount;
+  } else {
+    const nights = calcNights(form.check_in, form.check_out);
+    payload.utilities_cost_override = Number(perNight) || 0;
+    payload.utilities_amount = form.is_owner_reservation ? 0 : Math.round((Number(perNight) || 0) * nights * 100) / 100;
+  }
+  return payload;
+}
+
 export function ReservationForm({ form, setForm, units, users, isNew, transferProof, onTransferProofChange, editId, allowPastDates, lockSalesPerson = false, currentUserName = '' }) {
   
   const selectedUnit = units.find(u => String(u.id) === String(form.unit_id));
+  const skipTotalSync = useRef(!isNew);
 
   useEffect(() => {
     if (selectedUnit && isNew && !form.price_per_night) {
@@ -72,17 +140,14 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
     }
   }, [form.unit_id]);
 
-  
-  useEffect(() => {
-    if (!selectedUnit) return;
-    const fee = housekeepingFeeForUnit(selectedUnit);
-    setForm((f) => (Number(f.housekeeping_fees) === fee ? f : { ...f, housekeeping_fees: String(fee) }));
-  }, [form.unit_id, selectedUnit?.property_type, selectedUnit?.type]);
-
   const nights = calcNights(form.check_in, form.check_out);
 
   
   useEffect(() => {
+    if (skipTotalSync.current) {
+      skipTotalSync.current = false;
+      return;
+    }
     if (nights > 0 && form.price_per_night) {
       const total = nights * parseFloat(form.price_per_night);
       setForm(f => ({ ...f, total_amount: total.toFixed(2) }));
@@ -91,9 +156,10 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
 
   const total = parseFloat(form.total_amount) || 0;
   const downPmt = parseFloat(form.down_payment) || 0;
-  const hkFees = selectedUnit
-    ? housekeepingFeeForUnit(selectedUnit)
-    : (parseFloat(form.housekeeping_fees) || 0);
+  const defaultHkFees = selectedUnit ? housekeepingFeeForUnit(selectedUnit) : 0;
+  const hkFees = form.housekeeping_fees !== '' && form.housekeeping_fees != null
+    ? (parseFloat(form.housekeeping_fees) || 0)
+    : defaultHkFees;
   const ins     = parseFloat(form.insurance) || 0;
   const ownerCollectedAmt = parseFloat(form.owner_collected_amount) || 0;
 
@@ -115,7 +181,15 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
         <div>
           <label className="label">Unit *</label>
           <SearchableSelect
-            value={form.unit_id} onChange={v => setForm(f => ({ ...f, unit_id: v, price_per_night: '' }))}
+            value={form.unit_id} onChange={v => {
+              const next = units.find(u => String(u.id) === String(v));
+              setForm(f => ({
+                ...f,
+                unit_id: v,
+                price_per_night: isNew ? '' : f.price_per_night,
+                housekeeping_fees: next ? String(housekeepingFeeForUnit(next)) : f.housekeeping_fees,
+              }));
+            }}
             placeholder="Select unit…"
             options={[{ value: '', label: 'Select unit…' }, ...units.map(u => ({ value: String(u.id), label: unitSelectLabel(u) }))]}
           />
@@ -133,7 +207,7 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
         <div><label className="label">Email</label><input type="email" className="input" value={form.guest_email} onChange={e => setForm(f => ({ ...f, guest_email: e.target.value }))} /></div>
         <div><label className="label">Nationality</label><input className="input" value={form.guest_nationality} onChange={e => setForm(f => ({ ...f, guest_nationality: e.target.value }))} /></div>
         <div>
-          <label className="label">Adults {!form.is_owner_reservation ? '*' : ''}</label>
+          <label className="label">Adults {isNew && !form.is_owner_reservation ? '*' : ''}</label>
           <input type="number" min="0" className="input" value={form.adults ?? '2'} onChange={e => setForm(f => ({ ...f, adults: e.target.value }))} />
         </div>
         <div>
@@ -189,6 +263,7 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
             onChange={(ci, co) => setForm(f => ({ ...f, check_in: ci, check_out: co }))}
             unitId={form.unit_id}
             excludeId={editId}
+            allowPastDates={!isNew}
           />
         )}
         <input type="hidden" value={form.check_in} />
@@ -216,12 +291,12 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
           </div>
           <div>
             <label className="label">Housekeeping Fees (EGP)</label>
-            <div className="input bg-gray-50 text-gray-700 font-medium">
-              {selectedUnit
-                ? `EGP ${hkFees.toLocaleString('en-EG')} (${String(selectedUnit.type || selectedUnit.property_type || '').toLowerCase() === 'villa' ? 'Villa' : 'Standard'})`
-                : 'Select a unit'}
-            </div>
-            <p className="text-xs text-gray-400 mt-1">Fixed: 1,500 EGP · Villas 2,500 EGP</p>
+            <input type="number" min="0" step="0.01" className="input" value={form.housekeeping_fees ?? ''}
+              onChange={e => setForm(f => ({ ...f, housekeeping_fees: e.target.value }))}
+              placeholder={selectedUnit ? String(defaultHkFees) : '0.00'} />
+            {selectedUnit && (
+              <p className="text-xs text-gray-400 mt-1">Unit default EGP {defaultHkFees.toLocaleString('en-EG')}</p>
+            )}
           </div>
           <div>
             <label className="label">Insurance (EGP)</label>
@@ -378,24 +453,15 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
               <input
                 type="number" min="0" step="0.01"
                 className="input w-36 text-sm"
-                value={form.utilities_cost_override}
+                value={form.utilities_cost_override ?? ''}
                 onChange={e => setForm(f => ({ ...f, utilities_cost_override: e.target.value }))}
-                placeholder={selectedUnit?.utilities_cost ? `${selectedUnit.utilities_cost} (default)` : '0.00'}
+                placeholder="Enter amount"
               />
-              {form.utilities_cost_override && (
-                <button
-                  type="button"
-                  onClick={() => setForm(f => ({ ...f, utilities_cost_override: '' }))}
-                  className="text-xs text-blue-500 hover:text-blue-700 underline"
-                >reset to default</button>
-              )}
             </div>
             <div className="text-xs text-blue-700">
-              {form.utilities_cost_override
-                ? <>Using override: <strong>EGP {form.utilities_cost_override}/night</strong>{nights > 0 && ` → total EGP ${(parseFloat(form.utilities_cost_override) * nights).toFixed(2)}`}</>
-                : selectedUnit?.utilities_cost > 0
-                  ? <>Unit default: <strong>EGP {selectedUnit.utilities_cost}/night</strong>{nights > 0 && ` → total EGP ${(selectedUnit.utilities_cost * nights).toFixed(2)}`}</>
-                  : 'Leave blank to use unit default (currently EGP 0)'
+              {(form.utilities_cost_override ?? '') !== ''
+                ? <>Utilities: <strong>EGP {Number(form.utilities_cost_override) || 0}/night</strong>{nights > 0 && ` → total EGP ${((parseFloat(form.utilities_cost_override) || 0) * nights).toFixed(2)}`}</>
+                : <>Not set — enter the utilities for this stay (0 if none){selectedUnit?.utilities_cost > 0 ? `. Unit default is EGP ${selectedUnit.utilities_cost}/night.` : '.'}</>
               }
             </div>
           </div>
@@ -411,14 +477,22 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
           <label htmlFor="is_owner_res" className="text-sm font-medium text-amber-800">Owner Reservation — no utilities deduction</label>
         </div>
         <div>
-          <label className="label">Sales Person {!form.is_owner_reservation && <span className="text-red-500">*</span>}</label>
+          <label className="label">Sales Person {isNew && !form.is_owner_reservation && <span className="text-red-500">*</span>}</label>
           {lockSalesPerson ? (
-            <div className="input bg-gray-50 text-gray-700">{currentUserName || 'Assigned to you'}</div>
+            <div className="input bg-gray-50 text-gray-700">
+              {isNew ? (currentUserName || 'Assigned to you') : (form.sales_person_name || currentUserName || '—')}
+            </div>
           ) : (
             <SearchableSelect
-              value={form.sales_person_id} onChange={v => setForm(f => ({ ...f, sales_person_id: v }))}
+              value={form.sales_person_id ? String(form.sales_person_id) : ''} onChange={v => setForm(f => ({ ...f, sales_person_id: v }))}
               placeholder="Select sales person…"
-              options={[{ value: '', label: 'None' }, ...users.map(u => ({ value: String(u.id), label: u.full_name }))]}
+              options={[
+                { value: '', label: 'None' },
+                ...users.map(u => ({ value: String(u.id), label: u.full_name || u.username })),
+                ...(form.sales_person_id && !users.some(u => String(u.id) === String(form.sales_person_id))
+                  ? [{ value: String(form.sales_person_id), label: form.sales_person_name || `User #${form.sales_person_id}` }]
+                  : []),
+              ]}
             />
           )}
         </div>
@@ -1187,36 +1261,17 @@ export default function Reservations() {
     setModal('drawer');
   };
   const openEdit = (r) => {
-    setForm({
-      unit_id: r.unit_id, guest_name: r.guest_name, guest_email: r.guest_email || '',
-      guest_phone: r.guest_phone || '', guest_nationality: r.guest_nationality || '',
-      adults: r.adults != null ? String(r.adults) : '2',
-      children: r.children != null ? String(r.children) : '0',
-      nanny_count: r.nanny_count != null ? String(r.nanny_count) : '0',
-      check_in: r.check_in, check_out: r.check_out,
-      price_per_night: r.price_per_night || '',
-      total_amount: r.total_amount,
-      down_payment: r.down_payment || '',
-      housekeeping_fees: r.housekeeping_fees || '',
-      insurance: r.insurance || '',
-      booking_source: r.booking_source || '',
-      sales_person_id: r.sales_person_id || '',
-      is_owner_reservation: !!r.is_owner_reservation,
-      notes: r.notes || '', status: r.status,
-      owner_collected_type:   r.owner_collected_type   || '',
-      owner_collected_amount: r.owner_collected_amount || '',
-      utilities_cost_override: r.utilities_cost_override != null ? String(r.utilities_cost_override) : '',
-      beach_access_fees: r.beach_access_fees != null ? String(r.beach_access_fees) : '',
-      broker_name: r.broker_name || '',
-      broker_phone: r.broker_phone || '',
-      broker_amount_per_night: r.broker_amount_per_night != null ? String(r.broker_amount_per_night) : '',
-    });
+    setForm(reservationToEditForm(r));
     setEditId(r.id); setModal('form');
   };
 
   const handleSave = () => {
     if (!form.guest_phone?.trim())
       return toast.error('Mobile number is required');
+    if (editId) {
+      saveMutation.mutate(reservationEditPayload(form));
+      return;
+    }
     if (!form.is_owner_reservation && !form.sales_person_id)
       return toast.error('Please select a Sales Person or mark as Owner Reservation');
     const selectedUnit = units.find((u) => String(u.id) === String(form.unit_id));
@@ -1225,7 +1280,9 @@ export default function Reservations() {
     const nannyCount = Math.max(0, parseInt(form.nanny_count, 10) || 0);
     if (!form.is_owner_reservation && adults < 1)
       return toast.error('At least 1 adult is required');
-    if (!editId && !form.is_owner_reservation && form.payment_method === 'other' && !form.payment_method_note?.trim())
+    if (!form.is_owner_reservation && (form.utilities_cost_override ?? '') === '')
+      return toast.error('Enter the utilities per night for this stay (0 if none)');
+    if (!form.is_owner_reservation && form.payment_method === 'other' && !form.payment_method_note?.trim())
       return toast.error('Add a comment for the Other payment method');
     const payload = {
       ...form,
@@ -1244,7 +1301,7 @@ export default function Reservations() {
           ? Number(form.beach_access_fees)
           : undefined,
     };
-    if (!editId && transferProof) {
+    if (transferProof) {
       const fd = new FormData();
       Object.entries(payload).forEach(([k, v]) => {
         if (v !== '' && v !== null && v !== undefined)
