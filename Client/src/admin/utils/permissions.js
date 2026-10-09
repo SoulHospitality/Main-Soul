@@ -334,6 +334,7 @@ const PERMISSIONS = {
     'units:read',
     'units:write',
     'reservations:read',
+    'schedule:read',
     'reservations:or_checklist',
     'owner_statement:read',
     'owner_blocks:write',
@@ -375,6 +376,7 @@ const PAGE_ACCESS = {
   owners_relations: new Set([
     'units',
     'reservations',
+    'schedule',
     'owner_statement',
     'owner_blocks',
     'owner_comments',

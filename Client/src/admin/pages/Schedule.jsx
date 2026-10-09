@@ -816,7 +816,7 @@ function BulkPriceModal({ open, onClose, unitCount, onSave, saving }) {
 export default function Schedule() {
   const qc = useQueryClient();
   const { user } = useAuth();
-  const { canEditSchedulePricing, canManageReservations, canReserveLongTermUnits, canWriteSchedule, isManualReservations, isWebsiteReservations, isReservationsManager, isAdmin } = usePermissions();
+  const { canEditSchedulePricing, canManageReservations, canReserveLongTermUnits, canWriteSchedule, isManualReservations, isWebsiteReservations, isReservationsManager, isAdmin, isOwnersRelations } = usePermissions();
   const TODAY = todayStr();
   const TOMORROW = addDays(TODAY, 1);
   const now = new Date();
@@ -2475,7 +2475,7 @@ export default function Schedule() {
         reservationId={detailResId}
         seed={detailSeed}
         canWrite={canWrite}
-        showCommission={isAdmin}
+        showCommission={isAdmin || isOwnersRelations}
         cancelling={cancelReservationMutation.isPending}
         deleting={deleteReservationMutation.isPending}
         onMoveUnit={(res) => {
