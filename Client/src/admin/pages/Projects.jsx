@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { ImagePlus, MapPin, Pencil, Plus, Trash2, Upload, Waves } from 'lucide-react';
+import { ArrowDown, ArrowUp, ImagePlus, MapPin, Pencil, Plus, Trash2, Upload, Waves } from 'lucide-react';
 
 import { PROJECT_CATALOG_KEY } from '../../hooks/useProjectCatalog';
 import TagSelect from '../components/ui/TagSelect';
@@ -399,6 +399,33 @@ export default function Projects() {
     onError: (err) => toast.error(err.message),
   });
 
+  const reorderMutation = useMutation({
+    mutationFn: (orders) =>
+      catalogFetch('/projects/reorder', {
+        method: 'PUT',
+        body: JSON.stringify({ orders }),
+      }),
+    onSuccess: () => {
+      toast.success('Homepage project order updated');
+      refetch();
+      qc.invalidateQueries({ queryKey: PROJECT_CATALOG_KEY });
+      qc.invalidateQueries({ queryKey: ['unit-projects'] });
+      qc.invalidateQueries({ queryKey: ['projects'] });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  function moveProject(itemIndex, direction) {
+    const list = [...selectedItems];
+    const targetIndex = itemIndex + direction;
+    if (targetIndex < 0 || targetIndex >= list.length) return;
+    const temp = list[itemIndex];
+    list[itemIndex] = list[targetIndex];
+    list[targetIndex] = temp;
+    const orders = list.map((item, i) => ({ id: item.id, sort_order: i }));
+    reorderMutation.mutate(orders);
+  }
+
   function clearCreateImage() {
     if (createImagePreview) URL.revokeObjectURL(createImagePreview);
     setCreateImageFile(null);
@@ -761,7 +788,7 @@ export default function Projects() {
             </div>
           ) : (
             <div className="space-y-4 p-4">
-              {selectedItems.map((row) => {
+              {selectedItems.map((row, idx) => {
                 const facilities = Array.isArray(row.facilities) ? row.facilities : [];
                 const isEditing = editingId === row.id;
                 const preview = isEditing && editImagePreview ? editImagePreview : row.image_url;
@@ -800,7 +827,27 @@ export default function Projects() {
                           ) : null}
                         </div>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200" title="Reorder Homepage Projects">
+                          <button
+                            type="button"
+                            title="Move Up on Homepage"
+                            disabled={idx === 0 || reorderMutation.isPending}
+                            onClick={() => moveProject(idx, -1)}
+                            className="p-1.5 text-slate-600 hover:text-slate-900 disabled:opacity-30 disabled:hover:text-slate-600 rounded transition-colors"
+                          >
+                            <ArrowUp className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            title="Move Down on Homepage"
+                            disabled={idx === selectedItems.length - 1 || reorderMutation.isPending}
+                            onClick={() => moveProject(idx, 1)}
+                            className="p-1.5 text-slate-600 hover:text-slate-900 disabled:opacity-30 disabled:hover:text-slate-600 rounded transition-colors"
+                          >
+                            <ArrowDown className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                         {!isEditing ? (
                           <button
                             type="button"

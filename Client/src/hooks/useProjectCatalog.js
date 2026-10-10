@@ -51,10 +51,25 @@ export function useProjectCatalog() {
         : { destinations: [], projectsByDestination: {}, items: [] };
 
   const projectCards = useMemo(() => {
+    if (Array.isArray(resolved.items) && resolved.items.length > 0) {
+      return resolved.items.map((item) => {
+        const fallback = COMPOUNDS.find((c) => c.name === item.name);
+        return {
+          id: item.id || `${item.destination}-${item.name}`,
+          name: item.name,
+          destination: item.destination,
+          slug: String(item.name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+          image: item.image_url || fallback?.image || '/soul-brand/coast-1.jpg',
+          area: item.destination,
+          sortOrder: Number(item.sort_order) || 0,
+        };
+      });
+    }
+
     const cards = [];
     for (const destination of resolved.destinations) {
       for (const name of resolved.projectsByDestination[destination] || []) {
-        const item = resolved.items.find(
+        const item = (resolved.items || []).find(
           (r) => r.destination === destination && r.name === name
         );
         const fallback = COMPOUNDS.find((c) => c.name === name);
@@ -65,6 +80,7 @@ export function useProjectCatalog() {
           slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
           image: item?.image_url || fallback?.image || '/soul-brand/coast-1.jpg',
           area: destination,
+          sortOrder: Number(item?.sort_order) || 0,
         });
       }
     }

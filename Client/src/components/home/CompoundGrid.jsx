@@ -31,17 +31,14 @@ export default function CompoundGrid({ index, showHead = true, limit = 0 }) {
   const [active, setActive] = useState(0);
 
   const cards = useMemo(() => {
-    const mapped = projectCards.map((p) => ({
+    return projectCards.map((p) => ({
       id: p.id,
       name: p.name,
       destination: p.destination,
       image: p.image || '/soul-brand/coast-2.jpg',
       phraseKey: phraseKeyForName(p.name),
+      sortOrder: p.sortOrder ?? 0,
     }));
-    const foukaIdx = mapped.findIndex((c) => /fouka/i.test(c.name));
-    if (foukaIdx <= 0) return mapped;
-    const [fouka] = mapped.splice(foukaIdx, 1);
-    return [fouka, ...mapped];
   }, [projectCards]);
 
   const head = !showHead ? null : (

@@ -71,11 +71,6 @@ function buildCatalog(rows) {
     }
   }
 
-  destinations.sort((a, b) => a.localeCompare(b));
-  for (const key of Object.keys(projectsByDestination)) {
-    projectsByDestination[key].sort((a, b) => a.localeCompare(b));
-  }
-
   return { destinations, projectsByDestination };
 }
 
@@ -495,6 +490,30 @@ router.delete(
   }
 );
 
+
+router.put('/reorder', authStaff, requireRoles(...PROJECT_EDITOR_ROLES), async (req, res, next) => {
+  try {
+    const orders = req.body?.orders || req.body?.items || req.body || [];
+    const list = Array.isArray(orders) ? orders : [];
+    if (!list.length) {
+      return res.status(400).json({ error: 'orders array is required' });
+    }
+
+    for (let i = 0; i < list.length; i++) {
+      const item = list[i];
+      if (typeof item === 'object' && item !== null && item.id) {
+        const orderVal = Number.isInteger(Number(item.sort_order)) ? Number(item.sort_order) : i;
+        await query('UPDATE location_projects SET sort_order = $1, updated_at = now() WHERE id = $2', [orderVal, item.id]);
+      } else if (typeof item === 'number' || typeof item === 'string') {
+        await query('UPDATE location_projects SET sort_order = $1, updated_at = now() WHERE id = $2', [i, item]);
+      }
+    }
+
+    res.json(catalogResponse(await loadCatalogRows()));
+  } catch (err) {
+    next(err);
+  }
+});
 
 router.delete('/:id', authStaff, requireRoles(...PROJECT_EDITOR_ROLES), async (req, res, next) => {
   try {
