@@ -6,6 +6,7 @@ import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import WebsitePopupSection from '../components/WebsitePopupSection';
+import { PROJECT_CATALOG_KEY } from '../../hooks/useProjectCatalog';
 
 const TABS = [
   { id: 'home', label: 'Homepage' },
@@ -298,6 +299,7 @@ function PropertyOrderTab() {
     onSuccess: () => {
       toast.success('Property order published');
       qc.invalidateQueries({ queryKey: ['site-settings-unit-order'] });
+      qc.invalidateQueries({ queryKey: PROJECT_CATALOG_KEY });
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Save failed'),
   });
@@ -307,6 +309,7 @@ function PropertyOrderTab() {
       toast.success('Order reset to random');
       setConfirmReset(false);
       qc.invalidateQueries({ queryKey: ['site-settings-unit-order'] });
+      qc.invalidateQueries({ queryKey: PROJECT_CATALOG_KEY });
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Reset failed'),
   });

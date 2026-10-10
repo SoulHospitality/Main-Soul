@@ -415,6 +415,33 @@ export default function Projects() {
     onError: (err) => toast.error(err.message),
   });
 
+  const reorderDestinationsMutation = useMutation({
+    mutationFn: (destinationsList) =>
+      catalogFetch('/projects/reorder-destinations', {
+        method: 'PUT',
+        body: JSON.stringify({ destinations: destinationsList }),
+      }),
+    onSuccess: () => {
+      toast.success('Destination order updated');
+      refetch();
+      qc.invalidateQueries({ queryKey: PROJECT_CATALOG_KEY });
+      qc.invalidateQueries({ queryKey: ['unit-projects'] });
+      qc.invalidateQueries({ queryKey: ['projects'] });
+      qc.invalidateQueries({ queryKey: ['site-settings-unit-order'] });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  function moveDestination(itemIndex, direction) {
+    const list = [...destinations];
+    const targetIndex = itemIndex + direction;
+    if (targetIndex < 0 || targetIndex >= list.length) return;
+    const temp = list[itemIndex];
+    list[itemIndex] = list[targetIndex];
+    list[targetIndex] = temp;
+    reorderDestinationsMutation.mutate(list);
+  }
+
   function moveProject(itemIndex, direction) {
     const list = [...selectedItems];
     const targetIndex = itemIndex + direction;
@@ -659,7 +686,7 @@ export default function Projects() {
           ) : destinations.length === 0 ? (
             <p className="text-sm text-gray-400 px-1 py-2">No destinations left.</p>
           ) : (
-            destinations.map((d) => (
+            destinations.map((d, di) => (
               <div
                 key={d}
                 className={`group flex items-center gap-1 rounded-lg ${
@@ -685,6 +712,34 @@ export default function Projects() {
                     {(projectsByDestination[d] || []).length}
                   </span>
                 </button>
+                <div className="flex items-center gap-0.5 opacity-70 group-hover:opacity-100">
+                  <button
+                    type="button"
+                    title={`Move ${d} up`}
+                    aria-label={`Move ${d} up`}
+                    disabled={di === 0 || reorderDestinationsMutation.isPending}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      moveDestination(di, -1);
+                    }}
+                    className="rounded p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-700 disabled:opacity-30 transition-colors"
+                  >
+                    <ArrowUp className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    title={`Move ${d} down`}
+                    aria-label={`Move ${d} down`}
+                    disabled={di === destinations.length - 1 || reorderDestinationsMutation.isPending}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      moveDestination(di, 1);
+                    }}
+                    className="rounded p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-700 disabled:opacity-30 transition-colors"
+                  >
+                    <ArrowDown className="w-3.5 h-3.5" />
+                  </button>
+                </div>
                 <button
                   type="button"
                   title={`Edit ${d}`}

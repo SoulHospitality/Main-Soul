@@ -8,7 +8,7 @@ const {
   syncUnitsMinNightsForProject,
 } = require('../lib/minStay');
 const { normalizeIncomingPolicy } = require('../lib/beachAccess');
-const { getUnitOrder } = require('../lib/siteSettings');
+const { getUnitOrder, setSetting, UNIT_ORDER_KEY } = require('../lib/siteSettings');
 const {
   upload,
   attachCloudinaryUrls,
@@ -146,12 +146,20 @@ router.get('/catalog', async (_req, res, next) => {
     const rows = await loadCatalogRows();
     const payload = catalogResponse(rows);
     const unitOrder = await getUnitOrder();
-    if (unitOrder.mode === 'custom' && unitOrder.destinations.length) {
+    if (unitOrder.destinations && unitOrder.destinations.length) {
       const rank = (d) => {
         const idx = unitOrder.destinations.findIndex((x) => x.toLowerCase() === String(d).toLowerCase());
         return idx === -1 ? Number.MAX_SAFE_INTEGER : idx;
       };
-      payload.data.destinations = [...payload.data.destinations].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+      payload.data.destinations = [...payload.data.destinations].sort(
+        (a, b) => rank(a) - rank(b) || a.localeCompare(b)
+      );
+      payload.data.items = [...payload.data.items].sort((a, b) => {
+        const rA = rank(a.destination);
+        const rB = rank(b.destination);
+        if (rA !== rB) return rA - rB;
+        return (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0) || String(a.name).localeCompare(String(b.name));
+      });
     }
     res.json(payload);
   } catch (err) {
@@ -489,6 +497,73 @@ router.delete(
     }
   }
 );
+
+
+router.put('/reorder-destinations', authStaff, requireRoles(...PROJECT_EDITOR_ROLES), async (req, res, next) => {
+  try {
+    const raw = req.body?.destinations || req.body?.orders || req.body?.items || [];
+    const newDestOrder = (Array.isArray(raw) ? raw : []).map(normalizeText).filter(Boolean);
+    if (!newDestOrder.length) {
+      return res.status(400).json({ error: 'destinations array is required' });
+    }
+
+    const { rows } = await query(
+      `SELECT id, destination, sort_order FROM location_projects ORDER BY sort_order ASC, destination ASC, name ASC`
+    );
+
+    const destinationGroups = {};
+    for (const row of rows) {
+      const dest = row.destination;
+      if (!destinationGroups[dest]) destinationGroups[dest] = [];
+      destinationGroups[dest].push(row);
+    }
+
+    const lowerNewDest = newDestOrder.map((x) => x.toLowerCase());
+    const allKnownDestinations = [
+      ...newDestOrder,
+      ...Object.keys(destinationGroups).filter((d) => !lowerNewDest.includes(d.toLowerCase())),
+    ];
+
+    let globalSortOrder = 0;
+    for (const dest of allKnownDestinations) {
+      const matchedKey = Object.keys(destinationGroups).find((k) => k.toLowerCase() === dest.toLowerCase());
+      const itemsInDest = matchedKey ? destinationGroups[matchedKey] : [];
+      for (const item of itemsInDest) {
+        await query('UPDATE location_projects SET sort_order = $1, updated_at = now() WHERE id = $2', [
+          globalSortOrder++,
+          item.id,
+        ]);
+      }
+    }
+
+    await setSetting(
+      UNIT_ORDER_KEY,
+      {
+        mode: 'custom',
+        destinations: allKnownDestinations,
+      },
+      req.user?.id
+    );
+
+    const nextRows = await loadCatalogRows();
+    const payload = catalogResponse(nextRows);
+    const rank = (d) => {
+      const idx = allKnownDestinations.findIndex((x) => x.toLowerCase() === String(d).toLowerCase());
+      return idx === -1 ? Number.MAX_SAFE_INTEGER : idx;
+    };
+    payload.data.destinations = [...payload.data.destinations].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+    payload.data.items = [...payload.data.items].sort((a, b) => {
+      const rA = rank(a.destination);
+      const rB = rank(b.destination);
+      if (rA !== rB) return rA - rB;
+      return (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0) || String(a.name).localeCompare(String(b.name));
+    });
+
+    res.json(payload);
+  } catch (err) {
+    next(err);
+  }
+});
 
 
 router.put('/reorder', authStaff, requireRoles(...PROJECT_EDITOR_ROLES), async (req, res, next) => {
