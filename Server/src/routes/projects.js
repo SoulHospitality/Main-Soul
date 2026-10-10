@@ -529,21 +529,34 @@ router.put('/reorder-destinations', authStaff, requireRoles(...PROJECT_EDITOR_RO
       const matchedKey = Object.keys(destinationGroups).find((k) => k.toLowerCase() === dest.toLowerCase());
       const itemsInDest = matchedKey ? destinationGroups[matchedKey] : [];
       for (const item of itemsInDest) {
-        await query('UPDATE location_projects SET sort_order = $1, updated_at = now() WHERE id = $2', [
-          globalSortOrder++,
-          item.id,
-        ]);
+        const orderVal = globalSortOrder++;
+        try {
+          await query('UPDATE location_projects SET sort_order = $1, updated_at = now() WHERE id = $2', [
+            orderVal,
+            item.id,
+          ]);
+        } catch (err) {
+          if (err.code === '42703') {
+            await query('UPDATE location_projects SET sort_order = $1 WHERE id = $2', [orderVal, item.id]);
+          } else {
+            throw err;
+          }
+        }
       }
     }
 
-    await setSetting(
-      UNIT_ORDER_KEY,
-      {
-        mode: 'custom',
-        destinations: allKnownDestinations,
-      },
-      req.user?.id
-    );
+    try {
+      await setSetting(
+        UNIT_ORDER_KEY,
+        {
+          mode: 'custom',
+          destinations: allKnownDestinations,
+        },
+        req.user?.id
+      );
+    } catch (err) {
+      console.error('Failed to set site setting unit order:', err?.message || err);
+    }
 
     const nextRows = await loadCatalogRows();
     const payload = catalogResponse(nextRows);
@@ -576,11 +589,28 @@ router.put('/reorder', authStaff, requireRoles(...PROJECT_EDITOR_ROLES), async (
 
     for (let i = 0; i < list.length; i++) {
       const item = list[i];
-      if (typeof item === 'object' && item !== null && item.id) {
-        const orderVal = Number.isInteger(Number(item.sort_order)) ? Number(item.sort_order) : i;
-        await query('UPDATE location_projects SET sort_order = $1, updated_at = now() WHERE id = $2', [orderVal, item.id]);
+      let itemId = null;
+      let orderVal = i;
+
+      if (typeof item === 'object' && item !== null) {
+        itemId = item.id;
+        orderVal = Number.isInteger(Number(item.sort_order)) ? Number(item.sort_order) : i;
       } else if (typeof item === 'number' || typeof item === 'string') {
-        await query('UPDATE location_projects SET sort_order = $1, updated_at = now() WHERE id = $2', [i, item]);
+        itemId = item;
+      }
+
+      if (!itemId) continue;
+
+      try {
+        await query('UPDATE location_projects SET sort_order = $1, updated_at = now() WHERE id = $2', [orderVal, itemId]);
+      } catch (err) {
+        if (err.code === '42703') {
+          await query('UPDATE location_projects SET sort_order = $1 WHERE id = $2', [orderVal, itemId]);
+        } else if (err.code === '22P02') {
+          await query('UPDATE location_projects SET sort_order = $1 WHERE lower(name) = lower($2)', [orderVal, String(itemId)]);
+        } else {
+          throw err;
+        }
       }
     }
 
