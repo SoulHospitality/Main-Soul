@@ -142,6 +142,7 @@ router.use(require('./promoCodesAdmin'));
 router.use(require('./sitePopupAdmin'));
 router.use(require('./siteSettingsAdmin'));
 router.use(require('./hr'));
+router.use(require('./inbox'));
 
 function sendList(res, rows) {
   res.json(rows);

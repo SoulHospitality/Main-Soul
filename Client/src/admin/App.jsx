@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { InboxProvider } from './inbox/InboxContext';
 import Layout from './components/layout/Layout';
 import OwnerLayout from './components/layout/OwnerLayout';
 import LoadingSpinner from './components/ui/LoadingSpinner';
@@ -54,6 +55,11 @@ const SitePerformance = lazy(() => import('./pages/SitePerformance'));
 const WebsiteControl = lazy(() => import('./pages/WebsiteControl'));
 const Tasks = lazy(() => import('./pages/Tasks'));
 const PettyCash = lazy(() => import('./pages/PettyCash'));
+
+const InboxPage = lazy(() => import('./pages/Inbox'));
+const LeadsPage = lazy(() => import('./pages/Leads'));
+const InboxAnalyticsPage = lazy(() => import('./pages/InboxAnalytics'));
+const InboxSettingsPage = lazy(() => import('./pages/InboxSettings'));
 
 function PageFallback() {
   return (
@@ -211,6 +217,11 @@ function AppRoutes() {
       <Route path="owner/comments" element={<ProtectedRoute page="owner_portal_comments"><OwnerPortalComments /></ProtectedRoute>} />
       <Route path="owner-comments" element={<ProtectedRoute page="owner_comments"><OwnerComments /></ProtectedRoute>} />
       <Route path="damage-reports" element={<ProtectedRoute page="damage_reports"><OpsDamageReports /></ProtectedRoute>} />
+      <Route path="inbox" element={<ProtectedRoute page="inbox"><InboxPage /></ProtectedRoute>} />
+      <Route path="leads" element={<ProtectedRoute page="leads"><LeadsPage /></ProtectedRoute>} />
+      <Route path="inbox-analytics" element={<ProtectedRoute page="inbox_analytics"><InboxAnalyticsPage /></ProtectedRoute>} />
+      <Route path="inbox-settings" element={<ProtectedRoute page="inbox_settings"><InboxSettingsPage /></ProtectedRoute>} />
+
       <Route path="profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
       <Route index element={<RoleRedirect />} />
       <Route path="*" element={<RoleRedirect />} />
@@ -221,7 +232,9 @@ function AppRoutes() {
 export default function AdminApp() {
   return (
     <AuthProvider>
-      <AppRoutes />
+      <InboxProvider>
+        <AppRoutes />
+      </InboxProvider>
     </AuthProvider>
   );
 }

@@ -69,6 +69,8 @@ function createApp() {
   );
   app.use(express.urlencoded({ extended: true }));
 
+  app.use('/api/inbox/webhooks', require('./routes/inboxWebhooks'));
+
   app.use(
     '/api/',
     rateLimit({
@@ -76,6 +78,8 @@ function createApp() {
       max: 800,
       standardHeaders: true,
       legacyHeaders: false,
+      // The live inbox refetches on every customer message; it is staff-authenticated.
+      skip: (req) => req.path.startsWith('/pms/inbox/'),
     })
   );
 

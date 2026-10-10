@@ -14,6 +14,7 @@ const { startDataRetentionJob } = require('./jobs/dataRetention');
 const { startReservationSettlementJob } = require('./jobs/reservationSettlement');
 const { startMonthlySalaryExpenseJob } = require('./jobs/monthlySalaryExpenses');
 const { startIcalAutoSyncJob } = require('./jobs/icalAutoSync');
+const { startInboxSlaLoop } = require('./lib/inbox/sla');
 const { syncAllUnitListingStatusesOnBoot } = require('./lib/bootUnitStatusSync');
 
 async function seedAdmin() {
@@ -83,6 +84,7 @@ async function main() {
   startReservationSettlementJob();
   startMonthlySalaryExpenseJob();
   if (process.env.DATABASE_URL) startIcalAutoSyncJob();
+  if (process.env.DATABASE_URL) startInboxSlaLoop();
 
   const port = Number(process.env.PORT || 5000);
   server.listen(port, () => {

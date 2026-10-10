@@ -39,6 +39,8 @@ const RESERVATIONS_PAGE_ACCESS = new Set([
   'tasks',
   'reservations',
   'schedule',
+  'inbox',
+  'leads',
   ...STAFF_HR_TABS,
 ]);
 
@@ -49,6 +51,8 @@ const RESERVATIONS_MANUAL_PAGE_ACCESS = new Set([
   'calendar_sync',
   'units',
   'projects',
+  'inbox',
+  'leads',
   ...STAFF_HR_TABS,
 ]);
 
@@ -60,12 +64,14 @@ const RESERVATIONS_WEB_PAGE_ACCESS = new Set([
   'website_bookings',
   'units',
   'projects',
+  'inbox',
+  'leads',
   ...STAFF_HR_TABS,
 ]);
 
-const RESALE_PAGE_ACCESS = new Set(['tasks', 'units', 'reservations', ...STAFF_HR_TABS]);
+const RESALE_PAGE_ACCESS = new Set(['tasks', 'units', 'reservations', 'inbox', ...STAFF_HR_TABS]);
 
-const RESALE_MANAGER_PAGE_ACCESS = new Set(['tasks', 'units', 'reservations', ...STAFF_HR_TABS]);
+const RESALE_MANAGER_PAGE_ACCESS = new Set(['tasks', 'units', 'reservations', 'inbox', ...STAFF_HR_TABS]);
 
 const FINANCE_PAGE_ACCESS = new Set([
   'tasks',
@@ -73,6 +79,7 @@ const FINANCE_PAGE_ACCESS = new Set([
   'units',
   'reservations',
   'schedule',
+  'inbox',
   ...STAFF_HR_TABS,
 ]);
 
@@ -83,6 +90,7 @@ const FINANCE_MANAGER_PAGE_ACCESS = new Set([
   'units',
   'reservations',
   'schedule',
+  'inbox',
   ...STAFF_HR_TABS,
 ]);
 
@@ -95,6 +103,10 @@ const RESERVATIONS_MANAGER_PAGE_ACCESS = new Set([
   'reservation_audit',
   'units',
   'projects',
+  'inbox',
+  'leads',
+  'inbox_analytics',
+  'inbox_settings',
   ...STAFF_HR_TABS,
 ]);
 
@@ -104,6 +116,8 @@ const UNIT_ACQUISITION_AGENT_PAGE_ACCESS = new Set([
   'owner_comments',
   'reservations',
   'schedule',
+  'inbox',
+  'leads',
   ...STAFF_HR_TABS,
 ]);
 
@@ -117,6 +131,9 @@ const UNIT_ACQUISITION_MANAGER_PAGE_ACCESS = new Set([
   'owner_statement',
   'owners',
   'owner_comments',
+  'inbox',
+  'leads',
+  'inbox_analytics',
   ...STAFF_HR_TABS,
 ]);
 
@@ -130,6 +147,7 @@ const OPERATIONS_PAGE_ACCESS = new Set([
   'ops_team',
   'reservations',
   'schedule',
+  'inbox',
   ...STAFF_HR_TABS,
 ]);
 

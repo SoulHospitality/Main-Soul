@@ -72,6 +72,7 @@ function initSocket(server) {
     if (userId && NOTIF_ROLES.has(role)) {
       socket.join(`sales-user:${userId}`);
     }
+    require('../lib/inbox/realtime').attachSocket(socket);
   });
 
   return io;

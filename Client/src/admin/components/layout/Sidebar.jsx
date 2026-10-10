@@ -29,6 +29,9 @@ import {
   Gauge,
   MessageSquareText,
   ShieldAlert,
+  Target,
+  BarChart3,
+  Sliders,
 } from 'lucide-react';
 
 const NAV_SECTIONS = [
@@ -40,6 +43,16 @@ const NAV_SECTIONS = [
       { path: '/admin/tasks', label: 'Tasks', icon: ListTodo, page: 'tasks', excludeRoles: ['hr', 'hr_supervisor'] },
       { path: '/admin/website-performance', label: 'Website Performance', icon: Gauge, page: 'site_performance' },
       { path: '/admin/website', label: 'Website', icon: Globe, page: 'website' },
+    ],
+  },
+  {
+    id: 'crm',
+    label: 'Inbox & CRM',
+    items: [
+      { path: '/admin/inbox', label: 'Live Inbox', icon: MessageSquareText, page: 'inbox', badge: 'inbox_needs_reply' },
+      { path: '/admin/leads', label: 'Leads & Pipeline', icon: Target, page: 'leads' },
+      { path: '/admin/inbox-analytics', label: 'Inbox Analytics', icon: BarChart3, page: 'inbox_analytics' },
+      { path: '/admin/inbox-settings', label: 'Inbox Settings', icon: Sliders, page: 'inbox_settings' },
     ],
   },
   {
@@ -202,6 +215,13 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
     refetchInterval: 30000,
   });
   const ownerCommentsUnread = ownerCommentsSummary?.counts?.unread || 0;
+  const { data: inboxMeData } = useQuery({
+    queryKey: ['inbox-me-badge'],
+    queryFn: () => api.get('/inbox/me').then((r) => r.data),
+    enabled: canAccess('inbox'),
+    refetchInterval: 15000,
+  });
+  const inboxNeedsReplyCount = inboxMeData?.stats?.needs_reply || 0;
 
   const handleLogout = () => {
     logout();
@@ -283,7 +303,9 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
                         ? item.agentLabel
                         : item.label;
                   const pendingCount =
-                    item.badge === 'website_pending'
+                    item.badge === 'inbox_needs_reply'
+                      ? inboxNeedsReplyCount
+                      : item.badge === 'website_pending'
                       ? websiteNeedsReviewCount
                       : item.badge === 'requests_pending'
                         ? pendingRequestsCount
