@@ -74,10 +74,48 @@ function buildCatalog(rows) {
   return { destinations, projectsByDestination };
 }
 
+let locationProjectsTableChecked = false;
+async function ensureLocationProjectsTable() {
+  if (locationProjectsTableChecked) return;
+  try {
+    await query(`
+      CREATE TABLE IF NOT EXISTS public.location_projects (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        destination text NOT NULL,
+        name text NOT NULL,
+        normalized_destination text NOT NULL,
+        normalized_name text NOT NULL,
+        image_url text,
+        sort_order integer NOT NULL DEFAULT 0,
+        facilities text[] DEFAULT '{}'::text[],
+        min_nights integer DEFAULT 4,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT location_projects_dest_name_uq UNIQUE (normalized_destination, normalized_name)
+      )
+    `);
+    await query(`ALTER TABLE public.location_projects ADD COLUMN IF NOT EXISTS sort_order integer NOT NULL DEFAULT 0`);
+    await query(`ALTER TABLE public.location_projects ADD COLUMN IF NOT EXISTS facilities text[] DEFAULT '{}'::text[]`);
+    await query(`ALTER TABLE public.location_projects ADD COLUMN IF NOT EXISTS min_nights integer DEFAULT 4`);
+    await query(`ALTER TABLE public.location_projects ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now()`);
+    await query(`ALTER TABLE public.location_projects ADD COLUMN IF NOT EXISTS beach_access_enabled boolean DEFAULT false`);
+    await query(`ALTER TABLE public.location_projects ADD COLUMN IF NOT EXISTS beach_access_mode text DEFAULT 'none'`);
+    await query(`ALTER TABLE public.location_projects ADD COLUMN IF NOT EXISTS beach_access_adult_egp numeric`);
+    await query(`ALTER TABLE public.location_projects ADD COLUMN IF NOT EXISTS beach_access_extra_egp numeric`);
+    await query(`ALTER TABLE public.location_projects ADD COLUMN IF NOT EXISTS beach_access_days text`);
+    await query(`ALTER TABLE public.location_projects ADD COLUMN IF NOT EXISTS beach_access_flat_egp numeric`);
+    await query(`ALTER TABLE public.location_projects ADD COLUMN IF NOT EXISTS beach_access_flat_studio_egp numeric`);
+    locationProjectsTableChecked = true;
+  } catch (err) {
+    console.error('Failed to ensure location_projects table:', err?.message || err);
+  }
+}
+
 async function loadCatalogRows() {
+  await ensureLocationProjectsTable();
   try {
     const { rows } = await query(
-      `SELECT id, destination, name, image_url, sort_order,
+      `SELECT id, destination, name, image_url, COALESCE(sort_order, 0) AS sort_order,
               COALESCE(facilities, '{}'::text[]) AS facilities,
               COALESCE(min_nights, ${DEFAULT_MIN_STAY_NIGHTS}) AS min_nights,
               COALESCE(beach_access_enabled, false) AS beach_access_enabled,
@@ -92,24 +130,28 @@ async function loadCatalogRows() {
     );
     return rows;
   } catch (err) {
-    if (!/beach_access_/i.test(String(err.message || ''))) throw err;
-    const { rows } = await query(
-      `SELECT id, destination, name, image_url, sort_order,
-              COALESCE(facilities, '{}'::text[]) AS facilities,
-              COALESCE(min_nights, ${DEFAULT_MIN_STAY_NIGHTS}) AS min_nights
-       FROM location_projects
-       ORDER BY sort_order ASC, destination ASC, name ASC`
-    );
-    return rows.map((r) => ({
-      ...r,
-      beach_access_enabled: false,
-      beach_access_mode: 'none',
-      beach_access_adult_egp: null,
-      beach_access_extra_egp: null,
-      beach_access_days: null,
-      beach_access_flat_egp: null,
-      beach_access_flat_studio_egp: null,
-    }));
+    try {
+      const { rows } = await query(
+        `SELECT id, destination, name, image_url, COALESCE(sort_order, 0) AS sort_order
+         FROM location_projects
+         ORDER BY sort_order ASC, destination ASC, name ASC`
+      );
+      return rows.map((r) => ({
+        ...r,
+        facilities: [],
+        min_nights: DEFAULT_MIN_STAY_NIGHTS,
+        beach_access_enabled: false,
+        beach_access_mode: 'none',
+        beach_access_adult_egp: null,
+        beach_access_extra_egp: null,
+        beach_access_days: null,
+        beach_access_flat_egp: null,
+        beach_access_flat_studio_egp: null,
+      }));
+    } catch (innerErr) {
+      console.error('Failed to load catalog rows fallback:', innerErr?.message || innerErr);
+      return [];
+    }
   }
 }
 
@@ -501,15 +543,28 @@ router.delete(
 
 router.put('/reorder-destinations', authStaff, requireRoles(...PROJECT_EDITOR_ROLES), async (req, res, next) => {
   try {
+    await ensureLocationProjectsTable();
     const raw = req.body?.destinations || req.body?.orders || req.body?.items || [];
     const newDestOrder = (Array.isArray(raw) ? raw : []).map(normalizeText).filter(Boolean);
     if (!newDestOrder.length) {
       return res.status(400).json({ error: 'destinations array is required' });
     }
 
-    const { rows } = await query(
-      `SELECT id, destination, sort_order FROM location_projects ORDER BY sort_order ASC, destination ASC, name ASC`
-    );
+    let rows = [];
+    try {
+      const result = await query(
+        `SELECT id, destination, COALESCE(sort_order, 0) AS sort_order FROM location_projects ORDER BY sort_order ASC, destination ASC, name ASC`
+      );
+      rows = result.rows;
+    } catch (err) {
+      try {
+        const result = await query(`SELECT id, destination FROM location_projects ORDER BY destination ASC, name ASC`);
+        rows = result.rows.map((r, idx) => ({ ...r, sort_order: idx }));
+      } catch (innerErr) {
+        console.error('Failed to query location_projects for reorder-destinations:', innerErr?.message || innerErr);
+        rows = [];
+      }
+    }
 
     const destinationGroups = {};
     for (const row of rows) {
@@ -536,10 +591,10 @@ router.put('/reorder-destinations', authStaff, requireRoles(...PROJECT_EDITOR_RO
             item.id,
           ]);
         } catch (err) {
-          if (err.code === '42703') {
+          try {
             await query('UPDATE location_projects SET sort_order = $1 WHERE id = $2', [orderVal, item.id]);
-          } else {
-            throw err;
+          } catch (innerErr) {
+            console.error('Failed to update project item sort_order:', innerErr?.message || innerErr);
           }
         }
       }
@@ -581,6 +636,7 @@ router.put('/reorder-destinations', authStaff, requireRoles(...PROJECT_EDITOR_RO
 
 router.put('/reorder', authStaff, requireRoles(...PROJECT_EDITOR_ROLES), async (req, res, next) => {
   try {
+    await ensureLocationProjectsTable();
     const orders = req.body?.orders || req.body?.items || req.body || [];
     const list = Array.isArray(orders) ? orders : [];
     if (!list.length) {
@@ -604,12 +660,14 @@ router.put('/reorder', authStaff, requireRoles(...PROJECT_EDITOR_ROLES), async (
       try {
         await query('UPDATE location_projects SET sort_order = $1, updated_at = now() WHERE id = $2', [orderVal, itemId]);
       } catch (err) {
-        if (err.code === '42703') {
+        try {
           await query('UPDATE location_projects SET sort_order = $1 WHERE id = $2', [orderVal, itemId]);
-        } else if (err.code === '22P02') {
-          await query('UPDATE location_projects SET sort_order = $1 WHERE lower(name) = lower($2)', [orderVal, String(itemId)]);
-        } else {
-          throw err;
+        } catch (err2) {
+          try {
+            await query('UPDATE location_projects SET sort_order = $1 WHERE lower(name) = lower($2)', [orderVal, String(itemId)]);
+          } catch (err3) {
+            console.error('Failed to update project reorder item:', err3?.message || err3);
+          }
         }
       }
     }
