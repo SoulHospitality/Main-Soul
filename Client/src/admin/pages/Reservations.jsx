@@ -1596,7 +1596,7 @@ export default function Reservations() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="page-header mb-0">
           <h1 className="page-title">{pageTitle}</h1>
           <p className="page-subtitle">
@@ -1607,7 +1607,7 @@ export default function Reservations() {
               : ''}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {(isAdmin) && <button onClick={exportExcel} className="btn-secondary"><Download className="w-4 h-4" />Export Excel</button>}
           {canWrite && (
             <button onClick={() => setBlockModal(true)}

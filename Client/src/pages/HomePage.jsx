@@ -106,7 +106,7 @@ function Hero() {
           ]}
         />
         <div className="soul-fade-up mt-8 flex justify-center" style={{ animationDelay: '0.75s' }}>
-          <Link to="/search" className="g-btn g-btn-glass !border-white/25 !bg-[#071422]/75 shadow-[0_10px_30px_rgba(0,0,0,0.28)] hover:!bg-[#071422]/90">
+          <Link to="/search" className="g-btn g-btn-glass !border-white/15 !bg-white/[0.07] backdrop-blur-md hover:!border-white/30 hover:!bg-white/15">
             {t('home.heroExplore')}
             <ArrowDot />
           </Link>

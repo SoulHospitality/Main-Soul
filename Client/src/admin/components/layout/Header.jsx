@@ -125,9 +125,9 @@ export default function Header({ onToggleSidebar, sidebarWidth = 256 }) {
           <Menu className="w-5 h-5" />
         </button>
 
-        {sidebarWidth === 0 && (
+        {sidebarWidth === 0 && !showSearch && (
           <div className="min-w-0">
-            <div className="text-sm font-semibold text-soul-blue tracking-tight truncate">Soul Hospitality</div>
+            <div className="text-sm font-semibold text-soul-blue tracking-tight truncate">Soul</div>
             <div className="text-[10px] uppercase tracking-[0.18em] text-soul-muted truncate">
               {PMS_LABELS[user?.role]}
             </div>
@@ -145,16 +145,16 @@ export default function Header({ onToggleSidebar, sidebarWidth = 256 }) {
           </div>
         )}
 
-        <form onSubmit={handleSearch} className="hidden sm:flex items-center ml-1">
+        <form onSubmit={handleSearch} className="flex items-center ml-1 min-w-0">
           {showSearch ? (
-            <div className="flex items-center gap-2 rounded-xl border border-soul-line bg-white/80 px-3 py-1.5 shadow-sm">
-              <Search className="w-4 h-4 text-soul-muted" />
+            <div className="flex items-center gap-2 rounded-xl border border-soul-line bg-white/80 px-3 py-1.5 shadow-sm min-w-0">
+              <Search className="w-4 h-4 text-soul-muted shrink-0" />
               <input
                 autoFocus
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search reservations..."
-                className="w-48 bg-transparent text-sm outline-none placeholder:text-soul-muted/60 text-soul-blue"
+                className="w-28 min-w-0 bg-transparent text-base sm:w-48 sm:text-sm outline-none placeholder:text-soul-muted/60 text-soul-blue"
               />
               <button type="button" onClick={() => { setShowSearch(false); setSearch(''); }}>
                 <X className="w-4 h-4 text-soul-muted hover:text-soul-blue" />

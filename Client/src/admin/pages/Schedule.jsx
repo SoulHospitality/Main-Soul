@@ -162,7 +162,10 @@ const COLOR_FILTERS = [
   { value: 'past', label: 'Past stays' },
 ];
 
-const CELL_W = 40;
+function scheduleCellWidth() {
+  if (typeof window === 'undefined') return 40;
+  return window.matchMedia('(max-width: 1023px)').matches ? 48 : 40;
+}
 
 
 function PriceEditorModal({
@@ -824,7 +827,18 @@ export default function Schedule() {
   
   const [viewYear, setViewYear]   = useState(now.getFullYear());
   const [viewMonth, setViewMonth] = useState(now.getMonth());
-  const [spanMonths, setSpanMonths] = useState(2);
+  const [spanMonths, setSpanMonths] = useState(() => (
+    typeof window !== 'undefined' && window.innerWidth < 1024 ? 1 : 2
+  ));
+  const [cellW, setCellW] = useState(scheduleCellWidth);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 1023px)');
+    const apply = () => setCellW(mq.matches ? 48 : 40);
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, []);
 
   
   const [createDrawer, setCreateDrawer] = useState(false);
@@ -2004,12 +2018,11 @@ export default function Schedule() {
       
       {isLoading ? <LoadingSpinner /> : (
         <div
-          className="relative z-0 overflow-auto rounded-2xl border border-soul-line bg-white shadow-sm"
-          style={{ maxHeight: '75vh' }}
+          className="relative z-0 overflow-auto rounded-2xl border border-soul-line bg-white shadow-sm max-h-[calc(100dvh-16rem)] lg:max-h-[75vh]"
         >
           <table
             className="w-full border-collapse text-sm"
-            style={{ minWidth: Math.max(480, 140 + displayDates.length * CELL_W) }}
+            style={{ minWidth: Math.max(480, 140 + displayDates.length * cellW) }}
           >
             <thead className="sticky top-0 z-30">
               <tr className="border-b border-soul-line bg-[#f7f9fc]">
@@ -2027,7 +2040,7 @@ export default function Schedule() {
                   return (
                     <th
                       key={i}
-                      style={{ minWidth: CELL_W, width: CELL_W }}
+                      style={{ minWidth: cellW, width: cellW }}
                       className={`border-r border-slate-100 px-0 py-1 text-center font-medium ${
                         isToday
                           ? 'bg-[var(--pms-accent-soft,rgba(40,63,94,0.12))] text-soul-blue'
@@ -2043,7 +2056,7 @@ export default function Schedule() {
                       }`}>
                         {d.getDate()}
                       </div>
-                      <div className="mt-0.5 hidden text-[8px] font-semibold uppercase tracking-wide opacity-70 lg:block">
+                      <div className="mt-0.5 text-[8px] font-semibold uppercase tracking-wide opacity-70">
                         {d.toLocaleDateString('en-GB', { weekday: 'short' })}
                       </div>
                     </th>
@@ -2159,8 +2172,8 @@ export default function Schedule() {
                             data-sched-date={cell.date}
                             data-sched-bookable={canBookCell ? '1' : '0'}
                             style={{
-                              minWidth: CELL_W,
-                              width: CELL_W,
+                              minWidth: cellW,
+                              width: cellW,
                               ...(hatch ? { backgroundImage: hatch } : {}),
                               userSelect: 'none',
                               touchAction: cellClickable ? 'none' : undefined,
@@ -2271,7 +2284,7 @@ export default function Schedule() {
                             key={j}
                             data-sched-unit={unit.id}
                             data-sched-date={cell.date}
-                            style={{ minWidth: CELL_W, width: CELL_W }}
+                            style={{ minWidth: cellW, width: cellW }}
                             className="border-r border-slate-100 p-0 align-middle"
                           >
                             <div className="flex h-11 items-center">
@@ -2301,7 +2314,7 @@ export default function Schedule() {
                             key={j}
                             data-sched-unit={unit.id}
                             data-sched-date={cell.date}
-                            style={{ minWidth: CELL_W, width: CELL_W }}
+                            style={{ minWidth: cellW, width: cellW }}
                             className="border-r border-slate-100 p-0 align-middle"
                           >
                             <div className="flex h-11 items-center overflow-hidden">
@@ -2345,7 +2358,7 @@ export default function Schedule() {
                             data-sched-date={cell.date}
                             data-sched-span={cell.span}
                             colSpan={cell.span}
-                            style={{ minWidth: CELL_W * cell.span }}
+                            style={{ minWidth: cellW * cell.span }}
                             className="border-r border-slate-100 p-0 align-middle"
                           >
                             <div
@@ -2379,7 +2392,7 @@ export default function Schedule() {
                             key={j}
                             data-sched-unit={unit.id}
                             data-sched-date={cell.date}
-                            style={{ minWidth: CELL_W, width: CELL_W }}
+                            style={{ minWidth: cellW, width: cellW }}
                             className="border-r border-slate-100 p-0 align-middle bg-emerald-50/90"
                           >
                             <div className="flex h-11 items-center overflow-hidden">

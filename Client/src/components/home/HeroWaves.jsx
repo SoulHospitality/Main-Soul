@@ -1,8 +1,7 @@
 import { useEffect, useRef } from 'react';
 
-// Mixkit "Turquoise ocean background with foaming waves" (id 2091), free for commercial use.
-const VIDEO = '/soul-brand/ocean-hero.mp4';
-const POSTER = '/soul-brand/ocean-hero-poster.jpg';
+const VIDEO = '/soul-brand/hero-beach.mp4?v=eg';
+const POSTER = '/soul-brand/hero-beach.jpg?v=eg';
 
 export default function HeroWaves() {
   const videoRef = useRef(null);
@@ -23,10 +22,10 @@ export default function HeroWaves() {
   }, []);
 
   return (
-    <div className="absolute inset-0" aria-hidden="true">
+    <div className="absolute inset-0 bg-[#0b4f73]" aria-hidden="true">
       <video
         ref={videoRef}
-        className="h-full w-full object-cover brightness-110 contrast-105"
+        className="h-full w-full object-cover"
         autoPlay
         muted
         loop

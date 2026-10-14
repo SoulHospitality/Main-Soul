@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import {
   MessageSquare, Search, Filter, RefreshCw, Send, Paperclip, Sparkles,
   Bot, Clock, User, Shield, AlertTriangle, CheckCircle, Tag, Check, X,
-  Plus, Smartphone, Play, Sliders, BarChart3, ChevronRight, UserPlus, Eye, Lock
+  Plus, Smartphone, Play, Sliders, BarChart3, ChevronLeft, ChevronRight, UserPlus, Eye, Lock
 } from 'lucide-react';
 import { useInbox, useInboxEvents } from '../inbox/InboxContext';
 import { inboxApi, errorMessage } from '../inbox/api';
@@ -27,7 +27,7 @@ export default function InboxPage() {
   const [activeChannel, setActiveChannel] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [showSimulator, setShowSimulator] = useState(false);
-  const [showRightPanel, setShowRightPanel] = useState(true);
+  const [showRightPanel, setShowRightPanel] = useState(() => window.innerWidth >= 1024);
   const [messageBody, setMessageBody] = useState('');
   const [isNoteMode, setIsNoteMode] = useState(false);
   const [sending, setSending] = useState(false);
@@ -156,9 +156,9 @@ export default function InboxPage() {
   };
 
   return (
-    <div className="pms-shell flex flex-col h-[calc(100vh-4rem)] bg-slate-50 overflow-hidden font-sans">
+    <div className="flex flex-col overflow-hidden bg-slate-50 font-sans max-lg:h-[calc(100dvh-11.5rem)] lg:h-[calc(100dvh-8rem)]">
       {/* Top Header Toolbar */}
-      <div className="flex-shrink-0 bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between gap-4 shadow-sm z-10">
+      <div className="flex-shrink-0 bg-white border-b border-slate-200 px-3 py-3 flex flex-wrap items-center justify-between gap-3 shadow-sm z-10 sm:px-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-soul-blue text-white flex items-center justify-center font-bold shadow">
             <MessageSquare className="w-5 h-5" />
@@ -234,7 +234,7 @@ export default function InboxPage() {
       {/* Main 3-Column Workspace */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Column: Conversations List */}
-        <div className="w-80 lg:w-96 border-r border-slate-200 bg-white flex flex-col flex-shrink-0">
+        <div className={`${activeConvId ? 'hidden lg:flex' : 'flex'} w-full lg:w-96 border-r border-slate-200 bg-white flex-col flex-shrink-0 min-h-0`}>
           {/* Filters & Search */}
           <div className="p-3 border-b border-slate-200 space-y-2 bg-slate-50/50">
             {/* Search Input */}
@@ -375,12 +375,24 @@ export default function InboxPage() {
         </div>
 
         {/* Middle Column: Active Conversation Feed */}
-        <div className="flex-1 flex flex-col bg-slate-100 overflow-hidden">
+        <div className={`${activeConvId ? 'flex' : 'hidden lg:flex'} min-w-0 flex-1 flex-col bg-slate-100 overflow-hidden`}>
           {activeConvId && currentConv?.conversation ? (
             <>
               {/* Conversation Header Bar */}
-              <div className="bg-white border-b border-slate-200 px-4 py-2.5 flex items-center justify-between gap-3 flex-shrink-0 shadow-sm">
-                <div className="flex items-center gap-3 min-w-0">
+              <div className="bg-white border-b border-slate-200 px-3 py-2.5 flex items-center justify-between gap-2 flex-shrink-0 shadow-sm sm:px-4">
+                <div className="flex items-center gap-2 min-w-0 sm:gap-3">
+                  <button
+                    type="button"
+                    className="lg:hidden grid h-10 w-10 shrink-0 place-items-center rounded-xl text-slate-600 hover:bg-slate-100"
+                    aria-label="Back to conversations"
+                    onClick={() => setSearchParams((prev) => {
+                      const next = new URLSearchParams(prev);
+                      next.delete('c');
+                      return next;
+                    })}
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
                   <Avatar
                     name={currentConv.conversation.customer_name}
                     url={currentConv.conversation.avatar_url}
@@ -625,7 +637,15 @@ export default function InboxPage() {
 
         {/* Right Column: PMS Lead Panel */}
         {showRightPanel && activeConvId && currentConv?.conversation && (
-          <div className="w-80 lg:w-96 border-l border-slate-200 bg-white flex-shrink-0 overflow-y-auto p-4">
+          <div className="fixed inset-0 z-40 overflow-y-auto bg-white p-4 pb-24 lg:static lg:z-auto lg:w-96 lg:flex-shrink-0 lg:border-l lg:border-slate-200 lg:pb-4">
+            <button
+              type="button"
+              className="mb-3 inline-flex items-center gap-1 text-sm font-semibold text-soul-blue lg:hidden"
+              onClick={() => setShowRightPanel(false)}
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Back to chat
+            </button>
             <LeadPanel
               leadId={currentConv.conversation.current_lead_id}
               conversationId={activeConvId}

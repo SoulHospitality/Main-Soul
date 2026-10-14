@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import Sidebar from './Sidebar';
 import Header from './Header';
+import MobileDock from './MobileDock';
 import { useAuth } from '../../context/AuthContext';
 import { roleThemeVars } from '../../utils/roleTheme';
 
@@ -23,6 +24,15 @@ export default function Layout({ children }) {
   const role = user?.role || 'admin';
   const sidebarWidth = isMobile ? 0 : collapsed ? 64 : 256;
 
+  useEffect(() => {
+    if (!isMobile || !mobileOpen) return undefined;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [isMobile, mobileOpen]);
+
   return (
     <div
       className="pms-shell min-h-screen"
@@ -31,7 +41,7 @@ export default function Layout({ children }) {
     >
       {isMobile && mobileOpen && (
         <div
-          className="fixed inset-0 bg-soul-ink/50 z-30 backdrop-blur-[2px]"
+          className="fixed inset-0 bg-soul-ink/50 z-[45] backdrop-blur-[2px]"
           onClick={() => setMobileOpen(false)}
         />
       )}
@@ -56,6 +66,8 @@ export default function Layout({ children }) {
           <div className="pms-content soul-fade-up">{children}</div>
         </div>
       </main>
+
+      {isMobile ? <MobileDock onOpenMenu={() => setMobileOpen(true)} /> : null}
     </div>
   );
 }

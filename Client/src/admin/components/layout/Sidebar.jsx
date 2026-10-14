@@ -34,7 +34,7 @@ import {
   Sliders,
 } from 'lucide-react';
 
-const NAV_SECTIONS = [
+export const NAV_SECTIONS = [
   {
     id: 'overview',
     label: 'Overview',
@@ -118,6 +118,18 @@ const NAV_SECTIONS = [
     ],
   },
 ];
+
+export function visibleNavSections(canAccess, role) {
+  return NAV_SECTIONS.map((section) => ({
+    ...section,
+    items: section.items.filter(
+      (item) =>
+        canAccess(item.page) &&
+        (!item.roles || item.roles.includes(role)) &&
+        (!item.excludeRoles || !item.excludeRoles.includes(role))
+    ),
+  })).filter((section) => section.items.length);
+}
 
 function PendingCountBadge({ count, compact = false }) {
   if (!count || count < 1) return null;
@@ -231,15 +243,7 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
   const showLabels = isMobile || !collapsed;
   const sidebarW = isMobile ? 288 : collapsed ? 64 : 256;
 
-  const visibleSections = NAV_SECTIONS.map((section) => ({
-    ...section,
-    items: section.items.filter(
-      (item) =>
-        canAccess(item.page) &&
-        (!item.roles || item.roles.includes(user?.role)) &&
-        (!item.excludeRoles || !item.excludeRoles.includes(user?.role))
-    ),
-  })).filter((section) => section.items.length);
+  const visibleSections = visibleNavSections(canAccess, user?.role);
 
   const handleNavClick = () => {
     if (isMobile) onCloseMobile();
@@ -247,7 +251,7 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
 
   return (
     <aside
-      className="pms-sidebar fixed top-0 left-0 h-full flex flex-col z-40"
+      className="pms-sidebar fixed top-0 left-0 h-full flex flex-col z-50"
       style={{
         width: sidebarW,
         transform: isMobile && !mobileOpen ? 'translateX(-100%)' : 'translateX(0)',

@@ -47,7 +47,7 @@ export default function OwnerLayout({ children }) {
 
   return (
     <div className="pms-shell min-h-screen bg-gray-50">
-      <header className="fixed top-0 left-0 right-0 z-40 h-16 bg-gradient-to-r from-primary-900 to-primary-800 flex items-center justify-between px-4 sm:px-6 shadow-lg">
+      <header className="pms-owner-header fixed top-0 left-0 right-0 z-40 h-16 bg-gradient-to-r from-primary-900 to-primary-800 flex items-center justify-between px-4 sm:px-6 shadow-lg">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">
             <Building className="w-5 h-5 text-white" />
@@ -96,30 +96,29 @@ export default function OwnerLayout({ children }) {
         </div>
       </header>
 
-      <main className="pt-16 min-h-screen">
-        <div className="md:hidden flex gap-2 px-4 pt-3 overflow-x-auto">
-          {NAV.map(({ to, label, end, badge }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              className={({ isActive }) =>
-                `whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium ${
-                  isActive ? 'bg-primary-700 text-white' : 'bg-white text-gray-600 border'
-                }`
-              }
-            >
-              {label}
+      <main className="pt-16 min-h-screen pb-24 md:pb-0">
+        <div className="max-w-5xl mx-auto p-4 sm:p-6">{children}</div>
+      </main>
+      <nav className="pms-dock flex md:hidden" aria-label="Owner">
+        {NAV.map(({ to, label, icon: Icon, end, badge }) => (
+          <NavLink
+            key={to}
+            to={to}
+            end={end}
+            className={({ isActive }) => `pms-dock__item ${isActive ? 'pms-dock__item--active' : ''}`}
+          >
+            <span className="relative">
+              <Icon className="h-5 w-5" strokeWidth={1.75} />
               {badge && badges[badge] ? (
-                <span className="ml-1 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold">
+                <span className="absolute -right-2 -top-1 min-w-[0.9rem] rounded-full bg-red-500 px-1 text-center text-[9px] font-bold text-white">
                   {badges[badge]}
                 </span>
               ) : null}
-            </NavLink>
-          ))}
-        </div>
-        <div className="max-w-5xl mx-auto p-6">{children}</div>
-      </main>
+            </span>
+            <span>{label.split(' ')[0]}</span>
+          </NavLink>
+        ))}
+      </nav>
     </div>
   );
 }

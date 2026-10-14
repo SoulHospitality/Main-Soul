@@ -22,18 +22,18 @@ export default function Modal({ open, onClose, title, children, size = 'md', foo
   
   
   return createPortal(
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[200] flex items-end justify-center p-0 sm:items-center sm:p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className={`relative bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl w-full ${sizes[size] || sizes.md} animate-slide-in max-h-[90vh] flex flex-col border border-soul-line`}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-soul-line flex-shrink-0 bg-[var(--pms-header-tint,transparent)]">
+      <div className={`relative bg-white/95 backdrop-blur-md rounded-t-3xl sm:rounded-2xl shadow-2xl w-full ${sizes[size] || sizes.md} animate-slide-in max-h-[92dvh] flex flex-col border border-soul-line pb-[env(safe-area-inset-bottom)]`}>
+        <div className="flex items-center justify-between px-4 py-4 sm:px-6 border-b border-soul-line flex-shrink-0 bg-[var(--pms-header-tint,transparent)]">
           <h2 className="font-display text-xl text-soul-blue tracking-wide">{title}</h2>
           <button type="button" onClick={onClose} className="p-1.5 rounded-xl text-soul-muted hover:text-soul-blue hover:bg-black/[0.04] transition-colors">
             <X className="w-5 h-5" />
           </button>
         </div>
-        <div className="overflow-y-auto flex-1 px-6 py-5">{children}</div>
+        <div className="overflow-y-auto flex-1 px-4 py-4 sm:px-6 sm:py-5">{children}</div>
         {footer && (
-          <div className="px-6 py-4 border-t border-soul-line flex-shrink-0 flex items-center justify-end gap-3">
+          <div className="px-4 py-3 sm:px-6 sm:py-4 border-t border-soul-line flex-shrink-0 flex flex-wrap items-center justify-end gap-2 sm:gap-3">
             {footer}
           </div>
         )}

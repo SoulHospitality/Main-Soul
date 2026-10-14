@@ -27,14 +27,14 @@ export default function AdminReservationDrawer({
   if (!open) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-3 sm:p-5">
+    <div className="fixed inset-0 z-[200] flex items-end justify-center p-0 sm:items-center sm:p-5">
       <button
         type="button"
         className="absolute inset-0 bg-slate-950/45 backdrop-blur-[2px]"
         aria-label="Close reservation form"
         onClick={onClose}
       />
-      <section className="relative flex max-h-[94dvh] w-full max-w-[720px] flex-col overflow-hidden rounded-[16px] border border-[#e6ebf2] bg-white shadow-2xl">
+      <section className="relative flex max-h-[94dvh] w-full max-w-[720px] flex-col overflow-hidden rounded-t-[20px] border border-[#e6ebf2] bg-white shadow-2xl pb-[env(safe-area-inset-bottom)] sm:rounded-[16px] sm:pb-0">
         <header className="flex flex-shrink-0 items-start justify-between gap-4 border-b border-[#e6ebf2] px-5 py-4 sm:px-6">
           <div>
             <h2 className="font-display text-xl font-semibold tracking-tight text-[#0f1c2e]">
