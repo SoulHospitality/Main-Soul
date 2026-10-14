@@ -55,8 +55,10 @@ router.post('/soully/chat', limiter, async (req, res, next) => {
       return res.status(err.status).json({ error: err.message });
     }
     if (err.status === 502) {
-      console.error('[soully]', err.message);
-      return res.status(502).json({ error: 'I tripped over a cable. Ask again in a second.' });
+      console.error('[soully]', err.geminiStatus || '', err.message);
+      return res.status(502).json({
+        error: err.publicMessage || 'I tripped over a cable. Ask again in a second.',
+      });
     }
     next(err);
   }

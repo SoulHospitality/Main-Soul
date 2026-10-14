@@ -30,41 +30,78 @@ function apiKey() {
   return String(process.env.GEMINI_API_KEY || process.env.SOULLY_API_KEY || '').trim();
 }
 
+const FALLBACK_MODEL = 'gemini-3.5-flash-lite';
+
 function modelName() {
-  return String(process.env.SOULLY_MODEL || process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim();
+  return String(process.env.SOULLY_MODEL || process.env.GEMINI_MODEL || FALLBACK_MODEL).trim();
+}
+
+function scrub(text) {
+  return String(text || '').replace(/AIza[0-9A-Za-z_-]+/g, '[key]').slice(0, 300);
 }
 
 function geminiTools(tools) {
   return [{
-    functionDeclarations: tools.map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.input_schema,
-    })),
+    functionDeclarations: tools.map((tool) => {
+      const declaration = { name: tool.name, description: tool.description };
+      const properties = tool.input_schema?.properties || {};
+      if (Object.keys(properties).length) declaration.parameters = tool.input_schema;
+      return declaration;
+    }),
   }];
 }
 
-async function complete({ system, tools, contents }) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelName())}:generateContent`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-goog-api-key': apiKey(),
-    },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: system }] },
-      contents,
-      tools: geminiTools(tools),
-      generationConfig: { maxOutputTokens: 900, temperature: 0.7 },
-    }),
-    signal: AbortSignal.timeout(45000),
-  });
+function publicGeminiMessage(status, message) {
+  const clean = scrub(message);
+  if (status === 401 || status === 403 || /api key|unauthenticated|permission denied/i.test(clean)) {
+    return 'The Gemini key on the server was rejected. Check GEMINI_API_KEY, then restart the API.';
+  }
+  if (status === 404 || /not found|not available|is not supported|no longer available/i.test(clean)) {
+    return 'That Gemini model is not available on this key.';
+  }
+  if (status === 429 || /quota|rate limit|resource exhausted/i.test(clean)) {
+    return 'Gemini is rate limiting Soully. Wait a minute and try again.';
+  }
+  return 'Soully could not get an answer from Gemini. Try again in a moment.';
+}
+
+async function complete({ model, system, tools, contents }) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+  const generationConfig = { maxOutputTokens: 2048 };
+  if (String(model).startsWith('gemini-3')) {
+    generationConfig.thinkingConfig = { thinkingLevel: 'LOW' };
+  }
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-goog-api-key': apiKey(),
+      },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: system }] },
+        contents,
+        tools: geminiTools(tools),
+        generationConfig,
+      }),
+      signal: AbortSignal.timeout(45000),
+    });
+  } catch (err) {
+    const wrapped = new Error('Soully could not reach Gemini.');
+    wrapped.status = 502;
+    wrapped.publicMessage = wrapped.message;
+    wrapped.cause = err;
+    throw wrapped;
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const message = data?.error?.message || `Gemini request failed (${res.status})`;
-    const err = new Error(message);
+    const err = new Error(scrub(message));
     err.status = 502;
+    err.geminiStatus = res.status;
+    err.publicMessage = publicGeminiMessage(res.status, message);
+    err.modelRejected = res.status === 404 || /not found|not available|is not supported|no longer available/i.test(message);
     throw err;
   }
   return data;
@@ -101,9 +138,21 @@ async function soullyReply(user, incoming) {
   const contents = toContents(incoming);
   const system = systemPrompt(user);
   const tools = toolsFor(user);
+  let model = modelName();
 
   for (let round = 0; round < 4; round += 1) {
-    const data = await complete({ system, tools, contents });
+    let data;
+    try {
+      data = await complete({ model, system, tools, contents });
+    } catch (err) {
+      if (round === 0 && model !== FALLBACK_MODEL && err.modelRejected) {
+        console.error('[soully] model', model, err.message);
+        model = FALLBACK_MODEL;
+        data = await complete({ model, system, tools, contents });
+      } else {
+        throw err;
+      }
+    }
     const parts = data?.candidates?.[0]?.content?.parts || [];
     const calls = parts.filter((part) => part.functionCall);
     if (!calls.length) {
@@ -113,12 +162,10 @@ async function soullyReply(user, incoming) {
     const responses = [];
     for (const call of calls) {
       const result = await runTool(user, call.functionCall.name, call.functionCall.args || {});
-      responses.push({
-        functionResponse: {
-          name: call.functionCall.name,
-          response: result && typeof result === 'object' ? result : { result },
-        },
-      });
+      const response = result && typeof result === 'object' && !Array.isArray(result) ? result : { result };
+      const functionResponse = { name: call.functionCall.name, response };
+      if (call.functionCall.id) functionResponse.id = call.functionCall.id;
+      responses.push({ functionResponse });
     }
     contents.push({ role: 'user', parts: responses });
   }
