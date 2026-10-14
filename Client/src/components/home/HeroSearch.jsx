@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowUpRight, Minus, Plus, Search } from 'lucide-react';
 import { useProjectCatalog } from '../../hooks/useProjectCatalog';
@@ -14,7 +14,7 @@ const isAfterDay = (a, b) => {
 const POPOVER =
   'absolute inset-x-0 top-full z-[130] mt-3 rounded-[22px] border border-soul-line bg-white p-2 shadow-[0_30px_80px_-30px_rgba(12,36,64,0.45)] lg:bottom-full lg:top-auto lg:mb-4 lg:mt-0';
 
-export default function HeroSearch() {
+const HeroSearch = forwardRef(function HeroSearch(_props, forwardedRef) {
   const navigate = useNavigate();
   const { t } = useLocale();
   const { destinations: catalogDestinations, projectsByDestination } = useProjectCatalog();
@@ -72,21 +72,25 @@ export default function HeroSearch() {
 
   return (
     <form
-      ref={capsuleRef}
+      ref={(node) => {
+        capsuleRef.current = node;
+        if (typeof forwardedRef === 'function') forwardedRef(node);
+        else if (forwardedRef) forwardedRef.current = node;
+      }}
       onSubmit={handleSubmit}
-      className="relative z-[60] grid w-full gap-1 rounded-[28px] border border-white/40 bg-white/95 p-2 text-soul-blue shadow-[0_40px_100px_-40px_rgba(12,36,64,0.75)] backdrop-blur-xl lg:grid-cols-[1.15fr_1.7fr_0.95fr_auto] lg:items-stretch lg:rounded-full"
+      className="relative z-[60] grid w-full gap-1 rounded-[28px] border border-white/45 bg-white/25 p-2 text-white shadow-[0_12px_40px_rgba(0,0,0,0.2)] backdrop-blur-xl lg:grid-cols-[1.15fr_1.7fr_0.95fr_auto] lg:items-stretch lg:rounded-full"
     >
-      <div className="relative lg:after:absolute lg:after:end-0 lg:after:top-1/2 lg:after:h-8 lg:after:w-px lg:after:-translate-y-1/2 lg:after:bg-soul-line">
+      <div className="relative lg:after:absolute lg:after:end-0 lg:after:top-1/2 lg:after:h-8 lg:after:w-px lg:after:-translate-y-1/2 lg:after:bg-white/20">
         <button
           type="button"
           onClick={() => {
             setProjectOpen((o) => !o);
             setGuestOpen(false);
           }}
-          className={`${segment} ${projectOpen ? 'bg-soul-blue-50' : 'hover:bg-soul-blue-50/60'}`}
+          className={`${segment} ${projectOpen ? 'bg-white/15' : 'hover:bg-white/10'}`}
         >
-          <span className="g-index text-soul-muted">{t('home.project')}</span>
-          <span className={`mt-1 truncate text-[15px] font-medium ${criteria.destination ? 'text-soul-blue' : 'text-soul-muted/70'}`}>
+          <span className="g-index text-white/85">{t('home.project')}</span>
+          <span className={`mt-1 truncate text-[15px] font-medium ${criteria.destination ? 'text-white' : 'text-white/80'}`}>
             {criteria.destination || t('home.whichProject')}
           </span>
         </button>
@@ -133,7 +137,7 @@ export default function HeroSearch() {
         ) : null}
       </div>
 
-      <div className="relative lg:after:absolute lg:after:end-0 lg:after:top-1/2 lg:after:h-8 lg:after:w-px lg:after:-translate-y-1/2 lg:after:bg-soul-line">
+      <div className="relative lg:after:absolute lg:after:end-0 lg:after:top-1/2 lg:after:h-8 lg:after:w-px lg:after:-translate-y-1/2 lg:after:bg-white/20">
         <DateRangePicker
           variant="bar"
           checkin={criteria.checkin}
@@ -157,10 +161,10 @@ export default function HeroSearch() {
             setGuestOpen((o) => !o);
             setProjectOpen(false);
           }}
-          className={`${segment} ${guestOpen ? 'bg-soul-blue-50' : 'hover:bg-soul-blue-50/60'}`}
+          className={`${segment} ${guestOpen ? 'bg-white/15' : 'hover:bg-white/10'}`}
         >
-          <span className="g-index text-soul-muted">{t('home.searchGuests')}</span>
-          <span className="mt-1 truncate text-[15px] font-medium text-soul-blue">
+          <span className="g-index text-white/85">{t('home.searchGuests')}</span>
+          <span className="mt-1 truncate text-[15px] font-medium text-white">
             {t('common.guestsCount', { count: criteria.guests })}
           </span>
         </button>
@@ -197,13 +201,15 @@ export default function HeroSearch() {
       <button
         type="submit"
         disabled={criteria.checkin && criteria.checkout ? !hasValidRange : false}
-        className="group mt-1 inline-flex h-14 items-center justify-center gap-3 rounded-2xl bg-soul-blue px-7 text-[13px] font-semibold tracking-[0.04em] text-white transition-all duration-500 ease-soul hover:bg-soul-blue-dark disabled:cursor-not-allowed disabled:opacity-60 lg:mt-0 lg:h-full lg:rounded-full"
+        className="group mt-1 inline-flex h-14 items-center justify-center gap-3 rounded-2xl border border-white/50 bg-white/35 px-7 text-[13px] font-semibold tracking-[0.04em] text-white shadow-[0_8px_24px_rgba(0,0,0,0.12)] backdrop-blur-xl transition-all duration-500 ease-soul hover:bg-white/50 disabled:cursor-not-allowed disabled:opacity-60 lg:mt-0 lg:h-full lg:rounded-full"
       >
-        <span className="grid h-8 w-8 place-items-center rounded-full bg-white text-soul-blue transition-transform duration-500 ease-soul group-hover:rotate-90">
+        <span className="grid h-8 w-8 place-items-center rounded-full bg-white/20 text-white transition-transform duration-500 ease-soul group-hover:rotate-90">
           <Search size={15} strokeWidth={2.4} />
         </span>
         <span>{t('home.searchStays')}</span>
       </button>
     </form>
   );
-}
+});
+
+export default HeroSearch;

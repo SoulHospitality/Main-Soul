@@ -185,21 +185,21 @@ export default function DateRangePicker({
       ? 'grid grid-cols-2 overflow-hidden rounded-2xl border border-white/25 bg-white/10'
       : 'grid grid-cols-2 overflow-hidden rounded-2xl border border-soul-line bg-white';
   const labelCls = isBar
-    ? 'g-index block text-soul-muted'
+    ? 'g-index block text-white/85'
     : isHero
       ? 'block text-[11px] font-bold uppercase tracking-wider text-white/70'
       : 'block text-[10px] font-bold uppercase tracking-wider text-soul-muted';
   const valueCls = (filled) =>
     isBar
-      ? `mt-1 block truncate text-[15px] font-medium ${filled ? 'text-soul-blue' : 'text-soul-muted/70'}`
+      ? `mt-1 block truncate text-[15px] font-medium ${filled ? 'text-white' : 'text-white/80'}`
       : isHero
         ? `mt-0.5 block truncate text-sm font-medium ${filled ? 'text-white' : 'text-white/55'}`
         : `mt-0.5 block truncate text-sm font-medium ${filled ? 'text-soul-blue' : 'text-soul-muted'}`;
   const halfActive = (field) =>
     isBar
       ? open && activeField === field
-        ? 'bg-soul-blue-50'
-        : 'hover:bg-soul-blue-50/60'
+        ? 'bg-white/15'
+        : 'hover:bg-white/10'
       : isHero
         ? open && activeField === field
           ? 'bg-white/20'

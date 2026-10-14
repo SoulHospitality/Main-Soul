@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight } from 'lucide-react';
 import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
 import HeroSearch from '../components/home/HeroSearch';
+import HeroWaves from '../components/home/HeroWaves';
 import CompoundGrid from '../components/home/CompoundGrid';
 import TrustSection from '../components/home/TrustSection';
 import HostCta from '../components/home/HostCta';
@@ -25,7 +26,6 @@ import { useLocale } from '../context/LocaleContext';
 import { useProjectCatalog } from '../hooks/useProjectCatalog';
 import { useSiteContent } from '../hooks/useSiteContent';
 
-const SLIDE_MS = 8000;
 const STAT_COLS = { 1: 'grid-cols-1', 2: 'grid-cols-2', 3: 'grid-cols-3' };
 const INTRO_KEY = 'soul-intro-seen';
 
@@ -83,131 +83,44 @@ function IntroCurtain() {
     </div>
   );
 }
-const HERO_SLIDES = [
-  { src: '/soul-brand/coast-hero-2.jpg', captionKey: 'home.heroPhrase1' },
-  { src: '/soul-brand/coast-hero-1.jpg', captionKey: 'home.heroPhrase2' },
-  { src: '/soul-brand/coast-hero-3.jpg', captionKey: 'home.regions' },
-];
-
 function Hero() {
-  const { t, locale } = useLocale();
+  const { t } = useLocale();
   const { content, pick } = useSiteContent();
-  const [index, setIndex] = useState(0);
-  const [cycle, setCycle] = useState(0);
-  const customSlides = (content.hero?.slides || []).filter((s) => s?.src);
-  const slides = customSlides.length
-    ? customSlides.map((s) => ({ src: s.src, caption: s[`caption_${locale}`] || s.caption_en || '' }))
-    : HERO_SLIDES.map((s) => ({ src: s.src, caption: t(s.captionKey) }));
-  const slideIndex = index % slides.length;
+  const capsuleRef = useRef(null);
   const titleLight = pick(content.hero, 'title_light') || t('home.heroTitleLight');
   const titleEm = pick(content.hero, 'title_em') || t('home.heroTitleEm');
-  const subtitle = pick(content.hero, 'subtitle') || t('home.heroSubtitle');
-
-  useEffect(() => {
-    const id = window.setTimeout(() => {
-      setIndex((i) => (i + 1) % slides.length);
-      setCycle((c) => c + 1);
-    }, SLIDE_MS);
-    return () => window.clearTimeout(id);
-  }, [index, cycle, slides.length]);
-
-  const goTo = (i) => {
-    setIndex(i);
-    setCycle((c) => c + 1);
-  };
 
   return (
-    <section className="g-grain relative isolate flex min-h-[100svh] flex-col overflow-hidden bg-soul-ink text-white">
-      <div className="absolute inset-0 -z-10">
-        {slides.map((slide, i) => (
-          <div
-            key={slide.src}
-            className={`absolute inset-0 transition-opacity duration-[1600ms] ease-soul ${
-              i === slideIndex ? 'opacity-100' : 'opacity-0'
-            }`}
-          >
-            <img
-              key={i === slideIndex ? `${slide.src}-${cycle}` : slide.src}
-              src={slide.src}
-              alt=""
-              fetchPriority={i === 0 ? 'high' : 'low'}
-              loading={i === 0 ? 'eager' : 'lazy'}
-              decoding="async"
-              className={`h-full w-full object-cover ${i === slideIndex ? 'g-kenburns' : ''}`}
-            />
-          </div>
-        ))}
-        <div className="absolute inset-0 bg-gradient-to-b from-soul-ink/55 via-soul-ink/10 to-soul-ink/80" />
-        <div
-          className="absolute inset-0"
-          style={{ background: 'radial-gradient(70% 55% at 88% 105%, rgba(22,61,104,0.55), transparent 60%)' }}
+    <section className="relative isolate flex min-h-[100svh] flex-col overflow-hidden bg-[#0b4a56] text-white">
+      <HeroWaves />
+
+      <div className="g-shell relative z-[2] flex w-full flex-1 flex-col items-center justify-center pb-24 pt-28 text-center sm:pb-12">
+        <RevealLines
+          as="h1"
+          immediate
+          delay={250}
+          className="g-display mx-auto max-w-5xl text-center text-[clamp(40px,5.6vw,92px)] !leading-[0.9] [text-shadow:0_2px_28px_rgba(0,0,0,0.45)]"
+          lines={[
+            <span key="l">{titleLight}</span>,
+            <em key="e">{titleEm}</em>,
+          ]}
         />
-      </div>
-
-      <div className="g-shell relative z-[2] flex w-full flex-1 flex-col justify-end pb-8 pt-32 md:pb-10">
-        <div className="grid gap-8 lg:grid-cols-[1fr_auto] lg:items-end">
-          <RevealLines
-            as="h1"
-            immediate
-            delay={250}
-            className="g-display text-[clamp(46px,8.2vw,136px)] !leading-[0.88]"
-            lines={[
-              <span key="l">{titleLight}</span>,
-              <em key="e">{titleEm}</em>,
-            ]}
-          />
-          <div className="soul-fade-up flex max-w-sm flex-col gap-6 lg:mb-4" style={{ animationDelay: '0.75s' }}>
-            <p className="text-[15px] leading-relaxed text-white/80 md:text-base">{subtitle}</p>
-            <div className="flex flex-wrap items-center gap-3">
-              <Link to="/search" className="g-btn g-btn-light">
-                {t('home.heroExplore')}
-                <ArrowDot />
-              </Link>
-            </div>
-          </div>
+        <div className="soul-fade-up mt-8 flex justify-center" style={{ animationDelay: '0.75s' }}>
+          <Link to="/search" className="g-btn g-btn-glass !border-white/55 !bg-white/30 shadow-[0_10px_30px_rgba(0,0,0,0.18)] hover:!bg-white/45">
+            {t('home.heroExplore')}
+            <ArrowDot />
+          </Link>
         </div>
 
-        <div className="soul-fade-up mt-10 md:mt-12" style={{ animationDelay: '0.95s' }}>
-          <HeroSearch />
+        <div className="soul-fade-up mt-8 w-full md:mt-10" style={{ animationDelay: '0.95s' }}>
+          <HeroSearch ref={capsuleRef} />
         </div>
 
-        <div className="mt-8 flex items-center justify-between gap-6 text-white/70">
-          <div className="flex min-w-0 flex-1 items-center gap-4">
-            <span className="g-index shrink-0 tabular-nums">
-              {String(slideIndex + 1).padStart(2, '0')} / {String(slides.length).padStart(2, '0')}
-            </span>
-            <div className="flex w-full max-w-[280px] gap-1.5">
-              {slides.map((slide, i) => (
-                <button
-                  key={slide.src}
-                  type="button"
-                  onClick={() => goTo(i)}
-                  aria-label={`${i + 1}`}
-                  className="relative h-6 flex-1"
-                >
-                  <span className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 overflow-hidden bg-white/25">
-                    {i < slideIndex ? <span className="absolute inset-0 bg-white" /> : null}
-                    {i === slideIndex ? (
-                      <span
-                        key={`${slideIndex}-${cycle}`}
-                        className="g-progress-fill absolute inset-0 bg-white"
-                        style={{ '--dur': `${SLIDE_MS}ms` }}
-                      />
-                    ) : null}
-                  </span>
-                </button>
-              ))}
-            </div>
-            <span key={slideIndex} className="g-index soul-fade-in hidden truncate md:inline">
-              {slides[slideIndex]?.caption}
-            </span>
-          </div>
-          <div className="hidden items-center gap-3 sm:flex">
-            <span className="g-index">{t('home.heroScroll')}</span>
-            <span className="relative h-10 w-px overflow-hidden bg-white/20">
-              <span className="g-scroll-cue absolute inset-0 bg-white" />
-            </span>
-          </div>
+        <div className="mt-8 hidden items-center justify-center gap-3 text-white/80 sm:flex">
+          <span className="g-index">{t('home.heroScroll')}</span>
+          <span className="relative h-10 w-px overflow-hidden bg-white/20">
+            <span className="g-scroll-cue absolute inset-0 bg-white" />
+          </span>
         </div>
       </div>
     </section>
