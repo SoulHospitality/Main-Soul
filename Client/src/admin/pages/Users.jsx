@@ -69,6 +69,34 @@ const WEEKDAY_SHORT = {
   sat: 'Sat',
 };
 
+function parseOwnerUnits(stat) {
+  let units = stat?.units;
+  if (typeof units === 'string') {
+    try {
+      units = JSON.parse(units);
+    } catch {
+      units = [];
+    }
+  }
+  if (Array.isArray(units)) {
+    const parsed = units.filter((unit) => unit && (unit.id || unit.unit_number || unit.title));
+    if (parsed.length) return parsed;
+  }
+  const text = String(stat?.unit_numbers || '').trim();
+  if (!text) return [];
+  return text
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((unit_number) => ({ unit_number }));
+}
+
+function ownerUnitLabel(unit) {
+  const name = unit?.unit_number || unit?.title || (unit?.id ? `Unit ${unit.id}` : '');
+  const project = unit?.project || unit?.compound || '';
+  return [name, project].filter(Boolean).join(' · ');
+}
+
 function formatDaysOff(days) {
   const picked = new Set(Array.isArray(days) ? days : []);
   const labels = WEEKDAY_OPTIONS.filter((day) => picked.has(day.value)).map((day) => WEEKDAY_SHORT[day.value]);
@@ -85,7 +113,7 @@ const EMPTY_STAFF_FORM = {
   leave_casual_days: '0',
   leave_annual_days: '0',
   leave_unpaid_days: '0',
-  days_off: [],
+  days_off: ['fri'],
   staff_code: '',
   manager_id: '',
   manager_ids: [],
@@ -863,11 +891,17 @@ export default function Users() {
     enabled: Boolean(viewOwnerId),
   });
 
+  const ownerStatById = Object.fromEntries(
+    (Array.isArray(ownerStats) ? ownerStats : []).map((o) => [String(o.id), o])
+  );
   const unitCountById = Object.fromEntries(
-    (Array.isArray(ownerStats) ? ownerStats : []).map((o) => [o.id, o.unit_count])
+    Object.entries(ownerStatById).map(([id, o]) => [id, o.unit_count])
   );
   const unitNumbersById = Object.fromEntries(
-    (Array.isArray(ownerStats) ? ownerStats : []).map((o) => [o.id, o.unit_numbers || ''])
+    Object.entries(ownerStatById).map(([id, o]) => [id, o.unit_numbers || ''])
+  );
+  const unitsById = Object.fromEntries(
+    Object.entries(ownerStatById).map(([id, o]) => [id, parseOwnerUnits(o)])
   );
   const viewOwner = users.find((u) => Number(u.id) === Number(viewOwnerId)) || null;
 
@@ -881,7 +915,12 @@ export default function Users() {
         u.full_name?.toLowerCase().includes(search.toLowerCase()) ||
         u.email?.toLowerCase().includes(search.toLowerCase()) ||
         u.staff_code?.toLowerCase().includes(search.toLowerCase()) ||
-        u.username?.toLowerCase().includes(search.toLowerCase())) &&
+        u.username?.toLowerCase().includes(search.toLowerCase()) ||
+        (unitsById[String(u.id)] || [])
+          .map((unit) => ownerUnitLabel(unit))
+          .join(' ')
+          .toLowerCase()
+          .includes(search.toLowerCase())) &&
       (!filterRole || u.role === filterRole)
   );
 
@@ -1269,7 +1308,7 @@ export default function Users() {
         onChange={setSearch}
         placeholder={
           isOwnersTab
-            ? 'Search name, phone, email...'
+            ? 'Search name, phone, email, unit...'
             : 'Search name, email, staff ID...'
         }
       >
@@ -1339,6 +1378,20 @@ export default function Users() {
                         </div>
                         <div>
                           <div className="font-medium">{u.full_name}</div>
+                          {(unitsById[String(u.id)] || []).length ? (
+                            <div className="mt-1 flex max-w-sm flex-wrap gap-1">
+                              {(unitsById[String(u.id)] || []).map((unit) => (
+                                <span
+                                  key={unit.id || ownerUnitLabel(unit)}
+                                  className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-soul-blue"
+                                >
+                                  {ownerUnitLabel(unit)}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="mt-0.5 text-[11px] text-slate-400">No linked units</div>
+                          )}
                           {u.is_first_login ? (
                             <div className="text-[10px] text-amber-600 font-medium">
                               Must change password

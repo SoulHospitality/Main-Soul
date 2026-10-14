@@ -934,7 +934,7 @@ async function setAttendanceHolidayDay({ staff, date, leaveType, actorId }) {
   const allowed = new Set(EDITABLE_FULL_DAY_LEAVE_TYPES);
   allowed.add('paid_excuse');
   if (!allowed.has(nextType)) {
-    const err = new Error('Holiday type must be casual, annual, unpaid, sick, or excuse');
+    const err = new Error('Holiday type must be casual, annual, unpaid, sick, meeting, or excuse');
     err.status = 400;
     throw err;
   }
@@ -1832,7 +1832,7 @@ router.post('/hr/leave-requests/:id/review', async (req, res, next) => {
   }
 });
 
-const EDITABLE_FULL_DAY_LEAVE_TYPES = new Set(['casual', 'annual', 'unpaid', 'sick']);
+const EDITABLE_FULL_DAY_LEAVE_TYPES = new Set(['casual', 'annual', 'unpaid', 'sick', 'meeting']);
 
 function balanceColumnForLeaveType(leaveType) {
   if (leaveType === 'casual') return 'leave_casual_days';
@@ -1852,7 +1852,7 @@ router.patch('/hr/leave-requests/:id/type', requireRoles(...HR_ROLES), async (re
     if (nextType === 'day_off') nextType = 'casual';
     if (!EDITABLE_FULL_DAY_LEAVE_TYPES.has(nextType)) {
       return res.status(400).json({
-        error: 'Holiday type must be casual, annual, unpaid, or sick',
+        error: 'Holiday type must be casual, annual, unpaid, sick, or meeting',
       });
     }
     if (isExcuseLeaveType(nextType)) {

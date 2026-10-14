@@ -24,6 +24,7 @@ export const LEAVE_TYPE_LABELS = {
   day_off: 'Day off',
   unpaid: 'Unpaid',
   mission: 'Mission',
+  meeting: 'Meeting',
 };
 
 export function formatUnpaidLeaveAvailable(leaveSnap) {

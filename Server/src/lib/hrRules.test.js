@@ -86,6 +86,7 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.equal(leaveDayDeductionAmount('unpaid', 9000), 300);
     assert.equal(leaveDayDeductionAmount('casual', 9000), 0);
     assert.equal(leaveDayDeductionAmount('annual', 9000), 0);
+    assert.equal(leaveDayDeductionAmount('meeting', 9000), 0);
   });
 
   it('allows casual and annual leave with no request timing rules', () => {

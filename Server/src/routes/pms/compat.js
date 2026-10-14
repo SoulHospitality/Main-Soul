@@ -114,7 +114,19 @@ router.get('/users/owners', requireRoles(...OWNER_ACCOUNT_ROLES, 'operations_sup
                   ORDER BY u.unit_number NULLS LAST, u.title
                 ),
                 ''
-              ) AS unit_numbers
+              ) AS unit_numbers,
+              COALESCE(
+                json_agg(
+                  json_build_object(
+                    'id', u.id,
+                    'unit_number', u.unit_number,
+                    'title', u.title,
+                    'project', COALESCE(NULLIF(u.project, ''), u.compound)
+                  )
+                  ORDER BY u.unit_number NULLS LAST, u.title
+                ) FILTER (WHERE u.id IS NOT NULL),
+                '[]'::json
+              ) AS units
        FROM staff_users s
        LEFT JOIN owner_units ou ON ou.owner_id = s.id
        LEFT JOIN units u ON u.id = ou.unit_id

@@ -23,6 +23,7 @@ const HOLIDAY_TYPE_OPTIONS = [
   { value: 'annual', label: LEAVE_TYPE_LABELS.annual },
   { value: 'unpaid', label: LEAVE_TYPE_LABELS.unpaid },
   { value: 'sick', label: LEAVE_TYPE_LABELS.sick },
+  { value: 'meeting', label: 'Meeting' },
   { value: 'paid_excuse', label: 'Excuse' },
 ];
 
@@ -544,6 +545,11 @@ export default function Attendance() {
                     );
                   })}
                 </div>
+                {form.leave_type === 'meeting' ? (
+                  <p className="mt-2 text-xs text-soul-muted">
+                    Meeting has no deduction and no limit.
+                  </p>
+                ) : null}
                 <p className="mt-2 text-xs text-soul-muted">
                   Excuses used this month: {excuseUsed} of {excuseMax}.
                   {alreadyExcuse ? ' This day is already an excuse.' : ''}
