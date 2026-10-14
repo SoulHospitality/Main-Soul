@@ -124,7 +124,7 @@ function allowedGuide(user) {
 }
 
 function soullyEnabled(user) {
-  return Boolean(user && user.role && user.role !== 'owner' && user.is_active !== false);
+  return Boolean(user && user.role === 'admin' && user.is_active !== false);
 }
 
 module.exports = { soullyCan, allowedGuide, soullyEnabled, GUIDE };

@@ -69,7 +69,7 @@ export default function Layout({ children }) {
       </main>
 
       {isMobile ? <MobileDock onOpenMenu={() => setMobileOpen(true)} /> : null}
-      <Soully />
+      {user?.role === 'admin' ? <Soully /> : null}
     </div>
   );
 }

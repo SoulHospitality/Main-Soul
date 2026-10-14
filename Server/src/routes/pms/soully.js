@@ -41,8 +41,8 @@ function cleanMessages(body) {
 
 router.post('/soully/chat', limiter, async (req, res, next) => {
   try {
-    if (req.user?.role === 'owner') {
-      return res.status(403).json({ error: 'Soully is for staff only' });
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({ error: 'Soully is for the admin only right now' });
     }
     const messages = cleanMessages(req.body);
     if (!messages) {

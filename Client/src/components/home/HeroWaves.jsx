@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 
-const VIDEO = '/soul-brand/hero-villas.mp4?v=villas';
-const POSTER = '/soul-brand/hero-villas.jpg?v=villas';
+const VIDEO = '/soul-brand/hero-alamein.mp4?v=alamein';
+const POSTER = '/soul-brand/hero-alamein.jpg?v=alamein';
 
 export default function HeroWaves() {
   const videoRef = useRef(null);

@@ -1,4 +1,3 @@
-const { config } = require('../inbox/config');
 const { allowedGuide, soullyEnabled } = require('./access');
 const { toolsFor, runTool, cairoToday, ROLE_LABELS } = require('./tools');
 
@@ -28,85 +27,100 @@ ${pages || '- Profile only.'}
 }
 
 function apiKey() {
-  return String(process.env.SOULLY_API_KEY || process.env.ANTHROPIC_API_KEY || config.ai.apiKey || '').trim();
+  return String(process.env.GEMINI_API_KEY || process.env.SOULLY_API_KEY || '').trim();
 }
 
 function modelName() {
-  return String(process.env.SOULLY_MODEL || 'claude-sonnet-4-5').trim();
+  return String(process.env.SOULLY_MODEL || process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim();
 }
 
-async function complete({ system, tools, messages }) {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+function geminiTools(tools) {
+  return [{
+    functionDeclarations: tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.input_schema,
+    })),
+  }];
+}
+
+async function complete({ system, tools, contents }) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelName())}:generateContent`;
+  const res = await fetch(url, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'x-api-key': apiKey(),
-      'anthropic-version': '2023-06-01',
+      'x-goog-api-key': apiKey(),
     },
     body: JSON.stringify({
-      model: modelName(),
-      max_tokens: 900,
-      system,
-      tools,
-      messages,
+      systemInstruction: { parts: [{ text: system }] },
+      contents,
+      tools: geminiTools(tools),
+      generationConfig: { maxOutputTokens: 900, temperature: 0.7 },
     }),
     signal: AbortSignal.timeout(45000),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const message = data?.error?.message || `AI request failed (${res.status})`;
+    const message = data?.error?.message || `Gemini request failed (${res.status})`;
     const err = new Error(message);
-    err.status = res.status >= 500 ? 502 : 502;
+    err.status = 502;
     throw err;
   }
   return data;
 }
 
 function textOf(data) {
-  return (data.content || [])
-    .filter((block) => block.type === 'text')
-    .map((block) => block.text)
+  const parts = data?.candidates?.[0]?.content?.parts || [];
+  return parts
+    .filter((part) => part.text)
+    .map((part) => part.text)
     .join('')
     .trim();
 }
 
+function toContents(incoming) {
+  return incoming.map((message) => ({
+    role: message.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: String(message.content || '').slice(0, 2000) }],
+  }));
+}
+
 async function soullyReply(user, incoming) {
   if (!soullyEnabled(user)) {
-    const err = new Error('Soully is for staff only');
+    const err = new Error('Soully is for the admin only right now');
     err.status = 403;
     throw err;
   }
   if (!apiKey()) {
-    const err = new Error('Soully is not connected yet. Set ANTHROPIC_API_KEY on the server.');
+    const err = new Error('Soully is not connected yet. Set GEMINI_API_KEY on the server.');
     err.status = 503;
     throw err;
   }
 
-  const messages = incoming.map((message) => ({
-    role: message.role,
-    content: String(message.content || '').slice(0, 2000),
-  }));
+  const contents = toContents(incoming);
   const system = systemPrompt(user);
   const tools = toolsFor(user);
 
   for (let round = 0; round < 4; round += 1) {
-    const data = await complete({ system, tools, messages });
-    const uses = (data.content || []).filter((block) => block.type === 'tool_use');
-    if (!uses.length) {
-      const text = textOf(data);
-      return text || 'I opened my mouth and nothing clever came out. Ask me again.';
+    const data = await complete({ system, tools, contents });
+    const parts = data?.candidates?.[0]?.content?.parts || [];
+    const calls = parts.filter((part) => part.functionCall);
+    if (!calls.length) {
+      return textOf(data) || 'I opened my mouth and nothing clever came out. Ask me again.';
     }
-    messages.push({ role: 'assistant', content: data.content });
-    const results = [];
-    for (const use of uses) {
-      const result = await runTool(user, use.name, use.input);
-      results.push({
-        type: 'tool_result',
-        tool_use_id: use.id,
-        content: JSON.stringify(result).slice(0, 12000),
+    contents.push({ role: 'model', parts });
+    const responses = [];
+    for (const call of calls) {
+      const result = await runTool(user, call.functionCall.name, call.functionCall.args || {});
+      responses.push({
+        functionResponse: {
+          name: call.functionCall.name,
+          response: result && typeof result === 'object' ? result : { result },
+        },
       });
     }
-    messages.push({ role: 'user', content: results });
+    contents.push({ role: 'user', parts: responses });
   }
 
   return 'I went in circles in the filing cabinet. Ask me one thing at a time.';
