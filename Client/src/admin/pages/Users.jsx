@@ -49,6 +49,32 @@ function avatarStyle(role) {
   return { background: getRoleTheme(role).avatarBg };
 }
 
+const WEEKDAY_OPTIONS = [
+  { value: 'sun', label: 'Sunday' },
+  { value: 'mon', label: 'Monday' },
+  { value: 'tue', label: 'Tuesday' },
+  { value: 'wed', label: 'Wednesday' },
+  { value: 'thu', label: 'Thursday' },
+  { value: 'fri', label: 'Friday' },
+  { value: 'sat', label: 'Saturday' },
+];
+
+const WEEKDAY_SHORT = {
+  sun: 'Sun',
+  mon: 'Mon',
+  tue: 'Tue',
+  wed: 'Wed',
+  thu: 'Thu',
+  fri: 'Fri',
+  sat: 'Sat',
+};
+
+function formatDaysOff(days) {
+  const picked = new Set(Array.isArray(days) ? days : []);
+  const labels = WEEKDAY_OPTIONS.filter((day) => picked.has(day.value)).map((day) => WEEKDAY_SHORT[day.value]);
+  return labels.length ? labels.join(', ') : 'Not set';
+}
+
 const EMPTY_STAFF_FORM = {
   full_name: '',
   email: '',
@@ -59,6 +85,7 @@ const EMPTY_STAFF_FORM = {
   leave_casual_days: '0',
   leave_annual_days: '0',
   leave_unpaid_days: '0',
+  days_off: [],
   staff_code: '',
   manager_id: '',
   manager_ids: [],
@@ -520,6 +547,39 @@ function StaffForm({
         </div>
         <div className="sm:col-span-2 rounded-xl border border-soul-line bg-slate-50 px-3 py-2 text-sm text-soul-muted">
           Unpaid leave is unlimited for all staff. Each approved day deducts 1× daily rate (salary ÷ 30).
+        </div>
+        <div className="sm:col-span-2">
+          <label className="label">Days off *</label>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {WEEKDAY_OPTIONS.map((day) => {
+              const selected = Array.isArray(form.days_off) && form.days_off.includes(day.value);
+              return (
+                <button
+                  key={day.value}
+                  type="button"
+                  onClick={() =>
+                    setForm((f) => {
+                      const current = Array.isArray(f.days_off) ? f.days_off : [];
+                      const days_off = selected
+                        ? current.filter((value) => value !== day.value)
+                        : [...current, day.value];
+                      return { ...f, days_off };
+                    })
+                  }
+                  className={`rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
+                    selected
+                      ? 'border-violet-600 bg-violet-600 text-white'
+                      : 'border-soul-line bg-white text-soul-blue hover:border-violet-300'
+                  }`}
+                >
+                  {day.label}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-1 text-[11px] text-slate-400">
+            Choose at least one weekly day off. Those days show in purple on attendance and are skipped by the Excel import.
+          </p>
         </div>
         {form.role === 'operations_supervisor' && (
           <div className="sm:col-span-2">
@@ -1002,6 +1062,7 @@ export default function Users() {
         leave_casual_days: String(u.leave_casual_days ?? 0),
         leave_annual_days: String(u.leave_annual_days ?? 0),
         leave_unpaid_days: String(u.leave_unpaid_days ?? 0),
+        days_off: Array.isArray(u.days_off) ? u.days_off : [],
         staff_code: u.staff_code || '',
         manager_id: u.manager_id ? String(u.manager_id) : '',
         manager_ids: (Array.isArray(u.manager_ids) && u.manager_ids.length
@@ -1045,6 +1106,10 @@ export default function Users() {
       toast.error('Staff ID is required');
       return;
     }
+    if (!Array.isArray(staffForm.days_off) || staffForm.days_off.length < 1) {
+      toast.error('Choose at least one day off');
+      return;
+    }
     if (staffForm.role === 'operations_supervisor' && !staffForm.petty_cash_location) {
       toast.error('Choose which petty cash this operations manager can see');
       return;
@@ -1065,6 +1130,7 @@ export default function Users() {
       base_salary: Number(staffForm.base_salary),
       leave_casual_days: Number(staffForm.leave_casual_days) || 0,
       leave_annual_days: Number(staffForm.leave_annual_days) || 0,
+      days_off: Array.isArray(staffForm.days_off) ? staffForm.days_off : [],
       staff_code: String(staffForm.staff_code || '').trim(),
       manager_id: isWebDeveloperRole(staffForm.role)
         ? null
@@ -1416,6 +1482,7 @@ export default function Users() {
                       <div>{currency(u.base_salary || 0)}</div>
                       <div className="mt-0.5 text-[11px] text-soul-muted">
                         Casual {u.leave_casual_days ?? 0} · Annual {u.leave_annual_days ?? 0} · Unpaid Unlimited
+                        {' · '}Days off {formatDaysOff(u.days_off)}
                       </div>
                       {u.salary_change_status === 'pending' && (
                         <div className="mt-1 text-[11px] text-amber-700">

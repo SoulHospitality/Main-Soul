@@ -42,6 +42,7 @@ const {
   roundMoney,
   splitSalaryAdjustments,
   hasOfficeAttendance,
+  isScheduledDayOff,
   isFieldOperationsRole,
   canRequestWfh,
   canRequestStaffBenefits,
@@ -708,13 +709,13 @@ async function upsertAttendanceRecord({
   actorId,
 }) {
   const st = String(status || '').trim();
-  if (!['on_time', 'late', 'no_show'].includes(st)) {
-    const err = new Error('Status must be on time, late, or no show');
+  if (!['on_time', 'late', 'no_show', 'day_off'].includes(st)) {
+    const err = new Error('Status must be on time, late, no show, or day off');
     err.status = 400;
     throw err;
   }
-  const inTime = hhMmOrNull(checkIn);
-  const outTime = hhMmOrNull(checkOut);
+  const inTime = st === 'day_off' ? null : hhMmOrNull(checkIn);
+  const outTime = st === 'day_off' ? null : hhMmOrNull(checkOut);
   if (st === 'late' && !inTime) {
     const err = new Error('Check-in time is required for a late day');
     err.status = 400;
@@ -722,7 +723,8 @@ async function upsertAttendanceRecord({
   }
 
   let deductionAmount = amount;
-  if (deductionAmount == null || Number.isNaN(Number(deductionAmount))) {
+  if (st === 'day_off') deductionAmount = 0;
+  else if (deductionAmount == null || Number.isNaN(Number(deductionAmount))) {
     if (st === 'on_time') deductionAmount = 0;
     else if (st === 'late') {
       deductionAmount = computeLatenessDeduction(staff.base_salary, inTime).amount;
@@ -816,13 +818,21 @@ async function loadCoveringAttendanceLeaves(staffId, date, db = null) {
   const { rows } = await q(
     `SELECT id, staff_user_id, leave_type,
             start_date::text AS start_date, end_date::text AS end_date,
+            start_time::text AS start_time, end_time::text AS end_time,
             COALESCE(days, 1)::float AS days
      FROM staff_leave_requests
      WHERE staff_user_id = $1 AND status = 'approved'
        AND start_date <= $2::date AND end_date >= $2::date`,
     [staffId, date]
   );
-  return rows.filter((row) => !leaveDoesNotAffectAttendance(row.leave_type));
+  return rows.filter((row) => {
+    if (!leaveDoesNotAffectAttendance(row.leave_type)) return true;
+    return (
+      normalizeExcuseLeaveType(row.leave_type) === 'paid_excuse' &&
+      !row.start_time &&
+      !row.end_time
+    );
+  });
 }
 
 async function removeSingleDayLeavesForDate(db, staff, date) {
@@ -921,8 +931,10 @@ function holidayAttendanceCell(staff, date, leaveRow, baseSalary) {
 
 async function setAttendanceHolidayDay({ staff, date, leaveType, actorId }) {
   const nextType = normalizeAttendanceHolidayType(leaveType);
-  if (!EDITABLE_FULL_DAY_LEAVE_TYPES.has(nextType)) {
-    const err = new Error('Holiday type must be casual, annual, unpaid, or sick');
+  const allowed = new Set(EDITABLE_FULL_DAY_LEAVE_TYPES);
+  allowed.add('paid_excuse');
+  if (!allowed.has(nextType)) {
+    const err = new Error('Holiday type must be casual, annual, unpaid, sick, or excuse');
     err.status = 400;
     throw err;
   }
@@ -1000,6 +1012,78 @@ async function setAttendanceHolidayDay({ staff, date, leaveType, actorId }) {
   } finally {
     client.release();
   }
+}
+
+async function existingFullDayPaidExcuse(staffId, date) {
+  const { rows } = await query(
+    `SELECT id, leave_type, start_date::text AS start_date, end_date::text AS end_date
+     FROM staff_leave_requests
+     WHERE staff_user_id = $1 AND status = 'approved'
+       AND leave_type IN ('paid_excuse', 'early_leave')
+       AND start_date = $2::date AND end_date = $2::date
+       AND start_time IS NULL AND end_time IS NULL
+     LIMIT 1`,
+    [staffId, date]
+  );
+  return rows[0] || null;
+}
+
+async function markAttendanceExcuse({ staff, date, checkIn, actorId }) {
+  const existing = await existingFullDayPaidExcuse(staff.id, date);
+  if (existing) {
+    return {
+      cell: holidayAttendanceCell(staff, date, existing, staff.base_salary),
+      counted_as_late: false,
+    };
+  }
+
+  const covering = await loadCoveringAttendanceLeaves(staff.id, date);
+  const multi = covering.find((leave) => !isSingleDayLeave(leave));
+  if (multi) {
+    const err = new Error(
+      'This day is part of a multi-day holiday. Change or cancel that leave request first.'
+    );
+    err.status = 400;
+    throw err;
+  }
+
+  const used = await paidExcuseUsedInMonth(staff.id, date.slice(0, 7));
+  if (used >= PAID_EXCUSE_MAX_PER_MONTH) {
+    if (covering.length) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await removeSingleDayLeavesForDate(client, staff, date);
+        await client.query('COMMIT');
+      } catch (err) {
+        try {
+          await client.query('ROLLBACK');
+        } catch (_) {}
+        throw err;
+      } finally {
+        client.release();
+      }
+    }
+    const cell = await upsertAttendanceRecord({
+      staff,
+      date,
+      status: 'late',
+      checkIn: checkIn || '11:16',
+      checkOut: null,
+      amount: null,
+      notified: false,
+      actorId,
+    });
+    return { cell, counted_as_late: true };
+  }
+
+  const cell = await setAttendanceHolidayDay({
+    staff,
+    date,
+    leaveType: 'paid_excuse',
+    actorId,
+  });
+  return { cell, counted_as_late: false };
 }
 
 router.get('/hr/payroll', requireRoles(...HR_ROLES), async (req, res, next) => {
@@ -2219,7 +2303,8 @@ router.get('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
     const { rows: staffRows } = await query(
       `SELECT id, full_name, role, staff_code, is_active,
               COALESCE(base_salary, 0)::float AS base_salary,
-              COALESCE(office_attendance_exempt, false) AS office_attendance_exempt
+              COALESCE(office_attendance_exempt, false) AS office_attendance_exempt,
+              COALESCE(days_off, '{}') AS days_off
        FROM staff_users
        WHERE COALESCE(is_active, 1)::int = 1
        ORDER BY full_name ASC, id ASC`
@@ -2244,13 +2329,24 @@ router.get('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
     );
     const { rows: leaveRows } = await query(
       `SELECT id, staff_user_id, leave_type,
-              start_date::text AS start_date, end_date::text AS end_date
+              start_date::text AS start_date, end_date::text AS end_date,
+              start_time::text AS start_time, end_time::text AS end_time
        FROM staff_leave_requests
        WHERE status = 'approved'
          AND start_date < $2::date
          AND end_date >= $1::date`,
       [from, to]
     );
+    const { rows: excuseRows } = await query(
+      `SELECT staff_user_id, COUNT(*)::int AS used
+       FROM staff_leave_requests
+       WHERE status IN ('pending', 'approved')
+         AND leave_type IN ('paid_excuse', 'early_leave')
+         AND to_char(start_date, 'YYYY-MM') = $1
+       GROUP BY staff_user_id`,
+      [from.slice(0, 7)]
+    );
+    const excuseUsedByStaff = new Map(excuseRows.map((row) => [row.staff_user_id, Number(row.used) || 0]));
 
     const cells = {};
     for (const row of deductionRows) {
@@ -2261,7 +2357,11 @@ router.get('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
     }
     const salaryByStaff = Object.fromEntries(staff.map((s) => [s.id, Number(s.base_salary) || 0]));
     for (const leave of leaveRows) {
-      if (leaveDoesNotAffectAttendance(leave.leave_type)) continue;
+      const fullDayExcuse =
+        normalizeExcuseLeaveType(leave.leave_type) === 'paid_excuse' &&
+        !leave.start_time &&
+        !leave.end_time;
+      if (leaveDoesNotAffectAttendance(leave.leave_type) && !fullDayExcuse) continue;
       for (const date of days) {
         if (!dateCoveredByRanges(date, [leave])) continue;
         const baseSalary = salaryByStaff[leave.staff_user_id] || 0;
@@ -2281,6 +2381,24 @@ router.get('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
         };
       }
     }
+    for (const person of staff) {
+      for (const date of days) {
+        const key = cellKey(person.id, date);
+        if (cells[key]) continue;
+        if (!isScheduledDayOff(person.days_off, date)) continue;
+        cells[key] = {
+          staff_user_id: person.id,
+          work_date: date,
+          status: 'day_off',
+          scheduled: true,
+          check_in: null,
+          check_out: null,
+          deduction_amount: 0,
+          notified: false,
+          notes: '',
+        };
+      }
+    }
 
     res.json({
       year,
@@ -2291,6 +2409,8 @@ router.get('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
       staff: staff.map((s) => ({
         ...s,
         daily_rate: dailyRate(s.base_salary),
+        paid_excuse_used: excuseUsedByStaff.get(s.id) || 0,
+        paid_excuse_max: PAID_EXCUSE_MAX_PER_MONTH,
       })),
       cells,
     });
@@ -2342,6 +2462,16 @@ router.put('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
 
     const status = String(b.status || '').trim();
     if (status === 'holiday') {
+      const requested = normalizeExcuseLeaveType(String(b.leave_type || '').trim());
+      if (requested === 'paid_excuse' || String(b.leave_type || '').trim().toLowerCase() === 'excuse') {
+        const marked = await markAttendanceExcuse({
+          staff,
+          date,
+          checkIn: b.check_in,
+          actorId: req.user.id,
+        });
+        return res.json({ ok: true, cell: marked.cell, counted_as_late: marked.counted_as_late });
+      }
       const cell = await setAttendanceHolidayDay({
         staff,
         date,
@@ -2437,7 +2567,8 @@ router.post(
 
       const { rows: staffRows } = await query(
         `SELECT id, staff_code, full_name, base_salary, role,
-                COALESCE(office_attendance_exempt, false) AS office_attendance_exempt
+                COALESCE(office_attendance_exempt, false) AS office_attendance_exempt,
+                COALESCE(days_off, '{}') AS days_off
          FROM staff_users WHERE role <> 'owner'`
       );
 
@@ -2509,6 +2640,10 @@ router.post(
         }
         if (!hasOfficeAttendance(staff.role, staff)) {
           skipped.push({ row: row.row, staff_user_id: staff.id, reason: 'no_office_attendance' });
+          continue;
+        }
+        if (isScheduledDayOff(staff.days_off, row.date)) {
+          skipped.push({ row: row.row, staff_user_id: staff.id, reason: 'day_off' });
           continue;
         }
         if (dateCoveredByRanges(row.date, leavesByStaff.get(staff.id) || [])) {

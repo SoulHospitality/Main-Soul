@@ -15,6 +15,7 @@ const STATUS_META = {
   late: { label: 'Late', className: 'bg-amber-400 hover:bg-amber-500' },
   no_show: { label: 'No show', className: 'bg-red-500 hover:bg-red-600' },
   holiday: { label: 'Holiday', className: 'bg-blue-500 hover:bg-blue-600' },
+  day_off: { label: 'Day off', className: 'bg-violet-500 hover:bg-violet-600' },
 };
 
 const HOLIDAY_TYPE_OPTIONS = [
@@ -22,13 +23,20 @@ const HOLIDAY_TYPE_OPTIONS = [
   { value: 'annual', label: LEAVE_TYPE_LABELS.annual },
   { value: 'unpaid', label: LEAVE_TYPE_LABELS.unpaid },
   { value: 'sick', label: LEAVE_TYPE_LABELS.sick },
+  { value: 'paid_excuse', label: 'Excuse' },
 ];
 
 function normalizeHolidayType(type) {
   const t = String(type || '');
   if (t === 'holiday') return 'annual';
   if (t === 'day_off') return 'casual';
+  if (t === 'early_leave' || t === 'excuse') return 'paid_excuse';
   return HOLIDAY_TYPE_OPTIONS.some((o) => o.value === t) ? t : 'unpaid';
+}
+
+function holidayTypeLabel(type) {
+  if (type === 'paid_excuse' || type === 'early_leave' || type === 'excuse') return 'Excuse';
+  return LEAVE_TYPE_LABELS[type] || type || 'Approved holiday';
 }
 
 function currentMonthIso() {
@@ -99,13 +107,17 @@ export default function Attendance() {
 
   const saveMutation = useMutation({
     mutationFn: (payload) => api.put('/hr/attendance', payload),
-    onSuccess: () => {
+    onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['hr-attendance'] });
       qc.invalidateQueries({ queryKey: ['hr-deductions'] });
       qc.invalidateQueries({ queryKey: ['hr-payroll'] });
       qc.invalidateQueries({ queryKey: ['hr-leave-requests'] });
       qc.invalidateQueries({ queryKey: ['hr-staff'] });
-      toast.success('Attendance saved');
+      toast.success(
+        res?.data?.counted_as_late
+          ? 'Excuse limit reached. This day was counted as late.'
+          : 'Attendance saved'
+      );
       setForm(null);
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Could not save attendance'),
@@ -156,8 +168,18 @@ export default function Attendance() {
     [staff, form?.staff_user_id]
   );
 
+  const currentCell = form ? cells[cellKey(form.staff_user_id, form.work_date)] : null;
+  const excuseUsed = Number(selectedStaff?.paid_excuse_used) || 0;
+  const excuseMax = Number(selectedStaff?.paid_excuse_max ?? 2);
+  const alreadyExcuse =
+    currentCell?.leave_type === 'paid_excuse' || currentCell?.leave_type === 'early_leave';
+  const excuseBlocked = !alreadyExcuse && excuseUsed >= excuseMax;
+  const multiDayHoliday = Boolean(
+    form?.start_date && form?.end_date && form.start_date !== form.end_date
+  );
+
   useEffect(() => {
-    if (!form || deductionTouched || !selectedStaff || form.status === 'holiday') return;
+    if (!form || deductionTouched || !selectedStaff || form.status === 'holiday' || form.status === 'day_off') return;
     const amount = String(computeAttendanceAmount(selectedStaff.base_salary, form));
     if (String(form.deduction_amount) === amount) return;
     setForm((f) => (f ? { ...f, deduction_amount: amount } : f));
@@ -178,6 +200,10 @@ export default function Attendance() {
     if (form.status === 'holiday') {
       if (!form.leave_type) {
         toast.error('Choose a holiday type');
+        return;
+      }
+      if (form.leave_type === 'paid_excuse' && multiDayHoliday) {
+        toast.error('An excuse covers one day. Cancel the multi-day holiday first.');
         return;
       }
       // Multi-day leave: only the holiday type can change from attendance.
@@ -297,6 +323,9 @@ export default function Attendance() {
           <span className="h-3 w-3 rounded-sm bg-blue-500" /> Holiday
         </span>
         <span className="inline-flex items-center gap-1.5">
+          <span className="h-3 w-3 rounded-sm bg-violet-500" /> Day off
+        </span>
+        <span className="inline-flex items-center gap-1.5">
           <span className="h-3 w-3 rounded-sm border border-slate-200 bg-white" /> Empty
         </span>
       </div>
@@ -392,7 +421,7 @@ export default function Attendance() {
               {tip.cell.status === 'holiday' ? (
                 <>
                   <div>
-                    {LEAVE_TYPE_LABELS[tip.cell.leave_type] || tip.cell.leave_type || 'Approved holiday'}
+                    {holidayTypeLabel(tip.cell.leave_type)}
                     {tip.cell.start_date && tip.cell.end_date && tip.cell.start_date !== tip.cell.end_date
                       ? ` · ${tip.cell.start_date} → ${tip.cell.end_date}`
                       : ''}
@@ -400,6 +429,12 @@ export default function Attendance() {
                   <div>Deduction: {currency(tip.cell.deduction_amount || 0)}</div>
                   <div className="text-soul-muted">Click to edit status or holiday type</div>
                 </>
+              ) : tip.cell.status === 'day_off' ? (
+                <div className="text-soul-muted">
+                  {tip.cell.scheduled
+                    ? 'Weekly day off from the staff profile. Excel import skips this weekday.'
+                    : 'Day off. No check-in and no deduction.'}
+                </div>
               ) : (
                 <>
                   <div>Check-in: {tip.cell.check_in || '—'}</div>
@@ -420,7 +455,7 @@ export default function Attendance() {
         title={form ? `${form.staff_name} · ${form.work_date}` : 'Attendance'}
         footer={
           <>
-            {cells[cellKey(form?.staff_user_id, form?.work_date)] ? (
+            {currentCell && !currentCell.scheduled ? (
               <button type="button" className="btn-secondary mr-auto" onClick={clearCell} disabled={saveMutation.isPending}>
                 Clear
               </button>
@@ -438,7 +473,7 @@ export default function Attendance() {
           <div className="space-y-4">
             <div>
               <label className="label">Status</label>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {Object.entries(STATUS_META).map(([value, meta]) => (
                   <button
                     key={value}
@@ -449,6 +484,9 @@ export default function Attendance() {
                         ...f,
                         status: value,
                         leave_type: value === 'holiday' ? f.leave_type || 'casual' : f.leave_type,
+                        ...(value === 'day_off'
+                          ? { deduction_amount: '0', check_in: '', check_out: '' }
+                          : {}),
                       }));
                     }}
                     className={`rounded-xl border px-3 py-2 text-sm font-semibold ${
@@ -466,22 +504,52 @@ export default function Attendance() {
               <div>
                 <label className="label">Holiday type</label>
                 <div className="grid grid-cols-2 gap-2">
-                  {HOLIDAY_TYPE_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => setForm((f) => (f ? { ...f, leave_type: opt.value } : f))}
-                      className={`rounded-xl border px-3 py-2 text-sm font-semibold ${
-                        form.leave_type === opt.value
-                          ? 'border-soul-blue ring-2 ring-soul-blue/20'
-                          : 'border-soul-line'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
+                  {HOLIDAY_TYPE_OPTIONS.map((opt) => {
+                    const excuseOption = opt.value === 'paid_excuse';
+                    const blocked = excuseOption && (excuseBlocked || multiDayHoliday);
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => {
+                          if (excuseOption && multiDayHoliday) {
+                            toast.error('An excuse covers one day. Cancel the multi-day holiday first.');
+                            return;
+                          }
+                          if (excuseOption && excuseBlocked) {
+                            toast.error('Excuse limit reached. This day will be counted as late.');
+                            setDeductionTouched(false);
+                            setForm((f) =>
+                              f
+                                ? {
+                                    ...f,
+                                    status: 'late',
+                                    leave_type: 'casual',
+                                    check_in: f.check_in || '11:16',
+                                  }
+                                : f
+                            );
+                            return;
+                          }
+                          setForm((f) => (f ? { ...f, leave_type: opt.value } : f));
+                        }}
+                        className={`rounded-xl border px-3 py-2 text-sm font-semibold ${
+                          form.leave_type === opt.value
+                            ? 'border-soul-blue ring-2 ring-soul-blue/20'
+                            : 'border-soul-line'
+                        } ${blocked ? 'opacity-50' : ''}`}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
                 </div>
-                {form.start_date && form.end_date && form.start_date !== form.end_date ? (
+                <p className="mt-2 text-xs text-soul-muted">
+                  Excuses used this month: {excuseUsed} of {excuseMax}.
+                  {alreadyExcuse ? ' This day is already an excuse.' : ''}
+                  {excuseBlocked ? ' The limit is finished, so a new excuse is counted as late.' : ''}
+                </p>
+                {multiDayHoliday ? (
                   <p className="mt-2 text-xs text-amber-700">
                     This day is part of a multi-day holiday ({form.start_date} → {form.end_date}).
                     You can change the holiday type for the whole request, or clear only after cancelling
@@ -493,6 +561,10 @@ export default function Attendance() {
                   </p>
                 )}
               </div>
+            ) : form.status === 'day_off' ? (
+              <p className="text-sm text-soul-muted">
+                Day off has no check-in and no deduction. Weekly days off from the staff profile stay purple, and the Excel import leaves them alone.
+              </p>
             ) : (
               <>
                 <div className="grid grid-cols-2 gap-3">

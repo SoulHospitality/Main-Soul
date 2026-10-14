@@ -688,12 +688,39 @@ function collapsePunchAttendance(rows) {
   });
 }
 
+const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+const WEEKDAY_SET = new Set(WEEKDAYS);
+
+function normalizeDaysOff(value) {
+  const list = Array.isArray(value) ? value : String(value || '').split(/[,\s]+/);
+  const picked = new Set();
+  for (const raw of list) {
+    const key = String(raw || '').trim().toLowerCase().slice(0, 3);
+    if (WEEKDAY_SET.has(key)) picked.add(key);
+  }
+  return WEEKDAYS.filter((day) => picked.has(day));
+}
+
+function weekdayKey(isoDate) {
+  const match = String(isoDate || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return '';
+  const day = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))).getUTCDay();
+  return WEEKDAYS[day] || '';
+}
+
+function isScheduledDayOff(daysOff, isoDate) {
+  const key = weekdayKey(isoDate);
+  if (!key) return false;
+  return normalizeDaysOff(daysOff).includes(key);
+}
+
 function fillMissingOfficeAbsences(dailyRows, staffList) {
   const workDates = new Set();
   const present = new Set();
   for (const row of dailyRows || []) {
     const staff = matchAttendanceStaff(row, staffList);
     if (!staff || !hasOfficeAttendance(staff.role, staff) || !row.date) continue;
+    if (isScheduledDayOff(staff.days_off, row.date)) continue;
     present.add(`${staff.id}|${row.date}`);
     if (!row.absent) workDates.add(row.date);
   }
@@ -703,6 +730,7 @@ function fillMissingOfficeAbsences(dailyRows, staffList) {
     for (const date of workDates) {
       const key = `${staff.id}|${date}`;
       if (present.has(key)) continue;
+      if (isScheduledDayOff(staff.days_off, date)) continue;
       extra.push({
         staff_code: String(staff.id),
         name: staff.full_name,
@@ -1158,6 +1186,10 @@ module.exports = {
   parseAttendanceRows,
   parseHtmlExcelTables,
   collapsePunchAttendance,
+  WEEKDAYS,
+  normalizeDaysOff,
+  weekdayKey,
+  isScheduledDayOff,
   fillMissingOfficeAbsences,
   isDoorPunchLog,
   normalizePersonId,

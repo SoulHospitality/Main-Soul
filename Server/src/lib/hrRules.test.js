@@ -35,6 +35,9 @@ const {
   parseHtmlExcelTables,
   matchAttendanceStaff,
   fillMissingOfficeAbsences,
+  weekdayKey,
+  isScheduledDayOff,
+  normalizeDaysOff,
   splitSalaryAdjustments,
   hasOfficeAttendance,
   canRequestWfh,
@@ -349,6 +352,31 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.equal(extra[0].staff_code, '22');
     assert.equal(extra[0].date, '2026-06-02');
     assert.equal(extra[0].absent, true);
+  });
+
+  it('skips a scheduled weekly day off when filling office absences', () => {
+    assert.equal(weekdayKey('2026-06-02'), 'tue');
+    assert.deepEqual(normalizeDaysOff(['Friday', 'tue', 'nope']), ['tue', 'fri']);
+    assert.equal(isScheduledDayOff(['tue'], '2026-06-02'), true);
+    const daily = [
+      {
+        staff_code: '15',
+        name: 'Hana',
+        date: '2026-06-02',
+        arrival_time: '09:49',
+        check_out: '18:00',
+        absent: false,
+      },
+    ];
+    const staff = [
+      { id: 15, staff_code: 'SH15', full_name: 'Hana Kamal', role: 'hr' },
+      { id: 22, staff_code: 'AYA', full_name: 'Aya Ahmed', role: 'reservations_web', days_off: ['tue'] },
+      { id: 23, staff_code: 'MON', full_name: 'Mona Adel', role: 'reservations_web', days_off: ['fri'] },
+    ];
+    const extra = fillMissingOfficeAbsences(daily, staff);
+    assert.equal(extra.length, 1);
+    assert.equal(extra[0].staff_code, '23');
+    assert.equal(extra[0].date, '2026-06-02');
   });
 
   it('splits lateness and absence as penalties, loans as deductions', () => {

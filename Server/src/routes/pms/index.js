@@ -55,6 +55,7 @@ const {
   isHrTeamRole,
   assertCanEditStaffCompensation,
   appliesSalaryImmediately,
+  normalizeDaysOff,
 } = require('../../lib/hrRules');
 const {
   attachManagerIds,
@@ -326,7 +327,8 @@ const STAFF_SELECT = `
   COALESCE(leave_annual_days, 0) AS leave_annual_days,
   COALESCE(leave_unpaid_days, 0) AS leave_unpaid_days,
   COALESCE(holiday_access, 'auto') AS holiday_access,
-  manager_id
+  manager_id,
+  COALESCE(days_off, '{}') AS days_off
 `;
 
 function assertCanAssignRole(actorRole, targetRole) {
@@ -515,6 +517,10 @@ router.post('/users', requireRoles(...USER_ACCOUNT_ROLES), async (req, res, next
     if (!isOwner && !staff_code) {
       return res.status(400).json({ error: 'Staff ID is required' });
     }
+    const daysOff = normalizeDaysOff(b.days_off);
+    if (!isOwner && !daysOff.length) {
+      return res.status(400).json({ error: 'Choose at least one day off' });
+    }
     await assertStaffCodeAvailable(staff_code);
 
     let username = String(b.username || b.phone || '').trim();
@@ -539,8 +545,8 @@ router.post('/users', requireRoles(...USER_ACCOUNT_ROLES), async (req, res, next
          username, password_hash, email, full_name, role, staff_code,
          base_salary, salary_change_status, is_first_login, is_active,
          sales_commission_pct, leave_casual_days, leave_annual_days, leave_unpaid_days, manager_id,
-         petty_cash_location
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,'none',1,1,$8,COALESCE($9,0),COALESCE($10,0),COALESCE($11,0),$12,$13)
+         petty_cash_location, days_off
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,'none',1,1,$8,COALESCE($9,0),COALESCE($10,0),COALESCE($11,0),$12,$13,$14::text[])
        RETURNING ${STAFF_SELECT}`,
       [
         username,
@@ -556,6 +562,7 @@ router.post('/users', requireRoles(...USER_ACCOUNT_ROLES), async (req, res, next
         b.leave_unpaid_days != null && b.leave_unpaid_days !== '' ? parseInt(b.leave_unpaid_days, 10) || 0 : 0,
         managerId ?? null,
         pettyCashScope,
+        daysOff,
       ]
     );
 
@@ -691,6 +698,14 @@ router.patch('/users/:id', requireRoles(...USER_ACCOUNT_ROLES), async (req, res,
       unpaidDays = n;
     }
 
+    let daysOff = null;
+    if (b.days_off !== undefined) {
+      daysOff = normalizeDaysOff(b.days_off);
+      if (nextRole !== 'owner' && !daysOff.length) {
+        return res.status(400).json({ error: 'Choose at least one day off' });
+      }
+    }
+
     let staffCode = existing.staff_code || null;
     if (b.staff_code !== undefined) {
       staffCode = normalizeStaffCode(b.staff_code);
@@ -738,6 +753,7 @@ router.patch('/users/:id', requireRoles(...USER_ACCOUNT_ROLES), async (req, res,
          leave_unpaid_days = $15,
          staff_code = $16,
          manager_id = $17,
+         days_off = COALESCE($19::text[], days_off),
          updated_at = now()
        WHERE id = $18
        RETURNING ${STAFF_SELECT}`,
@@ -760,6 +776,7 @@ router.patch('/users/:id', requireRoles(...USER_ACCOUNT_ROLES), async (req, res,
         staffCode,
         nextManagerId,
         req.params.id,
+        daysOff,
       ]
     );
     if (nextRole !== 'owner' && managerIdsToSync !== null) {
