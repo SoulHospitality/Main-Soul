@@ -144,6 +144,7 @@ router.use(require('./sitePopupAdmin'));
 router.use(require('./siteSettingsAdmin'));
 router.use(require('./hr'));
 router.use(require('./inbox'));
+router.use(require('./soully'));
 
 function sendList(res, rows) {
   res.json(rows);

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import MobileDock from './MobileDock';
+import Soully from '../soully/Soully';
 import { useAuth } from '../../context/AuthContext';
 import { roleThemeVars } from '../../utils/roleTheme';
 
@@ -68,6 +69,7 @@ export default function Layout({ children }) {
       </main>
 
       {isMobile ? <MobileDock onOpenMenu={() => setMobileOpen(true)} /> : null}
+      <Soully />
     </div>
   );
 }
