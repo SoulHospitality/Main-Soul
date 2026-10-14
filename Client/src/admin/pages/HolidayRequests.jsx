@@ -144,7 +144,7 @@ function RequestForm({ leaveSnap, form, setForm, createMutation, onSubmit }) {
                 {isMission
                   ? 'Paid mission time. Does not affect attendance. Needs manager then HR Manager.'
                   : form.leave_type === 'paid_excuse'
-                    ? 'Paid excuse: max 2 hours, 2 per month. Needs manager then HR Manager.'
+                    ? 'Paid excuse: max 2 hours, 2 per cycle (26th–25th). Needs manager then HR Manager.'
                     : 'Unpaid excuse: hours × hourly rate (daily rate ÷ 24). Needs manager then HR Manager.'}
               </p>
             </div>

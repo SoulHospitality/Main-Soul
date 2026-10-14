@@ -4,10 +4,10 @@ import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import PayslipDetail, { PAYSLIP_MONTHS } from '../components/PayslipDetail';
 import { useAuth } from '../context/AuthContext';
+import { currentPayrollPeriod, formatCycleRange, payrollCycleBounds } from '../utils/hrPolicy';
 
 function currentPeriod() {
-  const now = new Date();
-  return { year: now.getFullYear(), month: now.getMonth() + 1 };
+  return currentPayrollPeriod();
 }
 
 export default function Payslip() {
@@ -28,7 +28,9 @@ export default function Payslip() {
         <div className="page-header mb-0">
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-soul-muted">Payroll</p>
           <h1 className="page-title mt-1">Payslip</h1>
-          <p className="page-subtitle">Your base salary, bonuses, penalties, deductions, and net for the month.</p>
+          <p className="page-subtitle">
+            {PAYSLIP_MONTHS[month - 1]} {year} is {formatCycleRange(payrollCycleBounds(year, month).from, payrollCycleBounds(year, month).through)}.
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <select className="input w-auto" value={month} onChange={(e) => setMonth(Number(e.target.value))}>

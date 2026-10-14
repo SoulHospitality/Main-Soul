@@ -1,7 +1,7 @@
 import { Receipt } from 'lucide-react';
 import { ROLE_LABELS } from '../utils/permissions';
 import { currency, formatDate } from '../utils/formatters';
-import { DEDUCTION_TYPE_LABELS } from '../utils/hrPolicy';
+import { DEDUCTION_TYPE_LABELS, formatCycleRange, payrollCycleBounds } from '../utils/hrPolicy';
 
 export const PAYSLIP_MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -56,6 +56,8 @@ export default function PayslipDetail({ data, year, month, fallbackName }) {
               {ROLE_LABELS[data.role] || data.role}
               {' · '}
               {PAYSLIP_MONTHS[month - 1]} {year}
+              {' · '}
+              {formatCycleRange(payrollCycleBounds(year, month).from, payrollCycleBounds(year, month).through)}
             </div>
           </div>
         </div>

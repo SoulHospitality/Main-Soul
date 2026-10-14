@@ -11,10 +11,10 @@ import SearchFilter from '../components/ui/SearchFilter';
 import PayslipDetail, { PAYSLIP_MONTHS } from '../components/PayslipDetail';
 import { ROLE_LABELS } from '../utils/permissions';
 import { currency } from '../utils/formatters';
+import { currentPayrollPeriod, formatCycleRange, payrollCycleBounds } from '../utils/hrPolicy';
 
 function currentPeriod() {
-  const now = new Date();
-  return { year: now.getFullYear(), month: now.getMonth() + 1 };
+  return currentPayrollPeriod();
 }
 
 export default function Payrolls() {
@@ -78,7 +78,7 @@ export default function Payrolls() {
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-soul-muted">HR</p>
           <h1 className="page-title mt-1">Payrolls</h1>
           <p className="page-subtitle">
-            Track staff salaries, deductions, and money paid for each month. Click a row to open that employee’s payslip.
+            {PAYSLIP_MONTHS[month - 1]} {year} runs {formatCycleRange(payrollCycleBounds(year, month).from, payrollCycleBounds(year, month).through)}. Salaries, deductions, and bonuses in that window. Click a row to open that employee’s payslip.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

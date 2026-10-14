@@ -1,9 +1,58 @@
+export const PAYROLL_CYCLE_START_DAY = 26;
 export const DAYS_IN_MONTH = 30;
 export const HOURS_IN_DAY = 24;
 export const PAID_EXCUSE_MAX_PER_MONTH = 2;
 export const PAID_EXCUSE_MAX_HOURS = 2;
 /** @deprecated */
 export const EARLY_LEAVE_MAX_PER_YEAR = PAID_EXCUSE_MAX_PER_MONTH;
+
+function pad2(n) {
+  return String(n).padStart(2, '0');
+}
+
+function isoFromLocal(date) {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
+
+/** Cycle labeled `month` runs from the 26th of the previous month through the 25th. */
+export function payrollCycleBounds(year, month) {
+  const y = Number(year);
+  const m = Number(month);
+  const from = new Date(y, m - 2, PAYROLL_CYCLE_START_DAY);
+  const through = new Date(y, m - 1, PAYROLL_CYCLE_START_DAY - 1);
+  return {
+    year: y,
+    month: m,
+    from: isoFromLocal(from),
+    through: isoFromLocal(through),
+    to: isoFromLocal(new Date(y, m - 1, PAYROLL_CYCLE_START_DAY)),
+  };
+}
+
+/** The 26th opens the next month's cycle. */
+export function payrollCycleForDate(isoDate) {
+  const [y, m, d] = String(isoDate || '').slice(0, 10).split('-').map(Number);
+  if (!y || !m || !d) return payrollCycleBounds(1970, 1);
+  if (d >= PAYROLL_CYCLE_START_DAY) {
+    const next = new Date(y, m, 1);
+    return payrollCycleBounds(next.getFullYear(), next.getMonth() + 1);
+  }
+  return payrollCycleBounds(y, m);
+}
+
+export function currentPayrollPeriod(now = new Date()) {
+  const cycle = payrollCycleForDate(isoFromLocal(now));
+  return { year: cycle.year, month: cycle.month };
+}
+
+export function formatCycleRange(from, through) {
+  const fmt = (iso) => {
+    const [y, m, d] = String(iso || '').slice(0, 10).split('-').map(Number);
+    if (!y || !m || !d) return '';
+    return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  };
+  return `${fmt(from)} – ${fmt(through)}`;
+}
 
 export function dailyRate(baseSalary) {
   return Math.round(((Number(baseSalary) || 0) / DAYS_IN_MONTH + Number.EPSILON) * 100) / 100;

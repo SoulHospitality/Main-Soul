@@ -7,7 +7,14 @@ import Modal from '../components/ui/Modal';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import { ROLE_LABELS, hasOfficeAttendance } from '../utils/permissions';
 import { currency } from '../utils/formatters';
-import { computeAttendanceAmount, LEAVE_TYPE_LABELS } from '../utils/hrPolicy';
+import {
+  computeAttendanceAmount,
+  currentPayrollPeriod,
+  formatCycleRange,
+  LEAVE_TYPE_LABELS,
+  payrollCycleBounds,
+  payrollCycleForDate,
+} from '../utils/hrPolicy';
 
 const CELL_W = 36;
 const STATUS_META = {
@@ -41,14 +48,16 @@ function holidayTypeLabel(type) {
 }
 
 function currentMonthIso() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const { year, month } = currentPayrollPeriod();
+  return `${year}-${String(month).padStart(2, '0')}`;
 }
 
 function monthLabel(ym) {
   const [y, m] = String(ym || '').split('-').map(Number);
   if (!y || !m) return ym;
-  return new Date(y, m - 1, 1).toLocaleString('en-GB', { month: 'long', year: 'numeric' });
+  const name = new Date(y, m - 1, 1).toLocaleString('en-GB', { month: 'long', year: 'numeric' });
+  const cycle = payrollCycleBounds(y, m);
+  return `${name} · ${formatCycleRange(cycle.from, cycle.through)}`;
 }
 
 function shiftMonth(ym, delta) {
@@ -145,7 +154,10 @@ export default function Attendance() {
         .map((c) => String(c?.work_date || '').slice(0, 10))
         .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
         .sort();
-      if (dates[0]) setMonth(dates[0].slice(0, 7));
+      if (dates[0]) {
+        const cycle = payrollCycleForDate(dates[0]);
+        setMonth(`${cycle.year}-${String(cycle.month).padStart(2, '0')}`);
+      }
       const errCount = Array.isArray(data.errors) ? data.errors.length : 0;
       toast.success(
         `Imported ${data.created || 0} day${data.created === 1 ? '' : 's'} onto the schedule` +
@@ -551,7 +563,7 @@ export default function Attendance() {
                   </p>
                 ) : null}
                 <p className="mt-2 text-xs text-soul-muted">
-                  Excuses used this month: {excuseUsed} of {excuseMax}.
+                  Excuses used this cycle: {excuseUsed} of {excuseMax}.
                   {alreadyExcuse ? ' This day is already an excuse.' : ''}
                   {excuseBlocked ? ' The limit is finished, so a new excuse is counted as late.' : ''}
                 </p>

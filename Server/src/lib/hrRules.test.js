@@ -28,6 +28,8 @@ const {
   leaveTypeRequiresHolidayAccess,
   isUnpaidLeaveUnlimited,
   nextPayrollPeriod,
+  payrollCycleBounds,
+  payrollCycleForDate,
   dateCoveredByRanges,
   parseAttendanceRows,
   collapsePunchAttendance,
@@ -219,13 +221,28 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.equal(annualManagerOnly.status, 'pending');
   });
 
-  it('schedules approved loans on the first of next month', () => {
+  it('runs each payroll cycle from the 26th through the 25th', () => {
+    assert.deepEqual(payrollCycleBounds(2026, 10), {
+      year: 2026,
+      month: 10,
+      from: '2026-09-26',
+      through: '2026-10-25',
+      to: '2026-10-26',
+    });
+    assert.equal(payrollCycleForDate('2026-09-25').month, 9);
+    assert.equal(payrollCycleForDate('2026-09-26').month, 10);
+    assert.equal(payrollCycleForDate('2026-10-25').month, 10);
+    assert.equal(payrollCycleForDate('2026-12-26').month, 1);
+    assert.equal(payrollCycleForDate('2026-12-26').year, 2027);
+  });
+
+  it('schedules approved loans on the first day of the next cycle', () => {
     assert.deepEqual(nextPayrollPeriod('2026-08-19'), {
       year: 2026,
       month: 9,
-      deductionDate: '2026-09-01',
+      deductionDate: '2026-08-26',
     });
-    assert.equal(nextPayrollPeriod('2026-12-31').deductionDate, '2027-01-01');
+    assert.equal(nextPayrollPeriod('2026-12-31').deductionDate, '2027-01-26');
   });
 
   it('skips attendance when an approved holiday covers the date', () => {

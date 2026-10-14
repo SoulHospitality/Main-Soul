@@ -30,6 +30,9 @@ const {
   HR_TEAM_ROLES,
   assertCanEditStaffCompensation,
   nextPayrollPeriod,
+  payrollCycleBounds,
+  payrollCycleForDate,
+  payrollCycleKey,
   dateCoveredByRanges,
   parseAttendanceRows,
   parseHtmlExcelTables,
@@ -343,11 +346,8 @@ function inclusiveDays(start, end) {
 }
 
 function periodBounds(year, month) {
-  const y = Number(year);
-  const m = Number(month);
-  const from = `${y}-${String(m).padStart(2, '0')}-01`;
-  const next = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`;
-  return { from, to: next };
+  const cycle = payrollCycleBounds(year, month);
+  return { from: cycle.from, through: cycle.through, to: cycle.to };
 }
 
 function parsePeriod(req) {
@@ -399,15 +399,19 @@ async function pendingLeaveDays(staffUserId, leaveType, exceptId = null) {
   return Number(rows[0]?.days) || 0;
 }
 
-async function paidExcuseUsedInMonth(staffUserId, yearMonth) {
-  const { rows } = await query(
+async function paidExcuseUsedInMonth(staffUserId, yearMonth, db = null) {
+  const [y, m] = String(yearMonth).split('-').map(Number);
+  const { from, to } = payrollCycleBounds(y, m);
+  const q = db ? (sql, params) => db.query(sql, params) : query;
+  const { rows } = await q(
     `SELECT COUNT(*)::int AS cnt
      FROM staff_leave_requests
      WHERE staff_user_id = $1
        AND leave_type IN ('paid_excuse', 'early_leave')
        AND status IN ('pending', 'approved')
-       AND to_char(start_date, 'YYYY-MM') = $2`,
-    [staffUserId, yearMonth]
+       AND start_date >= $2::date
+       AND start_date < $3::date`,
+    [staffUserId, from, to]
   );
   return Number(rows[0]?.cnt) || 0;
 }
@@ -416,7 +420,7 @@ async function leaveSnapshot(staffUserId) {
   const staff = await loadStaffForHr(staffUserId);
   const cairo = cairoParts();
   const year = Number(cairo.date.slice(0, 4));
-  const yearMonth = cairo.date.slice(0, 7);
+  const yearMonth = payrollCycleKey(payrollCycleForDate(cairo.date));
   const pendingCasual = await pendingLeaveDays(staffUserId, 'casual');
   const pendingAnnual = await pendingLeaveDays(staffUserId, 'annual');
   const paidExcuseUsed = await paidExcuseUsedInMonth(staffUserId, yearMonth);
@@ -1047,7 +1051,7 @@ async function markAttendanceExcuse({ staff, date, checkIn, actorId }) {
     throw err;
   }
 
-  const used = await paidExcuseUsedInMonth(staff.id, date.slice(0, 7));
+  const used = await paidExcuseUsedInMonth(staff.id, payrollCycleKey(payrollCycleForDate(date)));
   if (used >= PAID_EXCUSE_MAX_PER_MONTH) {
     if (covering.length) {
       const client = await pool.connect();
@@ -1804,21 +1808,22 @@ router.post('/hr/leave-requests/:id/review', async (req, res, next) => {
           }
         }
         if (row.leave_type === 'paid_excuse' || row.leave_type === 'early_leave') {
-          const yearMonth = String(row.start_date).slice(0, 7);
+          const cycle = payrollCycleForDate(row.start_date);
           const { rows: usedRows } = await client.query(
             `SELECT COUNT(*)::int AS cnt
              FROM staff_leave_requests
              WHERE staff_user_id = $1
                AND leave_type IN ('paid_excuse', 'early_leave')
-               AND status = 'approved'
-               AND to_char(start_date, 'YYYY-MM') = $2
-               AND id <> $3`,
-            [row.staff_user_id, yearMonth, row.id]
+               AND status IN ('pending', 'approved')
+               AND start_date >= $2::date
+               AND start_date < $3::date
+               AND id <> $4`,
+            [row.staff_user_id, cycle.from, cycle.to, row.id]
           );
           const used = Number(usedRows[0]?.cnt) || 0;
           if (used + 1 > PAID_EXCUSE_MAX_PER_MONTH) {
             const err = new Error(
-              `Paid excuse limit reached (maximum ${PAID_EXCUSE_MAX_PER_MONTH} per month)`
+              `Paid excuse limit reached (maximum ${PAID_EXCUSE_MAX_PER_MONTH} per cycle, 26th–25th)`
             );
             err.status = 400;
             throw err;
@@ -2342,9 +2347,10 @@ router.get('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
        FROM staff_leave_requests
        WHERE status IN ('pending', 'approved')
          AND leave_type IN ('paid_excuse', 'early_leave')
-         AND to_char(start_date, 'YYYY-MM') = $1
+         AND start_date >= $1::date
+         AND start_date < $2::date
        GROUP BY staff_user_id`,
-      [from.slice(0, 7)]
+      [from, to]
     );
     const excuseUsedByStaff = new Map(excuseRows.map((row) => [row.staff_user_id, Number(row.used) || 0]));
 

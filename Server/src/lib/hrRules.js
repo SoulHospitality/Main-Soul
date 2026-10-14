@@ -382,14 +382,47 @@ function assertHrNotEditingOwnCompensation() {
   return;
 }
 
-function nextPayrollPeriod(isoDate) {
-  const [y, m] = String(isoDate).slice(0, 10).split('-').map(Number);
-  if (m === 12) return { year: y + 1, month: 1, deductionDate: `${y + 1}-01-01` };
+const PAYROLL_CYCLE_START_DAY = 26;
+
+function isoFromUtc(date) {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+}
+
+/** Cycle labeled `month` runs from the 26th of the previous month through the 25th. */
+function payrollCycleBounds(year, month) {
+  const y = Number(year);
+  const m = Number(month);
+  const fromDate = new Date(Date.UTC(y, m - 2, PAYROLL_CYCLE_START_DAY));
+  const throughDate = new Date(Date.UTC(y, m - 1, PAYROLL_CYCLE_START_DAY - 1));
+  const toDate = new Date(Date.UTC(y, m - 1, PAYROLL_CYCLE_START_DAY));
   return {
     year: y,
-    month: m + 1,
-    deductionDate: `${y}-${String(m + 1).padStart(2, '0')}-01`,
+    month: m,
+    from: isoFromUtc(fromDate),
+    through: isoFromUtc(throughDate),
+    to: isoFromUtc(toDate),
   };
+}
+
+/** The cycle that contains this calendar date. The 26th opens the next month's cycle. */
+function payrollCycleForDate(isoDate) {
+  const [y, m, d] = String(isoDate || '').slice(0, 10).split('-').map(Number);
+  if (!y || !m || !d) return payrollCycleBounds(1970, 1);
+  if (d >= PAYROLL_CYCLE_START_DAY) {
+    const next = new Date(Date.UTC(y, m, 1));
+    return payrollCycleBounds(next.getUTCFullYear(), next.getUTCMonth() + 1);
+  }
+  return payrollCycleBounds(y, m);
+}
+
+function payrollCycleKey(cycle) {
+  return `${cycle.year}-${String(cycle.month).padStart(2, '0')}`;
+}
+
+function nextPayrollPeriod(isoDate) {
+  const current = payrollCycleForDate(isoDate);
+  const next = payrollCycleForDate(current.to);
+  return { year: next.year, month: next.month, deductionDate: next.from };
 }
 
 function dateCoveredByRanges(isoDate, ranges = []) {
@@ -1181,6 +1214,10 @@ module.exports = {
   canEditStaffCompensation,
   assertCanEditStaffCompensation,
   assertHrNotEditingOwnCompensation,
+  PAYROLL_CYCLE_START_DAY,
+  payrollCycleBounds,
+  payrollCycleForDate,
+  payrollCycleKey,
   nextPayrollPeriod,
   dateCoveredByRanges,
   parseAttendanceRows,
