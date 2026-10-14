@@ -348,6 +348,12 @@ h1, h2, h3, h4, .font-display {
 }
 .g-scroll-cue { animation: gScrollCue 2.4s var(--ease-soul) infinite; }
 
+@keyframes gWaScroll {
+  0%, 100% { transform: translateY(0); }
+  45%, 55% { transform: translateY(12px); }
+}
+.wa-fab--with-scroll { animation: gWaScroll 2.4s var(--ease-soul) infinite; }
+
 /* Fullscreen menu */
 @keyframes gMenuIn {
   from { clip-path: inset(0 0 100% 0); }
@@ -517,6 +523,7 @@ h1, h2, h3, h4, .font-display {
   .g-kenburns,
   .g-marquee__track,
   .g-scroll-cue,
+  .wa-fab--with-scroll,
   .g-menu-in,
   .g-menu-item { animation: none !important; }
   .g-scrolltext .g-word { opacity: 1; }
@@ -959,6 +966,30 @@ td.sched-drag-hit {
 }
 td.sched-drag-hit > div {
   color: rgb(3 105 161) !important;
+}
+
+.hero-yt-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.9s ease;
+}
+.hero-yt-layer.is-front {
+  opacity: 1;
+}
+.hero-yt-layer iframe {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100vw;
+  height: 56.25vw;
+  min-width: 177.78vh;
+  min-height: 100%;
+  border: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(1.55);
 }
 
 .soully {
