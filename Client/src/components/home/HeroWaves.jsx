@@ -1,40 +1,48 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 
-const VIDEO = '/soul-brand/hero-alamein.mp4?v=alamein';
-const POSTER = '/soul-brand/hero-alamein.jpg?v=alamein';
+const VIDEO_ID = 'WFua9wsYbb0';
+const POSTER = `https://i.ytimg.com/vi/${VIDEO_ID}/maxresdefault.jpg`;
+
+function embedSrc() {
+  const params = new URLSearchParams({
+    autoplay: '1',
+    mute: '1',
+    loop: '1',
+    playlist: VIDEO_ID,
+    controls: '0',
+    modestbranding: '1',
+    playsinline: '1',
+    rel: '0',
+    iv_load_policy: '3',
+    disablekb: '1',
+  });
+  return `https://www.youtube-nocookie.com/embed/${VIDEO_ID}?${params}`;
+}
 
 export default function HeroWaves() {
-  const videoRef = useRef(null);
+  const [reduce, setReduce] = useState(false);
 
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return undefined;
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reduce) {
-      video.pause();
-      video.removeAttribute('autoplay');
-      return undefined;
-    }
-    const play = () => video.play().catch(() => {});
-    if (video.readyState >= 2) play();
-    else video.addEventListener('canplay', play, { once: true });
-    return () => video.removeEventListener('canplay', play);
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const apply = () => setReduce(media.matches);
+    apply();
+    media.addEventListener('change', apply);
+    return () => media.removeEventListener('change', apply);
   }, []);
 
   return (
-    <div className="absolute inset-0 bg-[#0b4f73]" aria-hidden="true">
-      <video
-        ref={videoRef}
-        className="h-full w-full object-cover"
-        autoPlay
-        muted
-        loop
-        playsInline
-        preload="auto"
-        poster={POSTER}
-      >
-        <source src={VIDEO} type="video/mp4" />
-      </video>
+    <div className="absolute inset-0 overflow-hidden bg-[#0b4f73]" aria-hidden="true">
+      <img src={POSTER} alt="" className="absolute inset-0 h-full w-full object-cover" />
+      {reduce ? null : (
+        <iframe
+          className="pointer-events-none absolute left-1/2 top-1/2 h-[56.25vw] min-h-full w-[177.78vh] min-w-full -translate-x-1/2 -translate-y-1/2"
+          src={embedSrc()}
+          title="Al Alamein, North Coast, Egypt"
+          allow="autoplay; encrypted-media; picture-in-picture"
+          referrerPolicy="strict-origin-when-cross-origin"
+          tabIndex={-1}
+        />
+      )}
     </div>
   );
 }
