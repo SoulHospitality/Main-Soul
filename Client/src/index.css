@@ -972,12 +972,7 @@ td.sched-drag-hit > div {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  opacity: 0;
   pointer-events: none;
-  transition: opacity 0.9s ease;
-}
-.hero-yt-layer.is-front {
-  opacity: 1;
 }
 .hero-yt-layer iframe {
   position: absolute;
@@ -989,7 +984,21 @@ td.sched-drag-hit > div {
   min-height: 100%;
   border: 0;
   pointer-events: none;
-  transform: translate(-50%, -50%) scale(1.55);
+  transform: translate(-50%, -50%);
+}
+.hero-yt-poster {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 1;
+  pointer-events: none;
+}
+.hero-yt-poster.is-clear {
+  opacity: 0;
+  transition: opacity 0.9s ease;
 }
 
 .soully {
