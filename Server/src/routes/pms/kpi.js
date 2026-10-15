@@ -13,6 +13,8 @@ const {
   measuresForMetric,
   teamKeysForRole,
   kpiProgress,
+  checklistCompletion,
+  blendKpiPercent,
   eachDate,
 } = require('../../lib/kpi');
 
@@ -248,6 +250,64 @@ router.get('/kpi', async (req, res, next) => {
       target.staff_ids.push(Number(row.staff_user_id));
     }
 
+    const targetIds = [...byTarget.keys()];
+    const checklistByTarget = new Map();
+    const tickSet = new Set();
+    if (targetIds.length) {
+      const { rows: checklistRows } = await query(
+        `SELECT c.id, c.target_id, c.title, c.weight_percent::float AS weight_percent, c.created_by,
+                maker.full_name AS created_by_name,
+                i.id AS item_id, i.label, i.sort_order,
+                a.staff_user_id
+         FROM kpi_checklists c
+         LEFT JOIN staff_users maker ON maker.id = c.created_by
+         LEFT JOIN kpi_checklist_items i ON i.checklist_id = c.id
+         LEFT JOIN kpi_checklist_assignees a ON a.checklist_id = c.id
+         WHERE c.target_id = ANY($1::int[])
+         ORDER BY c.id, i.sort_order, i.id`,
+        [targetIds]
+      );
+      for (const row of checklistRows) {
+        let checklist = checklistByTarget.get(row.target_id);
+        if (!checklist) {
+          checklist = [];
+          checklistByTarget.set(row.target_id, checklist);
+        }
+        let entry = checklist.find((item) => item.id === row.id);
+        if (!entry) {
+          entry = {
+            id: row.id,
+            title: row.title,
+            weight_percent: Number(row.weight_percent),
+            created_by: row.created_by,
+            created_by_name: row.created_by_name,
+            items: [],
+            staff_ids: [],
+          };
+          checklist.push(entry);
+        }
+        if (row.item_id && !entry.items.some((item) => item.id === row.item_id)) {
+          entry.items.push({ id: row.item_id, label: row.label });
+        }
+        if (row.staff_user_id && !entry.staff_ids.includes(Number(row.staff_user_id))) {
+          entry.staff_ids.push(Number(row.staff_user_id));
+        }
+      }
+      const checklistIds = [...checklistByTarget.values()].flat().map((item) => item.id);
+      if (checklistIds.length) {
+        const { rows: ticks } = await query(
+          `SELECT t.item_id, t.staff_user_id, t.work_date::text AS work_date
+           FROM kpi_checklist_ticks t
+           JOIN kpi_checklist_items i ON i.id = t.item_id
+           WHERE i.checklist_id = ANY($1::int[])`,
+          [checklistIds]
+        );
+        for (const tick of ticks) {
+          tickSet.add(`${tick.staff_user_id}|${tick.item_id}|${String(tick.work_date).slice(0, 10)}`);
+        }
+      }
+    }
+
     const progressCache = new Map();
     async function progress(target) {
       const key = `${target.id}`;
@@ -271,6 +331,42 @@ router.get('/kpi', async (req, res, next) => {
         const actual = target.metric === 'reviews' ? (raw?.average ?? null) : (raw || 0);
         const reviewCount = target.metric === 'reviews' ? (raw?.count || 0) : null;
         const score = kpiProgress({ actual, targetValue: target.target_value });
+        const checklists = (checklistByTarget.get(target.id) || [])
+          .filter((checklist) => checklist.staff_ids.includes(Number(person.id)))
+          .map((checklist) => {
+            const checkedByDay = {};
+            for (const date of stats.days) {
+              checkedByDay[date] = checklist.items.filter((item) => (
+                tickSet.has(`${Number(person.id)}|${item.id}|${date}`)
+              )).length;
+            }
+            const completion = checklistCompletion({
+              days: stats.days,
+              itemCount: checklist.items.length,
+              checkedByDay,
+            });
+            return {
+              id: checklist.id,
+              title: checklist.title,
+              weight_percent: checklist.weight_percent,
+              created_by_name: checklist.created_by_name,
+              can_delete: req.user.role === 'admin' || Number(checklist.created_by) === Number(req.user.id),
+              items: checklist.items.map((item) => ({
+                id: item.id,
+                label: item.label,
+                checked_dates: stats.days.filter((date) => tickSet.has(`${Number(person.id)}|${item.id}|${date}`)),
+              })),
+              completion_percent: completion.percent,
+              daily: completion.days,
+            };
+          });
+        const percent = blendKpiPercent({
+          metricPercent: score.percent,
+          parts: checklists.map((checklist) => ({
+            weight: checklist.weight_percent,
+            percent: checklist.completion_percent,
+          })),
+        });
         kpis.push({
           id: target.id,
           metric: target.metric,
@@ -282,7 +378,10 @@ router.get('/kpi', async (req, res, next) => {
           deadline: target.deadline,
           created_by_name: target.created_by_name,
           actual: score.actual,
-          percent: score.percent,
+          metric_percent: score.percent,
+          percent,
+          checklist_weight: checklists.reduce((sum, checklist) => sum + checklist.weight_percent, 0),
+          checklists,
           review_count: reviewCount,
           days: stats.days,
           daily: stats.days.map((date) => {
@@ -432,10 +531,171 @@ router.delete('/kpi/:id', async (req, res, next) => {
     }
     if (staffId) {
       await query(`DELETE FROM kpi_target_assignees WHERE target_id = $1 AND staff_user_id = $2`, [id, staffId]);
+      await query(
+        `DELETE FROM kpi_checklist_assignees a
+         USING kpi_checklists c
+         WHERE a.checklist_id = c.id AND c.target_id = $1 AND a.staff_user_id = $2`,
+        [id, staffId]
+      );
+      await query(
+        `DELETE FROM kpi_checklists c
+         WHERE c.target_id = $1
+           AND NOT EXISTS (SELECT 1 FROM kpi_checklist_assignees a WHERE a.checklist_id = c.id)`,
+        [id]
+      );
       const { rows: left } = await query(`SELECT 1 FROM kpi_target_assignees WHERE target_id = $1 LIMIT 1`, [id]);
       if (!left.length) await query(`DELETE FROM kpi_targets WHERE id = $1`, [id]);
     } else {
       await query(`DELETE FROM kpi_targets WHERE id = $1`, [id]);
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/kpi/:id/checklists', async (req, res, next) => {
+  try {
+    if (!canManageKpi(req.user)) {
+      return res.status(403).json({ error: 'Only the CEO and managers can add a checklist' });
+    }
+    const targetId = Number(req.params.id);
+    const { rows: targets } = await query(
+      `SELECT id, starts_on::text AS starts_on, deadline::text AS deadline FROM kpi_targets WHERE id = $1`,
+      [targetId]
+    );
+    if (!targets[0]) return res.status(404).json({ error: 'KPI not found' });
+    const title = String(req.body?.title || '').trim().slice(0, 120);
+    if (title.length < 2) return res.status(400).json({ error: 'Name the checklist' });
+    const weight = Number(req.body?.weight_percent);
+    if (!(weight > 0 && weight <= 100)) {
+      return res.status(400).json({ error: 'Choose how much of the KPI this checklist is, from 1 to 100' });
+    }
+    const labels = (Array.isArray(req.body?.items) ? req.body.items : [])
+      .map((item) => String(item || '').trim().slice(0, 160))
+      .filter(Boolean)
+      .slice(0, 12);
+    if (!labels.length) return res.status(400).json({ error: 'Add at least one item to check each day' });
+
+    const { rows: weightRows } = await query(
+      `SELECT COALESCE(SUM(weight_percent), 0)::float AS used FROM kpi_checklists WHERE target_id = $1`,
+      [targetId]
+    );
+    if (Number(weightRows[0]?.used || 0) + weight > 100) {
+      return res.status(400).json({ error: 'Checklists on this KPI cannot add up to more than 100%' });
+    }
+
+    const { rows: assigneeRows } = await query(
+      `SELECT staff_user_id FROM kpi_target_assignees WHERE target_id = $1`,
+      [targetId]
+    );
+    const onTarget = new Set(assigneeRows.map((row) => Number(row.staff_user_id)));
+    const assignable = await loadAssignable(req.user);
+    const allowed = new Set(assignable.map((row) => Number(row.id)));
+    const poolIds = [...onTarget].filter((id) => req.user.role === 'admin' || allowed.has(id));
+    const scope = req.body?.scope === 'staff' ? 'staff' : 'all';
+    let chosen = poolIds;
+    if (scope === 'staff') {
+      const ids = Array.isArray(req.body?.staff_ids) ? req.body.staff_ids.map(Number) : [];
+      chosen = ids.filter((id) => poolIds.includes(id));
+    }
+    chosen = [...new Set(chosen)];
+    if (!chosen.length) return res.status(400).json({ error: 'Choose at least one person on this KPI' });
+
+    const client = await pool.connect();
+    let checklistId;
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query(
+        `INSERT INTO kpi_checklists (target_id, title, weight_percent, created_by)
+         VALUES ($1,$2,$3,$4) RETURNING id`,
+        [targetId, title, weight, req.user.id]
+      );
+      checklistId = rows[0].id;
+      for (let index = 0; index < labels.length; index += 1) {
+        await client.query(
+          `INSERT INTO kpi_checklist_items (checklist_id, label, sort_order) VALUES ($1,$2,$3)`,
+          [checklistId, labels[index], index]
+        );
+      }
+      for (const staffId of chosen) {
+        await client.query(
+          `INSERT INTO kpi_checklist_assignees (checklist_id, staff_user_id) VALUES ($1,$2)`,
+          [checklistId, staffId]
+        );
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+    res.status(201).json({ id: checklistId });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete('/kpi/:id/checklists/:checklistId', async (req, res, next) => {
+  try {
+    const id = Number(req.params.checklistId);
+    const { rows } = await query(
+      `SELECT created_by FROM kpi_checklists WHERE id = $1 AND target_id = $2`,
+      [id, Number(req.params.id)]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Checklist not found' });
+    if (req.user.role !== 'admin' && Number(rows[0].created_by) !== Number(req.user.id)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    await query(`DELETE FROM kpi_checklists WHERE id = $1`, [id]);
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/kpi/checklists/:id/ticks', async (req, res, next) => {
+  try {
+    const checklistId = Number(req.params.id);
+    const staffId = Number(req.body?.staff_id);
+    const itemId = Number(req.body?.item_id);
+    const workDate = isoDate(req.body?.date);
+    const checked = Boolean(req.body?.checked);
+    if (!staffId || !itemId || !workDate) return res.status(400).json({ error: 'Choose the person, the item, and the day' });
+
+    const { rows } = await query(
+      `SELECT c.created_by, t.starts_on::text AS starts_on, t.deadline::text AS deadline
+       FROM kpi_checklists c
+       JOIN kpi_targets t ON t.id = c.target_id
+       JOIN kpi_checklist_items i ON i.checklist_id = c.id AND i.id = $2
+       JOIN kpi_checklist_assignees a ON a.checklist_id = c.id AND a.staff_user_id = $3
+       WHERE c.id = $1`,
+      [checklistId, itemId, staffId]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'That item is not on this person\'s checklist' });
+    const today = cairoToday();
+    if (workDate < rows[0].starts_on || workDate > rows[0].deadline || workDate > today) {
+      return res.status(400).json({ error: 'That day is outside this KPI' });
+    }
+    const canTick = req.user.role === 'admin'
+      || Number(req.user.id) === staffId
+      || Number(rows[0].created_by) === Number(req.user.id);
+    if (!canTick) return res.status(403).json({ error: 'Forbidden' });
+
+    if (checked) {
+      await query(
+        `INSERT INTO kpi_checklist_ticks (item_id, staff_user_id, work_date, checked_by)
+         VALUES ($1,$2,$3::date,$4)
+         ON CONFLICT (item_id, staff_user_id, work_date) DO NOTHING`,
+        [itemId, staffId, workDate, req.user.id]
+      );
+    } else {
+      await query(
+        `DELETE FROM kpi_checklist_ticks
+         WHERE item_id = $1 AND staff_user_id = $2 AND work_date = $3::date`,
+        [itemId, staffId, workDate]
+      );
     }
     res.json({ ok: true });
   } catch (err) {

@@ -6,6 +6,7 @@ import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
 import Modal from '../components/ui/Modal';
 import { ROLE_LABELS } from '../utils/permissions';
+import { useAuth } from '../context/AuthContext';
 import { currency } from '../utils/formatters';
 
 const TEAM_LABELS = {
@@ -200,12 +201,19 @@ export default function Kpi() {
                         <p className="font-semibold text-soul-blue">{kpi.metric_label}</p>
                         <p className="text-xs text-soul-muted mt-1">{kpi.measure_label} · {formatTarget(kpi)}</p>
                         <p className="mt-2 text-sm">{formatActual(kpi)} · {kpi.percent}%</p>
+                        {kpi.checklist_weight ? (
+                          <p className="text-xs text-soul-muted mt-1">Daily checklist is {kpi.checklist_weight}% of this KPI</p>
+                        ) : null}
                       </button>
                     ))}
                   </div>
                   {selectedKpi ? (
                     <KpiDetail
                       kpi={selectedKpi}
+                      staffId={selectedStaff.id}
+                      today={data.today}
+                      canManage={data.can_manage}
+                      people={staff.filter((person) => person.kpis.some((item) => item.id === selectedKpi.id))}
                       onDelete={() => remove.mutate({ id: selectedKpi.id, staffId: selectedStaff.id })}
                       deleting={remove.isPending}
                     />
@@ -346,21 +354,164 @@ export default function Kpi() {
   );
 }
 
-function KpiDetail({ kpi, onDelete, deleting }) {
+function KpiDetail({ kpi, staffId, today, canManage, people, onDelete, deleting }) {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [day, setDay] = useState(today && today >= kpi.starts_on && today <= kpi.deadline ? today : kpi.starts_on);
+  const [form, setForm] = useState(null);
+
+  const createList = useMutation({
+    mutationFn: (payload) => api.post(`/kpi/${kpi.id}/checklists`, payload).then((r) => r.data),
+    onSuccess: () => {
+      toast.success('Checklist added');
+      setOpen(false);
+      qc.invalidateQueries({ queryKey: ['kpi'] });
+    },
+    onError: (err) => toast.error(err.response?.data?.error || 'Could not add the checklist'),
+  });
+  const removeList = useMutation({
+    mutationFn: (checklistId) => api.delete(`/kpi/${kpi.id}/checklists/${checklistId}`).then((r) => r.data),
+    onSuccess: () => {
+      toast.success('Checklist removed');
+      qc.invalidateQueries({ queryKey: ['kpi'] });
+    },
+    onError: (err) => toast.error(err.response?.data?.error || 'Could not remove the checklist'),
+  });
+  const tick = useMutation({
+    mutationFn: (payload) => api.post(`/kpi/checklists/${payload.checklistId}/ticks`, payload).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['kpi'] }),
+    onError: (err) => toast.error(err.response?.data?.error || 'Could not update the checklist'),
+  });
+
+  function openForm() {
+    setForm({
+      title: '',
+      weight_percent: '20',
+      items: [''],
+      scope: 'all',
+      staff_ids: [],
+    });
+    setOpen(true);
+  }
+
+  function submit(event) {
+    event.preventDefault();
+    createList.mutate({
+      title: form.title,
+      weight_percent: Number(form.weight_percent),
+      items: form.items,
+      scope: form.scope === 'staff' ? 'staff' : 'all',
+      staff_ids: form.staff_ids,
+    });
+  }
+
+  const checklistByDate = new Map();
+  for (const checklist of kpi.checklists || []) {
+    for (const row of checklist.daily || []) {
+      const current = checklistByDate.get(row.date) || { checked: 0, total: 0 };
+      current.checked += row.checked;
+      current.total += row.total;
+      checklistByDate.set(row.date, current);
+    }
+  }
+
   return (
     <section className="card overflow-hidden">
       <div className="px-5 py-4 border-b border-soul-line flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="font-semibold text-soul-blue">{kpi.metric_label}</h3>
           <p className="text-sm text-soul-muted mt-1">
-            {formatDay(kpi.starts_on)} to {formatDay(kpi.deadline)}. Target {formatTarget(kpi)}. Result {formatActual(kpi)} ({kpi.percent}%).
+            {formatDay(kpi.starts_on)} to {formatDay(kpi.deadline)}. Target {formatTarget(kpi)}. Result {formatActual(kpi)} ({kpi.metric_percent}% of the target).
           </p>
+          {kpi.checklist_weight ? (
+            <p className="text-sm text-soul-muted mt-1">
+              The result is {Math.max(0, Math.round((100 - kpi.checklist_weight) * 10) / 10)}% of this KPI. The daily checklist is {kpi.checklist_weight}%. Overall {kpi.percent}%.
+            </p>
+          ) : (
+            <p className="text-sm text-soul-muted mt-1">Overall {kpi.percent}%.</p>
+          )}
           {kpi.created_by_name ? <p className="text-xs text-soul-muted mt-1">Added by {kpi.created_by_name}</p> : null}
         </div>
-        {kpi.can_delete ? (
-          <button type="button" className="btn-secondary" onClick={onDelete} disabled={deleting}>Remove</button>
-        ) : null}
+        <div className="flex flex-wrap gap-2">
+          {canManage ? (
+            <button type="button" className="btn-primary" onClick={openForm}>Add checklist</button>
+          ) : null}
+          {kpi.can_delete ? (
+            <button type="button" className="btn-secondary" onClick={onDelete} disabled={deleting}>Remove</button>
+          ) : null}
+        </div>
       </div>
+
+      <div className="px-5 py-4 space-y-4 border-b border-soul-line">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <h4 className="font-semibold text-soul-blue">Daily checklist</h4>
+          <div>
+            <label className="label">Day</label>
+            <input
+              className="input"
+              type="date"
+              min={kpi.starts_on}
+              max={today && today < kpi.deadline ? today : kpi.deadline}
+              value={day}
+              onChange={(event) => setDay(event.target.value)}
+            />
+          </div>
+        </div>
+        {(kpi.checklists || []).length ? (
+          kpi.checklists.map((checklist) => (
+            <div key={checklist.id} className="rounded-xl border border-soul-line p-4">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="font-semibold text-soul-blue">{checklist.title}</p>
+                  <p className="text-xs text-soul-muted mt-1">
+                    {checklist.weight_percent}% of this KPI · {checklist.completion_percent}% of days completed
+                    {checklist.created_by_name ? ` · Added by ${checklist.created_by_name}` : ''}
+                  </p>
+                </div>
+                {checklist.can_delete ? (
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={removeList.isPending}
+                    onClick={() => removeList.mutate(checklist.id)}
+                  >
+                    Remove
+                  </button>
+                ) : null}
+              </div>
+              <div className="mt-3 space-y-2">
+                {checklist.items.map((item) => {
+                  const checked = (item.checked_dates || []).includes(day);
+                  const canTick = Boolean(day)
+                    && (!today || day <= today)
+                    && (Number(user?.id) === Number(staffId) || checklist.can_delete);
+                  return (
+                    <label key={item.id} className="flex items-center gap-3 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={!canTick || tick.isPending}
+                        onChange={() => tick.mutate({
+                          checklistId: checklist.id,
+                          staff_id: staffId,
+                          item_id: item.id,
+                          date: day,
+                          checked: !checked,
+                        })}
+                      />
+                      <span>{item.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          ))
+        ) : (
+          <p className="text-sm text-soul-muted">No daily checklist on this KPI yet.</p>
+        )}
+      </div>
+
       <div className="px-5 py-4">
         <h4 className="font-semibold text-soul-blue">Daily performance</h4>
         <div className="mt-3 overflow-x-auto">
@@ -369,23 +520,140 @@ function KpiDetail({ kpi, onDelete, deleting }) {
               <tr className="text-left text-xs text-soul-muted">
                 <th className="py-2 pr-3 font-medium">Day</th>
                 <th className="py-2 font-medium text-right">{kpi.metric === 'reviews' ? 'Average' : 'Result'}</th>
+                {kpi.checklist_weight ? <th className="py-2 pl-3 font-medium text-right">Checklist</th> : null}
               </tr>
             </thead>
             <tbody>
-              {(kpi.daily || []).map((day) => (
-                <tr key={day.date} className="border-t border-soul-line/70">
-                  <td className="py-2 pr-3 text-soul-muted">{formatDay(day.date)}</td>
-                  <td className="py-2 text-right tabular-nums">
-                    {kpi.measure === 'value' ? currency(day.value) : day.value}
-                    {kpi.metric === 'reviews' && day.count ? ` · ${day.count}` : ''}
-                  </td>
-                </tr>
-              ))}
+              {(kpi.daily || []).map((row) => {
+                const checks = checklistByDate.get(row.date);
+                return (
+                  <tr key={row.date} className="border-t border-soul-line/70">
+                    <td className="py-2 pr-3 text-soul-muted">{formatDay(row.date)}</td>
+                    <td className="py-2 text-right tabular-nums">
+                      {kpi.measure === 'value' ? currency(row.value) : row.value}
+                      {kpi.metric === 'reviews' && row.count ? ` · ${row.count}` : ''}
+                    </td>
+                    {kpi.checklist_weight ? (
+                      <td className="py-2 pl-3 text-right tabular-nums">
+                        {checks ? `${checks.checked}/${checks.total}` : '—'}
+                      </td>
+                    ) : null}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           {!kpi.daily?.length ? <p className="text-sm text-soul-muted">No days in this KPI yet.</p> : null}
         </div>
       </div>
+
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Add a daily checklist"
+        size="lg"
+        footer={
+          <>
+            <button type="button" className="btn-secondary" onClick={() => setOpen(false)}>Cancel</button>
+            <button type="submit" form="kpi-checklist-form" className="btn-primary" disabled={createList.isPending}>Save checklist</button>
+          </>
+        }
+      >
+        {form ? (
+          <form id="kpi-checklist-form" className="space-y-4" onSubmit={submit}>
+            <div>
+              <label className="label">Name</label>
+              <input className="input" required value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} />
+            </div>
+            <div>
+              <label className="label">How much of this KPI</label>
+              <input
+                className="input"
+                type="number"
+                min="1"
+                max={String(Math.max(1, 100 - (kpi.checklist_weight || 0)))}
+                step="1"
+                required
+                value={form.weight_percent}
+                onChange={(event) => setForm((current) => ({ ...current, weight_percent: event.target.value }))}
+              />
+              <p className="text-xs text-soul-muted mt-1">
+                {kpi.checklist_weight ? `${kpi.checklist_weight}% is already used. ` : ''}
+                The rest of the KPI stays on {kpi.metric_label.toLowerCase()}.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <label className="label">Items to check each day</label>
+              {form.items.map((item, index) => (
+                <div key={index} className="flex gap-2">
+                  <input
+                    className="input"
+                    required
+                    value={item}
+                    onChange={(event) => setForm((current) => {
+                      const items = current.items.slice();
+                      items[index] = event.target.value;
+                      return { ...current, items };
+                    })}
+                  />
+                  {form.items.length > 1 ? (
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => setForm((current) => ({ ...current, items: current.items.filter((_, itemIndex) => itemIndex !== index) }))}
+                    >
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+              {form.items.length < 12 ? (
+                <button type="button" className="btn-secondary" onClick={() => setForm((current) => ({ ...current, items: [...current.items, ''] }))}>
+                  Add item
+                </button>
+              ) : null}
+            </div>
+            <div>
+              <label className="label">Assign to</label>
+              <div className="flex flex-wrap gap-4 text-sm">
+                <label className="inline-flex items-center gap-2">
+                  <input type="radio" name="checklist-scope" checked={form.scope === 'all'} onChange={() => setForm((current) => ({ ...current, scope: 'all' }))} />
+                  Everyone on this KPI
+                </label>
+                <label className="inline-flex items-center gap-2">
+                  <input type="radio" name="checklist-scope" checked={form.scope === 'staff'} onChange={() => setForm((current) => ({ ...current, scope: 'staff' }))} />
+                  Selected people
+                </label>
+              </div>
+            </div>
+            {form.scope === 'staff' ? (
+              <div className="max-h-56 overflow-y-auto rounded-xl border border-soul-line divide-y divide-soul-line/70">
+                {people.map((person) => (
+                  <label key={person.id} className="flex items-center gap-3 px-3 py-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={form.staff_ids.includes(person.id)}
+                      onChange={() => setForm((current) => {
+                        const has = current.staff_ids.includes(person.id);
+                        return {
+                          ...current,
+                          staff_ids: has
+                            ? current.staff_ids.filter((id) => id !== person.id)
+                            : [...current.staff_ids, person.id],
+                        };
+                      })}
+                    />
+                    <span>{person.full_name}</span>
+                    <span className="text-soul-muted">{ROLE_LABELS[person.role] || person.role}</span>
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-soul-muted">This goes to everyone on this KPI who you can assign.</p>
+            )}
+          </form>
+        ) : null}
+      </Modal>
     </section>
   );
 }

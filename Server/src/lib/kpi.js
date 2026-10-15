@@ -63,6 +63,37 @@ function kpiProgress({ actual, targetValue }) {
   };
 }
 
+function checklistCompletion({ days, itemCount, checkedByDay }) {
+  const total = Number(itemCount) || 0;
+  if (!days?.length || total < 1) return { percent: 0, days: [] };
+  const daily = days.map((date) => {
+    const checked = Math.max(0, Math.min(total, Number(checkedByDay?.[date]) || 0));
+    return {
+      date,
+      checked,
+      total,
+      percent: Math.round((checked / total) * 1000) / 10,
+    };
+  });
+  const average = daily.reduce((sum, day) => sum + day.percent, 0) / daily.length;
+  return { percent: Math.round(average * 10) / 10, days: daily };
+}
+
+function blendKpiPercent({ metricPercent, parts }) {
+  const list = Array.isArray(parts) ? parts : [];
+  const requested = list.reduce((sum, part) => sum + Math.max(0, Number(part.weight) || 0), 0);
+  const used = Math.min(100, requested);
+  let score = (Number(metricPercent) || 0) * ((100 - used) / 100);
+  let consumed = 0;
+  for (const part of list) {
+    const room = Math.max(0, used - consumed);
+    const applied = Math.min(room, Math.max(0, Number(part.weight) || 0));
+    consumed += applied;
+    score += (Number(part.percent) || 0) * (applied / 100);
+  }
+  return Math.round(score * 10) / 10;
+}
+
 function eachDate(from, to) {
   const days = [];
   const cursor = new Date(`${String(from).slice(0, 10)}T00:00:00Z`);
@@ -88,5 +119,7 @@ module.exports = {
   measuresForMetric,
   teamKeysForRole,
   kpiProgress,
+  checklistCompletion,
+  blendKpiPercent,
   eachDate,
 };

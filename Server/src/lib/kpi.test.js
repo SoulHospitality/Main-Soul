@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { kpiProgress, metricsForRole, measuresForMetric, canManageKpi } = require('./kpi');
+const { kpiProgress, metricsForRole, measuresForMetric, canManageKpi, checklistCompletion, blendKpiPercent } = require('./kpi');
 
 test('progress is the actual result divided by the target', () => {
   assert.deepEqual(kpiProgress({ actual: 51, targetValue: 100 }), { actual: 51, percent: 51 });
@@ -16,4 +16,18 @@ test('every manager can set the three KPI types', () => {
   assert.deepEqual(measuresForMetric('reservations'), ['count', 'value']);
   assert.deepEqual(measuresForMetric('reviews'), ['average']);
   assert.deepEqual(measuresForMetric('unit_acquisitions'), ['count']);
+});
+
+test('a daily checklist is the share of the KPI its creator assigned', () => {
+  const completion = checklistCompletion({
+    days: ['2026-10-01', '2026-10-02'],
+    itemCount: 2,
+    checkedByDay: { '2026-10-01': 2, '2026-10-02': 1 },
+  });
+  assert.equal(completion.percent, 75);
+  assert.equal(blendKpiPercent({
+    metricPercent: 80,
+    parts: [{ weight: 30, percent: completion.percent }],
+  }), 78.5);
+  assert.equal(blendKpiPercent({ metricPercent: 51, parts: [] }), 51);
 });
