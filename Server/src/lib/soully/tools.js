@@ -7,6 +7,7 @@ const {
 } = require('../staffTasks');
 const { staffTaskTablesReady } = require('../staffTaskSchema');
 const { soullyCan } = require('./access');
+const { FINANCIAL_EPOCH, clampFromDate } = require('../financialEpoch');
 
 const ROLE_LABELS = {
   admin: 'CEO',
@@ -361,17 +362,61 @@ function forecastNext(values, floorAtZero = true) {
   };
 }
 
-function attachForecasts(series, fields, currentMonth, signed = []) {
+function daysInMonth(monthKey) {
+  const [year, month] = monthKey.split('-').map(Number);
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+function diagnoseField(series, field, currentMonth, today) {
   const history = series.filter((row) => row.month < currentMonth);
+  if (history.length < 2) return { field, status: 'not_enough_history' };
+  const previous = history[history.length - 2];
+  const latest = history[history.length - 1];
+  const before = Number(previous[field]) || 0;
+  const after = Number(latest[field]) || 0;
+  const change = Math.round(after - before);
+  const changePercent = before ? Math.round((change / Math.abs(before)) * 100) : null;
+  const current = series.find((row) => row.month === currentMonth);
+  const soFar = current ? Number(current[field]) || 0 : 0;
+  const day = Number(String(today).slice(8, 10)) || 1;
+  const pace = Math.round((soFar / day) * daysInMonth(currentMonth));
+  let reading = 'flat';
+  if (change > 0 && (changePercent == null || changePercent >= 5)) reading = 'up';
+  else if (change < 0 && (changePercent == null || changePercent <= -5)) reading = 'down';
+  return {
+    field,
+    previous_month: previous.month,
+    previous_value: Math.round(before),
+    latest_full_month: latest.month,
+    latest_value: Math.round(after),
+    change,
+    change_percent: changePercent,
+    reading,
+    current_month_so_far: Math.round(soFar),
+    current_month_pace_if_the_rate_holds: pace,
+    pace_versus_latest_full_month: Math.round(pace - after),
+  };
+}
+
+function attachForecasts(series, fields, currentMonth, signed = [], today = null) {
+  const history = series.filter((row) => row.month < currentMonth);
+  const asOf = today || `${currentMonth}-01`;
   const forecasts = {};
+  const diagnosis = {};
   for (const field of fields) {
-    forecasts[field] = forecastNext(history.map((row) => row[field]), !signed.includes(field));
+    const values = history.map((row) => row[field]);
+    const next = forecastNext(values, !signed.includes(field));
+    forecasts[field] = next
+      ? { ...next, method: 'average change between the recorded full months' }
+      : null;
+    diagnosis[field] = diagnoseField(series, field, currentMonth, asOf);
   }
   return {
     months: series,
     current_month: currentMonth,
     current_month_is_partial: true,
     forecast_uses_full_months_only: true,
+    diagnosis,
     forecast: forecasts,
   };
 }
@@ -390,7 +435,7 @@ async function departmentOutlook(user, input) {
     from,
     to: today,
     department,
-    writing: 'Write a short report from these figures. Compare months, name what rose or fell, then give the next-month estimate. Call every estimate a trend from recent full months, not a commitment. The current month is still open.',
+    basis: 'diagnosis and forecast are calculated from the months below. A prediction or a diagnosis must use those fields and must not add a cause the months do not show.',
   };
 
   try {
@@ -412,7 +457,9 @@ async function departmentOutlook(user, input) {
         report.reservations = attachForecasts(
           fillMonths(keys, rows, ['reservations', 'booked_value', 'collected']),
           ['reservations', 'booked_value', 'collected'],
-          currentMonth
+          currentMonth,
+          [],
+          today
         );
       }
     }
@@ -461,7 +508,8 @@ async function departmentOutlook(user, input) {
           series,
           ['stay_value', 'collected', 'expenses', 'collected_minus_expenses'],
           currentMonth,
-          ['collected_minus_expenses']
+          ['collected_minus_expenses'],
+          today
         );
       }
     }
@@ -489,7 +537,7 @@ async function departmentOutlook(user, input) {
               present_percent: marked ? Math.round(((row.on_time + row.late) / marked) * 100) : 0,
             };
           });
-          hr.attendance = attachForecasts(series, ['no_show', 'present_percent'], currentMonth);
+          hr.attendance = attachForecasts(series, ['no_show', 'present_percent'], currentMonth, [], today);
         }
         if (soullyCan(user, 'payroll')) {
           const { rows } = await query(
@@ -502,7 +550,7 @@ async function departmentOutlook(user, input) {
              ORDER BY period_year, period_month`,
             [from]
           );
-          hr.payroll = attachForecasts(fillMonths(keys, rows, ['net_pay', 'payslips']), ['net_pay'], currentMonth);
+          hr.payroll = attachForecasts(fillMonths(keys, rows, ['net_pay', 'payslips']), ['net_pay'], currentMonth, [], today);
           const { rows: headcount } = await query(
             `SELECT COUNT(*) FILTER (WHERE is_active = true AND role <> 'owner')::int AS active_staff,
                     COALESCE(SUM(base_salary) FILTER (WHERE is_active = true AND role <> 'owner'), 0)::float AS monthly_base
@@ -528,7 +576,7 @@ async function departmentOutlook(user, input) {
            GROUP BY 1`,
           [from]
         );
-        report.operations = attachForecasts(fillMonths(keys, rows, ['checkins']), ['checkins'], currentMonth);
+        report.operations = attachForecasts(fillMonths(keys, rows, ['checkins']), ['checkins'], currentMonth, [], today);
       }
     }
 
@@ -545,7 +593,7 @@ async function departmentOutlook(user, input) {
            GROUP BY 1`,
           [from]
         );
-        report.acquisition = attachForecasts(fillMonths(keys, rows, ['units_added']), ['units_added'], currentMonth);
+        report.acquisition = attachForecasts(fillMonths(keys, rows, ['units_added']), ['units_added'], currentMonth, [], today);
       }
     }
 
@@ -703,31 +751,45 @@ async function businessReport(user, input) {
     if (term.length >= 2) {
       params.push(like(term));
       nameClause = ` AND su.full_name ILIKE $1`;
+    } else {
+      nameClause = ` AND su.is_active = true`;
     }
     const { rows: owners } = await query(
-      `SELECT su.full_name, su.email, su.is_active, COUNT(ou.unit_id)::int AS units
+      `SELECT su.id, su.full_name, su.is_active, COUNT(ou.unit_id)::int AS units
        FROM staff_users su
        LEFT JOIN owner_units ou ON ou.owner_id = su.id
        WHERE su.role = 'owner'${nameClause}
        GROUP BY su.id
-       ORDER BY su.full_name
-       LIMIT 40`,
+       ORDER BY su.full_name`,
       params
     );
-    let payouts = [];
-    try {
-      const { rows } = await query(
-        `SELECT su.full_name AS owner, p.amount, p.status, p.created_at::date::text AS requested
-         FROM owner_payout_requests p
-         LEFT JOIN staff_users su ON su.id = p.owner_id
-         ORDER BY p.created_at DESC
-         LIMIT 20`
-      );
-      payouts = rows;
-    } catch (err) {
-      console.error('[soully] owner payouts', err.message);
-    }
-    return { count: owners.length, owners, recent_payouts: payouts };
+    const periodFrom = clampFromDate(isoDate(input.from) || FINANCIAL_EPOCH);
+    const periodTo = isoDate(input.to) || isoDate(input.date) || cairoToday();
+    const { loadOwnerStatementData } = require('../../routes/pms/financialSystem');
+    const { ownerBalances } = await loadOwnerStatementData(periodFrom, periodTo);
+    const byOwner = new Map(ownerBalances.map((row) => [Number(row.owner_id), row]));
+    const people = owners.map((owner) => {
+      const balance = byOwner.get(Number(owner.id));
+      return {
+        name: owner.full_name,
+        units: Number(owner.units) || 0,
+        share: balance ? balance.gross_credits : 0,
+        owner_expenses: balance ? balance.maintenance_deductions : 0,
+        already_paid: balance ? balance.paid_out : 0,
+        still_owed: balance ? balance.remaining : 0,
+      };
+    });
+    const total = (field) => Math.round(people.reduce((sum, row) => sum + (Number(row[field]) || 0), 0));
+    return {
+      from: periodFrom,
+      to: periodTo,
+      active_owners: people.length,
+      total_share: total('share'),
+      total_owner_expenses: total('owner_expenses'),
+      total_already_paid: total('already_paid'),
+      total_still_owed: total('still_owed'),
+      owners: people,
+    };
   } catch (err) {
     console.error('[soully] report', topic, err.message);
     return failed();
@@ -794,7 +856,7 @@ const TOOL_DEFS = [
     name: 'business_report',
     page: 'reservations',
     also: ['financial_system', 'payroll', 'attendance', 'users', 'owner_statement'],
-    description: 'Live figures for one Cairo date or range. Topics: snapshot, money, payroll, attendance, expenses, owners. Use this for a specific total or a named person. For a written report, a trend, or a next-month estimate, use department_outlook instead.',
+    description: 'Live figures for one Cairo date or range. Topics: snapshot, money, payroll, attendance, expenses, owners. The owners topic returns each owner’s share, expenses, what was already paid, and what is still owed. Use it whenever they ask how much owners are owed. For a written report, a trend, or a next-month estimate, use department_outlook instead.',
     input_schema: {
       type: 'object',
       properties: {
@@ -811,7 +873,7 @@ const TOOL_DEFS = [
     name: 'department_outlook',
     page: 'reservations',
     also: ['financial_system', 'payroll', 'attendance', 'operations', 'units'],
-    description: 'Six months of department history plus a next-month estimate from the full months. Departments: all, reservations (bookings created, value, collected), finance (stay value, collected, expenses, collected minus expenses), hr (attendance and payroll), operations (completed check-ins), acquisition (units added). Use this whenever they ask for a report, a summary, a trend, a forecast, or how a department is doing.',
+    description: 'Six months of recorded department history, a diagnosis of what changed between the last two full months, the current month pace, and a next-month figure calculated from those months. Departments: all, reservations, finance, hr, operations, acquisition. Use this for every report, prediction, or diagnosis. Read the diagnosis and forecast back. Do not invent a cause.',
     input_schema: {
       type: 'object',
       properties: {

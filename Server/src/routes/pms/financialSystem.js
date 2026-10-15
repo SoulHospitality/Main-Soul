@@ -3337,3 +3337,4 @@ router.get('/financial-system/tax-filing-pack/:month', requireRoles('admin', 'fi
 });
 
 module.exports = router;
+module.exports.loadOwnerStatementData = loadOwnerStatementData;

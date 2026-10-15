@@ -99,7 +99,7 @@ const GUIDE = [
   { page: 'requests', path: '/admin/requests', label: 'Requests', hint: 'Leave, loans, and work-from-home. Staff file their own. HR approves.' },
   { page: 'payslip', path: '/admin/payslip', label: 'Payslip', hint: 'Your own pay slip. Nobody else’s.' },
   { page: 'payroll', path: '/admin/payroll', label: 'Payrolls', hint: 'The payroll run. HR only.' },
-  { page: 'owner_statement', path: '/admin/owner-statement', label: 'Owner statement', hint: 'What an owner is owed for their units.' },
+  { page: 'owner_statement', path: '/admin/owner-statement', label: 'Owner statement', hint: 'Export a unit statement. Amounts are already available in chat.' },
   { page: 'acquisition', path: '/admin/acquisition', label: 'Owner leads', hint: 'Units the acquisition team is trying to sign.' },
   { page: 'website', path: '/admin/website', label: 'Website', hint: 'Public site content and popups.' },
   { page: 'site_performance', path: '/admin/website-performance', label: 'Website performance', hint: 'How the public site is behaving.' },
