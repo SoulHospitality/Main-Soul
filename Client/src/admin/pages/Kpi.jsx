@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
@@ -60,6 +60,7 @@ function emptyForm(metrics, teamKeys) {
 export default function Kpi() {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
+  const [checklistOpen, setChecklistOpen] = useState(false);
   const [selectedStaffId, setSelectedStaffId] = useState(null);
   const [selectedKpiId, setSelectedKpiId] = useState(null);
   const { data, isLoading, error } = useQuery({
@@ -147,11 +148,14 @@ export default function Kpi() {
         <div>
           <h1 className="page-title">KPI</h1>
           <p className="page-subtitle">
-            Each person carries their own targets. The result is calculated from reservations, units they add, or the average rating of guests they checked in.
+            Each person carries their own targets. Set the amount on their user record. Add the daily checklist here.
           </p>
         </div>
         {data.can_manage ? (
-          <button type="button" className="btn-primary" onClick={openForm}>Add KPI</button>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="btn-secondary" onClick={openForm}>Add KPI</button>
+            <button type="button" className="btn-primary" onClick={() => setChecklistOpen(true)}>Add checklist</button>
+          </div>
         ) : null}
       </div>
 
@@ -350,7 +354,177 @@ export default function Kpi() {
           </form>
         ) : null}
       </Modal>
+      <PageChecklist
+        open={checklistOpen}
+        onClose={() => setChecklistOpen(false)}
+        staff={staff}
+      />
     </div>
+  );
+}
+
+function PageChecklist({ open, onClose, staff }) {
+  const qc = useQueryClient();
+  const catalog = useMemo(() => {
+    const map = new Map();
+    for (const person of staff) {
+      for (const kpi of person.kpis || []) {
+        if (!map.has(kpi.id)) map.set(kpi.id, { ...kpi, people: [] });
+        map.get(kpi.id).people.push(person);
+      }
+    }
+    return [...map.values()];
+  }, [staff]);
+  const [form, setForm] = useState(null);
+  const selected = catalog.find((kpi) => kpi.id === form?.kpi_id) || catalog[0] || null;
+
+  useEffect(() => {
+    if (!open) return;
+    setForm({
+      kpi_id: catalog[0]?.id || '',
+      title: '',
+      weight_percent: '20',
+      items: [''],
+      scope: 'all',
+      staff_ids: [],
+    });
+  }, [open, catalog]);
+
+  const createList = useMutation({
+    mutationFn: (payload) => api.post(`/kpi/${payload.kpi_id}/checklists`, payload).then((r) => r.data),
+    onSuccess: () => {
+      toast.success('Checklist added');
+      onClose();
+      qc.invalidateQueries({ queryKey: ['kpi'] });
+    },
+    onError: (err) => toast.error(err.response?.data?.error || 'Could not add the checklist'),
+  });
+
+  function submit(event) {
+    event.preventDefault();
+    if (!selected) return;
+    createList.mutate({
+      kpi_id: selected.id,
+      title: form.title,
+      weight_percent: Number(form.weight_percent),
+      items: form.items,
+      scope: form.scope === 'staff' ? 'staff' : 'all',
+      staff_ids: form.staff_ids,
+    });
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Add a daily checklist"
+      size="lg"
+      footer={
+        <>
+          <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+          <button type="submit" form="kpi-page-checklist" className="btn-primary" disabled={createList.isPending || !selected}>Save checklist</button>
+        </>
+      }
+    >
+      {!catalog.length ? (
+        <p className="text-sm text-soul-muted">Set a KPI amount for someone in User management first. The checklist is a share of that KPI.</p>
+      ) : form ? (
+        <form id="kpi-page-checklist" className="space-y-4" onSubmit={submit}>
+          <div>
+            <label className="label">KPI</label>
+            <select
+              className="input"
+              value={form.kpi_id}
+              onChange={(event) => setForm((current) => ({ ...current, kpi_id: Number(event.target.value), staff_ids: [] }))}
+            >
+              {catalog.map((kpi) => (
+                <option key={kpi.id} value={kpi.id}>
+                  {kpi.metric_label} · {formatTarget(kpi)} · {kpi.people.map((person) => person.full_name).join(', ')}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="label">Name</label>
+            <input className="input" required value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} />
+          </div>
+          <div>
+            <label className="label">How much of this KPI</label>
+            <input
+              className="input"
+              type="number"
+              min="1"
+              max={String(Math.max(1, 100 - (selected?.checklist_weight || 0)))}
+              step="1"
+              required
+              value={form.weight_percent}
+              onChange={(event) => setForm((current) => ({ ...current, weight_percent: event.target.value }))}
+            />
+            <p className="text-xs text-soul-muted mt-1">You choose the share. The rest stays on the KPI amount.</p>
+          </div>
+          <div className="space-y-2">
+            <label className="label">Items to check each day</label>
+            {form.items.map((item, index) => (
+              <div key={index} className="flex gap-2">
+                <input
+                  className="input"
+                  required
+                  value={item}
+                  onChange={(event) => setForm((current) => {
+                    const items = current.items.slice();
+                    items[index] = event.target.value;
+                    return { ...current, items };
+                  })}
+                />
+                {form.items.length > 1 ? (
+                  <button type="button" className="btn-secondary" onClick={() => setForm((current) => ({ ...current, items: current.items.filter((_, itemIndex) => itemIndex !== index) }))}>
+                    Remove
+                  </button>
+                ) : null}
+              </div>
+            ))}
+            {form.items.length < 12 ? (
+              <button type="button" className="btn-secondary" onClick={() => setForm((current) => ({ ...current, items: [...current.items, ''] }))}>
+                Add item
+              </button>
+            ) : null}
+          </div>
+          <div>
+            <label className="label">Assign to</label>
+            <div className="flex flex-wrap gap-4 text-sm">
+              <label className="inline-flex items-center gap-2">
+                <input type="radio" checked={form.scope === 'all'} onChange={() => setForm((current) => ({ ...current, scope: 'all' }))} />
+                Everyone on this KPI
+              </label>
+              <label className="inline-flex items-center gap-2">
+                <input type="radio" checked={form.scope === 'staff'} onChange={() => setForm((current) => ({ ...current, scope: 'staff' }))} />
+                Selected people
+              </label>
+            </div>
+          </div>
+          {form.scope === 'staff' && selected ? (
+            <div className="max-h-56 overflow-y-auto rounded-xl border border-soul-line divide-y divide-soul-line/70">
+              {selected.people.map((person) => (
+                <label key={person.id} className="flex items-center gap-3 px-3 py-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={form.staff_ids.includes(person.id)}
+                    onChange={() => setForm((current) => {
+                      const has = current.staff_ids.includes(person.id);
+                      return {
+                        ...current,
+                        staff_ids: has ? current.staff_ids.filter((id) => id !== person.id) : [...current.staff_ids, person.id],
+                      };
+                    })}
+                  />
+                  <span>{person.full_name}</span>
+                </label>
+              ))}
+            </div>
+          ) : null}
+        </form>
+      ) : null}
+    </Modal>
   );
 }
 

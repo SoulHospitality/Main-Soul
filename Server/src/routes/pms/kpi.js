@@ -703,4 +703,179 @@ router.post('/kpi/checklists/:id/ticks', async (req, res, next) => {
   }
 });
 
+function canSetStaffKpi(user) {
+  return Boolean(user && (user.role === 'admin' || user.role === 'hr' || user.role === 'hr_supervisor' || canManageKpi(user)));
+}
+
+async function assertStaffKpiAccess(user, staffId) {
+  const { rows } = await query(`SELECT id, role FROM staff_users WHERE id = $1`, [staffId]);
+  const person = rows[0];
+  if (!person || person.role === 'owner' || person.role === 'admin') {
+    const err = new Error('KPIs are for staff members');
+    err.status = 400;
+    throw err;
+  }
+  if (!canSetStaffKpi(user)) {
+    const err = new Error('Forbidden');
+    err.status = 403;
+    throw err;
+  }
+  if (user.role === 'admin' || user.role === 'hr' || user.role === 'hr_supervisor') return person;
+  const assignable = await loadAssignable(user);
+  if (!assignable.some((row) => Number(row.id) === Number(staffId))) {
+    const err = new Error('Forbidden');
+    err.status = 403;
+    throw err;
+  }
+  return person;
+}
+
+router.get('/users/:id/kpis', async (req, res, next) => {
+  try {
+    const staffId = Number(req.params.id);
+    await assertStaffKpiAccess(req.user, staffId);
+    const { rows } = await query(
+      `SELECT t.id, t.metric, COALESCE(t.measure, 'count') AS measure, t.target_value,
+              t.starts_on::text AS starts_on, t.deadline::text AS deadline,
+              (SELECT COUNT(*)::int FROM kpi_target_assignees a2 WHERE a2.target_id = t.id) AS assignee_count
+       FROM kpi_targets t
+       JOIN kpi_target_assignees a ON a.target_id = t.id AND a.staff_user_id = $1
+       ORDER BY t.deadline DESC, t.id DESC`,
+      [staffId]
+    );
+    res.json(rows.map((row) => ({
+      id: row.id,
+      metric: row.metric,
+      measure: row.measure,
+      target_value: Number(row.target_value),
+      starts_on: String(row.starts_on).slice(0, 10),
+      deadline: String(row.deadline).slice(0, 10),
+      shared: Number(row.assignee_count) > 1,
+    })));
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+router.put('/users/:id/kpis', async (req, res, next) => {
+  try {
+    const staffId = Number(req.params.id);
+    await assertStaffKpiAccess(req.user, staffId);
+    const incoming = Array.isArray(req.body?.kpis) ? req.body.kpis : [];
+    const { rows: current } = await query(
+      `SELECT t.id,
+              (SELECT COUNT(*)::int FROM kpi_target_assignees a2 WHERE a2.target_id = t.id) AS assignee_count
+       FROM kpi_targets t
+       JOIN kpi_target_assignees a ON a.target_id = t.id AND a.staff_user_id = $1`,
+      [staffId]
+    );
+    const currentIds = new Set(current.map((row) => Number(row.id)));
+    const sharedIds = new Set(current.filter((row) => Number(row.assignee_count) > 1).map((row) => Number(row.id)));
+    const kept = new Set();
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const row of incoming) {
+        const metric = String(row?.metric || '');
+        if (!metricsForRole('admin').includes(metric)) {
+          const err = new Error('Choose a KPI type');
+          err.status = 400;
+          throw err;
+        }
+        const allowedMeasures = measuresForMetric(metric);
+        const measure = allowedMeasures.includes(row?.measure) ? row.measure : allowedMeasures[0];
+        const targetValue = Number(row?.target_value);
+        const startsOn = isoDate(row?.starts_on);
+        const deadline = isoDate(row?.deadline);
+        if (metric === 'reviews') {
+          if (!(targetValue >= 1 && targetValue <= 5)) {
+            const err = new Error('The review target must be a rating from 1 to 5');
+            err.status = 400;
+            throw err;
+          }
+        } else if (measure === 'value') {
+          if (!(targetValue > 0)) {
+            const err = new Error('Enter the reservation value for this period');
+            err.status = 400;
+            throw err;
+          }
+        } else if (!Number.isFinite(targetValue) || targetValue < 1) {
+          const err = new Error('Enter the target number');
+          err.status = 400;
+          throw err;
+        }
+        if (!startsOn || !deadline || deadline < startsOn || eachDate(startsOn, deadline).length > 120) {
+          const err = new Error('Set a start and a deadline within 120 days');
+          err.status = 400;
+          throw err;
+        }
+
+        const existingId = Number(row?.id);
+        if (existingId && currentIds.has(existingId)) {
+          kept.add(existingId);
+          if (sharedIds.has(existingId)) continue;
+          await client.query(
+            `UPDATE kpi_targets
+             SET metric = $2, measure = $3, target_value = $4, starts_on = $5::date, deadline = $6::date
+             WHERE id = $1`,
+            [existingId, metric, measure, targetValue, startsOn, deadline]
+          );
+          continue;
+        }
+        const { rows: created } = await client.query(
+          `INSERT INTO kpi_targets
+             (metric, measure, target_value, reward_amount, min_percent, starts_on, deadline, created_by)
+           VALUES ($1,$2,$3,NULL,0,$4::date,$5::date,$6)
+           RETURNING id`,
+          [metric, measure, targetValue, startsOn, deadline, req.user.id]
+        );
+        await client.query(
+          `INSERT INTO kpi_target_assignees (target_id, staff_user_id) VALUES ($1,$2)`,
+          [created[0].id, staffId]
+        );
+        kept.add(created[0].id);
+      }
+
+      for (const row of current) {
+        const id = Number(row.id);
+        if (kept.has(id)) continue;
+        await client.query(
+          `DELETE FROM kpi_target_assignees WHERE target_id = $1 AND staff_user_id = $2`,
+          [id, staffId]
+        );
+        await client.query(
+          `DELETE FROM kpi_checklist_assignees a
+           USING kpi_checklists c
+           WHERE a.checklist_id = c.id AND c.target_id = $1 AND a.staff_user_id = $2`,
+          [id, staffId]
+        );
+        await client.query(
+          `DELETE FROM kpi_checklists c
+           WHERE c.target_id = $1
+             AND NOT EXISTS (SELECT 1 FROM kpi_checklist_assignees a WHERE a.checklist_id = c.id)`,
+          [id]
+        );
+        await client.query(
+          `DELETE FROM kpi_targets t
+           WHERE t.id = $1
+             AND NOT EXISTS (SELECT 1 FROM kpi_target_assignees a WHERE a.target_id = t.id)`,
+          [id]
+        );
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
 module.exports = router;

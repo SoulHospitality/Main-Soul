@@ -118,6 +118,7 @@ const EMPTY_STAFF_FORM = {
   manager_id: '',
   manager_ids: [],
   petty_cash_location: '',
+  kpis: [],
 };
 
 const PETTY_CASH_SCOPES = [
@@ -667,6 +668,109 @@ function StaffForm({
           </div>
         )}
       </div>
+      {Array.isArray(form.kpis) ? <StaffKpiAmounts form={form} setForm={setForm} /> : null}
+    </div>
+  );
+}
+
+function blankKpi() {
+  const today = new Date().toISOString().slice(0, 10);
+  return {
+    metric: 'reservations',
+    measure: 'count',
+    target_value: '',
+    starts_on: today,
+    deadline: '',
+  };
+}
+
+function StaffKpiAmounts({ form, setForm }) {
+  const rows = Array.isArray(form.kpis) ? form.kpis : [];
+  function update(index, patch) {
+    setForm((current) => {
+      const kpis = current.kpis.slice();
+      kpis[index] = { ...kpis[index], ...patch };
+      return { ...current, kpis };
+    });
+  }
+  return (
+    <div className="space-y-3 rounded-xl border border-soul-line p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="font-semibold text-soul-blue">KPI amounts</p>
+          <p className="text-xs text-soul-muted mt-1">The target for this person. The daily checklist is added on the KPI page.</p>
+        </div>
+        <button type="button" className="btn-secondary" onClick={() => setForm((current) => ({ ...current, kpis: [...(current.kpis || []), blankKpi()] }))}>
+          Add amount
+        </button>
+      </div>
+      {!rows.length ? <p className="text-sm text-soul-muted">No KPI amount yet.</p> : null}
+      {rows.map((kpi, index) => (
+        <div key={kpi.id || `new-${index}`} className="grid gap-3 sm:grid-cols-2 border-t border-soul-line pt-3">
+          <div>
+            <label className="label">Type</label>
+            <select
+              className="input"
+              disabled={kpi.shared}
+              value={kpi.metric}
+              onChange={(event) => update(index, {
+                metric: event.target.value,
+                measure: event.target.value === 'reviews' ? 'average' : event.target.value === 'reservations' ? 'count' : 'count',
+                target_value: event.target.value === 'reviews' ? '4.5' : kpi.target_value,
+              })}
+            >
+              <option value="reservations">Reservations</option>
+              <option value="unit_acquisitions">Unit acquisitions</option>
+              <option value="reviews">Check-in reviews</option>
+            </select>
+          </div>
+          {kpi.metric === 'reservations' ? (
+            <div>
+              <label className="label">Measure</label>
+              <select className="input" disabled={kpi.shared} value={kpi.measure} onChange={(event) => update(index, { measure: event.target.value })}>
+                <option value="count">Number of reservations</option>
+                <option value="value">Total value</option>
+              </select>
+            </div>
+          ) : null}
+          <div>
+            <label className="label">
+              {kpi.metric === 'reviews' ? 'Target average' : kpi.measure === 'value' ? 'Target value (EGP)' : kpi.metric === 'unit_acquisitions' ? 'Units to add' : 'Number of reservations'}
+            </label>
+            <input
+              className="input"
+              type="number"
+              min={kpi.metric === 'reviews' ? '1' : '1'}
+              max={kpi.metric === 'reviews' ? '5' : undefined}
+              step={kpi.metric === 'reviews' || kpi.measure === 'value' ? '0.1' : '1'}
+              disabled={kpi.shared}
+              value={kpi.target_value}
+              onChange={(event) => update(index, { target_value: event.target.value })}
+            />
+          </div>
+          <div>
+            <label className="label">Starts</label>
+            <input className="input" type="date" disabled={kpi.shared} value={kpi.starts_on || ''} onChange={(event) => update(index, { starts_on: event.target.value })} />
+          </div>
+          <div>
+            <label className="label">Deadline</label>
+            <input className="input" type="date" disabled={kpi.shared} value={kpi.deadline || ''} onChange={(event) => update(index, { deadline: event.target.value })} />
+          </div>
+          <div className="flex items-end">
+            {kpi.shared ? (
+              <p className="text-xs text-soul-muted">This amount is shared with other people and stays as it is.</p>
+            ) : (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setForm((current) => ({ ...current, kpis: current.kpis.filter((_, rowIndex) => rowIndex !== index) }))}
+              >
+                Remove
+              </button>
+            )}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -952,9 +1056,27 @@ export default function Users() {
   };
 
   const saveStaffMutation = useMutation({
-    mutationFn: (d) => (editId ? api.put(`/users/${editId}`, d) : api.post('/users', d)),
+    mutationFn: async (d) => {
+      const { kpis, ...profile } = d;
+      const res = editId ? await api.put(`/users/${editId}`, profile) : await api.post('/users', profile);
+      const userId = editId || res.data?.id;
+      if (userId && Array.isArray(kpis)) {
+        await api.put(`/users/${userId}/kpis`, {
+          kpis: kpis.map((kpi) => ({
+            id: kpi.id,
+            metric: kpi.metric,
+            measure: kpi.metric === 'reviews' ? 'average' : kpi.metric === 'unit_acquisitions' ? 'count' : kpi.measure,
+            target_value: Number(kpi.target_value),
+            starts_on: kpi.starts_on,
+            deadline: kpi.deadline,
+          })),
+        });
+      }
+      return res;
+    },
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['users'] });
+      qc.invalidateQueries({ queryKey: ['kpi'] });
       if (!editId && res?.data) {
         setCreatedInfo(res.data);
         setModal('created');
@@ -1111,7 +1233,15 @@ export default function Users() {
             : []
         ).map(String),
         petty_cash_location: u.petty_cash_location || '',
+        kpis: [],
       });
+      try {
+        const { data } = await api.get(`/users/${u.id}/kpis`);
+        setStaffForm((current) => ({ ...current, kpis: Array.isArray(data) ? data : [] }));
+      } catch {
+        setStaffForm((current) => ({ ...current, kpis: null }));
+        toast.error('Could not load this person\'s KPI amounts');
+      }
       setModal('edit-staff');
     }
   };
@@ -1153,6 +1283,13 @@ export default function Users() {
       toast.error('Choose which petty cash this operations manager can see');
       return;
     }
+    for (const kpi of staffForm.kpis || []) {
+      if (kpi.shared) continue;
+      if (!kpi.starts_on || !kpi.deadline || kpi.target_value === '' || kpi.target_value == null) {
+        toast.error('Each KPI needs an amount, a start, and a deadline');
+        return;
+      }
+    }
     if (usesCommissionPct(staffForm.role)) {
       if (staffForm.sales_commission_pct === '' || staffForm.sales_commission_pct == null) {
         toast.error('Commission % is required for this role');
@@ -1184,6 +1321,7 @@ export default function Users() {
         : Number(staffForm.sales_commission_pct) || 0,
       petty_cash_location:
         staffForm.role === 'operations_supervisor' ? staffForm.petty_cash_location : undefined,
+      ...(Array.isArray(staffForm.kpis) ? { kpis: staffForm.kpis } : {}),
     });
   };
 
