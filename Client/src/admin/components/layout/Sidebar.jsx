@@ -40,6 +40,7 @@ export const NAV_SECTIONS = [
     label: 'Overview',
     items: [
       { path: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard, page: 'dashboard' },
+      { path: '/admin/kpi', label: 'KPI', icon: Target, page: 'kpi' },
       { path: '/admin/tasks', label: 'Tasks', icon: ListTodo, page: 'tasks', excludeRoles: ['hr', 'hr_supervisor'] },
       { path: '/admin/website-performance', label: 'Website Performance', icon: Gauge, page: 'site_performance' },
       { path: '/admin/website', label: 'Website', icon: Globe, page: 'website' },

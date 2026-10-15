@@ -49,6 +49,16 @@ function cairoToday() {
   }).format(new Date());
 }
 
+function rangeOf(input) {
+  const to = isoDate(input.to) || isoDate(input.date) || cairoToday();
+  const from = isoDate(input.from) || `${to.slice(0, 7)}-01`;
+  return from <= to ? { from, to } : { from: to, to: from };
+}
+
+function rowLimit(user, normal, wide) {
+  return user?.role === 'admin' ? wide : normal;
+}
+
 function denied(page) {
   return { error: 'forbidden', page, message: 'This role cannot see that part of the PMS.' };
 }
@@ -82,10 +92,10 @@ async function searchUnits(user, input) {
           OR COALESCE(u.project, '') ILIKE $1
           OR COALESCE(u.compound, '') ILIKE $1
        ORDER BY u.project NULLS LAST, u.unit_number NULLS LAST
-       LIMIT 12`,
+       LIMIT ${rowLimit(user, 12, 40)}`,
       [like(term)]
     );
-    return { count: rows.length, units: rows };
+    return { count: rows.length, truncated: rows.length >= rowLimit(user, 12, 40), units: rows };
   } catch (err) {
     console.error('[soully] units', err.message);
     return failed();
@@ -106,6 +116,8 @@ async function searchReservations(user, input) {
               r.status,
               r.booking_source,
               r.total_amount,
+              r.amount_paid,
+              r.payment_status,
               COALESCE(r.guest_phone, '') AS guest_phone,
               COALESCE(u.unit_number, u.title) AS unit,
               COALESCE(u.project, u.compound) AS project
@@ -118,10 +130,15 @@ async function searchReservations(user, input) {
          OR COALESCE(u.project, u.compound, '') ILIKE $1
        )${scope.clause}
        ORDER BY r.check_in DESC
-       LIMIT 12`,
+       LIMIT ${rowLimit(user, 12, 40)}`,
       [like(term), ...scope.params]
     );
-    return { count: rows.length, reservations: rows, scope: 'only stays this login can open' };
+    return {
+      count: rows.length,
+      truncated: rows.length >= rowLimit(user, 12, 40),
+      reservations: rows,
+      scope: user.role === 'admin' ? 'every stay' : 'only stays this login can open',
+    };
   } catch (err) {
     console.error('[soully] reservations', err.message);
     return failed();
@@ -146,6 +163,9 @@ async function stayBoard(user, input) {
               r.check_out::text AS check_out,
               r.status,
               r.booking_source,
+              r.total_amount,
+              r.amount_paid,
+              r.payment_status,
               COALESCE(r.guest_phone, '') AS guest_phone,
               COALESCE(u.unit_number, u.title) AS unit,
               COALESCE(u.project, u.compound) AS project
@@ -154,10 +174,10 @@ async function stayBoard(user, input) {
        WHERE r.status <> 'cancelled'
          AND ${when}${scope.clause}
        ORDER BY u.project NULLS LAST, u.unit_number NULLS LAST
-       LIMIT 20`,
+       LIMIT ${rowLimit(user, 20, 80)}`,
       [date, ...scope.params]
     );
-    return { date, kind, count: rows.length, stays: rows };
+    return { date, kind, count: rows.length, truncated: rows.length >= rowLimit(user, 20, 80), stays: rows };
   } catch (err) {
     console.error('[soully] stay-board', err.message);
     return failed();
@@ -178,7 +198,7 @@ async function myTasks(user) {
          JOIN staff_users m ON m.id = t.created_by
          WHERE ${staffTaskScopeSql('$1', 'a', user.role)}
          ORDER BY (t.completed_at IS NULL) DESC, t.deadline ASC
-         LIMIT 15`
+         LIMIT 40`
       : canManageStaffTasks(user)
         ? `SELECT t.title, t.deadline::text AS deadline, t.completed_at, t.assignee_id, t.created_by,
                   a.full_name AS assignee_name, m.full_name AS created_by_name
@@ -249,7 +269,7 @@ async function findStaff(user, input) {
   if (term.length < 2) return { error: 'need_query', message: 'Ask for a name or staff code.' };
   try {
     const { rows } = await query(
-      `SELECT full_name, role, email, staff_code, is_active
+      `SELECT full_name, role, email, staff_code, is_active, base_salary
        FROM staff_users
        WHERE role <> 'owner'
          AND (
@@ -261,6 +281,7 @@ async function findStaff(user, input) {
        LIMIT 12`,
       [like(term)]
     );
+    const showPay = soullyCan(user, 'payroll');
     return {
       count: rows.length,
       staff: rows.map((row) => ({
@@ -269,6 +290,7 @@ async function findStaff(user, input) {
         email: row.email,
         staff_code: row.staff_code,
         active: Boolean(row.is_active),
+        ...(showPay ? { base_salary: row.base_salary != null ? Number(row.base_salary) : null } : {}),
       })),
     };
   } catch (err) {
@@ -297,6 +319,184 @@ async function housekeepingToday(user, input) {
     return { date, count: rows.length, cleans: rows };
   } catch (err) {
     console.error('[soully] housekeeping', err.message);
+    return failed();
+  }
+}
+
+async function businessReport(user, input) {
+  const topic = ['snapshot', 'money', 'payroll', 'attendance', 'expenses', 'owners'].includes(input.topic)
+    ? input.topic
+    : 'snapshot';
+  const date = isoDate(input.date) || cairoToday();
+  const { from, to } = rangeOf({ ...input, date });
+  const term = clip(input.query, 60);
+
+  if (topic === 'snapshot' && !soullyCan(user, 'reservations') && !soullyCan(user, 'dashboard')) {
+    return denied('reservations');
+  }
+  if (topic === 'money' && !soullyCan(user, 'financial_system') && !soullyCan(user, 'reservations')) {
+    return denied('financial_system');
+  }
+  if (topic === 'payroll' && !soullyCan(user, 'payroll')) return denied('payroll');
+  if (topic === 'attendance' && !soullyCan(user, 'attendance')) return denied('attendance');
+  if (topic === 'expenses' && !soullyCan(user, 'financial_system')) return denied('financial_system');
+  if (topic === 'owners' && !soullyCan(user, 'owner_statement') && !soullyCan(user, 'financial_system')) {
+    return denied('owner_statement');
+  }
+
+  try {
+    if (topic === 'snapshot') {
+      const { rows } = await query(
+        `SELECT
+           COUNT(*) FILTER (WHERE check_in::date = $1::date AND status <> 'cancelled')::int AS arrivals,
+           COUNT(*) FILTER (WHERE check_out::date = $1::date AND status <> 'cancelled')::int AS departures,
+           COUNT(*) FILTER (WHERE check_in::date <= $1::date AND check_out::date > $1::date AND status <> 'cancelled')::int AS in_house,
+           COALESCE(SUM(total_amount) FILTER (WHERE check_in::date <= $1::date AND check_out::date > $1::date AND status <> 'cancelled'), 0)::float AS in_house_value,
+           COALESCE(SUM(COALESCE(amount_paid, 0)) FILTER (WHERE check_in::date <= $1::date AND check_out::date > $1::date AND status <> 'cancelled'), 0)::float AS in_house_paid
+         FROM reservations`,
+        [date]
+      );
+      const { rows: units } = await query(
+        `SELECT COALESCE(status, 'unknown') AS status, COUNT(*)::int AS count FROM units GROUP BY status ORDER BY count DESC`
+      );
+      let openTasks = null;
+      try {
+        const ready = await staffTaskTablesReady();
+        if (ready.staff_tasks) {
+          const { rows: taskRows } = await query(
+            `SELECT COUNT(*) FILTER (WHERE completed_at IS NULL)::int AS open,
+                    COUNT(*) FILTER (WHERE completed_at IS NULL AND deadline::date < $1::date)::int AS overdue
+             FROM staff_tasks`,
+            [date]
+          );
+          openTasks = taskRows[0] || null;
+        }
+      } catch (err) {
+        console.error('[soully] snapshot tasks', err.message);
+      }
+      return { date, stays: rows[0] || {}, units, open_tasks: openTasks };
+    }
+
+    if (topic === 'money') {
+      const { rows } = await query(
+        `SELECT
+           COUNT(*) FILTER (WHERE status <> 'cancelled')::int AS stays,
+           COALESCE(SUM(total_amount) FILTER (WHERE status <> 'cancelled'), 0)::float AS booked,
+           COALESCE(SUM(COALESCE(amount_paid, 0)) FILTER (WHERE status <> 'cancelled'), 0)::float AS collected
+         FROM reservations
+         WHERE check_in::date >= $1::date AND check_in::date <= $2::date`,
+        [from, to]
+      );
+      let expenses = null;
+      if (soullyCan(user, 'financial_system')) {
+        const { rows: exp } = await query(
+          `SELECT COALESCE(SUM(amount), 0)::float AS total, COUNT(*)::int AS count
+           FROM expenses
+           WHERE expense_date >= $1::date AND expense_date <= $2::date`,
+          [from, to]
+        );
+        expenses = exp[0] || null;
+      }
+      return { from, to, reservations: rows[0] || {}, expenses };
+    }
+
+    if (topic === 'payroll') {
+      const params = [];
+      let where = `role <> 'owner'`;
+      if (term.length >= 2) {
+        params.push(like(term));
+        where += ` AND (full_name ILIKE $1 OR COALESCE(staff_code, '') ILIKE $1 OR COALESCE(email, '') ILIKE $1)`;
+      }
+      const { rows } = await query(
+        `SELECT full_name, role, staff_code, is_active, COALESCE(base_salary, 0)::float AS base_salary
+         FROM staff_users
+         WHERE ${where}
+         ORDER BY full_name
+         LIMIT 80`,
+        params
+      );
+      return {
+        count: rows.length,
+        truncated: rows.length >= 80,
+        staff: rows.map((row) => ({
+          name: row.full_name,
+          role: ROLE_LABELS[row.role] || row.role,
+          staff_code: row.staff_code,
+          active: Boolean(row.is_active),
+          base_salary: Number(row.base_salary) || 0,
+        })),
+      };
+    }
+
+    if (topic === 'attendance') {
+      const params = [date];
+      let nameClause = '';
+      if (term.length >= 2) {
+        params.push(like(term));
+        nameClause = ` AND u.full_name ILIKE $2`;
+      }
+      const { rows } = await query(
+        `SELECT u.full_name, a.status, a.check_in::text AS check_in, a.check_out::text AS check_out, a.notes
+         FROM staff_attendance a
+         JOIN staff_users u ON u.id = a.staff_user_id
+         WHERE a.work_date = $1::date${nameClause}
+         ORDER BY u.full_name
+         LIMIT 80`,
+        params
+      );
+      return { date, count: rows.length, attendance: rows };
+    }
+
+    if (topic === 'expenses') {
+      const params = [from, to];
+      let nameClause = '';
+      if (term.length >= 2) {
+        params.push(like(term));
+        nameClause = ` AND (COALESCE(description, '') ILIKE $3 OR COALESCE(category, '') ILIKE $3)`;
+      }
+      const { rows } = await query(
+        `SELECT description, amount, category, expense_date::text AS expense_date
+         FROM expenses
+         WHERE expense_date >= $1::date AND expense_date <= $2::date${nameClause}
+         ORDER BY expense_date DESC
+         LIMIT 40`,
+        params
+      );
+      return { from, to, count: rows.length, truncated: rows.length >= 40, expenses: rows };
+    }
+
+    const params = [];
+    let nameClause = '';
+    if (term.length >= 2) {
+      params.push(like(term));
+      nameClause = ` AND su.full_name ILIKE $1`;
+    }
+    const { rows: owners } = await query(
+      `SELECT su.full_name, su.email, su.is_active, COUNT(ou.unit_id)::int AS units
+       FROM staff_users su
+       LEFT JOIN owner_units ou ON ou.owner_id = su.id
+       WHERE su.role = 'owner'${nameClause}
+       GROUP BY su.id
+       ORDER BY su.full_name
+       LIMIT 40`,
+      params
+    );
+    let payouts = [];
+    try {
+      const { rows } = await query(
+        `SELECT su.full_name AS owner, p.amount, p.status, p.created_at::date::text AS requested
+         FROM owner_payout_requests p
+         LEFT JOIN staff_users su ON su.id = p.owner_id
+         ORDER BY p.created_at DESC
+         LIMIT 20`
+      );
+      payouts = rows;
+    } catch (err) {
+      console.error('[soully] owner payouts', err.message);
+    }
+    return { count: owners.length, owners, recent_payouts: payouts };
+  } catch (err) {
+    console.error('[soully] report', topic, err.message);
     return failed();
   }
 }
@@ -350,11 +550,28 @@ const TOOL_DEFS = [
   {
     name: 'find_staff',
     page: 'users',
-    description: 'Look up a coworker by name, email, or staff code. No salaries. HR and CEO only.',
+    description: 'Look up a coworker by name, email, or staff code. Includes base salary when this login can open payroll. HR and CEO.',
     input_schema: {
       type: 'object',
       properties: { query: { type: 'string' } },
       required: ['query'],
+    },
+  },
+  {
+    name: 'business_report',
+    page: 'reservations',
+    also: ['financial_system', 'payroll', 'attendance', 'users', 'owner_statement'],
+    description: 'Live figures for any Cairo date or range. Topics: snapshot (arrivals, departures, in-house value), money (booked and collected, plus expenses), payroll (base salaries), attendance, expenses, owners (owners and recent payout requests). Use this for totals, money, salaries, and dates that are not a single name search. Read only.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        topic: { type: 'string', enum: ['snapshot', 'money', 'payroll', 'attendance', 'expenses', 'owners'] },
+        date: { type: 'string', description: 'YYYY-MM-DD. Omit for today.' },
+        from: { type: 'string', description: 'YYYY-MM-DD range start. Omit for the first day of the month.' },
+        to: { type: 'string', description: 'YYYY-MM-DD range end. Omit for date or today.' },
+        query: { type: 'string', description: 'Optional name, code, or category filter.' },
+      },
+      required: ['topic'],
     },
   },
   {
@@ -385,6 +602,7 @@ async function runTool(user, name, input) {
   if (name === 'website_queue') return websiteQueue(user);
   if (name === 'find_staff') return findStaff(user, args);
   if (name === 'housekeeping_today') return housekeepingToday(user, args);
+  if (name === 'business_report') return businessReport(user, args);
   return { error: 'unknown_tool' };
 }
 

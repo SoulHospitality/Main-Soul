@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import api from '../../api/axios';
 
 const STARTERS = [
-  { label: 'Arrivals today', text: 'Who is checking in today?' },
-  { label: 'وصول النهاردة', text: 'مين جاي النهاردة؟' },
-  { label: 'Where do I click?', text: 'Where do I add a reservation?' },
+  { label: 'Today', text: 'What is the movement today: arrivals, departures, and who is in house?' },
+  { label: 'This month', text: 'How much was booked and collected this month, and what were the expenses?' },
+  { label: 'In house', text: 'Who is in house today, with unit, phone, and balance?' },
 ];
 
 function hasArabic(text) {
@@ -40,7 +40,7 @@ export default function Soully() {
       });
       setMessages((current) => [...current, { role: 'assistant', content: data.reply || '…' }]);
     } catch (err) {
-      const reply = err.response?.data?.error || 'I tripped over a cable. Ask again in a second.';
+      const reply = err.response?.data?.error || 'I could not complete that lookup. Please try again.';
       setMessages((current) => [...current, { role: 'assistant', content: reply }]);
     } finally {
       setBusy(false);
@@ -58,7 +58,7 @@ export default function Soully() {
             <img src="/soul-brand/soul-logo.png" alt="" className="soully-panel__logo" />
             <div className="min-w-0">
               <p className="soully-panel__name">Soully</p>
-              <p className="soully-panel__tag">Staff PMS. I know the buttons. I also know when you are guessing.</p>
+              <p className="soully-panel__tag">Ask about the business. I will look up the live figures.</p>
             </div>
             <button type="button" className="soully-panel__close" onClick={() => setOpen(false)} aria-label="Close Soully">
               ×
@@ -68,7 +68,7 @@ export default function Soully() {
           <div ref={listRef} className="soully-panel__body">
             {messages.length === 0 ? (
               <div className="soully-empty">
-                <p>Ask about arrivals, a unit, your tasks, or where a page went.</p>
+                <p>Ask about stays, money, staff, owners, or any other figure in the system.</p>
                 <div className="soully-starters">
                   {STARTERS.map((item) => (
                     <button key={item.label} type="button" onClick={() => send(item.text)}>
@@ -88,7 +88,7 @@ export default function Soully() {
                 </div>
               ))
             )}
-            {busy ? <div className="soully-bubble soully-bubble--assistant soully-bubble--wait">One second, I am in the filing cabinet…</div> : null}
+            {busy ? <div className="soully-bubble soully-bubble--assistant soully-bubble--wait">One moment.</div> : null}
           </div>
 
           <form

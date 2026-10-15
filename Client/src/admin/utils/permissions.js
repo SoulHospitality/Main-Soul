@@ -33,6 +33,7 @@ const STAFF_HR_TABS = [
   'requests',
   'payslip',
   'profile',
+  'kpi',
 ];
 
 const RESERVATIONS_PAGE_ACCESS = new Set([
@@ -261,6 +262,7 @@ const HR_PAGE_ACCESS = new Set([
   'payslip',
   'tasks',
   'profile',
+  'kpi',
 ]);
 
 const HR_AGENT_PAGE_ACCESS = new Set([...HR_PAGE_ACCESS, 'reservations', 'units']);
@@ -736,14 +738,9 @@ export function isLineManagerRole(role) {
   return LINE_MANAGER_ROLES.includes(String(role || ''));
 }
 
-export function hasOfficeAttendance(role, staff) {
-  if (staff?.office_attendance_exempt) return false;
+export function hasOfficeAttendance(role) {
   const r = String(role || '');
-  if (['owner', 'operations', 'web_developer'].includes(r)) return false;
-  // Resale Manager and Unit Acquisition Manager are the only line managers on attendance.
-  if (r === 'resale_manager' || r === 'unit_acquisition_manager') return true;
-  if (isLineManagerRole(r)) return false;
-  return true;
+  return r !== 'admin' && r !== 'owner';
 }
 
 const RESERVATION_ROLES = ['reservations_web', 'reservations_manual', 'reservations_manager'];

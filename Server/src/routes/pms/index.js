@@ -125,6 +125,7 @@ router.use(compat);
 router.use(require('./reportsAnalytics'));
 router.use(require('./reservationsPerformance'));
 router.use(require('./reservationTargets'));
+router.use(require('./kpi'));
 router.use(require('./resalePerformance'));
 router.use(require('./acquisitionAudit'));
 router.use(require('./financeAudit'));

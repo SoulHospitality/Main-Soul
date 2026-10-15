@@ -799,17 +799,13 @@ const LINE_MANAGER_ROLES = new Set([
   'operations_supervisor',
   'finance_manager',
 ]);
-/** Line managers who still clock office attendance (door report). */
+/** Line managers who still clock office attendance (door report). Kept for older checks. */
 const OFFICE_ATTENDANCE_LINE_MANAGER_ROLES = new Set([
   'resale_manager',
   'unit_acquisition_manager',
 ]);
-const NO_OFFICE_ATTENDANCE_ROLES = new Set([
-  ...[...LINE_MANAGER_ROLES].filter((r) => !OFFICE_ATTENDANCE_LINE_MANAGER_ROLES.has(r)),
-  'owner',
-  'operations',
-  'web_developer',
-]);
+/** CEO and property owners are not employees on the attendance sheet. */
+const NO_OFFICE_ATTENDANCE_ROLES = new Set(['admin', 'owner']);
 const NO_STAFF_BENEFIT_ROLES = new Set(['admin', 'owner']);
 const UNPAID_LEAVE_UNLIMITED = true;
 
@@ -819,8 +815,7 @@ function isUnpaidLeaveUnlimited() {
   return UNPAID_LEAVE_UNLIMITED;
 }
 
-function hasOfficeAttendance(role, staff) {
-  if (staff && staff.office_attendance_exempt) return false;
+function hasOfficeAttendance(role) {
   return !NO_OFFICE_ATTENDANCE_ROLES.has(String(role || ''));
 }
 

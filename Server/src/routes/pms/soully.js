@@ -10,7 +10,7 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req) => `soully:${req.user?.id || 'anon'}`,
-  message: { error: 'Easy. I am one assistant, not a call center. Give me a minute.' },
+  message: { error: 'Too many questions in a short time. Wait a minute and ask again.' },
 });
 
 function cleanMessages(body) {
@@ -46,7 +46,7 @@ router.post('/soully/chat', limiter, async (req, res, next) => {
     }
     const messages = cleanMessages(req.body);
     if (!messages) {
-      return res.status(400).json({ error: 'Send a message first. I cannot banter with silence.' });
+      return res.status(400).json({ error: 'Send a message first.' });
     }
     const reply = await soullyReply(req.user, messages);
     res.json({ reply });
@@ -57,7 +57,7 @@ router.post('/soully/chat', limiter, async (req, res, next) => {
     if (err.status === 502) {
       console.error('[soully]', err.geminiStatus || '', err.message);
       return res.status(502).json({
-        error: err.publicMessage || 'I tripped over a cable. Ask again in a second.',
+        error: err.publicMessage || 'I could not complete that lookup. Please try again.',
       });
     }
     next(err);
