@@ -436,6 +436,8 @@ describe('HR daily-rate deductions and leave rules', () => {
       needsFinance: true,
       needsHr: true,
     });
+    assert.equal(canRequestWfh('hr'), true);
+    assert.equal(canRequestWfh('hr_supervisor'), true);
     assert.equal(canRequestWfh('web_developer'), false);
     assert.equal(canRequestWfh('operations_supervisor'), false);
     assert.equal(canRequestWfh('reservations_web'), true);
@@ -716,6 +718,18 @@ describe('HR daily-rate deductions and leave rules', () => {
       canRequest: true,
       needsManager: true,
       needsHr: true,
+      approvalMode: 'all',
+    });
+    assert.deepEqual(wfhRequestPolicy('hr'), {
+      canRequest: true,
+      needsManager: false,
+      needsHr: true,
+      approvalMode: 'all',
+    });
+    assert.deepEqual(wfhRequestPolicy('hr_supervisor'), {
+      canRequest: true,
+      needsManager: true,
+      needsHr: false,
       approvalMode: 'all',
     });
     assert.deepEqual(leaveApprovalPolicy('annual', 'reservations_web'), {

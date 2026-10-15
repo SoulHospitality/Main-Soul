@@ -23,7 +23,10 @@ const STATUS_META = {
   no_show: { label: 'No show', className: 'bg-red-500 hover:bg-red-600' },
   holiday: { label: 'Holiday', className: 'bg-blue-500 hover:bg-blue-600' },
   day_off: { label: 'Day off', className: 'bg-violet-500 hover:bg-violet-600' },
+  wfh: { label: 'Work from home', className: 'bg-sky-500 hover:bg-sky-600' },
 };
+
+const EDITABLE_STATUSES = ['on_time', 'late', 'no_show', 'holiday', 'day_off'];
 
 const HOLIDAY_TYPE_OPTIONS = [
   { value: 'casual', label: LEAVE_TYPE_LABELS.casual },
@@ -208,6 +211,10 @@ export default function Attendance() {
   function submitCell() {
     if (!form?.status) {
       toast.error('Choose a status');
+      return;
+    }
+    if (form.status === 'wfh') {
+      toast.error('This day is an approved work-from-home request. Change it from Requests.');
       return;
     }
     if (form.status === 'holiday') {
@@ -486,7 +493,9 @@ export default function Attendance() {
             <div>
               <label className="label">Status</label>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {Object.entries(STATUS_META).map(([value, meta]) => (
+                {EDITABLE_STATUSES.map((value) => {
+                  const meta = STATUS_META[value];
+                  return (
                   <button
                     key={value}
                     type="button"
@@ -508,7 +517,8 @@ export default function Attendance() {
                     <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-sm ${meta.className.split(' ')[0]}`} />
                     {meta.label}
                   </button>
-                ))}
+                  );
+                })}
               </div>
             </div>
 

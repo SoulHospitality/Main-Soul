@@ -323,6 +323,239 @@ async function housekeepingToday(user, input) {
   }
 }
 
+function monthKeys(today, count) {
+  const [year, month] = today.split('-').map(Number);
+  const keys = [];
+  for (let i = count - 1; i >= 0; i -= 1) {
+    const date = new Date(Date.UTC(year, month - 1 - i, 1));
+    keys.push(`${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`);
+  }
+  return keys;
+}
+
+function fillMonths(keys, rows, fields) {
+  const byMonth = new Map(rows.map((row) => [String(row.month), row]));
+  return keys.map((month) => {
+    const row = byMonth.get(month) || {};
+    const point = { month };
+    for (const field of fields) point[field] = Number(row[field]) || 0;
+    return point;
+  });
+}
+
+function forecastNext(values, floorAtZero = true) {
+  const series = values.filter((value) => Number.isFinite(value));
+  if (series.length < 2) return null;
+  let change = 0;
+  for (let i = 1; i < series.length; i += 1) change += series[i] - series[i - 1];
+  const step = change / (series.length - 1);
+  const latest = series[series.length - 1];
+  const recent = series.slice(-3);
+  const average = recent.reduce((sum, value) => sum + value, 0) / recent.length;
+  const estimate = Math.round(latest + step);
+  return {
+    based_on_full_months: series.length,
+    latest_full_month: Math.round(latest),
+    recent_average: Math.round(average),
+    estimated_next_month: floorAtZero ? Math.max(0, estimate) : estimate,
+  };
+}
+
+function attachForecasts(series, fields, currentMonth, signed = []) {
+  const history = series.filter((row) => row.month < currentMonth);
+  const forecasts = {};
+  for (const field of fields) {
+    forecasts[field] = forecastNext(history.map((row) => row[field]), !signed.includes(field));
+  }
+  return {
+    months: series,
+    current_month: currentMonth,
+    current_month_is_partial: true,
+    forecast_uses_full_months_only: true,
+    forecast: forecasts,
+  };
+}
+
+async function departmentOutlook(user, input) {
+  const department = ['all', 'reservations', 'finance', 'hr', 'operations', 'acquisition'].includes(input.department)
+    ? input.department
+    : 'all';
+  const today = cairoToday();
+  const currentMonth = today.slice(0, 7);
+  const keys = monthKeys(today, 6);
+  const from = `${keys[0]}-01`;
+  const want = (name) => department === 'all' || department === name;
+  const report = {
+    as_of: today,
+    from,
+    to: today,
+    department,
+    writing: 'Write a short report from these figures. Compare months, name what rose or fell, then give the next-month estimate. Call every estimate a trend from recent full months, not a commitment. The current month is still open.',
+  };
+
+  try {
+    if (want('reservations')) {
+      if (!soullyCan(user, 'reservations')) {
+        report.reservations = denied('reservations');
+      } else {
+        const { rows } = await query(
+          `SELECT to_char((created_at AT TIME ZONE 'Africa/Cairo')::date, 'YYYY-MM') AS month,
+                  COUNT(*) FILTER (WHERE status <> 'cancelled')::int AS reservations,
+                  COALESCE(SUM(total_amount) FILTER (WHERE status <> 'cancelled'), 0)::float AS booked_value,
+                  COALESCE(SUM(COALESCE(amount_paid, 0)) FILTER (WHERE status <> 'cancelled'), 0)::float AS collected
+           FROM reservations
+           WHERE (created_at AT TIME ZONE 'Africa/Cairo')::date >= $1::date
+           GROUP BY 1
+           ORDER BY 1`,
+          [from]
+        );
+        report.reservations = attachForecasts(
+          fillMonths(keys, rows, ['reservations', 'booked_value', 'collected']),
+          ['reservations', 'booked_value', 'collected'],
+          currentMonth
+        );
+      }
+    }
+
+    if (want('finance')) {
+      if (!soullyCan(user, 'financial_system') && !soullyCan(user, 'reservations')) {
+        report.finance = denied('financial_system');
+      } else {
+        const { rows: money } = await query(
+          `SELECT to_char(check_in::date, 'YYYY-MM') AS month,
+                  COALESCE(SUM(total_amount) FILTER (WHERE status <> 'cancelled'), 0)::float AS stay_value,
+                  COALESCE(SUM(COALESCE(amount_paid, 0)) FILTER (WHERE status <> 'cancelled'), 0)::float AS collected
+           FROM reservations
+           WHERE check_in::date >= $1::date
+           GROUP BY 1`,
+          [from]
+        );
+        let expenses = [];
+        if (soullyCan(user, 'financial_system')) {
+          const { rows } = await query(
+            `SELECT to_char(expense_date, 'YYYY-MM') AS month,
+                    COALESCE(SUM(amount), 0)::float AS expenses
+             FROM expenses
+             WHERE expense_date >= $1::date
+             GROUP BY 1`,
+            [from]
+          );
+          expenses = rows;
+        }
+        const byMoney = new Map(money.map((row) => [String(row.month), row]));
+        const byExpense = new Map(expenses.map((row) => [String(row.month), row]));
+        const series = keys.map((month) => {
+          const stay = byMoney.get(month) || {};
+          const expense = byExpense.get(month) || {};
+          const collected = Number(stay.collected) || 0;
+          const spent = Number(expense.expenses) || 0;
+          return {
+            month,
+            stay_value: Number(stay.stay_value) || 0,
+            collected,
+            expenses: spent,
+            collected_minus_expenses: Math.round(collected - spent),
+          };
+        });
+        report.finance = attachForecasts(
+          series,
+          ['stay_value', 'collected', 'expenses', 'collected_minus_expenses'],
+          currentMonth,
+          ['collected_minus_expenses']
+        );
+      }
+    }
+
+    if (want('hr')) {
+      if (!soullyCan(user, 'attendance') && !soullyCan(user, 'payroll')) {
+        report.hr = denied('attendance');
+      } else {
+        const hr = {};
+        if (soullyCan(user, 'attendance')) {
+          const { rows } = await query(
+            `SELECT to_char(work_date, 'YYYY-MM') AS month,
+                    COUNT(*) FILTER (WHERE status = 'on_time')::int AS on_time,
+                    COUNT(*) FILTER (WHERE status = 'late')::int AS late,
+                    COUNT(*) FILTER (WHERE status = 'no_show')::int AS no_show
+             FROM staff_attendance
+             WHERE work_date >= $1::date
+             GROUP BY 1`,
+            [from]
+          );
+          const series = fillMonths(keys, rows, ['on_time', 'late', 'no_show']).map((row) => {
+            const marked = row.on_time + row.late + row.no_show;
+            return {
+              ...row,
+              present_percent: marked ? Math.round(((row.on_time + row.late) / marked) * 100) : 0,
+            };
+          });
+          hr.attendance = attachForecasts(series, ['no_show', 'present_percent'], currentMonth);
+        }
+        if (soullyCan(user, 'payroll')) {
+          const { rows } = await query(
+            `SELECT period_year::text || '-' || lpad(period_month::text, 2, '0') AS month,
+                    COALESCE(SUM(net_pay), 0)::float AS net_pay,
+                    COUNT(*)::int AS payslips
+             FROM staff_payroll_entries
+             WHERE make_date(period_year, period_month, 1) >= $1::date
+             GROUP BY period_year, period_month
+             ORDER BY period_year, period_month`,
+            [from]
+          );
+          hr.payroll = attachForecasts(fillMonths(keys, rows, ['net_pay', 'payslips']), ['net_pay'], currentMonth);
+          const { rows: headcount } = await query(
+            `SELECT COUNT(*) FILTER (WHERE is_active = true AND role <> 'owner')::int AS active_staff,
+                    COALESCE(SUM(base_salary) FILTER (WHERE is_active = true AND role <> 'owner'), 0)::float AS monthly_base
+             FROM staff_users`
+          );
+          hr.headcount = headcount[0] || {};
+        }
+        report.hr = hr;
+      }
+    }
+
+    if (want('operations')) {
+      if (!soullyCan(user, 'operations') && !soullyCan(user, 'reservations')) {
+        report.operations = denied('operations');
+      } else {
+        const { rows } = await query(
+          `SELECT to_char((ops_handed_over_at AT TIME ZONE 'Africa/Cairo')::date, 'YYYY-MM') AS month,
+                  COUNT(*)::int AS checkins
+           FROM reservations
+           WHERE COALESCE(ops_handed_over, 0)::int = 1
+             AND ops_handed_over_at IS NOT NULL
+             AND (ops_handed_over_at AT TIME ZONE 'Africa/Cairo')::date >= $1::date
+           GROUP BY 1`,
+          [from]
+        );
+        report.operations = attachForecasts(fillMonths(keys, rows, ['checkins']), ['checkins'], currentMonth);
+      }
+    }
+
+    if (want('acquisition')) {
+      if (!soullyCan(user, 'units') && user.role !== 'admin') {
+        report.acquisition = denied('units');
+      } else {
+        const { rows } = await query(
+          `SELECT to_char((created_at AT TIME ZONE 'Africa/Cairo')::date, 'YYYY-MM') AS month,
+                  COUNT(*)::int AS units_added
+           FROM units
+           WHERE created_at IS NOT NULL
+             AND (created_at AT TIME ZONE 'Africa/Cairo')::date >= $1::date
+           GROUP BY 1`,
+          [from]
+        );
+        report.acquisition = attachForecasts(fillMonths(keys, rows, ['units_added']), ['units_added'], currentMonth);
+      }
+    }
+
+    return report;
+  } catch (err) {
+    console.error('[soully] outlook', err.message);
+    return failed();
+  }
+}
+
 async function businessReport(user, input) {
   const topic = ['snapshot', 'money', 'payroll', 'attendance', 'expenses', 'owners'].includes(input.topic)
     ? input.topic
@@ -561,7 +794,7 @@ const TOOL_DEFS = [
     name: 'business_report',
     page: 'reservations',
     also: ['financial_system', 'payroll', 'attendance', 'users', 'owner_statement'],
-    description: 'Live figures for any Cairo date or range. Topics: snapshot (arrivals, departures, in-house value), money (booked and collected, plus expenses), payroll (base salaries), attendance, expenses, owners (owners and recent payout requests). Use this for totals, money, salaries, and dates that are not a single name search. Read only.',
+    description: 'Live figures for one Cairo date or range. Topics: snapshot, money, payroll, attendance, expenses, owners. Use this for a specific total or a named person. For a written report, a trend, or a next-month estimate, use department_outlook instead.',
     input_schema: {
       type: 'object',
       properties: {
@@ -572,6 +805,22 @@ const TOOL_DEFS = [
         query: { type: 'string', description: 'Optional name, code, or category filter.' },
       },
       required: ['topic'],
+    },
+  },
+  {
+    name: 'department_outlook',
+    page: 'reservations',
+    also: ['financial_system', 'payroll', 'attendance', 'operations', 'units'],
+    description: 'Six months of department history plus a next-month estimate from the full months. Departments: all, reservations (bookings created, value, collected), finance (stay value, collected, expenses, collected minus expenses), hr (attendance and payroll), operations (completed check-ins), acquisition (units added). Use this whenever they ask for a report, a summary, a trend, a forecast, or how a department is doing.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        department: {
+          type: 'string',
+          enum: ['all', 'reservations', 'finance', 'hr', 'operations', 'acquisition'],
+          description: 'Use all unless they named one department.',
+        },
+      },
     },
   },
   {
@@ -603,7 +852,8 @@ async function runTool(user, name, input) {
   if (name === 'find_staff') return findStaff(user, args);
   if (name === 'housekeeping_today') return housekeepingToday(user, args);
   if (name === 'business_report') return businessReport(user, args);
+  if (name === 'department_outlook') return departmentOutlook(user, args);
   return { error: 'unknown_tool' };
 }
 
-module.exports = { toolsFor, runTool, cairoToday, ROLE_LABELS };
+module.exports = { toolsFor, runTool, cairoToday, ROLE_LABELS, forecastNext };

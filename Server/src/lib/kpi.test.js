@@ -1,30 +1,19 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { kpiBonus, metricsForRole, canManageKpi } = require('./kpi');
+const { kpiProgress, metricsForRole, measuresForMetric, canManageKpi } = require('./kpi');
 
-test('a partial target pays the same share of the reward', () => {
-  const result = kpiBonus({ count: 51, targetValue: 100, rewardAmount: 1000, minPercent: 50 });
-  assert.equal(result.percent, 51);
-  assert.equal(result.bonus, 510);
-  assert.equal(result.eligible, true);
+test('progress is the actual result divided by the target', () => {
+  assert.deepEqual(kpiProgress({ actual: 51, targetValue: 100 }), { actual: 51, percent: 51 });
+  assert.deepEqual(kpiProgress({ actual: 4.5, targetValue: 5 }), { actual: 4.5, percent: 90 });
+  assert.equal(kpiProgress({ actual: null, targetValue: 4 }).percent, 0);
 });
 
-test('work below the minimum pays nothing', () => {
-  const result = kpiBonus({ count: 49, targetValue: 100, rewardAmount: 1000, minPercent: 50 });
-  assert.equal(result.bonus, 0);
-  assert.equal(result.eligible, false);
-});
-
-test('passing the target pays the full reward and no more', () => {
-  const result = kpiBonus({ count: 140, targetValue: 100, rewardAmount: 1000, minPercent: 0 });
-  assert.equal(result.bonus, 1000);
-});
-
-test('only the CEO and managers can add targets', () => {
-  assert.equal(canManageKpi({ role: 'admin' }), true);
-  assert.equal(canManageKpi({ role: 'reservations_manager' }), true);
-  assert.equal(canManageKpi({ role: 'operations_supervisor' }), true);
+test('every manager can set the three KPI types', () => {
   assert.equal(canManageKpi({ role: 'reservations_web' }), false);
-  assert.deepEqual(metricsForRole('reservations_manager'), ['reservations']);
-  assert.deepEqual(metricsForRole('operations_supervisor'), ['reservations', 'check_ins', 'check_outs']);
+  assert.equal(canManageKpi({ role: 'unit_acquisition_manager' }), true);
+  assert.deepEqual(metricsForRole('admin'), ['reservations', 'unit_acquisitions', 'reviews']);
+  assert.deepEqual(metricsForRole('reservations_manager'), ['reservations', 'unit_acquisitions', 'reviews']);
+  assert.deepEqual(measuresForMetric('reservations'), ['count', 'value']);
+  assert.deepEqual(measuresForMetric('reviews'), ['average']);
+  assert.deepEqual(measuresForMetric('unit_acquisitions'), ['count']);
 });

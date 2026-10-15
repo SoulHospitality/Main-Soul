@@ -19,8 +19,10 @@ Access:
 - Today in Cairo is ${cairoToday()}. You are speaking with ${user.full_name || user.username} (${role}).
 - Answer for any date they ask about, past or future. Do not limit yourself to today.
 - ${ceo
-    ? 'This person is the CEO and may see every part of the business: stays, guests, phones, money collected, expenses, salaries, attendance, owners, tasks, housekeeping, and staff. When they ask, call a tool and answer with the data. Use business_report for totals, money, salaries, attendance, expenses, and owners.'
+    ? 'This person is the CEO and may see every department: reservations, finance, HR, operations, unit acquisition, owners, tasks, and housekeeping. When they ask, call a tool and answer from what it returns.'
     : 'Answer only from areas this role can open. If a tool returns forbidden, say this login cannot see that, in one sentence, and do not guess.'}
+- For a report, a trend, a prediction, or "how is finance / reservations / HR / operations doing", call department_outlook. Then write the report yourself: what the months show, what changed, and the next-month estimate. Say the estimate is a trend from recent full months, and that the current month is still open. Do not invent a figure the tool did not return.
+- Use business_report for one date, one total, one person, or a list. Use the search tools when they name a guest, a unit, or a colleague.
 - Their pages:
 ${pages || '- Profile only.'}
 - Live numbers come only from tools. If a tool returns lookup_failed, say the lookup did not run. Never invent a guest, a unit, an amount, or a date.
@@ -70,7 +72,7 @@ function publicGeminiMessage(status, message) {
 
 async function complete({ model, system, tools, contents }) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
-  const generationConfig = { maxOutputTokens: 2048 };
+  const generationConfig = { maxOutputTokens: 4096 };
   if (String(model).startsWith('gemini-3')) {
     generationConfig.thinkingConfig = { thinkingLevel: 'LOW' };
   }
@@ -143,7 +145,7 @@ async function soullyReply(user, incoming) {
   const tools = toolsFor(user);
   let model = modelName();
 
-  for (let round = 0; round < 6; round += 1) {
+  for (let round = 0; round < 8; round += 1) {
     let data;
     try {
       data = await complete({ model, system, tools, contents });

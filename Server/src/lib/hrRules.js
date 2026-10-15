@@ -853,8 +853,13 @@ function staffRequestPolicy(role) {
 
 /**
  * WFH uses the same cycle as holidays: manager first, then HR Manager.
+ * HR staff are approved by the HR Manager directly. The HR Manager is approved by their own manager.
  */
 function wfhRequestPolicy(role) {
+  const r = String(role || '');
+  if (r === 'hr') {
+    return { canRequest: true, needsManager: false, needsHr: true, approvalMode: 'all' };
+  }
   const base = staffRequestPolicy(role);
   return { ...base, approvalMode: 'all' };
 }

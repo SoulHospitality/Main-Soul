@@ -10,9 +10,10 @@ import { currency } from '../utils/formatters';
 
 const TEAM_LABELS = {
   mine: 'My team',
+  all: 'Everyone',
   reservations: 'Reservations team',
   operations: 'Operations team',
-  all: 'Everyone',
+  acquisition: 'Unit acquisition team',
 };
 
 function todayInput() {
@@ -24,12 +25,29 @@ function formatDay(iso) {
   return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
+function formatActual(kpi) {
+  if (kpi.metric === 'reviews') {
+    if (kpi.actual == null) return 'No reviews yet';
+    return `${kpi.actual} average · ${kpi.review_count} review${kpi.review_count === 1 ? '' : 's'}`;
+  }
+  if (kpi.measure === 'value') return currency(kpi.actual);
+  return String(kpi.actual ?? 0);
+}
+
+function formatTarget(kpi) {
+  if (kpi.metric === 'reviews') return `${kpi.target_value} average`;
+  if (kpi.measure === 'value') return currency(kpi.target_value);
+  if (kpi.metric === 'unit_acquisitions') return `${kpi.target_value} units`;
+  return `${kpi.target_value} reservations`;
+}
+
 function emptyForm(metrics, teamKeys) {
+  const metric = metrics[0]?.key || 'reservations';
+  const measure = metrics[0]?.measures?.[0]?.key || 'count';
   return {
-    metric: metrics[0]?.key || 'reservations',
-    target_value: '100',
-    reward_amount: '1000',
-    min_percent: '50',
+    metric,
+    measure,
+    target_value: metric === 'reviews' ? '4.5' : '100',
     starts_on: todayInput(),
     deadline: '',
     scope: 'team',
@@ -41,7 +59,8 @@ function emptyForm(metrics, teamKeys) {
 export default function Kpi() {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [selectedId, setSelectedId] = useState(null);
+  const [selectedStaffId, setSelectedStaffId] = useState(null);
+  const [selectedKpiId, setSelectedKpiId] = useState(null);
   const { data, isLoading, error } = useQuery({
     queryKey: ['kpi'],
     queryFn: () => api.get('/kpi').then((r) => r.data),
@@ -49,50 +68,52 @@ export default function Kpi() {
 
   const metrics = data?.metrics || [];
   const teamKeys = data?.team_keys || [];
+  const staff = data?.staff || [];
   const [form, setForm] = useState(null);
 
   const create = useMutation({
     mutationFn: (payload) => api.post('/kpi', payload).then((r) => r.data),
     onSuccess: () => {
-      toast.success('Target added');
+      toast.success('KPI added');
       setOpen(false);
       qc.invalidateQueries({ queryKey: ['kpi'] });
     },
-    onError: (err) => toast.error(err.response?.data?.error || 'Could not add the target'),
-  });
-
-  const apply = useMutation({
-    mutationFn: (id) => api.post(`/kpi/${id}/apply`).then((r) => r.data),
-    onSuccess: () => {
-      toast.success('Bonuses added to payroll');
-      qc.invalidateQueries({ queryKey: ['kpi'] });
-    },
-    onError: (err) => toast.error(err.response?.data?.error || 'Could not add the bonuses'),
+    onError: (err) => toast.error(err.response?.data?.error || 'Could not add the KPI'),
   });
 
   const remove = useMutation({
-    mutationFn: (id) => api.delete(`/kpi/${id}`).then((r) => r.data),
+    mutationFn: ({ id, staffId }) => api.delete(`/kpi/${id}`, { params: { staff_id: staffId } }).then((r) => r.data),
     onSuccess: () => {
-      toast.success('Target removed');
+      toast.success('KPI removed');
       qc.invalidateQueries({ queryKey: ['kpi'] });
     },
-    onError: (err) => toast.error(err.response?.data?.error || 'Could not remove the target'),
+    onError: (err) => toast.error(err.response?.data?.error || 'Could not remove the KPI'),
   });
 
-  const targets = data?.targets || [];
-  const selected = useMemo(
-    () => targets.find((item) => item.id === selectedId) || targets[0] || null,
-    [targets, selectedId]
+  const selectedStaff = useMemo(
+    () => staff.find((person) => String(person.id) === String(selectedStaffId)) || staff[0] || null,
+    [staff, selectedStaffId]
   );
+  const selectedKpi = selectedStaff?.kpis?.find((kpi) => kpi.id === selectedKpiId) || selectedStaff?.kpis?.[0] || null;
+  const selectedMetric = metrics.find((item) => item.key === form?.metric);
 
   if (isLoading) return <LoadingSpinner />;
-  if (error) {
-    return <EmptyState title={error.response?.data?.error || 'Could not load KPI'} />;
-  }
+  if (error) return <EmptyState title={error.response?.data?.error || 'Could not load KPIs'} />;
 
   function openForm() {
     setForm(emptyForm(metrics, teamKeys));
     setOpen(true);
+  }
+
+  function changeMetric(metric) {
+    const next = metrics.find((item) => item.key === metric);
+    const measure = next?.measures?.[0]?.key || 'count';
+    setForm((current) => ({
+      ...current,
+      metric,
+      measure,
+      target_value: metric === 'reviews' ? '4.5' : '100',
+    }));
   }
 
   function toggleStaff(id) {
@@ -109,9 +130,8 @@ export default function Kpi() {
     event.preventDefault();
     create.mutate({
       metric: form.metric,
+      measure: form.measure,
       target_value: Number(form.target_value),
-      reward_amount: Number(form.reward_amount),
-      min_percent: Number(form.min_percent),
       starts_on: form.starts_on,
       deadline: form.deadline,
       scope: form.scope,
@@ -126,47 +146,73 @@ export default function Kpi() {
         <div>
           <h1 className="page-title">KPI</h1>
           <p className="page-subtitle">
-            Targets for the team. Each person earns the same share of the reward as the share of the target they finish. Below the minimum, the bonus is zero.
+            Each person carries their own targets. The result is calculated from reservations, units they add, or the average rating of guests they checked in.
           </p>
         </div>
         {data.can_manage ? (
-          <button type="button" className="btn-primary" onClick={openForm}>
-            Add target
-          </button>
+          <button type="button" className="btn-primary" onClick={openForm}>Add KPI</button>
         ) : null}
       </div>
 
-      {!targets.length ? (
-        <EmptyState title="No targets yet" subtitle="When a manager assigns a target, progress and the bonus appear here." />
+      {!staff.length ? (
+        <EmptyState title="No staff to show" />
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]">
-          <div className="space-y-3">
-            {targets.map((target) => (
+        <div className="grid gap-6 lg:grid-cols-[20rem_minmax(0,1fr)]">
+          <div className="space-y-2">
+            {staff.map((person) => (
               <button
-                key={target.id}
+                key={person.id}
                 type="button"
-                onClick={() => setSelectedId(target.id)}
-                className={`card w-full p-4 text-left ${selected?.id === target.id ? 'ring-2 ring-[var(--pms-accent,#F28C28)]' : ''}`}
+                onClick={() => {
+                  setSelectedStaffId(person.id);
+                  setSelectedKpiId(null);
+                }}
+                className={`card w-full p-4 text-left ${selectedStaff?.id === person.id ? 'ring-2 ring-[var(--pms-accent,#F28C28)]' : ''}`}
               >
-                <p className="font-semibold text-soul-blue">{target.metric_label}</p>
-                <p className="text-sm text-soul-muted mt-1">
-                  {target.target_value} by {formatDay(target.deadline)} · {currency(target.reward_amount)}
-                </p>
+                <p className="font-semibold text-soul-blue">{person.full_name}</p>
                 <p className="text-xs text-soul-muted mt-1">
-                  Minimum {target.min_percent}% · {target.assignees.length} {target.assignees.length === 1 ? 'person' : 'people'}
+                  {ROLE_LABELS[person.role] || person.role}
+                  {' · '}
+                  {person.kpis.length} KPI{person.kpis.length === 1 ? '' : 's'}
                 </p>
               </button>
             ))}
           </div>
 
-          {selected ? (
-            <TargetDetail
-              target={selected}
-              onApply={() => apply.mutate(selected.id)}
-              applying={apply.isPending}
-              onDelete={() => remove.mutate(selected.id)}
-              deleting={remove.isPending}
-            />
+          {selectedStaff ? (
+            <section className="space-y-4">
+              <div>
+                <h2 className="font-semibold text-soul-blue">{selectedStaff.full_name}</h2>
+                <p className="text-sm text-soul-muted">{ROLE_LABELS[selectedStaff.role] || selectedStaff.role}</p>
+              </div>
+              {!selectedStaff.kpis.length ? (
+                <EmptyState title="No KPIs yet" subtitle="A manager adds targets for this person from this page." />
+              ) : (
+                <>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {selectedStaff.kpis.map((kpi) => (
+                      <button
+                        key={kpi.id}
+                        type="button"
+                        onClick={() => setSelectedKpiId(kpi.id)}
+                        className={`card p-4 text-left ${selectedKpi?.id === kpi.id ? 'ring-2 ring-[var(--pms-accent,#F28C28)]' : ''}`}
+                      >
+                        <p className="font-semibold text-soul-blue">{kpi.metric_label}</p>
+                        <p className="text-xs text-soul-muted mt-1">{kpi.measure_label} · {formatTarget(kpi)}</p>
+                        <p className="mt-2 text-sm">{formatActual(kpi)} · {kpi.percent}%</p>
+                      </button>
+                    ))}
+                  </div>
+                  {selectedKpi ? (
+                    <KpiDetail
+                      kpi={selectedKpi}
+                      onDelete={() => remove.mutate({ id: selectedKpi.id, staffId: selectedStaff.id })}
+                      deleting={remove.isPending}
+                    />
+                  ) : null}
+                </>
+              )}
+            </section>
           ) : null}
         </div>
       )}
@@ -174,112 +220,94 @@ export default function Kpi() {
       <Modal
         open={open}
         onClose={() => setOpen(false)}
-        title="Add a target"
+        title="Add a KPI"
         size="lg"
         footer={
           <>
-            <button type="button" className="btn-secondary" onClick={() => setOpen(false)}>
-              Cancel
-            </button>
-            <button type="submit" form="kpi-form" className="btn-primary" disabled={create.isPending}>
-              Save target
-            </button>
+            <button type="button" className="btn-secondary" onClick={() => setOpen(false)}>Cancel</button>
+            <button type="submit" form="kpi-form" className="btn-primary" disabled={create.isPending}>Save KPI</button>
           </>
         }
       >
         {form ? (
           <form id="kpi-form" className="space-y-4" onSubmit={submit}>
+            <div>
+              <label className="label">Type</label>
+              <select className="input" value={form.metric} onChange={(event) => changeMetric(event.target.value)}>
+                {metrics.map((item) => (
+                  <option key={item.key} value={item.key}>{item.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {selectedMetric?.measures?.length > 1 ? (
+              <div>
+                <label className="label">Measure</label>
+                <div className="flex flex-wrap gap-4 text-sm">
+                  {selectedMetric.measures.map((item) => (
+                    <label key={item.key} className="inline-flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="kpi-measure"
+                        checked={form.measure === item.key}
+                        onChange={() => setForm((current) => ({ ...current, measure: item.key }))}
+                      />
+                      {item.key === 'count' ? 'Number of reservations' : 'Total value of reservations'}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <label className="label">What to count</label>
-                <select
-                  className="input"
-                  value={form.metric}
-                  onChange={(event) => setForm((current) => ({ ...current, metric: event.target.value }))}
-                >
-                  {metrics.map((item) => (
-                    <option key={item.key} value={item.key}>{item.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="label">Target</label>
+                <label className="label">
+                  {form.metric === 'reviews'
+                    ? 'Target average rating'
+                    : form.measure === 'value'
+                      ? 'Target value (EGP)'
+                      : form.metric === 'unit_acquisitions'
+                        ? 'Units to add'
+                        : 'Number of reservations'}
+                </label>
                 <input
                   className="input"
                   type="number"
-                  min="1"
-                  step="1"
+                  min={form.metric === 'reviews' ? '1' : '1'}
+                  max={form.metric === 'reviews' ? '5' : undefined}
+                  step={form.metric === 'reviews' || form.measure === 'value' ? '0.1' : '1'}
                   required
                   value={form.target_value}
                   onChange={(event) => setForm((current) => ({ ...current, target_value: event.target.value }))}
                 />
               </div>
               <div>
-                <label className="label">Reward (EGP)</label>
-                <input
-                  className="input"
-                  type="number"
-                  min="1"
-                  step="0.01"
-                  required
-                  value={form.reward_amount}
-                  onChange={(event) => setForm((current) => ({ ...current, reward_amount: event.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="label">Minimum to earn anything (%)</label>
-                <input
-                  className="input"
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="1"
-                  required
-                  value={form.min_percent}
-                  onChange={(event) => setForm((current) => ({ ...current, min_percent: event.target.value }))}
-                />
-              </div>
-              <div>
                 <label className="label">Starts</label>
-                <input
-                  className="input"
-                  type="date"
-                  required
-                  value={form.starts_on}
-                  onChange={(event) => setForm((current) => ({ ...current, starts_on: event.target.value }))}
-                />
+                <input className="input" type="date" required value={form.starts_on} onChange={(event) => setForm((current) => ({ ...current, starts_on: event.target.value }))} />
               </div>
               <div>
                 <label className="label">Deadline</label>
-                <input
-                  className="input"
-                  type="date"
-                  required
-                  value={form.deadline}
-                  onChange={(event) => setForm((current) => ({ ...current, deadline: event.target.value }))}
-                />
+                <input className="input" type="date" required value={form.deadline} onChange={(event) => setForm((current) => ({ ...current, deadline: event.target.value }))} />
               </div>
             </div>
+
+            <p className="text-xs text-soul-muted">
+              {form.metric === 'reviews'
+                ? 'Only reviews from a guest who reserved that unit count. The average is given to the person who checked them in.'
+                : form.metric === 'unit_acquisitions'
+                  ? 'Counts units this person adds during the period.'
+                  : 'Counts reservations this person makes during the period.'}
+            </p>
 
             <div>
               <label className="label">Assign to</label>
               <div className="flex flex-wrap gap-4 text-sm">
                 <label className="inline-flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name="kpi-scope"
-                    checked={form.scope === 'team'}
-                    onChange={() => setForm((current) => ({ ...current, scope: 'team' }))}
-                  />
+                  <input type="radio" name="kpi-scope" checked={form.scope === 'team'} onChange={() => setForm((current) => ({ ...current, scope: 'team' }))} />
                   Whole team
                 </label>
                 <label className="inline-flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name="kpi-scope"
-                    checked={form.scope === 'staff'}
-                    onChange={() => setForm((current) => ({ ...current, scope: 'staff' }))}
-                  />
+                  <input type="radio" name="kpi-scope" checked={form.scope === 'staff'} onChange={() => setForm((current) => ({ ...current, scope: 'staff' }))} />
                   Selected people
                 </label>
               </div>
@@ -288,11 +316,7 @@ export default function Kpi() {
             {form.scope === 'team' && teamKeys.length > 1 ? (
               <div>
                 <label className="label">Team</label>
-                <select
-                  className="input"
-                  value={form.team_key}
-                  onChange={(event) => setForm((current) => ({ ...current, team_key: event.target.value }))}
-                >
+                <select className="input" value={form.team_key} onChange={(event) => setForm((current) => ({ ...current, team_key: event.target.value }))}>
                   {teamKeys.map((key) => (
                     <option key={key} value={key}>{TEAM_LABELS[key] || key}</option>
                   ))}
@@ -304,22 +328,15 @@ export default function Kpi() {
               <div className="max-h-56 overflow-y-auto rounded-xl border border-soul-line divide-y divide-soul-line/70">
                 {(data.team || []).map((person) => (
                   <label key={person.id} className="flex items-center gap-3 px-3 py-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={form.staff_ids.includes(person.id)}
-                      onChange={() => toggleStaff(person.id)}
-                    />
+                    <input type="checkbox" checked={form.staff_ids.includes(person.id)} onChange={() => toggleStaff(person.id)} />
                     <span>{person.full_name}</span>
                     <span className="text-soul-muted">{ROLE_LABELS[person.role] || person.role}</span>
                   </label>
                 ))}
-                {!data.team?.length ? <p className="px-3 py-4 text-sm text-soul-muted">No one on your team yet.</p> : null}
               </div>
             ) : (
               <p className="text-xs text-soul-muted">
-                {form.team_key === 'mine' || teamKeys.length === 1
-                  ? 'This goes to everyone who reports to you.'
-                  : 'This goes to every active person in the team you chose.'}
+                {teamKeys.length === 1 ? 'This goes to everyone who reports to you.' : 'This goes to every active person in the team you chose.'}
               </p>
             )}
           </form>
@@ -329,94 +346,44 @@ export default function Kpi() {
   );
 }
 
-function TargetDetail({ target, onApply, applying, onDelete, deleting }) {
+function KpiDetail({ kpi, onDelete, deleting }) {
   return (
     <section className="card overflow-hidden">
       <div className="px-5 py-4 border-b border-soul-line flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="font-semibold text-soul-blue">
-            {target.target_value} {target.metric_label.toLowerCase()}
-          </h2>
+          <h3 className="font-semibold text-soul-blue">{kpi.metric_label}</h3>
           <p className="text-sm text-soul-muted mt-1">
-            {formatDay(target.starts_on)} to {formatDay(target.deadline)}. Reward {currency(target.reward_amount)}. Below {target.min_percent}% pays nothing.
+            {formatDay(kpi.starts_on)} to {formatDay(kpi.deadline)}. Target {formatTarget(kpi)}. Result {formatActual(kpi)} ({kpi.percent}%).
           </p>
-          {target.created_by_name ? (
-            <p className="text-xs text-soul-muted mt-1">Added by {target.created_by_name}</p>
-          ) : null}
+          {kpi.created_by_name ? <p className="text-xs text-soul-muted mt-1">Added by {kpi.created_by_name}</p> : null}
         </div>
-        <div className="flex gap-2">
-          {target.can_apply ? (
-            <button type="button" className="btn-primary" onClick={onApply} disabled={applying}>
-              Add bonuses
-            </button>
-          ) : null}
-          {target.can_delete ? (
-            <button type="button" className="btn-secondary" onClick={onDelete} disabled={deleting}>
-              Remove
-            </button>
-          ) : null}
-        </div>
+        {kpi.can_delete ? (
+          <button type="button" className="btn-secondary" onClick={onDelete} disabled={deleting}>Remove</button>
+        ) : null}
       </div>
-
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs text-soul-muted border-b border-soul-line">
-              <th className="px-5 py-3 font-medium">Person</th>
-              <th className="px-3 py-3 font-medium text-right">Done</th>
-              <th className="px-3 py-3 font-medium text-right">Share</th>
-              <th className="px-5 py-3 font-medium text-right">Bonus</th>
-            </tr>
-          </thead>
-          <tbody>
-            {target.assignees.map((person) => (
-              <tr key={person.staff_user_id} className="border-b border-soul-line/70">
-                <td className="px-5 py-3">
-                  <div className="font-medium">{person.full_name}</div>
-                  <div className="text-xs text-soul-muted">{ROLE_LABELS[person.role] || person.role}</div>
-                </td>
-                <td className="px-3 py-3 text-right tabular-nums">{person.count} / {target.target_value}</td>
-                <td className="px-3 py-3 text-right tabular-nums">{person.percent}%</td>
-                <td className="px-5 py-3 text-right tabular-nums">
-                  {currency(person.bonus)}
-                  {person.applied ? <div className="text-xs text-soul-muted">On payslip</div> : null}
-                  {!person.applied && !person.eligible ? <div className="text-xs text-soul-muted">Below minimum</div> : null}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="px-5 py-4 border-t border-soul-line">
-        <h3 className="font-semibold text-soul-blue">Daily performance</h3>
+      <div className="px-5 py-4">
+        <h4 className="font-semibold text-soul-blue">Daily performance</h4>
         <div className="mt-3 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-soul-muted">
                 <th className="py-2 pr-3 font-medium">Day</th>
-                {target.assignees.map((person) => (
-                  <th key={person.staff_user_id} className="py-2 px-3 font-medium text-right">{person.full_name}</th>
-                ))}
+                <th className="py-2 font-medium text-right">{kpi.metric === 'reviews' ? 'Average' : 'Result'}</th>
               </tr>
             </thead>
             <tbody>
-              {(target.days || []).map((day) => (
-                <tr key={day} className="border-t border-soul-line/70">
-                  <td className="py-2 pr-3 text-soul-muted">{formatDay(day)}</td>
-                  {target.assignees.map((person) => {
-                    const cell = (person.daily || []).find((item) => item.date === day);
-                    return (
-                      <td key={person.staff_user_id} className="py-2 px-3 text-right tabular-nums">
-                        {cell?.count || 0}
-                      </td>
-                    );
-                  })}
+              {(kpi.daily || []).map((day) => (
+                <tr key={day.date} className="border-t border-soul-line/70">
+                  <td className="py-2 pr-3 text-soul-muted">{formatDay(day.date)}</td>
+                  <td className="py-2 text-right tabular-nums">
+                    {kpi.measure === 'value' ? currency(day.value) : day.value}
+                    {kpi.metric === 'reviews' && day.count ? ` · ${day.count}` : ''}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {!target.days?.length ? <p className="text-sm text-soul-muted">No days in this target yet.</p> : null}
+          {!kpi.daily?.length ? <p className="text-sm text-soul-muted">No days in this KPI yet.</p> : null}
         </div>
       </div>
     </section>

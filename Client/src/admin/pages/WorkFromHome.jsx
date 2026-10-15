@@ -83,9 +83,13 @@ export default function WorkFromHome({ embedded = false }) {
         <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-soul-muted">HR</p>
         <h1 className="page-title mt-1">Work from home</h1>
         <p className="page-subtitle">
-          {canQueue
-            ? 'Same cycle as holidays: manager accepts first; HR Manager Accept/Reject after the manager. CEOs can act anytime.'
-            : 'Request a WFH day. Your manager accepts first, then the HR Manager. If approved, it counts as a half day on payroll.'}
+          {user?.role === 'hr'
+            ? 'Request a WFH day. The HR Manager accepts it. If approved, it counts as a half day on payroll.'
+            : user?.role === 'hr_supervisor'
+              ? 'Request a WFH day. Your manager accepts it. If approved, it counts as a half day on payroll.'
+              : canQueue
+                ? 'Same cycle as holidays: manager accepts first; HR Manager Accept/Reject after the manager. CEOs can act anytime.'
+                : 'Request a WFH day. Your manager accepts first, then the HR Manager. If approved, it counts as a half day on payroll.'}
         </p>
       </div>
       ) : null}

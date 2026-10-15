@@ -4,14 +4,16 @@ const { logAudit } = require('../../lib/audit');
 const { sqlStaffManagedBy } = require('../../lib/staffManagers');
 const {
   METRIC_LABELS,
+  MEASURE_LABELS,
   RESERVATION_TEAM_ROLES,
   OPERATIONS_TEAM_ROLES,
+  ACQUISITION_TEAM_ROLES,
   canManageKpi,
   metricsForRole,
+  measuresForMetric,
   teamKeysForRole,
-  kpiBonus,
+  kpiProgress,
   eachDate,
-  roundMoney,
 } = require('../../lib/kpi');
 
 const router = express.Router();
@@ -61,57 +63,127 @@ async function loadAssignable(user) {
   return rows;
 }
 
-function filterTeam(rows, teamKey) {
-  if (teamKey === 'reservations') {
-    return rows.filter((row) => RESERVATION_TEAM_ROLES.includes(row.role));
+async function loadDirectory(user) {
+  if (user.role === 'admin' || canManageKpi(user)) {
+    const people = await loadAssignable(user);
+    if (user.role !== 'admin' && !people.some((person) => Number(person.id) === Number(user.id))) {
+      people.unshift({
+        id: user.id,
+        full_name: user.full_name,
+        role: user.role,
+        staff_code: user.staff_code,
+      });
+    }
+    return people;
   }
-  if (teamKey === 'operations') {
-    return rows.filter((row) => OPERATIONS_TEAM_ROLES.includes(row.role));
-  }
+  const { rows } = await query(
+    `SELECT id, full_name, role, staff_code FROM staff_users WHERE id = $1`,
+    [user.id]
+  );
   return rows;
 }
 
-async function progressFor(metric, staffIds, from, to) {
+function filterTeam(rows, teamKey) {
+  if (teamKey === 'reservations') return rows.filter((row) => RESERVATION_TEAM_ROLES.includes(row.role));
+  if (teamKey === 'operations') return rows.filter((row) => OPERATIONS_TEAM_ROLES.includes(row.role));
+  if (teamKey === 'acquisition') return rows.filter((row) => ACQUISITION_TEAM_ROLES.includes(row.role));
+  return rows;
+}
+
+async function progressFor(metric, measure, staffIds, from, to) {
   const totals = new Map();
   const daily = new Map();
   if (!staffIds.length) return { totals, daily };
-  let sql;
   if (metric === 'reservations') {
-    sql = `SELECT COALESCE(r.sales_person_id, r.created_by) AS staff_id,
-                  (r.created_at AT TIME ZONE 'Africa/Cairo')::date::text AS day,
-                  COUNT(*)::int AS cnt
-           FROM reservations r
-           WHERE ${ACTIVE_STAY_SQL}
-             AND COALESCE(r.sales_person_id, r.created_by) = ANY($3::int[])
-             AND (r.created_at AT TIME ZONE 'Africa/Cairo')::date BETWEEN $1::date AND $2::date
-           GROUP BY 1, 2`;
-  } else if (metric === 'check_ins') {
-    sql = `SELECT r.ops_handed_over_by AS staff_id,
-                  (r.ops_handed_over_at AT TIME ZONE 'Africa/Cairo')::date::text AS day,
-                  COUNT(*)::int AS cnt
-           FROM reservations r
-           WHERE COALESCE(r.ops_handed_over, 0)::int = 1
-             AND r.ops_handed_over_by = ANY($3::int[])
-             AND (r.ops_handed_over_at AT TIME ZONE 'Africa/Cairo')::date BETWEEN $1::date AND $2::date
-           GROUP BY 1, 2`;
-  } else {
-    sql = `SELECT r.insurance_refunded_by AS staff_id,
-                  r.insurance_refunded_at::date::text AS day,
-                  COUNT(*)::int AS cnt
-           FROM reservations r
-           WHERE r.insurance_refunded_by = ANY($3::int[])
-             AND r.insurance_refunded_at IS NOT NULL
-             AND r.insurance_refunded_at::date BETWEEN $1::date AND $2::date
-           GROUP BY 1, 2`;
+    const valueSql = measure === 'value'
+      ? 'COALESCE(SUM(COALESCE(r.total_amount, 0)), 0)::float'
+      : 'COUNT(*)::int';
+    const { rows } = await query(
+      `SELECT COALESCE(r.sales_person_id, r.created_by) AS staff_id,
+              (r.created_at AT TIME ZONE 'Africa/Cairo')::date::text AS day,
+              ${valueSql} AS amount
+       FROM reservations r
+       WHERE ${ACTIVE_STAY_SQL}
+         AND COALESCE(r.sales_person_id, r.created_by) = ANY($3::int[])
+         AND (r.created_at AT TIME ZONE 'Africa/Cairo')::date BETWEEN $1::date AND $2::date
+       GROUP BY 1, 2`,
+      [from, to, staffIds]
+    );
+    for (const row of rows) {
+      const staffId = Number(row.staff_id);
+      const amount = Number(row.amount) || 0;
+      totals.set(staffId, (totals.get(staffId) || 0) + amount);
+      daily.set(`${staffId}|${row.day}`, amount);
+    }
+    return { totals, daily };
   }
-  const { rows } = await query(sql, [from, to, staffIds]);
+
+  if (metric === 'unit_acquisitions') {
+    const { rows } = await query(
+      `SELECT u.created_by_staff AS staff_id,
+              (u.created_at AT TIME ZONE 'Africa/Cairo')::date::text AS day,
+              COUNT(*)::int AS amount
+       FROM units u
+       WHERE u.created_by_staff = ANY($3::int[])
+         AND (u.created_at AT TIME ZONE 'Africa/Cairo')::date BETWEEN $1::date AND $2::date
+       GROUP BY 1, 2`,
+      [from, to, staffIds]
+    );
+    for (const row of rows) {
+      const staffId = Number(row.staff_id);
+      const amount = Number(row.amount) || 0;
+      totals.set(staffId, (totals.get(staffId) || 0) + amount);
+      daily.set(`${staffId}|${row.day}`, amount);
+    }
+    return { totals, daily };
+  }
+
+  const { rows } = await query(
+    `SELECT staff_id, day, rating
+     FROM (
+       SELECT DISTINCT ON (rev.id)
+              res.ops_handed_over_by AS staff_id,
+              (rev.created_at AT TIME ZONE 'Africa/Cairo')::date::text AS day,
+              rev.rating
+       FROM reviews rev
+       JOIN reservations res ON res.unit_id = rev.unit_id
+         AND COALESCE(res.ops_handed_over, 0)::int = 1
+         AND res.ops_handed_over_by IS NOT NULL
+         AND res.status <> 'cancelled'
+       LEFT JOIN profiles p ON p.id = rev.guest_user_id
+       WHERE rev.published = true
+         AND res.ops_handed_over_by = ANY($3::int[])
+         AND (rev.created_at AT TIME ZONE 'Africa/Cairo')::date BETWEEN $1::date AND $2::date
+         AND res.check_in::date <= (rev.created_at AT TIME ZONE 'Africa/Cairo')::date
+         AND (
+           (p.email IS NOT NULL AND lower(p.email) = lower(COALESCE(res.guest_email, '')))
+           OR lower(trim(rev.guest_name)) = lower(trim(COALESCE(res.guest_name, '')))
+         )
+       ORDER BY rev.id, res.check_out DESC NULLS LAST
+     ) matched`,
+    [from, to, staffIds]
+  );
+  const buckets = new Map();
   for (const row of rows) {
     const staffId = Number(row.staff_id);
-    const count = Number(row.cnt) || 0;
-    totals.set(staffId, (totals.get(staffId) || 0) + count);
-    daily.set(`${staffId}|${row.day}`, count);
+    const rating = Number(row.rating) || 0;
+    const key = `${staffId}|${row.day}`;
+    const total = buckets.get(staffId) || { sum: 0, count: 0 };
+    total.sum += rating;
+    total.count += 1;
+    buckets.set(staffId, total);
+    const day = daily.get(key) || { sum: 0, count: 0 };
+    day.sum += rating;
+    day.count += 1;
+    daily.set(key, day);
   }
-  return { totals, daily };
+  for (const [staffId, bucket] of buckets) {
+    totals.set(staffId, {
+      average: bucket.count ? Math.round((bucket.sum / bucket.count) * 10) / 10 : null,
+      count: bucket.count,
+    });
+  }
+  return { totals, daily, reviews: true };
 }
 
 async function loadVisibleTargets(user) {
@@ -135,116 +207,121 @@ async function loadVisibleTargets(user) {
     )`;
   }
   const { rows } = await query(
-    `SELECT t.id, t.metric, t.target_value, t.reward_amount, t.min_percent,
+    `SELECT t.id, t.metric, COALESCE(t.measure, 'count') AS measure, t.target_value,
             t.starts_on::text AS starts_on, t.deadline::text AS deadline,
-            t.created_by, t.created_at,
-            maker.full_name AS created_by_name,
-            a.staff_user_id, a.applied_bonus_id, a.applied_at,
-            s.full_name, s.role, s.staff_code
+            t.created_by, maker.full_name AS created_by_name,
+            a.staff_user_id
      FROM kpi_targets t
      LEFT JOIN staff_users maker ON maker.id = t.created_by
      JOIN kpi_target_assignees a ON a.target_id = t.id
-     JOIN staff_users s ON s.id = a.staff_user_id
      WHERE ${where}
-     ORDER BY t.deadline DESC, t.id DESC, s.full_name`,
+     ORDER BY t.deadline DESC, t.id DESC`,
     params
   );
   return rows;
-}
-
-function groupTargets(rows) {
-  const targets = [];
-  const byId = new Map();
-  for (const row of rows) {
-    let target = byId.get(row.id);
-    if (!target) {
-      target = {
-        id: row.id,
-        metric: row.metric,
-        metric_label: METRIC_LABELS[row.metric] || row.metric,
-        target_value: Number(row.target_value),
-        reward_amount: roundMoney(row.reward_amount),
-        min_percent: Number(row.min_percent) || 0,
-        starts_on: row.starts_on,
-        deadline: row.deadline,
-        created_by: row.created_by,
-        created_by_name: row.created_by_name,
-        assignees: [],
-      };
-      byId.set(row.id, target);
-      targets.push(target);
-    }
-    target.assignees.push({
-      staff_user_id: Number(row.staff_user_id),
-      full_name: row.full_name,
-      role: row.role,
-      staff_code: row.staff_code,
-      applied: Boolean(row.applied_at),
-      applied_bonus_id: row.applied_bonus_id,
-    });
-  }
-  return targets;
 }
 
 router.get('/kpi', async (req, res, next) => {
   try {
     if (req.user.role === 'owner') return res.status(403).json({ error: 'Forbidden' });
     const today = cairoToday();
+    const directory = await loadDirectory(req.user);
     const assignable = canManageKpi(req.user) ? await loadAssignable(req.user) : [];
-    const grouped = groupTargets(await loadVisibleTargets(req.user));
-    const targets = [];
-    for (const target of grouped) {
-      const through = today < target.starts_on ? null : (today < target.deadline ? today : target.deadline);
-      const { totals, daily } = through
-        ? await progressFor(
-        target.metric,
-        target.assignees.map((person) => person.staff_user_id),
-        target.starts_on,
-        through
-      )
-        : { totals: new Map(), daily: new Map() };
-      const days = through ? eachDate(target.starts_on, through) : [];
-      const assignees = target.assignees.map((person) => {
-        const count = totals.get(person.staff_user_id) || 0;
-        const pay = kpiBonus({
-          count,
-          targetValue: target.target_value,
-          rewardAmount: target.reward_amount,
-          minPercent: target.min_percent,
-        });
-        return {
-          ...person,
-          count,
-          percent: pay.percent,
-          bonus: pay.bonus,
-          eligible: pay.eligible,
-          daily: days.map((date) => ({
-            date,
-            count: daily.get(`${person.staff_user_id}|${date}`) || 0,
-          })),
+    const rows = await loadVisibleTargets(req.user);
+    const byTarget = new Map();
+    for (const row of rows) {
+      let target = byTarget.get(row.id);
+      if (!target) {
+        target = {
+          id: row.id,
+          metric: row.metric,
+          measure: row.measure,
+          target_value: Number(row.target_value),
+          starts_on: row.starts_on,
+          deadline: row.deadline,
+          created_by: row.created_by,
+          created_by_name: row.created_by_name,
+          staff_ids: [],
         };
-      });
-      const open = assignees.some((person) => !person.applied);
-      targets.push({
-        ...target,
-        assignees,
-        days,
-        can_apply:
-          open &&
-          today >= target.deadline &&
-          (req.user.role === 'admin' || Number(target.created_by) === Number(req.user.id)),
-        can_delete:
-          assignees.every((person) => !person.applied) &&
-          (req.user.role === 'admin' || Number(target.created_by) === Number(req.user.id)),
+        byTarget.set(row.id, target);
+      }
+      target.staff_ids.push(Number(row.staff_user_id));
+    }
+
+    const progressCache = new Map();
+    async function progress(target) {
+      const key = `${target.id}`;
+      if (progressCache.has(key)) return progressCache.get(key);
+      const through = today < target.starts_on ? null : (today < target.deadline ? today : target.deadline);
+      const result = through
+        ? await progressFor(target.metric, target.measure, target.staff_ids, target.starts_on, through)
+        : { totals: new Map(), daily: new Map(), reviews: target.metric === 'reviews' };
+      result.days = through ? eachDate(target.starts_on, through) : [];
+      progressCache.set(key, result);
+      return result;
+    }
+
+    const staff = [];
+    for (const person of directory) {
+      const kpis = [];
+      for (const target of byTarget.values()) {
+        if (!target.staff_ids.includes(Number(person.id))) continue;
+        const stats = await progress(target);
+        const raw = stats.totals.get(Number(person.id));
+        const actual = target.metric === 'reviews' ? (raw?.average ?? null) : (raw || 0);
+        const reviewCount = target.metric === 'reviews' ? (raw?.count || 0) : null;
+        const score = kpiProgress({ actual, targetValue: target.target_value });
+        kpis.push({
+          id: target.id,
+          metric: target.metric,
+          metric_label: METRIC_LABELS[target.metric] || target.metric,
+          measure: target.measure,
+          measure_label: MEASURE_LABELS[target.measure] || target.measure,
+          target_value: target.target_value,
+          starts_on: target.starts_on,
+          deadline: target.deadline,
+          created_by_name: target.created_by_name,
+          actual: score.actual,
+          percent: score.percent,
+          review_count: reviewCount,
+          days: stats.days,
+          daily: stats.days.map((date) => {
+            const cell = stats.daily.get(`${Number(person.id)}|${date}`);
+            if (target.metric === 'reviews') {
+              return {
+                date,
+                value: cell?.count ? Math.round((cell.sum / cell.count) * 10) / 10 : 0,
+                count: cell?.count || 0,
+              };
+            }
+            return { date, value: cell || 0 };
+          }),
+          can_delete: req.user.role === 'admin' || Number(target.created_by) === Number(req.user.id),
+        });
+      }
+      staff.push({
+        id: person.id,
+        full_name: person.full_name,
+        role: person.role,
+        staff_code: person.staff_code,
+        kpis,
       });
     }
+
     res.json({
       today,
       can_manage: canManageKpi(req.user),
-      metrics: metricsForRole(req.user.role).map((key) => ({ key, label: METRIC_LABELS[key] })),
+      metrics: metricsForRole(req.user.role).map((key) => ({
+        key,
+        label: METRIC_LABELS[key],
+        measures: measuresForMetric(key).map((measure) => ({
+          key: measure,
+          label: MEASURE_LABELS[measure],
+        })),
+      })),
       team_keys: teamKeysForRole(req.user.role),
       team: assignable,
-      targets,
+      staff,
     });
   } catch (err) {
     next(err);
@@ -253,28 +330,32 @@ router.get('/kpi', async (req, res, next) => {
 
 router.post('/kpi', async (req, res, next) => {
   try {
-    if (!canManageKpi(req.user)) return res.status(403).json({ error: 'Only the CEO and managers can add a target' });
+    if (!canManageKpi(req.user)) {
+      return res.status(403).json({ error: 'Only the CEO and managers can add a KPI' });
+    }
     const metric = String(req.body?.metric || '');
     if (!metricsForRole(req.user.role).includes(metric)) {
-      return res.status(400).json({ error: 'Choose a target type this role can set' });
+      return res.status(400).json({ error: 'Choose a KPI type' });
     }
-    const targetValue = Math.round(Number(req.body?.target_value));
-    const rewardAmount = roundMoney(req.body?.reward_amount);
-    const minPercent = Number(req.body?.min_percent);
+    const allowedMeasures = measuresForMetric(metric);
+    const measure = allowedMeasures.includes(req.body?.measure) ? req.body.measure : allowedMeasures[0];
+    const targetValue = Number(req.body?.target_value);
     const startsOn = isoDate(req.body?.starts_on);
     const deadline = isoDate(req.body?.deadline);
-    if (!Number.isFinite(targetValue) || targetValue < 1) {
-      return res.status(400).json({ error: 'Enter how many must be completed' });
-    }
-    if (!(rewardAmount > 0)) return res.status(400).json({ error: 'Enter the reward in EGP' });
-    if (!Number.isFinite(minPercent) || minPercent < 0 || minPercent > 100) {
-      return res.status(400).json({ error: 'Minimum percent must be between 0 and 100' });
+    if (metric === 'reviews') {
+      if (!(targetValue >= 1 && targetValue <= 5)) {
+        return res.status(400).json({ error: 'The review target must be a rating from 1 to 5' });
+      }
+    } else if (measure === 'value') {
+      if (!(targetValue > 0)) return res.status(400).json({ error: 'Enter the reservation value for this period' });
+    } else if (!Number.isFinite(targetValue) || targetValue < 1) {
+      return res.status(400).json({ error: 'Enter the target number' });
     }
     if (!startsOn || !deadline || deadline < startsOn) {
       return res.status(400).json({ error: 'The deadline must be on or after the start date' });
     }
     if (eachDate(startsOn, deadline).length > 120) {
-      return res.status(400).json({ error: 'A target can cover at most 120 days' });
+      return res.status(400).json({ error: 'A KPI can cover at most 120 days' });
     }
 
     const assignable = await loadAssignable(req.user);
@@ -282,7 +363,7 @@ router.post('/kpi', async (req, res, next) => {
     const scope = req.body?.scope === 'staff' ? 'staff' : 'team';
     let chosen = assignable;
     if (req.user.role === 'admin' && scope === 'team') {
-      const teamKey = ['reservations', 'operations', 'all'].includes(req.body?.team_key)
+      const teamKey = ['reservations', 'operations', 'acquisition', 'all'].includes(req.body?.team_key)
         ? req.body.team_key
         : 'all';
       chosen = filterTeam(assignable, teamKey);
@@ -302,115 +383,22 @@ router.post('/kpi', async (req, res, next) => {
     if (!unique.length) return res.status(400).json({ error: 'Choose at least one staff member' });
 
     const client = await pool.connect();
+    let targetId;
     try {
       await client.query('BEGIN');
       const { rows } = await client.query(
         `INSERT INTO kpi_targets
-           (metric, target_value, reward_amount, min_percent, starts_on, deadline, created_by)
-         VALUES ($1,$2,$3,$4,$5::date,$6::date,$7)
+           (metric, measure, target_value, reward_amount, min_percent, starts_on, deadline, created_by)
+         VALUES ($1,$2,$3,NULL,0,$4::date,$5::date,$6)
          RETURNING id`,
-        [metric, targetValue, rewardAmount, minPercent, startsOn, deadline, req.user.id]
+        [metric, measure, targetValue, startsOn, deadline, req.user.id]
       );
-      const targetId = rows[0].id;
+      targetId = rows[0].id;
       for (const person of unique) {
         await client.query(
           `INSERT INTO kpi_target_assignees (target_id, staff_user_id) VALUES ($1,$2)`,
           [targetId, person.id]
         );
-      }
-      await client.query('COMMIT');
-      await logAudit({
-        userId: req.user.id,
-        action: 'KPI_TARGET_CREATE',
-        entityType: 'kpi_target',
-        entityId: targetId,
-        details: { metric, target_value: targetValue, staff: unique.length },
-      });
-      res.status(201).json({ id: targetId });
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
-  } catch (err) {
-    if (err.status) return res.status(err.status).json({ error: err.message });
-    next(err);
-  }
-});
-
-router.post('/kpi/:id/apply', async (req, res, next) => {
-  try {
-    const id = Number(req.params.id);
-    const { rows } = await query(
-      `SELECT t.*, a.staff_user_id, a.applied_at, s.full_name
-       FROM kpi_targets t
-       JOIN kpi_target_assignees a ON a.target_id = t.id
-       JOIN staff_users s ON s.id = a.staff_user_id
-       WHERE t.id = $1`,
-      [id]
-    );
-    if (!rows.length) return res.status(404).json({ error: 'Target not found' });
-    const target = rows[0];
-    if (req.user.role !== 'admin' && Number(target.created_by) !== Number(req.user.id)) {
-      return res.status(403).json({ error: 'Only the CEO or the manager who added this target can add the bonus' });
-    }
-    const today = cairoToday();
-    const deadline = String(target.deadline).slice(0, 10);
-    if (today < deadline) {
-      return res.status(400).json({ error: 'Bonuses can be added after the deadline' });
-    }
-    const open = rows.filter((row) => !row.applied_at);
-    if (!open.length) return res.status(400).json({ error: 'This target is already on the payslips' });
-
-    const { totals } = await progressFor(
-      target.metric,
-      open.map((row) => Number(row.staff_user_id)),
-      String(target.starts_on).slice(0, 10),
-      deadline
-    );
-    const label = METRIC_LABELS[target.metric] || target.metric;
-    const results = [];
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      for (const row of open) {
-        const count = totals.get(Number(row.staff_user_id)) || 0;
-        const pay = kpiBonus({
-          count,
-          targetValue: target.target_value,
-          rewardAmount: target.reward_amount,
-          minPercent: target.min_percent,
-        });
-        let bonusId = null;
-        if (pay.bonus > 0) {
-          const { rows: bonusRows } = await client.query(
-            `INSERT INTO staff_salary_bonuses (staff_user_id, amount, reason, bonus_date, created_by)
-             VALUES ($1,$2,$3,$4::date,$5)
-             RETURNING id`,
-            [
-              row.staff_user_id,
-              pay.bonus,
-              `${label} target ${count}/${target.target_value} (${pay.percent}%)`.slice(0, 255),
-              deadline,
-              req.user.id,
-            ]
-          );
-          bonusId = bonusRows[0].id;
-        }
-        await client.query(
-          `UPDATE kpi_target_assignees
-           SET applied_bonus_id = $3, applied_at = now(), applied_by = $4
-           WHERE target_id = $1 AND staff_user_id = $2 AND applied_at IS NULL`,
-          [id, row.staff_user_id, bonusId, req.user.id]
-        );
-        results.push({
-          staff_user_id: row.staff_user_id,
-          full_name: row.full_name,
-          count,
-          percent: pay.percent,
-          bonus: pay.bonus,
-        });
       }
       await client.query('COMMIT');
     } catch (err) {
@@ -421,13 +409,14 @@ router.post('/kpi/:id/apply', async (req, res, next) => {
     }
     await logAudit({
       userId: req.user.id,
-      action: 'KPI_TARGET_APPLY',
+      action: 'KPI_TARGET_CREATE',
       entityType: 'kpi_target',
-      entityId: id,
-      details: { people: results.length },
+      entityId: targetId,
+      details: { metric, measure, staff: unique.length },
     });
-    res.json({ results });
+    res.status(201).json({ id: targetId });
   } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
     next(err);
   }
 });
@@ -435,22 +424,19 @@ router.post('/kpi/:id/apply', async (req, res, next) => {
 router.delete('/kpi/:id', async (req, res, next) => {
   try {
     const id = Number(req.params.id);
-    const { rows } = await query(
-      `SELECT t.created_by, BOOL_OR(a.applied_at IS NOT NULL) AS applied
-       FROM kpi_targets t
-       LEFT JOIN kpi_target_assignees a ON a.target_id = t.id
-       WHERE t.id = $1
-       GROUP BY t.created_by`,
-      [id]
-    );
-    if (!rows[0]) return res.status(404).json({ error: 'Target not found' });
+    const staffId = Number(req.query.staff_id);
+    const { rows } = await query(`SELECT created_by FROM kpi_targets WHERE id = $1`, [id]);
+    if (!rows[0]) return res.status(404).json({ error: 'KPI not found' });
     if (req.user.role !== 'admin' && Number(rows[0].created_by) !== Number(req.user.id)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
-    if (rows[0].applied) {
-      return res.status(400).json({ error: 'This target is already on the payslips' });
+    if (staffId) {
+      await query(`DELETE FROM kpi_target_assignees WHERE target_id = $1 AND staff_user_id = $2`, [id, staffId]);
+      const { rows: left } = await query(`SELECT 1 FROM kpi_target_assignees WHERE target_id = $1 LIMIT 1`, [id]);
+      if (!left.length) await query(`DELETE FROM kpi_targets WHERE id = $1`, [id]);
+    } else {
+      await query(`DELETE FROM kpi_targets WHERE id = $1`, [id]);
     }
-    await query(`DELETE FROM kpi_targets WHERE id = $1`, [id]);
     res.json({ ok: true });
   } catch (err) {
     next(err);

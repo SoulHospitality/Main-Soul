@@ -1,9 +1,13 @@
-const METRICS = ['reservations', 'check_ins', 'check_outs'];
-
 const METRIC_LABELS = {
   reservations: 'Reservations',
-  check_ins: 'Check-ins',
-  check_outs: 'Check-outs',
+  unit_acquisitions: 'Unit acquisitions',
+  reviews: 'Check-in reviews',
+};
+
+const MEASURE_LABELS = {
+  count: 'Number',
+  value: 'Total value',
+  average: 'Average rating',
 };
 
 const LINE_MANAGER_ROLES = new Set([
@@ -16,8 +20,11 @@ const LINE_MANAGER_ROLES = new Set([
   'finance_manager',
 ]);
 
+const METRICS = ['reservations', 'unit_acquisitions', 'reviews'];
+
 const RESERVATION_TEAM_ROLES = ['reservations', 'reservations_web', 'reservations_manual'];
 const OPERATIONS_TEAM_ROLES = ['operations'];
+const ACQUISITION_TEAM_ROLES = ['unit_acquisition_agent'];
 
 function roundMoney(value) {
   return Math.round((Number(value) || 0) * 100) / 100;
@@ -28,35 +35,32 @@ function canManageKpi(user) {
 }
 
 function metricsForRole(role) {
-  if (role === 'admin' || role === 'operations_supervisor') {
-    return ['reservations', 'check_ins', 'check_outs'];
-  }
-  if (role === 'reservations_manager') return ['reservations'];
-  if (LINE_MANAGER_ROLES.has(role)) return ['reservations', 'check_ins', 'check_outs'];
+  if (!LINE_MANAGER_ROLES.has(role)) return [];
+  return METRICS.slice();
+}
+
+function measuresForMetric(metric) {
+  if (metric === 'reservations') return ['count', 'value'];
+  if (metric === 'reviews') return ['average'];
+  if (metric === 'unit_acquisitions') return ['count'];
   return [];
 }
 
 function teamKeysForRole(role) {
-  if (role === 'admin') return ['reservations', 'operations', 'all'];
+  if (role === 'admin') return ['all', 'reservations', 'operations', 'acquisition'];
   return ['mine'];
 }
 
-function kpiBonus({ count, targetValue, rewardAmount, minPercent }) {
+function kpiProgress({ actual, targetValue }) {
   const target = Number(targetValue);
-  const reward = Number(rewardAmount);
-  const minimum = Number(minPercent) || 0;
-  const done = Math.max(0, Number(count) || 0);
-  if (!(target > 0) || !(reward > 0)) {
-    return { percent: 0, bonus: 0, eligible: false };
+  const done = actual == null || actual === '' ? null : Number(actual);
+  if (!(target > 0) || done == null || Number.isNaN(done)) {
+    return { percent: 0, actual: done };
   }
-  const ratio = done / target;
-  const percent = Math.round(ratio * 1000) / 10;
-  if (percent + 1e-9 < minimum) {
-    return { percent, bonus: 0, eligible: false };
-  }
-  const payable = Math.min(ratio, 1);
-  const bonus = roundMoney(reward * payable);
-  return { percent, bonus, eligible: bonus > 0 };
+  return {
+    actual: done,
+    percent: Math.round((done / target) * 1000) / 10,
+  };
 }
 
 function eachDate(from, to) {
@@ -74,12 +78,15 @@ function eachDate(from, to) {
 module.exports = {
   METRICS,
   METRIC_LABELS,
+  MEASURE_LABELS,
   RESERVATION_TEAM_ROLES,
   OPERATIONS_TEAM_ROLES,
+  ACQUISITION_TEAM_ROLES,
   roundMoney,
   canManageKpi,
   metricsForRole,
+  measuresForMetric,
   teamKeysForRole,
-  kpiBonus,
+  kpiProgress,
   eachDate,
 };

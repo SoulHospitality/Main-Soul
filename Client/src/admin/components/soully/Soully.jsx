@@ -3,8 +3,8 @@ import api from '../../api/axios';
 
 const STARTERS = [
   { label: 'Today', text: 'What is the movement today: arrivals, departures, and who is in house?' },
-  { label: 'This month', text: 'How much was booked and collected this month, and what were the expenses?' },
-  { label: 'In house', text: 'Who is in house today, with unit, phone, and balance?' },
+  { label: 'Report', text: 'Write a report on reservations, finance, and HR, and estimate next month from the recent trend.' },
+  { label: 'Forecast', text: 'How are bookings and collections trending, and what does next month look like?' },
 ];
 
 function hasArabic(text) {
@@ -58,7 +58,7 @@ export default function Soully() {
             <img src="/soul-brand/soul-logo.png" alt="" className="soully-panel__logo" />
             <div className="min-w-0">
               <p className="soully-panel__name">Soully</p>
-              <p className="soully-panel__tag">Ask about the business. I will look up the live figures.</p>
+              <p className="soully-panel__tag">Ask for the figures, a department report, or a next-month estimate.</p>
             </div>
             <button type="button" className="soully-panel__close" onClick={() => setOpen(false)} aria-label="Close Soully">
               ×
@@ -68,7 +68,7 @@ export default function Soully() {
           <div ref={listRef} className="soully-panel__body">
             {messages.length === 0 ? (
               <div className="soully-empty">
-                <p>Ask about stays, money, staff, owners, or any other figure in the system.</p>
+                <p>Ask for a live figure, or for a report and a next-month estimate across reservations, finance, HR, operations, and units.</p>
                 <div className="soully-starters">
                   {STARTERS.map((item) => (
                     <button key={item.label} type="button" onClick={() => send(item.text)}>

@@ -2387,6 +2387,30 @@ router.get('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
         };
       }
     }
+    const { rows: wfhRows } = await query(
+      `SELECT staff_user_id, work_date::text AS work_date
+       FROM staff_wfh_requests
+       WHERE status = 'approved'
+         AND work_date >= $1::date
+         AND work_date < $2::date`,
+      [from, to]
+    );
+    for (const wfh of wfhRows) {
+      const key = cellKey(wfh.staff_user_id, wfh.work_date);
+      const existing = cells[key];
+      if (existing && existing.status !== 'no_show') continue;
+      cells[key] = {
+        staff_user_id: wfh.staff_user_id,
+        work_date: wfh.work_date,
+        status: 'wfh',
+        check_in: null,
+        check_out: null,
+        deduction_amount: existing?.deduction_amount || 0,
+        notified: false,
+        notes: 'Work from home',
+      };
+    }
+
     for (const person of staff) {
       for (const date of days) {
         const key = cellKey(person.id, date);
