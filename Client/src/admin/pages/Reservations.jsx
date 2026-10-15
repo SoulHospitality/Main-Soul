@@ -1490,7 +1490,7 @@ export default function Reservations() {
   };
 
   const canWrite = canManageReservations;
-  const canCreate = canWrite && user?.role !== 'operations' && user?.role !== 'operations_supervisor';
+  const canCreate = canWrite;
   const canDeleteReservations = canDeleteReservationsFor(user);
   const canPay = canAccessFinance || isManualReservations || isAdmin;
   const canApprove = isAdmin;

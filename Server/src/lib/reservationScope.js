@@ -313,7 +313,8 @@ function bookingAssigneeClause(user, alias = 'b', paramIndex = 1) {
 
 async function loadReservationAccess(id) {
   const { rows } = await query(
-    `SELECT id, unit_id, sales_person_id, created_by, booking_id, booking_source, status, sales_label
+    `SELECT id, unit_id, sales_person_id, created_by, booking_id, booking_source, status, sales_label,
+            ops_assigned_to, ops_assigned_by
      FROM reservations WHERE id = $1`,
     [id]
   );
@@ -342,6 +343,34 @@ async function assertReservationOwned(user, reservation) {
   if (hasWebsiteAllReservationAccess(user)) {
     if (isWebsiteOriginReservation(reservation)) return;
     const err = new Error('Finance can only access website reservations');
+    err.status = 403;
+    throw err;
+  }
+  if (user.role === 'operations') {
+    if (
+      Number(reservation.ops_assigned_to) === Number(user.id) ||
+      Number(reservation.created_by) === Number(user.id)
+    ) return;
+    const err = new Error('You can only access reservations assigned to you');
+    err.status = 403;
+    throw err;
+  }
+  if (user.role === 'operations_supervisor') {
+    if (
+      Number(reservation.ops_assigned_to) === Number(user.id) ||
+      Number(reservation.created_by) === Number(user.id) ||
+      Number(reservation.ops_assigned_by) === Number(user.id)
+    ) return;
+    if (reservation.ops_assigned_to) {
+      const { rows } = await query(
+        `SELECT 1 FROM staff_users
+         WHERE id = $1 AND manager_id = $2 AND role = 'operations'
+         LIMIT 1`,
+        [reservation.ops_assigned_to, user.id]
+      );
+      if (rows[0]) return;
+    }
+    const err = new Error('You can only access reservations for your operations team');
     err.status = 403;
     throw err;
   }
