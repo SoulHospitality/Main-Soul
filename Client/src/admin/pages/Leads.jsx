@@ -301,8 +301,8 @@ export default function LeadsPage() {
           size="lg"
         >
           <LeadPanel
-            leadId={selectedLeadId}
-            onUpdated={() => {
+            lead={leads.find((l) => l.id === selectedLeadId) || null}
+            onChanged={() => {
               refetch();
               setSelectedLeadId(null);
             }}

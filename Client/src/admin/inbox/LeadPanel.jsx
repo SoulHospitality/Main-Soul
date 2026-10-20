@@ -226,6 +226,7 @@ export default function LeadPanel({ lead, followUps = [], customer, onChanged, o
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    if (!lead) return;
     setForm({
       project: lead.project || '', unit_type: lead.unit_type || '', check_in: lead.check_in || '', check_out: lead.check_out || '',
       guests: lead.guests ?? '', budget: lead.budget || '', temperature: lead.temperature || '', source: lead.source || '', campaign: lead.campaign || '',
@@ -233,16 +234,16 @@ export default function LeadPanel({ lead, followUps = [], customer, onChanged, o
   }, [lead]);
 
   const stages = me?.stages || [];
-  const current = stageByKey(lead.stage_key);
+  const current = stageByKey(lead?.stage_key);
   const openStages = stages.filter((s) => s.kind === 'open');
   const closingStages = stages.filter((s) => s.kind !== 'open');
   const now = Date.now();
   const openFollowUps = useMemo(
-    () => followUps.filter((f) => f.lead_id === lead.id && f.status === 'open').sort((a, b) => a.due_at - b.due_at),
-    [followUps, lead.id],
+    () => (lead ? followUps.filter((f) => f.lead_id === lead.id && f.status === 'open').sort((a, b) => a.due_at - b.due_at) : []),
+    [followUps, lead],
   );
   const hasFutureFollowUp = openFollowUps.some((f) => f.due_at > now);
-  const dirty = Object.keys(EMPTY).some((k) => String(form[k] ?? '') !== String(lead[k] ?? ''));
+  const dirty = Boolean(lead) && Object.keys(EMPTY).some((k) => String(form[k] ?? '') !== String(lead[k] ?? ''));
   const canBook = canManageReservations && current?.kind === 'open';
 
   const save = async (patch = form) => {
@@ -301,6 +302,8 @@ export default function LeadPanel({ lead, followUps = [], customer, onChanged, o
   };
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+
+  if (!lead) return null;
 
   return (
     <div className="space-y-4">

@@ -647,14 +647,23 @@ export default function InboxPage() {
               <ChevronLeft className="h-4 w-4" />
               Back to chat
             </button>
-            <LeadPanel
-              leadId={currentConv.conversation.current_lead_id}
-              conversationId={activeConvId}
-              onUpdated={() => {
-                refetchCurrentConv();
-                refetchConvs();
-              }}
-            />
+            {(() => {
+              const lead = (currentConv.leads || []).find((l) => l.id === currentConv.conversation.current_lead_id) || currentConv.leads?.[0] || null;
+              if (!lead) {
+                return <p className="text-sm text-slate-500">This conversation has no lead yet.</p>;
+              }
+              return (
+                <LeadPanel
+                  lead={lead}
+                  followUps={currentConv.followUps || []}
+                  customer={currentConv.customer}
+                  onChanged={() => {
+                    refetchCurrentConv();
+                    refetchConvs();
+                  }}
+                />
+              );
+            })()}
           </div>
         )}
       </div>
