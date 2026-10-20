@@ -116,6 +116,7 @@ const {
   pettyCashLocationsFor,
   canUsePettyCashLocation,
 } = require('../../lib/pettyCashAccess');
+const { assertPettyUnitLocation } = require('../../lib/opsPettyCash');
 const { refreshBooksReset, afterReset } = require('../../lib/finance/booksReset');
 
 const router = express.Router();
@@ -124,15 +125,18 @@ router.use(requirePasswordChanged);
 router.use(compat);
 router.use(require('./reportsAnalytics'));
 router.use(require('./reservationsPerformance'));
+router.use(require('./reservationReceipt'));
 router.use(require('./reservationTargets'));
 router.use(require('./kpi'));
 router.use(require('./resalePerformance'));
 router.use(require('./acquisitionAudit'));
+router.use(require('./acquisitionPerformance'));
 router.use(require('./financeAudit'));
 router.use(require('./reservationAudit'));
 router.use(require('./siteHealth'));
 router.use(require('./staffTasks'));
 router.use(require('./financialSystem'));
+router.use(require('./pettyCashAccounts'));
 router.use(housekeepingOps);
 router.use(require('./opsCheckins'));
 router.use(require('./opsTeam'));
@@ -144,6 +148,7 @@ router.use(require('./promoCodesAdmin'));
 router.use(require('./sitePopupAdmin'));
 router.use(require('./siteSettingsAdmin'));
 router.use(require('./hr'));
+router.use(require('./hrRulesAdmin'));
 router.use(require('./inbox'));
 router.use(require('./soully'));
 
@@ -3596,7 +3601,7 @@ router.get('/petty-cash', requireRoles(...PETTY_CASH_ROLES), async (req, res, ne
     const location = req.query.location;
     const unitId = req.query.unit_id || null;
     const paidBy = req.query.paid_by || null;
-    const allowedLocations = pettyCashLocationsFor(req.user);
+    const allowedLocations = await pettyCashLocationsFor(req.user);
     if (location && !allowedLocations.includes(location)) {
       return res.status(403).json({ error: 'No access to this petty cash location' });
     }
@@ -3608,11 +3613,13 @@ router.get('/petty-cash', requireRoles(...PETTY_CASH_ROLES), async (req, res, ne
              u.unit_number,
              COALESCE(u.project, u.compound) AS project,
              ow.full_name AS owner_name,
+             maker.full_name AS created_by_name,
              pc.entry_type AS type,
              pc.entry_date AS expense_date
       FROM petty_cash pc
       LEFT JOIN units u ON u.id = pc.unit_id
       LEFT JOIN staff_users ow ON ow.id = pc.owner_id
+      LEFT JOIN staff_users maker ON maker.id = pc.created_by
       WHERE pc.entry_date >= $1::date${afterReset('pc.created_at')}`;
     if (location) {
       params.push(location);
@@ -3654,7 +3661,14 @@ router.post(
   const client = await pool.connect();
   try {
     const b = req.body || {};
-    const entryType = String(b.entry_type || b.type || 'out').toLowerCase() === 'in' ? 'in' : 'out';
+    const entryKind = ['loan', 'finance_transfer', 'ops_collection', 'standard'].includes(b.entry_kind)
+      ? b.entry_kind
+      : 'standard';
+    const entryType = entryKind === 'finance_transfer' || entryKind === 'ops_collection'
+      ? 'in'
+      : String(b.entry_type || b.type || 'out').toLowerCase() === 'in'
+        ? 'in'
+        : 'out';
     const paidBy =
       entryType === 'in'
         ? 'company'
@@ -3673,14 +3687,21 @@ router.post(
     const proofPath = req.file?.path || req.file?.secure_url || b.transfer_proof_path || null;
     const proofName = req.file?.originalname || b.transfer_proof_name || null;
 
-    if (!canUsePettyCashLocation(req.user, location)) {
+    if (!(await canUsePettyCashLocation(req.user, location))) {
       return res.status(403).json({ error: 'No access to this petty cash location' });
+    }
+    if (['finance', 'finance_manager'].includes(req.user.role) && entryKind !== 'finance_transfer') {
+      return res.status(403).json({ error: 'Finance adds money as a transfer into petty cash' });
     }
     if (!description || Number.isNaN(amount) || amount < 0) {
       return res.status(400).json({ error: 'Description and amount are required' });
     }
-    if (entryType === 'out' && !proofPath) {
+    if (entryType === 'out' && entryKind !== 'loan' && !proofPath) {
       return res.status(400).json({ error: 'Transfer proof is required for cash out' });
+    }
+    if (unitId) {
+      const unitDrawerError = await assertPettyUnitLocation(unitId, location);
+      if (unitDrawerError) return res.status(400).json({ error: unitDrawerError });
     }
     if (entryType === 'out' && paidBy === 'owner') {
       if (!ownerId || Number.isNaN(ownerId)) {
@@ -3728,10 +3749,11 @@ router.post(
       `INSERT INTO petty_cash (
          location, description, amount, entry_type, entry_date, created_by,
          unit_id, paid_by, notes, status, is_advance, res_from_date, res_to_date,
-         linked_expense_id, moved_to, owner_id, transfer_proof_path, transfer_proof_name
+         linked_expense_id, moved_to, owner_id, transfer_proof_path, transfer_proof_name,
+         entry_kind
        ) VALUES (
          $1,$2,$3,$4,COALESCE($5::date, CURRENT_DATE),$6,
-         $7,$8,$9,$10,COALESCE($11,0),$12,$13,$14,$15,$16,$17,$18
+         $7,$8,$9,$10,COALESCE($11,0),$12,$13,$14,$15,$16,$17,$18,$19
        ) RETURNING *`,
       [
         location,
@@ -3752,6 +3774,7 @@ router.post(
         ownerId,
         proofPath,
         proofName,
+        entryKind,
       ]
     );
 
@@ -3781,13 +3804,19 @@ router.patch('/petty-cash/:id', requireRoles(...PETTY_CASH_ROLES), async (req, r
     const existing = existingRows[0];
     if (!existing) return res.status(404).json({ error: 'Not found' });
     if (
-      !canUsePettyCashLocation(req.user, existing.location) ||
-      (b.location && !canUsePettyCashLocation(req.user, b.location))
+      !(await canUsePettyCashLocation(req.user, existing.location)) ||
+      (b.location && !(await canUsePettyCashLocation(req.user, b.location)))
     ) {
       return res.status(403).json({ error: 'No access to this petty cash location' });
     }
     if (existing.status === 'moved') {
       return res.status(400).json({ error: 'Cannot edit an entry that was moved to expenses' });
+    }
+    const nextUnitId = b.unit_id !== undefined ? b.unit_id || null : existing.unit_id;
+    const nextLocation = b.location || existing.location;
+    if (nextUnitId) {
+      const unitDrawerError = await assertPettyUnitLocation(nextUnitId, nextLocation);
+      if (unitDrawerError) return res.status(400).json({ error: unitDrawerError });
     }
 
     const entryType =

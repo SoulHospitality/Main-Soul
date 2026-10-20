@@ -1,5 +1,40 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import api from '../../api/axios';
+
+const PAGE_LINKS = [
+  ['Dashboard', '/admin/dashboard'],
+  ['KPI', '/admin/kpi'],
+  ['Financial system', '/admin/financial-system'],
+  ['Owner statement', '/admin/owner-statement'],
+  ['Reservations', '/admin/reservations'],
+  ['Performance', '/admin/performance'],
+  ['Attendance', '/admin/attendance'],
+  ['Payrolls', '/admin/payroll'],
+  ['User management', '/admin/users'],
+  ['Petty cash', '/admin/petty-cash'],
+  ['Operations', '/admin/operations'],
+  ['HR rules', '/admin/hr-rules'],
+];
+
+function MessageText({ text }) {
+  const withLabels = String(text || '').replace(/\/admin\/[a-z0-9-]+/gi, (path) => {
+    const found = PAGE_LINKS.find(([, href]) => href === path);
+    return found ? `[[${found[0]}]]` : '';
+  });
+  const parts = withLabels.split(/(\[\[[^\]]+\]\])/g);
+  return parts.map((part, index) => {
+    const match = part.match(/^\[\[(.+)\]\]$/);
+    if (!match) return <span key={index}>{part}</span>;
+    const href = PAGE_LINKS.find(([name]) => name.toLowerCase() === match[1].toLowerCase())?.[1];
+    if (!href) return <span key={index}>{match[1]}</span>;
+    return (
+      <Link key={index} to={href} className="underline font-medium">
+        {match[1]}
+      </Link>
+    );
+  });
+}
 
 const STARTERS = [
   { label: 'Today', text: 'What is the movement today: arrivals, departures, and who is in house?' },
@@ -58,7 +93,7 @@ export default function Soully() {
             <img src="/soul-brand/soul-logo.png" alt="" className="soully-panel__logo" />
             <div className="min-w-0">
               <p className="soully-panel__name">Soully</p>
-              <p className="soully-panel__tag">Ask for the figures, a department report, or a next-month estimate.</p>
+              <p className="soully-panel__tag">Ask for a figure, a report, or what happens next.</p>
             </div>
             <button type="button" className="soully-panel__close" onClick={() => setOpen(false)} aria-label="Close Soully">
               ×
@@ -84,7 +119,7 @@ export default function Soully() {
                   className={`soully-bubble soully-bubble--${item.role}`}
                   dir={hasArabic(item.content) ? 'rtl' : 'ltr'}
                 >
-                  {item.content}
+                  {item.role === 'assistant' ? <MessageText text={item.content} /> : item.content}
                 </div>
               ))
             )}

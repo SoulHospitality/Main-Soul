@@ -255,6 +255,27 @@ export function CheckinsTodaySection({ embedded = false }) {
     enabled: canAssign,
   });
 
+  const customBillMutation = useMutation({
+    mutationFn: ({ id, bill, comment }) =>
+      api.post(`/ops/checkins-today/${id}/custom-bill`, { bill, comment }),
+    onSuccess: () => {
+      toast.success('Sent to the line manager');
+      setCollectingId(null);
+      invalidateCheckins();
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Could not send the custom bill'),
+  });
+
+  const reviewBillMutation = useMutation({
+    mutationFn: ({ id, decision }) =>
+      api.post(`/ops/checkins-today/${id}/custom-bill/review`, { decision }),
+    onSuccess: (_res, vars) => {
+      toast.success(vars.decision === 'approved' ? 'Custom bill approved' : 'Custom bill rejected');
+      invalidateCheckins();
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Could not review the custom bill'),
+  });
+
   const collectMutation = useMutation({
     mutationFn: ({ id, bill, proof, ...fields }) => {
       const fd = new FormData();
@@ -401,6 +422,11 @@ export function CheckinsTodaySection({ embedded = false }) {
                 const paid = Number(r.amount_paid) || 0;
                 const mode = collectModes[r.id] || 'full';
                 const isCustom = mode === 'custom';
+                const billRequest = r.custom_bill_request;
+                const canReviewBill =
+                  billRequest?.status === 'pending' &&
+                  Number(billRequest.requested_by) !== Number(user?.id) &&
+                  (canAssign || Number(billRequest.line_manager_id) === Number(user?.id));
                 const billDraft = billDrafts[r.id] || seedBillDraft(r);
                 const finalBill = Math.round(sumBillDraft(billDraft) * 100) / 100;
                 const customRemaining = Math.max(0, Math.round((finalBill - paid) * 100) / 100);
@@ -539,6 +565,33 @@ export function CheckinsTodaySection({ embedded = false }) {
                         </div>
                       ) : (
                         <div className="space-y-2">
+                          {billRequest?.status === 'pending' ? (
+                            <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900 space-y-1">
+                              <div className="font-semibold">Custom bill waiting for the line manager</div>
+                              <div>{billRequest.comment}</div>
+                              {billRequest.requested_by_name ? <div>From {billRequest.requested_by_name}</div> : null}
+                              {canReviewBill ? (
+                                <div className="flex gap-2 pt-1">
+                                  <button
+                                    type="button"
+                                    className="btn-primary text-xs"
+                                    disabled={reviewBillMutation.isPending}
+                                    onClick={() => reviewBillMutation.mutate({ id: r.id, decision: 'approved' })}
+                                  >
+                                    Approve
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn-secondary text-xs"
+                                    disabled={reviewBillMutation.isPending}
+                                    onClick={() => reviewBillMutation.mutate({ id: r.id, decision: 'rejected' })}
+                                  >
+                                    Reject
+                                  </button>
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
                           <label className="flex items-center gap-2 text-sm font-medium text-gray-800">
                             <input
                               type="checkbox"
@@ -628,7 +681,7 @@ export function CheckinsTodaySection({ embedded = false }) {
                                   </div>
                                   <label className="block text-xs space-y-1">
                                     <span className="text-gray-600 font-medium">
-                                      Comment (required for bill edits)
+                                      Comment (required)
                                     </span>
                                     <textarea
                                       className="input text-sm py-1.5 min-h-[4rem]"
@@ -639,9 +692,40 @@ export function CheckinsTodaySection({ embedded = false }) {
                                           [r.id]: e.target.value,
                                         }))
                                       }
-                                      placeholder="Why was the bill changed?"
+                                      placeholder="Why is this bill different?"
                                     />
                                   </label>
+                                  <p className="text-[11px] text-amber-800">
+                                    The line manager has to approve this before the bill changes. Collecting the original full amount does not need approval.
+                                  </p>
+                                  <button
+                                    type="button"
+                                    className="btn-primary text-xs w-full justify-center"
+                                    disabled={customBillMutation.isPending}
+                                    onClick={() => {
+                                      const comment = String(collectCommentDrafts[r.id] || '').trim();
+                                      if (!comment) {
+                                        toast.error('A comment is required for a custom bill');
+                                        return;
+                                      }
+                                      if (finalBill + 0.5 < paid) {
+                                        toast.error('Final bill cannot be less than already paid');
+                                        return;
+                                      }
+                                      customBillMutation.mutate({
+                                        id: r.id,
+                                        comment,
+                                        bill: Object.fromEntries(
+                                          BILL_FIELDS.map((f) => [
+                                            f.key,
+                                            Math.round((Number(billDraft[f.key]) || 0) * 100) / 100,
+                                          ])
+                                        ),
+                                      });
+                                    }}
+                                  >
+                                    {customBillMutation.isPending ? 'Sending…' : 'Request line manager approval'}
+                                  </button>
                                 </>
                               ) : (
                                 <div className="text-xs text-gray-700">
@@ -652,6 +736,37 @@ export function CheckinsTodaySection({ embedded = false }) {
                                 </div>
                               )}
 
+                              {billRequest?.status === 'pending' ? (
+                                <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900 space-y-1">
+                                  <div className="font-semibold">Waiting for the line manager</div>
+                                  <div>{billRequest.comment}</div>
+                                  {canReviewBill ? (
+                                    <div className="flex gap-2 pt-1">
+                                      <button
+                                        type="button"
+                                        className="btn-primary text-xs"
+                                        disabled={reviewBillMutation.isPending}
+                                        onClick={() => reviewBillMutation.mutate({ id: r.id, decision: 'approved' })}
+                                      >
+                                        Approve
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="btn-secondary text-xs"
+                                        disabled={reviewBillMutation.isPending}
+                                        onClick={() => reviewBillMutation.mutate({ id: r.id, decision: 'rejected' })}
+                                      >
+                                        Reject
+                                      </button>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ) : billRequest?.status === 'approved' ? (
+                                <p className="text-[11px] text-emerald-700">Custom bill approved. Collect the full remaining amount.</p>
+                              ) : billRequest?.status === 'rejected' ? (
+                                <p className="text-[11px] text-rose-700">Custom bill was rejected{billRequest.review_note ? `: ${billRequest.review_note}` : ''}.</p>
+                              ) : null}
+                              {!isCustom ? (
                               <CollectPaymentMethods
                                 method={method}
                                 onMethodChange={(next) => {
@@ -773,6 +888,7 @@ export function CheckinsTodaySection({ embedded = false }) {
                                 Confirm collect
                                 {collectAmount > 0 ? ` · ${currency(collectAmount)}` : ''}
                               </button>
+                              ) : null}
                             </div>
                           ) : null}
                         </div>

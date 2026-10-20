@@ -59,10 +59,20 @@ const {
   applyRequestReview,
   describeRequestApproval,
   isUnpaidLeaveUnlimited,
+  refreshDeductionRules,
 } = require('../../lib/hrRules');
 const { loadManagerIds, sqlStaffManagedBy } = require('../../lib/staffManagers');
 
 const router = express.Router();
+
+router.use(async (_req, _res, next) => {
+  try {
+    await refreshDeductionRules();
+  } catch (err) {
+    console.error('[hr-rules]', err.message);
+  }
+  next();
+});
 
 const HR_ROLES = ['admin', ...HR_TEAM_ROLES];
 
@@ -678,6 +688,20 @@ function mapAttendanceRow(row) {
 
 function cellFromDeduction(row) {
   const category = String(row.category || '').toLowerCase();
+  if (category === 'wfh') {
+    return {
+      staff_user_id: row.staff_user_id,
+      work_date: String(row.deduction_date || '').slice(0, 10),
+      status: 'wfh',
+      leave_type: 'wfh',
+      check_in: null,
+      check_out: null,
+      deduction_amount: Number(row.amount) || 0,
+      notified: false,
+      notes: row.reason || 'Work from home',
+      from_deduction: true,
+    };
+  }
   const status = category === 'absence' ? 'no_show' : 'late';
   return {
     staff_user_id: row.staff_user_id,
@@ -839,6 +863,19 @@ async function loadCoveringAttendanceLeaves(staffId, date, db = null) {
   });
 }
 
+async function clearWfhForDate(db, staffId, date) {
+  await db.query(
+    `DELETE FROM staff_salary_deductions
+     WHERE staff_user_id = $1 AND deduction_date = $2::date AND category = 'wfh'`,
+    [staffId, date]
+  );
+  await db.query(
+    `DELETE FROM staff_wfh_requests
+     WHERE staff_user_id = $1 AND work_date = $2::date`,
+    [staffId, date]
+  );
+}
+
 async function removeSingleDayLeavesForDate(db, staff, date) {
   const covering = await loadCoveringAttendanceLeaves(staff.id, date, db);
   for (const leave of covering) {
@@ -960,6 +997,7 @@ async function setAttendanceHolidayDay({ staff, date, leaveType, actorId }) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await clearWfhForDate(client, staff.id, date);
     for (const leave of covering) {
       await reverseLeaveTypeEffects(client, leave, staff.base_salary);
       await client.query(`DELETE FROM staff_leave_requests WHERE id = $1`, [leave.id]);
@@ -1008,6 +1046,88 @@ async function setAttendanceHolidayDay({ staff, date, leaveType, actorId }) {
     );
     await client.query('COMMIT');
     return holidayAttendanceCell(staff, date, rows[0], staff.base_salary);
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (_) {}
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function setAttendanceWfhDay({ staff, date, actorId }) {
+  const covering = await loadCoveringAttendanceLeaves(staff.id, date);
+  if (covering.some((leave) => !isSingleDayLeave(leave))) {
+    const err = new Error('This day is part of a multi-day holiday. Cancel that leave request first.');
+    err.status = 400;
+    throw err;
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const leave of covering) {
+      await reverseLeaveTypeEffects(client, leave, staff.base_salary);
+      await client.query(`DELETE FROM staff_leave_requests WHERE id = $1`, [leave.id]);
+    }
+    await client.query(
+      `DELETE FROM staff_salary_deductions
+       WHERE staff_user_id = $1
+         AND deduction_date = $2::date
+         AND category IN ('lateness', 'absence')`,
+      [staff.id, date]
+    );
+    await client.query(
+      `DELETE FROM staff_attendance WHERE staff_user_id = $1 AND work_date = $2::date`,
+      [staff.id, date]
+    );
+    await clearWfhForDate(client, staff.id, date);
+    const computed = computeHalfDayDeduction(staff.base_salary);
+    const inserted = await insertDeduction(client, [
+      staff.id,
+      computed.amount,
+      computed.label,
+      date,
+      'wfh',
+      actorId || null,
+      null,
+      null,
+      computed.daily_rate,
+      computed.days_factor,
+    ]);
+    await client.query(
+      `INSERT INTO staff_wfh_requests
+         (staff_user_id, work_date, reason, status, deduction_id,
+          needs_manager_approval, needs_hr_approval,
+          manager_reviewed_by, manager_reviewed_at,
+          hr_reviewed_by, hr_reviewed_at,
+          reviewed_by, reviewed_at, review_note)
+       VALUES ($1,$2::date,$3,'approved',$4,
+               false, false,
+               $5, now(),
+               $5, now(),
+               $5, now(), $6)`,
+      [
+        staff.id,
+        date,
+        'Marked from attendance',
+        inserted?.id || null,
+        actorId || null,
+        'Attendance holiday · work from home',
+      ]
+    );
+    await client.query('COMMIT');
+    return {
+      staff_user_id: staff.id,
+      work_date: date,
+      status: 'wfh',
+      leave_type: 'wfh',
+      check_in: null,
+      check_out: null,
+      deduction_amount: computed.amount,
+      notified: false,
+      notes: 'Work from home',
+    };
   } catch (err) {
     try {
       await client.query('ROLLBACK');
@@ -2388,24 +2508,27 @@ router.get('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
       }
     }
     const { rows: wfhRows } = await query(
-      `SELECT staff_user_id, work_date::text AS work_date
-       FROM staff_wfh_requests
-       WHERE status = 'approved'
-         AND work_date >= $1::date
-         AND work_date < $2::date`,
+      `SELECT w.staff_user_id, w.work_date::text AS work_date,
+              COALESCE(d.amount, 0)::float AS deduction_amount
+       FROM staff_wfh_requests w
+       LEFT JOIN staff_salary_deductions d ON d.id = w.deduction_id
+       WHERE w.status = 'approved'
+         AND w.work_date >= $1::date
+         AND w.work_date < $2::date`,
       [from, to]
     );
     for (const wfh of wfhRows) {
       const key = cellKey(wfh.staff_user_id, wfh.work_date);
       const existing = cells[key];
-      if (existing && existing.status !== 'no_show') continue;
+      if (existing && existing.status !== 'no_show' && existing.status !== 'wfh') continue;
       cells[key] = {
         staff_user_id: wfh.staff_user_id,
         work_date: wfh.work_date,
         status: 'wfh',
+        leave_type: 'wfh',
         check_in: null,
         check_out: null,
-        deduction_amount: existing?.deduction_amount || 0,
+        deduction_amount: Number(wfh.deduction_amount) || existing?.deduction_amount || 0,
         notified: false,
         notes: 'Work from home',
       };
@@ -2478,6 +2601,7 @@ router.put('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
           `DELETE FROM staff_attendance WHERE staff_user_id = $1 AND work_date = $2::date`,
           [staff.id, date]
         );
+        await clearWfhForDate(client, staff.id, date);
         await client.query('COMMIT');
       } catch (err) {
         try {
@@ -2492,6 +2616,14 @@ router.put('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
 
     const status = String(b.status || '').trim();
     if (status === 'holiday') {
+      if (String(b.leave_type || '').trim().toLowerCase() === 'wfh') {
+        const cell = await setAttendanceWfhDay({
+          staff,
+          date,
+          actorId: req.user.id,
+        });
+        return res.json({ ok: true, cell });
+      }
       const requested = normalizeExcuseLeaveType(String(b.leave_type || '').trim());
       if (requested === 'paid_excuse' || String(b.leave_type || '').trim().toLowerCase() === 'excuse') {
         const marked = await markAttendanceExcuse({
@@ -2511,22 +2643,21 @@ router.put('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
       return res.json({ ok: true, cell });
     }
 
-    // Switching to an attendance status removes a single-day holiday on that date.
+    // Switching to an attendance status removes a single-day holiday or work-from-home mark.
     const covering = await loadCoveringAttendanceLeaves(staff.id, date);
-    if (covering.length) {
-      const client = await pool.connect();
+    const switchClient = await pool.connect();
+    try {
+      await switchClient.query('BEGIN');
+      if (covering.length) await removeSingleDayLeavesForDate(switchClient, staff, date);
+      await clearWfhForDate(switchClient, staff.id, date);
+      await switchClient.query('COMMIT');
+    } catch (err) {
       try {
-        await client.query('BEGIN');
-        await removeSingleDayLeavesForDate(client, staff, date);
-        await client.query('COMMIT');
-      } catch (err) {
-        try {
-          await client.query('ROLLBACK');
-        } catch (_) {}
-        throw err;
-      } finally {
-        client.release();
-      }
+        await switchClient.query('ROLLBACK');
+      } catch (_) {}
+      throw err;
+    } finally {
+      switchClient.release();
     }
 
     const amountRaw = b.deduction_amount;

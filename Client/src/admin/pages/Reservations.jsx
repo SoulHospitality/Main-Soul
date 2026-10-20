@@ -781,8 +781,42 @@ function ReservationDetail({
     );
   }
 
+  async function downloadReceipt() {
+    try {
+      const token = localStorage.getItem('pms_token') || '';
+      const res = await fetch(`/api/pms/reservations/${reservation.id}/receipt.pdf`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Receipt failed');
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `receipt-SH-${reservation.id}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Could not generate the receipt');
+    }
+  }
+
+  async function emailReceipt() {
+    try {
+      await api.post(`/reservations/${reservation.id}/receipt/email`);
+      toast.success('Receipt sent to the guest');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Could not email the receipt');
+    }
+  }
+
   return (
     <div className="space-y-5">
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className="btn-secondary" onClick={downloadReceipt}>Receipt</button>
+        <button type="button" className="btn-primary" onClick={emailReceipt}>Email receipt</button>
+      </div>
       <div className="grid grid-cols-2 gap-4 text-sm">
         <div className="space-y-2">
           <InfoRow

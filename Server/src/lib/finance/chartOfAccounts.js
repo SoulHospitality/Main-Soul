@@ -12,6 +12,7 @@ const CHART_OF_ACCOUNTS = [
   { code: '102000', name: 'Bank - CIB (EGP)', group: 'assets', type: 'asset', treasury: 'bank', currency: 'EGP' },
   { code: '103000', name: 'Cash - EGP', group: 'assets', type: 'asset', treasury: 'cash', currency: 'EGP' },
   { code: '104000', name: 'Cash - USD (booked in EGP)', group: 'assets', type: 'asset', treasury: 'cash', currency: 'USD' },
+  { code: '108000', name: 'Petty Cash Floats', group: 'assets', type: 'asset' },
   { code: '105000', name: 'Guest Accounts Receivable', group: 'assets', type: 'asset' },
   { code: '106000', name: 'Payment Gateway Clearing (Paymob / Stripe / Fawry)', group: 'assets', type: 'asset' },
   { code: '107000', name: 'VAT Receivable (Input VAT 14%)', group: 'assets', type: 'asset' },

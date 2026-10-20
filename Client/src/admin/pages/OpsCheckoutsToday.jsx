@@ -28,6 +28,9 @@ export function CheckoutsTodaySection({ embedded = false }) {
   const canAssign = user?.role === 'admin' || user?.role === 'operations_supervisor';
   const [range, setRange] = useState('today');
   const [refundingId, setRefundingId] = useState(null);
+  const [editingInsuranceId, setEditingInsuranceId] = useState(null);
+  const [insuranceDrafts, setInsuranceDrafts] = useState({});
+  const [insurancePhotos, setInsurancePhotos] = useState({});
   const [methodDrafts, setMethodDrafts] = useState({});
   const [bankDrafts, setBankDrafts] = useState({});
   const [refundDrafts, setRefundDrafts] = useState({});
@@ -84,6 +87,21 @@ export function CheckoutsTodaySection({ embedded = false }) {
       invalidate();
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Could not record insurance payout'),
+  });
+
+  const insuranceMutation = useMutation({
+    mutationFn: ({ id, insurance, photos }) => {
+      const fd = new FormData();
+      fd.append('insurance', String(insurance));
+      (photos || []).forEach((file) => fd.append('photos', file));
+      return api.post(`/ops/checkouts-today/${id}/insurance`, fd);
+    },
+    onSuccess: () => {
+      toast.success('Insurance updated');
+      setEditingInsuranceId(null);
+      invalidate();
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Could not update insurance'),
   });
 
   const assignMutation = useMutation({
@@ -258,13 +276,90 @@ export function CheckoutsTodaySection({ embedded = false }) {
                         <div className="mt-1 text-[11px] text-gray-500">Check-in: {r.ops_assignee_name}</div>
                       ) : null}
                     </td>
-                    <td className="py-4 px-4">
-                      {insurance > 0.009 ? (
-                        <div className="font-semibold tabular-nums text-amber-900">
-                          {currency(insurance)}
+                    <td className="py-4 px-4 min-w-[12rem]">
+                      {editingInsuranceId === r.id ? (
+                        <div className="space-y-2">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            className="input text-sm py-1.5"
+                            value={insuranceDrafts[r.id] ?? ''}
+                            onChange={(e) =>
+                              setInsuranceDrafts((prev) => ({ ...prev, [r.id]: e.target.value }))
+                            }
+                          />
+                          <ProofPicker
+                            label="Photo"
+                            required
+                            multiple
+                            accept="image/*"
+                            files={insurancePhotos[r.id] || []}
+                            onChange={(next) =>
+                              setInsurancePhotos((prev) => ({ ...prev, [r.id]: next }))
+                            }
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              className="btn-primary text-xs"
+                              disabled={insuranceMutation.isPending}
+                              onClick={() => {
+                                const photos = insurancePhotos[r.id] || [];
+                                if (!photos.length) {
+                                  toast.error('A photo is required to change the insurance');
+                                  return;
+                                }
+                                insuranceMutation.mutate({
+                                  id: r.id,
+                                  insurance: parseFloat(insuranceDrafts[r.id]) || 0,
+                                  photos,
+                                });
+                              }}
+                            >
+                              {insuranceMutation.isPending ? 'Saving…' : 'Save'}
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-secondary text-xs"
+                              onClick={() => setEditingInsuranceId(null)}
+                            >
+                              Cancel
+                            </button>
+                          </div>
                         </div>
                       ) : (
-                        <span className="text-xs text-gray-500">No insurance held</span>
+                        <div className="space-y-1">
+                          {insurance > 0.009 ? (
+                            <div className="font-semibold tabular-nums text-amber-900">
+                              {currency(insurance)}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-gray-500">No insurance held</span>
+                          )}
+                          {(r.insurance_adjust_photo_urls || []).length ? (
+                            <div className="flex flex-wrap gap-1">
+                              {r.insurance_adjust_photo_urls.map((url) => (
+                                <a key={url} href={url} target="_blank" rel="noreferrer">
+                                  <img src={url} alt="Insurance" className="h-10 w-10 rounded object-cover border" />
+                                </a>
+                              ))}
+                            </div>
+                          ) : null}
+                          {status !== 'refunded' && status !== 'partial' && status !== 'forfeited' ? (
+                            <button
+                              type="button"
+                              className="text-xs font-semibold text-soul-blue"
+                              onClick={() => {
+                                setEditingInsuranceId(r.id);
+                                setInsuranceDrafts((prev) => ({ ...prev, [r.id]: String(insurance || '') }));
+                                setInsurancePhotos((prev) => ({ ...prev, [r.id]: [] }));
+                              }}
+                            >
+                              Edit insurance
+                            </button>
+                          ) : null}
+                        </div>
                       )}
                     </td>
                     <td className="py-4 px-4 min-w-[11rem]">

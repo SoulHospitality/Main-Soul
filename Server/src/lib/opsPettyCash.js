@@ -1,13 +1,51 @@
 const { query } = require('../config/db');
 
-/** Petty cash box for a unit: Ain Sokhna units use 'sokhna', everything else 'north_coast'. */
-async function pettyLocationForUnit(unitId) {
-  if (!unitId) return 'north_coast';
+function drawerFromText(area, blob, destination) {
+  const dest = String(destination || area || '');
+  const text = `${dest} ${blob || ''}`;
+  if (/ain\s*sokhna|sokhna|galala/i.test(text)) return 'sokhna';
+  if (/north\s*coast/i.test(text)) return 'north_coast';
+  return null;
+}
+
+/** North Coast destinations → north_coast. Ain Sokhna → sokhna. */
+async function classifyUnitDrawer(unitId) {
+  if (!unitId) return null;
   const { rows } = await query(
-    `SELECT concat_ws(' ', area, city, project, compound) AS place FROM units WHERE id = $1`,
+    `SELECT area, city, project, compound FROM units WHERE id = $1`,
     [unitId]
   );
-  return /sokhna/i.test(String(rows[0]?.place || '')) ? 'sokhna' : 'north_coast';
+  const unit = rows[0];
+  if (!unit) return null;
+  const blob = [unit.area, unit.city, unit.project, unit.compound].filter(Boolean).join(' ');
+  const direct = drawerFromText(unit.area, blob);
+  if (direct) return direct;
+  try {
+    const { rows: projects } = await query(
+      `SELECT destination FROM location_projects
+       WHERE lower(name) = lower($1) OR lower(name) = lower($2)
+       LIMIT 1`,
+      [unit.project || '', unit.compound || '']
+    );
+    return drawerFromText(projects[0]?.destination, blob);
+  } catch (err) {
+    if (err.code === '42P01') return null;
+    throw err;
+  }
+}
+
+async function pettyLocationForUnit(unitId) {
+  return (await classifyUnitDrawer(unitId)) || 'north_coast';
+}
+
+async function assertPettyUnitLocation(unitId, location) {
+  if (!unitId) return null;
+  const drawer = await classifyUnitDrawer(unitId);
+  if (!drawer) return 'Choose a unit in a North Coast or Ain Sokhna destination';
+  if (drawer === location) return null;
+  return drawer === 'sokhna'
+    ? 'Ain Sokhna units belong in the Sokhna petty cash'
+    : 'North Coast units belong in the North Coast petty cash';
 }
 
 /**
@@ -34,8 +72,8 @@ async function recordOpsPettyCash({
     `INSERT INTO petty_cash (
        location, description, amount, entry_type, entry_date, created_by,
        unit_id, linked_reservation_id, paid_by, notes, status,
-       transfer_proof_path, transfer_proof_name, source, source_ref
-     ) VALUES ($1,$2,$3,$4,(timezone('Africa/Cairo', now()))::date,$5,$6,$7,'company',$8,'open',$9,$10,$11,$12)
+       transfer_proof_path, transfer_proof_name, source, source_ref, entry_kind
+     ) VALUES ($1,$2,$3,$4,(timezone('Africa/Cairo', now()))::date,$5,$6,$7,'company',$8,'open',$9,$10,$11,$12,'ops_collection')
      RETURNING *`,
     [
       location,
@@ -55,4 +93,9 @@ async function recordOpsPettyCash({
   return rows[0] || null;
 }
 
-module.exports = { pettyLocationForUnit, recordOpsPettyCash };
+module.exports = {
+  pettyLocationForUnit,
+  classifyUnitDrawer,
+  assertPettyUnitLocation,
+  recordOpsPettyCash,
+};

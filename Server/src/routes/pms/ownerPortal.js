@@ -776,5 +776,93 @@ router.get('/owner/payout-requests/all', requireRoles('admin'), async (_req, res
   }
 });
 
+router.get('/reports/export/owner-statement/pdf', requireRoles('owner', ...STAFF_EDITOR_ROLES), async (req, res, next) => {
+  try {
+    const from = clampFromDate(req.query.from_date);
+    const to = req.query.to_date || null;
+    const isOwner = req.user.role === 'owner';
+    let unitId = req.query.unit_id || null;
+    if (!unitId) return res.status(400).json({ error: 'unit_id required' });
+    if (isOwner) {
+      const allowed = await ownerUnitIds(req.user.id);
+      if (!allowed.includes(unitId)) return res.status(403).json({ error: 'Forbidden' });
+    }
+    const { rows: units } = await query(`SELECT * FROM units WHERE id = $1`, [unitId]);
+    const unit = units[0];
+    if (!unit) return res.status(404).json({ error: 'Unit not found' });
+
+    const params = [unitId, from];
+    let where = `r.unit_id = $1 AND r.status <> 'cancelled' AND r.check_in >= $2::date`;
+    if (to) {
+      params.push(to);
+      where += ` AND r.check_in <= $${params.length}::date`;
+    }
+    const { rows: reservations } = await query(
+      `SELECT r.* FROM reservations r WHERE ${where} ORDER BY r.check_in`,
+      params
+    );
+    const statement = calcStatementFinancials(unit, reservations);
+    const expParams = [unitId, from];
+    let expWhere = `expense_date >= $2::date AND (
+         unit_id = $1
+         OR (
+           paid_by = 'owner'
+           AND owner_id IN (SELECT owner_id FROM owner_units WHERE unit_id = $1)
+           AND unit_id IS NULL
+         )
+       )`;
+    if (to) {
+      expParams.push(to);
+      expWhere += ` AND expense_date <= $${expParams.length}::date`;
+    }
+    const { rows: expenses } = await query(
+      `SELECT description, amount, paid_by, expense_date FROM expenses WHERE ${expWhere} ORDER BY expense_date`,
+      expParams
+    );
+    const ownerExpTotal = expenses
+      .filter((row) => row.paid_by === 'owner')
+      .reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    const finalDue = round2(statement.totalOwnerNet - ownerExpTotal);
+
+    const PDFDocument = require('pdfkit');
+    const doc = new PDFDocument({ margin: 48, size: 'A4' });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="owner-statement-${unitId}.pdf"`);
+    doc.pipe(res);
+    doc.fontSize(18).text('Soul Hospitality', { align: 'left' });
+    doc.moveDown(0.2);
+    doc.fontSize(14).text('Owner statement');
+    doc.fontSize(10).fillColor('#444').text(`${unit.unit_number || unit.title || 'Unit'} · ${unit.project || unit.compound || ''}`);
+    doc.text(`From ${from}${to ? ` to ${to}` : ''}`);
+    doc.moveDown();
+    doc.fillColor('#111').fontSize(11);
+    doc.text(`Gross  ${round2(isOwner ? statement.totalOwnerGross : statement.totalGross)}`);
+    doc.text(`Company commission  ${round2(statement.totalCompanyCommission)}`);
+    doc.text(`Owner net  ${round2(statement.totalOwnerNet)}`);
+    doc.text(`Owner expenses  ${round2(ownerExpTotal)}`);
+    doc.fontSize(13).text(`Amount due  ${finalDue}`);
+    doc.moveDown();
+    doc.fontSize(12).text('Stays');
+    doc.fontSize(9);
+    for (const row of statement.rows) {
+      const fin = row._fin;
+      const guest = isOwner ? '' : ` · ${row.guest_name || ''}`;
+      doc.text(`${String(row.check_in).slice(0, 10)} to ${String(row.check_out).slice(0, 10)}${guest} · net ${round2(fin.ownerNet)}`);
+    }
+    if (!statement.rows.length) doc.text('No stays in this period.');
+    doc.moveDown();
+    doc.fontSize(12).text('Owner expenses');
+    doc.fontSize(9);
+    const ownerExpenses = expenses.filter((row) => row.paid_by === 'owner');
+    if (!ownerExpenses.length) doc.text('None.');
+    for (const row of ownerExpenses) {
+      doc.text(`${String(row.expense_date).slice(0, 10)} · ${row.description || 'Expense'} · ${round2(row.amount)}`);
+    }
+    doc.end();
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;
 

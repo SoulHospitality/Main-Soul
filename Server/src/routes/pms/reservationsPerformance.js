@@ -6,7 +6,7 @@ const { isReservationsManager, isAdmin } = require('../../lib/reservationScope')
 const router = express.Router();
 
 const AGENT_ROLES = ['reservations', 'reservations_web', 'reservations_manual', 'reservations_manager'];
-const TEAM_AGENT_ROLES = ['reservations', 'reservations_web', 'reservations_manual'];
+const TEAM_AGENT_ROLES = ['reservations', 'reservations_web', 'reservations_manual', 'reservations_manager'];
 
 const ACTIVE_STAY_SQL = `
   r.status <> 'cancelled'
@@ -74,7 +74,8 @@ router.get(
         `SELECT
            COALESCE(r.sales_person_id, r.created_by) AS staff_id,
            ${CAIRO_CREATED_DATE} AS day,
-           COUNT(*)::int AS cnt
+           COUNT(*)::int AS cnt,
+           COALESCE(SUM(COALESCE(r.total_amount, 0)), 0)::float AS value
          FROM reservations r
          WHERE ${ACTIVE_STAY_SQL}
            AND ${CAIRO_CREATED_DATE} BETWEEN $1::date AND $2::date
@@ -95,13 +96,32 @@ router.get(
 
       const todayByStaff = new Map(todayCounts.map((row) => [Number(row.staff_id), Number(row.cnt)]));
       const totalByStaff = new Map();
+      const valueByStaff = new Map();
       const byDay = new Map();
       for (const row of counted) {
         const staffId = Number(row.staff_id);
         const day = isoDate(row.day);
         const cnt = Number(row.cnt) || 0;
+        const value = Number(row.value) || 0;
         totalByStaff.set(staffId, (totalByStaff.get(staffId) || 0) + cnt);
+        valueByStaff.set(staffId, (valueByStaff.get(staffId) || 0) + value);
         byDay.set(day, (byDay.get(day) || 0) + cnt);
+      }
+
+      const { rows: kpiRows } = await query(
+        `SELECT a.staff_user_id, t.metric, COALESCE(t.measure, 'count') AS measure, t.target_value
+         FROM kpi_targets t
+         JOIN kpi_target_assignees a ON a.target_id = t.id
+         WHERE a.staff_user_id = ANY($1::int[])
+           AND t.metric = 'reservations'
+           AND t.starts_on <= $3::date
+           AND t.deadline >= $2::date`,
+        [teamIds, from, to]
+      );
+      const kpiByStaff = new Map();
+      for (const row of kpiRows) {
+        const id = Number(row.staff_user_id);
+        if (!kpiByStaff.has(id)) kpiByStaff.set(id, row);
       }
 
       const daily = [];
@@ -113,17 +133,31 @@ router.get(
       }
 
       const leaderboard = team
-        .map((member) => ({
-          staff_id: member.id,
-          full_name: member.full_name,
-          role: member.role,
-          total: totalByStaff.get(Number(member.id)) || 0,
-          today: todayByStaff.get(Number(member.id)) || 0,
-        }))
+        .map((member) => {
+          const id = Number(member.id);
+          const total = totalByStaff.get(id) || 0;
+          const value = Math.round((valueByStaff.get(id) || 0) * 100) / 100;
+          const kpi = kpiByStaff.get(id);
+          const target = Number(kpi?.target_value) || 0;
+          const actual = kpi?.measure === 'value' ? value : total;
+          const kpiPercent = target > 0 ? Math.round((actual / target) * 1000) / 10 : null;
+          return {
+            staff_id: member.id,
+            full_name: member.full_name,
+            role: member.role,
+            total,
+            value,
+            today: todayByStaff.get(id) || 0,
+            kpi_percent: kpiPercent,
+            kpi_target: target || null,
+            kpi_measure: kpi?.measure || null,
+          };
+        })
         .sort((a, b) => b.total - a.total || String(a.full_name).localeCompare(String(b.full_name)));
 
       const totals = {
         total: leaderboard.reduce((sum, row) => sum + row.total, 0),
+        value: Math.round(leaderboard.reduce((sum, row) => sum + row.value, 0) * 100) / 100,
         today: leaderboard.reduce((sum, row) => sum + row.today, 0),
         team_size: team.length,
       };

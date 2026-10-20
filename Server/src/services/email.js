@@ -16,8 +16,12 @@ function defaultFrom() {
 }
 
 
-async function sendEmail({ to, subject, html, text }) {
+async function sendEmail({ to, subject, html, text, attachments }) {
   const resend = getResendClient();
+  const files = (attachments || []).map((file) => ({
+    filename: file.filename,
+    content: Buffer.isBuffer(file.content) ? file.content.toString('base64') : file.content,
+  }));
 
   if (resend) {
     const { data, error } = await resend.emails.send({
@@ -26,6 +30,7 @@ async function sendEmail({ to, subject, html, text }) {
       subject,
       html,
       text,
+      attachments: files.length ? files : undefined,
     });
     if (error) {
       throw new Error(`Resend failed: ${error.message || JSON.stringify(error)}`);
@@ -53,6 +58,10 @@ async function sendEmail({ to, subject, html, text }) {
     subject,
     html,
     text,
+    attachments: (attachments || []).map((file) => ({
+      filename: file.filename,
+      content: file.content,
+    })),
   });
 }
 

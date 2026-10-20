@@ -21,6 +21,7 @@ const Commissions = lazy(() => import('./pages/Commissions'));
 const Users = lazy(() => import('./pages/Users'));
 const Payrolls = lazy(() => import('./pages/Payrolls'));
 const Deductions = lazy(() => import('./pages/Deductions'));
+const HrRules = lazy(() => import('./pages/HrRules'));
 const Requests = lazy(() => import('./pages/Requests'));
 const HolidayAccess = lazy(() => import('./pages/HolidayAccess'));
 const JobOffers = lazy(() => import('./pages/JobOffers'));
@@ -196,6 +197,7 @@ function AppRoutes() {
       <Route path="users" element={<ProtectedRoute page={['users', 'owners']}><Users /></ProtectedRoute>} />
       <Route path="payroll" element={<ProtectedRoute page="payroll"><Payrolls /></ProtectedRoute>} />
       <Route path="deductions" element={<ProtectedRoute page="deductions"><Deductions /></ProtectedRoute>} />
+      <Route path="hr-rules" element={<ProtectedRoute page="hr_rules"><HrRules /></ProtectedRoute>} />
       <Route path="requests" element={<ProtectedRoute page="requests"><Requests /></ProtectedRoute>} />
       <Route path="holiday-requests" element={<Navigate to="/admin/requests?type=holiday" replace />} />
       <Route path="holiday-access" element={<ProtectedRoute page="holiday_access"><HolidayAccess /></ProtectedRoute>} />

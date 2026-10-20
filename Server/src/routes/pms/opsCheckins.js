@@ -473,7 +473,7 @@ router.get('/ops/checkins-today', requireRoles(...OPS_ROLES), async (req, res, n
        ORDER BY r.check_in ASC, u.unit_number ASC NULLS LAST`,
       params
     );
-    res.json({ range, from, to, items: rows.map(mapCheckin) });
+    res.json({ range, from, to, items: await withCustomBillRequests(rows.map(mapCheckin)) });
   } catch (e) {
     next(e);
   }
@@ -594,6 +594,208 @@ router.post(
   }
 );
 
+function mapCustomBillRequest(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    status: row.status,
+    comment: row.comment,
+    bill: row.bill,
+    requested_by: row.requested_by,
+    requested_by_name: row.requested_by_name || null,
+    line_manager_id: row.line_manager_id || null,
+    reviewed_by_name: row.reviewed_by_name || null,
+    review_note: row.review_note || null,
+    created_at: row.created_at,
+  };
+}
+
+async function latestCustomBillRequests(reservationIds) {
+  if (!reservationIds.length) return new Map();
+  try {
+    const { rows } = await query(
+      `SELECT DISTINCT ON (r.reservation_id)
+              r.*,
+              requester.full_name AS requested_by_name,
+              requester.manager_id AS line_manager_id,
+              reviewer.full_name AS reviewed_by_name
+       FROM ops_custom_bill_requests r
+       LEFT JOIN staff_users requester ON requester.id = r.requested_by
+       LEFT JOIN staff_users reviewer ON reviewer.id = r.reviewed_by
+       WHERE r.reservation_id = ANY($1::int[])
+       ORDER BY r.reservation_id, r.created_at DESC`,
+      [reservationIds]
+    );
+    return new Map(rows.map((row) => [Number(row.reservation_id), mapCustomBillRequest(row)]));
+  } catch (err) {
+    if (err.code === '42P01') return new Map();
+    throw err;
+  }
+}
+
+async function withCustomBillRequests(items) {
+  const byId = await latestCustomBillRequests(items.map((item) => item.id));
+  return items.map((item) => ({ ...item, custom_bill_request: byId.get(Number(item.id)) || null }));
+}
+
+function validateCustomBill(bill, row) {
+  const accommodation = roundMoney(bill?.accommodation_amount);
+  const housekeeping = roundMoney(bill?.housekeeping_fees);
+  const beach = roundMoney(bill?.beach_access_fees);
+  const service = roundMoney(bill?.service_fees);
+  const insurance = roundMoney(bill?.insurance);
+  const finalTotal = roundMoney(accommodation + housekeeping + beach + service + insurance);
+  const paid = roundMoney(row.amount_paid);
+  if (!(finalTotal > 0) && remainingOf(row) > 0.5) {
+    return 'Edited bill total must be greater than zero';
+  }
+  if (finalTotal + 0.5 < paid) {
+    return `Final bill (EGP ${finalTotal}) cannot be less than already paid (EGP ${paid})`;
+  }
+  return null;
+}
+
+async function canReviewCustomBill(user, requestRow) {
+  if (!user || !requestRow) return false;
+  if (Number(requestRow.requested_by) === Number(user.id) && user.role !== 'admin') return false;
+  if (user.role === 'admin' || user.role === OPS_SUPER) return true;
+  const { rows } = await query(`SELECT manager_id FROM staff_users WHERE id = $1`, [requestRow.requested_by]);
+  return Number(rows[0]?.manager_id) === Number(user.id);
+}
+
+router.post(
+  '/ops/checkins-today/:reservationId/custom-bill',
+  requireRoles(...OPS_ROLES),
+  async (req, res, next) => {
+    try {
+      const reservationId = Number(req.params.reservationId);
+      const row = await fetchCheckinRow(reservationId);
+      if (!row) return res.status(404).json({ error: 'Reservation not found' });
+      if (String(row.status).toLowerCase() === 'cancelled') {
+        return res.status(409).json({ error: 'Reservation is cancelled' });
+      }
+      const denied = assertOpsCanAct(req, row);
+      if (denied) return res.status(403).json({ error: denied });
+      if (Number(row.ops_money_collected) === 1) {
+        return res.status(409).json({ error: 'Money is already collected' });
+      }
+      const comment = String(req.body?.comment || '').trim();
+      if (!comment) return res.status(400).json({ error: 'A comment is required for a custom bill' });
+      const bill = req.body?.bill && typeof req.body.bill === 'object' ? req.body.bill : null;
+      if (!bill) return res.status(400).json({ error: 'The custom bill is required' });
+      const invalid = validateCustomBill(bill, row);
+      if (invalid) return res.status(400).json({ error: invalid });
+
+      const { rows: managers } = await query(`SELECT manager_id FROM staff_users WHERE id = $1`, [req.user.id]);
+      const managerId = managers[0]?.manager_id || null;
+      const { rows: pending } = await query(
+        `SELECT id FROM ops_custom_bill_requests
+         WHERE reservation_id = $1 AND status = 'pending'
+         ORDER BY created_at DESC LIMIT 1`,
+        [reservationId]
+      );
+      let saved;
+      if (pending[0]) {
+        const updated = await query(
+          `UPDATE ops_custom_bill_requests
+           SET bill = $2::jsonb, comment = $3, requested_by = $4, created_at = now()
+           WHERE id = $1
+           RETURNING *`,
+          [pending[0].id, JSON.stringify(bill), comment.slice(0, 2000), req.user.id]
+        );
+        saved = updated.rows[0];
+      } else {
+        const inserted = await query(
+          `INSERT INTO ops_custom_bill_requests (reservation_id, requested_by, bill, comment)
+           VALUES ($1,$2,$3::jsonb,$4)
+           RETURNING *`,
+          [reservationId, req.user.id, JSON.stringify(bill), comment.slice(0, 2000)]
+        );
+        saved = inserted.rows[0];
+      }
+
+      try {
+        const { rows: targets } = await query(
+          `SELECT DISTINCT id FROM staff_users
+           WHERE COALESCE(is_active, 1)::int = 1
+             AND id <> $1
+             AND (role IN ('operations_supervisor', 'admin') OR id = $2)`,
+          [req.user.id, managerId]
+        );
+        for (const target of targets) {
+          await query(
+            `INSERT INTO notifications (user_id, type, title, message, entity_type, entity_id)
+             VALUES ($1, 'ops_custom_bill', $2, $3, 'reservation', $4)`,
+            [
+              target.id,
+              'Custom bill needs approval',
+              `${req.user.full_name || 'Operations'} asked to change the check-in bill for ${row.guest_name || 'a guest'}.`,
+              reservationId,
+            ]
+          );
+        }
+      } catch (err) {
+        console.error('[ops custom bill notify]', err.message);
+      }
+
+      const mapped = (await withCustomBillRequests([mapCheckin(row)]))[0];
+      res.status(201).json(mapped || { custom_bill_request: { id: saved.id, status: 'pending', comment } });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+router.post(
+  '/ops/checkins-today/:reservationId/custom-bill/review',
+  requireRoles('admin', OPS_SUPER, 'reservations_manager', 'hr_supervisor', 'finance_manager', 'unit_acquisition_manager', 'resale_manager'),
+  async (req, res, next) => {
+    try {
+      const reservationId = Number(req.params.reservationId);
+      const decision = String(req.body?.decision || '').toLowerCase() === 'approved' ? 'approved' : 'rejected';
+      const { rows } = await query(
+        `SELECT * FROM ops_custom_bill_requests
+         WHERE reservation_id = $1 AND status = 'pending'
+         ORDER BY created_at DESC LIMIT 1`,
+        [reservationId]
+      );
+      const requestRow = rows[0];
+      if (!requestRow) return res.status(404).json({ error: 'No custom bill is waiting for approval' });
+      if (!(await canReviewCustomBill(req.user, requestRow))) {
+        return res.status(403).json({ error: 'Only the line manager can approve this custom bill' });
+      }
+      const row = await fetchCheckinRow(reservationId);
+      if (!row) return res.status(404).json({ error: 'Reservation not found' });
+      if (decision === 'approved' && Number(row.ops_money_collected) === 1) {
+        return res.status(409).json({ error: 'Money was already collected on the original bill' });
+      }
+      if (decision === 'approved') {
+        const invalid = validateCustomBill(requestRow.bill, row);
+        if (invalid) return res.status(400).json({ error: invalid });
+        await applyCollectBillEdits(reservationId, requestRow.bill, row);
+      }
+      await query(
+        `UPDATE ops_custom_bill_requests
+         SET status = $2, reviewed_by = $3, reviewed_at = now(), review_note = $4
+         WHERE id = $1`,
+        [requestRow.id, decision, req.user.id, String(req.body?.note || '').trim().slice(0, 500) || null]
+      );
+      await logAudit({
+        userId: req.user.id,
+        action: decision === 'approved' ? 'OPS_APPROVE_CUSTOM_BILL' : 'OPS_REJECT_CUSTOM_BILL',
+        entityType: 'reservation',
+        entityId: reservationId,
+        details: { comment: requestRow.comment, bill: requestRow.bill },
+      });
+      const updated = await fetchCheckinRow(reservationId);
+      const mapped = (await withCustomBillRequests([mapCheckin(updated)]))[0];
+      res.json(mapped);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 router.post(
   '/ops/checkins-today/:reservationId/collect',
   requireRoles(...OPS_ROLES),
@@ -614,40 +816,14 @@ router.post(
       const denied = assertOpsCanAct(req, row);
       if (denied) return res.status(403).json({ error: denied });
 
-      const collectMode = String(req.body?.collect_mode || 'full').toLowerCase() === 'custom'
-        ? 'custom'
-        : 'full';
-      const collectComment = String(req.body?.comment || req.body?.note || '').trim();
-      let billApplied = null;
-      if (collectMode === 'custom' && req.body?.bill) {
-        if (!collectComment) {
-          return res.status(400).json({
-            error: 'A comment is required when editing the bill before collect',
-          });
-        }
-        const before = {
-          total_amount: Number(row.total_amount) || 0,
-          price_per_night: Number(row.price_per_night) || 0,
-          housekeeping_fees: Number(row.housekeeping_fees) || 0,
-          beach_access_fees: Number(row.beach_access_fees) || 0,
-          insurance: Number(row.insurance) || 0,
-          utilities_amount: Number(row.utilities_amount) || 0,
-        };
-        row = await applyCollectBillEdits(reservationId, req.body.bill, row);
-        billApplied = {
-          before,
-          after: {
-            total_amount: Number(row.total_amount) || 0,
-            price_per_night: Number(row.price_per_night) || 0,
-            housekeeping_fees: Number(row.housekeeping_fees) || 0,
-            beach_access_fees: Number(row.beach_access_fees) || 0,
-            insurance: Number(row.insurance) || 0,
-            utilities_amount: Number(row.utilities_amount) || 0,
-            bill: req.body.bill,
-          },
-          comment: collectComment,
-        };
+      const collectMode = String(req.body?.collect_mode || 'full').toLowerCase();
+      if (collectMode === 'custom') {
+        return res.status(400).json({
+          error: 'A custom bill needs a comment and approval from the line manager before it can be collected',
+        });
       }
+      const collectComment = String(req.body?.comment || req.body?.note || '').trim();
+      const billApplied = null;
 
       const remaining = remainingOf(row, paymentBreakdown(row).full_bill_total);
       if (remaining <= 0.5) {
@@ -775,6 +951,17 @@ router.post(
          WHERE id = $1`,
         [reservationId, req.user.id, amount]
       );
+
+      try {
+        await query(
+          `UPDATE ops_custom_bill_requests
+           SET status = 'rejected', reviewed_at = now(), review_note = 'Full amount was collected'
+           WHERE reservation_id = $1 AND status = 'pending'`,
+          [reservationId]
+        );
+      } catch (err) {
+        if (err.code !== '42P01') throw err;
+      }
 
       if (billApplied) {
         await logAudit({
@@ -1960,6 +2147,7 @@ function mapCheckout(row) {
     insurance_refund_notes: row.insurance_refund_notes || null,
     insurance_refunded_by_name: row.insurance_refunded_by_name || null,
     insurance_damage_photo_urls: row.insurance_damage_photo_urls || [],
+    insurance_adjust_photo_urls: row.insurance_adjust_photo_urls || [],
     insurance_damage_share_status: row.insurance_damage_share_status || null,
     can_refund_insurance: insurance > 0.009 && !refunded,
     ops_assigned_to: row.ops_assigned_to || null,
@@ -1995,6 +2183,7 @@ const CHECKOUT_SELECT = `
          r.insurance_refund_method,
          r.insurance_refund_notes,
          r.insurance_damage_photo_urls,
+         r.insurance_adjust_photo_urls,
          r.insurance_damage_share_status,
          u.unit_number,
          COALESCE(u.unit_number, u.title, 'Unit') AS unit_title,
@@ -2100,6 +2289,57 @@ router.post(
       res.json(mapCheckout(await fetchCheckoutRow(reservationId)));
     } catch (e) {
       next(e);
+    }
+  }
+);
+
+router.post(
+  '/ops/checkouts-today/:reservationId/insurance',
+  requireRoles(...OPS_ROLES),
+  upload.array('photos', 8),
+  setCloudinaryFolder(FOLDER_INSPECTIONS),
+  attachCloudinaryUrls,
+  async (req, res, next) => {
+    try {
+      const reservationId = Number(req.params.reservationId);
+      if (!reservationId) return res.status(400).json({ error: 'Invalid reservation id' });
+      const row = await fetchCheckoutRow(reservationId);
+      if (!row) return res.status(404).json({ error: 'Reservation not found' });
+      if (String(row.status).toLowerCase() === 'cancelled') {
+        return res.status(409).json({ error: 'Reservation is cancelled' });
+      }
+      const denied = assertCheckoutCanAct(req, row);
+      if (denied) return res.status(403).json({ error: denied });
+      const existing = String(row.insurance_refund_status || '').toLowerCase();
+      if (['refunded', 'partial', 'forfeited'].includes(existing)) {
+        return res.status(400).json({ error: 'Insurance is already settled' });
+      }
+      const photoUrls = (req.files || []).map(fileUrl).filter(Boolean);
+      if (!photoUrls.length) {
+        return res.status(400).json({ error: 'A photo is required to change the insurance' });
+      }
+      const amount = Math.round((Number(req.body?.insurance) || 0) * 100) / 100;
+      if (!(amount >= 0)) {
+        return res.status(400).json({ error: 'Insurance amount is required' });
+      }
+      await query(
+        `UPDATE reservations
+         SET insurance = $2,
+             insurance_adjust_photo_urls = $3::text[],
+             updated_at = now()
+         WHERE id = $1`,
+        [reservationId, amount, photoUrls]
+      );
+      await logAudit({
+        userId: req.user.id,
+        action: 'OPS_EDIT_INSURANCE',
+        entityType: 'reservation',
+        entityId: reservationId,
+        details: { from: Number(row.insurance) || 0, to: amount, photos: photoUrls.length },
+      });
+      res.json(mapCheckout(await fetchCheckoutRow(reservationId)));
+    } catch (err) {
+      next(err);
     }
   }
 );

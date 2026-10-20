@@ -1640,7 +1640,7 @@ router.put('/notifications/:id/read', async (req, res, next) => {
 router.get('/petty-cash/settings', requireRoles(...PETTY_CASH_ROLES), async (req, res, next) => {
   try {
     const location = req.query.location || 'main';
-    if (req.user.role !== 'admin' && !canUsePettyCashLocation(req.user, location)) {
+    if (req.user.role !== 'admin' && !(await canUsePettyCashLocation(req.user, location))) {
       return res.status(403).json({ error: 'No access to this petty cash location' });
     }
     const { rows } = await query(`SELECT * FROM petty_cash_settings WHERE location = $1`, [location]);

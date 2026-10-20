@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Edit2, ArrowRightCircle, Wallet, CreditCard, TrendingUp, TrendingDown, Pencil, Check, X, Upload } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -13,6 +13,27 @@ import SortTh from '../components/ui/SortTh';
 import { currency, formatDate, unitDisplay, unitSelectLabel } from '../utils/formatters';
 import { usePermissions } from '../hooks/usePermissions';
 import SearchableSelect from '../components/ui/SearchableSelect';
+import { useProjectCatalog } from '../../hooks/useProjectCatalog';
+
+function pettyDrawerName(value) {
+  const text = String(value || '');
+  if (/ain\s*sokhna|sokhna|galala/i.test(text)) return 'sokhna';
+  if (/north\s*coast/i.test(text)) return 'north_coast';
+  return null;
+}
+
+function unitInPettyDrawer(unit, location, projectsByDestination) {
+  if (!unit) return false;
+  const blob = [unit.area, unit.destination, unit.city, unit.project, unit.compound].filter(Boolean).join(' ');
+  const named = pettyDrawerName(unit.area || unit.destination) || pettyDrawerName(blob);
+  if (named) return named === location;
+  const project = String(unit.project || unit.compound || '').trim().toLowerCase();
+  if (!project) return false;
+  return Object.entries(projectsByDestination || {}).some(([destination, names]) => {
+    if (pettyDrawerName(destination) !== location) return false;
+    return (names || []).some((name) => String(name).trim().toLowerCase() === project);
+  });
+}
 
 const IN_CATEGORIES = [
   'Beach Access In',
@@ -28,6 +49,7 @@ const OUT_CATEGORIES = [
   'Housekeeping',
   'Insurance',
   'Maintenance',
+  'Loan',
   'Others',
 ];
 
@@ -42,6 +64,7 @@ const EMPTY_FORM = {
   res_from_date: '', res_to_date: '', notes: '',
   is_general: false,
   is_advance: false,
+  entry_kind: 'standard',
 };
 
 function PaidByBadge({ paidBy }) {
@@ -63,12 +86,12 @@ function EntryForm({ form, setForm, units, owners = [], ownerUnits = [], transfe
     <div className="space-y-4">
 
       
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-3 gap-2">
         <button
           type="button"
-          onClick={() => setForm(f => ({ ...EMPTY_FORM, type: 'out', expense_date: f.expense_date }))}
+          onClick={() => setForm(f => ({ ...EMPTY_FORM, type: 'out', entry_kind: 'standard', expense_date: f.expense_date }))}
           className={`flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all ${
-            !isIn
+            !isIn && form.entry_kind !== 'loan'
               ? 'border-red-400 bg-red-50 text-red-700'
               : 'border-gray-200 bg-white text-gray-400 hover:border-gray-300'
           }`}
@@ -77,7 +100,18 @@ function EntryForm({ form, setForm, units, owners = [], ownerUnits = [], transfe
         </button>
         <button
           type="button"
-          onClick={() => setForm(f => ({ ...EMPTY_FORM, type: 'in', expense_date: f.expense_date }))}
+          onClick={() => setForm((f) => ({ ...EMPTY_FORM, type: 'out', entry_kind: 'loan', category: 'Loan', expense_date: f.expense_date }))}
+          className={`flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all ${
+            form.entry_kind === 'loan'
+              ? 'border-amber-500 bg-amber-50 text-amber-800'
+              : 'border-gray-200 bg-white text-gray-400 hover:border-gray-300'
+          }`}
+        >
+          Cash out (Loan)
+        </button>
+        <button
+          type="button"
+          onClick={() => setForm(f => ({ ...EMPTY_FORM, type: 'in', entry_kind: 'standard', expense_date: f.expense_date }))}
           className={`flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all ${
             isIn
               ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
@@ -294,19 +328,44 @@ export function PettyCashSection({ embedded = false }) {
   const canMove  = can('petty_cash:move') || user?.role === 'admin';
   const canWrite = can('petty_cash:write') || user?.role === 'admin';
 
-  const isAdminFinance = user?.role === 'admin';
+  const isAdminFinance = user?.role === 'admin' || user?.role === 'finance' || user?.role === 'finance_manager';
+  const canOpenAccount = user?.role === 'admin' || user?.role === 'finance_manager';
   const userPCL = user?.petty_cash_location;
-
-  const availableTabs = isAdminFinance
-    ? ['north_coast', 'sokhna']
-    : userPCL === 'both' ? ['north_coast', 'sokhna']
-    : ['north_coast', 'sokhna'].includes(userPCL) ? [userPCL]
-    : [];
+  const accountsQuery = useQuery({
+    queryKey: ['petty-cash-accounts'],
+    queryFn: () => api.get('/petty-cash/accounts').then((r) => r.data),
+  });
+  const fallbackAccounts = (
+    isAdminFinance
+      ? [
+          { location_key: 'north_coast', name: 'North Coast', destination: 'North Coast' },
+          { location_key: 'sokhna', name: 'Sokhna', destination: 'Ain Sokhna' },
+        ]
+      : userPCL === 'both'
+        ? [
+            { location_key: 'north_coast', name: 'North Coast', destination: 'North Coast' },
+            { location_key: 'sokhna', name: 'Sokhna', destination: 'Ain Sokhna' },
+          ]
+        : userPCL === 'sokhna'
+          ? [{ location_key: 'sokhna', name: 'Sokhna', destination: 'Ain Sokhna' }]
+          : userPCL === 'north_coast'
+            ? [{ location_key: 'north_coast', name: 'North Coast', destination: 'North Coast' }]
+            : []
+  );
+  const accounts = accountsQuery.isSuccess && Array.isArray(accountsQuery.data)
+    ? accountsQuery.data
+    : fallbackAccounts;
+  const availableTabs = accounts.map((row) => row.location_key);
   const hasAccess = availableTabs.length > 0;
-
-  const TAB_LABELS = { north_coast: 'North Coast', sokhna: 'Sokhna' };
+  const TAB_LABELS = Object.fromEntries(accounts.map((row) => [row.location_key, row.name]));
 
   const [location, setLocation] = useState(availableTabs[0] || 'north_coast');
+  const [accountModal, setAccountModal] = useState(false);
+  const [accountForm, setAccountForm] = useState({ name: '', amount: '', treasury_account_code: '', destination: '' });
+  const activeAccount = accounts.find((row) => row.location_key === location) || null;
+  useEffect(() => {
+    if (availableTabs.length && !availableTabs.includes(location)) setLocation(availableTabs[0]);
+  }, [availableTabs, location]);
   const [filterUnit,   setFilterUnit]   = useState('');
   const [filterPaidBy, setFilterPaidBy] = useState('');
 
@@ -343,6 +402,40 @@ export function PettyCashSection({ embedded = false }) {
     queryKey: ['units'],
     queryFn:  () => api.get('/units').then(r => r.data),
   });
+  const { projectsByDestination, destinations } = useProjectCatalog();
+  const { data: treasurySources = [] } = useQuery({
+    queryKey: ['petty-cash-treasury-sources'],
+    queryFn: () => api.get('/petty-cash/treasury-sources').then((r) => r.data),
+    enabled: accountModal,
+  });
+  const createAccount = useMutation({
+    mutationFn: (payload) => api.post('/petty-cash/accounts', payload).then((r) => r.data),
+    onSuccess: (row) => {
+      toast.success('Petty cash account opened');
+      setAccountModal(false);
+      setAccountForm({ name: '', amount: '', treasury_account_code: '', destination: '' });
+      if (row?.location_key) setLocation(row.location_key);
+      qc.invalidateQueries({ queryKey: ['petty-cash-accounts'] });
+      qc.invalidateQueries({ queryKey: ['petty-cash'] });
+      qc.invalidateQueries({ queryKey: ['financial-system-portal'] });
+    },
+    onError: (err) => toast.error(err.response?.data?.error || 'Could not open the petty cash account'),
+  });
+  const drawerUnits = useMemo(
+    () => (Array.isArray(units) ? units : []).filter((unit) => {
+      if (location === 'north_coast' || location === 'sokhna') {
+        return unitInPettyDrawer(unit, location, projectsByDestination);
+      }
+      if (!activeAccount?.destination) return true;
+      const dest = String(activeAccount.destination).trim().toLowerCase();
+      const area = String(unit.area || unit.destination || '').trim().toLowerCase();
+      if (area && area === dest) return true;
+      const names = projectsByDestination?.[activeAccount.destination] || [];
+      const project = String(unit.project || unit.compound || '').trim().toLowerCase();
+      return names.some((name) => String(name).trim().toLowerCase() === project);
+    }),
+    [units, location, projectsByDestination, activeAccount]
+  );
 
   const { data: owners = [] } = useQuery({
     queryKey: ['users-owners'],
@@ -354,6 +447,21 @@ export function PettyCashSection({ embedded = false }) {
     queryFn: () => api.get(`/users/owners/${form.owner_id}/units`).then((r) => r.data),
     enabled: !!form.owner_id && form.paid_by === 'owner',
   });
+  const drawerOwnerUnits = useMemo(
+    () => (Array.isArray(ownerUnits) ? ownerUnits : []).filter((unit) => {
+      if (location === 'north_coast' || location === 'sokhna') {
+        return unitInPettyDrawer(unit, location, projectsByDestination);
+      }
+      if (!activeAccount?.destination) return true;
+      const dest = String(activeAccount.destination).trim().toLowerCase();
+      const area = String(unit.area || unit.destination || '').trim().toLowerCase();
+      if (area && area === dest) return true;
+      const names = projectsByDestination?.[activeAccount.destination] || [];
+      const project = String(unit.project || unit.compound || '').trim().toLowerCase();
+      return names.some((name) => String(name).trim().toLowerCase() === project);
+    }),
+    [ownerUnits, location, projectsByDestination, activeAccount]
+  );
 
   const { data: reservationsList = [] } = useQuery({
     queryKey: ['reservations-simple'],
@@ -424,8 +532,13 @@ export function PettyCashSection({ embedded = false }) {
   });
 
   
-  const openAdd = (defaultType = 'out') => {
-    setForm({ ...EMPTY_FORM, type: defaultType });
+  const openAdd = (defaultType = 'out', entryKind = 'standard') => {
+    setForm({
+      ...EMPTY_FORM,
+      type: entryKind === 'finance_transfer' ? 'in' : defaultType,
+      entry_kind: entryKind,
+      category: entryKind === 'finance_transfer' ? 'Finance transfer' : entryKind === 'loan' ? 'Loan' : '',
+    });
     setEditId(null);
     setTransferProof(null);
     setModal(true);
@@ -479,9 +592,10 @@ export function PettyCashSection({ embedded = false }) {
       return toast.error('Reservation period "From" must be before "To"');
     if (form.category === 'Others' && !form.custom_description.trim())
       return toast.error('Please enter a description for Others');
-    if (!isIn && !editId && !transferProof)
+    const isLoan = form.entry_kind === 'loan' || form.category === 'Loan';
+    if (!isIn && !isLoan && !editId && !transferProof)
       return toast.error('Upload a transfer proof for cash out');
-    if (!isIn && editId && !transferProof && !form._hasExistingProof)
+    if (!isIn && !isLoan && editId && !transferProof && !form._hasExistingProof)
       return toast.error('Upload a transfer proof for cash out');
 
     const description = form.category === 'Others'
@@ -496,7 +610,8 @@ export function PettyCashSection({ embedded = false }) {
       paid_by:      isIn ? 'company' : form.paid_by,
       expense_date: form.expense_date,
       notes:        form.notes,
-      type:         form.type,
+      type:         form.entry_kind === 'finance_transfer' ? 'in' : form.type,
+      entry_kind:   form.entry_kind === 'loan' || form.category === 'Loan' ? 'loan' : (form.entry_kind || 'standard'),
       location,
       is_advance:   isIn ? form.is_advance : false,
       res_from_date: needsDates ? form.res_from_date : undefined,
@@ -580,7 +695,7 @@ export function PettyCashSection({ embedded = false }) {
       {availableTabs.length > 1 && (
         <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
           {availableTabs.map(tab => (
-            <button key={tab} onClick={() => setLocation(tab)}
+            <button key={tab} onClick={() => { setLocation(tab); setFilterUnit(''); }}
               className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${
                 location === tab ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'
               }`}>
@@ -614,10 +729,24 @@ export function PettyCashSection({ embedded = false }) {
             </>
           )}
         </div>
-        {canWrite && (
-          <button onClick={() => openAdd('out')} className="btn-primary">
-            <Plus className="w-4 h-4" />Add Entry
+        {canOpenAccount ? (
+          <button type="button" className="btn-secondary" onClick={() => setAccountModal(true)}>
+            New petty cash account
           </button>
+        ) : null}
+        {canWrite && (
+          <div className="flex gap-2">
+            {(user?.role === 'finance' || user?.role === 'finance_manager' || user?.role === 'admin') ? (
+              <button type="button" onClick={() => openAdd('in', 'finance_transfer')} className="btn-secondary">
+                Finance transfer
+              </button>
+            ) : null}
+            {user?.role !== 'finance' && user?.role !== 'finance_manager' ? (
+              <button onClick={() => openAdd('out')} className="btn-primary">
+                <Plus className="w-4 h-4" />Add Entry
+              </button>
+            ) : null}
+          </div>
         )}
       </div>
 
@@ -671,7 +800,7 @@ export function PettyCashSection({ embedded = false }) {
           <label className="label text-xs">Unit</label>
           <SearchableSelect className="w-52" value={filterUnit} onChange={setFilterUnit}
             placeholder="All Units"
-            options={[{ value: '', label: 'All Units' }, ...units.map((u) => ({ value: String(u.id), label: unitSelectLabel(u) }))]}
+            options={[{ value: '', label: 'All Units' }, ...drawerUnits.map((u) => ({ value: String(u.id), label: unitSelectLabel(u) }))]}
           />
         </div>
         <div>
@@ -705,7 +834,11 @@ export function PettyCashSection({ embedded = false }) {
           icon={Wallet}
           title="No petty cash entries"
           subtitle="Add an expense or record cash in to start tracking"
-          action={canWrite && <button onClick={() => openAdd('out')} className="btn-primary"><Plus className="w-4 h-4" />Add Entry</button>}
+          action={canWrite && (
+            user?.role === 'finance' || user?.role === 'finance_manager'
+              ? <button onClick={() => openAdd('in', 'finance_transfer')} className="btn-primary">Finance transfer</button>
+              : <button onClick={() => openAdd('out')} className="btn-primary"><Plus className="w-4 h-4" />Add Entry</button>
+          )}
         />
       ) : (
         <div className="card p-0 overflow-x-auto">
@@ -771,6 +904,15 @@ export function PettyCashSection({ embedded = false }) {
                     <td>
                       <div className="max-w-xs">
                         <p className={isMoved ? 'text-gray-400' : 'text-gray-800'}>{entry.description}</p>
+                        {entry.entry_kind === 'loan' ? (
+                          <p className="text-xs text-amber-700 mt-0.5">Loan · {entry.created_by_name || 'staff'}</p>
+                        ) : null}
+                        {entry.entry_kind === 'finance_transfer' || entry.source === 'finance_transfer' ? (
+                          <p className="text-xs text-emerald-700 mt-0.5">Finance transfer · cash in</p>
+                        ) : null}
+                        {entry.entry_kind === 'ops_collection' || entry.source === 'ops_collection' ? (
+                          <p className="text-xs text-emerald-700 mt-0.5">Operations cash collection · {entry.created_by_name || 'ops'}</p>
+                        ) : null}
                         {entry.res_from_date && (
                           <p className="text-xs text-blue-600 font-medium mt-0.5">
                             📅 {String(entry.res_from_date).split('T')[0]} → {String(entry.res_to_date || '').split('T')[0]}
@@ -879,9 +1021,9 @@ export function PettyCashSection({ embedded = false }) {
         <EntryForm
           form={form}
           setForm={setForm}
-          units={units}
+          units={drawerUnits}
           owners={owners.filter((o) => o.is_active == null || Number(o.is_active) === 1)}
-          ownerUnits={ownerUnits}
+          ownerUnits={drawerOwnerUnits}
           transferProof={transferProof}
           onTransferProofChange={setTransferProof}
         />
@@ -946,6 +1088,87 @@ export function PettyCashSection({ embedded = false }) {
             </div>
           </div>
         )}
+      </Modal>
+
+      <Modal
+        open={accountModal}
+        onClose={() => setAccountModal(false)}
+        title="New petty cash account"
+        size="md"
+        footer={
+          <>
+            <button type="button" className="btn-secondary" onClick={() => setAccountModal(false)}>Cancel</button>
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={createAccount.isPending}
+              onClick={() => {
+                if (!accountForm.name.trim()) return toast.error('Name the account');
+                if (!(Number(accountForm.amount) > 0)) return toast.error('Enter the opening amount');
+                if (!accountForm.treasury_account_code) return toast.error('Choose the treasury account this amount comes from');
+                createAccount.mutate({
+                  name: accountForm.name.trim(),
+                  amount: Number(accountForm.amount),
+                  treasury_account_code: accountForm.treasury_account_code,
+                  destination: accountForm.destination || undefined,
+                });
+              }}
+            >
+              {createAccount.isPending ? 'Opening…' : 'Open account'}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="label">Name</label>
+            <input
+              className="input"
+              value={accountForm.name}
+              onChange={(e) => setAccountForm((f) => ({ ...f, name: e.target.value }))}
+              placeholder="Marina float"
+            />
+          </div>
+          <div>
+            <label className="label">Opening amount</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              className="input"
+              value={accountForm.amount}
+              onChange={(e) => setAccountForm((f) => ({ ...f, amount: e.target.value }))}
+            />
+            <p className="mt-1 text-xs text-gray-500">This amount is taken from the treasury account you choose. It cannot be more than that balance.</p>
+          </div>
+          <div>
+            <label className="label">Treasury account</label>
+            <SearchableSelect
+              value={accountForm.treasury_account_code}
+              onChange={(v) => setAccountForm((f) => ({ ...f, treasury_account_code: v }))}
+              placeholder="Choose treasury…"
+              options={[
+                { value: '', label: 'Choose treasury…' },
+                ...(Array.isArray(treasurySources) ? treasurySources : []).map((row) => ({
+                  value: row.code,
+                  label: `${row.name} · ${currency(row.balance)}`,
+                })),
+              ]}
+            />
+          </div>
+          <div>
+            <label className="label">Destination (optional)</label>
+            <SearchableSelect
+              value={accountForm.destination}
+              onChange={(v) => setAccountForm((f) => ({ ...f, destination: v }))}
+              placeholder="No destination"
+              options={[
+                { value: '', label: 'No destination' },
+                ...(destinations || []).map((name) => ({ value: name, label: name })),
+              ]}
+            />
+          </div>
+        </div>
       </Modal>
     </div>
   );

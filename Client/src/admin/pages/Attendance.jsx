@@ -34,6 +34,7 @@ const HOLIDAY_TYPE_OPTIONS = [
   { value: 'unpaid', label: LEAVE_TYPE_LABELS.unpaid },
   { value: 'sick', label: LEAVE_TYPE_LABELS.sick },
   { value: 'meeting', label: 'Meeting' },
+  { value: 'wfh', label: 'Work from home' },
   { value: 'paid_excuse', label: 'Excuse' },
 ];
 
@@ -47,6 +48,7 @@ function normalizeHolidayType(type) {
 
 function holidayTypeLabel(type) {
   if (type === 'paid_excuse' || type === 'early_leave' || type === 'excuse') return 'Excuse';
+  if (type === 'wfh') return 'Work from home';
   return LEAVE_TYPE_LABELS[type] || type || 'Approved holiday';
 }
 
@@ -79,12 +81,13 @@ function cellKey(staffId, date) {
 }
 
 function emptyForm(staff, date, cell) {
+  const markedWfh = cell?.status === 'wfh' || cell?.leave_type === 'wfh';
   return {
     staff_user_id: staff?.id || '',
     staff_name: staff?.full_name || '',
     work_date: date || '',
-    status: cell?.status || 'on_time',
-    leave_type: normalizeHolidayType(cell?.leave_type),
+    status: markedWfh ? 'holiday' : cell?.status || 'on_time',
+    leave_type: normalizeHolidayType(markedWfh ? 'wfh' : cell?.leave_type),
     leave_request_id: cell?.leave_request_id || null,
     start_date: cell?.start_date || date || '',
     end_date: cell?.end_date || date || '',
@@ -213,17 +216,13 @@ export default function Attendance() {
       toast.error('Choose a status');
       return;
     }
-    if (form.status === 'wfh') {
-      toast.error('This day is an approved work-from-home request. Change it from Requests.');
-      return;
-    }
     if (form.status === 'holiday') {
       if (!form.leave_type) {
         toast.error('Choose a holiday type');
         return;
       }
-      if (form.leave_type === 'paid_excuse' && multiDayHoliday) {
-        toast.error('An excuse covers one day. Cancel the multi-day holiday first.');
+      if ((form.leave_type === 'paid_excuse' || form.leave_type === 'wfh') && multiDayHoliday) {
+        toast.error('This covers one day. Cancel the multi-day holiday first.');
         return;
       }
       // Multi-day leave: only the holiday type can change from attendance.
@@ -437,7 +436,13 @@ export default function Attendance() {
                 Status:{' '}
                 <span className="font-medium">{STATUS_META[tip.cell.status]?.label || tip.cell.status}</span>
               </div>
-              {tip.cell.status === 'holiday' ? (
+              {tip.cell.status === 'wfh' ? (
+                <>
+                  <div>Work from home</div>
+                  <div>Deduction: {currency(tip.cell.deduction_amount || 0)}</div>
+                  <div className="text-soul-muted">Half a day. Click to change the holiday type.</div>
+                </>
+              ) : tip.cell.status === 'holiday' ? (
                 <>
                   <div>
                     {holidayTypeLabel(tip.cell.leave_type)}
@@ -528,12 +533,17 @@ export default function Attendance() {
                 <div className="grid grid-cols-2 gap-2">
                   {HOLIDAY_TYPE_OPTIONS.map((opt) => {
                     const excuseOption = opt.value === 'paid_excuse';
-                    const blocked = excuseOption && (excuseBlocked || multiDayHoliday);
+                    const singleDay = excuseOption || opt.value === 'wfh';
+                    const blocked = (excuseOption && excuseBlocked) || (singleDay && multiDayHoliday);
                     return (
                       <button
                         key={opt.value}
                         type="button"
                         onClick={() => {
+                          if (opt.value === 'wfh' && multiDayHoliday) {
+                            toast.error('Work from home covers one day. Cancel the multi-day holiday first.');
+                            return;
+                          }
                           if (excuseOption && multiDayHoliday) {
                             toast.error('An excuse covers one day. Cancel the multi-day holiday first.');
                             return;
@@ -569,6 +579,11 @@ export default function Attendance() {
                 {form.leave_type === 'meeting' ? (
                   <p className="mt-2 text-xs text-soul-muted">
                     Meeting has no deduction and no limit.
+                  </p>
+                ) : null}
+                {form.leave_type === 'wfh' ? (
+                  <p className="mt-2 text-xs text-soul-muted">
+                    Work from home is half a day on payroll and is not a no-show.
                   </p>
                 ) : null}
                 <p className="mt-2 text-xs text-soul-muted">

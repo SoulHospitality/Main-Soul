@@ -60,11 +60,42 @@ function parseHhMm(value) {
 }
 
 /** @returns {{ factor: number, band: string, label: string } | { factor: 0, band: 'grace', label: string }} */
+let liveDeductionRules = null;
+
+function applyDeductionRules(rows) {
+  liveDeductionRules = Array.isArray(rows) ? rows : null;
+}
+
+async function refreshDeductionRules() {
+  try {
+    const { query } = require('../config/db');
+    const { rows } = await query(
+      `SELECT rule_key, kind, label, factor, end_minutes, active
+       FROM hr_deduction_rules
+       WHERE active = true`
+    );
+    applyDeductionRules(rows);
+  } catch (err) {
+    if (err.code !== '42P01') console.error('[hr-rules]', err.message);
+  }
+}
+
 function latenessFactor(arrivalMinutes) {
   if (!Number.isFinite(arrivalMinutes)) {
     const err = new Error('Arrival time is required for lateness');
     err.status = 400;
     throw err;
+  }
+  const bands = (liveDeductionRules || [])
+    .filter((row) => row.kind === 'lateness')
+    .sort((a, b) => Number(a.end_minutes) - Number(b.end_minutes));
+  if (bands.length) {
+    const match = bands.find((row) => arrivalMinutes <= Number(row.end_minutes)) || bands[bands.length - 1];
+    return {
+      factor: Number(match.factor) || 0,
+      band: match.rule_key,
+      label: match.label,
+    };
   }
   if (arrivalMinutes <= GRACE_END_MINUTES) {
     return {
@@ -94,8 +125,14 @@ function latenessFactor(arrivalMinutes) {
   };
 }
 
+function ruleFactor(kind, fallback) {
+  const row = (liveDeductionRules || []).find((item) => item.kind === kind);
+  const factor = Number(row?.factor);
+  return Number.isFinite(factor) ? factor : fallback;
+}
+
 function absenceFactor() {
-  return 2;
+  return ruleFactor('absence', 2);
 }
 
 function computeLatenessDeduction(baseSalary, arrivalTime) {
@@ -129,11 +166,12 @@ function computeAbsenceDeduction(baseSalary) {
 
 function computeUnpaidLeaveDeduction(baseSalary) {
   const rate = dailyRate(baseSalary);
+  const factor = ruleFactor('unpaid_leave', 1);
   return {
-    factor: 1,
+    factor,
     daily_rate: rate,
-    amount: rate,
-    label: 'Unpaid leave · 1 × daily rate',
+    amount: roundMoney(rate * factor),
+    label: `Unpaid leave · ${factor} × daily rate`,
   };
 }
 
@@ -1181,6 +1219,8 @@ module.exports = {
   leaveDoesNotAffectAttendance,
   normalizeExcuseLeaveType,
   parseHhMm,
+  applyDeductionRules,
+  refreshDeductionRules,
   latenessFactor,
   absenceFactor,
   computeLatenessDeduction,

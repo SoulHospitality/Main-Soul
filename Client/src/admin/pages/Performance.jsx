@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
-import { ROLE_LABELS, isResaleManager } from '../utils/permissions';
+import { ROLE_LABELS, isResaleManager, isUnitAcquisitionManager } from '../utils/permissions';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
@@ -465,8 +465,8 @@ function ReservationsPerformance() {
         <h1 className="page-title">Performance</h1>
         <p className="page-subtitle">
           {user?.role === 'admin'
-            ? 'Reservation counts and monthly targets for every reservations agent.'
-            : 'Team booking pace, leaderboard, and monthly targets (bonus if hit, deduction if missed).'}
+            ? 'Every reservations role: website, manual, and reservations. Counts, value, and the KPI for this range.'
+            : 'The whole reservations team: website, manual, and reservations. Counts, value, and each person’s KPI.'}
         </p>
       </div>
 
@@ -527,7 +527,9 @@ function ReservationsPerformance() {
                     <th className="px-5 py-2.5 font-semibold">Rank</th>
                     <th className="px-3 py-2.5 font-semibold">Agent</th>
                     <th className="px-3 py-2.5 font-semibold text-right">Today</th>
-                    <th className="px-5 py-2.5 font-semibold text-right">In range</th>
+                    <th className="px-3 py-2.5 font-semibold text-right">Reservations</th>
+                    <th className="px-3 py-2.5 font-semibold text-right">Amount</th>
+                    <th className="px-5 py-2.5 font-semibold text-right">KPI</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -541,7 +543,9 @@ function ReservationsPerformance() {
                         </div>
                       </td>
                       <td className="px-3 py-3 text-right tabular-nums">{row.today}</td>
-                      <td className="px-5 py-3 text-right tabular-nums font-semibold">{row.total}</td>
+                      <td className="px-3 py-3 text-right tabular-nums font-semibold">{row.total}</td>
+                      <td className="px-3 py-3 text-right tabular-nums">{currency(row.value || 0)}</td>
+                      <td className="px-5 py-3 text-right tabular-nums">{row.kpi_percent == null ? '—' : `${row.kpi_percent}%`}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -705,8 +709,68 @@ function ResalePerformance() {
   );
 }
 
+function AcquisitionPerformance() {
+  const initial = defaultRange();
+  const [fromDate, setFromDate] = useState(initial.from);
+  const [toDate, setToDate] = useState(initial.to);
+  const { data, isLoading } = useQuery({
+    queryKey: ['acquisition-performance', fromDate, toDate],
+    queryFn: () =>
+      api.get('/acquisition-performance', { params: { from_date: fromDate, to_date: toDate } }).then((r) => r.data),
+  });
+  const rows = data?.leaderboard || [];
+  if (isLoading) return <LoadingSpinner />;
+  return (
+    <div className="space-y-6">
+      <div className="page-header mb-0">
+        <h1 className="page-title">Unit acquisition</h1>
+        <p className="page-subtitle">Units each person added, next to their unit KPI.</p>
+      </div>
+      <DateRangePicker fromDate={fromDate} toDate={toDate} setFromDate={setFromDate} setToDate={setToDate} />
+      <section className="card overflow-hidden">
+        {!rows.length ? (
+          <EmptyState title="No acquisition staff yet" />
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-[11px] uppercase tracking-wide text-soul-muted border-b border-soul-line">
+                <th className="px-5 py-2.5 font-semibold">Person</th>
+                <th className="px-3 py-2.5 font-semibold text-right">Units added</th>
+                <th className="px-5 py-2.5 font-semibold text-right">KPI</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.staff_id} className="border-b border-soul-line/70 last:border-0">
+                  <td className="px-5 py-3">
+                    <div className="font-medium text-soul-blue">{row.full_name}</div>
+                    <div className="text-[11px] text-soul-muted">{ROLE_LABELS[row.role] || row.role}</div>
+                  </td>
+                  <td className="px-3 py-3 text-right tabular-nums font-semibold">{row.units}</td>
+                  <td className="px-5 py-3 text-right tabular-nums">{row.kpi_percent == null ? '—' : `${row.kpi_percent}%`}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+    </div>
+  );
+}
+
 export default function Performance() {
   const { user } = useAuth();
+  const [tab, setTab] = useState(isUnitAcquisitionManager(user) ? 'acquisition' : 'reservations');
   if (isResaleManager(user)) return <ResalePerformance />;
-  return <ReservationsPerformance />;
+  if (isUnitAcquisitionManager(user)) return <AcquisitionPerformance />;
+  if (user?.role !== 'admin') return <ReservationsPerformance />;
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2">
+        <button type="button" className={tab === 'reservations' ? 'btn-primary' : 'btn-secondary'} onClick={() => setTab('reservations')}>Reservations</button>
+        <button type="button" className={tab === 'acquisition' ? 'btn-primary' : 'btn-secondary'} onClick={() => setTab('acquisition')}>Unit acquisition</button>
+      </div>
+      {tab === 'acquisition' ? <AcquisitionPerformance /> : <ReservationsPerformance />}
+    </div>
+  );
 }
