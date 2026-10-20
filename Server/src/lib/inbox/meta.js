@@ -116,12 +116,31 @@ async function downloadWhatsAppMedia(channel, mediaId) {
   return { mime: meta.mime_type, buffer: Buffer.from(await res.arrayBuffer()) };
 }
 
-/** Subscribe a Facebook Page to this app's webhooks (messages, echoes, referrals, comments). */
+/** Subscribe a Facebook Page, or the linked Instagram account, to this app's webhooks. */
 async function subscribePage(channel) {
-  const pageId = channel.kind === 'instagram' ? channel.page_id : channel.external_id;
-  return graph(`${pageId}/subscribed_apps`, {
+  const token = channelToken(channel);
+  if (channel.kind === 'instagram') {
+    const fields = 'messages,messaging_postbacks,messaging_seen,messaging_referral,message_reactions,comments';
+    const page = await graph(`${channel.page_id}/subscribed_apps`, {
+      method: 'POST',
+      token,
+      query: { subscribed_fields: fields },
+    });
+    let instagram = null;
+    try {
+      instagram = await graph(`${channel.external_id}/subscribed_apps`, {
+        method: 'POST',
+        token,
+        query: { subscribed_fields: fields },
+      });
+    } catch (err) {
+      instagram = { warning: err.message };
+    }
+    return { page, instagram };
+  }
+  return graph(`${channel.external_id}/subscribed_apps`, {
     method: 'POST',
-    token: channelToken(channel),
+    token,
     query: { subscribed_fields: 'messages,message_echoes,messaging_postbacks,messaging_referrals,feed' },
   });
 }

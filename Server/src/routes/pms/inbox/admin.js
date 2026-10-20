@@ -130,6 +130,9 @@ router.post('/channels', requirePerm('channels.manage'), wrap(async (req, res) =
   if (!['messenger', 'instagram', 'whatsapp'].includes(kind)) throw badRequest('Invalid channel type');
   if (!String(name || '').trim() || !String(externalId || '').trim()) throw badRequest('Name and ID are required');
   if (kind === 'instagram' && !pageId) throw badRequest('Instagram needs the linked Facebook Page ID');
+  if ((kind === 'messenger' || kind === 'instagram') && !String(token || '').trim()) {
+    throw badRequest('A Page access token is required');
+  }
   if (kind === 'whatsapp' && await q.get("SELECT 1 AS x FROM inbox_channels WHERE kind = 'whatsapp' AND active = 1 AND external_id NOT LIKE 'demo-%'")) {
     throw badRequest('Only one WhatsApp number is supported. Disable the current one first.');
   }

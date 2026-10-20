@@ -81,6 +81,81 @@ export default function InboxSettingsPage() {
     toast.success('Copied to clipboard!');
   };
 
+  const emptyChannel = { kind: 'messenger', name: '', external_id: '', page_id: '', access_token: '' };
+  const [channelForm, setChannelForm] = useState(emptyChannel);
+  const [connecting, setConnecting] = useState(false);
+  const [channelBusy, setChannelBusy] = useState(null);
+
+  const connectChannel = async (e) => {
+    e.preventDefault();
+    const kind = channelForm.kind;
+    const name = channelForm.name.trim();
+    const token = channelForm.access_token.trim();
+    const pageId = channelForm.page_id.trim();
+    const externalId = kind === 'messenger' ? pageId : channelForm.external_id.trim();
+    if (!name || !externalId || !token) {
+      toast.error(kind === 'instagram' ? 'Name, Instagram ID, Page ID, and token are required' : 'Name, Page ID, and token are required');
+      return;
+    }
+    if (kind === 'instagram' && !pageId) {
+      toast.error('Instagram needs the linked Facebook Page ID');
+      return;
+    }
+    setConnecting(true);
+    try {
+      const created = await inboxApi.post('/admin/channels', {
+        kind,
+        name,
+        external_id: externalId,
+        page_id: kind === 'instagram' ? pageId : undefined,
+        access_token: token,
+      });
+      let detail = 'Channel saved';
+      try {
+        const test = await inboxApi.post(`/admin/channels/${created.id}/test`);
+        detail = test.info || detail;
+      } catch (err) {
+        toast.error(errorMessage(err, 'Saved, but Meta did not accept the token'));
+        setChannelForm(emptyChannel);
+        refetchChannels();
+        return;
+      }
+      try {
+        await inboxApi.post(`/admin/channels/${created.id}/subscribe`);
+        toast.success(`Connected. ${detail}`);
+      } catch (err) {
+        toast.error(errorMessage(err, 'Saved, but the webhook subscription failed'));
+      }
+      setChannelForm(emptyChannel);
+      refetchChannels();
+    } catch (err) {
+      toast.error(errorMessage(err, 'Could not connect the channel'));
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const runChannelAction = async (id, action) => {
+    setChannelBusy(`${id}-${action}`);
+    try {
+      if (action === 'test') {
+        const test = await inboxApi.post(`/admin/channels/${id}/test`);
+        toast.success(test.info || 'Connection works');
+      } else if (action === 'subscribe') {
+        await inboxApi.post(`/admin/channels/${id}/subscribe`);
+        toast.success('Webhook subscription updated');
+      } else if (action === 'disable') {
+        await inboxApi.patch(`/admin/channels/${id}`, { active: false });
+        toast.success('Channel disabled');
+        refetchChannels();
+      }
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setChannelBusy(null);
+    }
+  };
+
   return (
     <div className="pms-shell min-h-screen bg-slate-50 p-6 space-y-6 font-sans">
       {/* Header */}
@@ -236,7 +311,7 @@ export default function InboxSettingsPage() {
               Meta App Webhook Configuration
             </h2>
             <p className="text-slate-500">
-              Set these credentials in Meta Developers Dashboard under Facebook / WhatsApp / Instagram Webhooks.
+              In the Meta app, add this callback once under Messenger and again under Instagram. Subscribe Messenger to messages, message echoes, and referrals. Subscribe Instagram to messages, messaging postbacks, messaging seen, and comments. Use the same verify token as META_VERIFY_TOKEN.
             </p>
 
             <div className="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-200 font-mono">
@@ -266,22 +341,72 @@ export default function InboxSettingsPage() {
             </div>
           </div>
 
+          <form onSubmit={connectChannel} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+            <h2 className="text-sm font-bold text-slate-900">Connect Messenger or Instagram</h2>
+            <p className="text-slate-500">
+              Messenger uses the Facebook Page ID. Instagram uses the Instagram account ID plus the Facebook Page it is linked to. Both use that Page access token. Messages then arrive in Live Inbox.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {['messenger', 'instagram'].map((kind) => (
+                <button
+                  key={kind}
+                  type="button"
+                  onClick={() => setChannelForm((f) => ({ ...f, kind }))}
+                  className={`rounded-xl border px-3 py-2 text-sm font-semibold capitalize ${
+                    channelForm.kind === kind ? 'border-soul-blue bg-soul-blue text-white' : 'border-slate-200 bg-white text-slate-700'
+                  }`}
+                >
+                  {kind}
+                </button>
+              ))}
+            </div>
+            <label className="block space-y-1">
+              <span className="font-semibold text-slate-700">Name</span>
+              <input className="input" value={channelForm.name} onChange={(e) => setChannelForm((f) => ({ ...f, name: e.target.value }))} placeholder="Soul Hospitality" />
+            </label>
+            <label className="block space-y-1">
+              <span className="font-semibold text-slate-700">Facebook Page ID</span>
+              <input className="input" value={channelForm.page_id} onChange={(e) => setChannelForm((f) => ({ ...f, page_id: e.target.value }))} placeholder="Page ID" />
+            </label>
+            {channelForm.kind === 'instagram' ? (
+              <label className="block space-y-1">
+                <span className="font-semibold text-slate-700">Instagram account ID</span>
+                <input className="input" value={channelForm.external_id} onChange={(e) => setChannelForm((f) => ({ ...f, external_id: e.target.value }))} placeholder="Instagram professional account ID" />
+              </label>
+            ) : null}
+            <label className="block space-y-1">
+              <span className="font-semibold text-slate-700">Page access token</span>
+              <input className="input" type="password" value={channelForm.access_token} onChange={(e) => setChannelForm((f) => ({ ...f, access_token: e.target.value }))} placeholder="Never shown again after saving" autoComplete="off" />
+            </label>
+            <button type="submit" className="btn-primary" disabled={connecting}>
+              {connecting ? 'Connecting…' : 'Connect and subscribe'}
+            </button>
+          </form>
+
           {/* Connected Channels Stream */}
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <h2 className="text-sm font-bold text-slate-900">Connected Channels</h2>
             {(channelsData?.items || []).length === 0 ? (
               <div className="p-8 text-center text-slate-400 border border-dashed border-slate-200 rounded-xl">
-                No active Meta channels connected yet. Add WhatsApp WABA, Facebook Page, or Instagram account credentials.
+                No channels yet. Connect Messenger or Instagram above.
               </div>
             ) : (
               <div className="space-y-2">
                 {(channelsData?.items || []).map((ch) => (
-                  <div key={ch.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
+                  <div key={ch.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-3">
                     <div>
                       <h4 className="font-bold text-slate-900 capitalize">{ch.kind} — {ch.name}</h4>
-                      <span className="text-[11px] text-slate-400 font-mono">External ID: {ch.external_id}</span>
+                      <span className="text-[11px] text-slate-400 font-mono">ID {ch.external_id}{ch.page_id ? ` · Page ${ch.page_id}` : ''}</span>
                     </div>
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">Active</span>
+                    <div className="flex items-center gap-2">
+                      <button type="button" className="btn-secondary text-[11px]" disabled={channelBusy === `${ch.id}-test`} onClick={() => runChannelAction(ch.id, 'test')}>Test</button>
+                      <button type="button" className="btn-secondary text-[11px]" disabled={channelBusy === `${ch.id}-subscribe`} onClick={() => runChannelAction(ch.id, 'subscribe')}>Subscribe</button>
+                      {ch.active ? (
+                        <button type="button" className="text-[11px] font-semibold text-rose-700" disabled={channelBusy === `${ch.id}-disable`} onClick={() => runChannelAction(ch.id, 'disable')}>Disable</button>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-200 text-slate-600">Disabled</span>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
