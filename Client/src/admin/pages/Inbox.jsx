@@ -102,7 +102,7 @@ export default function InboxPage() {
       if (isNoteMode) {
         await inboxApi.post(`/conversations/${activeConvId}/notes`, { body: messageBody.trim() });
       } else {
-        await inboxApi.post(`/conversations/${activeConvId}/messages`, { body: messageBody.trim() });
+        await inboxApi.post(`/conversations/${activeConvId}/messages`, { text: messageBody.trim() });
       }
       setMessageBody('');
       refetchCurrentConv();

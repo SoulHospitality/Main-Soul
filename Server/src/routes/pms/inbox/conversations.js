@@ -183,7 +183,9 @@ router.get('/conversations/:id/guest', wrap(async (req, res) => {
 router.post('/conversations/:id/messages', wrap(async (req, res) => {
   const conv = await loadConversation(int(req.params.id), req.inbox);
   await ensureCanAct(conv, req.inbox);
-  const { text, template } = req.body || {};
+  const raw = req.body || {};
+  const text = typeof raw.text === 'string' ? raw.text : typeof raw.body === 'string' ? raw.body : undefined;
+  const { template } = raw;
   const message = await sendToCustomer(conv.id, {
     text: typeof text === 'string' ? text.trim() : undefined,
     template: template?.name ? { name: String(template.name).slice(0, 200), language: String(template.language || 'ar').slice(0, 10) } : undefined,
