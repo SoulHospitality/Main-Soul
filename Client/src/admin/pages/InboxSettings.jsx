@@ -315,7 +315,7 @@ export default function InboxSettingsPage() {
               Meta App Webhook Configuration
             </h2>
             <p className="text-slate-500">
-              In the Meta app, add this callback once under Messenger and again under Instagram. Subscribe Messenger to messages, message echoes, and referrals. Subscribe Instagram to messages, messaging postbacks, messaging seen, and comments. Use the same verify token as META_VERIFY_TOKEN.
+              In the Meta app, add this callback once under Messenger and again under Instagram. Subscribe Messenger to messages, message echoes, and referrals. Subscribe Instagram to messages, messaging postbacks, and messaging seen. Use the same verify token as META_VERIFY_TOKEN.
             </p>
 
             <div className="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-200 font-mono">

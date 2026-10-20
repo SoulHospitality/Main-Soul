@@ -120,7 +120,7 @@ async function downloadWhatsAppMedia(channel, mediaId) {
 async function subscribePage(channel) {
   const token = channelToken(channel);
   if (channel.kind === 'instagram') {
-    const fields = 'messages,messaging_postbacks,messaging_seen,messaging_referral,message_reactions,comments';
+    const fields = 'messages,messaging_postbacks,messaging_seen,messaging_referral,message_reactions';
     const page = await graph(`${channel.page_id}/subscribed_apps`, {
       method: 'POST',
       token,
@@ -141,7 +141,7 @@ async function subscribePage(channel) {
   return graph(`${channel.external_id}/subscribed_apps`, {
     method: 'POST',
     token,
-    query: { subscribed_fields: 'messages,message_echoes,messaging_postbacks,messaging_referrals,feed' },
+    query: { subscribed_fields: 'messages,message_echoes,messaging_postbacks,messaging_referrals' },
   });
 }
 
@@ -156,8 +156,10 @@ async function checkChannel(channel) {
     const d = await graph(channel.external_id, { token, query: { fields: 'display_phone_number,verified_name,quality_rating' } });
     return `${d.verified_name || ''} ${d.display_phone_number || ''} (quality: ${d.quality_rating || 'n/a'})`.trim();
   }
-  const d = await graph(channel.external_id, { token, query: { fields: channel.kind === 'instagram' ? 'username,name' : 'name' } });
-  return d.username ? `@${d.username}` : d.name;
+  const pageId = channel.kind === 'instagram' ? channel.page_id : channel.external_id;
+  // Reading the Page name requires pages_read_engagement. Managing webhooks does not.
+  await graph(`${pageId}/subscribed_apps`, { token });
+  return channel.name;
 }
 
 module.exports = {
