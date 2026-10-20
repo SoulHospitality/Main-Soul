@@ -69,8 +69,9 @@ export default function InboxPage() {
   const { data: quickReplies = [] } = useQuery({
     queryKey: ['inbox-quick-replies'],
     queryFn: () => inboxApi.get('/admin/quick-replies'),
-    enabled: can('templates.manage') || Boolean(me),
+    enabled: Boolean(me),
   });
+  const replies = Array.isArray(quickReplies) ? quickReplies : [];
 
   // Listen for realtime events
   useInboxEvents((type, data) => {
@@ -505,9 +506,9 @@ export default function InboxPage() {
                             {msg.body}
                           </p>
 
-                          {msg.attachments && (
-                            <Attachment message={msg} />
-                          )}
+                          {(Array.isArray(msg.attachments) ? msg.attachments : []).map((attachment, index) => (
+                            <Attachment key={`${msg.id}-${index}`} message={msg} index={index} attachment={attachment} />
+                          ))}
                         </div>
                       </div>
                     );
@@ -552,7 +553,7 @@ export default function InboxPage() {
                       {aiSuggesting ? 'Thinking…' : 'AI Draft Response'}
                     </button>
 
-                    {quickReplies.length > 0 && (
+                    {replies.length > 0 && (
                       <button
                         type="button"
                         onClick={() => setShowQuickReplies(!showQuickReplies)}
@@ -567,7 +568,7 @@ export default function InboxPage() {
                 {/* Quick Replies Dropdown Popover */}
                 {showQuickReplies && (
                   <div className="mb-2 p-2 bg-slate-50 border border-slate-200 rounded-xl max-h-36 overflow-y-auto divide-y divide-slate-100 text-xs">
-                    {quickReplies.map((qr) => (
+                    {replies.map((qr) => (
                       <div
                         key={qr.id}
                         onClick={() => {

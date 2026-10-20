@@ -40,6 +40,7 @@ export default function InboxSettingsPage() {
     enabled: can('templates.manage'),
   });
 
+  const replies = Array.isArray(quickReplies) ? quickReplies : [];
   const settings = settingsData?.settings || {};
   const webhook = settingsData?.webhook || {};
 
@@ -501,7 +502,7 @@ export default function InboxSettingsPage() {
             <h2 className="font-bold text-sm text-slate-900">Canned Quick Replies</h2>
           </div>
           <div className="space-y-2">
-            {quickReplies.map((qr) => (
+            {replies.map((qr) => (
               <div key={qr.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-start justify-between gap-4">
                 <div>
                   <h4 className="font-bold text-slate-800">{qr.title || qr.shortcut}</h4>

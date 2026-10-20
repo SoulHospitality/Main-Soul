@@ -4,11 +4,11 @@ import { inboxApi } from './api';
 
 /** WhatsApp media needs our auth header, so it is fetched as a blob and shown from an object URL. */
 function useMediaUrl(message, index, attachment) {
-  const direct = attachment.url || null;
+  const direct = attachment?.url || null;
   const [url, setUrl] = useState(direct);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
-    if (direct || !attachment.mediaId) return undefined;
+    if (!attachment || direct || !attachment.mediaId) return undefined;
     let objectUrl = null;
     let cancelled = false;
     inboxApi.blob(`/media/wa/${message.id}/${index}`)
@@ -22,12 +22,13 @@ function useMediaUrl(message, index, attachment) {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [direct, attachment.mediaId, message.id, index]);
+  }, [direct, attachment?.mediaId, message?.id, index]);
   return { url, failed };
 }
 
-export default function Attachment({ message, index, attachment }) {
+export default function Attachment({ message, index = 0, attachment }) {
   const { url, failed } = useMediaUrl(message, index, attachment);
+  if (!attachment) return null;
   const type = attachment.type;
   if (failed) return <div className="text-xs italic opacity-70">Media expired or unavailable</div>;
   if (!url) return <div className="h-24 w-40 animate-pulse rounded-lg bg-black/5" />;

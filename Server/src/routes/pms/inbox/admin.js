@@ -271,6 +271,13 @@ router.put('/lost-reasons', requirePerm('settings.manage'), wrap(async (req, res
 }));
 
 // ---------- Saved replies
+router.get('/quick-replies', wrap(async (req, res) => {
+  const items = await q.all(
+    'SELECT id, title, body, shortcut FROM inbox_templates WHERE active = 1 ORDER BY title',
+  );
+  res.json(items);
+}));
+
 router.get('/templates', requirePerm('templates.manage'), wrap(async (req, res) => {
   res.json({ items: await q.all('SELECT * FROM inbox_templates ORDER BY active DESC, title') });
 }));
