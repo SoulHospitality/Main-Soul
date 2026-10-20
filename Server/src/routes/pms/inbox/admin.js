@@ -1,6 +1,6 @@
 const express = require('express');
 const { config } = require('../../../lib/inbox/config');
-const { q, audit } = require('../../../lib/inbox/db');
+const { q, tx, audit } = require('../../../lib/inbox/db');
 const { badRequest, forbidden, int, notFound, wrap } = require('../../../lib/inbox/http');
 const { OVERRIDE_ROLES, can } = require('../../../lib/inbox/permissions');
 const { encrypt } = require('../../../lib/inbox/security');
@@ -162,6 +162,32 @@ router.patch('/channels/:id', requirePerm('channels.manage'), wrap(async (req, r
     userId: req.inbox.id, type: 'channel_updated',
     data: { id, fields: Object.keys(b).filter((k) => k !== 'access_token'), token_changed: Boolean(b.access_token) },
   });
+  broadcast('settings', {});
+  res.json({ ok: true });
+}));
+
+router.delete('/channels/:id', requirePerm('channels.manage'), wrap(async (req, res) => {
+  const id = int(req.params.id);
+  const channel = await q.get('SELECT id, kind, name FROM inbox_channels WHERE id = ?', id);
+  if (!channel) throw notFound();
+  const convs = '(SELECT id FROM inbox_conversations WHERE channel_id = ?)';
+  const leads = `(SELECT id FROM inbox_leads WHERE conversation_id IN ${convs})`;
+  await tx(async () => {
+    await q.run(`UPDATE inbox_comments SET lead_id = NULL WHERE lead_id IN ${leads}`, id);
+    await q.run('DELETE FROM inbox_comments WHERE channel_id = ?', id);
+    await q.run(`DELETE FROM inbox_follow_ups WHERE conversation_id IN ${convs} OR lead_id IN ${leads}`, id, id);
+    await q.run(`DELETE FROM inbox_lead_stage_history WHERE lead_id IN ${leads}`, id);
+    await q.run(`DELETE FROM inbox_leads WHERE conversation_id IN ${convs}`, id);
+    await q.run(`DELETE FROM inbox_messages WHERE conversation_id IN ${convs}`, id);
+    await q.run(`DELETE FROM inbox_notes WHERE conversation_id IN ${convs}`, id);
+    await q.run(`DELETE FROM inbox_responses WHERE conversation_id IN ${convs}`, id);
+    await q.run(`DELETE FROM inbox_sla_events WHERE conversation_id IN ${convs}`, id);
+    await q.run(`DELETE FROM inbox_assignments WHERE conversation_id IN ${convs}`, id);
+    await q.run('DELETE FROM inbox_conversations WHERE channel_id = ?', id);
+    await q.run('DELETE FROM inbox_customer_identities WHERE channel_id = ?', id);
+    await q.run('DELETE FROM inbox_channels WHERE id = ?', id);
+  });
+  await audit({ userId: req.inbox.id, type: 'channel_deleted', data: { id, kind: channel.kind, name: channel.name } });
   broadcast('settings', {});
   res.json({ ok: true });
 }));

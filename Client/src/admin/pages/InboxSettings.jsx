@@ -148,6 +148,10 @@ export default function InboxSettingsPage() {
         await inboxApi.patch(`/admin/channels/${id}`, { active: false });
         toast.success('Channel disabled');
         refetchChannels();
+      } else if (action === 'delete') {
+        await inboxApi.delete(`/admin/channels/${id}`);
+        toast.success('Channel deleted');
+        refetchChannels();
       }
     } catch (err) {
       toast.error(errorMessage(err));
@@ -406,6 +410,18 @@ export default function InboxSettingsPage() {
                       ) : (
                         <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-200 text-slate-600">Disabled</span>
                       )}
+                      <button
+                        type="button"
+                        className="text-[11px] font-semibold text-rose-700"
+                        disabled={channelBusy === `${ch.id}-delete`}
+                        onClick={() => {
+                          if (window.confirm(`Delete ${ch.kind} — ${ch.name}? Its conversations are removed too.`)) {
+                            runChannelAction(ch.id, 'delete');
+                          }
+                        }}
+                      >
+                        Delete
+                      </button>
                     </div>
                   </div>
                 ))}
