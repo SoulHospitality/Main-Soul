@@ -767,6 +767,7 @@ export function CheckinsTodaySection({ embedded = false }) {
                                 <p className="text-[11px] text-rose-700">Custom bill was rejected{billRequest.review_note ? `: ${billRequest.review_note}` : ''}.</p>
                               ) : null}
                               {!isCustom ? (
+                              <>
                               <CollectPaymentMethods
                                 method={method}
                                 onMethodChange={(next) => {
@@ -888,6 +889,7 @@ export function CheckinsTodaySection({ embedded = false }) {
                                 Confirm collect
                                 {collectAmount > 0 ? ` · ${currency(collectAmount)}` : ''}
                               </button>
+                              </>
                               ) : null}
                             </div>
                           ) : null}
