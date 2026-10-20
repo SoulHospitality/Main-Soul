@@ -32,18 +32,20 @@ export const CHART_OF_ACCOUNTS = [
   { code: '404000', name: 'Direct Rental Revenue (Owned / Master-Leased)', group: 'revenue', type: 'revenue' },
   { code: '409000', name: 'Miscellaneous Guest Revenue (Early Check-in, Extra Amenities)', group: 'revenue', type: 'revenue' },
   { code: '410000', name: 'Insurance Damage Retention Revenue', group: 'revenue', type: 'revenue' },
-  { code: '501000', name: 'Housekeeping & Laundry Direct Costs', group: 'expenses', type: 'expense' },
-  { code: '503000', name: 'Direct Villa Repairs & Maintenance (Soul Cost)', group: 'expenses', type: 'expense' },
+  { code: '501000', name: 'Housekeeping salaries', group: 'expenses', type: 'expense' },
   { code: '504000', name: 'Merchant / Payment Gateway Transaction Fees', group: 'expenses', type: 'expense' },
   { code: '506000', name: 'Owner Share Expense (Unit % of nightly rate × nights)', group: 'expenses', type: 'expense' },
   { code: '508000', name: 'Staff Buffet & Meals', group: 'expenses', type: 'expense', recurring: 'buffet' },
-  { code: '601000', name: 'Software & Tech Stack (Odoo, Channel Manager, PriceLabs)', group: 'expenses', type: 'expense' },
-  { code: '602000', name: 'Salaries, Wages & Field Staff Payroll', group: 'expenses', type: 'expense' },
-  { code: '603000', name: 'Marketing, OTA Promotions & Guest Acquisition', group: 'expenses', type: 'expense' },
+  { code: '601000', name: 'Subscriptions', group: 'expenses', type: 'expense' },
+  { code: '602000', name: 'Salaries (Campus)', group: 'expenses', type: 'expense' },
+  { code: '603000', name: 'Marketing', group: 'expenses', type: 'expense' },
   { code: '604000', name: 'Office Rent', group: 'expenses', type: 'expense', recurring: 'rent' },
-  { code: '605000', name: 'Professional, CPA & Legal Fees', group: 'expenses', type: 'expense' },
-  { code: '608000', name: 'Company Campus Utilities', group: 'expenses', type: 'expense', recurring: 'utilities' },
+  { code: '605000', name: 'General & Administrations Expenses', group: 'expenses', type: 'expense' },
+  { code: '608000', name: 'Campus Utilities', group: 'expenses', type: 'expense', recurring: 'utilities' },
   { code: '609000', name: 'Sales Agent Commission Expense', group: 'expenses', type: 'expense' },
+  { code: '610000', name: 'Charity (Sadaqat)', group: 'expenses', type: 'expense' },
+  { code: '611000', name: 'Vodafone Bill', group: 'expenses', type: 'expense' },
+  { code: '612000', name: 'Operational Rents', group: 'expenses', type: 'expense' },
 ];
 
 const BUILTIN_ACCOUNTS = CHART_OF_ACCOUNTS.slice();
@@ -90,13 +92,13 @@ export const EXPENSE_CATEGORY_TO_ACCOUNT = {
   utilities_cost: '608000',
   salary: '602000',
   marketing: '603000',
-  maintenance: '503000',
+  maintenance: '605000',
   professional: '605000',
   software: '601000',
   gateway_fees: '504000',
   rent: '604000',
   buffet: '508000',
-  other: '503000',
+  other: '605000',
 };
 
 export const TREASURY_CODES = ['101000', '102000', '103000', '104000'];

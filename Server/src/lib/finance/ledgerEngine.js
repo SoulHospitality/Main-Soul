@@ -558,7 +558,7 @@ function gatewaySettleEntry(collection, mdrPct) {
 function expenseEntries(e) {
   const amt = round2(parseFloat(e.amount) || 0);
   if (!(amt > 0.009)) return [];
-  const acct = EXPENSE_CATEGORY_TO_ACCOUNT[e.category] || '503000';
+  const acct = EXPENSE_CATEGORY_TO_ACCOUNT[e.category] || '605000';
   const companyPaid = String(e.paid_by || 'company') !== 'owner';
   const inputVat = companyPaid && INPUT_VAT_CATEGORIES.includes(e.category) ? extractInputVat(amt) : null;
   const expenseNet = inputVat ? inputVat.net : amt;
@@ -924,9 +924,9 @@ async function loadPortalData(from, to) {
     recurring = rows;
   } catch (_) {
     recurring = [
-      { kind: 'rent', label: 'Office rent', account_code: '604000', amount_egp: 0, day_of_month: 1, is_active: 1 },
-      { kind: 'utilities', label: 'Company campus utilities', account_code: '608000', amount_egp: 0, day_of_month: 1, is_active: 1 },
-      { kind: 'buffet', label: 'Staff buffet & meals', account_code: '508000', amount_egp: 0, day_of_month: 1, is_active: 1 },
+      { kind: 'rent', label: 'Office Rent', account_code: '604000', amount_egp: 0, day_of_month: 1, is_active: 1 },
+      { kind: 'utilities', label: 'Campus Utilities', account_code: '608000', amount_egp: 0, day_of_month: 1, is_active: 1 },
+      { kind: 'buffet', label: 'Staff Buffet & Meals', account_code: '508000', amount_egp: 0, day_of_month: 1, is_active: 1 },
     ];
   }
 
@@ -1129,7 +1129,7 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
     const outflow = String(pc.entry_type || 'out') === 'out';
     const lines = outflow
       ? [
-          journalLine('503000', amt, 0, pc.description || 'Petty cash out'),
+          journalLine('605000', amt, 0, pc.description || 'Petty cash out'),
           journalLine('103000', 0, amt, 'Cash on hand'),
         ]
       : [
@@ -1175,13 +1175,13 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
       type = 'manual_revenue';
     } else if (row.entry_type === 'expense') {
       lines = [
-        journalLine('503000', amt, 0, row.description),
+        journalLine('605000', amt, 0, row.description),
         journalLine('201000', 0, amt, 'Manual expense'),
       ];
       type = 'manual_expense';
     } else if (row.misc_flow === 'out') {
       lines = [
-        journalLine('503000', amt, 0, row.description),
+        journalLine('605000', amt, 0, row.description),
         journalLine('101000', 0, amt, 'Miscellaneous out'),
       ];
       type = 'miscellaneous';

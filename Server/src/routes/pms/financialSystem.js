@@ -80,7 +80,7 @@ function resolveManualJournalLines(row) {
     return {
       type: 'manual_expense',
       lines: [
-        journalLine('503000', amt, 0, row.description),
+        journalLine('605000', amt, 0, row.description),
         journalLine('201000', 0, amt, 'Manual expense paid'),
       ],
     };
@@ -89,7 +89,7 @@ function resolveManualJournalLines(row) {
     return {
       type: 'miscellaneous',
       lines: [
-        journalLine('503000', amt, 0, row.description),
+        journalLine('605000', amt, 0, row.description),
         journalLine('101000', 0, amt, 'Miscellaneous expense'),
       ],
     };
@@ -919,7 +919,7 @@ router.get('/financial-system/ledger', requireRoles('admin', 'finance', 'finance
 
     for (const e of expenses) {
       const amt = parseFloat(e.amount) || 0;
-      const acct = EXPENSE_CATEGORY_TO_ACCOUNT[e.category] || '503000';
+      const acct = EXPENSE_CATEGORY_TO_ACCOUNT[e.category] || '605000';
       const wht = withholdingTax(amt, { ratePct: e.category === 'professional' ? 1 : 3 });
       journal.push({
         id: `EXP-${e.id}`,
@@ -1130,7 +1130,7 @@ router.post('/financial-system/manual-entries', requireRoles('admin', 'finance',
       debitAccount = '101000';
       creditAccount = '409000';
     } else if (entryType === 'expense') {
-      debitAccount = '503000';
+      debitAccount = '605000';
       creditAccount = '201000';
     }
 
