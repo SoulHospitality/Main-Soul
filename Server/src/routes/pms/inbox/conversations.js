@@ -9,7 +9,7 @@ const { messagingWindow, sendToCustomer } = require('../../../lib/inbox/outbound
 const { createLead } = require('../../../lib/inbox/leads');
 const { aiAvailable, classify, suggestReply, summarize } = require('../../../lib/inbox/ai');
 const { applyClassification, markExistingGuest } = require('../../../lib/inbox/ingest');
-const { downloadWhatsAppMedia } = require('../../../lib/inbox/meta');
+const { downloadWhatsAppMedia, fetchProfile } = require('../../../lib/inbox/meta');
 const { guestHistory, availabilityFacts } = require('../../../lib/inbox/pmsLink');
 const { loadConversation, ensureCanAct, visibilitySql, onChatSql } = require('./common');
 
@@ -79,6 +79,36 @@ router.get('/conversations', wrap(async (req, res) => {
   }
 
   // Customers waiting longest first, then most recent activity.
+  async function fillGuestNames(items) {
+    const missing = items.filter((row) => !row.customer_name && (row.channel_kind === 'messenger' || row.channel_kind === 'instagram')).slice(0, 8);
+    await Promise.all(missing.map(async (row) => {
+      try {
+        const identity = await q.get(
+          `SELECT i.id, i.external_id FROM inbox_customer_identities i
+           JOIN inbox_conversations c ON c.identity_id = i.id WHERE c.id = ?`,
+          row.id,
+        );
+        const channel = await q.get('SELECT * FROM inbox_channels WHERE id = (SELECT channel_id FROM inbox_conversations WHERE id = ?)', row.id);
+        if (!identity?.external_id || !channel) return;
+        const profile = await fetchProfile(channel, identity.external_id);
+        if (!profile?.name) return;
+        await q.run(
+          `UPDATE inbox_customers SET name = COALESCE(name, ?), avatar_url = COALESCE(avatar_url, ?), updated_at = ?
+           WHERE id = (SELECT customer_id FROM inbox_conversations WHERE id = ?)`,
+          profile.name, profile.avatar, Date.now(), row.id,
+        );
+        await q.run(
+          'UPDATE inbox_customer_identities SET display_name = COALESCE(display_name, ?), username = COALESCE(username, ?) WHERE id = ?',
+          profile.name, profile.username, identity.id,
+        );
+        row.customer_name = profile.name;
+        if (!row.avatar_url && profile.avatar) row.avatar_url = profile.avatar;
+      } catch (err) {
+        console.warn('[inbox] name lookup failed:', err.message);
+      }
+    }));
+  }
+
   const rows = await q.all(
     `${LIST_SELECT} WHERE ${where.join(' AND ')}
      ORDER BY CASE WHEN c.status = 'needs_reply' THEN 0 ELSE 1 END, COALESCE(c.sla_due_at, 9000000000000000) ASC,
@@ -86,6 +116,7 @@ router.get('/conversations', wrap(async (req, res) => {
      LIMIT 80`,
     ...params,
   );
+  await fillGuestNames(rows);
 
   const counts = await q.get(
     `SELECT
@@ -134,9 +165,34 @@ router.get('/conversations/:id', wrap(async (req, res) => {
     listAssignees(conv.id),
     q.get('SELECT id, kind, name FROM inbox_channels WHERE id = ?', conv.channel_id),
   ]);
+  if (!customer?.name && (conv.channel_kind === 'messenger' || conv.channel_kind === 'instagram') && Number(customer?.is_simulated) !== 1) {
+    try {
+      const identity = await q.get('SELECT id, external_id FROM inbox_customer_identities WHERE id = ?', conv.identity_id);
+      const fullChannel = await q.get('SELECT * FROM inbox_channels WHERE id = ?', conv.channel_id);
+      const profile = identity?.external_id && fullChannel ? await fetchProfile(fullChannel, identity.external_id) : null;
+      if (profile?.name) {
+        await q.run(
+          'UPDATE inbox_customers SET name = COALESCE(name, ?), avatar_url = COALESCE(avatar_url, ?), updated_at = ? WHERE id = ?',
+          profile.name, profile.avatar, Date.now(), customer.id,
+        );
+        await q.run(
+          'UPDATE inbox_customer_identities SET display_name = COALESCE(display_name, ?), username = COALESCE(username, ?) WHERE id = ?',
+          profile.name, profile.username, identity.id,
+        );
+        customer.name = profile.name;
+        if (!customer.avatar_url && profile.avatar) customer.avatar_url = profile.avatar;
+      }
+    } catch (err) {
+      console.warn('[inbox] name lookup failed:', err.message);
+    }
+  }
   res.json({
     conversation: {
       ...conv,
+      customer_name: customer?.name || null,
+      avatar_url: customer?.avatar_url || null,
+      phone: customer?.phone || conv.phone,
+      email: customer?.email || null,
       ai: parseJson(conv.ai_json),
       ai_summary: parseJson(conv.ai_summary),
       ad_ref: parseJson(conv.ad_ref_json),

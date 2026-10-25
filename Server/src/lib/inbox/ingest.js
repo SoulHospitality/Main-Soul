@@ -127,7 +127,8 @@ async function afterInbound({ conversationId, isNew, newIdentity, identityId, cu
 
   if (isNew) await markExistingGuest(conversationId, customerId);
 
-  if (newIdentity && !simulated && !profile.name && channel.kind !== 'whatsapp') {
+  const stored = await q.get('SELECT name FROM inbox_customers WHERE id = ?', customerId);
+  if (!simulated && !profile.name && !stored?.name && channel.kind !== 'whatsapp') {
     fetchProfile(channel, externalUserId)
       .then(async (p) => {
         await q.run('UPDATE inbox_customer_identities SET display_name = ?, username = ? WHERE id = ?', p.name, p.username, identityId);

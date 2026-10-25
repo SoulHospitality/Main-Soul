@@ -98,13 +98,29 @@ async function replyToCommentPrivately(channel, commentId, text) {
 }
 
 async function fetchProfile(channel, userId) {
-  const fields = channel.kind === 'instagram' ? 'name,username,profile_pic' : 'first_name,last_name,profile_pic';
-  const p = await graph(userId, { token: channelToken(channel), query: { fields } });
-  return {
-    name: p.name || [p.first_name, p.last_name].filter(Boolean).join(' ') || p.username || null,
-    username: p.username || null,
-    avatar: p.profile_pic || null,
-  };
+  const token = channelToken(channel);
+  const fields = channel.kind === 'instagram' ? 'name,username,profile_pic' : 'name,profile_pic';
+  try {
+    const p = await graph(userId, { token, query: { fields } });
+    const name = p.name || p.username || null;
+    if (name) return { name, username: p.username || null, avatar: p.profile_pic || null };
+  } catch {
+    // The user id often refuses a direct read. The thread participants include the name.
+  }
+  const pageId = channel.kind === 'instagram' ? channel.page_id : channel.external_id;
+  const data = await graph(`${pageId}/conversations`, {
+    token,
+    query: {
+      platform: channel.kind === 'instagram' ? 'instagram' : 'messenger',
+      user_id: String(userId),
+      fields: 'participants',
+    },
+  });
+  const people = data.data?.[0]?.participants?.data || [];
+  const person = people.find((p) => String(p.id) === String(userId))
+    || people.find((p) => String(p.id) !== String(pageId));
+  if (!person?.name && !person?.username) throw new MetaError('Meta did not return a name for this guest');
+  return { name: person.name || person.username, username: person.username || null, avatar: null };
 }
 
 /** WhatsApp media is fetched in two steps: id -> short-lived URL -> bytes (both need the token). */
