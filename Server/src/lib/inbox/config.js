@@ -11,6 +11,7 @@ const config = {
   meta: {
     get appId() { return env.META_APP_ID || ''; },
     get appSecret() { return env.META_APP_SECRET || ''; },
+    get instagramAppSecret() { return env.META_INSTAGRAM_APP_SECRET || ''; },
     get verifyToken() { return env.META_VERIFY_TOKEN || ''; },
     get graphVersion() { return env.META_GRAPH_VERSION || 'v23.0'; },
   },

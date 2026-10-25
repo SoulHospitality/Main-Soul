@@ -19,8 +19,10 @@ router.get('/meta', (req, res) => {
 
 router.post('/meta', (req, res) => {
   const raw = Buffer.isBuffer(req.rawBody) ? req.rawBody : null;
-  if (config.meta.appSecret) {
-    if (!verifyMetaSignature(raw, req.get('x-hub-signature-256'), config.meta.appSecret)) return res.sendStatus(401);
+  const signature = req.get('x-hub-signature-256');
+  const secrets = [config.meta.appSecret, config.meta.instagramAppSecret].filter(Boolean);
+  if (secrets.length) {
+    if (!secrets.some((secret) => verifyMetaSignature(raw, signature, secret))) return res.sendStatus(401);
   } else if (config.isProduction) {
     return res.sendStatus(503); // never accept unsigned webhooks in production
   }
