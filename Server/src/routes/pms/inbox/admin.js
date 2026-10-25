@@ -6,7 +6,7 @@ const { OVERRIDE_ROLES, can } = require('../../../lib/inbox/permissions');
 const { encrypt, decrypt } = require('../../../lib/inbox/security');
 const { DEFAULTS, getSettings, updateSettings } = require('../../../lib/inbox/settings');
 const { handleAgentOffline } = require('../../../lib/inbox/assignment');
-const { checkChannel, instagramAccount, subscribePage, subscribeWaba } = require('../../../lib/inbox/meta');
+const { checkChannel, instagramAccount, pageToken, subscribePage, subscribeWaba } = require('../../../lib/inbox/meta');
 const { broadcast } = require('../../../lib/inbox/realtime');
 const { requirePerm } = require('./common');
 
@@ -194,10 +194,9 @@ router.delete('/channels/:id', requirePerm('channels.manage'), wrap(async (req, 
 
 router.post('/channels/lookup-instagram', requirePerm('channels.manage'), wrap(async (req, res) => {
   const pageId = String(req.body?.page_id || '').trim();
-  const token = String(req.body?.access_token || '').trim();
-  if (!pageId || !token) throw badRequest('Facebook Page ID and Page access token are required');
+  if (!pageId || !String(req.body?.access_token || '').trim()) throw badRequest('Facebook Page ID and Page access token are required');
   try {
-    res.json({ instagram: await instagramAccount(pageId, token) });
+    res.json({ instagram: await instagramAccount(pageId, req.body.access_token) });
   } catch (err) {
     throw badRequest(err.message);
   }
@@ -210,7 +209,7 @@ async function saveInstagramChannel({ pageId, token, name, userId }) {
   }
   const { id } = await q.insert(
     'INSERT INTO inbox_channels (kind, name, external_id, page_id, access_token_enc, created_at) VALUES (?,?,?,?,?,?)',
-    'instagram', String(name || ig.name).trim(), ig.id, String(pageId).trim(), encrypt(String(token).trim()), Date.now(),
+    'instagram', String(name || ig.name).trim(), ig.id, String(pageId).trim(), encrypt(pageToken(token)), Date.now(),
   );
   const channel = await q.get('SELECT * FROM inbox_channels WHERE id = ?', id);
   let warning = null;

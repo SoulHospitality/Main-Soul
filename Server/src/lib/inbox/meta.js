@@ -116,15 +116,37 @@ async function downloadWhatsAppMedia(channel, mediaId) {
   return { mime: meta.mime_type, buffer: Buffer.from(await res.arrayBuffer()) };
 }
 
+/** Page tokens are the long EAA string. App IDs, secrets, and verify tokens are not. */
+function pageToken(raw) {
+  const token = String(raw || '').trim().replace(/^Bearer\s+/i, '').replace(/\s+/g, '');
+  if (!token.startsWith('EAA') || token.length < 40) {
+    throw new MetaError('That is not a Page access token. Paste the long token that starts with EAA, the same kind Messenger uses. The app ID, app secret, and verify token will not work here.');
+  }
+  return token;
+}
+
 /** The Instagram professional account linked to a Facebook Page. */
 async function instagramAccount(pageId, token) {
-  const data = await graph(pageId, {
-    token,
-    query: { fields: 'name,instagram_business_account{id,username,name}' },
-  });
+  const clean = pageToken(token);
+  let data;
+  try {
+    // The Page name field requires pages_read_engagement. The linked account id does not.
+    data = await graph(String(pageId).trim(), {
+      token: clean,
+      query: { fields: 'instagram_business_account{id,username}' },
+    });
+  } catch (err) {
+    if (/Cannot parse access token/i.test(err.message || '')) {
+      throw new MetaError('Meta could not read that access token. Paste only the Page token, the long value that starts with EAA.');
+    }
+    if (/pages_read_engagement|Page Public/i.test(err.message || '')) {
+      throw new MetaError('This Page token cannot see the linked Instagram account. In Graph API Explorer, generate a new Page token for this Page and include pages_show_list, pages_read_engagement, and instagram_basic.');
+    }
+    throw err;
+  }
   const ig = data.instagram_business_account;
   if (!ig?.id) throw new MetaError('This Facebook Page has no linked Instagram professional account');
-  return { id: String(ig.id), username: ig.username || null, name: ig.name || ig.username || data.name || 'Instagram', pageName: data.name || null };
+  return { id: String(ig.id), username: ig.username || null, name: ig.username || 'Instagram', pageName: null };
 }
 
 /** Subscribe a Facebook Page, or the linked Instagram account, to this app's webhooks. */
@@ -181,6 +203,7 @@ module.exports = {
   replyToCommentPrivately,
   fetchProfile,
   downloadWhatsAppMedia,
+  pageToken,
   instagramAccount,
   subscribePage,
   subscribeWaba,
