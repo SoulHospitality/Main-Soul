@@ -1,23 +1,21 @@
 import { useState, useEffect, useRef, useMemo, forwardRef, useImperativeHandle } from 'react';
-import { useSearchParams, useNavigate, Link } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import {
-  MessageSquare, Search, Filter, RefreshCw, Send, Paperclip, Sparkles,
-  Bot, Clock, User, Shield, AlertTriangle, CheckCircle, Tag, Check, X,
-  Plus, Smartphone, Play, Sliders, BarChart3, ChevronLeft, ChevronRight, UserPlus, Eye, Lock
+  MessageSquare, Search, Send, Paperclip, Sparkles,
+  X, Smartphone, Sliders, BarChart3, ChevronLeft, Lock, PanelRight
 } from 'lucide-react';
 import { useInbox, useInboxEvents } from '../inbox/InboxContext';
 import { inboxApi, errorMessage } from '../inbox/api';
 import { CHANNELS, VIEWS, STATUS_LABELS, CONVERSATION_TYPES, timeAgo, fmtTime, serviceWindow, nextCairoTime } from '../inbox/utils';
 import { Avatar, ChannelDot, PresenceDot, SlaChip, StageChip, Chip, useNow } from '../inbox/ui';
 import Attachment from '../inbox/Attachment';
-import LeadPanel from '../inbox/LeadPanel';
+import GuestRail from '../inbox/GuestRail';
 import Modal from '../components/ui/Modal';
 
 export default function InboxPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
   const qc = useQueryClient();
   const { me, can, setPresence, setViewing, userName, connected, viewers } = useInbox();
   const now = useNow(30000);
@@ -29,7 +27,7 @@ export default function InboxPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
   const [showSimulator, setShowSimulator] = useState(false);
-  const [showRightPanel, setShowRightPanel] = useState(() => window.innerWidth >= 1280);
+  const [showRightPanel, setShowRightPanel] = useState(() => window.innerWidth >= 1536);
   const messagesEndRef = useRef(null);
   const composerRef = useRef(null);
   const listRefreshTimer = useRef(null);
@@ -180,6 +178,11 @@ export default function InboxPage() {
 
   const handleUpdateStatus = async (status) => {
     if (!activeConvId) return;
+    if (status === 'closed' && (!currentConv?.conversation?.type || currentConv.conversation.type === 'unknown')) {
+      setShowRightPanel(true);
+      toast.error('Choose who this guest is before closing the chat');
+      return;
+    }
     try {
       await inboxApi.post(`/conversations/${activeConvId}/status`, { status });
       toast.success(`Status updated to ${STATUS_LABELS[status] || status}`);
@@ -235,6 +238,30 @@ export default function InboxPage() {
     if (rows.length) return rows;
     if (conv.assigned_user_id) return [{ id: conv.assigned_user_id, name: conv.assigned_name || userName(conv.assigned_user_id) }];
     return [];
+  };
+
+  const setConversationType = async (type) => {
+    if (!activeConvId || !type) return;
+    try {
+      await inboxApi.post(`/conversations/${activeConvId}/type`, { type });
+      toast.success(`Marked as ${CONVERSATION_TYPES[type] || type}`);
+      refetchCurrentConv();
+      refetchConvs();
+    } catch (err) {
+      toast.error(errorMessage(err));
+    }
+  };
+
+  const startStayRequest = async () => {
+    if (!activeConvId) return;
+    try {
+      await inboxApi.post(`/conversations/${activeConvId}/leads`, {});
+      toast.success('Stay request opened');
+      refetchCurrentConv();
+      refetchConvs();
+    } catch (err) {
+      toast.error(errorMessage(err));
+    }
   };
 
   const snoozeUntilMorning = async () => {
@@ -295,96 +322,92 @@ export default function InboxPage() {
   }, [conversations, activeConvId, showSimulator]);
 
   return (
-    <div className="inbox-shell bg-slate-50 font-sans">
-      {/* Top Header Toolbar. Hidden on a phone once a chat is open so the thread can use the screen. */}
-      <div className={`${activeConvId ? 'hidden lg:flex' : 'flex'} flex-shrink-0 flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-2 shadow-sm z-10 sm:px-4`}>
-        <div className="flex min-w-0 items-center gap-2.5">
-          <div className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-soul-blue font-bold text-white shadow sm:flex">
-            <MessageSquare className="w-5 h-5" />
+    <div className="inbox-shell flex-row bg-slate-50 font-sans">
+      <aside className="hidden w-52 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
+        <div className="border-b border-slate-200 px-3 py-3">
+          <div className="flex items-center justify-between gap-2">
+            <h1 className="text-sm font-bold text-slate-900">Inbox</h1>
+            <span className={`inline-flex items-center gap-1 text-[10px] font-semibold ${connected ? 'text-emerald-700' : 'text-amber-700'}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+              {connected ? 'Live' : 'Connecting'}
+            </span>
           </div>
-          <div className="min-w-0">
-            <h1 className="text-base font-bold leading-tight text-slate-800 sm:text-lg">Inbox</h1>
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
-              <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-medium ${connected ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
-                <span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-                {connected ? 'Live' : 'Connecting'}
-              </span>
-              <span>Reply <strong className="text-slate-800">{counts.needs_reply || 0}</strong></span>
-              <span>Overdue <strong className="text-rose-600">{counts.overdue || 0}</strong></span>
-            </div>
-          </div>
+          <p className="mt-1 text-[11px] text-slate-500">Guest chats across WhatsApp, Instagram, and Messenger.</p>
         </div>
-
-        {/* Presence Selector & Action Bar */}
-        <div className="flex items-center gap-2">
-          <select
-            aria-label="My status"
-            value={me?.user?.presence || 'offline'}
-            onChange={(e) => setPresence(e.target.value)}
-            className="h-10 rounded-lg border border-slate-200 bg-slate-50 px-2 text-sm font-medium capitalize text-slate-700 lg:hidden"
+        <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 py-2" aria-label="Inbox views">
+          {VIEWS.map((view) => (
+            <button
+              key={view.key}
+              type="button"
+              onClick={() => setActiveView(view.key)}
+              className={`flex h-9 w-full items-center justify-between rounded-lg px-2.5 text-left text-xs font-medium ${
+                activeView === view.key ? 'bg-soul-blue text-white' : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              <span className="truncate">{view.label}</span>
+              {counts[view.key] !== undefined ? (
+                <span className={`ml-2 rounded-full px-1.5 text-[10px] ${activeView === view.key ? 'bg-white/20' : 'bg-slate-100 text-slate-600'}`}>{counts[view.key]}</span>
+              ) : null}
+            </button>
+          ))}
+          <p className="px-2.5 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Channel</p>
+          <button
+            type="button"
+            onClick={() => setActiveChannel('')}
+            className={`flex h-8 w-full items-center rounded-lg px-2.5 text-left text-xs ${!activeChannel ? 'bg-slate-100 font-semibold text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}
           >
-            <option value="online">Online</option>
-            <option value="away">Away</option>
-            <option value="offline">Offline</option>
-          </select>
-          <div className="hidden items-center rounded-lg border border-slate-200 bg-slate-100 p-1 text-xs lg:flex">
-            <span className="px-2 font-medium text-slate-500">My Status:</span>
-            {['online', 'away', 'offline'].map((p) => (
+            All channels
+          </button>
+          {Object.entries(CHANNELS).map(([key, channel]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setActiveChannel(key === activeChannel ? '' : key)}
+              className={`flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs ${activeChannel === key ? 'bg-slate-100 font-semibold text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}
+            >
+              <ChannelDot kind={key} />
+              {channel.label}
+            </button>
+          ))}
+        </nav>
+        <div className="space-y-2 border-t border-slate-200 p-2">
+          <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-[11px]">
+            {['online', 'away', 'offline'].map((presence) => (
               <button
-                key={p}
+                key={presence}
                 type="button"
-                onClick={() => setPresence(p)}
-                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 font-medium capitalize transition-all ${
-                  me?.user?.presence === p
-                    ? 'border border-slate-200 bg-white text-slate-800 shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900'
+                onClick={() => setPresence(presence)}
+                className={`flex flex-1 items-center justify-center gap-1 rounded-md py-1.5 font-medium capitalize ${
+                  me?.user?.presence === presence ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
                 }`}
               >
-                <PresenceDot presence={p} />
-                {p}
+                <PresenceDot presence={presence} />
+                {presence === 'online' ? 'On' : presence === 'away' ? 'Away' : 'Off'}
               </button>
             ))}
           </div>
-
-          {me?.simulator && (
-          <button
-            type="button"
-            onClick={() => setShowSimulator(true)}
-            className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 text-xs font-medium text-indigo-700 transition-colors hover:bg-indigo-100"
-          >
-            <Smartphone className="h-4 w-4" />
-            <span className="hidden sm:inline">Simulate</span>
-          </button>
-          )}
-
-          {can('analytics.team') && (
-            <Link
-              to="/admin/inbox-analytics"
-              aria-label="Analytics"
-              className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-100 px-2.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-200"
-            >
-              <BarChart3 className="h-4 w-4" />
-              <span className="hidden sm:inline">Analytics</span>
-            </Link>
-          )}
-
-          {can('settings.manage') && (
-            <Link
-              to="/admin/inbox-settings"
-              aria-label="Settings"
-              className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-100 px-2.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-200"
-            >
-              <Sliders className="h-4 w-4" />
-              <span className="hidden sm:inline">Settings</span>
-            </Link>
-          )}
+          <div className="flex gap-1">
+            {me?.simulator ? (
+              <button type="button" onClick={() => setShowSimulator(true)} className="grid h-9 flex-1 place-items-center rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700" aria-label="Simulate a message">
+                <Smartphone className="h-4 w-4" />
+              </button>
+            ) : null}
+            {can('analytics.team') ? (
+              <Link to="/admin/inbox-analytics" aria-label="Analytics" className="grid h-9 flex-1 place-items-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">
+                <BarChart3 className="h-4 w-4" />
+              </Link>
+            ) : null}
+            {can('settings.manage') ? (
+              <Link to="/admin/inbox-settings" aria-label="Settings" className="grid h-9 flex-1 place-items-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">
+                <Sliders className="h-4 w-4" />
+              </Link>
+            ) : null}
+          </div>
         </div>
-      </div>
-
-      {/* Main 3-Column Workspace */}
-      <div className="relative flex min-h-0 flex-1 overflow-hidden">
-        {/* Left Column: Conversations List */}
-        <div className={`${activeConvId ? 'hidden lg:flex' : 'flex'} w-full min-h-0 flex-shrink-0 flex-col border-r border-slate-200 bg-white lg:w-80 xl:w-96`}>
+      </aside>
+      <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        {/* Thread list */}
+        <div className={`${activeConvId ? 'hidden lg:flex' : 'flex'} w-full min-h-0 flex-shrink-0 flex-col border-r border-slate-200 bg-white lg:w-72 xl:w-80`}>
           {/* Filters & Search */}
           <div className="p-3 border-b border-slate-200 space-y-2 bg-slate-50/50">
             {/* Search Input */}
@@ -409,32 +432,31 @@ export default function InboxPage() {
             </div>
 
             {/* View Filter Tabs */}
-            <div className="flex items-center gap-1 overflow-x-auto pb-1 text-xs no-scrollbar">
-              {VIEWS.map((v) => (
-                <button
-                  key={v.key}
-                  type="button"
-                  onClick={() => setActiveView(v.key)}
-                  className={`px-2.5 py-1 rounded-full whitespace-nowrap font-medium transition-colors ${
-                    activeView === v.key
-                      ? 'bg-soul-blue text-white shadow-sm'
-                      : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-                  }`}
-                >
-                  {v.label}
-                  {counts[v.key] !== undefined && (
-                    <span className={`ml-1.5 text-[10px] px-1.5 py-0.2 rounded-full ${
-                      activeView === v.key ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
-                    }`}>
-                      {counts[v.key]}
-                    </span>
-                  )}
-                </button>
-              ))}
+            <div className="flex items-center gap-2 lg:hidden">
+              <select
+                aria-label="Inbox view"
+                value={activeView}
+                onChange={(event) => setActiveView(event.target.value)}
+                className="h-10 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2 text-sm font-medium text-slate-800"
+              >
+                {VIEWS.map((view) => (
+                  <option key={view.key} value={view.key}>
+                    {view.label}{counts[view.key] !== undefined ? ` (${counts[view.key]})` : ''}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label="My status"
+                value={me?.user?.presence || 'offline'}
+                onChange={(event) => setPresence(event.target.value)}
+                className="h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm capitalize text-slate-700"
+              >
+                <option value="online">Online</option>
+                <option value="away">Away</option>
+                <option value="offline">Offline</option>
+              </select>
             </div>
-
-            {/* Channel Filter Chips */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pt-1 text-[11px]">
+            <div className="flex items-center gap-1.5 overflow-x-auto pt-1 text-[11px] lg:hidden">
               <span className="text-slate-400 font-medium">Channel:</span>
               <button
                 type="button"
@@ -493,8 +515,11 @@ export default function InboxPage() {
 
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-1">
-                          <h3 className="text-xs font-bold text-slate-900 truncate">
-                            {conv.customer_name || 'Guest User'}
+                          <h3 className="truncate text-xs font-bold text-slate-900">
+                            {conv.customer_name || 'Guest'}
+                            {conv.type && conv.type !== 'unknown' ? (
+                              <span className="ml-1.5 font-medium text-soul-blue">{CONVERSATION_TYPES[conv.type]}</span>
+                            ) : null}
                           </h3>
                           <span className="text-[10px] text-slate-400 flex-shrink-0">
                             {timeAgo(conv.last_message_at, now)}
@@ -548,112 +573,49 @@ export default function InboxPage() {
         <div className={`${activeConvId ? 'flex' : 'hidden lg:flex'} min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-100`}>
           {activeConvId && currentConv?.conversation ? (
             <>
-              <div className="flex-shrink-0 border-b border-slate-200 bg-white shadow-sm">
-                <div className="flex items-center gap-1.5 px-2 py-2 sm:gap-2 sm:px-3">
-                  <button
-                    type="button"
-                    className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-slate-600 hover:bg-slate-100 lg:hidden"
-                    aria-label="Back to conversations"
-                    onClick={() => setSearchParams((prev) => {
-                      const next = new URLSearchParams(prev);
-                      next.delete('c');
-                      return next;
-                    })}
-                  >
-                    <ChevronLeft className="h-5 w-5" />
-                  </button>
-                  <Avatar
-                    name={currentConv.conversation.customer_name}
-                    url={currentConv.conversation.avatar_url}
-                    kind={currentConv.conversation.channel_kind}
-                    size="sm"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <h2 className="truncate text-sm font-bold text-slate-900">
-                        {currentConv.conversation.customer_name || 'Guest User'}
-                      </h2>
-                      <ChannelDot kind={currentConv.conversation.channel_kind} />
-                    </div>
-                    <p className="truncate text-[11px] text-slate-500">
-                      {currentConv.conversation.phone || currentConv.conversation.email || `#${currentConv.conversation.id}`}
-                      {' · '}
-                      {peopleOn(currentConv.conversation).map((p) => p.name).join(', ') || 'Unassigned'}
-                    </p>
+              <div className="flex flex-shrink-0 items-center gap-1.5 border-b border-slate-200 bg-white px-2 py-2 shadow-sm sm:px-3">
+                <button
+                  type="button"
+                  className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-slate-600 hover:bg-slate-100 lg:hidden"
+                  aria-label="Back to conversations"
+                  onClick={() => setSearchParams((prev) => {
+                    const next = new URLSearchParams(prev);
+                    next.delete('c');
+                    return next;
+                  })}
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+                <Avatar
+                  name={currentConv.conversation.customer_name}
+                  url={currentConv.conversation.avatar_url}
+                  kind={currentConv.conversation.channel_kind}
+                  size="sm"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <h2 className="truncate text-sm font-bold text-slate-900">
+                      {currentConv.conversation.customer_name || 'Guest'}
+                    </h2>
+                    <ChannelDot kind={currentConv.conversation.channel_kind} />
                   </div>
-                  {!peopleOn(currentConv.conversation).some((p) => Number(p.id) === Number(me?.user?.id)) && (
-                    <button
-                      type="button"
-                      onClick={() => claimConversation(currentConv.conversation.id)}
-                      className="h-10 shrink-0 rounded-lg bg-soul-blue px-3 text-xs font-bold text-white"
-                    >
-                      {peopleOn(currentConv.conversation).length ? 'Join' : 'Take'}
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setShowRightPanel(!showRightPanel)}
-                    className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl border transition-colors ${
-                      showRightPanel ? 'border-soul-blue bg-soul-blue text-white' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                    }`}
-                    aria-label="Guest details"
-                    title="Guest details"
-                  >
-                    <UserPlus className="h-4 w-4" />
-                  </button>
+                  <p className="truncate text-[11px] text-slate-500">
+                    {CONVERSATION_TYPES[currentConv.conversation.type] || 'Unclassified'}
+                    {' · '}
+                    {peopleOn(currentConv.conversation).map((p) => p.name).join(', ') || 'Unassigned'}
+                  </p>
                 </div>
-                <div className="flex items-center gap-2 overflow-x-auto px-2 pb-2 sm:px-3">
-                  <SlaChip conversation={currentConv.conversation} now={now} />
-                  <Chip className={`border ${windowInfo.cls}`}>{windowInfo.text}</Chip>
-                  <button
-                    type="button"
-                    onClick={snoozeUntilMorning}
-                    className="h-9 shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700"
-                    title="Bring this chat back at 11:00 Cairo time"
-                  >
-                    Snooze till 11
-                  </button>
-                  <select
-                    aria-label="Chat status"
-                    value={currentConv.conversation.status}
-                    onChange={(e) => handleUpdateStatus(e.target.value)}
-                    className="h-9 shrink-0 rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs font-medium text-slate-700 focus:outline-none"
-                  >
-                    {Object.entries(STATUS_LABELS).map(([k, label]) => (
-                      <option key={k} value={k}>{label}</option>
-                    ))}
-                  </select>
-                  {peopleOn(currentConv.conversation).map((p) => (
-                    <span key={p.id} className="inline-flex h-9 shrink-0 items-center gap-1 rounded-full bg-slate-100 px-2.5 text-[11px] font-medium text-slate-700">
-                      {Number(p.id) === Number(me?.user?.id) ? 'You' : p.name}
-                      {(can('conv.assign') || Number(p.id) === Number(me?.user?.id)) && (
-                        <button
-                          type="button"
-                          className="text-slate-400 hover:text-rose-600"
-                          aria-label={`Remove ${p.name}`}
-                          onClick={() => removeAssignee(currentConv.conversation.id, p.id)}
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      )}
-                    </span>
-                  ))}
-                  {can('conv.assign') && (
-                    <select
-                      aria-label="Add staff"
-                      value=""
-                      onChange={(e) => { if (e.target.value) handleAssign(e.target.value); }}
-                      className="h-9 shrink-0 rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs font-medium text-slate-700 focus:outline-none"
-                    >
-                      <option value="">Add staff</option>
-                      {(me?.users || [])
-                        .filter((u) => u.active !== 0 && !peopleOn(currentConv.conversation).some((p) => Number(p.id) === Number(u.id)))
-                        .map((u) => (
-                          <option key={u.id} value={u.id}>{u.name}</option>
-                        ))}
-                    </select>
-                  )}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowRightPanel(!showRightPanel)}
+                  className={`inline-flex h-10 shrink-0 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-semibold ${
+                    showRightPanel ? 'border-soul-blue bg-soul-blue text-white' : 'border-slate-200 bg-white text-slate-700'
+                  }`}
+                  aria-label="Guest record"
+                >
+                  <PanelRight className="h-4 w-4" />
+                  <span className="hidden sm:inline">Guest</span>
+                </button>
               </div>
 
               {othersOn(currentConv.conversation.id).length > 0 && (
@@ -758,9 +720,9 @@ export default function InboxPage() {
               <div className="w-16 h-16 rounded-2xl bg-slate-200 text-slate-400 flex items-center justify-center mb-4">
                 <MessageSquare className="w-8 h-8" />
               </div>
-              <h2 className="text-base font-bold text-slate-700">Select a conversation to start chatting</h2>
-              <p className="text-xs text-slate-400 max-w-sm mt-1">
-                Choose a customer thread from the left list to view chat history, reply, log staff notes, or manage PMS leads.
+              <h2 className="text-base font-bold text-slate-700">Choose a guest</h2>
+              <p className="mt-1 max-w-sm text-xs text-slate-400">
+                Reply from here, record the stay, and label the chat before you close it.
               </p>
             </div>
           )}
@@ -768,32 +730,34 @@ export default function InboxPage() {
 
         {/* Right Column: PMS Lead Panel */}
         {showRightPanel && activeConvId && currentConv?.conversation && (
-          <div className="absolute inset-0 z-20 overflow-y-auto bg-white p-4 pb-8 xl:static xl:z-auto xl:w-80 xl:flex-shrink-0 xl:border-l xl:border-slate-200 xl:pb-4">
+          <div className="absolute inset-0 z-20 overflow-y-auto bg-white p-4 pb-8 2xl:static 2xl:z-auto 2xl:w-80 2xl:flex-shrink-0 2xl:border-l 2xl:border-slate-200 2xl:pb-4">
             <button
               type="button"
-              className="mb-3 inline-flex h-11 items-center gap-1 text-sm font-semibold text-soul-blue xl:hidden"
+              className="mb-3 inline-flex h-11 items-center gap-1 text-sm font-semibold text-soul-blue 2xl:hidden"
               onClick={() => setShowRightPanel(false)}
             >
               <ChevronLeft className="h-4 w-4" />
               Back to chat
             </button>
-            {(() => {
-              const lead = (currentConv.leads || []).find((l) => l.id === currentConv.conversation.current_lead_id) || currentConv.leads?.[0] || null;
-              if (!lead) {
-                return <p className="text-sm text-slate-500">This conversation has no lead yet.</p>;
-              }
-              return (
-                <LeadPanel
-                  lead={lead}
-                  followUps={currentConv.followUps || []}
-                  customer={currentConv.customer}
-                  onChanged={() => {
-                    refetchCurrentConv();
-                    refetchConvs();
-                  }}
-                />
-              );
-            })()}
+            <GuestRail
+              conversation={currentConv.conversation}
+              customer={currentConv.customer}
+              leads={currentConv.leads}
+              followUps={currentConv.followUps}
+              me={me}
+              can={can}
+              now={now}
+              windowInfo={windowInfo}
+              people={peopleOn(currentConv.conversation)}
+              onType={setConversationType}
+              onStatus={handleUpdateStatus}
+              onAssign={handleAssign}
+              onRemove={(userId) => removeAssignee(currentConv.conversation.id, userId)}
+              onClaim={() => claimConversation(currentConv.conversation.id)}
+              onSnooze={snoozeUntilMorning}
+              onChanged={() => { refetchCurrentConv(); refetchConvs(); }}
+              onStartLead={startStayRequest}
+            />
           </div>
         )}
       </div>
