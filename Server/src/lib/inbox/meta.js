@@ -3,7 +3,9 @@ const { decrypt } = require('./security');
 
 // Thin client for the official Meta Graph API (Messenger, Instagram Messaging, WhatsApp Cloud API).
 
-const base = () => `https://graph.facebook.com/${config.meta.graphVersion}`;
+const graphRoot = (token) => (String(token || '').startsWith('IG')
+  ? `https://graph.instagram.com/${config.meta.graphVersion}`
+  : `https://graph.facebook.com/${config.meta.graphVersion}`);
 
 class MetaError extends Error {
   constructor(message, details) {
@@ -13,7 +15,7 @@ class MetaError extends Error {
 }
 
 async function graph(path, { method = 'GET', token, body, query } = {}) {
-  const url = new URL(`${base()}/${String(path).replace(/^\//, '')}`);
+  const url = new URL(`${graphRoot(token)}/${String(path).replace(/^\//, '')}`);
   for (const [k, v] of Object.entries(query || {})) url.searchParams.set(k, v);
   const res = await fetch(url, {
     method,
@@ -47,17 +49,21 @@ const attachmentType = (mime = '') =>
  * only if the app was approved for the Human Agent permission.
  */
 async function sendPageMessage(channel, recipient, { text, attachment, tag }) {
-  const pageId = channel.kind === 'instagram' ? channel.page_id : channel.external_id;
+  const token = channelToken(channel);
+  const instagramLogin = channel.kind === 'instagram' && token.startsWith('IG');
+  const pageId = instagramLogin ? channel.external_id : (channel.kind === 'instagram' ? channel.page_id : channel.external_id);
   const message = attachment
     ? { attachment: { type: attachmentType(attachment.mime), payload: { url: attachment.url, is_reusable: true } } }
     : { text };
-  const body = {
-    recipient,
-    message,
-    messaging_type: tag ? 'MESSAGE_TAG' : 'RESPONSE',
-    ...(tag ? { tag } : {}),
-  };
-  const data = await graph(`${pageId || 'me'}/messages`, { method: 'POST', token: channelToken(channel), body });
+  const body = instagramLogin
+    ? { recipient, message }
+    : {
+      recipient,
+      message,
+      messaging_type: tag ? 'MESSAGE_TAG' : 'RESPONSE',
+      ...(tag ? { tag } : {}),
+    };
+  const data = await graph(`${pageId || 'me'}/messages`, { method: 'POST', token, body });
   return data.message_id;
 }
 
@@ -132,18 +138,21 @@ async function downloadWhatsAppMedia(channel, mediaId) {
   return { mime: meta.mime_type, buffer: Buffer.from(await res.arrayBuffer()) };
 }
 
-/** Page tokens are the long EAA string. App IDs, secrets, and verify tokens are not. */
+/** Page tokens start with EAA. Instagram account tokens start with IGAA. */
 function pageToken(raw) {
   const token = String(raw || '').trim().replace(/^Bearer\s+/i, '').replace(/\s+/g, '');
-  if (!token.startsWith('EAA') || token.length < 40) {
-    throw new MetaError('That is not a Page access token. Paste the long token that starts with EAA, the same kind Messenger uses. The app ID, app secret, and verify token will not work here.');
-  }
-  return token;
+  if ((token.startsWith('EAA') || token.startsWith('IGAA')) && token.length >= 40) return token;
+  throw new MetaError('Paste the Page token that starts with EAA, or the Instagram account token that starts with IGAA. The app ID, app secret, and verify token will not work here.');
 }
 
 /** The Instagram professional account linked to a Facebook Page. */
 async function instagramAccount(pageId, token) {
   const clean = pageToken(token);
+  if (clean.startsWith('IG')) {
+    const me = await graph('me', { token: clean, query: { fields: 'id,username,name' } });
+    if (!me?.id) throw new MetaError('This Instagram token did not return an account');
+    return { id: String(me.id), username: me.username || null, name: me.username || me.name || 'Instagram', pageName: null };
+  }
   let data;
   try {
     // The Page name field requires pages_read_engagement. The linked account id does not.
@@ -168,6 +177,14 @@ async function instagramAccount(pageId, token) {
 /** Subscribe a Facebook Page, or the linked Instagram account, to this app's webhooks. */
 async function subscribePage(channel) {
   const token = channelToken(channel);
+  if (channel.kind === 'instagram' && token.startsWith('IG')) {
+    const fields = 'messages,messaging_postbacks,messaging_seen,messaging_referral,message_reactions';
+    return graph(`${channel.external_id}/subscribed_apps`, {
+      method: 'POST',
+      token,
+      query: { subscribed_fields: fields },
+    });
+  }
   if (channel.kind === 'instagram') {
     const fields = 'messages,message_echoes,messaging_postbacks,message_reads,messaging_referrals,message_reactions';
     const page = await graph(`${channel.page_id}/subscribed_apps`, {
@@ -204,6 +221,10 @@ async function checkChannel(channel) {
   if (channel.kind === 'whatsapp') {
     const d = await graph(channel.external_id, { token, query: { fields: 'display_phone_number,verified_name,quality_rating' } });
     return `${d.verified_name || ''} ${d.display_phone_number || ''} (quality: ${d.quality_rating || 'n/a'})`.trim();
+  }
+  if (channel.kind === 'instagram' && token.startsWith('IG')) {
+    const me = await graph('me', { token, query: { fields: 'id,username,name' } });
+    return `@${me.username || me.name || channel.name}`;
   }
   const pageId = channel.kind === 'instagram' ? channel.page_id : channel.external_id;
   // Reading the Page name requires pages_read_engagement. Managing webhooks does not.
