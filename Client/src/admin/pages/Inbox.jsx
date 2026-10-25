@@ -108,8 +108,8 @@ export default function InboxPage() {
     setSearchParams({ c: id });
   };
 
-  const handleSendMessage = (text, asNote) => {
-    if (!text || !activeConvId) return;
+  const handleSendMessage = (text, asNote, file) => {
+    if ((!text && !file) || !activeConvId) return;
     if (!asNote && Number(currentConv?.customer?.is_simulated) !== 1 && !serviceWindow(currentConv?.conversation, Date.now()).open) {
       toast.error('The 24-hour window is closed');
       return;
@@ -117,6 +117,10 @@ export default function InboxPage() {
     const tempId = `local-${Date.now()}`;
     const stamp = Date.now();
     const mine = { id: me?.user?.id, name: me?.user?.name };
+    const localUrl = file ? URL.createObjectURL(file) : null;
+    const pendingAttachments = file
+      ? [{ type: (file.type || 'file').split('/')[0] || 'file', url: localUrl, mime: file.type, filename: file.name }]
+      : [];
     qc.setQueryData(['inbox-conversation', activeConvId], (old) => {
       if (!old) return old;
       if (asNote) {
@@ -126,14 +130,23 @@ export default function InboxPage() {
         ...old,
         messages: [...(old.messages || []), {
           id: tempId, direction: 'out', sender_type: 'agent', body: text, user_id: mine.id, user_name: mine.name,
-          created_at: stamp, delivery_status: 'pending', attachments: [],
+          created_at: stamp, delivery_status: 'pending', attachments: pendingAttachments,
         }],
       };
     });
-    const request = asNote
-      ? inboxApi.post(`/conversations/${activeConvId}/notes`, { body: text })
-      : inboxApi.post(`/conversations/${activeConvId}/messages`, { text });
+    let request;
+    if (asNote) {
+      request = inboxApi.post(`/conversations/${activeConvId}/notes`, { body: text });
+    } else if (file) {
+      const form = new FormData();
+      form.append('file', file);
+      if (text) form.append('caption', text);
+      request = inboxApi.upload(`/conversations/${activeConvId}/attachments`, form);
+    } else {
+      request = inboxApi.post(`/conversations/${activeConvId}/messages`, { text });
+    }
     request.then((res) => {
+      if (localUrl) setTimeout(() => URL.revokeObjectURL(localUrl), 1500);
       if (asNote || !res?.message) return;
       qc.setQueryData(['inbox-conversation', activeConvId], (old) => {
         if (!old) return old;
@@ -794,7 +807,9 @@ const ChatComposer = forwardRef(function ChatComposer({
   const [note, setNote] = useState(false);
   const [openReplies, setOpenReplies] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
+  const [file, setFile] = useState(null);
   const inputRef = useRef(null);
+  const fileRef = useRef(null);
   const blocked = !note && !simulated && !windowOpen;
   const slash = body.startsWith('/') ? body.slice(1).trim().toLowerCase() : null;
   const matches = slash === null
@@ -805,6 +820,7 @@ const ChatComposer = forwardRef(function ChatComposer({
     setBody('');
     setNote(false);
     setOpenReplies(false);
+    setFile(null);
   }, [conversationId]);
 
   useImperativeHandle(ref, () => ({
@@ -820,13 +836,28 @@ const ChatComposer = forwardRef(function ChatComposer({
     },
   }), []);
 
+  const chooseFile = (event) => {
+    const next = event.target.files?.[0];
+    event.target.value = '';
+    if (!next) return;
+    if (next.size > 16 * 1024 * 1024) {
+      toast.error('File must be under 16 MB');
+      return;
+    }
+    setNote(false);
+    setFile(next);
+  };
+
   const submit = (event) => {
     event?.preventDefault();
     const text = body.trim();
-    if (!text || blocked) return;
+    if (blocked || (!text && !file)) return;
+    if (note && !text) return;
     setBody('');
     setOpenReplies(false);
-    onSend(text, note);
+    const sendingFile = note ? null : file;
+    setFile(null);
+    onSend(text, note, sendingFile);
   };
 
   return (
@@ -886,7 +917,33 @@ const ChatComposer = forwardRef(function ChatComposer({
           ))}
         </div>
       )}
+      {file && (
+        <div className="mb-2 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700">
+          <Paperclip className="h-3.5 w-3.5" />
+          <span className="max-w-[16rem] truncate">{file.name}</span>
+          <button type="button" onClick={() => setFile(null)} aria-label="Remove attachment" className="text-slate-400 hover:text-rose-600">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
       <form onSubmit={submit} className="flex items-end gap-2">
+        <input
+          ref={fileRef}
+          type="file"
+          className="hidden"
+          accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,audio/mpeg,audio/ogg,audio/aac,audio/mp4,application/pdf"
+          onChange={chooseFile}
+        />
+        <button
+          type="button"
+          disabled={blocked}
+          onClick={() => fileRef.current?.click()}
+          className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+          aria-label="Attach a file"
+          title="Image, video, audio, or PDF, up to 16 MB"
+        >
+          <Paperclip className="h-4 w-4" />
+        </button>
         <textarea
           ref={inputRef}
           rows={2}
@@ -907,7 +964,7 @@ const ChatComposer = forwardRef(function ChatComposer({
           placeholder={note ? 'Internal note. Type @Name to mention a teammate.' : blocked ? 'Free replies are closed. Switch to an internal note.' : `Reply to ${customerName || 'customer'}… Enter sends`}
           className={`flex-1 p-2.5 text-xs bg-slate-50 border rounded-xl focus:outline-none focus:ring-2 resize-none ${note ? 'border-amber-300 focus:ring-amber-400/30 bg-amber-50/20' : 'border-slate-200 focus:ring-soul-blue/20'}`}
         />
-        <button type="submit" disabled={!body.trim() || blocked} className={`px-4 py-3 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow disabled:opacity-50 ${note ? 'bg-amber-500 text-white' : 'bg-soul-blue text-white'}`}>
+        <button type="submit" disabled={blocked || (!body.trim() && !file) || (note && !body.trim())} className={`px-4 py-3 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow disabled:opacity-50 ${note ? 'bg-amber-500 text-white' : 'bg-soul-blue text-white'}`}>
           <Send className="w-4 h-4" />
           {note ? 'Save Note' : 'Send'}
         </button>

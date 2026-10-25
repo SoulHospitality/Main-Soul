@@ -17,6 +17,11 @@ const router = express.Router();
 
 const TYPES = ['unknown', 'sales_lead', 'existing_guest', 'owner', 'broker', 'complaint', 'supplier', 'spam', 'other'];
 
+function publicMessage(row) {
+  if (!row) return row;
+  return { ...row, attachments: parseJson(row.attachments_json, []), attachments_json: undefined };
+}
+
 const LIST_SELECT = `
   SELECT c.id, c.status, c.type, c.priority, c.channel_kind, c.assigned_user_id, c.awaiting_since, c.sla_start_at,
          c.sla_due_at, c.sla_breached, c.escalation_level, c.last_message_at, c.last_inbound_at, c.last_message_preview,
@@ -171,7 +176,7 @@ router.post('/conversations/:id/messages', wrap(async (req, res) => {
     userId: req.inbox.id,
   });
   await addAssignee(conv.id, req.inbox.id, { byUserId: req.inbox.id, reason: 'reply' });
-  res.json({ message });
+  res.json({ message: publicMessage(message) });
 }));
 
 const ALLOWED_MIME = /^(image\/(jpeg|png|webp|gif)|video\/mp4|audio\/(mpeg|ogg|aac|mp4)|application\/pdf)$/;
@@ -215,7 +220,7 @@ router.post('/conversations/:id/attachments', wrap(async (req, res) => {
     userId: req.inbox.id,
   });
   await addAssignee(conv.id, req.inbox.id, { byUserId: req.inbox.id, reason: 'reply' });
-  res.json({ message });
+  res.json({ message: publicMessage(message) });
 }));
 
 /** WhatsApp media needs the channel token, so the browser loads it through us. */
