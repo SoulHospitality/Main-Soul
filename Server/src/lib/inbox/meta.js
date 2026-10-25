@@ -149,9 +149,15 @@ function pageToken(raw) {
 async function instagramAccount(pageId, token) {
   const clean = pageToken(token);
   if (clean.startsWith('IG')) {
-    const me = await graph('me', { token: clean, query: { fields: 'id,username,name' } });
-    if (!me?.id) throw new MetaError('This Instagram token did not return an account');
-    return { id: String(me.id), username: me.username || null, name: me.username || me.name || 'Instagram', pageName: null };
+    let me;
+    try {
+      me = await graph('me', { token: clean, query: { fields: 'id,user_id,username,name' } });
+    } catch {
+      me = await graph('me', { token: clean, query: { fields: 'id,username,name' } });
+    }
+    const id = me?.user_id || me?.id;
+    if (!id) throw new MetaError('This Instagram token did not return an account');
+    return { id: String(id), username: me.username || null, name: me.username || me.name || 'Instagram', pageName: null };
   }
   let data;
   try {
