@@ -53,4 +53,9 @@ function nextBusinessStart(ts, opts) {
   return startOfMinute + deltaMin * 60000;
 }
 
-module.exports = { localMinutes, localHour, localDay, isBusinessTime, nextBusinessStart };
+/** Staff are off from 22:00 until 11:00 Cairo time. */
+function isQuietHours(ts = Date.now()) {
+  return !isBusinessTime(ts, { business_start: '11:00', business_end: '22:00' });
+}
+
+module.exports = { localMinutes, localHour, localDay, isBusinessTime, nextBusinessStart, isQuietHours };

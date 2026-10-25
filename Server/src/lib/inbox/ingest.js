@@ -2,7 +2,7 @@ const { config } = require('./config');
 const { q, tx, audit, lockKey } = require('./db');
 const { normalizePhone, preview } = require('./http');
 const { getSettings, loadSettings } = require('./settings');
-const { isBusinessTime } = require('./hours');
+const { isBusinessTime, isQuietHours } = require('./hours');
 const { autoAssign } = require('./assignment');
 const { startAwaiting, recordResponse } = require('./sla');
 const { broadcast } = require('./realtime');
@@ -119,10 +119,10 @@ async function afterInbound({ conversationId, isNew, newIdentity, identityId, cu
   broadcast('message', { conversation_id: conversationId });
   broadcast('conversation', { id: conversationId, new: isNew });
 
-  if (isBusinessTime()) {
-    await autoAssign(conversationId);
-  } else {
+  if (isQuietHours()) {
     scheduleNightReply(conversationId);
+  } else if (isBusinessTime()) {
+    await autoAssign(conversationId);
   }
 
   if (isNew) await markExistingGuest(conversationId, customerId);
@@ -184,8 +184,8 @@ async function applyClassification(conversationId, r) {
 const nightTimers = new Map();
 
 function scheduleNightReply(conversationId) {
-  const s = getSettings();
-  if (s.night_mode === 'off') return;
+  if (getSettings().night_mode === 'off') return;
+  if (!isQuietHours()) return;
   clearTimeout(nightTimers.get(conversationId));
   // Debounce: customers often send several messages in a row.
   const t = setTimeout(() => {
@@ -199,7 +199,7 @@ function scheduleNightReply(conversationId) {
 async function sendNightReply(conversationId) {
   const s = await loadSettings();
   const conv = await q.get('SELECT * FROM inbox_conversations WHERE id = ?', conversationId);
-  if (!conv || isBusinessTime() || !conv.awaiting_since) return;
+  if (!conv || !isQuietHours() || !conv.awaiting_since) return;
   if (s.night_mode === 'off') return;
   // One scripted reply per closed period. A human reply resets the counter.
   if (conv.night_ai_replies > 0) return;

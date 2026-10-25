@@ -4,7 +4,8 @@ const crypto = require('crypto');
 
 const { toPg } = require('./db');
 const { normalizePhone, phoneTail, int, preview } = require('./http');
-const { isBusinessTime, nextBusinessStart, localMinutes } = require('./hours');
+const { isBusinessTime, nextBusinessStart, localMinutes, isQuietHours } = require('./hours');
+const { messagingWindow } = require('./outbound');
 const { verifyMetaSignature, encrypt, decrypt } = require('./security');
 const { can, permissionsFor } = require('./permissions');
 const { scrub, PRICE_OR_PROMISE } = require('./ai');
@@ -61,6 +62,22 @@ test('business hours: overnight and 24/7 windows', () => {
   assert.equal(isBusinessTime(cairo('03:00'), overnight), true);
   assert.equal(isBusinessTime(cairo('12:00'), overnight), false);
   assert.equal(isBusinessTime(cairo('03:00'), { business_start: '00:00', business_end: '24:00' }), true);
+});
+
+test('free replies stay open for 24 hours after the customer writes', () => {
+  const now = Date.parse('2026-07-01T12:00:00Z');
+  assert.equal(messagingWindow({ last_inbound_at: now - 23 * 3600000 }, now).open, true);
+  assert.equal(messagingWindow({ last_inbound_at: now - 25 * 3600000 }, now).open, false);
+  assert.equal(messagingWindow({}, now).open, false);
+});
+
+test('quiet hours are after 10 PM and before 11 AM Cairo', () => {
+  assert.equal(isQuietHours(cairo('22:00')), true);
+  assert.equal(isQuietHours(cairo('23:30')), true);
+  assert.equal(isQuietHours(cairo('00:10')), true);
+  assert.equal(isQuietHours(cairo('10:59')), true);
+  assert.equal(isQuietHours(cairo('11:00')), false);
+  assert.equal(isQuietHours(cairo('21:59')), false);
 });
 
 test('after midnight is outside the 11:00–22:00 staff window', () => {

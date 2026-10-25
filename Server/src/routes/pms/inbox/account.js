@@ -27,10 +27,15 @@ publicRouter.get('/me', wrap(async (req, res) => {
   const s = getSettings();
   const counts = await q.get(
     `SELECT
-       COUNT(*) FILTER (WHERE assigned_user_id = ? AND status = 'needs_reply') AS mine_waiting,
-       COUNT(*) FILTER (WHERE assigned_user_id IS NULL AND status = 'needs_reply') AS unassigned_waiting
+       COUNT(*) FILTER (WHERE status = 'needs_reply' AND (
+         assigned_user_id = ? OR EXISTS (
+           SELECT 1 FROM inbox_conversation_assignees a WHERE a.conversation_id = inbox_conversations.id AND a.user_id = ?
+         ))) AS mine_waiting,
+       COUNT(*) FILTER (WHERE status = 'needs_reply' AND assigned_user_id IS NULL AND NOT EXISTS (
+         SELECT 1 FROM inbox_conversation_assignees a WHERE a.conversation_id = inbox_conversations.id
+       )) AS unassigned_waiting
      FROM inbox_conversations`,
-    u.id,
+    u.id, u.id,
   );
   res.json({
     access: true,

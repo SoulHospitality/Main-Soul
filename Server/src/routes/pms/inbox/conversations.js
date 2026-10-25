@@ -3,8 +3,7 @@ const multer = require('multer');
 const { q, tx, audit, parseJson } = require('../../../lib/inbox/db');
 const { HttpError, badRequest, forbidden, int, normalizePhone, notFound, wrap } = require('../../../lib/inbox/http');
 const { can } = require('../../../lib/inbox/permissions');
-const { getSettings } = require('../../../lib/inbox/settings');
-const { assign } = require('../../../lib/inbox/assignment');
+const { addAssignee, removeAssignee, listAssignees } = require('../../../lib/inbox/assignment');
 const { broadcast, viewersSnapshot } = require('../../../lib/inbox/realtime');
 const { messagingWindow, sendToCustomer } = require('../../../lib/inbox/outbound');
 const { createLead } = require('../../../lib/inbox/leads');
@@ -12,7 +11,7 @@ const { aiAvailable, classify, suggestReply, summarize } = require('../../../lib
 const { applyClassification, markExistingGuest } = require('../../../lib/inbox/ingest');
 const { downloadWhatsAppMedia } = require('../../../lib/inbox/meta');
 const { guestHistory, availabilityFacts } = require('../../../lib/inbox/pmsLink');
-const { loadConversation, ensureCanAct, visibilitySql } = require('./common');
+const { loadConversation, ensureCanAct, visibilitySql, onChatSql } = require('./common');
 
 const router = express.Router();
 
@@ -24,7 +23,13 @@ const LIST_SELECT = `
          c.unread_count, c.snooze_until, c.current_lead_id, c.source,
          cu.name AS customer_name, cu.avatar_url, cu.phone,
          ch.name AS channel_name, u.name AS assigned_name,
-         l.stage_key, l.temperature
+         l.stage_key, l.temperature,
+         COALESCE((
+           SELECT json_agg(json_build_object('id', a.user_id, 'name', iu.name) ORDER BY a.assigned_at)
+           FROM inbox_conversation_assignees a
+           JOIN inbox_users iu ON iu.id = a.user_id
+           WHERE a.conversation_id = c.id
+         ), '[]'::json) AS assignees
   FROM inbox_conversations c
   JOIN inbox_customers cu ON cu.id = c.customer_id
   JOIN inbox_channels ch ON ch.id = c.channel_id
@@ -33,15 +38,18 @@ const LIST_SELECT = `
 
 router.get('/conversations', wrap(async (req, res) => {
   const user = req.inbox;
-  const { view = 'mine', channel, assigned, stage, search, type } = req.query;
+  const channel = req.query.channel || req.query.channel_kind;
+  const search = req.query.search || req.query.q;
+  const { view = 'mine', assigned, stage, type } = req.query;
   const vis = visibilitySql(user);
   const where = [vis.sql];
   const params = [...vis.params];
   const now = Date.now();
 
   switch (view) {
-    case 'mine': where.push("c.assigned_user_id = ? AND c.status <> 'closed'"); params.push(user.id); break;
-    case 'unassigned': where.push("c.assigned_user_id IS NULL AND c.status <> 'closed'"); break;
+    case 'mine': where.push(`${onChatSql()} AND c.status <> 'closed'`); params.push(user.id, user.id); break;
+    case 'unassigned': where.push(`c.status <> 'closed' AND c.assigned_user_id IS NULL AND NOT EXISTS (
+      SELECT 1 FROM inbox_conversation_assignees a WHERE a.conversation_id = c.id)`); break;
     case 'needs_reply': where.push("c.status = 'needs_reply'"); break;
     case 'overdue': where.push("c.status = 'needs_reply' AND c.sla_due_at IS NOT NULL AND c.sla_due_at <= ?"); params.push(now); break;
     case 'waiting': where.push("c.status = 'waiting_customer'"); break;
@@ -52,8 +60,10 @@ router.get('/conversations', wrap(async (req, res) => {
   }
   if (channel) { where.push('c.channel_kind = ?'); params.push(String(channel)); }
   if (type) { where.push('c.type = ?'); params.push(String(type)); }
-  if (assigned === 'none') where.push('c.assigned_user_id IS NULL');
-  else if (assigned) { where.push('c.assigned_user_id = ?'); params.push(Number(assigned) || 0); }
+  if (assigned === 'none') {
+    where.push(`c.assigned_user_id IS NULL AND NOT EXISTS (
+      SELECT 1 FROM inbox_conversation_assignees a WHERE a.conversation_id = c.id)`);
+  } else if (assigned) { where.push(onChatSql()); params.push(Number(assigned) || 0, Number(assigned) || 0); }
   if (stage) { where.push('l.stage_key = ?'); params.push(String(stage)); }
   if (search) {
     const term = String(search).trim().slice(0, 100);
@@ -75,14 +85,15 @@ router.get('/conversations', wrap(async (req, res) => {
 
   const counts = await q.get(
     `SELECT
-       COUNT(*) FILTER (WHERE c.assigned_user_id = ? AND c.status <> 'closed') AS mine,
-       COUNT(*) FILTER (WHERE c.assigned_user_id IS NULL AND c.status <> 'closed') AS unassigned,
+       COUNT(*) FILTER (WHERE ${onChatSql()} AND c.status <> 'closed') AS mine,
+       COUNT(*) FILTER (WHERE c.assigned_user_id IS NULL AND c.status <> 'closed' AND NOT EXISTS (
+         SELECT 1 FROM inbox_conversation_assignees a WHERE a.conversation_id = c.id)) AS unassigned,
        COUNT(*) FILTER (WHERE c.status = 'needs_reply') AS needs_reply,
        COUNT(*) FILTER (WHERE c.status = 'needs_reply' AND c.sla_due_at <= ?) AS overdue,
        COUNT(*) FILTER (WHERE c.status = 'waiting_customer') AS waiting,
        COUNT(*) FILTER (WHERE c.status = 'snoozed') AS snoozed
      FROM inbox_conversations c WHERE ${vis.sql}`,
-    user.id, now, ...vis.params,
+    user.id, user.id, now, ...vis.params,
   );
   res.json({ items: rows, counts, viewers: viewersSnapshot(), now });
 }));
@@ -150,6 +161,7 @@ router.get('/conversations/:id', wrap(async (req, res) => {
       ai_summary: parseJson(conv.ai_summary),
       ad_ref: parseJson(conv.ad_ref_json),
       window: messagingWindow(conv),
+      assignees: await listAssignees(conv.id),
       ai_json: undefined,
       ad_ref_json: undefined,
     },
@@ -192,6 +204,7 @@ router.post('/conversations/:id/messages', wrap(async (req, res) => {
     senderType: 'agent',
     userId: req.inbox.id,
   });
+  await addAssignee(conv.id, req.inbox.id, { byUserId: req.inbox.id, reason: 'reply' });
   res.json({ message });
 }));
 
@@ -235,6 +248,7 @@ router.post('/conversations/:id/attachments', wrap(async (req, res) => {
     senderType: 'agent',
     userId: req.inbox.id,
   });
+  await addAssignee(conv.id, req.inbox.id, { byUserId: req.inbox.id, reason: 'reply' });
   res.json({ message });
 }));
 
@@ -277,17 +291,16 @@ router.post('/conversations/:id/notes', wrap(async (req, res) => {
 router.post('/conversations/:id/assign', wrap(async (req, res) => {
   const conv = await loadConversation(int(req.params.id), req.inbox);
   const to = req.body?.user_id ? int(req.body.user_id, 'user') : null;
-  if (!can(req.inbox, 'conv.assign')) {
-    // Agents may only hand their own chat to someone else or claim an unassigned one.
-    const ownChat = conv.assigned_user_id === req.inbox.id;
-    const claiming = conv.assigned_user_id === null && to === req.inbox.id && getSettings().allow_agent_claim;
-    if (!ownChat && !claiming) throw forbidden('Only supervisors can reassign');
-  }
-  if (to && !(await q.get('SELECT 1 AS x FROM inbox_users WHERE id = ? AND active = 1 AND role IS NOT NULL', to))) {
+  if (!to) throw badRequest('Choose a staff member');
+  const removing = Boolean(req.body?.remove);
+  if (to !== req.inbox.id && !can(req.inbox, 'conv.assign')) throw forbidden('Only supervisors can change other people on a chat');
+  if (!(await q.get('SELECT 1 AS x FROM inbox_users WHERE id = ? AND active = 1 AND role IS NOT NULL', to))) {
     throw badRequest('User not found');
   }
-  const reason = to === req.inbox.id ? (conv.assigned_user_id ? 'takeover' : 'claim') : 'manual';
-  res.json({ conversation: await assign(conv.id, to, { byUserId: req.inbox.id, reason }) });
+  const conversation = removing
+    ? await removeAssignee(conv.id, to, { byUserId: req.inbox.id })
+    : await addAssignee(conv.id, to, { byUserId: req.inbox.id, reason: to === req.inbox.id ? 'claim' : 'manual' });
+  res.json({ conversation, assignees: await listAssignees(conv.id) });
 }));
 
 router.post('/conversations/:id/status', wrap(async (req, res) => {
@@ -344,7 +357,11 @@ router.post('/conversations/:id/type', wrap(async (req, res) => {
 
 router.post('/conversations/:id/read', wrap(async (req, res) => {
   const conv = await loadConversation(int(req.params.id), req.inbox);
-  if (conv.assigned_user_id === req.inbox.id && conv.unread_count) {
+  const onIt = conv.assigned_user_id === req.inbox.id || await q.get(
+    'SELECT 1 AS x FROM inbox_conversation_assignees WHERE conversation_id = ? AND user_id = ?',
+    conv.id, req.inbox.id,
+  );
+  if (onIt && conv.unread_count) {
     await q.run('UPDATE inbox_conversations SET unread_count = 0 WHERE id = ?', conv.id);
   }
   res.json({ ok: true });
@@ -373,7 +390,14 @@ router.patch('/customers/:id', wrap(async (req, res) => {
   const customer = await q.get('SELECT * FROM inbox_customers WHERE id = ?', id);
   if (!customer) throw notFound();
   const allowed = can(req.inbox, 'conv.view_all')
-    || await q.get('SELECT 1 AS x FROM inbox_conversations WHERE customer_id = ? AND assigned_user_id = ?', id, req.inbox.id);
+    || await q.get(
+      `SELECT 1 AS x FROM inbox_conversations c
+       WHERE c.customer_id = ? AND (
+         c.assigned_user_id = ? OR EXISTS (
+           SELECT 1 FROM inbox_conversation_assignees a WHERE a.conversation_id = c.id AND a.user_id = ?
+         ))`,
+      id, req.inbox.id, req.inbox.id,
+    );
   if (!allowed) throw forbidden();
   const b = req.body || {};
   const patch = {};

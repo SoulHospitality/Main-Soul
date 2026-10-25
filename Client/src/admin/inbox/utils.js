@@ -119,6 +119,26 @@ export function initials(name) {
   return String(name || '?').trim().split(/\s+/).slice(0, 2).map((p) => p[0]).join('').toUpperCase() || '?';
 }
 
+const DAY_MS = 24 * 3600 * 1000;
+
+/** Meta free-reply window: 24 hours after the customer's last message. */
+export function serviceWindow(conversation, now = Date.now()) {
+  const last = Number(conversation?.last_inbound_at);
+  if (!last) {
+    return { open: false, closesAt: null, urgent: false, text: 'No customer message yet', cls: 'bg-slate-100 text-slate-600 border-slate-200' };
+  }
+  const closesAt = last + DAY_MS;
+  const left = closesAt - now;
+  if (left <= 0) {
+    return { open: false, closesAt, urgent: true, text: '24h window closed', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
+  }
+  if (left < 3600000) {
+    return { open: true, closesAt, urgent: true, text: `Window ${fmtClock(left)}`, cls: 'bg-amber-50 text-amber-800 border-amber-200' };
+  }
+  const hours = Math.ceil(left / 3600000);
+  return { open: true, closesAt, urgent: false, text: `Window ${hours}h`, cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+}
+
 /** SLA chip state for a conversation; null when the clock is not running. */
 export function slaInfo(c, rules, now = Date.now()) {
   if (!c || c.status !== 'needs_reply' || !c.sla_due_at) return null;

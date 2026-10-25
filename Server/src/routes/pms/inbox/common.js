@@ -2,7 +2,6 @@ const { q } = require('../../../lib/inbox/db');
 const { forbidden, notFound } = require('../../../lib/inbox/http');
 const { can } = require('../../../lib/inbox/permissions');
 const { getSettings, loadSettings } = require('../../../lib/inbox/settings');
-const { assign } = require('../../../lib/inbox/assignment');
 
 /** Resolves the PMS staff user to an inbox user (role from the PMS role or the Team override). */
 async function loadInboxUser(staffId) {
@@ -27,30 +26,42 @@ function requirePerm(permission) {
   };
 }
 
+function onChatSql(userIdParam = '?') {
+  return `(c.assigned_user_id = ${userIdParam} OR EXISTS (
+    SELECT 1 FROM inbox_conversation_assignees a WHERE a.conversation_id = c.id AND a.user_id = ${userIdParam}
+  ))`;
+}
+
 function visibilitySql(user) {
   if (can(user, 'conv.view_all')) return { sql: '1 = 1', params: [] };
-  return getSettings().allow_agent_claim
-    ? { sql: '(c.assigned_user_id = ? OR c.assigned_user_id IS NULL)', params: [user.id] }
-    : { sql: 'c.assigned_user_id = ?', params: [user.id] };
+  const mine = onChatSql();
+  if (!getSettings().allow_agent_claim) return { sql: mine, params: [user.id, user.id] };
+  return {
+    sql: `(${mine} OR (c.assigned_user_id IS NULL AND NOT EXISTS (
+      SELECT 1 FROM inbox_conversation_assignees a WHERE a.conversation_id = c.id
+    )))`,
+    params: [user.id, user.id],
+  };
 }
 
 async function loadConversation(id, user) {
   const conv = await q.get('SELECT * FROM inbox_conversations WHERE id = ?', id);
   if (!conv) throw notFound('Conversation not found');
-  const visible = can(user, 'conv.view_all') || conv.assigned_user_id === user.id
-    || (conv.assigned_user_id === null && getSettings().allow_agent_claim);
-  if (!visible) throw forbidden('This chat is assigned to another agent');
+  if (can(user, 'conv.view_all')) return conv;
+  const member = conv.assigned_user_id === user.id || await q.get(
+    'SELECT 1 AS x FROM inbox_conversation_assignees WHERE conversation_id = ? AND user_id = ?',
+    conv.id, user.id,
+  );
+  if (member) return conv;
+  const open = getSettings().allow_agent_claim && !conv.assigned_user_id && !(await q.get(
+    'SELECT 1 AS x FROM inbox_conversation_assignees WHERE conversation_id = ?',
+    conv.id,
+  ));
+  if (!open) throw forbidden('This chat is assigned to other staff');
   return conv;
 }
 
-/** Replying to an unassigned chat claims it (when claiming is allowed). */
-async function ensureCanAct(conv, user) {
-  if (conv.assigned_user_id === user.id || can(user, 'conv.reply_any')) return;
-  if (conv.assigned_user_id === null && getSettings().allow_agent_claim) {
-    await assign(conv.id, user.id, { byUserId: user.id, reason: 'claim' });
-    return;
-  }
-  throw forbidden('This chat is assigned to another agent');
-}
+/** Opening the chat is enough. Sending a reply adds the sender to its assignees. */
+async function ensureCanAct() {}
 
-module.exports = { loadInboxUser, inboxAuth, requirePerm, visibilitySql, loadConversation, ensureCanAct };
+module.exports = { loadInboxUser, inboxAuth, requirePerm, visibilitySql, loadConversation, ensureCanAct, onChatSql };

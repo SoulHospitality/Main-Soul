@@ -13,7 +13,11 @@ async function availableAgents(excludeIds = []) {
   const cutoff = Date.now() - s.presence_timeout_min * 60000;
   const rows = await q.all(
     `SELECT u.id, u.name, u.max_open, u.last_assigned_at,
-       (SELECT COUNT(*) FROM inbox_conversations c WHERE c.assigned_user_id = u.id AND c.status = 'needs_reply') AS waiting
+       (SELECT COUNT(*) FROM inbox_conversations c
+          WHERE c.status = 'needs_reply' AND (
+            c.assigned_user_id = u.id
+            OR EXISTS (SELECT 1 FROM inbox_conversation_assignees a WHERE a.conversation_id = c.id AND a.user_id = u.id)
+          )) AS waiting
      FROM inbox_users u
      WHERE u.role IS NOT NULL AND u.active = 1 AND u.in_rotation = 1 AND u.presence = 'online' AND u.last_seen_at >= ?`,
     cutoff,
@@ -24,16 +28,84 @@ async function availableAgents(excludeIds = []) {
     .sort((a, b) => a.waiting - b.waiting || (a.last_assigned_at || 0) - (b.last_assigned_at || 0));
 }
 
+async function assigneeIds(conversationId, fallbackId = null) {
+  const rows = await q.all(
+    'SELECT user_id FROM inbox_conversation_assignees WHERE conversation_id = ? ORDER BY assigned_at',
+    conversationId,
+  );
+  const ids = rows.map((r) => r.user_id);
+  if (!ids.length && fallbackId) ids.push(fallbackId);
+  return ids;
+}
+
+async function listAssignees(conversationId) {
+  return q.all(
+    `SELECT a.user_id AS id, u.name, a.assigned_at
+     FROM inbox_conversation_assignees a
+     JOIN inbox_users u ON u.id = a.user_id
+     WHERE a.conversation_id = ?
+     ORDER BY a.assigned_at`,
+    conversationId,
+  );
+}
+
+/** Add a staff member. Existing assignees stay on the chat. */
+async function addAssignee(conversationId, userId, { byUserId = null, reason = 'reply' } = {}) {
+  return assign(conversationId, userId, { byUserId, reason });
+}
+
+async function removeAssignee(conversationId, userId, { byUserId = null } = {}) {
+  const conv = await q.get('SELECT * FROM inbox_conversations WHERE id = ?', conversationId);
+  if (!conv || !userId) return conv;
+  const now = Date.now();
+  await tx(async () => {
+    await q.run(
+      'DELETE FROM inbox_conversation_assignees WHERE conversation_id = ? AND user_id = ?',
+      conversationId, userId,
+    );
+    if (conv.assigned_user_id === userId) {
+      const next = await q.get(
+        'SELECT user_id FROM inbox_conversation_assignees WHERE conversation_id = ? ORDER BY assigned_at LIMIT 1',
+        conversationId,
+      );
+      await q.run(
+        'UPDATE inbox_conversations SET assigned_user_id = ?, assigned_at = ? WHERE id = ?',
+        next?.user_id || null, next ? now : null, conversationId,
+      );
+    }
+    await audit({
+      conversationId, userId: byUserId, type: 'unassigned',
+      data: { user_id: userId }, at: now,
+    });
+  });
+  broadcast('conversation', { id: conversationId });
+  return q.get('SELECT * FROM inbox_conversations WHERE id = ?', conversationId);
+}
+
 async function assign(conversationId, toUserId, { byUserId = null, reason }) {
   const now = Date.now();
   const s = getSettings();
   const conv = await q.get('SELECT * FROM inbox_conversations WHERE id = ?', conversationId);
-  if (!conv || conv.assigned_user_id === toUserId) return conv;
+  if (!conv || !toUserId) return conv;
+  const already = await q.get(
+    'SELECT 1 AS x FROM inbox_conversation_assignees WHERE conversation_id = ? AND user_id = ?',
+    conversationId, toUserId,
+  );
+  if (already) return conv;
 
   await tx(async () => {
-    const freshWindow = Boolean(conv.awaiting_since && FRESH_WINDOW_REASONS.has(reason) && isBusinessTime(now));
     await q.run(
-      `UPDATE inbox_conversations SET assigned_user_id = ?, assigned_at = ?,
+      `INSERT INTO inbox_conversation_assignees (conversation_id, user_id, assigned_at)
+       VALUES (?,?,?) ON CONFLICT DO NOTHING`,
+      conversationId, toUserId, now,
+    );
+    const freshWindow = Boolean(
+      !conv.assigned_user_id && conv.awaiting_since && FRESH_WINDOW_REASONS.has(reason) && isBusinessTime(now),
+    );
+    await q.run(
+      `UPDATE inbox_conversations SET
+         assigned_user_id = COALESCE(assigned_user_id, ?),
+         assigned_at = COALESCE(assigned_at, ?),
          sla_due_at = CASE WHEN ?::int = 1 THEN ?::bigint ELSE sla_due_at END,
          sla_warned = CASE WHEN ?::int = 1 THEN 0 ELSE sla_warned END,
          sla_breached = CASE WHEN ?::int = 1 THEN 0 ELSE sla_breached END,
@@ -49,32 +121,22 @@ async function assign(conversationId, toUserId, { byUserId = null, reason }) {
       'INSERT INTO inbox_assignments (conversation_id, from_user_id, to_user_id, by_user_id, reason, at) VALUES (?,?,?,?,?,?)',
       conversationId, conv.assigned_user_id, toUserId, byUserId, reason, now,
     );
-    if (toUserId) {
-      await q.run(
-        `INSERT INTO inbox_agents (staff_user_id, last_assigned_at) VALUES (?, ?)
-         ON CONFLICT (staff_user_id) DO UPDATE SET last_assigned_at = EXCLUDED.last_assigned_at`,
-        toUserId, now,
-      );
-    }
+    await q.run(
+      `INSERT INTO inbox_agents (staff_user_id, last_assigned_at) VALUES (?, ?)
+       ON CONFLICT (staff_user_id) DO UPDATE SET last_assigned_at = EXCLUDED.last_assigned_at`,
+      toUserId, now,
+    );
     await audit({
       conversationId, userId: byUserId, type: 'assigned',
-      data: { from: conv.assigned_user_id, to: toUserId, reason }, at: now,
+      data: { from: conv.assigned_user_id, to: toUserId, reason, added: true }, at: now,
     });
   });
 
-  const customer = await q.get('SELECT name FROM inbox_customers WHERE id = ?', conv.customer_id);
-  if (toUserId && toUserId !== byUserId) {
+  if (toUserId !== byUserId) {
+    const customer = await q.get('SELECT name FROM inbox_customers WHERE id = ?', conv.customer_id);
     await notify([toUserId], {
       kind: 'assigned',
-      title: reason === 'sla_breach' ? 'Chat moved to you (SLA breach)' : 'New chat assigned to you',
-      body: customer?.name || 'Customer',
-      conversationId,
-    });
-  }
-  if (conv.assigned_user_id && conv.assigned_user_id !== byUserId && conv.assigned_user_id !== toUserId) {
-    await notify([conv.assigned_user_id], {
-      kind: 'unassigned',
-      title: reason === 'sla_breach' ? 'Chat moved away: no reply in time' : 'Chat reassigned',
+      title: reason === 'sla_breach' ? 'You were added to a chat (SLA breach)' : 'You were added to a chat',
       body: customer?.name || 'Customer',
       conversationId,
     });
@@ -102,10 +164,9 @@ async function autoAssign(conversationId, { exclude = [], reason = 'auto' } = {}
   if (!conv || conv.status === 'closed') return null;
 
   const candidates = await availableAgents(exclude);
-  if (conv.assigned_user_id && !exclude.includes(conv.assigned_user_id)
-      && candidates.some((c) => c.id === conv.assigned_user_id)) {
-    return conv.assigned_user_id;
-  }
+  const members = await assigneeIds(conversationId, conv.assigned_user_id);
+  const stillHere = members.find((id) => !exclude.includes(id) && candidates.some((c) => c.id === id));
+  if (stillHere) return stillHere;
   const sticky = await previousOwner(conv.customer_id);
   if (sticky && sticky !== conv.assigned_user_id && candidates.some((c) => c.id === sticky)) {
     await assign(conversationId, sticky, { reason: reason === 'auto' ? 'sticky' : reason });
@@ -120,10 +181,12 @@ async function autoAssign(conversationId, { exclude = [], reason = 'auto' } = {}
 /** When an agent goes offline, chats where a customer is waiting move to someone online. */
 async function handleAgentOffline(userId) {
   const waiting = await q.all(
-    "SELECT id FROM inbox_conversations WHERE assigned_user_id = ? AND status = 'needs_reply'",
-    userId,
+    `SELECT DISTINCT c.id FROM inbox_conversations c
+     LEFT JOIN inbox_conversation_assignees a ON a.conversation_id = c.id
+     WHERE c.status = 'needs_reply' AND (c.assigned_user_id = ? OR a.user_id = ?)`,
+    userId, userId,
   );
   for (const c of waiting) await autoAssign(c.id, { exclude: [userId], reason: 'agent_offline' });
 }
 
-module.exports = { availableAgents, assign, autoAssign, handleAgentOffline };
+module.exports = { availableAgents, assign, addAssignee, removeAssignee, assigneeIds, listAssignees, autoAssign, handleAgentOffline };

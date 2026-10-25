@@ -9,8 +9,8 @@ import {
 } from 'lucide-react';
 import { useInbox, useInboxEvents } from '../inbox/InboxContext';
 import { inboxApi, errorMessage } from '../inbox/api';
-import { CHANNELS, VIEWS, STATUS_LABELS, PRESENCE, CONVERSATION_TYPES, timeAgo, fmtTime, fmtDateTime, slaInfo } from '../inbox/utils';
-import { Avatar, ChannelDot, PresenceDot, SlaChip, StageChip, Chip } from '../inbox/ui';
+import { CHANNELS, VIEWS, STATUS_LABELS, CONVERSATION_TYPES, timeAgo, fmtTime, serviceWindow, nextCairoTime } from '../inbox/utils';
+import { Avatar, ChannelDot, PresenceDot, SlaChip, StageChip, Chip, useNow } from '../inbox/ui';
 import Attachment from '../inbox/Attachment';
 import LeadPanel from '../inbox/LeadPanel';
 import Modal from '../components/ui/Modal';
@@ -19,13 +19,15 @@ export default function InboxPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { me, can, presence, setPresence, setViewing, userName, connected } = useInbox();
+  const { me, can, setPresence, setViewing, userName, connected, viewers } = useInbox();
+  const now = useNow(30000);
 
   const activeConvId = searchParams.get('c') ? Number(searchParams.get('c')) : null;
 
   const [activeView, setActiveView] = useState('mine');
   const [activeChannel, setActiveChannel] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchDebounced, setSearchDebounced] = useState('');
   const [showSimulator, setShowSimulator] = useState(false);
   const [showRightPanel, setShowRightPanel] = useState(() => window.innerWidth >= 1024);
   const [messageBody, setMessageBody] = useState('');
@@ -35,6 +37,12 @@ export default function InboxPage() {
   const [showQuickReplies, setShowQuickReplies] = useState(false);
 
   const messagesEndRef = useRef(null);
+  const composerRef = useRef(null);
+
+  useEffect(() => {
+    const t = setTimeout(() => setSearchDebounced(searchQuery.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
 
   // Set viewing conversation for presence socket
   useEffect(() => {
@@ -44,18 +52,23 @@ export default function InboxPage() {
 
   // Fetch conversations list
   const { data: convData, isLoading: loadingConvs, refetch: refetchConvs } = useQuery({
-    queryKey: ['inbox-conversations', activeView, activeChannel, searchQuery],
+    queryKey: ['inbox-conversations', activeView, activeChannel, searchDebounced],
     queryFn: () => inboxApi.get('/conversations', {
       view: activeView,
-      channel_kind: activeChannel || undefined,
-      q: searchQuery || undefined,
-      limit: 60,
+      channel: activeChannel || undefined,
+      search: searchDebounced || undefined,
     }),
     refetchInterval: 15000,
   });
 
   const conversations = convData?.items || [];
   const counts = convData?.counts || {};
+  const viewerMap = Object.keys(viewers || {}).length ? viewers : (convData?.viewers || {});
+
+  const othersOn = (conversationId) => {
+    const ids = viewerMap?.[conversationId] || viewerMap?.[String(conversationId)] || [];
+    return ids.filter((id) => Number(id) !== Number(me?.user?.id));
+  };
 
   // Fetch active conversation detail & messages
   const { data: currentConv, refetch: refetchCurrentConv } = useQuery({
@@ -71,7 +84,7 @@ export default function InboxPage() {
     queryFn: () => inboxApi.get('/admin/quick-replies'),
     enabled: Boolean(me),
   });
-  const replies = Array.isArray(quickReplies) ? quickReplies : [];
+  const replies = (Array.isArray(quickReplies) && quickReplies.length ? quickReplies : null) || me?.templates || [];
 
   // Listen for realtime events
   useInboxEvents((type, data) => {
@@ -85,10 +98,10 @@ export default function InboxPage() {
 
   // Scroll chat feed to bottom when messages update
   useEffect(() => {
-    if (currentConv?.messages?.length) {
+    if (currentConv?.messages?.length || currentConv?.notes?.length) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [currentConv?.messages]);
+  }, [currentConv?.messages, currentConv?.notes]);
 
   const selectConversation = (id) => {
     setSearchParams({ c: id });
@@ -97,6 +110,7 @@ export default function InboxPage() {
   const handleSendMessage = async (e) => {
     e?.preventDefault();
     if (!messageBody.trim() || !activeConvId || sending) return;
+    if (!isNoteMode && replyBlocked) return;
     setSending(true);
     try {
       if (isNoteMode) {
@@ -148,13 +162,117 @@ export default function InboxPage() {
     if (!activeConvId) return;
     try {
       await inboxApi.post(`/conversations/${activeConvId}/assign`, { user_id: userId ? Number(userId) : null });
-      toast.success('Assignment updated');
+      toast.success('Added to this chat');
       refetchCurrentConv();
       refetchConvs();
     } catch (err) {
       toast.error(errorMessage(err));
     }
   };
+
+  const claimConversation = async (id) => {
+    if (!me?.user?.id) return;
+    try {
+      await inboxApi.post(`/conversations/${id}/assign`, { user_id: me.user.id });
+      toast.success('You are on this chat');
+      refetchCurrentConv();
+      refetchConvs();
+    } catch (err) {
+      toast.error(errorMessage(err));
+    }
+  };
+
+  const removeAssignee = async (id, userId) => {
+    try {
+      await inboxApi.post(`/conversations/${id}/assign`, { user_id: userId, remove: true });
+      toast.success('Removed from this chat');
+      refetchCurrentConv();
+      refetchConvs();
+    } catch (err) {
+      toast.error(errorMessage(err));
+    }
+  };
+
+  const peopleOn = (conv) => {
+    if (!conv) return [];
+    let rows = [];
+    if (Array.isArray(conv.assignees)) rows = conv.assignees;
+    else if (typeof conv.assignees === 'string') {
+      try { rows = JSON.parse(conv.assignees); } catch { rows = []; }
+    }
+    if (rows.length) return rows;
+    if (conv.assigned_user_id) return [{ id: conv.assigned_user_id, name: conv.assigned_name || userName(conv.assigned_user_id) }];
+    return [];
+  };
+
+  const snoozeUntilMorning = async () => {
+    if (!activeConvId) return;
+    try {
+      await inboxApi.post(`/conversations/${activeConvId}/status`, {
+        status: 'snoozed',
+        snooze_until: nextCairoTime(me?.rules?.business_start || '11:00'),
+      });
+      toast.success('Snoozed until the team is back');
+      refetchCurrentConv();
+      refetchConvs();
+    } catch (err) {
+      toast.error(errorMessage(err));
+    }
+  };
+
+  const thread = useMemo(() => {
+    const messages = (currentConv?.messages || []).map((m) => ({ ...m, kind: 'message' }));
+    const notes = (currentConv?.notes || []).map((n) => ({
+      id: `note-${n.id}`,
+      kind: 'note',
+      sender_type: 'note',
+      user_id: n.user_id,
+      user_name: n.user_name,
+      body: n.body,
+      created_at: n.created_at,
+    }));
+    return [...messages, ...notes].sort((a, b) => Number(a.created_at) - Number(b.created_at));
+  }, [currentConv]);
+
+  const activeConversation = currentConv?.conversation;
+  const windowInfo = serviceWindow(activeConversation, now);
+  const replyBlocked = Boolean(activeConversation) && !isNoteMode && Number(currentConv?.customer?.is_simulated) !== 1 && !windowInfo.open;
+  const slashQuery = messageBody.startsWith('/') ? messageBody.slice(1).trim().toLowerCase() : null;
+  const visibleReplies = slashQuery === null
+    ? replies
+    : replies.filter((qr) => {
+      const hay = `${qr.shortcut || ''} ${qr.title || ''}`.toLowerCase();
+      return !slashQuery || hay.includes(slashQuery);
+    });
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || showSimulator) return;
+      const tag = document.activeElement?.tagName;
+      const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || document.activeElement?.isContentEditable;
+      if (typing) return;
+      if (e.key === 'j' || e.key === 'k') {
+        e.preventDefault();
+        const down = e.key === 'j';
+        const idx = conversations.findIndex((c) => c.id === activeConvId);
+        const next = down
+          ? conversations[idx < 0 ? 0 : Math.min(conversations.length - 1, idx + 1)]
+          : conversations[idx <= 0 ? 0 : idx - 1];
+        if (next) selectConversation(next.id);
+      } else if (e.key === 'n' && activeConvId) {
+        setIsNoteMode((v) => !v);
+        composerRef.current?.focus();
+      } else if (e.key === '/' && activeConvId) {
+        e.preventDefault();
+        setIsNoteMode(false);
+        setShowQuickReplies(true);
+        setMessageBody((body) => (body.startsWith('/') ? body : '/'));
+        composerRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [conversations, activeConvId, showSimulator]);
 
   return (
     <div className="flex flex-col overflow-hidden bg-slate-50 font-sans max-lg:h-[calc(100dvh-11.5rem)] lg:h-[calc(100dvh-8rem)]">
@@ -201,6 +319,7 @@ export default function InboxPage() {
             ))}
           </div>
 
+          {me?.simulator && (
           <button
             type="button"
             onClick={() => setShowSimulator(true)}
@@ -209,6 +328,7 @@ export default function InboxPage() {
             <Smartphone className="w-4 h-4" />
             Simulate Message
           </button>
+          )}
 
           {can('analytics.team') && (
             <Link
@@ -321,6 +441,10 @@ export default function InboxPage() {
             ) : (
               conversations.map((conv) => {
                 const isActive = conv.id === activeConvId;
+                const waiting = conv.status === 'needs_reply';
+                const overdue = waiting && conv.sla_due_at && Number(conv.sla_due_at) <= now && !(conv.sla_start_at && now < Number(conv.sla_start_at));
+                const rowWindow = serviceWindow(conv, now);
+                const watching = othersOn(conv.id);
                 return (
                   <div
                     key={conv.id}
@@ -328,8 +452,10 @@ export default function InboxPage() {
                     className={`p-3 cursor-pointer transition-all hover:bg-slate-50 relative border-l-4 ${
                       isActive
                         ? 'bg-blue-50/70 border-l-soul-blue'
-                        : conv.unread_count > 0
-                        ? 'bg-amber-50/40 border-l-amber-500 font-medium'
+                        : overdue
+                        ? 'bg-rose-50/70 border-l-rose-500'
+                        : waiting || conv.unread_count > 0
+                        ? 'bg-amber-50/40 border-l-amber-500'
                         : 'border-l-transparent'
                     }`}
                   >
@@ -342,7 +468,7 @@ export default function InboxPage() {
                             {conv.customer_name || 'Guest User'}
                           </h3>
                           <span className="text-[10px] text-slate-400 flex-shrink-0">
-                            {timeAgo(conv.last_message_at)}
+                            {timeAgo(conv.last_message_at, now)}
                           </span>
                         </div>
 
@@ -352,12 +478,24 @@ export default function InboxPage() {
 
                         <div className="flex items-center justify-between gap-1 mt-2">
                           <div className="flex items-center gap-1 flex-wrap">
-                            {conv.lead_stage ? (
-                              <StageChip stageKey={conv.lead_stage} />
+                            {conv.stage_key ? (
+                              <StageChip stageKey={conv.stage_key} />
                             ) : (
                               <Chip className="bg-slate-100 text-slate-600">{CONVERSATION_TYPES[conv.type] || conv.type}</Chip>
                             )}
-                            <SlaChip conversation={conv} now={Date.now()} />
+                            {conv.temperature === 'hot' ? <Chip className="bg-rose-100 text-rose-700">Hot</Chip> : null}
+                            <SlaChip conversation={conv} now={now} />
+                            {rowWindow.urgent ? <Chip className={`border ${rowWindow.cls}`}>{rowWindow.text}</Chip> : null}
+                            <Chip className={peopleOn(conv).length ? 'bg-slate-100 text-slate-600' : 'bg-orange-50 text-orange-700'}>
+                              {peopleOn(conv).length
+                                ? peopleOn(conv).map((p) => (Number(p.id) === Number(me?.user?.id) ? 'You' : p.name)).join(', ')
+                                : 'Unassigned'}
+                            </Chip>
+                            {watching.length > 0 ? (
+                              <Chip className="bg-amber-50 text-amber-800" title="Someone else has this chat open">
+                                {watching.map((id) => userName(id)).join(', ')}
+                              </Chip>
+                            ) : null}
                           </div>
 
                           {conv.unread_count > 0 && (
@@ -410,16 +548,33 @@ export default function InboxPage() {
                         {currentConv.conversation.phone || currentConv.conversation.email || `#${currentConv.conversation.id}`}
                       </span>
                     </div>
-                    <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5">
-                      <span>Assigned to: <strong>{userName(currentConv.conversation.assigned_user_id)}</strong></span>
-                      <span>·</span>
-                      <SlaChip conversation={currentConv.conversation} now={Date.now()} />
+                    <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5 flex-wrap">
+                      <span>On this chat: <strong>{peopleOn(currentConv.conversation).map((p) => p.name).join(', ') || 'nobody yet'}</strong></span>
+                      <SlaChip conversation={currentConv.conversation} now={now} />
+                      <Chip className={`border ${windowInfo.cls}`}>{windowInfo.text}</Chip>
                     </div>
                   </div>
                 </div>
 
                 {/* Status & Assignment Actions */}
                 <div className="flex items-center gap-2 flex-shrink-0">
+                  {!peopleOn(currentConv.conversation).some((p) => Number(p.id) === Number(me?.user?.id)) && (
+                    <button
+                      type="button"
+                      onClick={() => claimConversation(currentConv.conversation.id)}
+                      className="px-2.5 py-1.5 rounded-lg bg-soul-blue text-white text-xs font-bold"
+                    >
+                      {peopleOn(currentConv.conversation).length ? 'Join chat' : 'Take chat'}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={snoozeUntilMorning}
+                    className="px-2.5 py-1.5 rounded-lg bg-white text-slate-700 text-xs font-medium border border-slate-200"
+                    title="Bring this chat back at 11:00 Cairo time"
+                  >
+                    Snooze till 11
+                  </button>
                   {/* Status Dropdown */}
                   <select
                     value={currentConv.conversation.status}
@@ -431,17 +586,37 @@ export default function InboxPage() {
                     ))}
                   </select>
 
-                  {/* Assignee Dropdown */}
-                  <select
-                    value={currentConv.conversation.assigned_user_id || ''}
-                    onChange={(e) => handleAssign(e.target.value)}
-                    className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-700 focus:outline-none"
-                  >
-                    <option value="">Unassigned</option>
-                    {(me?.users || []).map((u) => (
-                      <option key={u.id} value={u.id}>{u.name}</option>
+                  <div className="flex items-center gap-1 max-w-[16rem] flex-wrap justify-end">
+                    {peopleOn(currentConv.conversation).map((p) => (
+                      <span key={p.id} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-700">
+                        {Number(p.id) === Number(me?.user?.id) ? 'You' : p.name}
+                        {(can('conv.assign') || Number(p.id) === Number(me?.user?.id)) && (
+                          <button
+                            type="button"
+                            className="text-slate-400 hover:text-rose-600"
+                            aria-label={`Remove ${p.name}`}
+                            onClick={() => removeAssignee(currentConv.conversation.id, p.id)}
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        )}
+                      </span>
                     ))}
-                  </select>
+                    {can('conv.assign') && (
+                      <select
+                        value=""
+                        onChange={(e) => { if (e.target.value) handleAssign(e.target.value); }}
+                        className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 font-medium text-slate-700 focus:outline-none"
+                      >
+                        <option value="">Add staff</option>
+                        {(me?.users || [])
+                          .filter((u) => u.active !== 0 && !peopleOn(currentConv.conversation).some((p) => Number(p.id) === Number(u.id)))
+                          .map((u) => (
+                            <option key={u.id} value={u.id}>{u.name}</option>
+                          ))}
+                      </select>
+                    )}
+                  </div>
 
                   <button
                     type="button"
@@ -456,23 +631,30 @@ export default function InboxPage() {
                 </div>
               </div>
 
+              {othersOn(currentConv.conversation.id).length > 0 && (
+                <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-xs font-medium text-amber-900">
+                  {othersOn(currentConv.conversation.id).map((id) => userName(id)).join(', ')} {othersOn(currentConv.conversation.id).length === 1 ? 'is' : 'are'} also in this chat. Check before you reply.
+                </div>
+              )}
+
               {/* Chat Message History Stream */}
               <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                {currentConv.messages?.length === 0 ? (
+                {thread.length === 0 ? (
                   <div className="p-12 text-center text-xs text-slate-400">No messages in this chat yet.</div>
                 ) : (
-                  currentConv.messages.map((msg) => {
-                    const isNote = msg.sender_type === 'note' || Boolean(msg.user_id && !msg.direction);
+                  thread.map((msg) => {
+                    const isNote = msg.sender_type === 'note' || msg.kind === 'note';
                     const isInbound = msg.direction === 'in';
-                    const isOutbound = msg.direction === 'out';
                     const isAi = msg.sender_type === 'ai';
+                    const isScript = msg.sender_type === 'auto';
+                    const isExternal = msg.sender_type === 'external';
 
                     if (isNote) {
                       return (
                         <div key={msg.id} className="mx-auto max-w-lg bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-3 text-xs shadow-sm space-y-1">
                           <div className="flex items-center justify-between text-[11px] font-bold text-amber-700">
                             <span className="flex items-center gap-1">
-                              <Lock className="w-3 h-3" /> Internal Staff Note — {userName(msg.user_id)}
+                              <Lock className="w-3 h-3" /> Internal Staff Note — {msg.user_name || userName(msg.user_id)}
                             </span>
                             <span>{fmtTime(msg.created_at)}</span>
                           </div>
@@ -490,6 +672,8 @@ export default function InboxPage() {
                           className={`max-w-xl rounded-2xl p-3 text-xs shadow-sm space-y-1.5 ${
                             isInbound
                               ? 'bg-white text-slate-800 rounded-tl-sm border border-slate-200'
+                              : isScript
+                              ? 'bg-slate-700 text-white rounded-tr-sm'
                               : isAi
                               ? 'bg-indigo-600 text-white rounded-tr-sm'
                               : 'bg-soul-blue text-white rounded-tr-sm'
@@ -497,7 +681,15 @@ export default function InboxPage() {
                         >
                           <div className={`flex items-center justify-between gap-4 text-[10px] ${isInbound ? 'text-slate-400' : 'text-white/70'}`}>
                             <span className="font-semibold">
-                              {isInbound ? currentConv.conversation.customer_name : isAi ? '🤖 AI Assistant' : userName(msg.user_id)}
+                              {isInbound
+                                ? currentConv.conversation.customer_name
+                                : isScript
+                                ? 'After-hours script'
+                                : isAi
+                                ? 'AI draft'
+                                : isExternal
+                                ? 'Sent outside the inbox'
+                                : (msg.user_name || userName(msg.user_id))}
                             </span>
                             <span>{fmtTime(msg.created_at)}</span>
                           </div>
@@ -505,6 +697,9 @@ export default function InboxPage() {
                           <p className="whitespace-pre-wrap leading-relaxed text-xs">
                             {msg.body}
                           </p>
+                          {msg.delivery_status === 'failed' && (
+                            <p className="text-[10px] font-semibold text-rose-100">Not delivered{msg.error ? `: ${msg.error}` : ''}</p>
+                          )}
 
                           {(Array.isArray(msg.attachments) ? msg.attachments : []).map((attachment, index) => (
                             <Attachment key={`${msg.id}-${index}`} message={msg} index={index} attachment={attachment} />
@@ -518,7 +713,12 @@ export default function InboxPage() {
               </div>
 
               {/* Message Composer & Action Controls */}
-              <div className="bg-white border-t border-slate-200 p-3 shadow-lg flex-shrink-0">
+              <div className={`border-t p-3 shadow-lg flex-shrink-0 ${replyBlocked ? 'bg-rose-50 border-rose-200' : 'bg-white border-slate-200'}`}>
+                {replyBlocked && (
+                  <p className="mb-2 text-xs font-medium text-rose-800">
+                    The 24-hour window is closed. A free reply will not send until the customer writes again. Internal notes still save.
+                  </p>
+                )}
                 {/* Composer Toolbar */}
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs">
@@ -543,6 +743,7 @@ export default function InboxPage() {
                   </div>
 
                   <div className="flex items-center gap-2">
+                    {me?.aiAvailable && (
                     <button
                       type="button"
                       onClick={handleAiSuggest}
@@ -552,6 +753,7 @@ export default function InboxPage() {
                       <Sparkles className="w-3.5 h-3.5" />
                       {aiSuggesting ? 'Thinking…' : 'AI Draft Response'}
                     </button>
+                    )}
 
                     {replies.length > 0 && (
                       <button
@@ -566,9 +768,9 @@ export default function InboxPage() {
                 </div>
 
                 {/* Quick Replies Dropdown Popover */}
-                {showQuickReplies && (
+                {(showQuickReplies || slashQuery !== null) && visibleReplies.length > 0 && (
                   <div className="mb-2 p-2 bg-slate-50 border border-slate-200 rounded-xl max-h-36 overflow-y-auto divide-y divide-slate-100 text-xs">
-                    {replies.map((qr) => (
+                    {visibleReplies.map((qr) => (
                       <div
                         key={qr.id}
                         onClick={() => {
@@ -587,10 +789,17 @@ export default function InboxPage() {
                 {/* Main Input Form */}
                 <form onSubmit={handleSendMessage} className="flex items-end gap-2">
                   <textarea
+                    ref={composerRef}
                     rows={2}
                     value={messageBody}
                     onChange={(e) => setMessageBody(e.target.value)}
                     onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey && slashQuery !== null && visibleReplies[0]) {
+                        e.preventDefault();
+                        setMessageBody(visibleReplies[0].body);
+                        setShowQuickReplies(false);
+                        return;
+                      }
                       if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
                         handleSendMessage();
@@ -598,8 +807,10 @@ export default function InboxPage() {
                     }}
                     placeholder={
                       isNoteMode
-                        ? 'Type an internal note visible only to staff…'
-                        : `Reply to ${currentConv.conversation.customer_name || 'customer'}… (Press Enter to send)`
+                        ? 'Internal note. Type @Name to mention a teammate.'
+                        : replyBlocked
+                        ? 'Free replies are closed. Switch to an internal note, or wait for the customer.'
+                        : `Reply to ${currentConv.conversation.customer_name || 'customer'}… Enter sends, / opens saved replies`
                     }
                     className={`flex-1 p-2.5 text-xs bg-slate-50 border rounded-xl focus:outline-none focus:ring-2 resize-none ${
                       isNoteMode
@@ -610,7 +821,7 @@ export default function InboxPage() {
 
                   <button
                     type="submit"
-                    disabled={sending || !messageBody.trim()}
+                    disabled={sending || !messageBody.trim() || replyBlocked}
                     className={`px-4 py-3 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow transition-all ${
                       isNoteMode
                         ? 'bg-amber-500 hover:bg-amber-600 text-white'
@@ -621,6 +832,7 @@ export default function InboxPage() {
                     {sending ? 'Sending…' : isNoteMode ? 'Save Note' : 'Send'}
                   </button>
                 </form>
+                <p className="mt-2 text-[10px] text-slate-400">J and K move the queue. N switches to a note. / inserts a saved reply.</p>
               </div>
             </>
           ) : (

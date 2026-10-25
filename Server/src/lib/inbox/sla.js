@@ -1,7 +1,7 @@
 const { q, tx, audit } = require('./db');
 const { getSettings, loadSettings } = require('./settings');
 const { isBusinessTime, nextBusinessStart } = require('./hours');
-const { assign, autoAssign, availableAgents, handleAgentOffline } = require('./assignment');
+const { assign, autoAssign, availableAgents, handleAgentOffline, assigneeIds } = require('./assignment');
 const { broadcast, notify, usersWithRoles } = require('./realtime');
 
 /** Called inside the ingest transaction when a customer message arrives. */
@@ -69,7 +69,7 @@ async function wakeSnoozed(now) {
   for (const c of due) {
     await q.run("UPDATE inbox_conversations SET status = 'needs_reply', snooze_until = NULL WHERE id = ?", c.id);
     await audit({ conversationId: c.id, type: 'snooze_ended', at: now });
-    await notify([c.assigned_user_id], { kind: 'snooze', title: 'Snoozed chat is back', conversationId: c.id });
+    await notify(await assigneeIds(c.id, c.assigned_user_id), { kind: 'snooze', title: 'Snoozed chat is back', conversationId: c.id });
     broadcast('conversation', { id: c.id });
   }
 }
@@ -103,7 +103,7 @@ async function checkTimers(now, s) {
         await q.run('UPDATE inbox_conversations SET sla_warned = 1 WHERE id = ?', conv.id);
         await slaEvent(conv, 'warning', now);
       });
-      await notify([conv.assigned_user_id], { kind: 'sla_warning', title: 'Reply needed soon', body: name, conversationId: conv.id });
+      await notify(await assigneeIds(conv.id, conv.assigned_user_id), { kind: 'sla_warning', title: 'Reply needed soon', body: name, conversationId: conv.id });
       broadcast('conversation', { id: conv.id });
     }
 
@@ -115,7 +115,7 @@ async function checkTimers(now, s) {
         );
         await slaEvent(conv, 'breach', now);
       });
-      await notify([conv.assigned_user_id], { kind: 'sla_breach', title: 'SLA breached', body: name, conversationId: conv.id });
+      await notify(await assigneeIds(conv.id, conv.assigned_user_id), { kind: 'sla_breach', title: 'SLA breached', body: name, conversationId: conv.id });
       let movedTo = null;
       if (s.reassign_on_breach && conv.reassign_count < s.max_auto_reassign) {
         const next = (await availableAgents(conv.assigned_user_id ? [conv.assigned_user_id] : []))[0];
