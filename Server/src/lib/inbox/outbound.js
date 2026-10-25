@@ -69,8 +69,6 @@ async function sendToCustomer(conversationId, { text, attachment, template, send
      VALUES (?,?,?,?,?,?,?,?,?)`,
     conversationId, 'out', senderType, userId, conv.channel_kind, body, attachments ? JSON.stringify(attachments) : null, 'pending', now,
   );
-  broadcast('message', { conversation_id: conversationId });
-
   let externalId = null;
   let error = null;
   try {

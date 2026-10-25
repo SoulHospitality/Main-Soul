@@ -69,9 +69,8 @@ router.get('/conversations', wrap(async (req, res) => {
     const term = String(search).trim().slice(0, 100);
     const like = `%${term.replace(/[%_\\]/g, '\\$&')}%`;
     const digits = term.replace(/\D/g, '');
-    where.push(`(cu.name ILIKE ? OR cu.phone LIKE ? OR c.id = ? OR EXISTS (
-      SELECT 1 FROM inbox_messages m WHERE m.conversation_id = c.id AND m.body ILIKE ?))`);
-    params.push(like, digits ? `%${digits}%` : like, /^\d{1,9}$/.test(term) ? Number(term) : -1, like);
+    where.push('(cu.name ILIKE ? OR cu.phone LIKE ? OR c.id = ?)');
+    params.push(like, digits ? `%${digits}%` : like, /^\d{1,9}$/.test(term) ? Number(term) : -1);
   }
 
   // Customers waiting longest first, then most recent activity.
@@ -79,7 +78,7 @@ router.get('/conversations', wrap(async (req, res) => {
     `${LIST_SELECT} WHERE ${where.join(' AND ')}
      ORDER BY CASE WHEN c.status = 'needs_reply' THEN 0 ELSE 1 END, COALESCE(c.sla_due_at, 9000000000000000) ASC,
               c.last_message_at DESC NULLS LAST
-     LIMIT 300`,
+     LIMIT 80`,
     ...params,
   );
 
@@ -98,62 +97,38 @@ router.get('/conversations', wrap(async (req, res) => {
   res.json({ items: rows, counts, viewers: viewersSnapshot(), now });
 }));
 
-async function timeline(convId) {
-  const rows = await q.all(
-    `SELECT e.id, e.type, e.data_json, e.at, e.user_id, u.name AS user_name FROM inbox_events e
-     LEFT JOIN inbox_users u ON u.id = e.user_id
-     WHERE e.conversation_id = ? OR e.lead_id IN (SELECT id FROM inbox_leads WHERE conversation_id = ?)
-     ORDER BY e.at, e.id LIMIT 500`,
-    convId, convId,
-  );
-  return rows.map((e) => ({ ...e, data: parseJson(e.data_json), data_json: undefined }));
-}
-
 router.get('/conversations/:id', wrap(async (req, res) => {
   const conv = await loadConversation(int(req.params.id), req.inbox);
-  const customer = await q.get('SELECT * FROM inbox_customers WHERE id = ?', conv.customer_id);
-  const messages = await q.all(
-    `SELECT * FROM (
-       SELECT m.*, u.name AS user_name FROM inbox_messages m LEFT JOIN inbox_users u ON u.id = m.user_id
-       WHERE m.conversation_id = ? ORDER BY m.created_at DESC, m.id DESC LIMIT 500
-     ) t ORDER BY created_at, id`,
-    conv.id,
-  );
-  const notes = await q.all(
-    `SELECT n.*, u.name AS user_name FROM inbox_notes n LEFT JOIN inbox_users u ON u.id = n.user_id
-     WHERE n.conversation_id = ? ORDER BY n.created_at`,
-    conv.id,
-  );
-  const leads = await q.all(
-    `SELECT l.*, u.name AS owner_name, un.title AS unit_title, un.unit_number AS unit_number
-     FROM inbox_leads l LEFT JOIN inbox_users u ON u.id = l.owner_user_id
-     LEFT JOIN units un ON un.id = l.unit_id
-     WHERE l.customer_id = ? ORDER BY l.created_at DESC`,
-    conv.customer_id,
-  );
-  const leadIds = leads.map((l) => l.id);
-  const stageHistory = leadIds.length
-    ? await q.all(
-      `SELECT h.*, u.name AS user_name FROM inbox_lead_stage_history h LEFT JOIN inbox_users u ON u.id = h.user_id
-       WHERE h.lead_id = ANY(?::int[]) ORDER BY h.at`,
-      leadIds,
-    )
-    : [];
-  const followUps = await q.all(
-    `SELECT f.*, u.name AS assigned_name FROM inbox_follow_ups f LEFT JOIN inbox_users u ON u.id = f.assigned_user_id
-     WHERE f.conversation_id = ? OR f.lead_id IN (SELECT id FROM inbox_leads WHERE customer_id = ?) ORDER BY f.due_at DESC`,
-    conv.id, conv.customer_id,
-  );
-  const responses = await q.all(
-    `SELECT r.*, u.name AS user_name FROM inbox_responses r LEFT JOIN inbox_users u ON u.id = r.user_id
-     WHERE r.conversation_id = ? ORDER BY r.responded_at`,
-    conv.id,
-  );
-  const otherConversations = await q.all(
-    `SELECT c.id, c.channel_kind, c.status, c.last_message_at, ch.name AS channel_name FROM inbox_conversations c
-     JOIN inbox_channels ch ON ch.id = c.channel_id WHERE c.customer_id = ? AND c.id <> ? ORDER BY c.last_message_at DESC NULLS LAST`,
-    conv.customer_id, conv.id,
-  );
+  const [customer, messageRows, notes, leads, followUps, assignees, channel] = await Promise.all([
+    q.get('SELECT id, name, phone, email, avatar_url, is_simulated FROM inbox_customers WHERE id = ?', conv.customer_id),
+    q.all(
+      `SELECT m.id, m.direction, m.sender_type, m.user_id, m.body, m.attachments_json, m.delivery_status, m.error, m.created_at,
+              u.name AS user_name
+       FROM inbox_messages m LEFT JOIN inbox_users u ON u.id = m.user_id
+       WHERE m.conversation_id = ? ORDER BY m.created_at DESC, m.id DESC LIMIT 120`,
+      conv.id,
+    ),
+    q.all(
+      `SELECT n.id, n.user_id, n.body, n.created_at, u.name AS user_name
+       FROM inbox_notes n LEFT JOIN inbox_users u ON u.id = n.user_id
+       WHERE n.conversation_id = ? ORDER BY n.created_at`,
+      conv.id,
+    ),
+    q.all(
+      `SELECT l.*, u.name AS owner_name, un.title AS unit_title, un.unit_number AS unit_number
+       FROM inbox_leads l LEFT JOIN inbox_users u ON u.id = l.owner_user_id
+       LEFT JOIN units un ON un.id = l.unit_id
+       WHERE l.customer_id = ? ORDER BY l.created_at DESC LIMIT 20`,
+      conv.customer_id,
+    ),
+    q.all(
+      `SELECT f.*, u.name AS assigned_name FROM inbox_follow_ups f LEFT JOIN inbox_users u ON u.id = f.assigned_user_id
+       WHERE f.conversation_id = ? ORDER BY f.due_at DESC LIMIT 30`,
+      conv.id,
+    ),
+    listAssignees(conv.id),
+    q.get('SELECT id, kind, name FROM inbox_channels WHERE id = ?', conv.channel_id),
+  ]);
   res.json({
     conversation: {
       ...conv,
@@ -161,25 +136,16 @@ router.get('/conversations/:id', wrap(async (req, res) => {
       ai_summary: parseJson(conv.ai_summary),
       ad_ref: parseJson(conv.ad_ref_json),
       window: messagingWindow(conv),
-      assignees: await listAssignees(conv.id),
+      assignees,
       ai_json: undefined,
       ad_ref_json: undefined,
     },
-    channel: await q.get('SELECT id, kind, name FROM inbox_channels WHERE id = ?', conv.channel_id),
+    channel,
     customer,
-    identities: await q.all(
-      `SELECT i.channel_kind, i.external_id, i.display_name, i.username, ch.name AS channel_name
-       FROM inbox_customer_identities i JOIN inbox_channels ch ON ch.id = i.channel_id WHERE i.customer_id = ?`,
-      conv.customer_id,
-    ),
-    messages: messages.map((m) => ({ ...m, attachments: parseJson(m.attachments_json, []), attachments_json: undefined })),
+    messages: messageRows.reverse().map((m) => ({ ...m, attachments: parseJson(m.attachments_json, []), attachments_json: undefined })),
     notes,
     leads,
-    stageHistory,
     followUps,
-    responses,
-    otherConversations,
-    timeline: await timeline(conv.id),
     now: Date.now(),
   });
 }));

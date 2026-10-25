@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
@@ -30,14 +30,10 @@ export default function InboxPage() {
   const [searchDebounced, setSearchDebounced] = useState('');
   const [showSimulator, setShowSimulator] = useState(false);
   const [showRightPanel, setShowRightPanel] = useState(() => window.innerWidth >= 1024);
-  const [messageBody, setMessageBody] = useState('');
-  const [isNoteMode, setIsNoteMode] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [aiSuggesting, setAiSuggesting] = useState(false);
-  const [showQuickReplies, setShowQuickReplies] = useState(false);
-
   const messagesEndRef = useRef(null);
   const composerRef = useRef(null);
+  const listRefreshTimer = useRef(null);
+  const threadRefreshTimer = useRef(null);
 
   useEffect(() => {
     const t = setTimeout(() => setSearchDebounced(searchQuery.trim()), 300);
@@ -58,7 +54,9 @@ export default function InboxPage() {
       channel: activeChannel || undefined,
       search: searchDebounced || undefined,
     }),
-    refetchInterval: 15000,
+    refetchInterval: 45000,
+    refetchOnWindowFocus: false,
+    staleTime: 15000,
   });
 
   const conversations = convData?.items || [];
@@ -75,7 +73,9 @@ export default function InboxPage() {
     queryKey: ['inbox-conversation', activeConvId],
     queryFn: () => inboxApi.get(`/conversations/${activeConvId}`),
     enabled: Boolean(activeConvId),
-    refetchInterval: 10000,
+    refetchInterval: 60000,
+    refetchOnWindowFocus: false,
+    staleTime: 10000,
   });
 
   // Fetch quick replies & templates
@@ -89,17 +89,18 @@ export default function InboxPage() {
   // Listen for realtime events
   useInboxEvents((type, data) => {
     if (type === 'message' && data?.conversation_id === activeConvId) {
-      refetchCurrentConv();
+      clearTimeout(threadRefreshTimer.current);
+      threadRefreshTimer.current = setTimeout(() => refetchCurrentConv(), 1500);
     }
     if (type === 'conversation' || type === 'message') {
-      refetchConvs();
+      clearTimeout(listRefreshTimer.current);
+      listRefreshTimer.current = setTimeout(() => refetchConvs(), 1500);
     }
   });
 
-  // Scroll chat feed to bottom when messages update
   useEffect(() => {
     if (currentConv?.messages?.length || currentConv?.notes?.length) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
     }
   }, [currentConv?.messages, currentConv?.notes]);
 
@@ -107,43 +108,61 @@ export default function InboxPage() {
     setSearchParams({ c: id });
   };
 
-  const handleSendMessage = async (e) => {
-    e?.preventDefault();
-    if (!messageBody.trim() || !activeConvId || sending) return;
-    if (!isNoteMode && replyBlocked) return;
-    setSending(true);
-    try {
-      if (isNoteMode) {
-        await inboxApi.post(`/conversations/${activeConvId}/notes`, { body: messageBody.trim() });
-      } else {
-        await inboxApi.post(`/conversations/${activeConvId}/messages`, { text: messageBody.trim() });
-      }
-      setMessageBody('');
-      refetchCurrentConv();
-      refetchConvs();
-    } catch (err) {
-      toast.error(errorMessage(err, 'Failed to send message'));
-    } finally {
-      setSending(false);
+  const handleSendMessage = (text, asNote) => {
+    if (!text || !activeConvId) return;
+    if (!asNote && Number(currentConv?.customer?.is_simulated) !== 1 && !serviceWindow(currentConv?.conversation, Date.now()).open) {
+      toast.error('The 24-hour window is closed');
+      return;
     }
+    const tempId = `local-${Date.now()}`;
+    const stamp = Date.now();
+    const mine = { id: me?.user?.id, name: me?.user?.name };
+    qc.setQueryData(['inbox-conversation', activeConvId], (old) => {
+      if (!old) return old;
+      if (asNote) {
+        return { ...old, notes: [...(old.notes || []), { id: tempId, body: text, user_id: mine.id, user_name: mine.name, created_at: stamp }] };
+      }
+      return {
+        ...old,
+        messages: [...(old.messages || []), {
+          id: tempId, direction: 'out', sender_type: 'agent', body: text, user_id: mine.id, user_name: mine.name,
+          created_at: stamp, delivery_status: 'pending', attachments: [],
+        }],
+      };
+    });
+    const request = asNote
+      ? inboxApi.post(`/conversations/${activeConvId}/notes`, { body: text })
+      : inboxApi.post(`/conversations/${activeConvId}/messages`, { text });
+    request.then((res) => {
+      if (asNote || !res?.message) return;
+      qc.setQueryData(['inbox-conversation', activeConvId], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          messages: (old.messages || []).map((m) => (m.id === tempId
+            ? { ...res.message, user_name: mine.name, attachments: res.message.attachments || [] }
+            : m)),
+        };
+      });
+    }).catch((err) => {
+      qc.setQueryData(['inbox-conversation', activeConvId], (old) => {
+        if (!old) return old;
+        if (asNote) return { ...old, notes: (old.notes || []).filter((n) => n.id !== tempId) };
+        return {
+          ...old,
+          messages: (old.messages || []).map((m) => (m.id === tempId
+            ? { ...m, delivery_status: 'failed', error: errorMessage(err, 'Not sent') }
+            : m)),
+        };
+      });
+      toast.error(errorMessage(err, 'Failed to send message'));
+    });
   };
 
   const handleAiSuggest = async () => {
-    if (!activeConvId || aiSuggesting) return;
-    setAiSuggesting(true);
-    try {
-      const res = await inboxApi.post(`/conversations/${activeConvId}/ai-suggest`);
-      if (res?.suggestion) {
-        setMessageBody(res.suggestion);
-        toast.success('AI draft generated!');
-      } else {
-        toast.error('No AI suggestion generated');
-      }
-    } catch (err) {
-      toast.error(errorMessage(err, 'AI suggest failed'));
-    } finally {
-      setAiSuggesting(false);
-    }
+    if (!activeConvId) return '';
+    const res = await inboxApi.post(`/conversations/${activeConvId}/ai-suggest`);
+    return res?.suggestion || '';
   };
 
   const handleUpdateStatus = async (status) => {
@@ -236,14 +255,6 @@ export default function InboxPage() {
 
   const activeConversation = currentConv?.conversation;
   const windowInfo = serviceWindow(activeConversation, now);
-  const replyBlocked = Boolean(activeConversation) && !isNoteMode && Number(currentConv?.customer?.is_simulated) !== 1 && !windowInfo.open;
-  const slashQuery = messageBody.startsWith('/') ? messageBody.slice(1).trim().toLowerCase() : null;
-  const visibleReplies = slashQuery === null
-    ? replies
-    : replies.filter((qr) => {
-      const hay = `${qr.shortcut || ''} ${qr.title || ''}`.toLowerCase();
-      return !slashQuery || hay.includes(slashQuery);
-    });
 
   useEffect(() => {
     const onKey = (e) => {
@@ -260,14 +271,10 @@ export default function InboxPage() {
           : conversations[idx <= 0 ? 0 : idx - 1];
         if (next) selectConversation(next.id);
       } else if (e.key === 'n' && activeConvId) {
-        setIsNoteMode((v) => !v);
-        composerRef.current?.focus();
+        composerRef.current?.toggleNote();
       } else if (e.key === '/' && activeConvId) {
         e.preventDefault();
-        setIsNoteMode(false);
-        setShowQuickReplies(true);
-        setMessageBody((body) => (body.startsWith('/') ? body : '/'));
-        composerRef.current?.focus();
+        composerRef.current?.openReplies();
       }
     };
     window.addEventListener('keydown', onKey);
@@ -697,8 +704,11 @@ export default function InboxPage() {
                           <p className="whitespace-pre-wrap leading-relaxed text-xs">
                             {msg.body}
                           </p>
+                          {msg.delivery_status === 'pending' && (
+                            <p className={`text-[10px] ${isInbound ? 'text-slate-400' : 'text-white/70'}`}>Sending…</p>
+                          )}
                           {msg.delivery_status === 'failed' && (
-                            <p className="text-[10px] font-semibold text-rose-100">Not delivered{msg.error ? `: ${msg.error}` : ''}</p>
+                            <p className={`text-[10px] font-semibold ${isInbound ? 'text-rose-600' : 'text-rose-100'}`}>Not delivered{msg.error ? `: ${msg.error}` : ''}</p>
                           )}
 
                           {(Array.isArray(msg.attachments) ? msg.attachments : []).map((attachment, index) => (
@@ -712,128 +722,17 @@ export default function InboxPage() {
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* Message Composer & Action Controls */}
-              <div className={`border-t p-3 shadow-lg flex-shrink-0 ${replyBlocked ? 'bg-rose-50 border-rose-200' : 'bg-white border-slate-200'}`}>
-                {replyBlocked && (
-                  <p className="mb-2 text-xs font-medium text-rose-800">
-                    The 24-hour window is closed. A free reply will not send until the customer writes again. Internal notes still save.
-                  </p>
-                )}
-                {/* Composer Toolbar */}
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs">
-                    <button
-                      type="button"
-                      onClick={() => setIsNoteMode(false)}
-                      className={`px-3 py-1 rounded-md font-medium transition-all ${
-                        !isNoteMode ? 'bg-white text-soul-blue shadow-sm' : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      Reply to Customer
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsNoteMode(true)}
-                      className={`px-3 py-1 rounded-md font-medium transition-all ${
-                        isNoteMode ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      🔒 Internal Note
-                    </button>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    {me?.aiAvailable && (
-                    <button
-                      type="button"
-                      onClick={handleAiSuggest}
-                      disabled={aiSuggesting}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs font-semibold border border-indigo-200 transition-colors"
-                    >
-                      <Sparkles className="w-3.5 h-3.5" />
-                      {aiSuggesting ? 'Thinking…' : 'AI Draft Response'}
-                    </button>
-                    )}
-
-                    {replies.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setShowQuickReplies(!showQuickReplies)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 text-xs font-medium border border-slate-200 transition-colors"
-                      >
-                        ⚡ Quick Replies
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Quick Replies Dropdown Popover */}
-                {(showQuickReplies || slashQuery !== null) && visibleReplies.length > 0 && (
-                  <div className="mb-2 p-2 bg-slate-50 border border-slate-200 rounded-xl max-h-36 overflow-y-auto divide-y divide-slate-100 text-xs">
-                    {visibleReplies.map((qr) => (
-                      <div
-                        key={qr.id}
-                        onClick={() => {
-                          setMessageBody(qr.body);
-                          setShowQuickReplies(false);
-                        }}
-                        className="py-1.5 px-2 hover:bg-white cursor-pointer rounded transition-colors flex items-center justify-between"
-                      >
-                        <span className="font-bold text-slate-800">{qr.title || qr.shortcut}</span>
-                        <span className="text-slate-400 truncate max-w-xs">{qr.body}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Main Input Form */}
-                <form onSubmit={handleSendMessage} className="flex items-end gap-2">
-                  <textarea
-                    ref={composerRef}
-                    rows={2}
-                    value={messageBody}
-                    onChange={(e) => setMessageBody(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey && slashQuery !== null && visibleReplies[0]) {
-                        e.preventDefault();
-                        setMessageBody(visibleReplies[0].body);
-                        setShowQuickReplies(false);
-                        return;
-                      }
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSendMessage();
-                      }
-                    }}
-                    placeholder={
-                      isNoteMode
-                        ? 'Internal note. Type @Name to mention a teammate.'
-                        : replyBlocked
-                        ? 'Free replies are closed. Switch to an internal note, or wait for the customer.'
-                        : `Reply to ${currentConv.conversation.customer_name || 'customer'}… Enter sends, / opens saved replies`
-                    }
-                    className={`flex-1 p-2.5 text-xs bg-slate-50 border rounded-xl focus:outline-none focus:ring-2 resize-none ${
-                      isNoteMode
-                        ? 'border-amber-300 focus:ring-amber-400/30 bg-amber-50/20'
-                        : 'border-slate-200 focus:ring-soul-blue/20'
-                    }`}
-                  />
-
-                  <button
-                    type="submit"
-                    disabled={sending || !messageBody.trim() || replyBlocked}
-                    className={`px-4 py-3 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow transition-all ${
-                      isNoteMode
-                        ? 'bg-amber-500 hover:bg-amber-600 text-white'
-                        : 'bg-soul-blue hover:bg-soul-blue-dark text-white'
-                    } disabled:opacity-50`}
-                  >
-                    <Send className="w-4 h-4" />
-                    {sending ? 'Sending…' : isNoteMode ? 'Save Note' : 'Send'}
-                  </button>
-                </form>
-                <p className="mt-2 text-[10px] text-slate-400">J and K move the queue. N switches to a note. / inserts a saved reply.</p>
-              </div>
+              <ChatComposer
+                ref={composerRef}
+                conversationId={activeConvId}
+                customerName={currentConv.conversation.customer_name}
+                windowOpen={windowInfo.open}
+                simulated={Number(currentConv.customer?.is_simulated) === 1}
+                replies={replies}
+                aiAvailable={Boolean(me?.aiAvailable)}
+                onSend={handleSendMessage}
+                onSuggest={handleAiSuggest}
+              />
             </>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
@@ -887,6 +786,136 @@ export default function InboxPage() {
     </div>
   );
 }
+
+const ChatComposer = forwardRef(function ChatComposer({
+  conversationId, customerName, windowOpen, simulated, replies, aiAvailable, onSend, onSuggest,
+}, ref) {
+  const [body, setBody] = useState('');
+  const [note, setNote] = useState(false);
+  const [openReplies, setOpenReplies] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
+  const inputRef = useRef(null);
+  const blocked = !note && !simulated && !windowOpen;
+  const slash = body.startsWith('/') ? body.slice(1).trim().toLowerCase() : null;
+  const matches = slash === null
+    ? replies
+    : replies.filter((qr) => `${qr.shortcut || ''} ${qr.title || ''}`.toLowerCase().includes(slash));
+
+  useEffect(() => {
+    setBody('');
+    setNote(false);
+    setOpenReplies(false);
+  }, [conversationId]);
+
+  useImperativeHandle(ref, () => ({
+    toggleNote() {
+      setNote((v) => !v);
+      inputRef.current?.focus();
+    },
+    openReplies() {
+      setNote(false);
+      setOpenReplies(true);
+      setBody((value) => (value.startsWith('/') ? value : '/'));
+      inputRef.current?.focus();
+    },
+  }), []);
+
+  const submit = (event) => {
+    event?.preventDefault();
+    const text = body.trim();
+    if (!text || blocked) return;
+    setBody('');
+    setOpenReplies(false);
+    onSend(text, note);
+  };
+
+  return (
+    <div className={`border-t p-3 shadow-lg flex-shrink-0 ${blocked ? 'bg-rose-50 border-rose-200' : 'bg-white border-slate-200'}`}>
+      {blocked && (
+        <p className="mb-2 text-xs font-medium text-rose-800">
+          The 24-hour window is closed. A free reply will not send until the customer writes again. Internal notes still save.
+        </p>
+      )}
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs">
+          <button type="button" onClick={() => setNote(false)} className={`px-3 py-1 rounded-md font-medium ${!note ? 'bg-white text-soul-blue shadow-sm' : 'text-slate-600'}`}>Reply to Customer</button>
+          <button type="button" onClick={() => setNote(true)} className={`px-3 py-1 rounded-md font-medium ${note ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-600'}`}>Internal Note</button>
+        </div>
+        <div className="flex items-center gap-2">
+          {aiAvailable && (
+            <button
+              type="button"
+              disabled={suggesting}
+              onClick={async () => {
+                setSuggesting(true);
+                try {
+                  const suggestion = await onSuggest();
+                  if (suggestion) setBody(suggestion);
+                  else toast.error('No AI suggestion generated');
+                } catch (err) {
+                  toast.error(errorMessage(err, 'AI suggest failed'));
+                } finally {
+                  setSuggesting(false);
+                }
+              }}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 text-xs font-semibold border border-indigo-200"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              {suggesting ? 'Thinking…' : 'AI Draft Response'}
+            </button>
+          )}
+          {replies.length > 0 && (
+            <button type="button" onClick={() => setOpenReplies((v) => !v)} className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-medium border border-slate-200">
+              Quick Replies
+            </button>
+          )}
+        </div>
+      </div>
+      {(openReplies || slash !== null) && matches.length > 0 && (
+        <div className="mb-2 p-2 bg-slate-50 border border-slate-200 rounded-xl max-h-36 overflow-y-auto divide-y divide-slate-100 text-xs">
+          {matches.map((qr) => (
+            <button
+              key={qr.id}
+              type="button"
+              onClick={() => { setBody(qr.body); setOpenReplies(false); inputRef.current?.focus(); }}
+              className="w-full py-1.5 px-2 hover:bg-white rounded text-left flex items-center justify-between"
+            >
+              <span className="font-bold text-slate-800">{qr.title || qr.shortcut}</span>
+              <span className="text-slate-400 truncate max-w-xs">{qr.body}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <form onSubmit={submit} className="flex items-end gap-2">
+        <textarea
+          ref={inputRef}
+          rows={2}
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey && slash !== null && matches[0]) {
+              e.preventDefault();
+              setBody(matches[0].body);
+              setOpenReplies(false);
+              return;
+            }
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              submit();
+            }
+          }}
+          placeholder={note ? 'Internal note. Type @Name to mention a teammate.' : blocked ? 'Free replies are closed. Switch to an internal note.' : `Reply to ${customerName || 'customer'}… Enter sends`}
+          className={`flex-1 p-2.5 text-xs bg-slate-50 border rounded-xl focus:outline-none focus:ring-2 resize-none ${note ? 'border-amber-300 focus:ring-amber-400/30 bg-amber-50/20' : 'border-slate-200 focus:ring-soul-blue/20'}`}
+        />
+        <button type="submit" disabled={!body.trim() || blocked} className={`px-4 py-3 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow disabled:opacity-50 ${note ? 'bg-amber-500 text-white' : 'bg-soul-blue text-white'}`}>
+          <Send className="w-4 h-4" />
+          {note ? 'Save Note' : 'Send'}
+        </button>
+      </form>
+      <p className="mt-2 text-[10px] text-slate-400">J and K move the queue. N switches to a note. / inserts a saved reply.</p>
+    </div>
+  );
+});
 
 function SimulatorModal({ open, onClose, onSimulated }) {
   const [kind, setKind] = useState('whatsapp');
