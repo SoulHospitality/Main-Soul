@@ -758,6 +758,25 @@ tr.cancelled-row td span[class*="inline-flex"] {
   }
 }
 
+/* Inbox fills the space under the PMS header and, on a phone, above the dock. */
+.inbox-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  height: calc(100dvh - 4rem - 4.6rem - 1.5rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+}
+@media (min-width: 640px) and (max-width: 1023px) {
+  .inbox-shell {
+    height: calc(100dvh - 4rem - 4.6rem - 2rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  }
+}
+@media (min-width: 1024px) {
+  .inbox-shell {
+    height: calc(100dvh - 4rem - 4rem);
+  }
+}
+
 .pms-dock {
   position: fixed;
   inset-inline: 0;

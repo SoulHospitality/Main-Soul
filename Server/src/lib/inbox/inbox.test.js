@@ -9,6 +9,7 @@ const { messagingWindow } = require('./outbound');
 const { verifyMetaSignature, encrypt, decrypt } = require('./security');
 const { can, permissionsFor } = require('./permissions');
 const { scrub, PRICE_OR_PROMISE } = require('./ai');
+const { fillPlaceholders } = require('./templates');
 
 test('toPg numbers placeholders and leaves quoted question marks alone', () => {
   assert.equal(toPg('SELECT ? , ?'), 'SELECT $1 , $2');
@@ -118,6 +119,15 @@ test('inbox permissions by role', () => {
   assert.equal(can({ role: 'agent' }, 'conv.view_all'), false);
   assert.equal(can(null, 'conv.view_all'), false);
   assert.ok(permissionsFor({ role: 'admin' }).includes('simulator'));
+});
+
+test('saved replies insert the agent and guest names', () => {
+  const body = 'أهلاً بيك في Soul Hospitality 🌊 معاك {{agent_name}}. أهلاً {{ customer_name }}';
+  assert.equal(
+    fillPlaceholders(body, { agentName: 'Hazem', customerName: 'Sara' }),
+    'أهلاً بيك في Soul Hospitality 🌊 معاك Hazem. أهلاً Sara',
+  );
+  assert.equal(fillPlaceholders('no tokens', { agentName: 'Hazem' }), 'no tokens');
 });
 
 test('AI scrubbing and the night-reply price guard', () => {

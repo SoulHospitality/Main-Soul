@@ -29,7 +29,7 @@ export default function InboxPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
   const [showSimulator, setShowSimulator] = useState(false);
-  const [showRightPanel, setShowRightPanel] = useState(() => window.innerWidth >= 1024);
+  const [showRightPanel, setShowRightPanel] = useState(() => window.innerWidth >= 1280);
   const messagesEndRef = useRef(null);
   const composerRef = useRef(null);
   const listRefreshTimer = useRef(null);
@@ -295,41 +295,48 @@ export default function InboxPage() {
   }, [conversations, activeConvId, showSimulator]);
 
   return (
-    <div className="flex flex-col overflow-hidden bg-slate-50 font-sans max-lg:h-[calc(100dvh-11.5rem)] lg:h-[calc(100dvh-8rem)]">
-      {/* Top Header Toolbar */}
-      <div className="flex-shrink-0 bg-white border-b border-slate-200 px-3 py-3 flex flex-wrap items-center justify-between gap-3 shadow-sm z-10 sm:px-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-soul-blue text-white flex items-center justify-center font-bold shadow">
+    <div className="inbox-shell bg-slate-50 font-sans">
+      {/* Top Header Toolbar. Hidden on a phone once a chat is open so the thread can use the screen. */}
+      <div className={`${activeConvId ? 'hidden lg:flex' : 'flex'} flex-shrink-0 flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-2 shadow-sm z-10 sm:px-4`}>
+        <div className="flex min-w-0 items-center gap-2.5">
+          <div className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-soul-blue font-bold text-white shadow sm:flex">
             <MessageSquare className="w-5 h-5" />
           </div>
-          <div>
-            <h1 className="text-lg font-bold text-slate-800 leading-tight">Unified Live Inbox</h1>
-            <div className="flex items-center gap-2 text-xs text-slate-500">
-              <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full font-medium text-[11px] ${connected ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
-                <span className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-                {connected ? 'Realtime Connected' : 'Connecting…'}
+          <div className="min-w-0">
+            <h1 className="text-base font-bold leading-tight text-slate-800 sm:text-lg">Inbox</h1>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
+              <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-medium ${connected ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                {connected ? 'Live' : 'Connecting'}
               </span>
-              <span>·</span>
-              <span>Needs reply: <strong className="text-slate-800">{counts.needs_reply || 0}</strong></span>
-              <span>·</span>
-              <span>Overdue: <strong className="text-rose-600">{counts.overdue || 0}</strong></span>
+              <span>Reply <strong className="text-slate-800">{counts.needs_reply || 0}</strong></span>
+              <span>Overdue <strong className="text-rose-600">{counts.overdue || 0}</strong></span>
             </div>
           </div>
         </div>
 
         {/* Presence Selector & Action Bar */}
-        <div className="flex items-center gap-3">
-          {/* Agent Presence Pill */}
-          <div className="flex items-center bg-slate-100 rounded-lg p-1 border border-slate-200 text-xs">
+        <div className="flex items-center gap-2">
+          <select
+            aria-label="My status"
+            value={me?.user?.presence || 'offline'}
+            onChange={(e) => setPresence(e.target.value)}
+            className="h-10 rounded-lg border border-slate-200 bg-slate-50 px-2 text-sm font-medium capitalize text-slate-700 lg:hidden"
+          >
+            <option value="online">Online</option>
+            <option value="away">Away</option>
+            <option value="offline">Offline</option>
+          </select>
+          <div className="hidden items-center rounded-lg border border-slate-200 bg-slate-100 p-1 text-xs lg:flex">
             <span className="px-2 font-medium text-slate-500">My Status:</span>
             {['online', 'away', 'offline'].map((p) => (
               <button
                 key={p}
                 type="button"
                 onClick={() => setPresence(p)}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all capitalize font-medium ${
+                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 font-medium capitalize transition-all ${
                   me?.user?.presence === p
-                    ? 'bg-white text-slate-800 shadow-sm border border-slate-200'
+                    ? 'border border-slate-200 bg-white text-slate-800 shadow-sm'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
@@ -343,39 +350,41 @@ export default function InboxPage() {
           <button
             type="button"
             onClick={() => setShowSimulator(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-medium text-xs border border-indigo-200 transition-colors"
+            className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 text-xs font-medium text-indigo-700 transition-colors hover:bg-indigo-100"
           >
-            <Smartphone className="w-4 h-4" />
-            Simulate Message
+            <Smartphone className="h-4 w-4" />
+            <span className="hidden sm:inline">Simulate</span>
           </button>
           )}
 
           {can('analytics.team') && (
             <Link
               to="/admin/inbox-analytics"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 font-medium text-xs border border-slate-200 transition-colors"
+              aria-label="Analytics"
+              className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-100 px-2.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-200"
             >
-              <BarChart3 className="w-4 h-4" />
-              Analytics
+              <BarChart3 className="h-4 w-4" />
+              <span className="hidden sm:inline">Analytics</span>
             </Link>
           )}
 
           {can('settings.manage') && (
             <Link
               to="/admin/inbox-settings"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 font-medium text-xs border border-slate-200 transition-colors"
+              aria-label="Settings"
+              className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-100 px-2.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-200"
             >
-              <Sliders className="w-4 h-4" />
-              Settings
+              <Sliders className="h-4 w-4" />
+              <span className="hidden sm:inline">Settings</span>
             </Link>
           )}
         </div>
       </div>
 
       {/* Main 3-Column Workspace */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
         {/* Left Column: Conversations List */}
-        <div className={`${activeConvId ? 'hidden lg:flex' : 'flex'} w-full lg:w-96 border-r border-slate-200 bg-white flex-col flex-shrink-0 min-h-0`}>
+        <div className={`${activeConvId ? 'hidden lg:flex' : 'flex'} w-full min-h-0 flex-shrink-0 flex-col border-r border-slate-200 bg-white lg:w-80 xl:w-96`}>
           {/* Filters & Search */}
           <div className="p-3 border-b border-slate-200 space-y-2 bg-slate-50/50">
             {/* Search Input */}
@@ -386,7 +395,7 @@ export default function InboxPage() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search chats, phone, name…"
-                className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-soul-blue/20"
+                className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-base focus:outline-none focus:ring-2 focus:ring-soul-blue/20 sm:text-sm"
               />
               {searchQuery && (
                 <button
@@ -425,7 +434,7 @@ export default function InboxPage() {
             </div>
 
             {/* Channel Filter Chips */}
-            <div className="flex items-center gap-1.5 pt-1 text-[11px]">
+            <div className="flex items-center gap-1.5 overflow-x-auto pt-1 text-[11px]">
               <span className="text-slate-400 font-medium">Channel:</span>
               <button
                 type="button"
@@ -439,7 +448,7 @@ export default function InboxPage() {
                   key={k}
                   type="button"
                   onClick={() => setActiveChannel(k === activeChannel ? '' : k)}
-                  className={`flex items-center gap-1 px-2 py-0.5 rounded transition-colors ${
+                  className={`flex shrink-0 items-center gap-1 rounded px-2 py-0.5 transition-colors ${
                     activeChannel === k ? `${c.soft} font-bold border border-current` : 'text-slate-600 hover:bg-slate-100'
                   }`}
                 >
@@ -451,7 +460,7 @@ export default function InboxPage() {
           </div>
 
           {/* Conversations Items Stream */}
-          <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
+          <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto overscroll-contain">
             {loadingConvs ? (
               <div className="p-8 text-center text-xs text-slate-400">Loading conversations…</div>
             ) : conversations.length === 0 ? (
@@ -496,23 +505,25 @@ export default function InboxPage() {
                           {conv.last_message_preview || 'No messages yet'}
                         </p>
 
-                        <div className="flex items-center justify-between gap-1 mt-2">
-                          <div className="flex items-center gap-1 flex-wrap">
-                            {conv.stage_key ? (
-                              <StageChip stageKey={conv.stage_key} />
-                            ) : (
-                              <Chip className="bg-slate-100 text-slate-600">{CONVERSATION_TYPES[conv.type] || conv.type}</Chip>
-                            )}
-                            {conv.temperature === 'hot' ? <Chip className="bg-rose-100 text-rose-700">Hot</Chip> : null}
+                        <div className="mt-1.5 flex items-center justify-between gap-1">
+                          <div className="flex min-w-0 items-center gap-1 overflow-hidden">
+                            <span className="hidden sm:contents">
+                              {conv.stage_key ? (
+                                <StageChip stageKey={conv.stage_key} />
+                              ) : (
+                                <Chip className="bg-slate-100 text-slate-600">{CONVERSATION_TYPES[conv.type] || conv.type}</Chip>
+                              )}
+                              {conv.temperature === 'hot' ? <Chip className="bg-rose-100 text-rose-700">Hot</Chip> : null}
+                            </span>
                             <SlaChip conversation={conv} now={now} />
-                            {rowWindow.urgent ? <Chip className={`border ${rowWindow.cls}`}>{rowWindow.text}</Chip> : null}
-                            <Chip className={peopleOn(conv).length ? 'bg-slate-100 text-slate-600' : 'bg-orange-50 text-orange-700'}>
+                            {rowWindow.urgent ? <Chip className={`hidden border sm:inline-flex ${rowWindow.cls}`}>{rowWindow.text}</Chip> : null}
+                            <Chip className={`max-w-[9rem] truncate ${peopleOn(conv).length ? 'bg-slate-100 text-slate-600' : 'bg-orange-50 text-orange-700'}`}>
                               {peopleOn(conv).length
                                 ? peopleOn(conv).map((p) => (Number(p.id) === Number(me?.user?.id) ? 'You' : p.name)).join(', ')
                                 : 'Unassigned'}
                             </Chip>
                             {watching.length > 0 ? (
-                              <Chip className="bg-amber-50 text-amber-800" title="Someone else has this chat open">
+                              <Chip className="hidden bg-amber-50 text-amber-800 sm:inline-flex" title="Someone else has this chat open">
                                 {watching.map((id) => userName(id)).join(', ')}
                               </Chip>
                             ) : null}
@@ -534,15 +545,14 @@ export default function InboxPage() {
         </div>
 
         {/* Middle Column: Active Conversation Feed */}
-        <div className={`${activeConvId ? 'flex' : 'hidden lg:flex'} min-w-0 flex-1 flex-col bg-slate-100 overflow-hidden`}>
+        <div className={`${activeConvId ? 'flex' : 'hidden lg:flex'} min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-100`}>
           {activeConvId && currentConv?.conversation ? (
             <>
-              {/* Conversation Header Bar */}
-              <div className="bg-white border-b border-slate-200 px-3 py-2.5 flex items-center justify-between gap-2 flex-shrink-0 shadow-sm sm:px-4">
-                <div className="flex items-center gap-2 min-w-0 sm:gap-3">
+              <div className="flex-shrink-0 border-b border-slate-200 bg-white shadow-sm">
+                <div className="flex items-center gap-1.5 px-2 py-2 sm:gap-2 sm:px-3">
                   <button
                     type="button"
-                    className="lg:hidden grid h-10 w-10 shrink-0 place-items-center rounded-xl text-slate-600 hover:bg-slate-100"
+                    className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-slate-600 hover:bg-slate-100 lg:hidden"
                     aria-label="Back to conversations"
                     onClick={() => setSearchParams((prev) => {
                       const next = new URLSearchParams(prev);
@@ -556,98 +566,93 @@ export default function InboxPage() {
                     name={currentConv.conversation.customer_name}
                     url={currentConv.conversation.avatar_url}
                     kind={currentConv.conversation.channel_kind}
-                    size="md"
+                    size="sm"
                   />
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h2 className="text-sm font-bold text-slate-900 truncate">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <h2 className="truncate text-sm font-bold text-slate-900">
                         {currentConv.conversation.customer_name || 'Guest User'}
                       </h2>
                       <ChannelDot kind={currentConv.conversation.channel_kind} />
-                      <span className="text-xs text-slate-400 capitalize font-mono">
-                        {currentConv.conversation.phone || currentConv.conversation.email || `#${currentConv.conversation.id}`}
-                      </span>
                     </div>
-                    <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5 flex-wrap">
-                      <span>On this chat: <strong>{peopleOn(currentConv.conversation).map((p) => p.name).join(', ') || 'nobody yet'}</strong></span>
-                      <SlaChip conversation={currentConv.conversation} now={now} />
-                      <Chip className={`border ${windowInfo.cls}`}>{windowInfo.text}</Chip>
-                    </div>
+                    <p className="truncate text-[11px] text-slate-500">
+                      {currentConv.conversation.phone || currentConv.conversation.email || `#${currentConv.conversation.id}`}
+                      {' · '}
+                      {peopleOn(currentConv.conversation).map((p) => p.name).join(', ') || 'Unassigned'}
+                    </p>
                   </div>
-                </div>
-
-                {/* Status & Assignment Actions */}
-                <div className="flex items-center gap-2 flex-shrink-0">
                   {!peopleOn(currentConv.conversation).some((p) => Number(p.id) === Number(me?.user?.id)) && (
                     <button
                       type="button"
                       onClick={() => claimConversation(currentConv.conversation.id)}
-                      className="px-2.5 py-1.5 rounded-lg bg-soul-blue text-white text-xs font-bold"
+                      className="h-10 shrink-0 rounded-lg bg-soul-blue px-3 text-xs font-bold text-white"
                     >
-                      {peopleOn(currentConv.conversation).length ? 'Join chat' : 'Take chat'}
+                      {peopleOn(currentConv.conversation).length ? 'Join' : 'Take'}
                     </button>
                   )}
                   <button
                     type="button"
+                    onClick={() => setShowRightPanel(!showRightPanel)}
+                    className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl border transition-colors ${
+                      showRightPanel ? 'border-soul-blue bg-soul-blue text-white' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                    }`}
+                    aria-label="Guest details"
+                    title="Guest details"
+                  >
+                    <UserPlus className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 overflow-x-auto px-2 pb-2 sm:px-3">
+                  <SlaChip conversation={currentConv.conversation} now={now} />
+                  <Chip className={`border ${windowInfo.cls}`}>{windowInfo.text}</Chip>
+                  <button
+                    type="button"
                     onClick={snoozeUntilMorning}
-                    className="px-2.5 py-1.5 rounded-lg bg-white text-slate-700 text-xs font-medium border border-slate-200"
+                    className="h-9 shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700"
                     title="Bring this chat back at 11:00 Cairo time"
                   >
                     Snooze till 11
                   </button>
-                  {/* Status Dropdown */}
                   <select
+                    aria-label="Chat status"
                     value={currentConv.conversation.status}
                     onChange={(e) => handleUpdateStatus(e.target.value)}
-                    className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-700 focus:outline-none"
+                    className="h-9 shrink-0 rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs font-medium text-slate-700 focus:outline-none"
                   >
                     {Object.entries(STATUS_LABELS).map(([k, label]) => (
                       <option key={k} value={k}>{label}</option>
                     ))}
                   </select>
-
-                  <div className="flex items-center gap-1 max-w-[16rem] flex-wrap justify-end">
-                    {peopleOn(currentConv.conversation).map((p) => (
-                      <span key={p.id} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-700">
-                        {Number(p.id) === Number(me?.user?.id) ? 'You' : p.name}
-                        {(can('conv.assign') || Number(p.id) === Number(me?.user?.id)) && (
-                          <button
-                            type="button"
-                            className="text-slate-400 hover:text-rose-600"
-                            aria-label={`Remove ${p.name}`}
-                            onClick={() => removeAssignee(currentConv.conversation.id, p.id)}
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        )}
-                      </span>
-                    ))}
-                    {can('conv.assign') && (
-                      <select
-                        value=""
-                        onChange={(e) => { if (e.target.value) handleAssign(e.target.value); }}
-                        className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 font-medium text-slate-700 focus:outline-none"
-                      >
-                        <option value="">Add staff</option>
-                        {(me?.users || [])
-                          .filter((u) => u.active !== 0 && !peopleOn(currentConv.conversation).some((p) => Number(p.id) === Number(u.id)))
-                          .map((u) => (
-                            <option key={u.id} value={u.id}>{u.name}</option>
-                          ))}
-                      </select>
-                    )}
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => setShowRightPanel(!showRightPanel)}
-                    className={`p-1.5 rounded-lg border transition-colors ${
-                      showRightPanel ? 'bg-soul-blue text-white border-soul-blue' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                    }`}
-                    title="Toggle PMS Lead Panel"
-                  >
-                    <UserPlus className="w-4 h-4" />
-                  </button>
+                  {peopleOn(currentConv.conversation).map((p) => (
+                    <span key={p.id} className="inline-flex h-9 shrink-0 items-center gap-1 rounded-full bg-slate-100 px-2.5 text-[11px] font-medium text-slate-700">
+                      {Number(p.id) === Number(me?.user?.id) ? 'You' : p.name}
+                      {(can('conv.assign') || Number(p.id) === Number(me?.user?.id)) && (
+                        <button
+                          type="button"
+                          className="text-slate-400 hover:text-rose-600"
+                          aria-label={`Remove ${p.name}`}
+                          onClick={() => removeAssignee(currentConv.conversation.id, p.id)}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      )}
+                    </span>
+                  ))}
+                  {can('conv.assign') && (
+                    <select
+                      aria-label="Add staff"
+                      value=""
+                      onChange={(e) => { if (e.target.value) handleAssign(e.target.value); }}
+                      className="h-9 shrink-0 rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs font-medium text-slate-700 focus:outline-none"
+                    >
+                      <option value="">Add staff</option>
+                      {(me?.users || [])
+                        .filter((u) => u.active !== 0 && !peopleOn(currentConv.conversation).some((p) => Number(p.id) === Number(u.id)))
+                        .map((u) => (
+                          <option key={u.id} value={u.id}>{u.name}</option>
+                        ))}
+                    </select>
+                  )}
                 </div>
               </div>
 
@@ -658,7 +663,7 @@ export default function InboxPage() {
               )}
 
               {/* Chat Message History Stream */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain px-3 py-3 sm:space-y-3 sm:p-4">
                 {thread.length === 0 ? (
                   <div className="p-12 text-center text-xs text-slate-400">No messages in this chat yet.</div>
                 ) : (
@@ -671,7 +676,7 @@ export default function InboxPage() {
 
                     if (isNote) {
                       return (
-                        <div key={msg.id} className="mx-auto max-w-lg bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-3 text-xs shadow-sm space-y-1">
+                        <div key={msg.id} className="mx-auto w-full max-w-lg space-y-1 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 shadow-sm sm:text-xs">
                           <div className="flex items-center justify-between text-[11px] font-bold text-amber-700">
                             <span className="flex items-center gap-1">
                               <Lock className="w-3 h-3" /> Internal Staff Note — {msg.user_name || userName(msg.user_id)}
@@ -689,7 +694,7 @@ export default function InboxPage() {
                         className={`flex flex-col ${isInbound ? 'items-start' : 'items-end'}`}
                       >
                         <div
-                          className={`max-w-xl rounded-2xl p-3 text-xs shadow-sm space-y-1.5 ${
+                          className={`max-w-[85%] space-y-1.5 rounded-2xl p-3 text-sm shadow-sm sm:max-w-xl sm:text-xs ${
                             isInbound
                               ? 'bg-white text-slate-800 rounded-tl-sm border border-slate-200'
                               : isScript
@@ -714,7 +719,7 @@ export default function InboxPage() {
                             <span>{fmtTime(msg.created_at)}</span>
                           </div>
 
-                          <p className="whitespace-pre-wrap leading-relaxed text-xs">
+                          <p className="whitespace-pre-wrap break-words leading-relaxed [overflow-wrap:anywhere]">
                             {msg.body}
                           </p>
                           {msg.delivery_status === 'pending' && (
@@ -739,6 +744,7 @@ export default function InboxPage() {
                 ref={composerRef}
                 conversationId={activeConvId}
                 customerName={currentConv.conversation.customer_name}
+                agentName={me?.user?.name}
                 windowOpen={windowInfo.open}
                 simulated={Number(currentConv.customer?.is_simulated) === 1}
                 replies={replies}
@@ -762,10 +768,10 @@ export default function InboxPage() {
 
         {/* Right Column: PMS Lead Panel */}
         {showRightPanel && activeConvId && currentConv?.conversation && (
-          <div className="fixed inset-0 z-40 overflow-y-auto bg-white p-4 pb-24 lg:static lg:z-auto lg:w-96 lg:flex-shrink-0 lg:border-l lg:border-slate-200 lg:pb-4">
+          <div className="absolute inset-0 z-20 overflow-y-auto bg-white p-4 pb-8 xl:static xl:z-auto xl:w-80 xl:flex-shrink-0 xl:border-l xl:border-slate-200 xl:pb-4">
             <button
               type="button"
-              className="mb-3 inline-flex items-center gap-1 text-sm font-semibold text-soul-blue lg:hidden"
+              className="mb-3 inline-flex h-11 items-center gap-1 text-sm font-semibold text-soul-blue xl:hidden"
               onClick={() => setShowRightPanel(false)}
             >
               <ChevronLeft className="h-4 w-4" />
@@ -800,8 +806,14 @@ export default function InboxPage() {
   );
 }
 
+function fillReply(text, agentName, customerName) {
+  return String(text || '')
+    .replace(/\{\{\s*agent_name\s*\}\}/gi, () => agentName || '')
+    .replace(/\{\{\s*customer_name\s*\}\}/gi, () => customerName || '');
+}
+
 const ChatComposer = forwardRef(function ChatComposer({
-  conversationId, customerName, windowOpen, simulated, replies, aiAvailable, onSend, onSuggest,
+  conversationId, customerName, agentName, windowOpen, simulated, replies, aiAvailable, onSend, onSuggest,
 }, ref) {
   const [body, setBody] = useState('');
   const [note, setNote] = useState(false);
@@ -821,7 +833,15 @@ const ChatComposer = forwardRef(function ChatComposer({
     setNote(false);
     setOpenReplies(false);
     setFile(null);
+    if (inputRef.current) inputRef.current.style.height = 'auto';
   }, [conversationId]);
+
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 144)}px`;
+  }, [body]);
 
   useImperativeHandle(ref, () => ({
     toggleNote() {
@@ -848,71 +868,73 @@ const ChatComposer = forwardRef(function ChatComposer({
     setFile(next);
   };
 
+  const applyReply = (text) => fillReply(text, agentName, customerName);
+
   const submit = (event) => {
     event?.preventDefault();
-    const text = body.trim();
+    const text = applyReply(body).trim();
     if (blocked || (!text && !file)) return;
     if (note && !text) return;
     setBody('');
     setOpenReplies(false);
+    if (inputRef.current) inputRef.current.style.height = 'auto';
     const sendingFile = note ? null : file;
     setFile(null);
     onSend(text, note, sendingFile);
   };
 
   return (
-    <div className={`border-t p-3 shadow-lg flex-shrink-0 ${blocked ? 'bg-rose-50 border-rose-200' : 'bg-white border-slate-200'}`}>
+    <div className={`flex-shrink-0 border-t px-2 py-2 shadow-lg sm:px-3 sm:py-3 ${blocked ? 'border-rose-200 bg-rose-50' : 'border-slate-200 bg-white'}`}>
       {blocked && (
         <p className="mb-2 text-xs font-medium text-rose-800">
           The 24-hour window is closed. A free reply will not send until the customer writes again. Internal notes still save.
         </p>
       )}
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs">
-          <button type="button" onClick={() => setNote(false)} className={`px-3 py-1 rounded-md font-medium ${!note ? 'bg-white text-soul-blue shadow-sm' : 'text-slate-600'}`}>Reply to Customer</button>
-          <button type="button" onClick={() => setNote(true)} className={`px-3 py-1 rounded-md font-medium ${note ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-600'}`}>Internal Note</button>
+      <div className="mb-2 flex items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-xs">
+          <button type="button" onClick={() => setNote(false)} className={`h-9 flex-1 rounded-md px-2 font-medium ${!note ? 'bg-white text-soul-blue shadow-sm' : 'text-slate-600'}`}>Reply</button>
+          <button type="button" onClick={() => setNote(true)} className={`h-9 flex-1 rounded-md px-2 font-medium ${note ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-600'}`}>Note</button>
         </div>
-        <div className="flex items-center gap-2">
-          {aiAvailable && (
-            <button
-              type="button"
-              disabled={suggesting}
-              onClick={async () => {
-                setSuggesting(true);
-                try {
-                  const suggestion = await onSuggest();
-                  if (suggestion) setBody(suggestion);
-                  else toast.error('No AI suggestion generated');
-                } catch (err) {
-                  toast.error(errorMessage(err, 'AI suggest failed'));
-                } finally {
-                  setSuggesting(false);
-                }
-              }}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 text-xs font-semibold border border-indigo-200"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              {suggesting ? 'Thinking…' : 'AI Draft Response'}
-            </button>
-          )}
-          {replies.length > 0 && (
-            <button type="button" onClick={() => setOpenReplies((v) => !v)} className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-medium border border-slate-200">
-              Quick Replies
-            </button>
-          )}
-        </div>
+        {aiAvailable && (
+          <button
+            type="button"
+            disabled={suggesting}
+            aria-label="AI draft"
+            onClick={async () => {
+              setSuggesting(true);
+              try {
+                const suggestion = await onSuggest();
+                if (suggestion) setBody(suggestion);
+                else toast.error('No AI suggestion generated');
+              } catch (err) {
+                toast.error(errorMessage(err, 'AI suggest failed'));
+              } finally {
+                setSuggesting(false);
+              }
+            }}
+            className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 text-xs font-semibold text-indigo-700"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">{suggesting ? 'Thinking…' : 'AI draft'}</span>
+          </button>
+        )}
+        {replies.length > 0 && (
+          <button type="button" onClick={() => setOpenReplies((v) => !v)} className="h-10 shrink-0 rounded-lg border border-slate-200 bg-slate-100 px-2.5 text-xs font-medium text-slate-700">
+            Saved
+          </button>
+        )}
       </div>
       {(openReplies || slash !== null) && matches.length > 0 && (
-        <div className="mb-2 p-2 bg-slate-50 border border-slate-200 rounded-xl max-h-36 overflow-y-auto divide-y divide-slate-100 text-xs">
+        <div className="mb-2 max-h-36 divide-y divide-slate-100 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-1 text-sm sm:text-xs">
           {matches.map((qr) => (
             <button
               key={qr.id}
               type="button"
-              onClick={() => { setBody(qr.body); setOpenReplies(false); inputRef.current?.focus(); }}
-              className="w-full py-1.5 px-2 hover:bg-white rounded text-left flex items-center justify-between"
+              onClick={() => { setBody(applyReply(qr.body)); setOpenReplies(false); inputRef.current?.focus(); }}
+              className="flex w-full flex-col items-start gap-0.5 rounded px-2 py-2 text-left hover:bg-white sm:flex-row sm:items-center sm:justify-between"
             >
               <span className="font-bold text-slate-800">{qr.title || qr.shortcut}</span>
-              <span className="text-slate-400 truncate max-w-xs">{qr.body}</span>
+              <span className="line-clamp-1 text-slate-400 sm:max-w-xs">{applyReply(qr.body)}</span>
             </button>
           ))}
         </div>
@@ -946,30 +968,31 @@ const ChatComposer = forwardRef(function ChatComposer({
         </button>
         <textarea
           ref={inputRef}
-          rows={2}
+          rows={1}
           value={body}
           onChange={(e) => setBody(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && slash !== null && matches[0]) {
               e.preventDefault();
-              setBody(matches[0].body);
+              setBody(applyReply(matches[0].body));
               setOpenReplies(false);
               return;
             }
-            if (e.key === 'Enter' && !e.shiftKey) {
+            const coarse = window.matchMedia('(pointer: coarse)').matches;
+            if (e.key === 'Enter' && !e.shiftKey && !coarse) {
               e.preventDefault();
               submit();
             }
           }}
-          placeholder={note ? 'Internal note. Type @Name to mention a teammate.' : blocked ? 'Free replies are closed. Switch to an internal note.' : `Reply to ${customerName || 'customer'}… Enter sends`}
-          className={`flex-1 p-2.5 text-xs bg-slate-50 border rounded-xl focus:outline-none focus:ring-2 resize-none ${note ? 'border-amber-300 focus:ring-amber-400/30 bg-amber-50/20' : 'border-slate-200 focus:ring-soul-blue/20'}`}
+          placeholder={note ? 'Internal note' : blocked ? 'Window closed. Use a note.' : `Message ${customerName || 'guest'}`}
+          className={`max-h-36 min-h-11 flex-1 resize-none rounded-xl border bg-slate-50 p-2.5 text-base focus:outline-none focus:ring-2 sm:text-sm ${note ? 'border-amber-300 bg-amber-50/20 focus:ring-amber-400/30' : 'border-slate-200 focus:ring-soul-blue/20'}`}
         />
-        <button type="submit" disabled={blocked || (!body.trim() && !file) || (note && !body.trim())} className={`px-4 py-3 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow disabled:opacity-50 ${note ? 'bg-amber-500 text-white' : 'bg-soul-blue text-white'}`}>
-          <Send className="w-4 h-4" />
-          {note ? 'Save Note' : 'Send'}
+        <button type="submit" aria-label={note ? 'Save note' : 'Send'} disabled={blocked || (!body.trim() && !file) || (note && !body.trim())} className={`flex h-11 shrink-0 items-center gap-1.5 rounded-xl px-3 text-xs font-bold shadow disabled:opacity-50 ${note ? 'bg-amber-500 text-white' : 'bg-soul-blue text-white'}`}>
+          <Send className="h-4 w-4" />
+          <span className="hidden sm:inline">{note ? 'Save' : 'Send'}</span>
         </button>
       </form>
-      <p className="mt-2 text-[10px] text-slate-400">J and K move the queue. N switches to a note. / inserts a saved reply.</p>
+      <p className="mt-1.5 hidden text-[10px] text-slate-400 lg:block">J and K move the queue. N switches to a note. / inserts a saved reply.</p>
     </div>
   );
 });

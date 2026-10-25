@@ -192,9 +192,9 @@ export default function InboxSettingsPage() {
   };
 
   return (
-    <div className="pms-shell min-h-screen bg-slate-50 p-6 space-y-6 font-sans">
+    <div className="min-w-0 space-y-4 bg-slate-50 font-sans sm:space-y-6">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+      <div className="flex flex-col justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 md:flex-row md:items-center">
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <Sliders className="w-6 h-6 text-soul-blue" />
@@ -207,12 +207,12 @@ export default function InboxSettingsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 text-xs font-bold">
+      <div className="flex items-center gap-1 overflow-x-auto border-b border-slate-200 text-xs font-bold">
         {[
-          { id: 'settings', label: 'SLA & Business Hours', icon: Clock, perm: 'settings.manage' },
-          { id: 'channels', label: 'Meta Channels & Webhooks', icon: Link2, perm: 'channels.manage' },
-          { id: 'team', label: 'Agent Rotation & Limits', icon: Users, perm: 'users.manage' },
-          { id: 'replies', label: 'Quick Replies & Templates', icon: MessageSquare, perm: 'templates.manage' },
+          { id: 'settings', label: 'SLA & Business Hours', short: 'Hours', icon: Clock, perm: 'settings.manage' },
+          { id: 'channels', label: 'Meta Channels & Webhooks', short: 'Channels', icon: Link2, perm: 'channels.manage' },
+          { id: 'team', label: 'Agent Rotation & Limits', short: 'Team', icon: Users, perm: 'users.manage' },
+          { id: 'replies', label: 'Quick Replies & Templates', short: 'Replies', icon: MessageSquare, perm: 'templates.manage' },
         ].map((tab) => {
           if (!can(tab.perm)) return null;
           return (
@@ -220,14 +220,15 @@ export default function InboxSettingsPage() {
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-1.5 px-4 py-3 border-b-2 transition-all ${
+              className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-3 transition-all ${
                 activeTab === tab.id
                   ? 'border-soul-blue text-soul-blue'
                   : 'border-transparent text-slate-500 hover:text-slate-800'
               }`}
             >
               <tab.icon className="w-4 h-4" />
-              {tab.label}
+              <span className="sm:hidden">{tab.short}</span>
+              <span className="hidden sm:inline">{tab.label}</span>
             </button>
           );
         })}
@@ -446,12 +447,12 @@ export default function InboxSettingsPage() {
             ) : (
               <div className="space-y-2">
                 {(channelsData?.items || []).map((ch) => (
-                  <div key={ch.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-3">
-                    <div>
+                  <div key={ch.id} className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
                       <h4 className="font-bold text-slate-900 capitalize">{ch.kind} — {ch.name}</h4>
-                      <span className="text-[11px] text-slate-400 font-mono">ID {ch.external_id}{ch.page_id ? ` · Page ${ch.page_id}` : ''}</span>
+                      <span className="break-all font-mono text-[11px] text-slate-400">ID {ch.external_id}{ch.page_id ? ` · Page ${ch.page_id}` : ''}</span>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       {ch.kind === 'messenger' && ch.active ? (
                         <button type="button" className="btn-secondary text-[11px]" disabled={channelBusy === `${ch.id}-instagram`} onClick={() => runChannelAction(ch.id, 'instagram')}>Add Instagram</button>
                       ) : null}
@@ -490,7 +491,8 @@ export default function InboxSettingsPage() {
             <h2 className="font-bold text-sm text-slate-900">Inbox Staff & Auto-Assignment Rotation</h2>
             <p className="text-slate-500 text-xs mt-0.5">Manage which staff members receive auto-routed customer conversations and their max chat limits.</p>
           </div>
-          <table className="w-full text-left border-collapse">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[40rem] border-collapse text-left">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold text-[11px] uppercase tracking-wider">
                 <th className="p-3">Staff Member</th>
@@ -543,6 +545,7 @@ export default function InboxSettingsPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

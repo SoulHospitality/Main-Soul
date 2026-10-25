@@ -32,9 +32,9 @@ export default function InboxAnalyticsPage() {
   const live = data?.live || {};
 
   return (
-    <div className="pms-shell min-h-screen bg-slate-50 p-6 space-y-6 font-sans">
+    <div className="min-w-0 space-y-4 bg-slate-50 font-sans sm:space-y-6">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+      <div className="flex flex-col justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 md:flex-row md:items-center">
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <BarChart3 className="w-6 h-6 text-soul-blue" />
@@ -46,7 +46,7 @@ export default function InboxAnalyticsPage() {
         </div>
 
         {/* Filter Controls */}
-        <div className="flex items-center gap-3 text-xs">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
           <select
             value={periodDays}
             onChange={(e) => setPeriodDays(Number(e.target.value))}
@@ -174,7 +174,7 @@ export default function InboxAnalyticsPage() {
                 <PieChart className="w-4 h-4 text-soul-blue" />
                 Channel Breakdown (WhatsApp vs Instagram vs Messenger)
               </h2>
-              <div className="grid grid-cols-3 gap-4 text-xs">
+              <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-3">
                 {['whatsapp', 'instagram', 'messenger'].map((ch) => {
                   const data = channels[ch] || {};
                   return (
@@ -198,7 +198,8 @@ export default function InboxAnalyticsPage() {
                 Agent Performance Leaderboard
               </h2>
             </div>
-            <table className="w-full text-left border-collapse">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[40rem] border-collapse text-left">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold text-[11px] uppercase tracking-wider">
                   <th className="p-3">Agent</th>
@@ -224,6 +225,7 @@ export default function InboxAnalyticsPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </>
       )}

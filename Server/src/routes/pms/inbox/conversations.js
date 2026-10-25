@@ -11,6 +11,7 @@ const { aiAvailable, classify, suggestReply, summarize } = require('../../../lib
 const { applyClassification, markExistingGuest } = require('../../../lib/inbox/ingest');
 const { downloadWhatsAppMedia, fetchProfile } = require('../../../lib/inbox/meta');
 const { guestHistory, availabilityFacts } = require('../../../lib/inbox/pmsLink');
+const { fillPlaceholders } = require('../../../lib/inbox/templates');
 const { loadConversation, ensureCanAct, visibilitySql, onChatSql } = require('./common');
 
 const router = express.Router();
@@ -20,6 +21,12 @@ const TYPES = ['unknown', 'sales_lead', 'existing_guest', 'owner', 'broker', 'co
 function publicMessage(row) {
   if (!row) return row;
   return { ...row, attachments: parseJson(row.attachments_json, []), attachments_json: undefined };
+}
+
+async function personalize(text, conv, agent) {
+  if (typeof text !== 'string' || !text.includes('{{')) return text;
+  const customer = await q.get('SELECT name FROM inbox_customers WHERE id = ?', conv.customer_id);
+  return fillPlaceholders(text, { agentName: agent?.name, customerName: customer?.name });
 }
 
 const LIST_SELECT = `
@@ -226,7 +233,7 @@ router.post('/conversations/:id/messages', wrap(async (req, res) => {
   const text = typeof raw.text === 'string' ? raw.text : typeof raw.body === 'string' ? raw.body : undefined;
   const { template } = raw;
   const message = await sendToCustomer(conv.id, {
-    text: typeof text === 'string' ? text.trim() : undefined,
+    text: typeof text === 'string' ? (await personalize(text, conv, req.inbox)).trim() : undefined,
     template: template?.name ? { name: String(template.name).slice(0, 200), language: String(template.language || 'ar').slice(0, 10) } : undefined,
     senderType: 'agent',
     userId: req.inbox.id,
@@ -264,7 +271,9 @@ router.post('/conversations/:id/attachments', wrap(async (req, res) => {
   const uploaded = await uploadBufferToCloudinary(req.file.buffer, req.file.originalname, req.file.mimetype, {
     folder: 'soul-hospitality/inbox',
   });
-  const caption = req.body?.caption ? String(req.body.caption).slice(0, 1000) : undefined;
+  const caption = req.body?.caption
+    ? (await personalize(String(req.body.caption), conv, req.inbox)).slice(0, 1000)
+    : undefined;
   const message = await sendToCustomer(conv.id, {
     attachment: {
       url: uploaded.secure_url,
