@@ -23,7 +23,6 @@ export default function GuestRail({
   people,
   onType,
   onStatus,
-  onAssign,
   onRemove,
   onClaim,
   onSnooze,
@@ -125,19 +124,6 @@ export default function GuestRail({
             </span>
           ))}
         </div>
-        {can('conv.assign') ? (
-          <select
-            aria-label="Add staff"
-            value=""
-            onChange={(event) => { if (event.target.value) onAssign(event.target.value); }}
-            className="mt-2 h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-700 focus:outline-none"
-          >
-            <option value="">Add staff</option>
-            {(me?.users || [])
-              .filter((user) => user.active !== 0 && !people.some((person) => Number(person.id) === Number(user.id)))
-              .map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}
-          </select>
-        ) : null}
       </div>
 
       {stays.length > 0 ? (

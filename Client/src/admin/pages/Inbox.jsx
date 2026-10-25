@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useMemo, forwardRef, useImperativeHandle } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import {
   MessageSquare, Search, Send, Paperclip, Sparkles,
-  X, Smartphone, Sliders, BarChart3, ChevronLeft, Lock, PanelRight
+  X, ChevronLeft, Lock, PanelRight
 } from 'lucide-react';
 import { useInbox, useInboxEvents } from '../inbox/InboxContext';
 import { inboxApi, errorMessage } from '../inbox/api';
@@ -12,7 +12,6 @@ import { CHANNELS, VIEWS, STATUS_LABELS, CONVERSATION_TYPES, timeAgo, fmtTime, s
 import { Avatar, ChannelDot, PresenceDot, SlaChip, StageChip, Chip, useNow } from '../inbox/ui';
 import Attachment from '../inbox/Attachment';
 import GuestRail from '../inbox/GuestRail';
-import Modal from '../components/ui/Modal';
 
 export default function InboxPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -26,7 +25,6 @@ export default function InboxPage() {
   const [activeChannel, setActiveChannel] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
-  const [showSimulator, setShowSimulator] = useState(false);
   const [showRightPanel, setShowRightPanel] = useState(() => window.innerWidth >= 1536);
   const messagesEndRef = useRef(null);
   const composerRef = useRef(null);
@@ -193,18 +191,6 @@ export default function InboxPage() {
     }
   };
 
-  const handleAssign = async (userId) => {
-    if (!activeConvId) return;
-    try {
-      await inboxApi.post(`/conversations/${activeConvId}/assign`, { user_id: userId ? Number(userId) : null });
-      toast.success('Added to this chat');
-      refetchCurrentConv();
-      refetchConvs();
-    } catch (err) {
-      toast.error(errorMessage(err));
-    }
-  };
-
   const claimConversation = async (id) => {
     if (!me?.user?.id) return;
     try {
@@ -298,7 +284,7 @@ export default function InboxPage() {
 
   useEffect(() => {
     const onKey = (e) => {
-      if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || showSimulator) return;
+      if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
       const tag = document.activeElement?.tagName;
       const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || document.activeElement?.isContentEditable;
       if (typing) return;
@@ -319,7 +305,7 @@ export default function InboxPage() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [conversations, activeConvId, showSimulator]);
+  }, [conversations, activeConvId]);
 
   return (
     <div className="inbox-shell flex-row bg-slate-50 font-sans">
@@ -385,23 +371,6 @@ export default function InboxPage() {
                 {presence === 'online' ? 'On' : presence === 'away' ? 'Away' : 'Off'}
               </button>
             ))}
-          </div>
-          <div className="flex gap-1">
-            {me?.simulator ? (
-              <button type="button" onClick={() => setShowSimulator(true)} className="grid h-9 flex-1 place-items-center rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700" aria-label="Simulate a message">
-                <Smartphone className="h-4 w-4" />
-              </button>
-            ) : null}
-            {can('analytics.team') ? (
-              <Link to="/admin/inbox-analytics" aria-label="Analytics" className="grid h-9 flex-1 place-items-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">
-                <BarChart3 className="h-4 w-4" />
-              </Link>
-            ) : null}
-            {can('settings.manage') ? (
-              <Link to="/admin/inbox-settings" aria-label="Settings" className="grid h-9 flex-1 place-items-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">
-                <Sliders className="h-4 w-4" />
-              </Link>
-            ) : null}
           </div>
         </div>
       </aside>
@@ -751,7 +720,6 @@ export default function InboxPage() {
               people={peopleOn(currentConv.conversation)}
               onType={setConversationType}
               onStatus={handleUpdateStatus}
-              onAssign={handleAssign}
               onRemove={(userId) => removeAssignee(currentConv.conversation.id, userId)}
               onClaim={() => claimConversation(currentConv.conversation.id)}
               onSnooze={snoozeUntilMorning}
@@ -762,10 +730,6 @@ export default function InboxPage() {
         )}
       </div>
 
-      {/* Simulator Modal for Testing */}
-      {showSimulator && (
-        <SimulatorModal open={showSimulator} onClose={() => setShowSimulator(false)} onSimulated={() => { refetchConvs(); if (activeConvId) refetchCurrentConv(); }} />
-      )}
     </div>
   );
 }
@@ -961,67 +925,3 @@ const ChatComposer = forwardRef(function ChatComposer({
   );
 });
 
-function SimulatorModal({ open, onClose, onSimulated }) {
-  const [kind, setKind] = useState('whatsapp');
-  const [phone, setPhone] = useState('201012345678');
-  const [name, setName] = useState('Ahmed Hassan');
-  const [body, setBody] = useState('Hello! I want to inquire about booking a villa for next weekend.');
-  const [loading, setLoading] = useState(false);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      await inboxApi.post('/admin/simulator/inbound', {
-        kind,
-        phone,
-        name,
-        body,
-      });
-      toast.success('Inbound message simulated successfully!');
-      onSimulated();
-      onClose();
-    } catch (err) {
-      toast.error(errorMessage(err, 'Simulation failed'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <Modal open={open} onClose={onClose} title="Simulate Inbound Customer Message" size="md">
-      <form onSubmit={handleSubmit} className="space-y-4 text-xs">
-        <div>
-          <label className="block font-bold text-slate-700 mb-1">Channel Kind</label>
-          <select value={kind} onChange={(e) => setKind(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg bg-white">
-            <option value="whatsapp">WhatsApp</option>
-            <option value="instagram">Instagram</option>
-            <option value="messenger">Messenger</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="block font-bold text-slate-700 mb-1">Customer Name</label>
-          <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg" required />
-        </div>
-
-        <div>
-          <label className="block font-bold text-slate-700 mb-1">Customer Phone / External ID</label>
-          <input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg" required />
-        </div>
-
-        <div>
-          <label className="block font-bold text-slate-700 mb-1">Message Content</label>
-          <textarea rows={3} value={body} onChange={(e) => setBody(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg" required />
-        </div>
-
-        <div className="flex items-center justify-end gap-2 pt-2">
-          <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg bg-slate-100 text-slate-700 font-medium">Cancel</button>
-          <button type="submit" disabled={loading} className="px-4 py-2 rounded-lg bg-soul-blue text-white font-bold shadow">
-            {loading ? 'Simulating…' : 'Trigger Inbound Event'}
-          </button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
