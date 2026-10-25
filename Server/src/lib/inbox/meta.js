@@ -153,7 +153,7 @@ async function instagramAccount(pageId, token) {
 async function subscribePage(channel) {
   const token = channelToken(channel);
   if (channel.kind === 'instagram') {
-    const fields = 'messages,messaging_postbacks,messaging_seen,messaging_referral,message_reactions';
+    const fields = 'messages,message_echoes,messaging_postbacks,message_reads,messaging_referrals,message_reactions';
     const page = await graph(`${channel.page_id}/subscribed_apps`, {
       method: 'POST',
       token,
