@@ -63,6 +63,15 @@ test('business hours: overnight and 24/7 windows', () => {
   assert.equal(isBusinessTime(cairo('03:00'), { business_start: '00:00', business_end: '24:00' }), true);
 });
 
+test('after midnight is outside the 11:00–22:00 staff window', () => {
+  const staff = { business_start: '11:00', business_end: '22:00' };
+  assert.equal(isBusinessTime(cairo('00:05'), staff), false);
+  assert.equal(isBusinessTime(cairo('10:59'), staff), false);
+  assert.equal(isBusinessTime(cairo('11:00'), staff), true);
+  assert.equal(isBusinessTime(cairo('21:59'), staff), true);
+  assert.equal(isBusinessTime(cairo('22:00'), staff), false);
+});
+
 test('SLA clock starts at the next business opening for night messages', () => {
   assert.equal(nextBusinessStart(cairo('11:15'), hours), cairo('11:15'));
   assert.equal(nextBusinessStart(cairo('02:30'), hours), cairo('10:00'));

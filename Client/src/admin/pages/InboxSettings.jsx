@@ -250,18 +250,21 @@ export default function InboxSettingsPage() {
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-amber-500" />
-              Working Hours & Night AI Auto-Replies
+              Working Hours & After-Hours Script
             </h2>
+            <p className="text-[11px] text-slate-500">
+              From 11:00 to 22:00 Cairo time, staff reply. After 10 PM, including after midnight, the inbox sends the script below once. It does not call an AI service.
+            </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Business Day Start Time (Cairo HH:MM)</label>
                 <input
                   type="text"
-                  value={formSettings.business_start || '09:00'}
+                  value={formSettings.business_start || '11:00'}
                   onChange={(e) => setFormSettings({ ...formSettings, business_start: e.target.value })}
                   className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50"
-                  placeholder="09:00"
+                  placeholder="11:00"
                   required
                 />
               </div>
@@ -270,26 +273,36 @@ export default function InboxSettingsPage() {
                 <label className="block font-bold text-slate-700 mb-1">Business Day End Time (Cairo HH:MM)</label>
                 <input
                   type="text"
-                  value={formSettings.business_end || '23:00'}
+                  value={formSettings.business_end || '22:00'}
                   onChange={(e) => setFormSettings({ ...formSettings, business_end: e.target.value })}
                   className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50"
-                  placeholder="23:00"
+                  placeholder="22:00"
                   required
                 />
               </div>
             </div>
 
             <div className="pt-2">
-              <label className="block font-bold text-slate-700 mb-1">After-Hours / Night Mode behavior</label>
+              <label className="block font-bold text-slate-700 mb-1">After-hours behavior</label>
               <select
-                value={formSettings.night_mode || 'ai'}
+                value={formSettings.night_mode === 'off' ? 'off' : 'message'}
                 onChange={(e) => setFormSettings({ ...formSettings, night_mode: e.target.value })}
                 className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50"
               >
-                <option value="ai">AI Assistant responds automatically outside business hours</option>
-                <option value="message">Send fixed after-hours automated text message</option>
-                <option value="off">Off (Leave unreplied until morning opening)</option>
+                <option value="message">Send the script once (no AI)</option>
+                <option value="off">Off — leave the chat until staff are in</option>
               </select>
+            </div>
+
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">After-hours script</label>
+              <textarea
+                rows={5}
+                value={formSettings.night_message || ''}
+                onChange={(e) => setFormSettings({ ...formSettings, night_message: e.target.value })}
+                className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50"
+              />
+              <span className="text-[11px] text-slate-400 mt-1 block">Sent once per chat while the team is off. A staff reply clears it, so the next closed period can send it again.</span>
             </div>
           </div>
 

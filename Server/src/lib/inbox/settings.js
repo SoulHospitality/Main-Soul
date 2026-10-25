@@ -4,14 +4,14 @@ const { q } = require('./db');
 const DEFAULTS = {
   company_name: 'Soul Hospitality',
 
-  // Working hours (Cairo time). Inside them the SLA clock runs and chats are routed;
-  // outside them the AI (or a fixed message) answers and the clock waits for business_start.
-  business_start: '10:00',
-  business_end: '24:00',
-  night_mode: 'ai', // 'ai' | 'message' | 'off'
+  // Working hours (Cairo time). Inside them the SLA clock runs and chats are routed.
+  // Outside them (10 PM–11 AM, including after midnight) a saved script answers once.
+  business_start: '11:00',
+  business_end: '22:00',
+  night_mode: 'message', // 'message' | 'off'  ('ai' is kept only so older rows still send the script)
   night_message:
-    'أهلاً بيك في Soul Hospitality 🌊\nفريق الحجوزات متاح من الساعة 10 الصبح. ابعتلنا المشروع اللي حابب تحجز فيه، تاريخ الوصول والمغادرة، وعدد الأفراد، وأول ما الفريق يبدأ هنرد عليك فوراً.\n\nWelcome to Soul Hospitality! Our reservations team is available from 10 AM. Send us the project, dates and number of guests and we will get back to you first thing.',
-  night_ai_max_replies: 4,
+    'أهلاً بيك في Soul Hospitality.\nمفيش حد من الفريق متاح دلوقتي. هنتواصل معاك بين الساعة 11 الصبح و 10 بالليل.\n\nHi from Soul Hospitality. No one is available right now. Someone from the team will contact you between 11 AM and 10 PM.',
+  night_ai_max_replies: 1,
 
   // SLA
   sla_target_min: 15,
@@ -45,6 +45,20 @@ const DEFAULTS = {
   ],
 };
 
+const PREVIOUS_NIGHT_MESSAGE =
+  'أهلاً بيك في Soul Hospitality 🌊\nفريق الحجوزات متاح من الساعة 10 الصبح. ابعتلنا المشروع اللي حابب تحجز فيه، تاريخ الوصول والمغادرة، وعدد الأفراد، وأول ما الفريق يبدأ هنرد عليك فوراً.\n\nWelcome to Soul Hospitality! Our reservations team is available from 10 AM. Send us the project, dates and number of guests and we will get back to you first thing.';
+
+/** Older installs stored a 10:00–24:00 AI night mode. The scripted reply uses 11:00–22:00. */
+function applyScriptedHours(next) {
+  if (next.night_mode === 'ai') next.night_mode = 'message';
+  if (next.business_start === '10:00' && (next.business_end === '24:00' || next.business_end === '00:00')) {
+    next.business_start = DEFAULTS.business_start;
+    next.business_end = DEFAULTS.business_end;
+  }
+  if (next.night_message === PREVIOUS_NIGHT_MESSAGE) next.night_message = DEFAULTS.night_message;
+  return next;
+}
+
 const TTL_MS = 30000;
 let cache = null;
 let loadedAt = 0;
@@ -61,7 +75,7 @@ async function loadSettings(force = false) {
   } catch (err) {
     if (!cache) console.warn('[inbox] settings not loaded:', err.message);
   }
-  cache = next;
+  cache = applyScriptedHours(next);
   loadedAt = Date.now();
   return cache;
 }

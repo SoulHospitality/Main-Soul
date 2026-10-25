@@ -7,7 +7,7 @@ const { autoAssign } = require('./assignment');
 const { startAwaiting, recordResponse } = require('./sla');
 const { broadcast } = require('./realtime');
 const { fetchProfile } = require('./meta');
-const { aiAvailable, classify, nightReply } = require('./ai');
+const { aiAvailable, classify } = require('./ai');
 const { sendToCustomer } = require('./outbound');
 const { hasActiveStay } = require('./pmsLink');
 
@@ -200,23 +200,13 @@ async function sendNightReply(conversationId) {
   const s = await loadSettings();
   const conv = await q.get('SELECT * FROM inbox_conversations WHERE id = ?', conversationId);
   if (!conv || isBusinessTime() || !conv.awaiting_since) return;
-  if (conv.night_ai_replies >= s.night_ai_max_replies) return;
-
-  let text = null;
-  let senderType = 'auto';
-  if (s.night_mode === 'ai' && aiAvailable()) {
-    text = await nightReply(conversationId).catch((err) => {
-      console.warn('[inbox] night AI failed, using fixed message:', err.message);
-      return null;
-    });
-    if (text) senderType = 'ai';
-  }
-  if (!text) {
-    if (conv.night_ai_replies > 0) return; // the fixed message is sent once per night
-    text = s.night_message;
-  }
+  if (s.night_mode === 'off') return;
+  // One scripted reply per closed period. A human reply resets the counter.
+  if (conv.night_ai_replies > 0) return;
+  const text = String(s.night_message || '').trim();
+  if (!text) return;
   await q.run('UPDATE inbox_conversations SET night_ai_replies = night_ai_replies + 1 WHERE id = ?', conversationId);
-  await sendToCustomer(conversationId, { text, senderType });
+  await sendToCustomer(conversationId, { text, senderType: 'auto' });
 }
 
 /** A reply made directly in Meta Business Suite / the WhatsApp app: logged, and counts as a response. */
