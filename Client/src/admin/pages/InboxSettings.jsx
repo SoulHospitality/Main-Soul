@@ -136,6 +136,31 @@ export default function InboxSettingsPage() {
     }
   };
 
+  const findInstagram = async () => {
+    const pageId = channelForm.page_id.trim();
+    const token = channelForm.access_token.trim();
+    if (!pageId || !token) {
+      toast.error('Enter the Facebook Page ID and Page access token first');
+      return;
+    }
+    setConnecting(true);
+    try {
+      const res = await inboxApi.post('/admin/channels/lookup-instagram', { page_id: pageId, access_token: token });
+      const ig = res.instagram;
+      setChannelForm((f) => ({
+        ...f,
+        kind: 'instagram',
+        external_id: ig.id,
+        name: f.name.trim() || (ig.username ? `@${ig.username}` : ig.name),
+      }));
+      toast.success(ig.username ? `Found @${ig.username}` : 'Found the Instagram account');
+    } catch (err) {
+      toast.error(errorMessage(err, 'Could not find a linked Instagram account'));
+    } finally {
+      setConnecting(false);
+    }
+  };
+
   const runChannelAction = async (id, action) => {
     setChannelBusy(`${id}-${action}`);
     try {
@@ -148,6 +173,11 @@ export default function InboxSettingsPage() {
       } else if (action === 'disable') {
         await inboxApi.patch(`/admin/channels/${id}`, { active: false });
         toast.success('Channel disabled');
+        refetchChannels();
+      } else if (action === 'instagram') {
+        const res = await inboxApi.post(`/admin/channels/${id}/connect-instagram`);
+        const who = res.instagram?.username ? `@${res.instagram.username}` : 'Instagram';
+        toast.success(res.warning ? `${who} saved, but subscribe failed: ${res.warning}` : `${who} connected`);
         refetchChannels();
       } else if (action === 'delete') {
         await inboxApi.delete(`/admin/channels/${id}`);
@@ -362,7 +392,7 @@ export default function InboxSettingsPage() {
           <form onSubmit={connectChannel} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <h2 className="text-sm font-bold text-slate-900">Connect Messenger or Instagram</h2>
             <p className="text-slate-500">
-              Messenger uses the Facebook Page ID. Instagram uses the Instagram account ID plus the Facebook Page it is linked to. Both use that Page access token. Messages then arrive in Live Inbox.
+              Instagram uses the same Facebook Page and Page access token as Messenger. Find the linked account, then connect it. In the Meta app, the Instagram webhook must use the same callback URL as Messenger, subscribed to messages.
             </p>
             <div className="grid grid-cols-2 gap-2">
               {['messenger', 'instagram'].map((kind) => (
@@ -387,10 +417,15 @@ export default function InboxSettingsPage() {
               <input className="input" value={channelForm.page_id} onChange={(e) => setChannelForm((f) => ({ ...f, page_id: e.target.value }))} placeholder="Page ID" />
             </label>
             {channelForm.kind === 'instagram' ? (
-              <label className="block space-y-1">
-                <span className="font-semibold text-slate-700">Instagram account ID</span>
-                <input className="input" value={channelForm.external_id} onChange={(e) => setChannelForm((f) => ({ ...f, external_id: e.target.value }))} placeholder="Instagram professional account ID" />
-              </label>
+              <div className="space-y-2">
+                <button type="button" className="btn-secondary" disabled={connecting} onClick={findInstagram}>
+                  Find linked Instagram account
+                </button>
+                <label className="block space-y-1">
+                  <span className="font-semibold text-slate-700">Instagram account ID</span>
+                  <input className="input" value={channelForm.external_id} onChange={(e) => setChannelForm((f) => ({ ...f, external_id: e.target.value }))} placeholder="Filled in when the account is found" />
+                </label>
+              </div>
             ) : null}
             <label className="block space-y-1">
               <span className="font-semibold text-slate-700">Page access token</span>
@@ -417,6 +452,9 @@ export default function InboxSettingsPage() {
                       <span className="text-[11px] text-slate-400 font-mono">ID {ch.external_id}{ch.page_id ? ` · Page ${ch.page_id}` : ''}</span>
                     </div>
                     <div className="flex items-center gap-2">
+                      {ch.kind === 'messenger' && ch.active ? (
+                        <button type="button" className="btn-secondary text-[11px]" disabled={channelBusy === `${ch.id}-instagram`} onClick={() => runChannelAction(ch.id, 'instagram')}>Add Instagram</button>
+                      ) : null}
                       <button type="button" className="btn-secondary text-[11px]" disabled={channelBusy === `${ch.id}-test`} onClick={() => runChannelAction(ch.id, 'test')}>Test</button>
                       <button type="button" className="btn-secondary text-[11px]" disabled={channelBusy === `${ch.id}-subscribe`} onClick={() => runChannelAction(ch.id, 'subscribe')}>Subscribe</button>
                       {ch.active ? (

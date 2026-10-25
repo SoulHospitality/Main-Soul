@@ -116,6 +116,17 @@ async function downloadWhatsAppMedia(channel, mediaId) {
   return { mime: meta.mime_type, buffer: Buffer.from(await res.arrayBuffer()) };
 }
 
+/** The Instagram professional account linked to a Facebook Page. */
+async function instagramAccount(pageId, token) {
+  const data = await graph(pageId, {
+    token,
+    query: { fields: 'name,instagram_business_account{id,username,name}' },
+  });
+  const ig = data.instagram_business_account;
+  if (!ig?.id) throw new MetaError('This Facebook Page has no linked Instagram professional account');
+  return { id: String(ig.id), username: ig.username || null, name: ig.name || ig.username || data.name || 'Instagram', pageName: data.name || null };
+}
+
 /** Subscribe a Facebook Page, or the linked Instagram account, to this app's webhooks. */
 async function subscribePage(channel) {
   const token = channelToken(channel);
@@ -170,6 +181,7 @@ module.exports = {
   replyToCommentPrivately,
   fetchProfile,
   downloadWhatsAppMedia,
+  instagramAccount,
   subscribePage,
   subscribeWaba,
   checkChannel,

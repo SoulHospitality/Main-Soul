@@ -11,6 +11,12 @@ async function log(payload, error = null) {
 const channelBy = (kind, externalId) =>
   q.get('SELECT * FROM inbox_channels WHERE kind = ? AND external_id = ? AND active = 1', kind, String(externalId));
 
+const channelByInstagram = (entryId) =>
+  q.get(
+    `SELECT * FROM inbox_channels WHERE kind = 'instagram' AND active = 1 AND (external_id = ? OR page_id = ?)`,
+    String(entryId), String(entryId),
+  );
+
 function pageAttachments(list = []) {
   return list
     .filter((a) => a.payload?.url)
@@ -82,7 +88,7 @@ async function handlePage(payload) {
 
 async function handleInstagram(payload) {
   for (const entry of payload.entry || []) {
-    const channel = await channelBy('instagram', entry.id);
+    const channel = await channelByInstagram(entry.id);
     if (!channel) continue;
     await handleMessaging(channel, entry.messaging);
     for (const change of entry.changes || []) {

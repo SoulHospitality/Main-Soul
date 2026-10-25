@@ -3,10 +3,10 @@ const { config } = require('../../../lib/inbox/config');
 const { q, tx, audit } = require('../../../lib/inbox/db');
 const { badRequest, forbidden, int, notFound, wrap } = require('../../../lib/inbox/http');
 const { OVERRIDE_ROLES, can } = require('../../../lib/inbox/permissions');
-const { encrypt } = require('../../../lib/inbox/security');
+const { encrypt, decrypt } = require('../../../lib/inbox/security');
 const { DEFAULTS, getSettings, updateSettings } = require('../../../lib/inbox/settings');
 const { handleAgentOffline } = require('../../../lib/inbox/assignment');
-const { checkChannel, subscribePage, subscribeWaba } = require('../../../lib/inbox/meta');
+const { checkChannel, instagramAccount, subscribePage, subscribeWaba } = require('../../../lib/inbox/meta');
 const { broadcast } = require('../../../lib/inbox/realtime');
 const { requirePerm } = require('./common');
 
@@ -190,6 +190,56 @@ router.delete('/channels/:id', requirePerm('channels.manage'), wrap(async (req, 
   await audit({ userId: req.inbox.id, type: 'channel_deleted', data: { id, kind: channel.kind, name: channel.name } });
   broadcast('settings', {});
   res.json({ ok: true });
+}));
+
+router.post('/channels/lookup-instagram', requirePerm('channels.manage'), wrap(async (req, res) => {
+  const pageId = String(req.body?.page_id || '').trim();
+  const token = String(req.body?.access_token || '').trim();
+  if (!pageId || !token) throw badRequest('Facebook Page ID and Page access token are required');
+  try {
+    res.json({ instagram: await instagramAccount(pageId, token) });
+  } catch (err) {
+    throw badRequest(err.message);
+  }
+}));
+
+async function saveInstagramChannel({ pageId, token, name, userId }) {
+  const ig = await instagramAccount(pageId, token);
+  if (await q.get("SELECT 1 AS x FROM inbox_channels WHERE kind = 'instagram' AND external_id = ?", ig.id)) {
+    throw badRequest(`@${ig.username || ig.name} is already connected`);
+  }
+  const { id } = await q.insert(
+    'INSERT INTO inbox_channels (kind, name, external_id, page_id, access_token_enc, created_at) VALUES (?,?,?,?,?,?)',
+    'instagram', String(name || ig.name).trim(), ig.id, String(pageId).trim(), encrypt(String(token).trim()), Date.now(),
+  );
+  const channel = await q.get('SELECT * FROM inbox_channels WHERE id = ?', id);
+  let warning = null;
+  try {
+    await subscribePage(channel);
+  } catch (err) {
+    warning = err.message;
+  }
+  await audit({ userId, type: 'channel_created', data: { id, kind: 'instagram', name: channel.name, username: ig.username } });
+  broadcast('settings', {});
+  return { id, instagram: ig, warning };
+}
+
+router.post('/channels/:id/connect-instagram', requirePerm('channels.manage'), wrap(async (req, res) => {
+  const channel = await q.get('SELECT * FROM inbox_channels WHERE id = ?', int(req.params.id));
+  if (!channel) throw notFound();
+  if (channel.kind !== 'messenger') throw badRequest('Instagram connects from the Facebook Page channel');
+  const token = decrypt(channel.access_token_enc);
+  if (!token) throw badRequest('This Page has no access token');
+  try {
+    res.json(await saveInstagramChannel({
+      pageId: channel.external_id,
+      token,
+      name: req.body?.name,
+      userId: req.inbox.id,
+    }));
+  } catch (err) {
+    throw badRequest(err.message);
+  }
 }));
 
 router.post('/channels/:id/test', requirePerm('channels.manage'), wrap(async (req, res) => {
