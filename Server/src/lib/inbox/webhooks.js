@@ -39,6 +39,16 @@ function pruneReferrals() {
   for (const [k, v] of pendingReferrals) if (v.at < cutoff) pendingReferrals.delete(k);
 }
 
+function messagingEvents(entry) {
+  const extra = [];
+  for (const change of entry.changes || []) {
+    if (change.field === 'messages' || change.field === 'message_echoes' || change.field === 'messaging_postbacks') {
+      if (change.value) extra.push(change.value);
+    }
+  }
+  return [...(entry.messaging || []), ...extra];
+}
+
 async function handleMessaging(channel, events) {
   for (const ev of events || []) {
     const msg = ev.message;
@@ -54,7 +64,7 @@ async function handleMessaging(channel, events) {
       externalId: msg.mid,
       text: msg.text || (msg.quick_reply?.payload ?? ''),
       attachments: pageAttachments(msg.attachments),
-      timestamp: ev.timestamp,
+      timestamp: Number(ev.timestamp) > 0 && Number(ev.timestamp) < 1e12 ? Number(ev.timestamp) * 1000 : ev.timestamp,
       referral: msg.referral || ev.referral || (msg.is_echo ? null : takeReferral(channel, ev.sender.id)),
       appId: msg.app_id,
     };
@@ -67,7 +77,7 @@ async function handlePage(payload) {
   for (const entry of payload.entry || []) {
     const channel = await channelBy('messenger', entry.id);
     if (!channel) continue;
-    await handleMessaging(channel, entry.messaging);
+    await handleMessaging(channel, messagingEvents(entry));
     for (const change of entry.changes || []) {
       const v = change.value || {};
       if (change.field !== 'feed' || v.item !== 'comment' || v.verb !== 'add') continue;
@@ -90,7 +100,7 @@ async function handleInstagram(payload) {
   for (const entry of payload.entry || []) {
     const channel = await channelByInstagram(entry.id);
     if (!channel) continue;
-    await handleMessaging(channel, entry.messaging);
+    await handleMessaging(channel, messagingEvents(entry));
     for (const change of entry.changes || []) {
       const v = change.value || {};
       if (change.field !== 'comments') continue;
