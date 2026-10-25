@@ -17,6 +17,7 @@ export const CONVERSATION_TYPES = {
 };
 
 export const VIEWS = [
+  { key: 'all', label: 'All' },
   { key: 'mine', label: 'Mine' },
   { key: 'unassigned', label: 'Unassigned' },
   { key: 'needs_reply', label: 'Needs reply' },
@@ -24,7 +25,6 @@ export const VIEWS = [
   { key: 'waiting', label: 'Waiting customer' },
   { key: 'snoozed', label: 'Snoozed' },
   { key: 'hot', label: 'Hot leads' },
-  { key: 'all', label: 'All open' },
   { key: 'closed', label: 'Closed' },
 ];
 

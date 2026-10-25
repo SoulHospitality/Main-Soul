@@ -59,6 +59,7 @@ router.get('/conversations', wrap(async (req, res) => {
   const now = Date.now();
 
   switch (view) {
+    case 'all': break;
     case 'mine': where.push(`${onChatSql()} AND c.status <> 'closed'`); params.push(user.id, user.id); break;
     case 'unassigned': where.push(`c.status <> 'closed' AND c.assigned_user_id IS NULL AND NOT EXISTS (
       SELECT 1 FROM inbox_conversation_assignees a WHERE a.conversation_id = c.id)`); break;
@@ -120,13 +121,14 @@ router.get('/conversations', wrap(async (req, res) => {
     `${LIST_SELECT} WHERE ${where.join(' AND ')}
      ORDER BY CASE WHEN c.status = 'needs_reply' THEN 0 ELSE 1 END, COALESCE(c.sla_due_at, 9000000000000000) ASC,
               c.last_message_at DESC NULLS LAST
-     LIMIT 80`,
+     LIMIT ${view === 'all' ? 200 : 80}`,
     ...params,
   );
   await fillGuestNames(rows);
 
   const counts = await q.get(
     `SELECT
+       COUNT(*) AS "all",
        COUNT(*) FILTER (WHERE ${onChatSql()} AND c.status <> 'closed') AS mine,
        COUNT(*) FILTER (WHERE c.assigned_user_id IS NULL AND c.status <> 'closed' AND NOT EXISTS (
          SELECT 1 FROM inbox_conversation_assignees a WHERE a.conversation_id = c.id)) AS unassigned,
