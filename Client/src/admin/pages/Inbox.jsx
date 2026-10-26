@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useInbox, useInboxEvents } from '../inbox/InboxContext';
 import { inboxApi, errorMessage } from '../inbox/api';
-import { CHANNELS, VIEWS, STATUS_LABELS, CONVERSATION_TYPES, timeAgo, fmtTime, serviceWindow, nextCairoTime } from '../inbox/utils';
+import { CHANNELS, VIEWS, STATUS_LABELS, CONVERSATION_TYPES, timeAgo, fmtTime, nextCairoTime } from '../inbox/utils';
 import { Avatar, ChannelDot, PresenceDot, SlaChip, StageChip, Chip, useNow } from '../inbox/ui';
 import Attachment from '../inbox/Attachment';
 import GuestRail from '../inbox/GuestRail';
@@ -106,10 +106,6 @@ export default function InboxPage() {
 
   const handleSendMessage = (text, asNote, file) => {
     if ((!text && !file) || !activeConvId) return;
-    if (!asNote && Number(currentConv?.customer?.is_simulated) !== 1 && !serviceWindow(currentConv?.conversation, Date.now()).open) {
-      toast.error('The 24-hour window is closed');
-      return;
-    }
     const tempId = `local-${Date.now()}`;
     const stamp = Date.now();
     const mine = { id: me?.user?.id, name: me?.user?.name };
@@ -278,9 +274,6 @@ export default function InboxPage() {
     }));
     return [...messages, ...notes].sort((a, b) => Number(a.created_at) - Number(b.created_at));
   }, [currentConv]);
-
-  const activeConversation = currentConv?.conversation;
-  const windowInfo = serviceWindow(activeConversation, now);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -463,7 +456,6 @@ export default function InboxPage() {
                 const isActive = conv.id === activeConvId;
                 const waiting = conv.status === 'needs_reply';
                 const overdue = waiting && conv.sla_due_at && Number(conv.sla_due_at) <= now && !(conv.sla_start_at && now < Number(conv.sla_start_at));
-                const rowWindow = serviceWindow(conv, now);
                 const watching = othersOn(conv.id);
                 return (
                   <div
@@ -510,7 +502,6 @@ export default function InboxPage() {
                               {conv.temperature === 'hot' ? <Chip className="bg-rose-100 text-rose-700">Hot</Chip> : null}
                             </span>
                             <SlaChip conversation={conv} now={now} />
-                            {rowWindow.urgent ? <Chip className={`hidden border sm:inline-flex ${rowWindow.cls}`}>{rowWindow.text}</Chip> : null}
                             <Chip className={`max-w-[9rem] truncate ${peopleOn(conv).length ? 'bg-slate-100 text-slate-600' : 'bg-orange-50 text-orange-700'}`}>
                               {peopleOn(conv).length
                                 ? peopleOn(conv).map((p) => (Number(p.id) === Number(me?.user?.id) ? 'You' : p.name)).join(', ')
@@ -676,8 +667,6 @@ export default function InboxPage() {
                 conversationId={activeConvId}
                 customerName={currentConv.conversation.customer_name}
                 agentName={me?.user?.name}
-                windowOpen={windowInfo.open}
-                simulated={Number(currentConv.customer?.is_simulated) === 1}
                 replies={replies}
                 aiAvailable={Boolean(me?.aiAvailable)}
                 onSend={handleSendMessage}
@@ -716,7 +705,6 @@ export default function InboxPage() {
               me={me}
               can={can}
               now={now}
-              windowInfo={windowInfo}
               people={peopleOn(currentConv.conversation)}
               onType={setConversationType}
               onStatus={handleUpdateStatus}
@@ -741,7 +729,7 @@ function fillReply(text, agentName, customerName) {
 }
 
 const ChatComposer = forwardRef(function ChatComposer({
-  conversationId, customerName, agentName, windowOpen, simulated, replies, aiAvailable, onSend, onSuggest,
+  conversationId, customerName, agentName, replies, aiAvailable, onSend, onSuggest,
 }, ref) {
   const [body, setBody] = useState('');
   const [note, setNote] = useState(false);
@@ -750,7 +738,6 @@ const ChatComposer = forwardRef(function ChatComposer({
   const [file, setFile] = useState(null);
   const inputRef = useRef(null);
   const fileRef = useRef(null);
-  const blocked = !note && !simulated && !windowOpen;
   const slash = body.startsWith('/') ? body.slice(1).trim().toLowerCase() : null;
   const matches = slash === null
     ? replies
@@ -801,7 +788,7 @@ const ChatComposer = forwardRef(function ChatComposer({
   const submit = (event) => {
     event?.preventDefault();
     const text = applyReply(body).trim();
-    if (blocked || (!text && !file)) return;
+    if (!text && !file) return;
     if (note && !text) return;
     setBody('');
     setOpenReplies(false);
@@ -812,12 +799,7 @@ const ChatComposer = forwardRef(function ChatComposer({
   };
 
   return (
-    <div className={`flex-shrink-0 border-t px-2 py-2 shadow-lg sm:px-3 sm:py-3 ${blocked ? 'border-rose-200 bg-rose-50' : 'border-slate-200 bg-white'}`}>
-      {blocked && (
-        <p className="mb-2 text-xs font-medium text-rose-800">
-          The 24-hour window is closed. A free reply will not send until the customer writes again. Internal notes still save.
-        </p>
-      )}
+    <div className="flex-shrink-0 border-t border-slate-200 bg-white px-2 py-2 shadow-lg sm:px-3 sm:py-3">
       <div className="mb-2 flex items-center gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-xs">
           <button type="button" onClick={() => setNote(false)} className={`h-9 flex-1 rounded-md px-2 font-medium ${!note ? 'bg-white text-soul-blue shadow-sm' : 'text-slate-600'}`}>Reply</button>
@@ -886,7 +868,6 @@ const ChatComposer = forwardRef(function ChatComposer({
         />
         <button
           type="button"
-          disabled={blocked}
           onClick={() => fileRef.current?.click()}
           className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40"
           aria-label="Attach a file"
@@ -912,10 +893,10 @@ const ChatComposer = forwardRef(function ChatComposer({
               submit();
             }
           }}
-          placeholder={note ? 'Internal note' : blocked ? 'Window closed. Use a note.' : `Message ${customerName || 'guest'}`}
+          placeholder={note ? 'Internal note' : `Message ${customerName || 'guest'}`}
           className={`max-h-36 min-h-11 flex-1 resize-none rounded-xl border bg-slate-50 p-2.5 text-base focus:outline-none focus:ring-2 sm:text-sm ${note ? 'border-amber-300 bg-amber-50/20 focus:ring-amber-400/30' : 'border-slate-200 focus:ring-soul-blue/20'}`}
         />
-        <button type="submit" aria-label={note ? 'Save note' : 'Send'} disabled={blocked || (!body.trim() && !file) || (note && !body.trim())} className={`flex h-11 shrink-0 items-center gap-1.5 rounded-xl px-3 text-xs font-bold shadow disabled:opacity-50 ${note ? 'bg-amber-500 text-white' : 'bg-soul-blue text-white'}`}>
+        <button type="submit" aria-label={note ? 'Save note' : 'Send'} disabled={(!body.trim() && !file) || (note && !body.trim())} className={`flex h-11 shrink-0 items-center gap-1.5 rounded-xl px-3 text-xs font-bold shadow disabled:opacity-50 ${note ? 'bg-amber-500 text-white' : 'bg-soul-blue text-white'}`}>
           <Send className="h-4 w-4" />
           <span className="hidden sm:inline">{note ? 'Save' : 'Send'}</span>
         </button>

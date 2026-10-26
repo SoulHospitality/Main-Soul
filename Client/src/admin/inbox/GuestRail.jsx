@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { CalendarPlus, X } from 'lucide-react';
 import { inboxApi } from './api';
 import LeadPanel from './LeadPanel';
-import { Avatar, ChannelDot, Chip, SlaChip } from './ui';
+import { Avatar, ChannelDot, SlaChip } from './ui';
 import { CHANNELS, CONVERSATION_TYPES, STATUS_LABELS, fmtDate, fmtMoney } from './utils';
 
 function Label({ children }) {
@@ -19,7 +19,6 @@ export default function GuestRail({
   me,
   can,
   now,
-  windowInfo,
   people,
   onType,
   onStatus,
@@ -75,26 +74,18 @@ export default function GuestRail({
         ) : null}
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <Label>Status</Label>
-          <select
-            aria-label="Chat status"
-            value={conversation.status}
-            onChange={(event) => onStatus(event.target.value)}
-            className="h-10 w-full rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-800 focus:outline-none"
-          >
-            {Object.entries(STATUS_LABELS).map(([key, label]) => (
-              <option key={key} value={key}>{label}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <Label>Reply window</Label>
-          <div className="flex h-10 items-center">
-            <Chip className={`border ${windowInfo.cls}`}>{windowInfo.text}</Chip>
-          </div>
-        </div>
+      <div>
+        <Label>Status</Label>
+        <select
+          aria-label="Chat status"
+          value={conversation.status}
+          onChange={(event) => onStatus(event.target.value)}
+          className="h-10 w-full rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-800 focus:outline-none"
+        >
+          {Object.entries(STATUS_LABELS).map(([key, label]) => (
+            <option key={key} value={key}>{label}</option>
+          ))}
+        </select>
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5">

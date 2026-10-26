@@ -7,7 +7,7 @@ const { broadcast } = require('./realtime');
 
 const DAY = 24 * 3600 * 1000;
 
-/** Meta only allows free-form replies within 24h of the customer's last message. */
+/** 24 hours after the customer's last message. Used to attach Meta's human-agent tag; sending is never blocked. */
 function messagingWindow(conv, now = Date.now()) {
   if (!conv.last_inbound_at) return { open: false, closesAt: null };
   const closesAt = conv.last_inbound_at + DAY;
@@ -48,16 +48,10 @@ async function sendToCustomer(conversationId, { text, attachment, template, send
 
   let tag = null;
   const win = messagingWindow(conv, now);
-  if (!template && !win.open && !customer.is_simulated) {
-    if (conv.channel_kind === 'whatsapp') {
-      throw new HttpError(409, 'The 24-hour window is closed. WhatsApp only allows an approved template now.', 'window_closed');
-    }
-    const within7Days = conv.last_inbound_at && now - conv.last_inbound_at < 7 * DAY;
-    if (getSettings().messenger_human_agent_tag && within7Days && senderType === 'agent') {
-      tag = 'HUMAN_AGENT';
-    } else {
-      throw new HttpError(409, 'The 24-hour window is closed. Meta does not allow messaging this customer until they write again.', 'window_closed');
-    }
+  const within7Days = conv.last_inbound_at && now - conv.last_inbound_at < 7 * DAY;
+  if (!template && !win.open && !customer.is_simulated && senderType === 'agent' && conv.channel_kind !== 'whatsapp'
+    && getSettings().messenger_human_agent_tag && within7Days) {
+    tag = 'HUMAN_AGENT';
   }
 
   const body = text || (template ? `[Template: ${template.name}]` : attachment?.caption || '');
