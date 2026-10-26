@@ -7,7 +7,7 @@ const { normalizePhone, phoneTail, int, preview } = require('./http');
 const { isBusinessTime, nextBusinessStart, localMinutes, isQuietHours } = require('./hours');
 const { messagingWindow } = require('./outbound');
 const { verifyMetaSignature, encrypt, decrypt } = require('./security');
-const { can, permissionsFor } = require('./permissions');
+const { can, seesEveryChat, permissionsFor } = require('./permissions');
 const { scrub, PRICE_OR_PROMISE } = require('./ai');
 const { fillPlaceholders } = require('./templates');
 
@@ -117,6 +117,12 @@ test('inbox permissions by role', () => {
   assert.equal(can({ role: 'manager' }, 'channels.manage'), false);
   assert.equal(can({ role: 'supervisor' }, 'conv.assign'), true);
   assert.equal(can({ role: 'agent' }, 'conv.view_all'), false);
+  assert.equal(can({ role: 'agent' }, 'settings.manage'), false);
+  assert.equal(can({ role: 'agent' }, 'analytics.team'), false);
+  assert.equal(seesEveryChat({ role: 'agent', pms_role: 'reservations' }), true);
+  assert.equal(seesEveryChat({ role: 'agent', pms_role: 'reservations_web' }), true);
+  assert.equal(seesEveryChat({ role: 'agent', pms_role: 'reservations_manual' }), true);
+  assert.equal(seesEveryChat({ role: 'agent', pms_role: 'operations' }), false);
   assert.equal(can(null, 'conv.view_all'), false);
   assert.ok(permissionsFor({ role: 'admin' }).includes('simulator'));
 });

@@ -1,6 +1,6 @@
 const { q } = require('../../../lib/inbox/db');
 const { forbidden, notFound } = require('../../../lib/inbox/http');
-const { can } = require('../../../lib/inbox/permissions');
+const { can, seesEveryChat } = require('../../../lib/inbox/permissions');
 const { getSettings, loadSettings } = require('../../../lib/inbox/settings');
 
 /** Resolves the PMS staff user to an inbox user (role from the PMS role or the Team override). */
@@ -33,7 +33,7 @@ function onChatSql(userIdParam = '?') {
 }
 
 function visibilitySql(user) {
-  if (can(user, 'conv.view_all')) return { sql: '1 = 1', params: [] };
+  if (seesEveryChat(user)) return { sql: '1 = 1', params: [] };
   const mine = onChatSql();
   if (!getSettings().allow_agent_claim) return { sql: mine, params: [user.id, user.id] };
   return {
@@ -47,7 +47,7 @@ function visibilitySql(user) {
 async function loadConversation(id, user) {
   const conv = await q.get('SELECT * FROM inbox_conversations WHERE id = ?', id);
   if (!conv) throw notFound('Conversation not found');
-  if (can(user, 'conv.view_all')) return conv;
+  if (seesEveryChat(user)) return conv;
   const member = conv.assigned_user_id === user.id || await q.get(
     'SELECT 1 AS x FROM inbox_conversation_assignees WHERE conversation_id = ? AND user_id = ?',
     conv.id, user.id,

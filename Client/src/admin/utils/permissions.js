@@ -41,7 +41,6 @@ const RESERVATIONS_PAGE_ACCESS = new Set([
   'reservations',
   'schedule',
   'inbox',
-  'leads',
   ...STAFF_HR_TABS,
 ]);
 
@@ -53,7 +52,6 @@ const RESERVATIONS_MANUAL_PAGE_ACCESS = new Set([
   'units',
   'projects',
   'inbox',
-  'leads',
   ...STAFF_HR_TABS,
 ]);
 
@@ -66,7 +64,6 @@ const RESERVATIONS_WEB_PAGE_ACCESS = new Set([
   'units',
   'projects',
   'inbox',
-  'leads',
   ...STAFF_HR_TABS,
 ]);
 

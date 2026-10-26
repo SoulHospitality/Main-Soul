@@ -1,6 +1,6 @@
 const express = require('express');
 const { q } = require('../../../lib/inbox/db');
-const { badRequest, wrap } = require('../../../lib/inbox/http');
+const { badRequest, forbidden, wrap } = require('../../../lib/inbox/http');
 const { can } = require('../../../lib/inbox/permissions');
 const { getSettings } = require('../../../lib/inbox/settings');
 const { localHour, localDay } = require('../../../lib/inbox/hours');
@@ -31,6 +31,7 @@ const pct = (a, b) => (b ? Math.round((a / b) * 1000) / 10 : null);
  *  - Qualified conversion (official KPI): Won / leads that reached a "qualified" stage.
  */
 router.get('/analytics', wrap(async (req, res) => {
+  if (!can(req.inbox, 'analytics.team')) throw forbidden('Not allowed');
   const now = Date.now();
   const to = Number(req.query.to) || now;
   const from = Number(req.query.from) || to - 7 * 86400000;
