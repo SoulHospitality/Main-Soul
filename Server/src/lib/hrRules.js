@@ -457,6 +457,17 @@ function payrollCycleKey(cycle) {
   return `${cycle.year}-${String(cycle.month).padStart(2, '0')}`;
 }
 
+const PAYSLIP_PENDING_MESSAGE = "You'll be able to see the payslip when its finalized";
+
+/** Staff see a current or future payslip only after that month is marked paid. */
+function staffPayslipWithheld({ year, month, paid, todayIso }) {
+  if (paid) return false;
+  const current = payrollCycleForDate(todayIso);
+  const selected = Number(year) * 12 + Number(month);
+  const nowKey = current.year * 12 + current.month;
+  return selected >= nowKey;
+}
+
 function nextPayrollPeriod(isoDate) {
   const current = payrollCycleForDate(isoDate);
   const next = payrollCycleForDate(current.to);
@@ -1258,6 +1269,8 @@ module.exports = {
   payrollCycleBounds,
   payrollCycleForDate,
   payrollCycleKey,
+  PAYSLIP_PENDING_MESSAGE,
+  staffPayslipWithheld,
   nextPayrollPeriod,
   dateCoveredByRanges,
   parseAttendanceRows,

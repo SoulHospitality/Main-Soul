@@ -33,6 +33,8 @@ const {
   payrollCycleBounds,
   payrollCycleForDate,
   payrollCycleKey,
+  PAYSLIP_PENDING_MESSAGE,
+  staffPayslipWithheld,
   dateCoveredByRanges,
   parseAttendanceRows,
   parseHtmlExcelTables,
@@ -1413,6 +1415,30 @@ router.get('/hr/payslip', async (req, res, next) => {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
+    const { rows: payrollRows } = await query(
+      `SELECT * FROM staff_payroll_entries
+       WHERE staff_user_id = $1 AND period_year = $2 AND period_month = $3`,
+      [staffUserId, year, month]
+    );
+    const payroll = payrollRows[0] || null;
+    const paid = payroll?.status === 'paid';
+    const adminPreview = isHrActor(req.user) && req.query.staff_user_id;
+    if (!adminPreview && staffPayslipWithheld({ year, month, paid, todayIso: cairoParts().date })) {
+      return res.json({
+        year,
+        month,
+        from,
+        to,
+        staff_user_id: staff.id,
+        full_name: staff.full_name,
+        staff_code: staff.staff_code || null,
+        role: staff.role,
+        finalized: false,
+        status: 'unpaid',
+        message: PAYSLIP_PENDING_MESSAGE,
+      });
+    }
+
     const { rows: deductionRows } = await query(
       `SELECT id, amount, reason, deduction_date, category, arrival_time, notified, daily_rate, days_factor
        FROM staff_salary_deductions
@@ -1427,13 +1453,6 @@ router.get('/hr/payslip', async (req, res, next) => {
        ORDER BY bonus_date, id`,
       [staffUserId, from, to]
     );
-    const { rows: payrollRows } = await query(
-      `SELECT * FROM staff_payroll_entries
-       WHERE staff_user_id = $1 AND period_year = $2 AND period_month = $3`,
-      [staffUserId, year, month]
-    );
-    const payroll = payrollRows[0] || null;
-    const paid = payroll?.status === 'paid';
     const split = splitSalaryAdjustments(deductionRows);
     const liveBonuses = roundMoney(bonusRows.reduce((acc, r) => acc + (Number(r.amount) || 0), 0));
     const liveDebits = roundMoney(split.penalties_total + split.deductions_total);

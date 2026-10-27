@@ -50,6 +50,10 @@ export default function Payslip() {
         <LoadingSpinner />
       ) : !data ? (
         <div className="card text-sm text-soul-muted">Could not load this payslip.</div>
+      ) : data.finalized === false ? (
+        <div className="card text-sm text-soul-muted">
+          {data.message || "You'll be able to see the payslip when its finalized"}
+        </div>
       ) : (
         <div className="card">
           <PayslipDetail data={data} year={year} month={month} fallbackName={user?.full_name} />

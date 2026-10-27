@@ -30,6 +30,7 @@ const {
   nextPayrollPeriod,
   payrollCycleBounds,
   payrollCycleForDate,
+  staffPayslipWithheld,
   dateCoveredByRanges,
   parseAttendanceRows,
   collapsePunchAttendance,
@@ -234,6 +235,16 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.equal(payrollCycleForDate('2026-10-25').month, 10);
     assert.equal(payrollCycleForDate('2026-12-26').month, 1);
     assert.equal(payrollCycleForDate('2026-12-26').year, 2027);
+  });
+
+  it('withholds the current and future payslip until it is marked paid', () => {
+    const todayIso = '2026-10-27';
+    assert.equal(staffPayslipWithheld({ year: 2026, month: 11, paid: false, todayIso }), true);
+    assert.equal(staffPayslipWithheld({ year: 2026, month: 12, paid: false, todayIso }), true);
+    assert.equal(staffPayslipWithheld({ year: 2027, month: 1, paid: false, todayIso }), true);
+    assert.equal(staffPayslipWithheld({ year: 2026, month: 11, paid: true, todayIso }), false);
+    assert.equal(staffPayslipWithheld({ year: 2026, month: 10, paid: false, todayIso }), false);
+    assert.equal(staffPayslipWithheld({ year: 2026, month: 10, paid: true, todayIso }), false);
   });
 
   it('schedules approved loans on the first day of the next cycle', () => {
