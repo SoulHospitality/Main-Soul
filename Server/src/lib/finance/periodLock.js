@@ -12,4 +12,14 @@ async function assertPeriodOpen(date, label = 'This date') {
   }
 }
 
-module.exports = { assertPeriodOpen };
+function reopenReason(body) {
+  const reason = String(body?.reason || '').trim();
+  if (!reason) {
+    const err = new Error('A reason is required to reopen a closed month');
+    err.status = 400;
+    throw err;
+  }
+  return reason;
+}
+
+module.exports = { assertPeriodOpen, reopenReason };

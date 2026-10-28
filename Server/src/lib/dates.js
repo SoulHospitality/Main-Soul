@@ -26,4 +26,16 @@ function shiftMonth(isoDate, delta) {
   return `${year}-${month}-01`;
 }
 
-module.exports = { todayCairo, addCalendarDays, shiftMonth };
+function isoDateOr(value, fallback) {
+  const iso = String(value || '').slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
+  return fallback;
+}
+
+/** Owner net still to pay after settlements and payout requests already counted. */
+function adjustPayoutsDue(gross, paidSettlements, openPayouts) {
+  const due = (Number(gross) || 0) - (Number(paidSettlements) || 0) - (Number(openPayouts) || 0);
+  return Math.round(Math.max(0, due) * 100) / 100;
+}
+
+module.exports = { todayCairo, addCalendarDays, shiftMonth, isoDateOr, adjustPayoutsDue };

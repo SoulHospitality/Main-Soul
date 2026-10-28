@@ -32,7 +32,7 @@ async function syncReservationPaymentStatus(reservationId) {
   const fromPayments = Number(payRows[0]?.paid) || 0;
   const paymentCount = Number(payRows[0]?.n) || 0;
   const down = Number(reservation.down_payment) || 0;
-  const amountPaid = paymentCount > 0 ? Math.max(0, fromPayments) : (fromPayments > 0 ? fromPayments : down);
+  const amountPaid = amountPaidFromRows(fromPayments, paymentCount, down);
   const paymentStatus = paymentStatusFrom(reservation.total_amount, amountPaid);
 
   let nextStatus = reservation.status;
@@ -57,7 +57,15 @@ async function syncReservationPaymentStatus(reservationId) {
   return rows[0] || null;
 }
 
+function amountPaidFromRows(fromPayments, paymentCount, down) {
+  const paid = Number(fromPayments) || 0;
+  const count = Number(paymentCount) || 0;
+  const deposit = Number(down) || 0;
+  return count > 0 ? Math.max(0, paid) : (paid > 0 ? paid : deposit);
+}
+
 module.exports = {
   syncReservationPaymentStatus,
   paymentStatusFrom,
+  amountPaidFromRows,
 };

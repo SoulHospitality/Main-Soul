@@ -1552,8 +1552,13 @@ router.post('/financial-system/periods/:yearMonth/close', requireRoles('admin', 
 
 router.delete('/financial-system/periods/:yearMonth/close', requireRoles('admin'), async (req, res, next) => {
   try {
-    const reason = String(req.body?.reason || '').trim();
-    if (!reason) return res.status(400).json({ error: 'A reason is required to reopen a closed month' });
+    const { reopenReason } = require('../../lib/finance/periodLock');
+    let reason;
+    try {
+      reason = reopenReason(req.body);
+    } catch (err) {
+      return res.status(err.status || 400).json({ error: err.message });
+    }
     const { rows: beforeRows } = await query(
       `SELECT * FROM financial_period_closes WHERE year_month = $1`,
       [req.params.yearMonth]

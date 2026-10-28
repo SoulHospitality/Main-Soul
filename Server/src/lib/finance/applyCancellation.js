@@ -1,4 +1,4 @@
-const { pool } = require('../config/db');
+const { pool, query } = require('../../config/db');
 const { logAudit } = require('../audit');
 const { syncReservationPaymentStatus } = require('../syncReservationPayment');
 const { assertPeriodOpen } = require('./periodLock');
@@ -161,7 +161,6 @@ async function applyCancellation({ reservationId, user, body = {} }) {
       },
     });
 
-    const { query } = require('../db');
     const { rows: fresh } = await query(`SELECT * FROM reservations WHERE id = $1`, [reservationId]);
     return fresh[0] || updated;
   } catch (err) {

@@ -2962,7 +2962,8 @@ router.post(
       if (!existingReservation) return res.status(404).json({ error: 'Reservation not found' });
       await assertReservationOwned(req.user, existingReservation);
     }
-    const idempotencyKey = String(req.get('Idempotency-Key') || '').trim().slice(0, 80);
+    const { normalizeIdempotencyKey, assertCollectionAmount } = require('../../lib/finance/paymentInput');
+    const idempotencyKey = normalizeIdempotencyKey(req.get('Idempotency-Key'));
     if (idempotencyKey) {
       const { rows: prior } = await query(
         `SELECT * FROM payments WHERE idempotency_key = $1`,
@@ -2970,14 +2971,13 @@ router.post(
       );
       if (prior[0]) return res.json(prior[0]);
     }
+    const { todayCairo, isoDateOr } = require('../../lib/dates');
     const { assertPeriodOpen } = require('../../lib/finance/periodLock');
-    await assertPeriodOpen(b.payment_date || new Date(), 'This payment date');
-    const submittedAmount = Number(b.amount);
-    if (!Number.isFinite(submittedAmount) || submittedAmount <= 0) {
-      return res.status(400).json({ error: 'Amount must be greater than zero' });
-    }
-    if (Math.abs(submittedAmount * 100 - Math.round(submittedAmount * 100)) > 0.001) {
-      return res.status(400).json({ error: 'Amount can have at most 2 decimal places' });
+    await assertPeriodOpen(isoDateOr(b.payment_date, todayCairo()), 'This payment date');
+    try {
+      assertCollectionAmount(b.amount);
+    } catch (err) {
+      return res.status(err.status || 400).json({ error: err.message });
     }
     const { syncReservationPaymentStatus } = require('../../lib/syncReservationPayment');
     const { normalizeBankAccount } = require('../../lib/reservationCurrency');
@@ -3299,7 +3299,7 @@ router.get('/dashboard/stats', async (req, res, next) => {
     const showFinance = role === 'admin' || role === 'finance' || role === 'finance_manager';
     const agentId = isReservationsAgent(req.user) ? req.user.id : null;
     const now = new Date();
-    const { todayCairo, addCalendarDays, shiftMonth } = require('../../lib/dates');
+    const { todayCairo, addCalendarDays, shiftMonth, adjustPayoutsDue } = require('../../lib/dates');
     const today = todayCairo(now);
     const calendarMonthStart = `${today.slice(0, 7)}-01`;
     const monthStart = clampFromDate(calendarMonthStart);
@@ -3511,9 +3511,11 @@ router.get('/dashboard/stats', async (req, res, next) => {
              )`
         ),
       ]);
-      payoutsDue -= Number(settlementRows[0]?.total) || 0;
-      payoutsDue -= Number(payoutRows[0]?.total) || 0;
-      if (payoutsDue < 0) payoutsDue = 0;
+      payoutsDue = adjustPayoutsDue(
+        payoutsDue,
+        settlementRows[0]?.total,
+        payoutRows[0]?.total
+      );
     }
 
     const kpis = {
@@ -3775,8 +3777,9 @@ router.post(
     if (!description || Number.isNaN(amount) || amount < 0) {
       return res.status(400).json({ error: 'Description and amount are required' });
     }
+    const { todayCairo, isoDateOr } = require('../../lib/dates');
     const { assertPeriodOpen } = require('../../lib/finance/periodLock');
-    await assertPeriodOpen(entryDate || new Date(), 'This petty cash date');
+    await assertPeriodOpen(isoDateOr(entryDate, todayCairo()), 'This petty cash date');
     if (entryType === 'out' && entryKind !== 'loan' && !proofPath) {
       return res.status(400).json({ error: 'Transfer proof is required for cash out' });
     }
