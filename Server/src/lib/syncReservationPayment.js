@@ -21,7 +21,8 @@ async function syncReservationPaymentStatus(reservationId) {
   if (!reservation) return null;
 
   const { rows: payRows } = await query(
-    `SELECT COALESCE(SUM(amount), 0)::float AS paid
+    `SELECT COALESCE(SUM(amount) FILTER (WHERE COALESCE(kind, 'collection') <> 'forfeit'), 0)::float AS paid,
+            COUNT(*)::int AS n
      FROM payments
      WHERE reservation_id = $1
        AND status = 'successful'
@@ -29,9 +30,9 @@ async function syncReservationPaymentStatus(reservationId) {
     [reservationId]
   );
   const fromPayments = Number(payRows[0]?.paid) || 0;
+  const paymentCount = Number(payRows[0]?.n) || 0;
   const down = Number(reservation.down_payment) || 0;
-  
-  const amountPaid = fromPayments > 0 ? fromPayments : down;
+  const amountPaid = paymentCount > 0 ? Math.max(0, fromPayments) : (fromPayments > 0 ? fromPayments : down);
   const paymentStatus = paymentStatusFrom(reservation.total_amount, amountPaid);
 
   let nextStatus = reservation.status;

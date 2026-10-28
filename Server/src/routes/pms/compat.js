@@ -1238,7 +1238,7 @@ function mapWebsiteBookingDecision(row) {
   };
 }
 
-router.get('/website-bookings', async (req, res, next) => {
+router.get('/website-bookings', requireRoles('reservations', 'reservations_web'), async (req, res, next) => {
   try {
     const status = req.query.status;
     const params = [];
@@ -1686,7 +1686,7 @@ router.get('/treasury', requireRoles('admin'), async (req, res, next) => {
   }
 });
 
-router.get('/utilities', async (req, res, next) => {
+router.get('/utilities', requireRoles('finance', 'finance_manager', 'owners_relations'), async (req, res, next) => {
   try {
     const from_date = clampFromDate(req.query.from_date);
     const { to_date, project, unit_id } = req.query;
@@ -1901,6 +1901,17 @@ router.post('/hr/deductions', requireRoles('admin', 'hr', 'hr_supervisor'), asyn
 
 router.put('/tasks/:id', async (req, res, next) => {
   try {
+    const { rows: existingRows } = await query(
+      `SELECT id, created_by, assigned_to FROM tasks WHERE id = $1`,
+      [req.params.id]
+    );
+    const existing = existingRows[0];
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    const uid = Number(req.user.id);
+    const canEdit = req.user.role === 'admin'
+      || Number(existing.created_by) === uid
+      || Number(existing.assigned_to) === uid;
+    if (!canEdit) return res.status(403).json({ error: 'Forbidden' });
     const b = req.body;
     const { rows } = await query(
       `UPDATE tasks SET

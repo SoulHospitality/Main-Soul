@@ -1212,6 +1212,8 @@ export default function Reservations() {
   const [cancelReqId,    setCancelReqId]    = useState(null);
   const [cancelReason,   setCancelReason]   = useState('');
   const [cancelType,     setCancelType]     = useState('non_refundable');
+  const [refundAmount,   setRefundAmount]   = useState('');
+  const paymentIdempotencyKey = useRef('');
   
   const [approveCancelReview, setApproveCancelReview] = useState(null); 
   const [approveCancelType, setApproveCancelType] = useState('non_refundable'); 
@@ -1294,12 +1296,16 @@ export default function Reservations() {
 
   
   const cancelRequestMutation = useMutation({
-    mutationFn: ({ id, reason, type }) =>
-      api.post(`/reservations/${id}/cancel-request`, { reason, cancel_type: type }),
+    mutationFn: ({ id, reason, type, refundAmount: amount }) =>
+      api.post(`/reservations/${id}/cancel-request`, {
+        reason,
+        cancel_type: type,
+        refund_amount: type === 'refundable' && amount !== '' ? amount : undefined,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['reservations'] });
-      toast.success('Cancellation request submitted');
-      setCancelReqOpen(false); setCancelReqId(null); setCancelReason(''); setCancelType('non_refundable');
+      toast.success('Reservation cancelled. Collected payments stay on the record.');
+      setCancelReqOpen(false); setCancelReqId(null); setCancelReason(''); setCancelType('non_refundable'); setRefundAmount('');
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Error submitting request'),
   });
@@ -1338,8 +1344,19 @@ export default function Reservations() {
   });
 
   const pmtMutation = useMutation({
-    mutationFn: (d) => api.post('/payments', d, d instanceof FormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : {}),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['reservations'] }); qc.invalidateQueries({ queryKey: ['reservation', viewRes] }); toast.success('Payment recorded'); setPmtModal(false); setPmtForm(EMPTY_PMT); setPmtFile(null); },
+    mutationFn: ({ body: d, idempotencyKey }) => api.post('/payments', d, {
+      headers: {
+        ...(d instanceof FormData ? { 'Content-Type': 'multipart/form-data' } : {}),
+        ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
+      },
+    }),
+    onSuccess: () => {
+      paymentIdempotencyKey.current = '';
+      qc.invalidateQueries({ queryKey: ['reservations'] });
+      qc.invalidateQueries({ queryKey: ['reservation', viewRes] });
+      toast.success('Payment recorded');
+      setPmtModal(false); setPmtForm(EMPTY_PMT); setPmtFile(null);
+    },
     onError: (e) => toast.error(e.response?.data?.error || 'Error recording payment'),
   });
 
@@ -1499,11 +1516,11 @@ export default function Reservations() {
     }
   };
 
-  const openCancelReq  = (id) => { setCancelReqId(id); setCancelReason(''); setCancelType('non_refundable'); setCancelReqOpen(true); };
+  const openCancelReq  = (id) => { setCancelReqId(id); setCancelReason(''); setCancelType('non_refundable'); setRefundAmount(''); setCancelReqOpen(true); };
   const openRefundDone = (id) => { setRefundDoneId(id); setRefundFile(null); setRefundDoneOpen(true); };
   const handleCancelReq = () => {
     if (!cancelReason.trim()) { toast.error('Reason is required'); return; }
-    cancelRequestMutation.mutate({ id: cancelReqId, reason: cancelReason, type: cancelType });
+    cancelRequestMutation.mutate({ id: cancelReqId, reason: cancelReason, type: cancelType, refundAmount });
   };
   const handleRefundDone = () => refundDoneMutation.mutate({ id: refundDoneId, file: refundFile });
   const handlePmtSave = () => {
@@ -1520,7 +1537,8 @@ export default function Reservations() {
     };
     Object.entries(body).forEach(([k, v]) => { if (v !== '' && v !== null && v !== undefined) fd.append(k, v); });
     if (pmtFile) fd.append('document', pmtFile);
-    pmtMutation.mutate(fd);
+    if (!paymentIdempotencyKey.current) paymentIdempotencyKey.current = crypto.randomUUID();
+    pmtMutation.mutate({ body: fd, idempotencyKey: paymentIdempotencyKey.current });
   };
 
   const canWrite = canManageReservations;
@@ -2305,9 +2323,23 @@ export default function Reservations() {
                   checked={cancelType === 'non_refundable'}
                   onChange={() => setCancelType('non_refundable')}
                   className="w-4 h-4 accent-gray-500" />
-                <span className="text-sm font-medium text-gray-700">Non-Refundable</span>
+                <span className="text-sm font-medium text-gray-700">Keep the deposit</span>
               </label>
             </div>
+            {cancelType === 'refundable' ? (
+              <label className="block mt-3 text-sm">
+                <span className="text-soul-muted">Refund amount. Leave blank to refund everything collected.</span>
+                <input
+                  className="input mt-1"
+                  inputMode="decimal"
+                  value={refundAmount}
+                  onChange={(e) => setRefundAmount(e.target.value)}
+                  placeholder="Partial refund"
+                />
+              </label>
+            ) : (
+              <p className="mt-3 text-sm text-soul-muted">The money already collected stays in the books as a forfeited deposit.</p>
+            )}
           </div>
         </div>
       </Modal>

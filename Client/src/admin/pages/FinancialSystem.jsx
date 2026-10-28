@@ -3469,7 +3469,7 @@ function CloseTool({ toDate }) {
     onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
   const reopen = useMutation({
-    mutationFn: (yearMonth) => api.delete(`/financial-system/periods/${yearMonth}/close`),
+    mutationFn: ({ yearMonth, reason }) => api.delete(`/financial-system/periods/${yearMonth}/close`, { data: { reason } }),
     onSuccess: () => {
       toast.success(t('pms.fin.close.monthReopened'));
       qc.invalidateQueries({ queryKey: ['financial-system-periods'] });
@@ -3603,7 +3603,11 @@ function CloseTool({ toDate }) {
                 <td className="text-right tabular-nums">{currency(row.pnl_amount)}</td>
                 <td>{row.closed_by_name || '—'}</td>
                 <td className="text-right">
-                  <button type="button" className="text-xs text-amber-700 inline-flex items-center gap-1" onClick={() => reopen.mutate(row.year_month)}>
+                  <button type="button" className="text-xs text-amber-700 inline-flex items-center gap-1" onClick={() => {
+                    const reason = window.prompt('Why is this month being reopened?');
+                    if (!reason || !reason.trim()) return;
+                    reopen.mutate({ yearMonth: row.year_month, reason: reason.trim() });
+                  }}>
                     <Unlock className="w-3 h-3" /> {t('pms.fin.close.reopen')}
                   </button>
                 </td>

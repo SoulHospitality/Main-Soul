@@ -1,8 +1,8 @@
 const express = require('express');
+const { authStaff, authGuest } = require('../middleware/auth');
 const { query } = require('../config/db');
 const { quoteStay } = require('../services/pricing');
 const { initializePaymobCheckout } = require('../config/paymob');
-const { authGuest } = require('../middleware/auth');
 const { isLongTermUnit } = require('../lib/listingType');
 const { upload, attachCloudinaryUrls } = require('../config/cloudinary');
 
@@ -415,7 +415,11 @@ router.get('/:id', async (req, res, next) => {
     }
 
     if (payload.kind === 'staff' || (!payload.kind && payload.role)) {
-      return res.json(booking);
+      return authStaff(req, res, () => {
+        if (res.headersSent) return;
+        if (req.user?.role === 'owner') return res.status(403).json({ error: 'Forbidden' });
+        return res.json(booking);
+      });
     }
 
     return res.status(401).json({ error: 'Unauthorized' });

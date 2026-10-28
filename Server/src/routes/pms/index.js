@@ -1565,40 +1565,56 @@ router.delete('/units/:id', requireRoles('admin', ...UNIT_ACQUISITION_ROLES), as
       });
     }
 
-    await query('BEGIN');
+    const { rows: moneyRows } = await query(
+      `SELECT
+         (SELECT COUNT(*)::int FROM payments p
+           WHERE p.reservation_id IN (SELECT id FROM reservations WHERE unit_id = $1)) AS payments,
+         (SELECT COUNT(*)::int FROM expenses e WHERE e.unit_id = $1) AS expenses`,
+      [unitId]
+    );
+    if (Number(moneyRows[0]?.payments) > 0 || Number(moneyRows[0]?.expenses) > 0) {
+      return res.status(409).json({
+        error: 'This unit has payments or expenses. Keep it so the financial history stays on the books.',
+      });
+    }
+
+    const client = await pool.connect();
     try {
+      await client.query('BEGIN');
       if (resIds.length) {
-        await query(
+        await client.query(
           `UPDATE petty_cash SET linked_reservation_id = NULL
            WHERE linked_reservation_id = ANY($1::int[])`,
           [resIds]
         );
-        await query(`DELETE FROM commissions WHERE reservation_id = ANY($1::int[])`, [resIds]);
-        await query(`DELETE FROM payments WHERE reservation_id = ANY($1::int[])`, [resIds]);
+        await client.query(`DELETE FROM commissions WHERE reservation_id = ANY($1::int[])`, [resIds]);
+        await client.query('SAVEPOINT delete_housekeeping');
         try {
-          await query(
+          await client.query(
             `DELETE FROM housekeeping_tasks WHERE reservation_id = ANY($1::int[])`,
             [resIds]
           );
-        } catch (_) {}
-        await query(`DELETE FROM reservations WHERE unit_id = $1`, [unitId]);
+          await client.query('RELEASE SAVEPOINT delete_housekeeping');
+        } catch (_) {
+          await client.query('ROLLBACK TO SAVEPOINT delete_housekeeping');
+        }
+        await client.query(`DELETE FROM reservations WHERE unit_id = $1`, [unitId]);
       }
 
-      await query(`UPDATE bookings SET unit_id = NULL WHERE unit_id = $1`, [unitId]);
-      await query(`DELETE FROM expenses WHERE unit_id = $1`, [unitId]);
-      await query(`DELETE FROM owner_units WHERE unit_id = $1`, [unitId]);
-      await query(`DELETE FROM reviews WHERE unit_id = $1`, [unitId]);
+      await client.query(`UPDATE bookings SET unit_id = NULL WHERE unit_id = $1`, [unitId]);
+      await client.query(`DELETE FROM owner_units WHERE unit_id = $1`, [unitId]);
+      await client.query(`DELETE FROM reviews WHERE unit_id = $1`, [unitId]);
 
       const wp = existing[0].wp_post_id;
       if (wp != null) {
-        await query(`DELETE FROM unit_daily_prices WHERE wp_post_id = $1`, [wp]);
-        await query(`DELETE FROM unit_blocked_dates WHERE wp_post_id = $1`, [wp]);
-        await query(`DELETE FROM unit_ical_blocks WHERE wp_post_id = $1`, [wp]);
-        await query(`DELETE FROM listing_ical WHERE wordpress_post_id = $1`, [wp]);
+        await client.query(`DELETE FROM unit_daily_prices WHERE wp_post_id = $1`, [wp]);
+        await client.query(`DELETE FROM unit_blocked_dates WHERE wp_post_id = $1`, [wp]);
+        await client.query(`DELETE FROM unit_ical_blocks WHERE wp_post_id = $1`, [wp]);
+        await client.query(`DELETE FROM listing_ical WHERE wordpress_post_id = $1`, [wp]);
       }
 
-      const { rows } = await query(`DELETE FROM units WHERE id = $1 RETURNING id`, [unitId]);
-      await query('COMMIT');
+      const { rows } = await client.query(`DELETE FROM units WHERE id = $1 RETURNING id`, [unitId]);
+      await client.query('COMMIT');
       await logAudit({
         userId: req.user.id,
         action: 'DELETE_UNIT',
@@ -1615,8 +1631,10 @@ router.delete('/units/:id', requireRoles('admin', ...UNIT_ACQUISITION_ROLES), as
       }
       res.json({ id: rows[0].id, deleted: true, reservations_deleted: deleteReservations ? resIds.length : 0 });
     } catch (inner) {
-      await query('ROLLBACK');
+      try { await client.query('ROLLBACK'); } catch (_) { /* already committed or closed */ }
       throw inner;
+    } finally {
+      client.release();
     }
   } catch (e) {
     next(e);
@@ -1903,6 +1921,9 @@ router.post(
       }
       
     }
+
+    const { assertPeriodOpen } = require('../../lib/finance/periodLock');
+    await assertPeriodOpen(b.check_in, 'This stay');
 
     let beachAccessFees =
       b.beach_access_fees !== undefined && b.beach_access_fees !== ''
@@ -2194,6 +2215,9 @@ router.patch(
     const existing = await loadReservationAccess(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Not found' });
     await assertReservationOwned(req.user, existing);
+    const { assertPeriodOpen } = require('../../lib/finance/periodLock');
+    await assertPeriodOpen(existing.check_in, 'This stay');
+    if (req.body?.check_in) await assertPeriodOpen(req.body.check_in, 'The new check-in');
 
     const { reservationCurrencyFromBody, applyReservationCurrency } = require('../../lib/reservationCurrency');
     const cur = await reservationCurrencyFromBody(req.body, { reservationId: req.params.id });
@@ -2480,9 +2504,23 @@ router.delete(
     await assertReservationOwned(req.user, existing);
 
     const bookingId = existing.booking_id;
+    const { rows: payCount } = await query(
+      `SELECT COUNT(*)::int AS n FROM payments WHERE reservation_id = $1`,
+      [id]
+    );
+    if (Number(payCount[0]?.n) > 0) {
+      const { applyCancellation } = require('../../lib/finance/applyCancellation');
+      const updated = await applyCancellation({
+        reservationId: id,
+        user: req.user,
+        body: req.body || {},
+      });
+      return res.json(updated);
+    }
+    const { assertPeriodOpen } = require('../../lib/finance/periodLock');
+    await assertPeriodOpen(existing.check_in, 'This stay');
 
     await query(`DELETE FROM commissions WHERE reservation_id = $1`, [id]);
-    await query(`DELETE FROM payments WHERE reservation_id = $1`, [id]);
     await query(
       `UPDATE petty_cash SET linked_reservation_id = NULL WHERE linked_reservation_id = $1`,
       [id]
@@ -2535,67 +2573,13 @@ router.post(
     if (!existing) return res.status(404).json({ error: 'Not found' });
     await assertReservationOwned(req.user, existing);
 
-    const { reason } = req.body || {};
-    const { rows } = await query(
-      `UPDATE reservations SET
-         status = 'cancelled',
-         amount_paid = 0,
-         payment_status = 'pending',
-         notes = CASE
-           WHEN $1::text IS NULL OR $1 = '' THEN notes
-           ELSE COALESCE(notes || E'\n', '') || ('Cancel request: ' || $1)
-         END,
-         updated_at = now()
-       WHERE id = $2 AND status <> 'cancelled'
-       RETURNING *`,
-      [reason || null, req.params.id]
-    );
-    if (!rows[0]) return res.status(404).json({ error: 'Not found' });
-
-    
-    await query(`DELETE FROM commissions WHERE reservation_id = $1`, [req.params.id]);
-    await query(`DELETE FROM payments WHERE reservation_id = $1`, [req.params.id]);
-    try {
-      await query(
-        `UPDATE housekeeping_tasks
-         SET status = 'cancelled', updated_at = now()
-         WHERE reservation_id = $1 AND status IS DISTINCT FROM 'ready'`,
-        [req.params.id]
-      );
-    } catch (_) {}
-
-    try {
-      const { syncBlocksForReservation } = require('../../lib/reservationBlocks');
-      await syncBlocksForReservation(rows[0]);
-    } catch (err) {
-      console.warn('[reservations] block release on cancel failed', err.message);
-    }
-
-    if (rows[0].booking_id) {
-      const { cancelWebsiteBooking } = require('../../services/bookingWorkflow');
-      await cancelWebsiteBooking(rows[0].booking_id, reason || 'cancel_request');
-    }
-
-    try {
-      const { notifyCancelRequest } = require('../../services/pmsNotifications');
-      await notifyCancelRequest(rows[0], req.user, reason);
-    } catch (_) {}
-
-    await logAudit({
-      userId: req.user.id,
-      action: 'CANCEL_RESERVATION',
-      entityType: 'reservation',
-      entityId: rows[0].id,
-      details: {
-        guest_name: rows[0].guest_name || null,
-        unit_id: rows[0].unit_id || null,
-        check_in: rows[0].check_in || null,
-        check_out: rows[0].check_out || null,
-        reason: reason || null,
-      },
+    const { applyCancellation } = require('../../lib/finance/applyCancellation');
+    const updated = await applyCancellation({
+      reservationId: req.params.id,
+      user: req.user,
+      body: req.body || {},
     });
-
-    res.json(rows[0]);
+    res.json(updated);
   } catch (e) {
     next(e);
   }
@@ -2973,6 +2957,28 @@ router.post(
     const b = req.body;
     const doc = req.file?.path || req.file?.secure_url || null;
     let method = String(b.payment_method || 'cash').toLowerCase();
+    if (b.reservation_id) {
+      const existingReservation = await loadReservationAccess(b.reservation_id);
+      if (!existingReservation) return res.status(404).json({ error: 'Reservation not found' });
+      await assertReservationOwned(req.user, existingReservation);
+    }
+    const idempotencyKey = String(req.get('Idempotency-Key') || '').trim().slice(0, 80);
+    if (idempotencyKey) {
+      const { rows: prior } = await query(
+        `SELECT * FROM payments WHERE idempotency_key = $1`,
+        [idempotencyKey]
+      );
+      if (prior[0]) return res.json(prior[0]);
+    }
+    const { assertPeriodOpen } = require('../../lib/finance/periodLock');
+    await assertPeriodOpen(b.payment_date || new Date(), 'This payment date');
+    const submittedAmount = Number(b.amount);
+    if (!Number.isFinite(submittedAmount) || submittedAmount <= 0) {
+      return res.status(400).json({ error: 'Amount must be greater than zero' });
+    }
+    if (Math.abs(submittedAmount * 100 - Math.round(submittedAmount * 100)) > 0.001) {
+      return res.status(400).json({ error: 'Amount can have at most 2 decimal places' });
+    }
     const { syncReservationPaymentStatus } = require('../../lib/syncReservationPayment');
     const { normalizeBankAccount } = require('../../lib/reservationCurrency');
     let amount = b.amount;
@@ -3002,10 +3008,10 @@ router.post(
       `INSERT INTO payments (
          reservation_id, booking_id, amount, payment_date, payment_method,
          reference_number, notes, document_path, document_name, created_by, status,
-         is_approved, approved_by, approved_at, paid_at, bank_account
+         is_approved, approved_by, approved_at, paid_at, bank_account, kind, idempotency_key
        ) VALUES (
          $1,$2,$3,COALESCE($4,CURRENT_DATE),$5,$6,$7,$8,$9,$10,
-         $11, $12, $13, $14, $15, $16
+         $11, $12, $13, $14, $15, $16, 'collection', $17
        )
        RETURNING *`,
       [
@@ -3025,6 +3031,7 @@ router.post(
         autoApprove ? new Date() : null,
         autoApprove ? new Date() : null,
         bankAccount,
+        idempotencyKey || null,
       ]
     );
 
@@ -3057,10 +3064,14 @@ router.post(
       entityType: 'payment',
       entityId: rows[0].id,
       details: {
+        before: null,
+        after: {
+          amount: rows[0].amount,
+          payment_method: rows[0].payment_method || method || null,
+          status: rows[0].status || null,
+          kind: rows[0].kind || 'collection',
+        },
         reservation_id: b.reservation_id || null,
-        amount: rows[0].amount,
-        payment_method: rows[0].payment_method || method || null,
-        status: rows[0].status || null,
       },
     });
 
@@ -3120,7 +3131,7 @@ function normalizeExpenseCategory(raw, fallback = 'other') {
   return EXPENSE_CATEGORIES.has(cat) ? cat : fallback;
 }
 
-router.get('/expenses', async (req, res, next) => {
+router.get('/expenses', requireRoles('finance', 'finance_manager'), async (req, res, next) => {
   try {
     const from = clampFromDate(req.query.from_date);
     const to = req.query.to_date || null;
@@ -3167,6 +3178,8 @@ router.post('/expenses', requireRoles('admin'), async (req, res, next) => {
     if (category === 'other' && !unitId) {
       return res.status(400).json({ error: 'unit_id required for general expenses' });
     }
+    const { assertPeriodOpen } = require('../../lib/finance/periodLock');
+    await assertPeriodOpen(b.expense_date, 'This expense date');
     const { rows } = await query(
       `INSERT INTO expenses (unit_id, description, amount, paid_by, expense_date, notes, created_by, category)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
@@ -3181,6 +3194,13 @@ router.post('/expenses', requireRoles('admin'), async (req, res, next) => {
         category,
       ]
     );
+    await logAudit({
+      userId: req.user.id,
+      action: 'CREATE_EXPENSE',
+      entityType: 'expense',
+      entityId: rows[0].id,
+      details: { before: null, after: { amount: rows[0].amount, expense_date: rows[0].expense_date, description: rows[0].description } },
+    });
     res.status(201).json(rows[0]);
   } catch (e) {
     next(e);
@@ -3193,6 +3213,9 @@ router.put('/expenses/:id', requireRoles('admin'), async (req, res, next) => {
     const existing = await query(`SELECT * FROM expenses WHERE id = $1`, [req.params.id]);
     if (!existing.rows[0]) return res.status(404).json({ error: 'Expense not found' });
     const cur = existing.rows[0];
+    const { assertPeriodOpen } = require('../../lib/finance/periodLock');
+    await assertPeriodOpen(cur.expense_date, 'This expense date');
+    if (b.expense_date) await assertPeriodOpen(b.expense_date, 'The new expense date');
     const category =
       b.category != null ? normalizeExpenseCategory(b.category, cur.category || 'other') : cur.category || 'other';
     const unitId =
@@ -3219,6 +3242,16 @@ router.put('/expenses/:id', requireRoles('admin'), async (req, res, next) => {
         req.params.id,
       ]
     );
+    await logAudit({
+      userId: req.user.id,
+      action: 'UPDATE_EXPENSE',
+      entityType: 'expense',
+      entityId: rows[0].id,
+      details: {
+        before: { amount: cur.amount, expense_date: cur.expense_date, description: cur.description },
+        after: { amount: rows[0].amount, expense_date: rows[0].expense_date, description: rows[0].description },
+      },
+    });
     res.json(rows[0]);
   } catch (e) {
     next(e);
@@ -3227,8 +3260,19 @@ router.put('/expenses/:id', requireRoles('admin'), async (req, res, next) => {
 
 router.delete('/expenses/:id', requireRoles('admin'), async (req, res, next) => {
   try {
+    const existing = await query(`SELECT * FROM expenses WHERE id = $1`, [req.params.id]);
+    if (!existing.rows[0]) return res.status(404).json({ error: 'Expense not found' });
+    const { assertPeriodOpen } = require('../../lib/finance/periodLock');
+    await assertPeriodOpen(existing.rows[0].expense_date, 'This expense date');
     const { rowCount } = await query(`DELETE FROM expenses WHERE id = $1`, [req.params.id]);
     if (!rowCount) return res.status(404).json({ error: 'Expense not found' });
+    await logAudit({
+      userId: req.user.id,
+      action: 'DELETE_EXPENSE',
+      entityType: 'expense',
+      entityId: req.params.id,
+      details: { before: { amount: existing.rows[0].amount, expense_date: existing.rows[0].expense_date, description: existing.rows[0].description }, after: null },
+    });
     res.json({ ok: true });
   } catch (e) {
     next(e);
@@ -3251,14 +3295,15 @@ router.get('/commissions', requireRoles('admin'), async (_req, res, next) => {
 router.get('/dashboard/stats', async (req, res, next) => {
   try {
     const role = req.user?.role;
+    if (role === 'owner') return res.status(403).json({ error: 'Forbidden' });
+    const showFinance = role === 'admin' || role === 'finance' || role === 'finance_manager';
     const agentId = isReservationsAgent(req.user) ? req.user.id : null;
     const now = new Date();
-    const today = now.toISOString().slice(0, 10);
-    const calendarMonthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    const { todayCairo, addCalendarDays, shiftMonth } = require('../../lib/dates');
+    const today = todayCairo(now);
+    const calendarMonthStart = `${today.slice(0, 7)}-01`;
     const monthStart = clampFromDate(calendarMonthStart);
-    const nextWeek = new Date(now);
-    nextWeek.setDate(nextWeek.getDate() + 7);
-    const nextWeekStr = nextWeek.toISOString().slice(0, 10);
+    const nextWeekStr = addCalendarDays(today, 7);
 
     const [
       totalUnitsRes,
@@ -3420,20 +3465,21 @@ router.get('/dashboard/stats', async (req, res, next) => {
              )
            ORDER BY COALESCE(u.project, u.compound), u.title`,
           [today, agentId]
-        ).catch(() => ({ rows: [] })),
-        query(
-          `SELECT r.*, u.company_commission_pct, u.company_commission_owner_pct,
-                  u.commission_mode, u.commission_tenant_pct, u.utilities_cost
-           FROM reservations r
-           JOIN units u ON u.id = r.unit_id
-           WHERE r.status <> 'cancelled' AND r.check_in >= $1::date
-             AND ($2::int IS NULL OR r.sales_person_id = $2 OR r.created_by = $2)`,
-          [FINANCIAL_EPOCH, agentId]
-        ).catch(() => ({ rows: [] })),
-        channelRevenueSummary({ from: monthStart, to: today, agentId }).catch(() => ({
-          channels: [],
-          totals: { count: 0, gross: 0, commission: 0, net: 0 },
-        })),
+        ),
+        showFinance
+          ? query(
+              `SELECT r.*, u.company_commission_pct, u.company_commission_owner_pct,
+                      u.commission_mode, u.commission_tenant_pct, u.utilities_cost
+               FROM reservations r
+               JOIN units u ON u.id = r.unit_id
+               WHERE r.status <> 'cancelled' AND r.check_in >= $1::date
+                 AND ($2::int IS NULL OR r.sales_person_id = $2 OR r.created_by = $2)`,
+              [FINANCIAL_EPOCH, agentId]
+            )
+          : Promise.resolve({ rows: [] }),
+        showFinance
+          ? channelRevenueSummary({ from: monthStart, to: today, agentId })
+          : Promise.resolve({ channels: [], totals: { count: 0, gross: 0, commission: 0, net: 0 } }),
       ]);
 
     const bookedNights = Number(nightRows[0]?.booked_nights) || 0;
@@ -3448,6 +3494,26 @@ router.get('/dashboard/stats', async (req, res, next) => {
       const utilitiesAmount = reservationUtilitiesAmount(r, r.utilities_cost);
       const fin = calcReservationFinancials(r, { ...r, utilities_amount: utilitiesAmount });
       payoutsDue += fin.ownerNet;
+    }
+    if (showFinance && payoutsDue) {
+      const [{ rows: settlementRows }, { rows: payoutRows }] = await Promise.all([
+        query(`SELECT COALESCE(SUM(net_amount), 0)::float AS total FROM owner_settlements WHERE status = 'paid'`),
+        query(
+          `SELECT COALESCE(SUM(p.amount), 0)::float AS total
+           FROM owner_payout_requests p
+           WHERE p.status IN ('paid', 'approved')
+             AND (
+               p.settlement_id IS NULL
+               OR NOT EXISTS (
+                 SELECT 1 FROM owner_settlements s
+                 WHERE s.id = p.settlement_id AND s.status = 'paid'
+               )
+             )`
+        ),
+      ]);
+      payoutsDue -= Number(settlementRows[0]?.total) || 0;
+      payoutsDue -= Number(payoutRows[0]?.total) || 0;
+      if (payoutsDue < 0) payoutsDue = 0;
     }
 
     const kpis = {
@@ -3505,15 +3571,14 @@ router.get('/dashboard/stats', async (req, res, next) => {
       };
 
       for (let i = 5; i >= 0; i--) {
-        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, '0');
-        const start = `${y}-${m}-01`;
+        const start = shiftMonth(today, -i);
+        const y = start.slice(0, 4);
+        const m = start.slice(5, 7);
         if (start < FINANCIAL_EPOCH) {
           monthlyRevenue.push({ month: `${y}-${m}`, revenue: 0 });
           continue;
         }
-        const lastDay = new Date(y, d.getMonth() + 1, 0).toISOString().slice(0, 10);
+        const lastDay = addCalendarDays(shiftMonth(start, 1), -1);
         const rev = await query(
           `SELECT COALESCE(SUM(total_amount), 0)::float AS total
            FROM reservations
@@ -3525,11 +3590,23 @@ router.get('/dashboard/stats', async (req, res, next) => {
       }
     }
 
+    const recentReservations = showFinance
+      ? recentRes.rows
+      : recentRes.rows.map(({ total_amount, ...row }) => row);
     res.json({
       units: { total: totalUnitsCount },
       reservations: { total: totalReservations },
-      finance,
-      kpis,
+      finance: showFinance ? finance : null,
+      kpis: showFinance
+        ? kpis
+        : {
+            from: kpis.from,
+            to: kpis.to,
+            booked_nights: kpis.booked_nights,
+            available_nights: kpis.available_nights,
+            occupancy_rate_pct: kpis.occupancy_rate_pct,
+            units_not_ready_today: kpis.units_not_ready_today,
+          },
       unitsAtRisk,
       calendar: {
         upcomingCheckins: Number(upcomingRes.rows[0].cnt) || 0,
@@ -3539,9 +3616,9 @@ router.get('/dashboard/stats', async (req, res, next) => {
         checkoutsCount: checkoutsRes.rows.length,
       },
       projectStats,
-      monthlyRevenue,
-      revenueByChannel: channelRevenue,
-      recentReservations: recentRes.rows,
+      monthlyRevenue: showFinance ? monthlyRevenue : [],
+      revenueByChannel: showFinance ? channelRevenue : { channels: [], totals: { count: 0, gross: 0, commission: 0, net: 0 } },
+      recentReservations,
     });
   } catch (e) {
     next(e);
@@ -3572,8 +3649,9 @@ router.post('/hr/employees', requireRoles(...HR_ROUTE_ROLES), async (req, res, n
   }
 });
 
-router.get('/tasks', async (_req, res, next) => {
+router.get('/tasks', async (req, res, next) => {
   try {
+    if (req.user.role === 'owner') return res.status(403).json({ error: 'Forbidden' });
     const { rows } = await query(`SELECT * FROM tasks ORDER BY created_at DESC`);
     sendList(res, rows);
   } catch (e) {
@@ -3583,6 +3661,7 @@ router.get('/tasks', async (_req, res, next) => {
 
 router.post('/tasks', async (req, res, next) => {
   try {
+    if (req.user.role === 'owner') return res.status(403).json({ error: 'Forbidden' });
     const b = req.body;
     const { rows } = await query(
       `INSERT INTO tasks (title, description, priority, status, assigned_to, created_by, due_date)
@@ -3696,6 +3775,8 @@ router.post(
     if (!description || Number.isNaN(amount) || amount < 0) {
       return res.status(400).json({ error: 'Description and amount are required' });
     }
+    const { assertPeriodOpen } = require('../../lib/finance/periodLock');
+    await assertPeriodOpen(entryDate || new Date(), 'This petty cash date');
     if (entryType === 'out' && entryKind !== 'loan' && !proofPath) {
       return res.status(400).json({ error: 'Transfer proof is required for cash out' });
     }
@@ -3803,6 +3884,11 @@ router.patch('/petty-cash/:id', requireRoles(...PETTY_CASH_ROLES), async (req, r
     ]);
     const existing = existingRows[0];
     if (!existing) return res.status(404).json({ error: 'Not found' });
+    const { assertPeriodOpen } = require('../../lib/finance/periodLock');
+    await assertPeriodOpen(existing.entry_date, 'This petty cash date');
+    if (b.expense_date || b.entry_date) {
+      await assertPeriodOpen(b.expense_date || b.entry_date, 'The new petty cash date');
+    }
     if (
       !(await canUsePettyCashLocation(req.user, existing.location)) ||
       (b.location && !(await canUsePettyCashLocation(req.user, b.location)))

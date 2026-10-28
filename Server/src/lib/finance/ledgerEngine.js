@@ -1028,8 +1028,14 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
 
   const paidByRes = {};
   const prepaidByRes = {};
+  const refundByRes = {};
   for (const p of data.stayPayments || data.payments || []) {
-    if (!paymentCollected(p) || (parseFloat(p.amount) || 0) <= 0) continue;
+    if (String(p.kind || '') === 'forfeit') continue;
+    const signed = parseFloat(p.amount) || 0;
+    if (signed < 0 && p.reservation_id) {
+      refundByRes[p.reservation_id] = round2((refundByRes[p.reservation_id] || 0) + Math.abs(signed));
+    }
+    if (!paymentCollected(p) || signed <= 0) continue;
     const res = byResId[String(p.reservation_id)];
     if (!res) continue;
     const payDate = isoDate(p.created_at) || isoDate(p.payment_date || p.paid_at);
@@ -1042,6 +1048,7 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
     }
   }
   for (const p of data.payments || []) {
+    if (String(p.kind || '') === 'forfeit') continue;
     if (!paymentCollected(p)) continue;
     const res = byResId[String(p.reservation_id)] || {
       guest_name: 'Guest',
@@ -1089,7 +1096,10 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
   }
 
   for (const r of data.reservations || []) {
-    const prepaid = prepaidByRes[r.id] || prepaidAmount(r, data.stayPayments || data.payments);
+    const prepaidGross = prepaidByRes[r.id] != null
+      ? prepaidByRes[r.id]
+      : (prepaidAmount(r, data.stayPayments || data.payments) || 0);
+    const prepaid = round2(Math.max(0, prepaidGross - (refundByRes[r.id] || 0)));
     if (isCancelledStay(r)) {
       const cxl = cancelForfeitEntry(r, prepaid);
       if (cxl && inRange(cxl.date, from, to)) journal.push(cxl);

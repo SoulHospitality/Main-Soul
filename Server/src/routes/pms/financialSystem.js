@@ -1,6 +1,7 @@
 
 const express = require('express');
 const { query } = require('../../config/db');
+const { logAudit } = require('../../lib/audit');
 const { requireRoles } = require('../../middleware/auth');
 const {
   clampBooksFromDate: clampFromDate,
@@ -1536,19 +1537,43 @@ router.post('/financial-system/periods/:yearMonth/close', requireRoles('admin', 
       [yearMonth, pnl, req.user.id, req.body.notes || null]
     );
     if (!rows[0]) return res.status(409).json({ error: `${yearMonth} is already closed` });
+    await logAudit({
+      userId: req.user.id,
+      action: 'CLOSE_PERIOD',
+      entityType: 'financial_period',
+      entityId: yearMonth,
+      details: { before: null, after: { year_month: yearMonth, pnl_amount: pnl } },
+    });
     res.status(201).json({ close: rows[0], pnl, entry: close });
   } catch (e) {
     next(e);
   }
 });
 
-router.delete('/financial-system/periods/:yearMonth/close', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+router.delete('/financial-system/periods/:yearMonth/close', requireRoles('admin'), async (req, res, next) => {
   try {
+    const reason = String(req.body?.reason || '').trim();
+    if (!reason) return res.status(400).json({ error: 'A reason is required to reopen a closed month' });
+    const { rows: beforeRows } = await query(
+      `SELECT * FROM financial_period_closes WHERE year_month = $1`,
+      [req.params.yearMonth]
+    );
     const { rows } = await query(
       `DELETE FROM financial_period_closes WHERE year_month = $1 RETURNING year_month`,
       [req.params.yearMonth]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Period is not closed' });
+    await logAudit({
+      userId: req.user.id,
+      action: 'REOPEN_PERIOD',
+      entityType: 'financial_period',
+      entityId: rows[0].year_month,
+      details: {
+        before: beforeRows[0] ? { year_month: beforeRows[0].year_month, pnl_amount: beforeRows[0].pnl_amount } : null,
+        after: null,
+        reason,
+      },
+    });
     res.json({ ok: true, year_month: rows[0].year_month });
   } catch (e) {
     next(e);

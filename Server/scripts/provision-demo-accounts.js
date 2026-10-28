@@ -3,15 +3,41 @@
  *
  * Usage: node scripts/provision-demo-accounts.js
  *
- * Shared password: 123
+ * Refuses to run when NODE_ENV is production, or when DATABASE_URL points at
+ * Supabase, unless ALLOW_DEMO_ACCOUNTS=yes. Never changes an account that
+ * already exists. Each new account gets its own temporary password and must
+ * change it on first login.
  */
 require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { query, pool } = require('../src/config/db');
 const { generateUniqueStaffCode } = require('../src/lib/staffIdentity');
 
-const DEMO_PASSWORD = '123';
+function databaseHost() {
+  try {
+    return new URL(process.env.DATABASE_URL || '').hostname;
+  } catch {
+    return '';
+  }
+}
+
+function assertSafeToRun() {
+  const host = databaseHost();
+  const production = process.env.NODE_ENV === 'production' || process.env.RAILWAY_ENVIRONMENT === 'production';
+  const hosted = /supabase\.co|railway\.internal|rlwy\.net/i.test(host);
+  if (production || (hosted && process.env.ALLOW_DEMO_ACCOUNTS !== 'yes')) {
+    console.error('Refusing to provision demo accounts against this database.');
+    console.error('This script does not run when NODE_ENV or Railway is production.');
+    console.error('Against a hosted database, set ALLOW_DEMO_ACCOUNTS=yes only on a database you can afford to fill with demo staff.');
+    process.exit(1);
+  }
+}
+
+function temporaryPassword() {
+  return crypto.randomBytes(9).toString('base64url');
+}
 
 /** All staff roles except admin / owner. */
 const ACCOUNTS = [
@@ -142,21 +168,7 @@ async function ensureAccount(acc, passwordHash) {
 
   if (existing[0]) {
     const row = existing[0];
-    await query(
-      `UPDATE staff_users SET
-         role = $2,
-         full_name = $3,
-         email = $4,
-         username = $5,
-         is_active = 1,
-         password_hash = $6,
-         is_first_login = 0,
-         base_salary = COALESCE(NULLIF(base_salary, 0), 10000),
-         updated_at = now()
-       WHERE id = $1`,
-      [row.id, acc.role, acc.full_name, acc.email, acc.username, passwordHash]
-    );
-    return { action: 'updated', id: row.id, staff_code: row.staff_code, username: acc.username };
+    return { action: 'skipped', id: row.id, staff_code: row.staff_code, username: row.username };
   }
 
   const staffCode = await generateUniqueStaffCode(acc.role);
@@ -168,7 +180,7 @@ async function ensureAccount(acc, passwordHash) {
        created_at, updated_at
      ) VALUES (
        $1, $2, $3, $4, $5,
-       $6, 1, 0, 0,
+       $6, 1, 1, 0,
        10000, 'none', 3, 15,
        now(), now()
      )
@@ -182,7 +194,7 @@ async function linkManagers(resultsByRole) {
   for (const [agentRole, managerRole] of Object.entries(MANAGER_OF)) {
     const agent = resultsByRole[agentRole];
     const manager = resultsByRole[managerRole];
-    if (!agent || !manager) continue;
+    if (!agent || !manager || agent.action !== 'created' || manager.action !== 'created') continue;
     await query(`UPDATE staff_users SET manager_id = $2, updated_at = now() WHERE id = $1`, [
       agent.id,
       manager.id,
@@ -198,13 +210,15 @@ async function linkManagers(resultsByRole) {
 }
 
 async function main() {
-  const hash = await bcrypt.hash(DEMO_PASSWORD, 10);
+  assertSafeToRun();
   const results = [];
   const byRole = {};
 
   for (const acc of ACCOUNTS) {
+    const password = temporaryPassword();
+    const hash = await bcrypt.hash(password, 10);
     const result = await ensureAccount(acc, hash);
-    const row = { ...result, role: acc.role, email: acc.email };
+    const row = { ...result, role: acc.role, email: acc.email, password: result.action === 'created' ? password : null };
     results.push(row);
     byRole[acc.role] = row;
     console.log(
@@ -215,13 +229,13 @@ async function main() {
   await linkManagers(byRole);
 
   console.log('');
-  console.log('Demo password (all accounts):', DEMO_PASSWORD);
-  console.log('Sign in at /admin (or your PMS login) with username or email.');
+  console.log('New accounts must change this password at first login.');
+  console.log('Existing accounts were left unchanged.');
   console.log('');
-  console.log('username'.padEnd(32), 'role');
-  console.log('-'.repeat(60));
+  console.log('username'.padEnd(32), 'role'.padEnd(28), 'temporary password');
+  console.log('-'.repeat(80));
   for (const r of results) {
-    console.log(r.username.padEnd(32), r.role);
+    console.log(r.username.padEnd(32), r.role.padEnd(28), r.password || '(already existed)');
   }
 
   await pool.end();

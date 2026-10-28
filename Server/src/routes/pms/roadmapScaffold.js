@@ -516,7 +516,7 @@ router.patch('/units/:unitId/comparable', requireRoles('admin'), async (req, res
 });
 
 
-router.get('/maintenance-tickets', async (req, res, next) => {
+router.get('/maintenance-tickets', requireRoles('operations', 'operations_supervisor'), async (req, res, next) => {
   try {
     const params = [];
     let where = '1=1';
@@ -539,7 +539,7 @@ router.get('/maintenance-tickets', async (req, res, next) => {
   }
 });
 
-router.post('/maintenance-tickets', async (req, res, next) => {
+router.post('/maintenance-tickets', requireRoles('operations', 'operations_supervisor'), async (req, res, next) => {
   try {
     const b = req.body;
     if (!b.unit_id || !b.title) return res.status(400).json({ error: 'unit_id and title required' });
@@ -577,7 +577,7 @@ router.post('/maintenance-tickets', async (req, res, next) => {
   }
 });
 
-router.patch('/maintenance-tickets/:id', async (req, res, next) => {
+router.patch('/maintenance-tickets/:id', requireRoles('operations', 'operations_supervisor'), async (req, res, next) => {
   try {
     const b = req.body;
     const { rows } = await query(
