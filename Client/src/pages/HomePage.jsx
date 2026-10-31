@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
 import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
 import HeroSearch from '../components/home/HeroSearch';
 import HeroWaves from '../components/home/HeroWaves';
+import HeroSlideshow, { SlideDots } from '../components/home/HeroSlideshow';
 import CompoundGrid from '../components/home/CompoundGrid';
 import TrustSection from '../components/home/TrustSection';
 import HostCta from '../components/home/HostCta';
@@ -28,6 +29,7 @@ import { useSiteContent } from '../hooks/useSiteContent';
 
 const STAT_COLS = { 1: 'grid-cols-1', 2: 'grid-cols-2', 3: 'grid-cols-3' };
 const INTRO_KEY = 'soul-intro-seen';
+const DEFAULT_SLIDES = [1, 2, 3].map((n) => ({ src: `/soul-brand/coast-hero-${n}.jpg` }));
 
 function IntroCurtain() {
   const { t } = useLocale();
@@ -87,24 +89,64 @@ function Hero() {
   const { t } = useLocale();
   const { content, pick } = useSiteContent();
   const capsuleRef = useRef(null);
-  const titleLight = pick(content.hero, 'title_light') || t('home.heroTitleLight');
-  const titleEm = pick(content.hero, 'title_em') || t('home.heroTitleEm');
+  const hero = content.hero || {};
+  const slideshow = hero.mode === 'slideshow';
+  const slides = useMemo(() => {
+    const own = (hero.slides || []).filter((s) => s?.src).slice(0, 4);
+    return own.length ? own : DEFAULT_SLIDES;
+  }, [hero.slides]);
+  const [index, setIndex] = useState(0);
+  const [advanced, setAdvanced] = useState(false);
+  const goTo = useCallback((i) => {
+    setAdvanced(true);
+    setIndex(i);
+  }, []);
+  const active = slideshow ? slides[Math.min(index, slides.length - 1)] : null;
+
+  // A slide's own headline wins; otherwise the hero-level text, then the built-in copy.
+  const titleLight = pick(active, 'title_light') || pick(hero, 'title_light') || t('home.heroTitleLight');
+  const titleEm = pick(active, 'title_em') || pick(hero, 'title_em') || t('home.heroTitleEm');
+  const subtitle = slideshow ? pick(active, 'subtitle') : pick(hero, 'subtitle');
+  const headingClass =
+    'g-display mx-auto max-w-5xl text-center text-[clamp(40px,5.6vw,92px)] !leading-[0.9] [text-shadow:0_2px_28px_rgba(0,0,0,0.45)]';
 
   return (
     <section className="relative isolate flex min-h-[100svh] flex-col overflow-hidden bg-[#0b4a56] text-white">
-      <HeroWaves />
+      {slideshow ? (
+        <HeroSlideshow slides={slides} index={Math.min(index, slides.length - 1)} onChange={goTo} />
+      ) : (
+        <HeroWaves videoUrl={hero.video_url} />
+      )}
 
       <div className="g-shell relative z-[2] flex w-full flex-1 flex-col items-center justify-center pb-24 pt-28 text-center sm:pb-12">
-        <RevealLines
-          as="h1"
-          immediate
-          delay={250}
-          className="g-display mx-auto max-w-5xl text-center text-[clamp(40px,5.6vw,92px)] !leading-[0.9] [text-shadow:0_2px_28px_rgba(0,0,0,0.45)]"
-          lines={[
-            <span key="l">{titleLight}</span>,
-            <em key="e">{titleEm}</em>,
-          ]}
-        />
+        {advanced ? (
+          <div key={index} className="soul-fade-up">
+            <h1 className={headingClass}>
+              <span className="block">{titleLight}</span>
+              <em className="block">{titleEm}</em>
+            </h1>
+          </div>
+        ) : (
+          <RevealLines
+            as="h1"
+            immediate
+            delay={250}
+            className={headingClass}
+            lines={[
+              <span key="l">{titleLight}</span>,
+              <em key="e">{titleEm}</em>,
+            ]}
+          />
+        )}
+        {subtitle ? (
+          <p
+            key={`sub-${slideshow ? index : 'v'}`}
+            className="soul-fade-up mx-auto mt-5 max-w-2xl text-base text-white/85 [text-shadow:0_1px_14px_rgba(0,0,0,0.45)] sm:text-lg"
+            style={{ animationDelay: advanced ? '0.1s' : '0.6s' }}
+          >
+            {subtitle}
+          </p>
+        ) : null}
         <div className="soul-fade-up mt-8 flex justify-center" style={{ animationDelay: '0.75s' }}>
           <Link to="/search" className="g-btn g-btn-glass !border-white/15 !bg-white/[0.07] backdrop-blur-md hover:!border-white/30 hover:!bg-white/15">
             {t('home.heroExplore')}
@@ -115,6 +157,12 @@ function Hero() {
         <div className="soul-fade-up mt-8 w-full md:mt-10" style={{ animationDelay: '0.95s' }}>
           <HeroSearch ref={capsuleRef} />
         </div>
+
+        {slideshow ? (
+          <div className="mt-8">
+            <SlideDots count={slides.length} index={Math.min(index, slides.length - 1)} onChange={goTo} label={t('home.heroSlide')} />
+          </div>
+        ) : null}
 
         <div className="mt-8 hidden items-center justify-center gap-3 text-white/80 sm:flex">
           <span className="g-index">{t('home.heroScroll')}</span>

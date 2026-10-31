@@ -1,10 +1,11 @@
 const express = require('express');
 const { query } = require('../../config/db');
 const { requireRoles } = require('../../middleware/auth');
-const { upload, attachCloudinaryUrls, setCloudinaryFolder, FOLDER_SITE } = require('../../config/cloudinary');
+const { upload, attachCloudinaryUrls, setCloudinaryFolder, signDirectUpload, FOLDER_SITE } = require('../../config/cloudinary');
 const {
   UNIT_ORDER_KEY,
   SITE_CONTENT_KEY,
+  HERO_MAX_SLIDES,
   setSetting,
   getUnitOrder,
   getSiteContent,
@@ -25,10 +26,20 @@ function sanitizeContent(body) {
   const merged = mergeContent(body);
   return {
     hero: {
+      mode: merged.hero.mode,
+      video_url: cleanUrl(merged.hero.video_url),
       slides: merged.hero.slides
-        .map((s) => ({ src: cleanUrl(s?.src), caption_en: cleanText(s?.caption_en, 160), caption_ar: cleanText(s?.caption_ar, 160) }))
+        .map((s) => ({
+          src: cleanUrl(s?.src),
+          title_light_en: cleanText(s?.title_light_en, 80),
+          title_light_ar: cleanText(s?.title_light_ar, 80),
+          title_em_en: cleanText(s?.title_em_en, 80),
+          title_em_ar: cleanText(s?.title_em_ar, 80),
+          subtitle_en: cleanText(s?.subtitle_en ?? s?.caption_en, 400),
+          subtitle_ar: cleanText(s?.subtitle_ar ?? s?.caption_ar, 400),
+        }))
         .filter((s) => s.src)
-        .slice(0, 8),
+        .slice(0, HERO_MAX_SLIDES),
       title_light_en: cleanText(merged.hero.title_light_en, 80),
       title_light_ar: cleanText(merged.hero.title_light_ar, 80),
       title_em_en: cleanText(merged.hero.title_em_en, 80),
@@ -86,6 +97,14 @@ router.post(
     res.json({ url });
   }
 );
+
+/** Signed params for uploading the hero video straight from the browser to Cloudinary. */
+router.post('/site-settings/video-upload', requireRoles(...WEBSITE_ROLES), (_req, res) => {
+  if (!process.env.CLOUDINARY_API_SECRET || !process.env.CLOUDINARY_CLOUD_NAME) {
+    return res.status(503).json({ error: 'Video uploads are not configured' });
+  }
+  res.json(signDirectUpload({ folder: FOLDER_SITE, publicId: `hero-${Date.now()}` }));
+});
 
 router.get('/site-settings/unit-order', requireRoles(...WEBSITE_ROLES), async (_req, res, next) => {
   try {

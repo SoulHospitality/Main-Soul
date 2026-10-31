@@ -1018,6 +1018,33 @@ td.sched-drag-hit > div {
   opacity: 0;
   transition: opacity 0.9s ease;
 }
+.hero-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+.hero-slide {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 1.4s ease;
+}
+.hero-slide.is-active {
+  opacity: 1;
+}
+.hero-dot-fill {
+  animation: gProgress linear both;
+}
+[dir='rtl'] .hero-dot-fill {
+  transform-origin: right;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-slide { transition: none; }
+  .hero-dot-fill { animation: none; transform: none; }
+}
 
 .soully {
   position: fixed;

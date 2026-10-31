@@ -10,8 +10,12 @@ const DEFAULT_UNIT_ORDER = { mode: 'random', destinations: [] };
 
 const HOME_SECTIONS = ['compounds', 'marquee', 'featured', 'trust', 'interlude', 'host', 'manifesto', 'partners'];
 
+const HERO_MAX_SLIDES = 4;
+
 const DEFAULT_SITE_CONTENT = {
   hero: {
+    mode: 'video',
+    video_url: '',
     slides: [],
     title_light_en: '',
     title_light_ar: '',
@@ -100,7 +104,12 @@ async function getUnitOrder() {
 function mergeContent(raw) {
   const src = raw && typeof raw === 'object' ? raw : {};
   return {
-    hero: { ...DEFAULT_SITE_CONTENT.hero, ...(src.hero || {}), slides: Array.isArray(src.hero?.slides) ? src.hero.slides : [] },
+    hero: {
+      ...DEFAULT_SITE_CONTENT.hero,
+      ...(src.hero || {}),
+      mode: src.hero?.mode === 'slideshow' ? 'slideshow' : 'video',
+      slides: Array.isArray(src.hero?.slides) ? src.hero.slides.slice(0, HERO_MAX_SLIDES) : [],
+    },
     sections: { ...DEFAULT_SITE_CONTENT.sections, ...(src.sections || {}) },
     partners: Array.isArray(src.partners) ? src.partners : [],
     interlude: { ...DEFAULT_SITE_CONTENT.interlude, ...(src.interlude || {}) },
@@ -116,6 +125,7 @@ module.exports = {
   UNIT_ORDER_KEY,
   SITE_CONTENT_KEY,
   HOME_SECTIONS,
+  HERO_MAX_SLIDES,
   getSetting,
   setSetting,
   getUnitOrder,

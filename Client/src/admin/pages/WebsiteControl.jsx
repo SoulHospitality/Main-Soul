@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowDown, ArrowUp, ImagePlus, Plus, RotateCcw, Save, Shuffle, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Film, ImagePlus, Images, Plus, RotateCcw, Save, Shuffle, Trash2, Upload } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
@@ -27,7 +27,7 @@ const SECTION_LABELS = {
 };
 
 const EMPTY_CONTENT = {
-  hero: { slides: [], title_light_en: '', title_light_ar: '', title_em_en: '', title_em_ar: '', subtitle_en: '', subtitle_ar: '' },
+  hero: { mode: 'video', video_url: '', slides: [], title_light_en: '', title_light_ar: '', title_em_en: '', title_em_ar: '', subtitle_en: '', subtitle_ar: '' },
   sections: Object.fromEntries(Object.keys(SECTION_LABELS).map((k) => [k, true])),
   partners: [],
   interlude: { image: '', lead_en: '', lead_ar: '', em_en: '', em_ar: '' },
@@ -47,6 +47,90 @@ async function uploadImage(file) {
   fd.append('image', file);
   const { data } = await api.post('/site-settings/upload', fd);
   return data.url;
+}
+
+const HERO_MAX_SLIDES = 4;
+const VIDEO_MAX_BYTES = 100 * 1024 * 1024;
+const EMPTY_SLIDE = { src: '', title_light_en: '', title_light_ar: '', title_em_en: '', title_em_ar: '', subtitle_en: '', subtitle_ar: '' };
+
+/** Direct browser → Cloudinary upload so the video never passes through the API server. */
+async function uploadVideo(file, onProgress) {
+  const { data: sig } = await api.post('/site-settings/video-upload');
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('api_key', sig.api_key);
+  fd.append('timestamp', String(sig.timestamp));
+  fd.append('signature', sig.signature);
+  fd.append('folder', sig.folder);
+  fd.append('public_id', sig.public_id);
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `https://api.cloudinary.com/v1_1/${sig.cloud_name}/video/upload`);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => {
+      let body = {};
+      try {
+        body = JSON.parse(xhr.responseText || '{}');
+      } catch {
+        body = {};
+      }
+      if (xhr.status >= 200 && xhr.status < 300 && body.secure_url) resolve(body.secure_url);
+      else reject(new Error(body?.error?.message || `Video upload failed (${xhr.status})`));
+    };
+    xhr.onerror = () => reject(new Error('Video upload failed — check your connection'));
+    xhr.send(fd);
+  });
+}
+
+function VideoField({ value, onChange }) {
+  const ref = useRef(null);
+  const [progress, setProgress] = useState(null);
+  const pick = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (file.size > VIDEO_MAX_BYTES) {
+      toast.error('Video must be under 100 MB');
+      return;
+    }
+    setProgress(0);
+    try {
+      onChange(await uploadVideo(file, setProgress));
+      toast.success('Video uploaded — publish to make it live');
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message || 'Upload failed');
+    } finally {
+      setProgress(null);
+    }
+  };
+  const busy = progress !== null;
+  return (
+    <div>
+      <label className="label">Hero video</label>
+      <div className="flex flex-col gap-2">
+        <input
+          className="input w-full"
+          value={value || ''}
+          placeholder="YouTube link, .mp4 link, or leave empty for the default film"
+          onChange={(e) => onChange(e.target.value)}
+        />
+        <div className="flex items-center gap-2">
+          <button type="button" className="btn-secondary text-xs" onClick={() => ref.current?.click()} disabled={busy}>
+            <Upload className="h-3.5 w-3.5" /> {busy ? `Uploading… ${progress}%` : 'Upload video'}
+          </button>
+          {value ? (
+            <button type="button" className="text-xs text-rose-600 hover:underline" onClick={() => onChange('')}>
+              Use default
+            </button>
+          ) : null}
+        </div>
+        <p className="text-xs text-gray-500">Plays muted on a loop. Short clips (under ~30 s, 100 MB max) load fastest.</p>
+      </div>
+      <input ref={ref} type="file" accept="video/mp4,video/webm,video/quicktime" className="hidden" onChange={pick} />
+    </div>
+  );
 }
 
 function ImageField({ label, value, onChange }) {
@@ -149,6 +233,7 @@ function HomepageTab({ editor }) {
   const setHero = (key, value) => setDraft((d) => ({ ...d, hero: { ...d.hero, [key]: value } }));
   const setSlides = (slides) => setHero('slides', slides);
   const slides = draft.hero?.slides || [];
+  const mode = draft.hero?.mode === 'slideshow' ? 'slideshow' : 'video';
   const setPart = (part) => (key, value) => setDraft((d) => ({ ...d, [part]: { ...d[part], [key]: value } }));
 
   return (
@@ -156,45 +241,80 @@ function HomepageTab({ editor }) {
       <div className="card space-y-4">
         <div>
           <h2 className="text-lg font-semibold text-gray-900">Hero</h2>
-          <p className="text-sm text-gray-500">The first screen guests see. Leave fields empty to keep the built-in text and photos.</p>
+          <p className="text-sm text-gray-500">The first screen guests see. Choose a video or a photo slideshow. Leave fields empty to keep the built-in text.</p>
         </div>
-        <BilingualField label="Title (light)" obj={draft.hero} base="title_light" onChange={setHero} />
-        <BilingualField label="Title (italic)" obj={draft.hero} base="title_em" onChange={setHero} />
-        <BilingualField label="Subtitle" obj={draft.hero} base="subtitle" onChange={setHero} textarea />
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <p className="font-medium text-gray-800">Slideshow photos</p>
-            <button type="button" className="btn-secondary text-sm" onClick={() => setSlides([...slides, { src: '', caption_en: '', caption_ar: '' }])}>
-              <Plus className="h-4 w-4" /> Add slide
-            </button>
+        <div>
+          <p className="label">Background</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {[
+              { id: 'video', label: 'Video', hint: 'One looping film behind the headline', Icon: Film },
+              { id: 'slideshow', label: 'Photo slideshow', hint: `Up to ${HERO_MAX_SLIDES} photos, each with its own headline`, Icon: Images },
+            ].map(({ id, label, hint, Icon }) => (
+              <label
+                key={id}
+                className={`flex cursor-pointer items-start gap-3 rounded-xl border px-3 py-3 text-sm ${mode === id ? 'border-gray-900 bg-gray-50' : ''}`}
+              >
+                <input type="radio" name="hero-mode" className="mt-1" checked={mode === id} onChange={() => setHero('mode', id)} />
+                <Icon className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
+                <span>
+                  <span className="block font-medium text-gray-800">{label}</span>
+                  <span className="block text-xs text-gray-500">{hint}</span>
+                </span>
+              </label>
+            ))}
           </div>
-          {slides.length === 0 ? <p className="text-sm text-gray-500">Using the default 3 coast photos.</p> : null}
-          {slides.map((slide, i) => (
-            <div key={i} className="rounded-xl border p-3 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-gray-500">Slide {i + 1}</span>
-                <div className="flex gap-1">
-                  <button type="button" className="p-1 text-gray-500 hover:text-gray-900" onClick={() => setSlides(move(slides, i, -1))} aria-label="Move up">
-                    <ArrowUp className="h-4 w-4" />
-                  </button>
-                  <button type="button" className="p-1 text-gray-500 hover:text-gray-900" onClick={() => setSlides(move(slides, i, 1))} aria-label="Move down">
-                    <ArrowDown className="h-4 w-4" />
-                  </button>
-                  <button type="button" className="p-1 text-rose-500 hover:text-rose-700" onClick={() => setSlides(slides.filter((_, j) => j !== i))} aria-label="Remove">
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-              <ImageField label="Photo" value={slide.src} onChange={(v) => setSlides(slides.map((s, j) => (j === i ? { ...s, src: v } : s)))} />
-              <BilingualField
-                label="Caption"
-                obj={slide}
-                base="caption"
-                onChange={(key, value) => setSlides(slides.map((s, j) => (j === i ? { ...s, [key]: value } : s)))}
-              />
-            </div>
-          ))}
         </div>
+
+        {mode === 'video' ? (
+          <>
+            <VideoField value={draft.hero?.video_url} onChange={(v) => setHero('video_url', v)} />
+            <BilingualField label="Title (light)" obj={draft.hero} base="title_light" onChange={setHero} />
+            <BilingualField label="Title (italic)" obj={draft.hero} base="title_em" onChange={setHero} />
+            <BilingualField label="Subtitle" obj={draft.hero} base="subtitle" onChange={setHero} textarea />
+          </>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="font-medium text-gray-800">
+                Slides <span className="text-sm font-normal text-gray-500">({slides.length}/{HERO_MAX_SLIDES})</span>
+              </p>
+              <button
+                type="button"
+                className="btn-secondary text-sm"
+                onClick={() => setSlides([...slides, { ...EMPTY_SLIDE }])}
+                disabled={slides.length >= HERO_MAX_SLIDES}
+              >
+                <Plus className="h-4 w-4" /> Add slide
+              </button>
+            </div>
+            {slides.length === 0 ? <p className="text-sm text-gray-500">Add at least one photo — until then the default coast photos are shown.</p> : null}
+            {slides.map((slide, i) => {
+              const setSlide = (key, value) => setSlides(slides.map((s, j) => (j === i ? { ...s, [key]: value } : s)));
+              return (
+                <div key={i} className="rounded-xl border p-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-gray-500">Slide {i + 1}</span>
+                    <div className="flex gap-1">
+                      <button type="button" className="p-1 text-gray-500 hover:text-gray-900" onClick={() => setSlides(move(slides, i, -1))} aria-label="Move up">
+                        <ArrowUp className="h-4 w-4" />
+                      </button>
+                      <button type="button" className="p-1 text-gray-500 hover:text-gray-900" onClick={() => setSlides(move(slides, i, 1))} aria-label="Move down">
+                        <ArrowDown className="h-4 w-4" />
+                      </button>
+                      <button type="button" className="p-1 text-rose-500 hover:text-rose-700" onClick={() => setSlides(slides.filter((_, j) => j !== i))} aria-label="Remove">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                  <ImageField label="Photo" value={slide.src} onChange={(v) => setSlide('src', v)} />
+                  <BilingualField label="Headline (light)" obj={slide} base="title_light" onChange={setSlide} />
+                  <BilingualField label="Headline (italic)" obj={slide} base="title_em" onChange={setSlide} />
+                  <BilingualField label="Subtitle" obj={slide} base="subtitle" onChange={setSlide} textarea />
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <div className="card space-y-3">
