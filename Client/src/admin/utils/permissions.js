@@ -363,6 +363,8 @@ const PERMISSIONS = {
   finance: [
     'financial_system:read',
     'financial_system:write',
+    'petty_cash:read',
+    'petty_cash:write',
     'notifications:read',
     'profile:read',
   ],
@@ -370,6 +372,8 @@ const PERMISSIONS = {
     'financial_system:read',
     'financial_system:write',
     'finance_audit:read',
+    'petty_cash:read',
+    'petty_cash:write',
     'notifications:read',
     'profile:read',
   ],

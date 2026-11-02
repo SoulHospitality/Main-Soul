@@ -741,11 +741,9 @@ export function PettyCashSection({ embedded = false }) {
                 Finance transfer
               </button>
             ) : null}
-            {user?.role !== 'finance' && user?.role !== 'finance_manager' ? (
-              <button onClick={() => openAdd('out')} className="btn-primary">
-                <Plus className="w-4 h-4" />Add Entry
-              </button>
-            ) : null}
+            <button onClick={() => openAdd('out')} className="btn-primary">
+              <Plus className="w-4 h-4" />Add Entry
+            </button>
           </div>
         )}
       </div>
@@ -835,9 +833,7 @@ export function PettyCashSection({ embedded = false }) {
           title="No petty cash entries"
           subtitle="Add an expense or record cash in to start tracking"
           action={canWrite && (
-            user?.role === 'finance' || user?.role === 'finance_manager'
-              ? <button onClick={() => openAdd('in', 'finance_transfer')} className="btn-primary">Finance transfer</button>
-              : <button onClick={() => openAdd('out')} className="btn-primary"><Plus className="w-4 h-4" />Add Entry</button>
+            <button onClick={() => openAdd('out')} className="btn-primary"><Plus className="w-4 h-4" />Add Entry</button>
           )}
         />
       ) : (

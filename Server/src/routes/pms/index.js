@@ -3771,9 +3771,6 @@ router.post(
     if (!(await canUsePettyCashLocation(req.user, location))) {
       return res.status(403).json({ error: 'No access to this petty cash location' });
     }
-    if (['finance', 'finance_manager'].includes(req.user.role) && entryKind !== 'finance_transfer') {
-      return res.status(403).json({ error: 'Finance adds money as a transfer into petty cash' });
-    }
     if (!description || Number.isNaN(amount) || amount < 0) {
       return res.status(400).json({ error: 'Description and amount are required' });
     }
