@@ -310,6 +310,7 @@ function useFinanceNav() {
     reports: 'reports',
     aging: 'aging',
     insurance: 'insurance',
+    'cash-review': 'cash-review',
     'checkin-audit': 'checkin-audit',
     checkins: 'checkin-audit',
     'check-in-audit': 'checkin-audit',
@@ -339,6 +340,49 @@ function useFinanceNav() {
 
 function rangeParams(fromDate, toDate, basis) {
   return { from_date: fromDate || undefined, to_date: toDate || undefined, basis: basis || undefined };
+}
+
+function CashReviewCard({ onOpen }) {
+  const { t } = useFinLocale();
+  const { data } = useQuery({
+    queryKey: ['financial-system-cash-review', 'pending'],
+    queryFn: () => api.get('/financial-system/cash-review').then((r) => r.data),
+    staleTime: 30_000,
+  });
+  const count = data?.pending_count || 0;
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={`w-full rounded-2xl border p-5 text-left ${
+        count ? 'border-orange-300 bg-orange-50/80 hover:border-orange-400' : 'border-soul-line bg-white hover:bg-slate-50'
+      }`}
+    >
+      <div className="flex items-center gap-4">
+        <div
+          className={`w-12 h-12 rounded-2xl text-white flex items-center justify-center ${
+            count ? 'bg-orange-500' : 'bg-emerald-600'
+          }`}
+        >
+          <Banknote className="w-6 h-6" />
+        </div>
+        <div className="flex-1">
+          <p className={`text-xs uppercase tracking-wider ${count ? 'text-orange-800' : 'text-emerald-800'}`}>
+            {t('pms.fin.home.cashReviewTitle')}
+          </p>
+          <p className="font-semibold text-soul-blue">{t('pms.fin.home.cashReviewSubtitle')}</p>
+          <p className="text-xs text-gray-500 mt-0.5">
+            {count ? t('pms.fin.home.cashReviewHint', { count }) : t('pms.fin.home.cashReviewClear')}
+          </p>
+        </div>
+        {count ? (
+          <p className="text-2xl font-bold tabular-nums text-orange-900">{currency(data?.pending_amount || 0)}</p>
+        ) : (
+          <CheckCircle2 className="w-6 h-6 text-emerald-500" />
+        )}
+      </div>
+    </button>
+  );
 }
 
 function HomeView({ data, basisLabel, onOpenGroup, onOpenAccount, onOpenTreasury, onOpenTool, onExport, exporting }) {
@@ -538,6 +582,8 @@ function HomeView({ data, basisLabel, onOpenGroup, onOpenAccount, onOpenTreasury
         </div>
       </button>
 
+      <CashReviewCard onOpen={() => onOpenTool('cash-review')} />
+
       <button
         type="button"
         onClick={() => onOpenTool('payment-calendar')}
@@ -604,6 +650,7 @@ function HomeView({ data, basisLabel, onOpenGroup, onOpenAccount, onOpenTreasury
           {[
             { id: 'owners', labelKey: 'ownerPayouts', icon: Users },
             { id: 'insurance', labelKey: 'insurancePayout', icon: Shield },
+            { id: 'cash-review', labelKey: 'cashReview', icon: Banknote },
             { id: 'checkin-audit', labelKey: 'checkinAudit', icon: ClipboardList },
             { id: 'payment-calendar', labelKey: 'paymentCalendar', icon: CalendarDays },
             { id: 'trust', labelKey: 'ownerTrust', icon: Building2 },
@@ -3173,6 +3220,283 @@ function PaymentCalendarTool() {
   );
 }
 
+const CASH_REVIEW_METHODS = ['cash', 'instapay', 'bank_transfer'];
+
+function CashReviewTool() {
+  const { t } = useFinLocale();
+  const qc = useQueryClient();
+  const [tab, setTab] = useState('pending');
+  const [review, setReview] = useState(null);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['financial-system-cash-review', tab],
+    queryFn: () =>
+      api
+        .get('/financial-system/cash-review', { params: tab === 'reviewed' ? { status: 'reviewed' } : {} })
+        .then((r) => r.data),
+  });
+
+  const saveReview = useMutation({
+    mutationFn: ({ id, body }) => api.post(`/financial-system/cash-review/${id}`, body).then((r) => r.data),
+    onSuccess: (res) => {
+      toast.success(res.corrected ? t('pms.fin.cashReview.corrected') : t('pms.fin.cashReview.confirmed'));
+      setReview(null);
+      qc.invalidateQueries({ queryKey: ['financial-system-cash-review'] });
+      qc.invalidateQueries({ queryKey: ['financial-system-portal'] });
+    },
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.cashReview.failed')),
+  });
+
+  const methodLabel = (m) => t(`pms.fin.cashReview.methods.${m}`) || m;
+  const items = data?.items || [];
+
+  function openReview(item) {
+    setReview({
+      item,
+      amount: String(item.amount),
+      payment_method: item.payment_method || 'cash',
+      bank_account: item.bank_account || '',
+      note: '',
+    });
+  }
+
+  const isUsd = review?.item?.currency === 'USD';
+  const corrected =
+    review &&
+    (Math.abs((parseFloat(review.amount) || 0) - review.item.amount) > 0.004 ||
+      review.payment_method !== review.item.payment_method ||
+      (review.payment_method !== 'cash' && review.bank_account !== (review.item.bank_account || '')));
+
+  function submitReview() {
+    if (!(parseFloat(review.amount) > 0)) {
+      toast.error(t('pms.fin.paymentCalendar.amountRequired'));
+      return;
+    }
+    saveReview.mutate({
+      id: review.item.id,
+      body: {
+        amount: review.amount,
+        payment_method: review.payment_method,
+        bank_account: review.payment_method === 'cash' ? null : review.bank_account,
+        note: review.note.trim() || undefined,
+      },
+    });
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-500 max-w-3xl">{t('pms.fin.cashReview.description')}</p>
+
+      <div className="grid grid-cols-2 gap-3 max-w-xl">
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
+          <p className="text-xs text-amber-800">{t('pms.fin.cashReview.waiting')}</p>
+          <p className="text-xl font-bold tabular-nums mt-1">{data?.pending_count || 0}</p>
+        </div>
+        <div className="rounded-2xl border border-soul-line bg-white p-4">
+          <p className="text-xs text-gray-400">{t('pms.fin.cashReview.waitingAmount')}</p>
+          <p className="text-xl font-bold tabular-nums mt-1">{currency(data?.pending_amount || 0)}</p>
+        </div>
+      </div>
+
+      <div className="inline-flex rounded-xl border border-soul-line bg-white p-1">
+        {['pending', 'reviewed'].map((id) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setTab(id)}
+            className={`rounded-lg px-4 py-1.5 text-sm font-medium ${
+              tab === id ? 'bg-soul-blue text-white' : 'text-gray-600 hover:bg-slate-50'
+            }`}
+          >
+            {id === 'pending' ? t('pms.fin.cashReview.pendingTab') : t('pms.fin.cashReview.reviewedTab')}
+          </button>
+        ))}
+      </div>
+
+      {isLoading ? (
+        <LoadingSpinner />
+      ) : !items.length ? (
+        <p className="rounded-2xl border border-soul-line bg-white py-10 text-center text-sm text-gray-400">
+          {tab === 'pending' ? t('pms.fin.cashReview.empty') : t('pms.fin.cashReview.emptyReviewed')}
+        </p>
+      ) : (
+        <div className="rounded-2xl border border-soul-line bg-white overflow-x-auto">
+          <table className="table text-sm">
+            <thead>
+              <tr>
+                <th>{t('pms.fin.cashReview.guest')}</th>
+                <th>{t('pms.fin.cashReview.unit')}</th>
+                <th>{t('pms.fin.cashReview.stay')}</th>
+                <th>{t('pms.fin.cashReview.recordedBy')}</th>
+                <th>{t('pms.fin.cashReview.method')}</th>
+                <th className="text-right">{t('pms.fin.cashReview.amount')}</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((it) => (
+                <tr key={it.id}>
+                  <td>
+                    <p className="font-medium text-soul-blue">{it.guest_name || '—'}</p>
+                    <p className="text-[11px] text-gray-400">#{it.reservation_id}</p>
+                  </td>
+                  <td>{it.unit_name || '—'}</td>
+                  <td className="whitespace-nowrap">
+                    {formatDate(it.check_in)} → {formatDate(it.check_out)}
+                  </td>
+                  <td>
+                    <p>{it.created_by_name || '—'}</p>
+                    <p className="text-[11px] text-gray-400">{formatDateTime(it.created_at)}</p>
+                  </td>
+                  <td>
+                    <p>
+                      {methodLabel(it.payment_method)}
+                      {it.bank_account ? ` · ${it.bank_account.toUpperCase()}` : ''}
+                    </p>
+                    {it.review_original ? (
+                      <p className="text-[11px] text-amber-700">
+                        {t('pms.fin.cashReview.wasValue', {
+                          amount: currency(it.review_original.amount),
+                          method: methodLabel(it.review_original.payment_method),
+                        })}
+                      </p>
+                    ) : null}
+                  </td>
+                  <td className="text-right tabular-nums font-semibold">{currency(it.amount)}</td>
+                  <td className="text-right">
+                    {tab === 'pending' ? (
+                      <button type="button" className="btn-primary text-xs" onClick={() => openReview(it)}>
+                        {t('pms.fin.cashReview.review')}
+                      </button>
+                    ) : (
+                      <div className="text-[11px] text-gray-500 text-left max-w-[14rem]">
+                        <p>
+                          {t('pms.fin.cashReview.reviewedBy', {
+                            name: it.reviewed_by_name || '—',
+                            date: formatDateTime(it.reviewed_at),
+                          })}
+                        </p>
+                        {it.review_note ? <p className="italic truncate">{it.review_note}</p> : null}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <Modal
+        open={Boolean(review)}
+        onClose={() => setReview(null)}
+        title={t('pms.fin.cashReview.reviewTitle')}
+        size="md"
+        footer={
+          <>
+            <button type="button" className="btn-secondary" onClick={() => setReview(null)}>
+              {t('pms.fin.cancel')}
+            </button>
+            <button type="button" className="btn-primary" disabled={saveReview.isPending} onClick={submitReview}>
+              {corrected ? t('pms.fin.cashReview.confirmCorrected') : t('pms.fin.cashReview.confirm')}
+            </button>
+          </>
+        }
+      >
+        {review ? (
+          <div className="space-y-4">
+            <div className="rounded-xl bg-slate-50 px-3 py-2.5 text-sm">
+              <p className="font-semibold text-soul-blue">
+                {review.item.guest_name || '—'} · {review.item.unit_name || '—'}
+              </p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {formatDate(review.item.check_in)} → {formatDate(review.item.check_out)} ·{' '}
+                {t('pms.fin.cashReview.reservationTotal', {
+                  total: currency(review.item.total_amount),
+                  paid: currency(review.item.amount_paid),
+                })}
+              </p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {t('pms.fin.cashReview.recordedBy')}: {review.item.created_by_name || '—'} ·{' '}
+                {formatDateTime(review.item.created_at)}
+              </p>
+              {review.item.notes ? <p className="text-xs text-gray-600 mt-1">{review.item.notes}</p> : null}
+              {review.item.document_path && /^https?:\/\//.test(review.item.document_path) ? (
+                <a
+                  href={review.item.document_path}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-1 inline-block text-xs font-medium text-soul-blue underline"
+                >
+                  {t('pms.fin.cashReview.proof')}
+                </a>
+              ) : null}
+            </div>
+
+            {isUsd ? (
+              <p className="text-xs text-amber-800 bg-amber-50 rounded-lg px-3 py-2">
+                {t('pms.fin.cashReview.usdNote', { rate: review.item.exchange_rate || '—' })}
+              </p>
+            ) : null}
+
+            <div>
+              <label className="label">{t('pms.fin.cashReview.amountReceived')}</label>
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                className="input w-full"
+                value={review.amount}
+                onChange={(e) => setReview((r) => ({ ...r, amount: e.target.value }))}
+              />
+            </div>
+
+            {!isUsd ? (
+              <div>
+                <p className="label">{t('pms.fin.cashReview.paymentMethod')}</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {CASH_REVIEW_METHODS.map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setReview((r) => ({ ...r, payment_method: m }))}
+                      className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
+                        review.payment_method === m
+                          ? 'border-[#1e5fbf] bg-[#eef4ff] text-[#1e5fbf]'
+                          : 'border-[#e6ebf2] bg-white text-[#5b6b80] hover:bg-[#f6f8fb]'
+                      }`}
+                    >
+                      {methodLabel(m)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {!isUsd && review.payment_method !== 'cash' ? (
+              <BankAccountPicker
+                label={t('pms.fin.cashReview.bankAccount')}
+                value={review.bank_account}
+                onChange={(v) => setReview((r) => ({ ...r, bank_account: v }))}
+              />
+            ) : null}
+
+            <div>
+              <label className="label">{t('pms.fin.cashReview.note')}</label>
+              <textarea
+                className="input w-full min-h-[70px]"
+                value={review.note}
+                onChange={(e) => setReview((r) => ({ ...r, note: e.target.value }))}
+                placeholder={t('pms.fin.cashReview.notePlaceholder')}
+              />
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+    </div>
+  );
+}
+
 function CheckinAuditTool() {
   const { t } = useFinLocale();
   const defaults = useMemo(() => {
@@ -5445,6 +5769,7 @@ function FinancialSystemInner() {
       const labels = {
         owners: t('pms.fin.tools.ownerPayouts'),
         insurance: t('pms.fin.tools.insurancePayout'),
+        'cash-review': t('pms.fin.tools.cashReview'),
         'checkin-audit': t('pms.fin.tools.checkinAudit'),
         'payment-calendar': t('pms.fin.tools.paymentCalendar'),
         trust: t('pms.fin.tools.ownerTrust'),
@@ -5592,6 +5917,8 @@ function FinancialSystemInner() {
         <InsuranceRefundsTool
           onOpenAccount={(c) => go({ view: 'account', code: c, group: 'liabilities', txn: '', tool: '' })}
         />
+      ) : tool === 'cash-review' ? (
+        <CashReviewTool />
       ) : tool === 'checkin-audit' ? (
         <CheckinAuditTool />
       ) : tool === 'payment-calendar' ? (

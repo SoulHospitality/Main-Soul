@@ -804,7 +804,11 @@
         "paymentCalendarTitle": "تقويم المدفوعات",
         "paymentCalendarSubtitle": "المدفوعات القادمة والمتأخرة حسب تاريخ الاستحقاق",
         "paymentCalendarHint": "متزامن مع المحاسبة · أضف بنوداً يدوياً عند الحاجة",
-        "workspace": "مساحة العمل"
+        "workspace": "مساحة العمل",
+        "cashReviewTitle": "مراجعة النقدية",
+        "cashReviewSubtitle": "مراجعة النقدية المحصلة على الحجوزات",
+        "cashReviewHint": "{{count}} دفعة نقدية بانتظار مراجعة المالية للمبلغ وطريقة الدفع",
+        "cashReviewClear": "تمت مراجعة كل الدفعات النقدية"
       },
       "group": {
         "managementView": "عرض إداري",
@@ -1456,7 +1460,8 @@
         "cashForecast": "توقعات السيولة",
         "apVendors": "الذمم الدائنة / الموردون",
         "monthlyCharges": "الرسوم الشهرية",
-        "arControls": "ضوابط الذمم المدينة"
+        "arControls": "ضوابط الذمم المدينة",
+        "cashReview": "مراجعة النقدية"
       },
       "groupMeta": {
         "assetsHint": "ما تملكه سول",
@@ -1484,6 +1489,44 @@
         "under": "حساب فرعي من {{parent}}",
         "addUnder": "إضافة حساب فرعي تحت هذا الحساب",
         "systemLocked": "حساب نظام (يُستخدم تلقائيًا، لا يمكن حذفه)"
+      },
+      "cashReview": {
+        "description": "كل دفعة نقدية يحصلها موظف من خارج المالية على حجز تنتظر هنا. راجع المبلغ وطريقة الدفع، وصححهما عند الحاجة، ثم أكد.",
+        "pendingTab": "بانتظار المراجعة",
+        "reviewedTab": "تمت مراجعتها",
+        "waiting": "بانتظار المراجعة",
+        "waitingAmount": "المبلغ المنتظر",
+        "empty": "لا توجد دفعات نقدية بانتظار المراجعة",
+        "emptyReviewed": "لا توجد دفعات تمت مراجعتها بعد",
+        "guest": "الضيف",
+        "unit": "الوحدة",
+        "stay": "الإقامة",
+        "recordedBy": "سجلها",
+        "recordedOn": "تاريخ التسجيل",
+        "amount": "المبلغ",
+        "method": "الطريقة",
+        "review": "مراجعة",
+        "reviewTitle": "مراجعة دفعة نقدية",
+        "reservationTotal": "إجمالي الحجز {{total}} · المدفوع حتى الآن {{paid}}",
+        "usdNote": "حجز بالدولار بسعر {{rate}} جنيه للدولار. أدخل المبلغ بالجنيه؛ تبقى دفعة نقدية.",
+        "amountReceived": "المبلغ المستلم فعليًا (جنيه)",
+        "paymentMethod": "طريقة الدفع",
+        "bankAccount": "الحساب المستلم",
+        "note": "ملاحظة المراجعة",
+        "notePlaceholder": "اختياري، مثل: تم عد الظرف، ناقص 200",
+        "proof": "عرض الإثبات",
+        "confirm": "تأكيد",
+        "confirmCorrected": "حفظ التصحيح والتأكيد",
+        "confirmed": "تمت مراجعة الدفعة",
+        "corrected": "تم تصحيح الدفعة ومراجعتها",
+        "failed": "تعذر حفظ المراجعة",
+        "wasValue": "كانت {{amount}} {{method}}",
+        "reviewedBy": "راجعها {{name}} في {{date}}",
+        "methods": {
+          "cash": "نقدي",
+          "instapay": "إنستاباي",
+          "bank_transfer": "تحويل بنكي"
+        }
       }
     }
   }

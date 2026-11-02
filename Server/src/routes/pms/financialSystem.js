@@ -2337,6 +2337,174 @@ router.delete('/financial-system/payment-calendar/:id', requireRoles('admin', 'f
   }
 });
 
+const CASH_REVIEW_METHODS = ['cash', 'instapay', 'bank_transfer'];
+
+function mapCashReviewRow(r) {
+  return {
+    id: r.id,
+    reservation_id: r.reservation_id,
+    amount: round2(parseFloat(r.amount) || 0),
+    payment_method: r.payment_method,
+    bank_account: r.bank_account || null,
+    payment_date: r.payment_date,
+    notes: r.notes || null,
+    document_path: r.document_path || null,
+    document_name: r.document_name || null,
+    created_at: r.created_at,
+    created_by_name: r.created_by_name || null,
+    approved_by_name: r.approved_by_name || null,
+    review_status: r.finance_review_status,
+    reviewed_at: r.finance_reviewed_at || null,
+    reviewed_by_name: r.reviewed_by_name || null,
+    review_note: r.finance_review_note || null,
+    review_original: r.finance_review_original || null,
+    guest_name: r.guest_name || null,
+    unit_name: r.unit_name || null,
+    check_in: r.check_in,
+    check_out: r.check_out,
+    reservation_status: r.reservation_status || null,
+    currency: r.currency || 'EGP',
+    exchange_rate: r.exchange_rate != null ? Number(r.exchange_rate) : null,
+    total_amount: round2(parseFloat(r.total_amount) || 0),
+    amount_paid: round2(parseFloat(r.amount_paid) || 0),
+  };
+}
+
+const CASH_REVIEW_SELECT = `
+  SELECT p.*, r.guest_name, r.status::text AS reservation_status, r.currency, r.exchange_rate,
+         to_char(r.check_in, 'YYYY-MM-DD') AS check_in, to_char(r.check_out, 'YYYY-MM-DD') AS check_out,
+         COALESCE(r.total_amount, 0) AS total_amount, COALESCE(r.amount_paid, 0) AS amount_paid,
+         COALESCE(u.unit_number, u.title, 'Unit') AS unit_name,
+         creator.full_name AS created_by_name, approver.full_name AS approved_by_name,
+         reviewer.full_name AS reviewed_by_name
+  FROM payments p
+  JOIN reservations r ON r.id = p.reservation_id
+  LEFT JOIN units u ON u.id = r.unit_id
+  LEFT JOIN staff_users creator ON creator.id = p.created_by
+  LEFT JOIN staff_users approver ON approver.id = p.approved_by
+  LEFT JOIN staff_users reviewer ON reviewer.id = p.finance_reviewed_by`;
+
+/** Cash payments waiting for finance to check the amount and method (?status=reviewed lists past reviews). */
+router.get('/financial-system/cash-review', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const reviewed = req.query.status === 'reviewed';
+    const { rows } = await query(
+      `${CASH_REVIEW_SELECT}
+       WHERE p.finance_review_status = $1
+       ORDER BY ${reviewed ? 'p.finance_reviewed_at DESC' : 'p.created_at ASC'}, p.id ASC
+       LIMIT 300`,
+      [reviewed ? 'reviewed' : 'pending']
+    );
+    const { rows: totals } = await query(
+      `SELECT COUNT(*)::int AS count, COALESCE(SUM(amount), 0)::float AS amount
+       FROM payments WHERE finance_review_status = 'pending'`
+    );
+    res.json({
+      items: rows.map(mapCashReviewRow),
+      pending_count: totals[0]?.count || 0,
+      pending_amount: round2(totals[0]?.amount || 0),
+    });
+  } catch (e) {
+    if (e.code === '42703') return res.json({ items: [], pending_count: 0, pending_amount: 0 });
+    next(e);
+  }
+});
+
+/** Confirms a cash payment, optionally correcting its amount or method; the corrected values become the payment. */
+router.post('/financial-system/cash-review/:id', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!id) return res.status(400).json({ error: 'Invalid payment id' });
+    const { rows: found } = await query(
+      `SELECT p.*, r.currency FROM payments p JOIN reservations r ON r.id = p.reservation_id WHERE p.id = $1`,
+      [id]
+    );
+    const prev = found[0];
+    if (!prev) return res.status(404).json({ error: 'Payment not found' });
+    if (prev.finance_review_status !== 'pending') {
+      return res.status(409).json({ error: 'This payment was already reviewed' });
+    }
+
+    const b = req.body || {};
+    const amount = b.amount != null && b.amount !== '' ? round2(parseFloat(b.amount) || 0) : round2(parseFloat(prev.amount) || 0);
+    let method = String(b.payment_method || prev.payment_method || 'cash').toLowerCase();
+    if (!(amount > 0)) return res.status(400).json({ error: 'Amount must be greater than zero' });
+    if (!CASH_REVIEW_METHODS.includes(method)) return res.status(400).json({ error: 'Choose cash, InstaPay or bank transfer' });
+    // USD reservations are always settled as cash (booked to Cash USD), as when the payment is recorded.
+    if (String(prev.currency || '').toUpperCase() === 'USD') method = 'cash';
+    const bankAccount = method === 'cash' ? null : normalizeBankAccount(b.bank_account || prev.bank_account);
+    if (method !== 'cash' && !bankAccount) return res.status(400).json({ error: 'Choose the ADIB or CIB account' });
+
+    const prevAmount = round2(parseFloat(prev.amount) || 0);
+    const changed =
+      amount !== prevAmount || method !== String(prev.payment_method || '').toLowerCase() ||
+      (bankAccount || null) !== (prev.bank_account || null);
+    if (changed) await assertPeriodOpen(String(prev.payment_date || '').slice(0, 10) || new Date().toISOString().slice(0, 10));
+    const note = b.note != null && String(b.note).trim() ? String(b.note).trim().slice(0, 1000) : null;
+
+    const saved = await inTransaction(async (client) => {
+      if (changed) {
+        // Cash taken at the door also sits in the ops petty cash drawer; keep that entry in step.
+        const { rows: drawer } = await client.query(
+          `SELECT id, status FROM petty_cash
+           WHERE source = 'ops_collection' AND source_ref = $1 AND entry_type = 'in'`,
+          [String(id)]
+        );
+        for (const entry of drawer) {
+          if (String(entry.status || 'open') !== 'open') {
+            throw badRequest('The petty cash entry for this payment was already handed over. Correct it in Petty cash first.');
+          }
+          if (method === 'cash') {
+            await client.query(`UPDATE petty_cash SET amount = $2 WHERE id = $1`, [entry.id, amount]);
+          } else {
+            await client.query(`DELETE FROM petty_cash WHERE id = $1`, [entry.id]);
+          }
+        }
+      }
+      const { rows } = await client.query(
+        `UPDATE payments SET
+           amount = $2, payment_method = $3, bank_account = $4,
+           finance_review_status = 'reviewed', finance_reviewed_by = $5, finance_reviewed_at = now(),
+           finance_review_note = $6, finance_review_original = $7::jsonb
+         WHERE id = $1
+         RETURNING *`,
+        [
+          id,
+          amount,
+          method,
+          bankAccount,
+          req.user.id,
+          note,
+          changed
+            ? JSON.stringify({ amount: prevAmount, payment_method: prev.payment_method, bank_account: prev.bank_account || null })
+            : null,
+        ]
+      );
+      return rows[0];
+    });
+
+    const { syncReservationPaymentStatus } = require('../../lib/syncReservationPayment');
+    await syncReservationPaymentStatus(saved.reservation_id);
+    await logAudit({
+      userId: req.user.id,
+      action: 'FINANCE_REVIEW_PAYMENT',
+      entityType: 'payment',
+      entityId: id,
+      details: {
+        before: { amount: prevAmount, payment_method: prev.payment_method, bank_account: prev.bank_account || null },
+        after: { amount, payment_method: method, bank_account: bankAccount },
+        corrected: changed,
+        note,
+        reservation_id: saved.reservation_id,
+      },
+    });
+    res.json({ ok: true, corrected: changed, payment: saved });
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
+    next(e);
+  }
+});
+
 router.post('/financial-system/insurance-refunds/:id/settle', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const id = parseInt(req.params.id, 10);

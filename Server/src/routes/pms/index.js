@@ -3114,8 +3114,8 @@ async function approvePaymentHandler(req, res, next) {
   }
 }
 
-router.post('/payments/:id/approve', requireRoles('admin'), approvePaymentHandler);
-router.put('/payments/:id/approve', requireRoles('admin'), approvePaymentHandler);
+router.post('/payments/:id/approve', requireRoles('admin', 'finance', 'finance_manager'), approvePaymentHandler);
+router.put('/payments/:id/approve', requireRoles('admin', 'finance', 'finance_manager'), approvePaymentHandler);
 
 
 const EXPENSE_CATEGORIES = new Set([
