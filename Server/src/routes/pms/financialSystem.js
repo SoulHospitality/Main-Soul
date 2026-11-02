@@ -3,6 +3,12 @@ const express = require('express');
 const crypto = require('crypto');
 const { pool, query } = require('../../config/db');
 const { logAudit } = require('../../lib/audit');
+const {
+  upload,
+  setCloudinaryFolder,
+  attachCloudinaryUrls,
+  FOLDER_PAYMENTS,
+} = require('../../config/cloudinary');
 const { requireRoles } = require('../../middleware/auth');
 const {
   clampBooksFromDate: clampFromDate,
@@ -18,7 +24,7 @@ const {
   isBuiltinAccount,
   isTreasuryCode,
 } = require('../../lib/finance/chartOfAccounts');
-const { refreshCustomAccounts } = require('../../lib/finance/customAccounts');
+const { refreshCustomAccounts, pettyLocationForAccount } = require('../../lib/finance/customAccounts');
 const { normalizeBankAccount } = require('../../lib/reservationCurrency');
 const { refreshBooksReset, afterReset } = require('../../lib/finance/booksReset');
 const {
@@ -491,10 +497,12 @@ async function loadManualEntries(from, to) {
     const { rows } = await query(
       `SELECT m.*,
               COALESCE(u.unit_number, u.title) AS unit_name,
-              su.full_name AS created_by_name
+              su.full_name AS created_by_name,
+              dev.name AS developer_name
        FROM financial_manual_entries m
        LEFT JOIN units u ON u.id = m.unit_id
        LEFT JOIN staff_users su ON su.id = m.created_by
+       LEFT JOIN financial_developers dev ON dev.id = m.developer_id
        WHERE ${where}
        ORDER BY m.created_at DESC, m.entry_date DESC`,
       params
@@ -1150,16 +1158,55 @@ router.post('/financial-system/manual-entries', requireRoles('admin', 'finance',
 
     const unitId = req.body.unit_id || null;
 
-    const { rows } = await query(
-      `INSERT INTO financial_manual_entries
-         (entry_type, misc_flow, description, amount, entry_date, notes, unit_id, created_by,
-          debit_account_code, credit_account_code)
-       VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8, $9)
-       RETURNING *`,
-      [entryType, description, amount, entryDate, notes, unitId, req.user.id, debitAccount, creditAccount]
-    );
+    const usesDeveloper = [debitAccount, creditAccount].some(isDeveloperAccount);
+    let developerId = null;
+    if (usesDeveloper) {
+      developerId = parseInt(req.body.developer_id, 10) || null;
+      const { rows: dev } = developerId
+        ? await query(`SELECT id FROM financial_developers WHERE id = $1`, [developerId])
+        : { rows: [] };
+      if (!dev[0]) return res.status(400).json({ error: 'Choose which developer this entry is for' });
+    }
 
-    res.status(201).json(rows[0]);
+    const debitDrawer = await pettyLocationForAccount(debitAccount);
+    const creditDrawer = await pettyLocationForAccount(creditAccount);
+
+    const row = await inTransaction(async (client) => {
+      const { rows } = await client.query(
+        `INSERT INTO financial_manual_entries
+           (entry_type, misc_flow, description, amount, entry_date, notes, unit_id, created_by,
+            debit_account_code, credit_account_code, developer_id)
+         VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         RETURNING *`,
+        [entryType, description, amount, entryDate, notes, unitId, req.user.id, debitAccount, creditAccount, developerId]
+      );
+      // Money sent to (or taken from) a petty cash drawer changes that drawer's current balance.
+      const moves = [
+        debitDrawer && { location: debitDrawer, type: 'in' },
+        creditDrawer && { location: creditDrawer, type: 'out' },
+      ].filter(Boolean);
+      for (const move of moves) {
+        await client.query(
+          `INSERT INTO petty_cash
+             (location, description, amount, entry_type, entry_date, created_by, paid_by, notes, status,
+              source, source_ref, entry_kind)
+           VALUES ($1, $2, $3, $4, $5::date, $6, 'company', $7, 'open', 'finance_transfer', $8, 'finance_transfer')`,
+          [
+            move.location,
+            String(description).slice(0, 500),
+            amount,
+            move.type,
+            entryDate,
+            req.user.id,
+            notes,
+            `manual:${rows[0].id}`,
+          ]
+        );
+      }
+      return rows[0];
+    });
+
+    res.status(201).json(row);
   } catch (e) {
     next(e);
   }
@@ -1258,7 +1305,7 @@ router.get('/financial-system/recurring', requireRoles('admin', 'finance', 'fina
 router.put('/financial-system/recurring/:kind', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const kind = String(req.params.kind || '').toLowerCase();
-    if (!['rent', 'utilities', 'buffet'].includes(kind)) {
+    if (!['utilities', 'buffet'].includes(kind)) {
       return res.status(400).json({ error: 'Unknown recurring charge' });
     }
     await assertPeriodOpen(new Date().toISOString().slice(0, 10));
@@ -1287,7 +1334,13 @@ router.delete('/financial-system/manual-entries/:id', requireRoles('admin', 'fin
     );
     if (!existing[0]) return res.status(404).json({ error: 'Entry not found' });
     await assertPeriodOpen(existing[0].entry_date);
-    await query(`DELETE FROM financial_manual_entries WHERE id = $1`, [req.params.id]);
+    await inTransaction(async (client) => {
+      await client.query(
+        `DELETE FROM petty_cash WHERE source = 'finance_transfer' AND source_ref = $1`,
+        [`manual:${existing[0].id}`]
+      );
+      await client.query(`DELETE FROM financial_manual_entries WHERE id = $1`, [existing[0].id]);
+    });
     res.json({ ok: true, id: existing[0].id });
   } catch (e) {
     next(e);
@@ -2096,7 +2149,8 @@ async function postCalendarJournal(client, item, userId) {
   const out = item.direction !== 'in';
   const debit = out ? item.account_code : item.treasury_account_code;
   const credit = out ? item.treasury_account_code : item.account_code;
-  const notes = `Payment calendar #${item.id}${item.notes ? ` · ${item.notes}` : ''}`;
+  const cheque = item.payment_mode === 'cheque' && item.cheque_number ? ` · Cheque ${item.cheque_number}` : '';
+  const notes = `Payment calendar #${item.id}${cheque}${item.notes ? ` · ${item.notes}` : ''}`;
   if (item.journal_entry_id) {
     const { rows: prior } = await client.query(`SELECT entry_date FROM financial_manual_entries WHERE id = $1`, [
       item.journal_entry_id,
@@ -2132,6 +2186,30 @@ async function removeCalendarJournal(client, journalId) {
   await client.query(`DELETE FROM financial_manual_entries WHERE id = $1`, [journalId]);
 }
 
+/** ADIB / CIB for a bank treasury account or one of its sub-accounts, else null. */
+function bankForTreasury(code) {
+  const acct = getAccount(code);
+  const root = acct?.parent_code || code;
+  if (root === '101000') return 'adib';
+  if (root === '102000') return 'cib';
+  return null;
+}
+
+function isDeveloperAccount(code) {
+  return code === '619000' || getAccount(code)?.parent_code === '619000';
+}
+
+/** Cheques are only for bank treasuries and always carry the cheque number and a photo. */
+function calendarChequeError(item) {
+  if (item.payment_mode !== 'cheque') return null;
+  if (!item.treasury_account_code || !bankForTreasury(item.treasury_account_code)) {
+    return 'A cheque needs a bank treasury (ADIB or CIB)';
+  }
+  if (!String(item.cheque_number || '').trim()) return 'Enter the cheque number';
+  if (!String(item.cheque_photo_url || '').trim()) return 'Upload the cheque photo';
+  return null;
+}
+
 async function inTransaction(work) {
   const client = await pool.connect();
   try {
@@ -2162,9 +2240,21 @@ router.post('/financial-system/payment-calendar', requireRoles('admin', 'finance
     if (!title) return res.status(400).json({ error: 'Title is required' });
     if (!dueDate) return res.status(400).json({ error: 'Due date is required' });
     if (!(amount > 0)) return res.status(400).json({ error: 'Amount must be greater than zero' });
-    if (!treasury || !counter) return res.status(400).json({ error: 'Choose the treasury and the account' });
-    const accountError = calendarAccountError(treasury, counter);
+    const category = String(b.category || 'other').slice(0, 64) || 'other';
+    // Fixed monthly charges pick their treasury when each month is confirmed as paid.
+    if (!counter || (!treasury && category !== 'fixed_charge')) {
+      return res.status(400).json({ error: 'Choose the treasury and the account' });
+    }
+    const accountError = calendarAccountError(treasury || null, counter);
     if (accountError) return res.status(400).json({ error: accountError });
+    const cheque = {
+      payment_mode: b.payment_mode === 'cheque' ? 'cheque' : 'transfer',
+      cheque_number: b.cheque_number ? String(b.cheque_number).trim().slice(0, 64) : null,
+      cheque_photo_url: b.cheque_photo_url ? String(b.cheque_photo_url).trim() : null,
+      treasury_account_code: treasury || null,
+    };
+    const chequeError = calendarChequeError(cheque);
+    if (chequeError) return res.status(400).json({ error: chequeError });
     const day = Math.min(Math.max(parseInt(b.day_of_month, 10) || Number(dueDate.slice(8, 10)), 1), 31);
 
     const status = months === 1 ? calendarStatus(b.status, 'pending') : 'pending';
@@ -2172,14 +2262,15 @@ router.post('/financial-system/payment-calendar', requireRoles('admin', 'finance
     const items = await inTransaction(async (client) => {
       const created = [];
       for (let i = 0; i < months; i += 1) {
-        const due = seriesId ? addMonthsOnDay(dueDate, i, day) : dueDate;
+        const due = seriesId || b.day_of_month ? addMonthsOnDay(dueDate, i, day) : dueDate;
         const paid = status === 'paid';
         const { rows } = await client.query(
           `INSERT INTO finance_calendar_payments
              (title, amount, currency, due_date, direction, category, status, paid_at, paid_date, notes,
               account_code, treasury_account_code, related_ref, series_id, series_index, series_count,
-              created_by, updated_by)
-           VALUES ($1, $2, $3, $4::date, $5, $6, $7, $8, $9::date, $10, $11, $12, $13, $14, $15, $16, $17, $17)
+              created_by, updated_by, payment_mode, cheque_number, cheque_photo_url)
+           VALUES ($1, $2, $3, $4::date, $5, $6, $7, $8, $9::date, $10, $11, $12, $13, $14, $15, $16, $17, $17,
+                   $18, $19, $20)
            RETURNING *`,
           [
             title,
@@ -2187,18 +2278,21 @@ router.post('/financial-system/payment-calendar', requireRoles('admin', 'finance
             String(b.currency || 'EGP').slice(0, 8),
             due,
             direction,
-            String(b.category || 'other').slice(0, 64) || 'other',
+            category,
             status,
             paid ? new Date().toISOString() : null,
             paid ? calendarIsoDate(b.paid_date) || due : null,
             b.notes != null ? String(b.notes) : null,
             counter,
-            treasury,
+            treasury || null,
             b.related_ref != null ? String(b.related_ref) : null,
             seriesId,
             seriesId ? i + 1 : null,
             seriesId ? months : null,
             req.user.id,
+            cheque.payment_mode,
+            cheque.cheque_number,
+            cheque.cheque_photo_url,
           ]
         );
         let row = rows[0];
@@ -2246,11 +2340,19 @@ router.patch('/financial-system/payment-calendar/:id', requireRoles('admin', 'fi
       account_code: pick('account_code', (v) => (v ? String(v).slice(0, 16) : null)),
       treasury_account_code: pick('treasury_account_code', (v) => (v ? String(v).slice(0, 16) : null)),
       related_ref: pick('related_ref', (v) => (v != null ? String(v) : null)),
+      payment_mode: pick('payment_mode', (v) => (v === 'cheque' ? 'cheque' : 'transfer')) || 'transfer',
+      cheque_number: pick('cheque_number', (v) => (v ? String(v).trim().slice(0, 64) : null)),
+      cheque_photo_url: pick('cheque_photo_url', (v) => (v ? String(v).trim() : null)),
     };
     if (!item.title) return res.status(400).json({ error: 'Title is required' });
     if (!item.due_date) return res.status(400).json({ error: 'Due date is required' });
     const accountError = calendarAccountError(item.treasury_account_code, item.account_code);
     if (accountError) return res.status(400).json({ error: accountError });
+    if (item.payment_mode === 'cheque' && item.treasury_account_code && !bankForTreasury(item.treasury_account_code)) {
+      item.payment_mode = 'transfer';
+    }
+    const chequeError = calendarChequeError(item);
+    if (chequeError) return res.status(400).json({ error: chequeError });
 
     if (item.status === 'paid') {
       if (!(item.amount > 0)) return res.status(400).json({ error: 'Paid amount must be greater than zero' });
@@ -2276,7 +2378,8 @@ router.patch('/financial-system/payment-calendar/:id', requireRoles('admin', 'fi
         `UPDATE finance_calendar_payments SET
            title = $2, amount = $3, due_date = $4::date, direction = $5, category = $6, status = $7,
            paid_at = $8, paid_date = $9::date, notes = $10, account_code = $11, treasury_account_code = $12,
-           related_ref = $13, journal_entry_id = $14, updated_by = $15, updated_at = now()
+           related_ref = $13, journal_entry_id = $14, updated_by = $15, updated_at = now(),
+           payment_mode = $16, cheque_number = $17, cheque_photo_url = $18
          WHERE id = $1
          RETURNING *`,
         [
@@ -2295,6 +2398,9 @@ router.patch('/financial-system/payment-calendar/:id', requireRoles('admin', 'fi
           item.related_ref,
           journalId,
           req.user.id,
+          item.payment_mode,
+          item.cheque_number,
+          item.cheque_photo_url,
         ]
       );
       return rows[0];
@@ -2505,6 +2611,227 @@ router.post('/financial-system/cash-review/:id', requireRoles('admin', 'finance'
   }
 });
 
+/** Read-only spending forecast built from the treasury and petty cash workbooks. */
+router.get('/financial-system/expense-forecast', requireRoles('admin', 'finance', 'finance_manager'), (req, res, next) => {
+  try {
+    const { buildExpenseForecast } = require('../../lib/finance/expenseForecast');
+    const horizon = Math.min(Math.max(parseInt(req.query.months, 10) || 6, 1), 12);
+    res.json(buildExpenseForecast({ horizon }));
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/financial-system/developers', requireRoles('admin', 'finance', 'finance_manager'), async (_req, res, next) => {
+  try {
+    const { rows } = await query(
+      `SELECT d.id, d.name, d.created_at,
+              COUNT(m.id)::int AS entry_count,
+              COALESCE(SUM(m.amount), 0)::float AS total_amount
+       FROM financial_developers d
+       LEFT JOIN financial_manual_entries m ON m.developer_id = d.id
+       GROUP BY d.id
+       ORDER BY lower(d.name)`
+    );
+    res.json(rows);
+  } catch (e) {
+    if (e.code === '42P01') return res.json([]);
+    next(e);
+  }
+});
+
+router.post('/financial-system/developers', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const name = String(req.body?.name || '').trim().slice(0, 120);
+    if (!name) return res.status(400).json({ error: 'Developer name is required' });
+    const { rows: existing } = await query(
+      `SELECT id, name FROM financial_developers WHERE lower(btrim(name)) = lower($1)`,
+      [name]
+    );
+    if (existing[0]) return res.status(409).json({ error: 'This developer already exists', developer: existing[0] });
+    const { rows } = await query(
+      `INSERT INTO financial_developers (name, created_by) VALUES ($1, $2) RETURNING id, name, created_at`,
+      [name, req.user.id]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+/** Uploads a cheque photo (or other finance proof) and returns its URL. */
+router.post(
+  '/financial-system/uploads',
+  requireRoles('admin', 'finance', 'finance_manager'),
+  upload.single('file'),
+  setCloudinaryFolder(FOLDER_PAYMENTS),
+  attachCloudinaryUrls,
+  (req, res) => {
+    const url = req.file?.secure_url || req.file?.path;
+    if (!url) return res.status(400).json({ error: 'Choose a photo or PDF to upload' });
+    res.status(201).json({ url, name: req.file.originalname || null });
+  }
+);
+
+/** Net money still held on a reservation: collected minus anything already refunded. */
+async function reservationNetCollected(reservationId, client = { query }) {
+  const { rows } = await client.query(
+    `SELECT COALESCE(SUM(amount), 0)::float AS net
+     FROM payments
+     WHERE reservation_id = $1 AND status = 'successful' AND COALESCE(is_approved, 0) = 1`,
+    [reservationId]
+  );
+  return round2(Math.max(0, Number(rows[0]?.net) || 0));
+}
+
+router.get('/financial-system/cancel-requests', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const approved = req.query.status === 'approved';
+    const { rows } = await query(
+      `SELECT cr.*, r.guest_name, r.currency,
+              to_char(r.check_in, 'YYYY-MM-DD') AS check_in, to_char(r.check_out, 'YYYY-MM-DD') AS check_out,
+              COALESCE(r.total_amount, 0)::float AS total_amount,
+              COALESCE(u.unit_number, u.title, 'Unit') AS unit_name,
+              requester.full_name AS requested_by_name, decider.full_name AS decided_by_name
+       FROM reservation_cancel_requests cr
+       JOIN reservations r ON r.id = cr.reservation_id
+       LEFT JOIN units u ON u.id = r.unit_id
+       LEFT JOIN staff_users requester ON requester.id = cr.requested_by
+       LEFT JOIN staff_users decider ON decider.id = cr.decided_by
+       WHERE cr.status = $1
+       ORDER BY ${approved ? 'cr.decided_at DESC' : 'cr.requested_at ASC'}
+       LIMIT 300`,
+      [approved ? 'approved' : 'pending']
+    );
+    const items = [];
+    for (const r of rows) {
+      items.push({
+        ...r,
+        collected: round2(parseFloat(r.collected) || 0),
+        requested_refund: round2(parseFloat(r.requested_refund) || 0),
+        refund_amount: r.refund_amount != null ? round2(parseFloat(r.refund_amount)) : null,
+        still_held: approved ? null : await reservationNetCollected(r.reservation_id),
+      });
+    }
+    const { rows: count } = await query(
+      `SELECT COUNT(*)::int AS n FROM reservation_cancel_requests WHERE status = 'pending'`
+    );
+    res.json({ items, pending_count: count[0]?.n || 0 });
+  } catch (e) {
+    if (e.code === '42P01') return res.json({ items: [], pending_count: 0 });
+    next(e);
+  }
+});
+
+/** Finance decides the refund: amount (0 keeps everything) and the treasury it leaves from. */
+router.post('/financial-system/cancel-requests/:id/approve', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    await refreshCustomAccounts();
+    const id = parseInt(req.params.id, 10);
+    if (!id) return res.status(400).json({ error: 'Invalid request id' });
+    const { rows: found } = await query(
+      `SELECT cr.*, r.guest_name FROM reservation_cancel_requests cr
+       JOIN reservations r ON r.id = cr.reservation_id WHERE cr.id = $1`,
+      [id]
+    );
+    const request = found[0];
+    if (!request) return res.status(404).json({ error: 'Cancellation request not found' });
+    if (request.status !== 'pending') return res.status(409).json({ error: 'This request was already decided' });
+
+    const b = req.body || {};
+    const refund = round2(parseFloat(b.refund_amount) || 0);
+    if (refund < 0) return res.status(400).json({ error: 'Refund cannot be negative' });
+    const held = await reservationNetCollected(request.reservation_id);
+    if (refund - held > 0.009) {
+      return res.status(400).json({ error: `Refund cannot be more than the EGP ${held.toFixed(2)} still held` });
+    }
+    const treasury = String(b.treasury_account_code || '').trim() || null;
+    if (refund > 0.009) {
+      if (!treasury) return res.status(400).json({ error: 'Choose the treasury the refund is paid from' });
+      if (!isTreasuryCode(treasury)) return res.status(400).json({ error: 'Choose a bank or cash treasury account' });
+    }
+    const refundDate = calendarIsoDate(b.refund_date) || new Date().toISOString().slice(0, 10);
+    const note = b.note ? String(b.note).trim().slice(0, 1000) : null;
+    if (refund > 0.009) await assertPeriodOpen(refundDate);
+
+    const result = await inTransaction(async (client) => {
+      let paymentId = null;
+      if (refund > 0.009) {
+        const bank = bankForTreasury(treasury);
+        const { rows: pay } = await client.query(
+          `INSERT INTO payments (
+             reservation_id, amount, payment_date, payment_method, bank_account, treasury_account_code,
+             status, is_approved, approved_by, approved_at, paid_at, notes, created_by, kind
+           ) VALUES ($1, $2, $3::date, $4, $5, $6, 'successful', 1, $7, now(), now(), $8, $7, 'refund')
+           RETURNING id`,
+          [
+            request.reservation_id,
+            -refund,
+            refundDate,
+            bank ? 'bank_transfer' : 'cash',
+            bank,
+            treasury,
+            req.user.id,
+            `Refund on cancellation${request.reason ? `: ${request.reason}` : ''}${note ? ` · ${note}` : ''}`,
+          ]
+        );
+        paymentId = pay[0].id;
+      }
+      const { rows } = await client.query(
+        `UPDATE reservation_cancel_requests SET
+           status = 'approved', refund_amount = $2, treasury_account_code = $3, refund_date = $4::date,
+           payment_id = $5, decided_by = $6, decided_at = now(), decision_note = $7
+         WHERE id = $1
+         RETURNING *`,
+        [id, refund, refund > 0.009 ? treasury : null, refund > 0.009 ? refundDate : null, paymentId, req.user.id, note]
+      );
+      return rows[0];
+    });
+
+    const { syncReservationPaymentStatus } = require('../../lib/syncReservationPayment');
+    await syncReservationPaymentStatus(request.reservation_id);
+    await logAudit({
+      userId: req.user.id,
+      action: 'APPROVE_CANCEL_REFUND',
+      entityType: 'reservation',
+      entityId: request.reservation_id,
+      details: { request_id: id, refund, kept: round2(held - refund), treasury_account_code: result.treasury_account_code, note },
+    });
+    res.json({ ok: true, request: result });
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
+    next(e);
+  }
+});
+
+/** Fixed monthly charges (Fixed Monthly Charges, 613000), one row per series of calendar payments. */
+router.get('/financial-system/fixed-charges', requireRoles('admin', 'finance', 'finance_manager'), async (_req, res, next) => {
+  try {
+    const { rows } = await query(
+      `SELECT COALESCE(series_id, id::text) AS key,
+              MIN(title) AS title,
+              MAX(amount)::float AS amount,
+              EXTRACT(DAY FROM MIN(due_date))::int AS day_of_month,
+              to_char(MIN(due_date), 'YYYY-MM-DD') AS first_due,
+              to_char(MAX(due_date), 'YYYY-MM-DD') AS last_due,
+              COUNT(*)::int AS months,
+              COUNT(*) FILTER (WHERE status = 'paid')::int AS paid,
+              to_char(MIN(due_date) FILTER (WHERE status NOT IN ('paid', 'cancelled')), 'YYYY-MM-DD') AS next_due,
+              MIN(id) FILTER (WHERE status NOT IN ('paid', 'cancelled')) AS next_id,
+              MIN(id) AS first_id,
+              BOOL_OR(series_id IS NOT NULL) AS is_series
+       FROM finance_calendar_payments
+       WHERE category = 'fixed_charge'
+       GROUP BY 1
+       ORDER BY MIN(due_date), MIN(title)`
+    );
+    res.json(rows);
+  } catch (e) {
+    if (e.code === '42P01') return res.json([]);
+    next(e);
+  }
+});
+
 router.post('/financial-system/insurance-refunds/:id/settle', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const id = parseInt(req.params.id, 10);
@@ -2551,12 +2878,15 @@ router.post('/financial-system/insurance-refunds/:id/settle', requireRoles('admi
     if (!allowedMethods.has(method)) {
       return res.status(400).json({ error: 'Invalid payment_method' });
     }
-    const refundBank = ['instapay', 'bank_transfer'].includes(method)
-      ? normalizeBankAccount(req.body.bank_account)
-      : null;
-    if (refundBank === null && ['instapay', 'bank_transfer'].includes(method) && refunded > 0.009) {
-      return res.status(400).json({ error: 'Choose the ADIB or CIB account the refund is paid from' });
+    await refreshCustomAccounts();
+    const treasuryCode = String(req.body.treasury_account_code || '').trim() || null;
+    if (refunded > 0.009 && !treasuryCode) {
+      return res.status(400).json({ error: 'Choose the treasury the refund is paid from' });
     }
+    if (treasuryCode && !isTreasuryCode(treasuryCode)) {
+      return res.status(400).json({ error: 'Choose a bank or cash treasury account' });
+    }
+    const refundBank = treasuryCode ? bankForTreasury(treasuryCode) : null;
 
     const refundDate = req.body.refunded_at
       ? String(req.body.refunded_at).slice(0, 10)
@@ -2580,6 +2910,7 @@ router.post('/financial-system/insurance-refunds/:id/settle', requireRoles('admi
          insurance_refund_notes = $7,
          insurance_refunded_by = $8,
          insurance_refund_bank_account = $9,
+         insurance_refund_treasury_code = $10,
          updated_at = NOW()
        WHERE id = $1
        RETURNING id, insurance, insurance_refund_status, insurance_refunded_amount,
@@ -2595,6 +2926,7 @@ router.post('/financial-system/insurance-refunds/:id/settle', requireRoles('admi
         req.body.notes ? String(req.body.notes).slice(0, 2000) : null,
         req.user.id,
         refundBank,
+        refunded > 0.009 ? treasuryCode : null,
       ]
     );
 

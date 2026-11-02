@@ -100,11 +100,12 @@ router.post('/petty-cash/accounts', requireRoles('admin', 'finance_manager'), as
        ON CONFLICT (location) DO UPDATE SET opening_balance = EXCLUDED.opening_balance, updated_at = now()`,
       [key, amount]
     );
-    await client.query(
+    const { rows: journal } = await client.query(
       `INSERT INTO financial_manual_entries
          (entry_type, misc_flow, description, amount, entry_date, notes, unit_id, created_by,
           debit_account_code, credit_account_code)
-       VALUES ('journal', NULL, $1, $2, $3::date, $4, NULL, $5, '108000', $6)`,
+       VALUES ('journal', NULL, $1, $2, $3::date, $4, NULL, $5, '108000', $6)
+       RETURNING id`,
       [
         `Petty cash ${name}`,
         amount,
@@ -115,7 +116,16 @@ router.post('/petty-cash/accounts', requireRoles('admin', 'finance_manager'), as
       ]
     );
     await client.query('COMMIT');
-    res.status(201).json(rows[0]);
+    // The new drawer gets its own sub-account under 108000; the funding journal lands there.
+    await refreshCustomAccounts();
+    const { rows: created } = await query(`SELECT account_code FROM petty_cash_accounts WHERE id = $1`, [rows[0].id]);
+    if (created[0]?.account_code && journal[0]?.id) {
+      await query(`UPDATE financial_manual_entries SET debit_account_code = $2 WHERE id = $1`, [
+        journal[0].id,
+        created[0].account_code,
+      ]);
+    }
+    res.status(201).json({ ...rows[0], account_code: created[0]?.account_code || null });
   } catch (err) {
     try {
       await client.query('ROLLBACK');

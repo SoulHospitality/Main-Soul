@@ -1,0 +1,874 @@
+{
+  "source_files": [
+    "Tresury.xlsx",
+    "Petty Cash.xlsx"
+  ],
+  "generated_at": "2026-11-02",
+  "months": [
+    "2025-10",
+    "2025-11",
+    "2025-12",
+    "2026-01",
+    "2026-02",
+    "2026-03",
+    "2026-04",
+    "2026-05",
+    "2026-06",
+    "2026-07",
+    "2026-08",
+    "2026-09",
+    "2026-10",
+    "2026-11",
+    "2026-12"
+  ],
+  "categories": [
+    {
+      "key": "salaries",
+      "label": "Salaries & bonuses",
+      "monthly": {
+        "2025-12": 355004,
+        "2026-01": 504760.32,
+        "2026-02": 3000,
+        "2026-03": 215763,
+        "2026-04": 408415,
+        "2026-05": 885557,
+        "2026-06": 401341,
+        "2026-07": 398519,
+        "2026-08": 519974,
+        "2026-09": 483205,
+        "2026-10": 489703,
+        "2026-11": 17210
+      },
+      "top_labels": [
+        {
+          "label": "Salaries",
+          "amount": 2902447.32
+        },
+        {
+          "label": "salaries Housekeeping",
+          "amount": 571300
+        },
+        {
+          "label": "salaries",
+          "amount": 415820
+        },
+        {
+          "label": "Salary",
+          "amount": 402059
+        },
+        {
+          "label": "Salaries Sokhna House Keeping",
+          "amount": 135500
+        },
+        {
+          "label": "Salaries Housekeeping ( Sokhna )",
+          "amount": 70900
+        },
+        {
+          "label": "Salaries Housekeeping",
+          "amount": 69100
+        },
+        {
+          "label": "Salaries House Keeping ( Sokhna )",
+          "amount": 69000
+        }
+      ]
+    },
+    {
+      "key": "commissions",
+      "label": "Commissions",
+      "monthly": {
+        "2025-12": 397439.46,
+        "2026-01": 152000,
+        "2026-02": 432732,
+        "2026-03": 1964346,
+        "2026-04": 276375.03,
+        "2026-05": 27435,
+        "2026-06": 363050,
+        "2026-07": 151597,
+        "2026-08": 210638,
+        "2026-09": 1781020
+      },
+      "top_labels": [
+        {
+          "label": "Commissions",
+          "amount": 3255327.49
+        },
+        {
+          "label": "Commission",
+          "amount": 1566894
+        },
+        {
+          "label": "Commission ( Nabarawy )",
+          "amount": 265300
+        },
+        {
+          "label": "Commission Ahmed El Naggar",
+          "amount": 165300
+        },
+        {
+          "label": "Commission Broker",
+          "amount": 145024
+        },
+        {
+          "label": "Commission Omar Walid",
+          "amount": 80000
+        },
+        {
+          "label": "Broker Commission",
+          "amount": 63559
+        },
+        {
+          "label": "Commissions Broker",
+          "amount": 55055
+        }
+      ]
+    },
+    {
+      "key": "tax",
+      "label": "Tax",
+      "monthly": {
+        "2026-04": 1080300,
+        "2026-05": 85900,
+        "2026-06": 108256,
+        "2026-08": 1407447,
+        "2026-10": 130455
+      },
+      "top_labels": [
+        {
+          "label": "Tax",
+          "amount": 1404911
+        },
+        {
+          "label": "Tax ( Monte Galala )",
+          "amount": 1391312
+        },
+        {
+          "label": "Tax 14%",
+          "amount": 16135
+        }
+      ]
+    },
+    {
+      "key": "marketing",
+      "label": "Marketing",
+      "monthly": {
+        "2025-12": 68000,
+        "2026-01": 112390,
+        "2026-02": 3000,
+        "2026-04": 5840.82,
+        "2026-05": 25000,
+        "2026-06": 154980,
+        "2026-07": 58050,
+        "2026-08": 63050,
+        "2026-09": 58598,
+        "2026-10": 66166
+      },
+      "top_labels": [
+        {
+          "label": "Dubizzle Limited",
+          "amount": 232432
+        },
+        {
+          "label": "Campign",
+          "amount": 158262
+        },
+        {
+          "label": "Property Finder",
+          "amount": 136000
+        },
+        {
+          "label": "Slick Advertising",
+          "amount": 34500
+        },
+        {
+          "label": "Campaign",
+          "amount": 33410
+        },
+        {
+          "label": "Advertising",
+          "amount": 14820.82
+        },
+        {
+          "label": "Marketing",
+          "amount": 5000
+        },
+        {
+          "label": "Mrketplace Campign",
+          "amount": 650
+        }
+      ]
+    },
+    {
+      "key": "rent",
+      "label": "Rent",
+      "monthly": {
+        "2026-01": 88000,
+        "2026-04": 132000,
+        "2026-05": 8000,
+        "2026-06": 48750,
+        "2026-07": 8122,
+        "2026-08": 39206,
+        "2026-09": 300,
+        "2026-10": 256870
+      },
+      "top_labels": [
+        {
+          "label": "Rent",
+          "amount": 220000
+        },
+        {
+          "label": "Rent Office",
+          "amount": 185300
+        },
+        {
+          "label": "Rent Golden Coast",
+          "amount": 31822
+        },
+        {
+          "label": "Landry - Rent Golden Coast",
+          "amount": 30706
+        },
+        {
+          "label": "Rent Golden Cost",
+          "amount": 27500
+        },
+        {
+          "label": "Rent El Sokhna",
+          "amount": 21250
+        },
+        {
+          "label": "Rent il Monte Galala",
+          "amount": 20020
+        },
+        {
+          "label": "Rent Opeartion il Monte Galala",
+          "amount": 20000
+        }
+      ]
+    },
+    {
+      "key": "utilities",
+      "label": "Utilities, internet & phone",
+      "monthly": {
+        "2026-01": 4716.8,
+        "2026-02": 38450,
+        "2026-03": 46850,
+        "2026-04": 33224,
+        "2026-05": 3733,
+        "2026-06": 18835,
+        "2026-07": 329411.78,
+        "2026-08": 27468,
+        "2026-09": 185679,
+        "2026-10": 28534
+      },
+      "top_labels": [
+        {
+          "label": "Sweedy Eelctiec",
+          "amount": 278415
+        },
+        {
+          "label": "Seweedy Elc And Water",
+          "amount": 147670
+        },
+        {
+          "label": "Land Line",
+          "amount": 99355.4
+        },
+        {
+          "label": "Bills",
+          "amount": 31452.78
+        },
+        {
+          "label": "Land Line + Chairty + elc + water",
+          "amount": 30449
+        },
+        {
+          "label": "line",
+          "amount": 22300
+        },
+        {
+          "label": "Seweedy Electric",
+          "amount": 14950
+        },
+        {
+          "label": "Land Line Bill",
+          "amount": 14290
+        }
+      ]
+    },
+    {
+      "key": "housekeeping",
+      "label": "Housekeeping & laundry",
+      "monthly": {
+        "2025-10": 6120,
+        "2025-11": 2990,
+        "2026-01": 4079,
+        "2026-02": 21572,
+        "2026-03": 40000,
+        "2026-04": 1042781,
+        "2026-05": 17325,
+        "2026-06": 8275,
+        "2026-07": 465403.26,
+        "2026-08": 387828.12,
+        "2026-09": 78435,
+        "2026-10": 7140,
+        "2026-11": 4000
+      },
+      "top_labels": [
+        {
+          "label": "Hospitality",
+          "amount": 1070530
+        },
+        {
+          "label": "Housekeeping ( Sahel )",
+          "amount": 571600
+        },
+        {
+          "label": "Landry ( Sahel )",
+          "amount": 216158.12
+        },
+        {
+          "label": "Landry Sahel",
+          "amount": 47713.26
+        },
+        {
+          "label": "Landry",
+          "amount": 44555
+        },
+        {
+          "label": "Web Site Hospitality",
+          "amount": 40000
+        },
+        {
+          "label": "Landray ( Sahel )",
+          "amount": 32505
+        },
+        {
+          "label": "مغسله",
+          "amount": 21980
+        }
+      ]
+    },
+    {
+      "key": "beach",
+      "label": "Beach passes & access cards",
+      "monthly": {
+        "2026-01": 1500,
+        "2026-03": 5500,
+        "2026-05": 126045,
+        "2026-06": 38000,
+        "2026-07": 143500,
+        "2026-08": 39286,
+        "2026-09": 26750,
+        "2026-10": 27128,
+        "2026-11": 2250
+      },
+      "top_labels": [
+        {
+          "label": "Beach Pass",
+          "amount": 195786
+        },
+        {
+          "label": "Beach Pass ( Sahel )",
+          "amount": 110000
+        },
+        {
+          "label": "Beach Access",
+          "amount": 39628
+        },
+        {
+          "label": "كروت مستاجر",
+          "amount": 14500
+        },
+        {
+          "label": "Beach Accses F1-V20",
+          "amount": 12000
+        },
+        {
+          "label": "Beach Accses CL3",
+          "amount": 11045
+        },
+        {
+          "label": "Beach Pass ( SA-4B-104 )",
+          "amount": 10000
+        },
+        {
+          "label": "كروت بحر",
+          "amount": 5500
+        }
+      ]
+    },
+    {
+      "key": "uniform",
+      "label": "Uniforms",
+      "monthly": {
+        "2026-06": 36543,
+        "2026-07": 25000
+      },
+      "top_labels": [
+        {
+          "label": "Uniform",
+          "amount": 25000
+        },
+        {
+          "label": "Uniform Suits",
+          "amount": 21543
+        },
+        {
+          "label": "HR - UNIFORM",
+          "amount": 15000
+        }
+      ]
+    },
+    {
+      "key": "stock",
+      "label": "Stock, furniture & supplies",
+      "monthly": {
+        "2026-03": 100,
+        "2026-05": 1050,
+        "2026-06": 172430,
+        "2026-07": 50200,
+        "2026-08": 176430,
+        "2026-09": 38000,
+        "2026-10": 44240
+      },
+      "top_labels": [
+        {
+          "label": "Stock ( Melyat )",
+          "amount": 248860
+        },
+        {
+          "label": "Furniture ( Sahel Unit )",
+          "amount": 70000
+        },
+        {
+          "label": "Coverlet fabric",
+          "amount": 50100
+        },
+        {
+          "label": "شراء تكيف",
+          "amount": 38000
+        },
+        {
+          "label": "Wash Stock Sahel",
+          "amount": 35000
+        },
+        {
+          "label": "TV ( V36 )",
+          "amount": 30000
+        },
+        {
+          "label": "Ahmed Ali ( Last Stock )",
+          "amount": 9240
+        },
+        {
+          "label": "بطاريات",
+          "amount": 1250
+        }
+      ]
+    },
+    {
+      "key": "transport",
+      "label": "Transport & cars",
+      "monthly": {
+        "2026-01": 600,
+        "2026-06": 760,
+        "2026-07": 11900,
+        "2026-08": 1250,
+        "2026-09": 16011,
+        "2026-10": 33340,
+        "2026-12": 1060
+      },
+      "top_labels": [
+        {
+          "label": "Maintenance Car Sokhna",
+          "amount": 25140
+        },
+        {
+          "label": "سواق الزوزكي",
+          "amount": 9400
+        },
+        {
+          "label": "Car Transpotaion Sahel",
+          "amount": 8550
+        },
+        {
+          "label": "Car Sokhna Maintenance",
+          "amount": 8200
+        },
+        {
+          "label": "بنزين",
+          "amount": 3605
+        },
+        {
+          "label": "مصاريف نقل",
+          "amount": 2476
+        },
+        {
+          "label": "Transportiaon Sokhna",
+          "amount": 2300
+        },
+        {
+          "label": "Car Transpotaion Sokhna",
+          "amount": 1500
+        }
+      ]
+    },
+    {
+      "key": "maintenance",
+      "label": "Maintenance",
+      "monthly": {
+        "2026-01": 500,
+        "2026-04": 5720,
+        "2026-05": 1171,
+        "2026-08": 24400,
+        "2026-09": 600
+      },
+      "top_labels": [
+        {
+          "label": "Air Conditioning",
+          "amount": 24400
+        },
+        {
+          "label": "Maintenance",
+          "amount": 6635
+        },
+        {
+          "label": "كشف تكييف",
+          "amount": 600
+        },
+        {
+          "label": "Maintainance",
+          "amount": 500
+        },
+        {
+          "label": "صيانه",
+          "amount": 256
+        }
+      ]
+    },
+    {
+      "key": "charity",
+      "label": "Charity",
+      "monthly": {
+        "2026-03": 58000,
+        "2026-05": 8000,
+        "2026-07": 50000,
+        "2026-08": 25600,
+        "2026-09": 10000,
+        "2026-10": 8000
+      },
+      "top_labels": [
+        {
+          "label": "Sadaqat",
+          "amount": 85600
+        },
+        {
+          "label": "Ongoing Charity",
+          "amount": 58000
+        },
+        {
+          "label": "Chairty",
+          "amount": 8000
+        },
+        {
+          "label": "Kafala",
+          "amount": 8000
+        }
+      ]
+    },
+    {
+      "key": "general",
+      "label": "General & administration",
+      "monthly": {
+        "2026-01": 12676.29,
+        "2026-02": 3504,
+        "2026-03": 270,
+        "2026-04": 12336,
+        "2026-05": 88777,
+        "2026-06": 285549.76,
+        "2026-07": 224985,
+        "2026-08": 78050.64,
+        "2026-09": 73796.18,
+        "2026-10": 59933.53,
+        "2026-11": 342,
+        "2026-12": 130
+      },
+      "top_labels": [
+        {
+          "label": "General and administrative expenses",
+          "amount": 558736
+        },
+        {
+          "label": "Office",
+          "amount": 75988
+        },
+        {
+          "label": "Expenses Gouna",
+          "amount": 37366
+        },
+        {
+          "label": "Event ( Jilan Hr )",
+          "amount": 30575
+        },
+        {
+          "label": "Fees Bank",
+          "amount": 27754.66
+        },
+        {
+          "label": "Bank Fees",
+          "amount": 24862.21
+        },
+        {
+          "label": "General expenses",
+          "amount": 24685
+        },
+        {
+          "label": "Buffet",
+          "amount": 18800
+        }
+      ]
+    }
+  ],
+  "excluded": [
+    {
+      "label": "Petty cash top-ups (counted as petty spending instead)",
+      "amount": 6535668
+    },
+    {
+      "label": "Guest refunds and cancellations",
+      "amount": 1945251
+    },
+    {
+      "label": "Advances and loans",
+      "amount": 591380
+    },
+    {
+      "label": "Asset purchases",
+      "amount": 790020
+    },
+    {
+      "label": "Cash withdrawals",
+      "amount": 100000
+    },
+    {
+      "label": "Partner transfers",
+      "amount": 14846610.35
+    },
+    {
+      "label": "Developers, deals and resale",
+      "amount": 11022063.2
+    },
+    {
+      "label": "Owner payouts",
+      "amount": 33157052.89
+    }
+  ],
+  "unclassified": [
+    {
+      "label": "Treasury: Reservations",
+      "amount": 229685
+    },
+    {
+      "label": "Treasury: Payment",
+      "amount": 63826.64
+    },
+    {
+      "label": "Treasury: Compensation",
+      "amount": 42150
+    },
+    {
+      "label": "Treasury: Violation IL Monte Galala",
+      "amount": 20000
+    },
+    {
+      "label": "Treasury: Payment Link",
+      "amount": 10000
+    },
+    {
+      "label": "Treasury: Nabarawy",
+      "amount": 10000
+    },
+    {
+      "label": "Treasury: Intercom To Company",
+      "amount": 7000
+    },
+    {
+      "label": "Treasury: Saryat Elmaadi",
+      "amount": 5783.57
+    },
+    {
+      "label": "Treasury: akhnaton",
+      "amount": 5325
+    },
+    {
+      "label": "Treasury: To Sahel",
+      "amount": 4900
+    },
+    {
+      "label": "Treasury: Avenue 90",
+      "amount": 4210
+    },
+    {
+      "label": "Treasury: Campigan il monte Galala + Gouna",
+      "amount": 4000
+    },
+    {
+      "label": "Treasury: Pocket Money + Photo",
+      "amount": 3100
+    },
+    {
+      "label": "Treasury: Saif Data Work",
+      "amount": 3000
+    },
+    {
+      "label": "Treasury: international",
+      "amount": 2700
+    },
+    {
+      "label": "Treasury: House Ghada Compensation",
+      "amount": 2000
+    },
+    {
+      "label": "Treasury: Company System",
+      "amount": 1726
+    },
+    {
+      "label": "Treasury: System",
+      "amount": 1580
+    },
+    {
+      "label": "Treasury: Buffiet",
+      "amount": 1360
+    },
+    {
+      "label": "Treasury: Competition",
+      "amount": 1300
+    },
+    {
+      "label": "Treasury: Claude",
+      "amount": 1000
+    },
+    {
+      "label": "Treasury: Compensation Ghada Sokhna",
+      "amount": 1000
+    },
+    {
+      "label": "Treasury: Fix Laptop",
+      "amount": 900
+    },
+    {
+      "label": "Treasury: Tissiu",
+      "amount": 895
+    },
+    {
+      "label": "Treasury: Online System",
+      "amount": 850
+    },
+    {
+      "label": "Treasury: Broker",
+      "amount": 800
+    },
+    {
+      "label": "Treasury: Pocket Money",
+      "amount": 770
+    },
+    {
+      "label": "Treasury: Gas",
+      "amount": 695
+    },
+    {
+      "label": "Treasury: Instapay",
+      "amount": 656.22
+    },
+    {
+      "label": "Treasury: Fees Instapay",
+      "amount": 643.53
+    },
+    {
+      "label": "Treasury: Housekeeeping Sokhna",
+      "amount": 600
+    },
+    {
+      "label": "Treasury: Jilan",
+      "amount": 575
+    },
+    {
+      "label": "Treasury: Stamp Fees",
+      "amount": 563.76
+    },
+    {
+      "label": "Treasury: IPTV Fees",
+      "amount": 500
+    },
+    {
+      "label": "Treasury: InstaPay Fees",
+      "amount": 481.47
+    },
+    {
+      "label": "Treasury: Cleaning",
+      "amount": 475
+    },
+    {
+      "label": "Treasury: Keys For Company",
+      "amount": 350
+    },
+    {
+      "label": "Treasury: Uber To Miss Emy",
+      "amount": 245
+    },
+    {
+      "label": "Treasury: Stamp Company",
+      "amount": 240
+    },
+    {
+      "label": "Treasury: Sticker For El Gouna",
+      "amount": 225
+    },
+    {
+      "label": "Treasury: Bank",
+      "amount": 220
+    },
+    {
+      "label": "Treasury: We",
+      "amount": 200
+    },
+    {
+      "label": "Treasury: Go Bus",
+      "amount": 200
+    },
+    {
+      "label": "Treasury: Cappicuino",
+      "amount": 200
+    },
+    {
+      "label": "Treasury: garbage",
+      "amount": 200
+    },
+    {
+      "label": "Treasury: Paper",
+      "amount": 195
+    },
+    {
+      "label": "Treasury: Instapay Fees",
+      "amount": 145.11
+    },
+    {
+      "label": "Treasury: Fees",
+      "amount": 95
+    },
+    {
+      "label": "Treasury: CIB Balance",
+      "amount": 55.2
+    },
+    {
+      "label": "Treasury: Uber",
+      "amount": 50
+    },
+    {
+      "label": "Treasury: Hamdi",
+      "amount": 15
+    }
+  ]
+}

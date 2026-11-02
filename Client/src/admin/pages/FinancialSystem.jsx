@@ -130,7 +130,7 @@ const ACCOUNT_ICONS = {
   '401000': TrendingUp,
   '506000': Users,
   '508000': UtensilsCrossed,
-  '604000': Home,
+  '613000': Home,
   '608000': Zap,
   '609000': Users,
 };
@@ -311,6 +311,10 @@ function useFinanceNav() {
     aging: 'aging',
     insurance: 'insurance',
     'cash-review': 'cash-review',
+    'cancel-requests': 'cancel-requests',
+    cancellations: 'cancel-requests',
+    'expense-forecast': 'expense-forecast',
+    forecast: 'expense-forecast',
     'checkin-audit': 'checkin-audit',
     checkins: 'checkin-audit',
     'check-in-audit': 'checkin-audit',
@@ -582,6 +586,8 @@ function HomeView({ data, basisLabel, onOpenGroup, onOpenAccount, onOpenTreasury
         </div>
       </button>
 
+      <CancelRequestsCard onOpen={() => onOpenTool('cancel-requests')} />
+
       <CashReviewCard onOpen={() => onOpenTool('cash-review')} />
 
       <button
@@ -651,6 +657,8 @@ function HomeView({ data, basisLabel, onOpenGroup, onOpenAccount, onOpenTreasury
             { id: 'owners', labelKey: 'ownerPayouts', icon: Users },
             { id: 'insurance', labelKey: 'insurancePayout', icon: Shield },
             { id: 'cash-review', labelKey: 'cashReview', icon: Banknote },
+            { id: 'cancel-requests', labelKey: 'cancelRequests', icon: Receipt },
+            { id: 'expense-forecast', labelKey: 'expenseForecast', icon: TrendingUp },
             { id: 'checkin-audit', labelKey: 'checkinAudit', icon: ClipboardList },
             { id: 'payment-calendar', labelKey: 'paymentCalendar', icon: CalendarDays },
             { id: 'trust', labelKey: 'ownerTrust', icon: Building2 },
@@ -1193,7 +1201,7 @@ function RecurringTool() {
 
   if (isLoading) return <LoadingSpinner />;
 
-  const icons = { rent: Home, utilities: Zap, buffet: UtensilsCrossed };
+  const icons = { utilities: Zap, buffet: UtensilsCrossed };
 
   return (
     <div className="space-y-4">
@@ -1201,7 +1209,7 @@ function RecurringTool() {
         {t('pms.fin.recurring.description')}
       </p>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {(Array.isArray(data) ? data : []).map((row) => {
+        {(Array.isArray(data) ? data : []).filter((row) => row.kind !== 'rent').map((row) => {
           const Icon = icons[row.kind] || Settings2;
           const draft = drafts[row.kind] || {
             amount_egp: row.amount_egp,
@@ -1257,6 +1265,7 @@ function RecurringTool() {
           );
         })}
       </div>
+      <FixedChargesSection />
     </div>
   );
 }
@@ -1705,8 +1714,13 @@ function ManualEntriesTab({ fromDate, toDate, rangeParams: params }) {
     amount: '',
     entry_date: new Date().toISOString().slice(0, 10),
     notes: '',
+    developer_id: '',
   };
   const [form, setForm] = useState(emptyForm);
+  const needsDeveloper = isDeveloperAccount(form.from_account) || isDeveloperAccount(form.to_account);
+  const pettyDrawer = [form.to_account, form.from_account].find(
+    (code) => code && code !== '108000' && getAccount(code)?.parent_code === '108000'
+  );
   const customAccounts = useCustomAccounts();
   const accountOptions = useMemo(() => manualAccountOptions(), [customAccounts]);
   const { data, isLoading } = useQuery({
@@ -1792,7 +1806,10 @@ function ManualEntriesTab({ fromDate, toDate, rangeParams: params }) {
                         '—'
                       )}
                     </td>
-                    <td className="max-w-[14rem] truncate">{row.notes || row.description || '—'}</td>
+                    <td className="max-w-[14rem] truncate">
+                      {row.developer_name ? <span className="font-medium">{row.developer_name} · </span> : null}
+                      {row.notes || row.description || '—'}
+                    </td>
                     <td className="text-right tabular-nums">{currency(row.amount)}</td>
                     <td className="text-right">
                       <button type="button" className="p-1.5 text-gray-400 hover:text-rose-600" onClick={() => setDeleteId(row.id)}>
@@ -1837,7 +1854,12 @@ function ManualEntriesTab({ fromDate, toDate, rangeParams: params }) {
               toast.error(t('pms.fin.manual.fromHint'));
               return;
             }
+            if (needsDeveloper && !form.developer_id) {
+              toast.error(t('pms.fin.developers.required'));
+              return;
+            }
             createEntry.mutate({
+              developer_id: needsDeveloper ? Number(form.developer_id) : undefined,
               entry_type: 'journal',
               from_account: form.from_account,
               to_account: form.to_account,
@@ -1871,6 +1893,16 @@ function ManualEntriesTab({ fromDate, toDate, rangeParams: params }) {
             />
             <p className="text-[11px] text-gray-400 mt-1">{t('pms.fin.manual.toHint')}</p>
           </div>
+          {needsDeveloper ? (
+            <DeveloperPicker value={form.developer_id} onChange={(v) => setForm((f) => ({ ...f, developer_id: v }))} />
+          ) : null}
+          {pettyDrawer ? (
+            <p className="text-xs text-emerald-800 bg-emerald-50 rounded-lg px-3 py-2">
+              {pettyDrawer === form.to_account
+                ? t('pms.fin.manual.pettyIn', { drawer: getAccount(pettyDrawer)?.name || pettyDrawer })
+                : t('pms.fin.manual.pettyOut', { drawer: getAccount(pettyDrawer)?.name || pettyDrawer })}
+            </p>
+          ) : null}
           <div>
             <label className="label">{t('pms.fin.amountEgp')}</label>
             <input
@@ -2453,6 +2485,9 @@ function PaymentCalendarTool() {
     treasury_account_code: '',
     account_code: '',
     repeat: false,
+    payment_mode: 'transfer',
+    cheque_number: '',
+    cheque_photo_url: '',
     repeat_months: '12',
     day_of_month: String(Number(String(day || today).slice(8, 10))),
   });
@@ -2584,6 +2619,9 @@ function PaymentCalendarTool() {
       notes: item.notes || '',
       treasury_account_code: item.treasury_account_code || '',
       account_code: item.account_code || '',
+      payment_mode: item.payment_mode || 'transfer',
+      cheque_number: item.cheque_number || '',
+      cheque_photo_url: item.cheque_photo_url || '',
     });
     setEditItem({ mode: 'edit', item });
   }
@@ -2595,6 +2633,9 @@ function PaymentCalendarTool() {
       paid_date: item.paid_date || (item.due_date < today ? item.due_date : today),
       treasury_account_code: item.treasury_account_code || '',
       account_code: item.account_code || '',
+      payment_mode: item.payment_mode || 'transfer',
+      cheque_number: item.cheque_number || '',
+      cheque_photo_url: item.cheque_photo_url || '',
     });
   }
 
@@ -2611,8 +2652,13 @@ function PaymentCalendarTool() {
       toast.error(t('pms.fin.paymentCalendar.amountRequired'));
       return;
     }
-    if (!form.treasury_account_code || !form.account_code) {
+    if ((!form.treasury_account_code && form.category !== 'fixed_charge') || !form.account_code) {
       toast.error(t('pms.fin.paymentCalendar.accountsRequired'));
+      return;
+    }
+    const chequeError = chequeMissing(form, form.treasury_account_code);
+    if (chequeError) {
+      toast.error(t(chequeError));
       return;
     }
     const creating = editItem?.mode === 'create';
@@ -2623,8 +2669,11 @@ function PaymentCalendarTool() {
       direction: form.direction,
       category: form.category,
       notes: form.notes,
-      treasury_account_code: form.treasury_account_code,
+      treasury_account_code: form.treasury_account_code || null,
       account_code: form.account_code,
+      payment_mode: isBankTreasury(form.treasury_account_code) ? form.payment_mode : 'transfer',
+      cheque_number: form.cheque_number || null,
+      cheque_photo_url: form.cheque_photo_url || null,
     };
     // A paid item keeps its status; saving re-posts its journal with the edited amount and accounts.
     if (form.status !== 'paid') body.status = form.status;
@@ -2645,6 +2694,11 @@ function PaymentCalendarTool() {
       toast.error(t('pms.fin.paymentCalendar.accountsRequired'));
       return;
     }
+    const chequeError = chequeMissing(confirm, confirm.treasury_account_code);
+    if (chequeError) {
+      toast.error(t(chequeError));
+      return;
+    }
     settleMutation.mutate({
       id: confirm.item.source_id,
       body: {
@@ -2653,6 +2707,9 @@ function PaymentCalendarTool() {
         paid_date: confirm.paid_date,
         treasury_account_code: confirm.treasury_account_code,
         account_code: confirm.account_code,
+        payment_mode: isBankTreasury(confirm.treasury_account_code) ? confirm.payment_mode : 'transfer',
+        cheque_number: confirm.cheque_number || null,
+        cheque_photo_url: confirm.cheque_photo_url || null,
       },
     });
   }
@@ -2847,6 +2904,9 @@ function PaymentCalendarTool() {
                                 : `${accountLabel(it.treasury_account_code)} → ${accountLabel(it.account_code)}`}
                             </p>
                           ) : null}
+                          {it.payment_mode === 'cheque' && it.cheque_number ? (
+                            <p className="text-[11px] mt-0.5">{t('pms.fin.cheque.badge', { number: it.cheque_number })}</p>
+                          ) : null}
                           {it.status === 'paid' && it.paid_date ? (
                             <p className="text-[11px] mt-0.5">
                               {t('pms.fin.paymentCalendar.paidSummary', {
@@ -3025,7 +3085,11 @@ function PaymentCalendarTool() {
                 placeholder={t('pms.fin.paymentCalendar.chooseTreasury')}
                 options={treasuryOptions}
               />
+              {form.category === 'fixed_charge' && !form.treasury_account_code ? (
+                <p className="text-[11px] text-gray-500 mt-1">{t('pms.fin.fixed.treasuryLater')}</p>
+              ) : null}
             </div>
+            {isBankTreasury(form.treasury_account_code) ? <ChequeFields value={form} onChange={setForm} /> : null}
             <div>
               <label className="label">{t(`pms.fin.paymentCalendar.counter${directionKey(form.direction)}`)} *</label>
               <SearchableSelect
@@ -3201,6 +3265,9 @@ function PaymentCalendarTool() {
                 options={treasuryOptions}
               />
             </div>
+            {isBankTreasury(confirm.treasury_account_code) ? (
+              <ChequeFields value={confirm} onChange={setConfirm} />
+            ) : null}
             <div>
               <label className="label">
                 {t(`pms.fin.paymentCalendar.counter${directionKey(confirm.item.direction)}`)} *
@@ -3495,6 +3562,770 @@ function CashReviewTool() {
       </Modal>
     </div>
   );
+}
+
+/** Bank treasury (ADIB / CIB) or one of its sub-accounts. */
+function isBankTreasury(code) {
+  if (!code) return false;
+  const root = getAccount(code)?.parent_code || code;
+  return root === '101000' || root === '102000';
+}
+
+function useTreasuryOptions() {
+  const customAccounts = useCustomAccounts();
+  return useMemo(() => {
+    const codes = treasuryCodes();
+    return manualAccountOptions().filter((o) => codes.includes(o.value));
+  }, [customAccounts]);
+}
+
+/** Transfer or cheque for a bank treasury; a cheque needs its number and a photo. */
+function ChequeFields({ value, onChange }) {
+  const { t } = useFinLocale();
+  const [uploading, setUploading] = useState(false);
+  const mode = value.payment_mode === 'cheque' ? 'cheque' : 'transfer';
+
+  async function uploadPhoto(file) {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const body = new FormData();
+      body.append('file', file);
+      const { data } = await api.post('/financial-system/uploads', body);
+      onChange({ ...value, cheque_photo_url: data.url });
+    } catch (e) {
+      toast.error(e.response?.data?.error || t('pms.fin.cheque.uploadFailed'));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-soul-line bg-slate-50/60 p-3 space-y-3">
+      <div>
+        <p className="label">{t('pms.fin.cheque.paidBy')}</p>
+        <div className="grid grid-cols-2 gap-2">
+          {['transfer', 'cheque'].map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => onChange({ ...value, payment_mode: m })}
+              className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
+                mode === m
+                  ? 'border-[#1e5fbf] bg-[#eef4ff] text-[#1e5fbf]'
+                  : 'border-[#e6ebf2] bg-white text-[#5b6b80] hover:bg-[#f6f8fb]'
+              }`}
+            >
+              {t(`pms.fin.cheque.${m}`)}
+            </button>
+          ))}
+        </div>
+      </div>
+      {mode === 'cheque' ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="label">{t('pms.fin.cheque.number')} *</label>
+            <input
+              className="input"
+              value={value.cheque_number || ''}
+              onChange={(e) => onChange({ ...value, cheque_number: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="label">{t('pms.fin.cheque.photo')} *</label>
+            {value.cheque_photo_url ? (
+              <div className="flex items-center gap-2 text-sm">
+                <a href={value.cheque_photo_url} target="_blank" rel="noreferrer" className="text-soul-blue underline">
+                  {t('pms.fin.cheque.viewPhoto')}
+                </a>
+                <button
+                  type="button"
+                  className="text-xs text-rose-700"
+                  onClick={() => onChange({ ...value, cheque_photo_url: '' })}
+                >
+                  {t('pms.fin.cheque.replace')}
+                </button>
+              </div>
+            ) : (
+              <input
+                type="file"
+                accept="image/*,application/pdf"
+                className="input py-1.5 text-xs"
+                disabled={uploading}
+                onChange={(e) => uploadPhoto(e.target.files?.[0])}
+              />
+            )}
+            {uploading ? <p className="text-[11px] text-gray-500 mt-1">{t('pms.fin.cheque.uploading')}</p> : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Returns an error message key when a cheque is missing its number or photo. */
+function chequeMissing(value, treasury) {
+  if (!isBankTreasury(treasury) || value.payment_mode !== 'cheque') return null;
+  if (!String(value.cheque_number || '').trim()) return 'pms.fin.cheque.numberRequired';
+  if (!value.cheque_photo_url) return 'pms.fin.cheque.photoRequired';
+  return null;
+}
+
+function FixedChargesSection() {
+  const { t } = useFinLocale();
+  const qc = useQueryClient();
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  const empty = { title: '', amount: '', day_of_month: '1', repeat_months: '12', start_month: thisMonth };
+  const [form, setForm] = useState(empty);
+  const [open, setOpen] = useState(false);
+
+  const { data = [], isLoading } = useQuery({
+    queryKey: ['financial-system-fixed-charges'],
+    queryFn: () => api.get('/financial-system/fixed-charges').then((r) => r.data),
+  });
+
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ['financial-system-fixed-charges'] });
+    qc.invalidateQueries({ queryKey: ['financial-system-payment-calendar'] });
+  };
+
+  const add = useMutation({
+    mutationFn: (body) => api.post('/financial-system/payment-calendar', body),
+    onSuccess: () => {
+      toast.success(t('pms.fin.fixed.added'));
+      setForm(empty);
+      setOpen(false);
+      refresh();
+    },
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
+  });
+
+  const remove = useMutation({
+    mutationFn: (id) => api.delete(`/financial-system/payment-calendar/${id}`, { params: { scope: 'series' } }),
+    onSuccess: () => {
+      toast.success(t('pms.fin.fixed.removed'));
+      refresh();
+    },
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
+  });
+
+  function submit() {
+    const months = Math.min(Math.max(parseInt(form.repeat_months, 10) || 1, 1), 60);
+    const day = Math.min(Math.max(parseInt(form.day_of_month, 10) || 1, 1), 31);
+    if (!form.title.trim()) return toast.error(t('pms.fin.paymentCalendar.titleRequired'));
+    if (!(parseFloat(form.amount) > 0)) return toast.error(t('pms.fin.paymentCalendar.amountRequired'));
+    add.mutate({
+      title: form.title.trim(),
+      amount: form.amount,
+      direction: 'out',
+      category: 'fixed_charge',
+      account_code: '613000',
+      due_date: `${form.start_month}-01`,
+      repeat_months: months,
+      day_of_month: day,
+    });
+  }
+
+  const preview = monthlyDueDates(
+    `${form.start_month}-01`,
+    Math.min(Math.max(parseInt(form.repeat_months, 10) || 1, 1), 60),
+    Math.min(Math.max(parseInt(form.day_of_month, 10) || 1, 1), 31)
+  );
+
+  return (
+    <section className="rounded-2xl border border-soul-line bg-white p-5 space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="font-semibold text-soul-blue">{t('pms.fin.fixed.title')}</h3>
+          <p className="text-sm text-gray-500 max-w-2xl">{t('pms.fin.fixed.description')}</p>
+        </div>
+        <button type="button" className="btn-primary text-sm" onClick={() => setOpen((o) => !o)}>
+          <Plus className="w-4 h-4" /> {t('pms.fin.fixed.add')}
+        </button>
+      </div>
+
+      {open ? (
+        <div className="rounded-xl border border-soul-line bg-slate-50/60 p-4 space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+            <div className="lg:col-span-2">
+              <label className="label">{t('pms.fin.fixed.name')} *</label>
+              <input
+                className="input w-full"
+                value={form.title}
+                onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="label">{t('pms.fin.fixed.amount')} *</label>
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                className="input w-full"
+                value={form.amount}
+                onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="label">{t('pms.fin.fixed.day')}</label>
+              <input
+                type="number"
+                min="1"
+                max="31"
+                className="input w-full"
+                value={form.day_of_month}
+                onChange={(e) => setForm((f) => ({ ...f, day_of_month: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="label">{t('pms.fin.fixed.months')}</label>
+              <input
+                type="number"
+                min="1"
+                max="60"
+                className="input w-full"
+                value={form.repeat_months}
+                onChange={(e) => setForm((f) => ({ ...f, repeat_months: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="label">{t('pms.fin.fixed.startMonth')}</label>
+              <input
+                type="month"
+                className="input w-full"
+                value={form.start_month}
+                onChange={(e) => setForm((f) => ({ ...f, start_month: e.target.value || thisMonth }))}
+              />
+            </div>
+          </div>
+          {preview.length ? (
+            <p className="text-xs text-soul-blue">
+              {t('pms.fin.paymentCalendar.seriesPreview', {
+                count: preview.length,
+                amount: currency(parseFloat(form.amount) || 0),
+                first: formatDate(preview[0]),
+                last: formatDate(preview[preview.length - 1]),
+              })}
+            </p>
+          ) : null}
+          <p className="text-[11px] text-gray-500">{t('pms.fin.fixed.hint')}</p>
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn-secondary" onClick={() => setOpen(false)}>
+              {t('pms.fin.cancel')}
+            </button>
+            <button type="button" className="btn-primary" disabled={add.isPending} onClick={submit}>
+              {t('pms.fin.save')}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {isLoading ? (
+        <LoadingSpinner />
+      ) : !data.length ? (
+        <p className="text-sm text-gray-400 py-4 text-center">{t('pms.fin.fixed.empty')}</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="table text-sm">
+            <thead>
+              <tr>
+                <th>{t('pms.fin.fixed.name')}</th>
+                <th className="text-right">{t('pms.fin.fixed.amount')}</th>
+                <th>{t('pms.fin.fixed.day')}</th>
+                <th>{t('pms.fin.fixed.period')}</th>
+                <th>{t('pms.fin.fixed.progress')}</th>
+                <th>{t('pms.fin.fixed.next')}</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((row) => (
+                <tr key={row.key}>
+                  <td className="font-medium text-soul-blue">{row.title}</td>
+                  <td className="text-right tabular-nums">{currency(row.amount)}</td>
+                  <td>{row.day_of_month}</td>
+                  <td className="whitespace-nowrap">
+                    {formatDate(row.first_due)} → {formatDate(row.last_due)}
+                  </td>
+                  <td>{t('pms.fin.fixed.paidOf', { paid: row.paid, months: row.months })}</td>
+                  <td>{row.next_due ? formatDate(row.next_due) : '—'}</td>
+                  <td className="text-right">
+                    {row.next_id ? (
+                      <button
+                        type="button"
+                        className="p-1.5 text-gray-400 hover:text-rose-600"
+                        title={t('pms.fin.fixed.stop')}
+                        disabled={remove.isPending}
+                        onClick={() => remove.mutate(row.next_id)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    ) : null}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function CancelRequestsCard({ onOpen }) {
+  const { t } = useFinLocale();
+  const { data } = useQuery({
+    queryKey: ['financial-system-cancel-requests', 'pending'],
+    queryFn: () => api.get('/financial-system/cancel-requests').then((r) => r.data),
+    staleTime: 30_000,
+  });
+  const count = data?.pending_count || 0;
+  if (!count) return null;
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="w-full rounded-2xl border border-rose-200 bg-rose-50/70 p-5 text-left hover:border-rose-300"
+    >
+      <div className="flex items-center gap-4">
+        <div className="w-12 h-12 rounded-2xl bg-rose-600 text-white flex items-center justify-center">
+          <Receipt className="w-6 h-6" />
+        </div>
+        <div className="flex-1">
+          <p className="text-xs uppercase tracking-wider text-rose-800">{t('pms.fin.home.cancelRequestsTitle')}</p>
+          <p className="font-semibold text-soul-blue">{t('pms.fin.home.cancelRequestsSubtitle')}</p>
+          <p className="text-xs text-gray-500 mt-0.5">{t('pms.fin.home.cancelRequestsHint', { count })}</p>
+        </div>
+        <p className="text-2xl font-bold tabular-nums text-rose-900">{count}</p>
+      </div>
+    </button>
+  );
+}
+
+const CANCEL_CHOICES = {
+  full_refund: 'pms.fin.cancelRequests.choiceFull',
+  partial_refund: 'pms.fin.cancelRequests.choicePartial',
+  forfeit: 'pms.fin.cancelRequests.choiceForfeit',
+};
+
+function CancelRequestsTool() {
+  const { t } = useFinLocale();
+  const qc = useQueryClient();
+  const treasuryOptions = useTreasuryOptions();
+  const [tab, setTab] = useState('pending');
+  const [decide, setDecide] = useState(null);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['financial-system-cancel-requests', tab],
+    queryFn: () =>
+      api
+        .get('/financial-system/cancel-requests', { params: tab === 'approved' ? { status: 'approved' } : {} })
+        .then((r) => r.data),
+  });
+
+  const approve = useMutation({
+    mutationFn: ({ id, body }) => api.post(`/financial-system/cancel-requests/${id}/approve`, body),
+    onSuccess: () => {
+      toast.success(t('pms.fin.cancelRequests.approved'));
+      setDecide(null);
+      qc.invalidateQueries({ queryKey: ['financial-system-cancel-requests'] });
+      qc.invalidateQueries({ queryKey: ['financial-system-portal'] });
+    },
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
+  });
+
+  const items = data?.items || [];
+  const refundValue = parseFloat(decide?.refund_amount) || 0;
+
+  function submit() {
+    if (refundValue < 0) return toast.error(t('pms.fin.cancelRequests.amountInvalid'));
+    if (refundValue - (decide.item.still_held || 0) > 0.009) return toast.error(t('pms.fin.cancelRequests.tooMuch'));
+    if (refundValue > 0 && !decide.treasury_account_code) return toast.error(t('pms.fin.cancelRequests.chooseTreasury'));
+    approve.mutate({
+      id: decide.item.id,
+      body: {
+        refund_amount: refundValue,
+        treasury_account_code: refundValue > 0 ? decide.treasury_account_code : undefined,
+        refund_date: decide.refund_date,
+        note: decide.note.trim() || undefined,
+      },
+    });
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-500 max-w-3xl">{t('pms.fin.cancelRequests.description')}</p>
+      <div className="inline-flex rounded-xl border border-soul-line bg-white p-1">
+        {['pending', 'approved'].map((id) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setTab(id)}
+            className={`rounded-lg px-4 py-1.5 text-sm font-medium ${
+              tab === id ? 'bg-soul-blue text-white' : 'text-gray-600 hover:bg-slate-50'
+            }`}
+          >
+            {t(`pms.fin.cancelRequests.${id}Tab`)}
+          </button>
+        ))}
+      </div>
+
+      {isLoading ? (
+        <LoadingSpinner />
+      ) : !items.length ? (
+        <p className="rounded-2xl border border-soul-line bg-white py-10 text-center text-sm text-gray-400">
+          {t(`pms.fin.cancelRequests.${tab === 'pending' ? 'empty' : 'emptyApproved'}`)}
+        </p>
+      ) : (
+        <div className="rounded-2xl border border-soul-line bg-white overflow-x-auto">
+          <table className="table text-sm">
+            <thead>
+              <tr>
+                <th>{t('pms.fin.cashReview.guest')}</th>
+                <th>{t('pms.fin.cashReview.stay')}</th>
+                <th>{t('pms.fin.cancelRequests.cancelledBy')}</th>
+                <th>{t('pms.fin.cancelRequests.requested')}</th>
+                <th className="text-right">{t('pms.fin.cancelRequests.collected')}</th>
+                <th className="text-right">
+                  {tab === 'pending' ? t('pms.fin.cancelRequests.requestedRefund') : t('pms.fin.cancelRequests.refunded')}
+                </th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((it) => (
+                <tr key={it.id}>
+                  <td>
+                    <p className="font-medium text-soul-blue">{it.guest_name || '—'}</p>
+                    <p className="text-[11px] text-gray-400">
+                      #{it.reservation_id} · {it.unit_name}
+                    </p>
+                  </td>
+                  <td className="whitespace-nowrap">
+                    {formatDate(it.check_in)} → {formatDate(it.check_out)}
+                  </td>
+                  <td>
+                    <p>{it.requested_by_name || '—'}</p>
+                    <p className="text-[11px] text-gray-400">{formatDateTime(it.requested_at)}</p>
+                  </td>
+                  <td className="max-w-[16rem]">
+                    <p>{CANCEL_CHOICES[it.requested_choice] ? t(CANCEL_CHOICES[it.requested_choice]) : '—'}</p>
+                    {it.reason ? <p className="text-[11px] text-gray-500 truncate">{it.reason}</p> : null}
+                  </td>
+                  <td className="text-right tabular-nums">{currency(it.collected)}</td>
+                  <td className="text-right tabular-nums font-semibold">
+                    {tab === 'pending' ? currency(it.requested_refund) : currency(it.refund_amount || 0)}
+                    {tab === 'approved' && it.treasury_account_code ? (
+                      <p className="text-[11px] font-normal text-gray-500">{accountLabel(it.treasury_account_code)}</p>
+                    ) : null}
+                  </td>
+                  <td className="text-right">
+                    {tab === 'pending' ? (
+                      <button
+                        type="button"
+                        className="btn-primary text-xs"
+                        onClick={() =>
+                          setDecide({
+                            item: it,
+                            refund_amount: String(Math.min(it.requested_refund, it.still_held ?? it.requested_refund)),
+                            treasury_account_code: '',
+                            refund_date: new Date().toISOString().slice(0, 10),
+                            note: '',
+                          })
+                        }
+                      >
+                        {t('pms.fin.cancelRequests.review')}
+                      </button>
+                    ) : (
+                      <span className="text-[11px] text-gray-500">
+                        {it.decided_by_name} · {formatDateTime(it.decided_at)}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <Modal
+        open={Boolean(decide)}
+        onClose={() => setDecide(null)}
+        title={t('pms.fin.cancelRequests.reviewTitle')}
+        size="md"
+        footer={
+          <>
+            <button type="button" className="btn-secondary" onClick={() => setDecide(null)}>
+              {t('pms.fin.cancel')}
+            </button>
+            <button type="button" className="btn-primary" disabled={approve.isPending} onClick={submit}>
+              {refundValue > 0 ? t('pms.fin.cancelRequests.approveRefund') : t('pms.fin.cancelRequests.approveKeep')}
+            </button>
+          </>
+        }
+      >
+        {decide ? (
+          <div className="space-y-4">
+            <div className="rounded-xl bg-slate-50 px-3 py-2.5 text-sm">
+              <p className="font-semibold text-soul-blue">
+                {decide.item.guest_name} · {decide.item.unit_name}
+              </p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {t('pms.fin.cancelRequests.summary', {
+                  collected: currency(decide.item.collected),
+                  held: currency(decide.item.still_held || 0),
+                  requested: currency(decide.item.requested_refund),
+                })}
+              </p>
+              {decide.item.reason ? <p className="text-xs text-gray-600 mt-1">{decide.item.reason}</p> : null}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">{t('pms.fin.cancelRequests.refundAmount')}</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className="input"
+                  value={decide.refund_amount}
+                  onChange={(e) => setDecide((d) => ({ ...d, refund_amount: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="label">{t('pms.fin.cancelRequests.refundDate')}</label>
+                <input
+                  type="date"
+                  min={FINANCIAL_EPOCH}
+                  className="input"
+                  value={decide.refund_date}
+                  onChange={(e) => setDecide((d) => ({ ...d, refund_date: e.target.value }))}
+                />
+              </div>
+            </div>
+            <p className="text-[11px] text-gray-500 -mt-1">
+              {t('pms.fin.cancelRequests.keptHint', {
+                kept: currency(Math.max(0, (decide.item.still_held || 0) - refundValue)),
+              })}
+            </p>
+            {refundValue > 0 ? (
+              <div>
+                <label className="label">{t('pms.fin.cancelRequests.paidFrom')} *</label>
+                <SearchableSelect
+                  className="w-full"
+                  value={decide.treasury_account_code}
+                  onChange={(v) => setDecide((d) => ({ ...d, treasury_account_code: v }))}
+                  placeholder={t('pms.fin.paymentCalendar.chooseTreasury')}
+                  options={treasuryOptions}
+                />
+              </div>
+            ) : null}
+            <div>
+              <label className="label">{t('pms.fin.notesOptional')}</label>
+              <textarea
+                className="input min-h-[70px]"
+                value={decide.note}
+                onChange={(e) => setDecide((d) => ({ ...d, note: e.target.value }))}
+              />
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+    </div>
+  );
+}
+
+function ExpenseForecastTool() {
+  const { t } = useFinLocale();
+  const [openKey, setOpenKey] = useState(null);
+  const { data, isLoading } = useQuery({
+    queryKey: ['financial-system-expense-forecast'],
+    queryFn: () => api.get('/financial-system/expense-forecast').then((r) => r.data),
+  });
+  if (isLoading) return <LoadingSpinner />;
+  if (!data) return null;
+
+  const monthLabel = (ym) =>
+    new Date(`${ym}-01T00:00:00`).toLocaleString(undefined, { month: 'short', year: '2-digit' });
+  const historyMonths = data.history_months.slice(-6);
+  const nextMonth = data.forecast_months[0];
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-500 max-w-3xl">
+        {t('pms.fin.forecast.description', { files: data.source_files.join(' + ') })}
+      </p>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="rounded-2xl border border-violet-200 bg-violet-50/60 p-4">
+          <p className="text-xs text-violet-800">{t('pms.fin.forecast.nextMonth', { month: monthLabel(nextMonth) })}</p>
+          <p className="text-2xl font-bold tabular-nums mt-1">{currency(data.totals.monthly_prediction)}</p>
+        </div>
+        <div className="rounded-2xl border border-soul-line bg-white p-4">
+          <p className="text-xs text-gray-400">{t('pms.fin.forecast.lastMonth', { month: monthLabel(data.last_complete_month) })}</p>
+          <p className="text-2xl font-bold tabular-nums mt-1">{currency(data.totals.history[data.last_complete_month] || 0)}</p>
+        </div>
+        <div className="rounded-2xl border border-soul-line bg-white p-4">
+          <p className="text-xs text-gray-400">{t('pms.fin.forecast.sixMonths')}</p>
+          <p className="text-2xl font-bold tabular-nums mt-1">
+            {currency(data.totals.monthly_prediction * data.forecast_months.length)}
+          </p>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-soul-line bg-white overflow-x-auto">
+        <table className="table text-sm">
+          <thead>
+            <tr>
+              <th>{t('pms.fin.forecast.category')}</th>
+              {historyMonths.map((m) => (
+                <th key={m} className="text-right text-gray-400">
+                  {monthLabel(m)}
+                </th>
+              ))}
+              <th className="text-right">{t('pms.fin.forecast.average')}</th>
+              <th className="text-right text-violet-800">{t('pms.fin.forecast.predicted')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.categories.map((c) => [
+              <tr
+                key={c.key}
+                className="cursor-pointer hover:bg-slate-50"
+                onClick={() => setOpenKey((k) => (k === c.key ? null : c.key))}
+              >
+                <td className="font-medium text-soul-blue">
+                  <ChevronRight
+                    className={`inline w-3.5 h-3.5 mr-1 text-gray-400 transition-transform ${openKey === c.key ? 'rotate-90' : ''}`}
+                  />
+                  {c.label}
+                </td>
+                {historyMonths.map((m) => (
+                  <td key={m} className="text-right tabular-nums text-gray-500">
+                    {c.history[m] ? currency(c.history[m]) : '—'}
+                  </td>
+                ))}
+                <td className="text-right tabular-nums">{currency(c.six_month_average)}</td>
+                <td className="text-right tabular-nums font-semibold text-violet-900">{currency(c.monthly_prediction)}</td>
+              </tr>,
+              openKey === c.key ? (
+                <tr key={`${c.key}-labels`}>
+                  <td colSpan={historyMonths.length + 3} className="bg-slate-50/70 text-xs text-gray-600">
+                    {t('pms.fin.forecast.fromLabels')}{' '}
+                    {c.top_labels.map((l) => `${l.label} (${currency(l.amount)})`).join(' · ')}
+                  </td>
+                </tr>
+              ) : null,
+            ])}
+            <tr className="font-semibold">
+              <td>{t('pms.fin.forecast.total')}</td>
+              {historyMonths.map((m) => (
+                <td key={m} className="text-right tabular-nums">
+                  {currency(data.totals.history[m] || 0)}
+                </td>
+              ))}
+              <td />
+              <td className="text-right tabular-nums text-violet-900">{currency(data.totals.monthly_prediction)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div className="rounded-2xl border border-soul-line bg-white p-4 text-xs text-gray-600 space-y-2">
+        <p className="font-medium text-gray-800">{t('pms.fin.forecast.howTitle')}</p>
+        <p>{t('pms.fin.forecast.how')}</p>
+        <p>
+          <span className="font-medium">{t('pms.fin.forecast.excluded')}</span>{' '}
+          {data.excluded.map((e) => `${e.label} (${currency(e.amount)})`).join(' · ')}
+        </p>
+        {data.unclassified.length ? (
+          <p>
+            <span className="font-medium">
+              {t('pms.fin.forecast.unclassified', { amount: currency(data.unclassified_total) })}
+            </span>{' '}
+            {data.unclassified.slice(0, 12).map((u) => u.label).join(' · ')}
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/** Developer picker for entries on the Developer expense account, with an inline "add developer". */
+function DeveloperPicker({ value, onChange }) {
+  const { t } = useFinLocale();
+  const qc = useQueryClient();
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState('');
+  const { data = [] } = useQuery({
+    queryKey: ['financial-system-developers'],
+    queryFn: () => api.get('/financial-system/developers').then((r) => r.data),
+  });
+  const create = useMutation({
+    mutationFn: (devName) => api.post('/financial-system/developers', { name: devName }).then((r) => r.data),
+    onSuccess: (dev) => {
+      qc.invalidateQueries({ queryKey: ['financial-system-developers'] });
+      onChange(String(dev.id));
+      setAdding(false);
+      setName('');
+    },
+    onError: (e) => {
+      const existing = e.response?.data?.developer;
+      if (existing) {
+        onChange(String(existing.id));
+        setAdding(false);
+        setName('');
+        return;
+      }
+      toast.error(e.response?.data?.error || t('pms.fin.failed'));
+    },
+  });
+
+  return (
+    <div>
+      <label className="label">{t('pms.fin.developers.which')} *</label>
+      {adding ? (
+        <div className="flex gap-2">
+          <input
+            className="input flex-1"
+            value={name}
+            autoFocus
+            placeholder={t('pms.fin.developers.namePlaceholder')}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <button
+            type="button"
+            className="btn-primary text-sm"
+            disabled={create.isPending || !name.trim()}
+            onClick={() => create.mutate(name.trim())}
+          >
+            {t('pms.fin.save')}
+          </button>
+          <button type="button" className="btn-secondary text-sm" onClick={() => setAdding(false)}>
+            {t('pms.fin.cancel')}
+          </button>
+        </div>
+      ) : (
+        <div className="flex gap-2">
+          <select className="input flex-1" value={value} onChange={(e) => onChange(e.target.value)}>
+            <option value="">{t('pms.fin.developers.choose')}</option>
+            {data.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+          <button type="button" className="btn-secondary text-sm whitespace-nowrap" onClick={() => setAdding(true)}>
+            <Plus className="w-3.5 h-3.5" /> {t('pms.fin.developers.add')}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function isDeveloperAccount(code) {
+  return code === '619000' || getAccount(code)?.parent_code === '619000';
 }
 
 function CheckinAuditTool() {
@@ -3809,10 +4640,10 @@ function InsuranceRefundsTool({ onOpenAccount }) {
   const [refundedAmount, setRefundedAmount] = useState('');
   const [damageAmount, setDamageAmount] = useState('0');
   const [method, setMethod] = useState('cash');
-  const [bankAccount, setBankAccount] = useState('');
+  const [treasury, setTreasury] = useState('');
   const [notes, setNotes] = useState('');
   const [refundDate, setRefundDate] = useState('');
-  const needsBank = method === 'instapay' || method === 'bank_transfer';
+  const treasuryOptions = useTreasuryOptions();
 
   const { data, isLoading } = useQuery({
     queryKey: ['financial-system-insurance', filter],
@@ -3837,7 +4668,7 @@ function InsuranceRefundsTool({ onOpenAccount }) {
     setRefundedAmount(String(held));
     setDamageAmount('0');
     setMethod('cash');
-    setBankAccount('');
+    setTreasury('');
     setNotes('');
     setRefundDate(row.check_out || new Date().toISOString().slice(0, 10));
   }
@@ -4027,18 +4858,19 @@ function InsuranceRefundsTool({ onOpenAccount }) {
                   onChange={(e) => onDamageChange(e.target.value)}
                 />
               </div>
-              <div>
-                <label className="label">{t('pms.fin.insurance.refundMethod')}</label>
-                <select className="input" value={method} onChange={(e) => setMethod(e.target.value)}>
-                  <option value="cash">{t('pms.fin.insurance.cashMethod')}</option>
-                  <option value="instapay">{t('pms.fin.insurance.instapayMethod')}</option>
-                  <option value="bank_transfer">{t('pms.fin.insurance.bankTransferMethod')}</option>
-                  <option value="credit_card">{t('pms.fin.insurance.cardMethod')}</option>
-                </select>
+              <div className="sm:col-span-2">
+                <label className="label">{t('pms.fin.insurance.paidFromTreasury')}</label>
+                <SearchableSelect
+                  className="w-full"
+                  value={treasury}
+                  onChange={(v) => {
+                    setTreasury(v);
+                    setMethod(isBankTreasury(v) ? 'bank_transfer' : 'cash');
+                  }}
+                  placeholder={t('pms.fin.paymentCalendar.chooseTreasury')}
+                  options={treasuryOptions}
+                />
               </div>
-              {needsBank ? (
-                <BankAccountPicker label={t('pms.fin.insurance.paidFromAccount')} value={bankAccount} onChange={setBankAccount} />
-              ) : null}
               <div>
                 <label className="label">{t('pms.fin.insurance.refundDate')}</label>
                 <input
@@ -4067,8 +4899,8 @@ function InsuranceRefundsTool({ onOpenAccount }) {
                 className="btn-primary"
                 disabled={settle.isPending}
                 onClick={() => {
-                  if (needsBank && (parseFloat(refundedAmount) || 0) > 0 && !bankAccount) {
-                    toast.error(t('pms.fin.insurance.chooseBank'));
+                  if ((parseFloat(refundedAmount) || 0) > 0 && !treasury) {
+                    toast.error(t('pms.fin.insurance.chooseTreasury'));
                     return;
                   }
                   settle.mutate({
@@ -4077,7 +4909,7 @@ function InsuranceRefundsTool({ onOpenAccount }) {
                       refunded_amount: parseFloat(refundedAmount) || 0,
                       damage_amount: parseFloat(damageAmount) || 0,
                       payment_method: method,
-                      bank_account: needsBank ? bankAccount || undefined : undefined,
+                      treasury_account_code: treasury || undefined,
                       refunded_at: refundDate,
                       notes: notes || undefined,
                     },
@@ -5770,6 +6602,8 @@ function FinancialSystemInner() {
         owners: t('pms.fin.tools.ownerPayouts'),
         insurance: t('pms.fin.tools.insurancePayout'),
         'cash-review': t('pms.fin.tools.cashReview'),
+        'cancel-requests': t('pms.fin.tools.cancelRequests'),
+        'expense-forecast': t('pms.fin.tools.expenseForecast'),
         'checkin-audit': t('pms.fin.tools.checkinAudit'),
         'payment-calendar': t('pms.fin.tools.paymentCalendar'),
         trust: t('pms.fin.tools.ownerTrust'),
@@ -5919,6 +6753,10 @@ function FinancialSystemInner() {
         />
       ) : tool === 'cash-review' ? (
         <CashReviewTool />
+      ) : tool === 'cancel-requests' ? (
+        <CancelRequestsTool />
+      ) : tool === 'expense-forecast' ? (
+        <ExpenseForecastTool />
       ) : tool === 'checkin-audit' ? (
         <CheckinAuditTool />
       ) : tool === 'payment-calendar' ? (

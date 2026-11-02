@@ -25,21 +25,6 @@ async function applyCancellation({ reservationId, user, body = {} }) {
     }
     await assertPeriodOpen(existing.check_in, 'This stay');
 
-    const { rows: payRows } = await client.query(
-      `SELECT COALESCE(SUM(amount) FILTER (WHERE amount > 0), 0)::float AS collected,
-              payment_method
-       FROM (
-         SELECT amount, payment_method
-         FROM payments
-         WHERE reservation_id = $1
-           AND status = 'successful'
-           AND COALESCE(is_approved, 0) = 1
-       ) s
-       GROUP BY payment_method
-       ORDER BY collected DESC
-       LIMIT 1`,
-      [reservationId]
-    );
     const { rows: sumRows } = await client.query(
       `SELECT COALESCE(SUM(amount) FILTER (WHERE amount > 0), 0)::float AS collected
        FROM payments
@@ -55,30 +40,27 @@ async function applyCancellation({ reservationId, user, body = {} }) {
       refundAmount: body.refund_amount,
       collected,
     });
-    const method = payRows[0]?.payment_method || existing.payment_method || 'cash';
     const reason = String(body.reason || '').trim();
 
-    if (settlement.refund > 0.009) {
+    // Money already collected is never refunded here: finance approves the refund, its amount and treasury.
+    const needsFinance = collected > 0.009;
+    if (needsFinance) {
       await client.query(
-        `INSERT INTO payments (
-           reservation_id, amount, payment_date, payment_method, status, is_approved,
-           approved_by, approved_at, paid_at, notes, created_by, kind
-         ) VALUES ($1, $2, CURRENT_DATE, $3, 'successful', 1, $4, now(), now(), $5, $4, 'refund')`,
-        [
-          reservationId,
-          round2(-settlement.refund),
-          method,
-          user?.id || null,
-          `Refund on cancellation${reason ? `: ${reason}` : ''}`,
-        ]
+        `INSERT INTO reservation_cancel_requests
+           (reservation_id, reason, requested_choice, requested_refund, collected, requested_by)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [reservationId, reason || null, settlement.choice, settlement.refund, round2(collected), user?.id || null]
       );
     }
 
-    const noteLine = settlement.choice === 'forfeit'
-      ? `Cancellation: deposit kept (${settlement.kept})`
+    const requested = settlement.choice === 'forfeit'
+      ? `deposit kept (${settlement.kept})`
       : settlement.choice === 'partial_refund'
-        ? `Cancellation: refunded ${settlement.refund}, kept ${settlement.kept}`
-        : `Cancellation: full refund ${settlement.refund}`;
+        ? `refund ${settlement.refund}, keep ${settlement.kept}`
+        : `full refund ${settlement.refund}`;
+    const noteLine = needsFinance
+      ? `Cancellation: ${requested} requested, waiting for finance approval`
+      : 'Cancellation: nothing collected';
     const { rows } = await client.query(
       `UPDATE reservations SET
          status = 'cancelled',
@@ -154,8 +136,9 @@ async function applyCancellation({ reservationId, user, body = {} }) {
         after: {
           status: 'cancelled',
           settlement: settlement.choice,
-          refund: settlement.refund,
+          requested_refund: settlement.refund,
           kept: settlement.kept,
+          finance_request: needsFinance,
         },
         reason: reason || null,
       },

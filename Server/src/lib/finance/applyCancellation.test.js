@@ -30,6 +30,10 @@ async function handle(sql, params) {
     state.inserted = params;
     return { rows: [] };
   }
+  if (text.includes('INSERT INTO reservation_cancel_requests')) {
+    state.request = params;
+    return { rows: [] };
+  }
   if (text.includes('DELETE FROM payments')) {
     throw new Error('collected payments must stay on the reservation');
   }
@@ -80,6 +84,7 @@ function stay() {
   state.closed = false;
   state.sql = [];
   state.inserted = null;
+  state.request = null;
   state.noteLine = '';
   state.released = false;
   state.reservation = {
@@ -98,19 +103,21 @@ function stay() {
 describe('apply cancellation on a fake database', () => {
   beforeEach(() => stay());
 
-  it('records a partial refund and does not delete the collection', async () => {
+  it('sends a partial refund to finance and does not touch the collection', async () => {
     const row = await applyCancellation({
       reservationId: 42,
       user: { id: 3 },
       body: { cancel_type: 'refundable', refund_amount: 4000, reason: 'guest changed plans' },
     });
     assert.equal(row.status, 'cancelled');
-    assert.equal(state.inserted[1], -4000);
-    assert.equal(state.inserted[2], 'instapay');
-    assert.match(state.inserted[4], /guest changed plans/);
+    assert.equal(state.inserted, null);
+    assert.equal(state.request[0], 42);
+    assert.match(state.request[1], /guest changed plans/);
+    assert.equal(state.request[2], 'partial_refund');
+    assert.equal(state.request[3], 4000);
+    assert.equal(state.request[4], 10000);
+    assert.match(state.noteLine, /waiting for finance/);
     const written = state.sql.join('\n');
-    assert.match(written, /kind/);
-    assert.match(written, /'refund'/);
     assert.doesNotMatch(written, /DELETE FROM payments/);
     assert.doesNotMatch(written, /amount_paid = 0/);
     assert.equal(state.released, true);
@@ -123,6 +130,7 @@ describe('apply cancellation on a fake database', () => {
       body: { cancel_type: 'non_refundable' },
     });
     assert.equal(state.inserted, null);
+    assert.equal(state.request[2], 'forfeit');
     assert.match(state.noteLine, /deposit kept/);
   });
 

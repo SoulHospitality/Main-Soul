@@ -808,7 +808,10 @@
         "cashReviewTitle": "Cash review",
         "cashReviewSubtitle": "Check cash collected on reservations",
         "cashReviewHint": "{{count}} cash payment(s) waiting for finance to check the amount and payment method",
-        "cashReviewClear": "All cash payments are checked"
+        "cashReviewClear": "All cash payments are checked",
+        "cancelRequestsTitle": "Cancellation requests",
+        "cancelRequestsSubtitle": "Approve refunds for cancelled reservations",
+        "cancelRequestsHint": "{{count}} cancelled reservation(s) waiting for finance to decide the refund"
       },
       "group": {
         "managementView": "Management view",
@@ -844,7 +847,7 @@
         "notes": "Notes"
       },
       "recurring": {
-        "description": "Each month these accrue to vendor payable, then pay from the ADIB bank account. Rent and campus utilities pull 14/114 input VAT. Set 0 to skip a month. Owner money is computed from stays — it is not typed here.",
+        "description": "Each month these accrue to vendor payable, then pay from the ADIB bank account. Campus utilities pull 14/114 input VAT. Set 0 to skip a month. Owner money is computed from stays — it is not typed here.",
         "monthlyAmount": "Monthly amount (EGP)",
         "dayOfMonth": "Day of month",
         "saved": "Monthly charge saved"
@@ -933,7 +936,9 @@
         "deleteMessage": "This removes the line from the books for this period.",
         "addEntryTitle": "Manual journal entry",
         "entryAdded": "Entry added",
-        "entryRemoved": "Entry removed"
+        "entryRemoved": "Entry removed",
+        "pettyIn": "This sends money into {{drawer}} and raises its current balance.",
+        "pettyOut": "This takes money out of {{drawer}} and lowers its current balance."
       },
       "reports": {
         "description": "From {{from}} → {{to}}. Revenue is reservation totals (by booking / created date) plus custom revenue. Owner share (each unit's % of nightly rate × nights) is an expense deducted from that revenue.",
@@ -1052,7 +1057,9 @@
         "statusCol": "Status",
         "guestStayCheckout": "{{guest}} · {{unit}} · checkout {{date}}",
         "paidFromAccount": "Paid from account",
-        "chooseBank": "Choose the ADIB or CIB account the refund is paid from"
+        "chooseBank": "Choose the ADIB or CIB account the refund is paid from",
+        "paidFromTreasury": "Refund paid from (treasury)",
+        "chooseTreasury": "Choose the treasury the refund is paid from"
       },
       "checkinAudit": {
         "description": "Audit every ops check-in: door collections, bill amounts, payments recorded, and handover events.",
@@ -1420,7 +1427,7 @@
         "netProfit": "Net profit"
       },
       "forecast": {
-        "description": "13-week rolling forecast. Starting balance: {{balance}} (current treasury). Click a week to add manual overrides.",
+        "description": "A prediction of monthly spending from {{files}}. It only reads that history; it does not change any balances or entries.",
         "week": "Week",
         "collections": "Collections",
         "ownerPayouts": "Owner payouts",
@@ -1437,7 +1444,19 @@
         "add": "Add",
         "entryAdded": "Forecast entry added",
         "entryRemoved": "Entry removed",
-        "vendor": "Vendor"
+        "vendor": "Vendor",
+        "nextMonth": "Predicted spend for {{month}}",
+        "lastMonth": "Actual spend in {{month}}",
+        "sixMonths": "Predicted spend, next 6 months",
+        "category": "Category",
+        "average": "6-month average",
+        "predicted": "Predicted / month",
+        "total": "Total",
+        "fromLabels": "From:",
+        "howTitle": "How the prediction works",
+        "how": "Every amount paid out in the workbooks is grouped by its cost label. Each category is predicted as a weighted average of its last six complete months, with the most recent month counting most. Tax and commissions are paid in lumps, so their monthly figure is an average to set aside, not a monthly bill.",
+        "excluded": "Not counted as spending:",
+        "unclassified": "Left out because the label was not recognised ({{amount}}):"
       },
       "tools": {
         "fixedAssets": "Fixed assets",
@@ -1461,7 +1480,9 @@
         "apVendors": "AP / Vendors",
         "monthlyCharges": "Monthly charges",
         "arControls": "AR controls",
-        "cashReview": "Cash review"
+        "cashReview": "Cash review",
+        "cancelRequests": "Cancellation requests",
+        "expenseForecast": "Expense forecast"
       },
       "groupMeta": {
         "assetsHint": "What Soul holds",
@@ -1527,6 +1548,75 @@
           "instapay": "InstaPay",
           "bank_transfer": "Bank transfer"
         }
+      },
+      "cheque": {
+        "paidBy": "Paid by",
+        "transfer": "Transfer",
+        "cheque": "Cheque",
+        "number": "Cheque number",
+        "photo": "Cheque photo",
+        "viewPhoto": "View cheque photo",
+        "replace": "Replace",
+        "uploading": "Uploading…",
+        "uploadFailed": "Could not upload the cheque photo",
+        "numberRequired": "Enter the cheque number",
+        "photoRequired": "Upload the cheque photo",
+        "badge": "Cheque {{number}}"
+      },
+      "fixed": {
+        "title": "Fixed monthly charges",
+        "description": "Charges booked to Fixed Monthly Charges (613000). Each month appears in the payments calendar and reaches the books when you confirm it as paid.",
+        "add": "Add fixed charge",
+        "name": "Name",
+        "amount": "Amount (EGP)",
+        "day": "Day of month",
+        "months": "How many months",
+        "startMonth": "Starting from",
+        "hint": "Months shorter than the day use their last day. Choose the treasury when you confirm each payment.",
+        "period": "Period",
+        "progress": "Paid",
+        "paidOf": "{{paid}} of {{months}}",
+        "next": "Next due",
+        "stop": "Remove the unpaid months",
+        "empty": "No fixed monthly charges yet",
+        "added": "Fixed monthly charge added to the calendar",
+        "removed": "Unpaid months removed",
+        "treasuryLater": "Fixed charge: you can choose the treasury when you confirm it as paid."
+      },
+      "cancelRequests": {
+        "description": "Reservations cancelled with money collected wait here. Decide how much to refund and which treasury pays it; whatever is not refunded is kept.",
+        "pendingTab": "Waiting",
+        "approvedTab": "Decided",
+        "empty": "No cancellation requests are waiting",
+        "emptyApproved": "No decided requests yet",
+        "cancelledBy": "Cancelled by",
+        "requested": "Requested",
+        "collected": "Collected",
+        "requestedRefund": "Requested refund",
+        "refunded": "Refunded",
+        "review": "Review",
+        "reviewTitle": "Approve cancellation refund",
+        "summary": "Collected {{collected}} · still held {{held}} · requested refund {{requested}}",
+        "refundAmount": "Refund amount (EGP)",
+        "refundDate": "Refund date",
+        "keptHint": "Kept by Soul: {{kept}}. Enter 0 to keep everything.",
+        "paidFrom": "Refund paid from (treasury)",
+        "chooseTreasury": "Choose the treasury the refund is paid from",
+        "amountInvalid": "Enter a valid refund amount",
+        "tooMuch": "The refund cannot be more than the money still held",
+        "approveRefund": "Approve refund",
+        "approveKeep": "Approve, keep everything",
+        "approved": "Cancellation decided",
+        "choiceFull": "Full refund",
+        "choicePartial": "Partial refund",
+        "choiceForfeit": "Keep the deposit"
+      },
+      "developers": {
+        "which": "Developer",
+        "choose": "Choose developer",
+        "add": "Add developer",
+        "namePlaceholder": "Developer name",
+        "required": "Choose which developer this entry is for"
       }
     }
   }

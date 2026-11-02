@@ -1304,7 +1304,7 @@ export default function Reservations() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['reservations'] });
-      toast.success('Reservation cancelled. Collected payments stay on the record.');
+      toast.success('Reservation cancelled. Any refund now waits for finance approval.');
       setCancelReqOpen(false); setCancelReqId(null); setCancelReason(''); setCancelType('non_refundable'); setRefundAmount('');
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Error submitting request'),

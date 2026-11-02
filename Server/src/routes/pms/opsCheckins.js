@@ -12,7 +12,7 @@ const {
   FOLDER_PAYMENTS,
   FOLDER_INSPECTIONS,
 } = require('../../config/cloudinary');
-const { recordOpsPettyCash } = require('../../lib/opsPettyCash');
+const { recordOpsPettyCash, pettyLocationForUnit } = require('../../lib/opsPettyCash');
 const { normalizeBankAccount } = require('../../lib/reservationCurrency');
 
 const router = express.Router();
@@ -2414,6 +2414,17 @@ router.post(
         ? String(row.check_out).slice(0, 10)
         : new Date().toISOString().slice(0, 10);
 
+      // Cash handed back by ops leaves that unit's petty cash drawer, not the company treasury.
+      let drawerAccount = null;
+      if (method === 'cash' && refunded > 0.009) {
+        const drawer = await pettyLocationForUnit(row.unit_id);
+        const { rows: acct } = await query(
+          `SELECT account_code FROM petty_cash_accounts WHERE location_key = $1`,
+          [drawer]
+        ).catch(() => ({ rows: [] }));
+        drawerAccount = acct[0]?.account_code || null;
+      }
+
       const { rows: updated } = await query(
         `UPDATE reservations SET
            insurance_refund_status = $2,
@@ -2426,6 +2437,7 @@ router.post(
            insurance_damage_photo_urls = $9::text[],
            insurance_damage_share_status = $10,
            insurance_refund_bank_account = $11,
+           insurance_refund_treasury_code = $12,
            updated_at = now()
          WHERE id = $1
          RETURNING id`,
@@ -2441,6 +2453,7 @@ router.post(
           photoUrls,
           shareWithOwner ? (isOpsSupervisor(req.user) ? 'approved' : 'pending') : null,
           refundBank,
+          drawerAccount,
         ]
       );
       if (!updated[0]) return res.status(404).json({ error: 'Reservation not found' });

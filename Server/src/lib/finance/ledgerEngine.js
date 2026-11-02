@@ -363,10 +363,12 @@ function insuranceRefundEntry(r) {
   const method = inferredHistorical
     ? 'historical'
     : r.insurance_refund_method || 'cash';
-  const treasury = treasuryAccountForMethod(method, {
-    bankAccount: r.insurance_refund_bank_account || r.bank_account,
-    currency: r.currency,
-  });
+  const treasury =
+    r.insurance_refund_treasury_code ||
+    treasuryAccountForMethod(method, {
+      bankAccount: r.insurance_refund_bank_account || r.bank_account,
+      currency: r.currency,
+    });
   const date = isoDate(r.insurance_refunded_at) || checkOut || todayIso();
   const historical = String(method).toLowerCase() === 'historical';
   const checkIn = isoDate(r.check_in);
@@ -420,10 +422,12 @@ function insuranceRefundEntry(r) {
 function collectionEntry(p, reservation) {
   const amt = round2(parseFloat(p.amount) || 0);
   const method = p.payment_method || reservation?.payment_method || 'cash';
-  const treasury = treasuryAccountForMethod(method, {
-    bankAccount: p.bank_account || reservation?.bank_account,
-    currency: reservation?.currency,
-  });
+  const treasury =
+    p.treasury_account_code ||
+    treasuryAccountForMethod(method, {
+      bankAccount: p.bank_account || reservation?.bank_account,
+      currency: reservation?.currency,
+    });
   const checkIn = isoDate(reservation?.check_in);
   const payDate = isoDate(p.created_at) || isoDate(p.payment_date || p.paid_at);
   const cancelled = isCancelledStay(reservation);
@@ -877,6 +881,14 @@ async function loadPortalData(from, to) {
     petty = [];
   }
 
+  let pettyAccounts = {};
+  try {
+    const { rows } = await query(`SELECT location_key, account_code FROM petty_cash_accounts WHERE account_code IS NOT NULL`);
+    pettyAccounts = Object.fromEntries(rows.map((r) => [r.location_key, r.account_code]));
+  } catch (_) {
+    pettyAccounts = {};
+  }
+
   let manuals = [];
   try {
     const mParams = [from];
@@ -924,7 +936,6 @@ async function loadPortalData(from, to) {
     recurring = rows;
   } catch (_) {
     recurring = [
-      { kind: 'rent', label: 'Office Rent', account_code: '604000', amount_egp: 0, day_of_month: 1, is_active: 1 },
       { kind: 'utilities', label: 'Campus Utilities', account_code: '608000', amount_egp: 0, day_of_month: 1, is_active: 1 },
       { kind: 'buffet', label: 'Staff Buffet & Meals', account_code: '508000', amount_egp: 0, day_of_month: 1, is_active: 1 },
     ];
@@ -998,6 +1009,7 @@ async function loadPortalData(from, to) {
     expenses,
     hkOrders,
     petty,
+    pettyAccounts,
     manuals,
     payouts,
     stayPayments,
@@ -1137,14 +1149,19 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
     if (pc.source) continue;
     const amt = parseFloat(pc.amount) || 0;
     const outflow = String(pc.entry_type || 'out') === 'out';
+    // Each drawer is its own account under 108000, so petty spending never touches the treasuries.
+    const drawer = (data.pettyAccounts || {})[pc.location] || '108000';
+    const fundedByFinance = String(pc.entry_kind || '') === 'finance_transfer';
     const lines = outflow
       ? [
           journalLine('605000', amt, 0, pc.description || 'Petty cash out'),
-          journalLine('103000', 0, amt, 'Cash on hand'),
+          journalLine(drawer, 0, amt, 'Petty cash drawer'),
         ]
       : [
-          journalLine('103000', amt, 0, 'Petty cash in'),
-          journalLine('409000', 0, amt, pc.description || 'Petty cash in'),
+          journalLine(drawer, amt, 0, 'Petty cash in'),
+          fundedByFinance
+            ? journalLine('103000', 0, amt, 'Funded from Cash EGP')
+            : journalLine('409000', 0, amt, pc.description || 'Petty cash in'),
         ];
     const pcDate = isoDate(pc.created_at) || isoDate(pc.entry_date);
     if (!inRange(pcDate, from, to)) continue;

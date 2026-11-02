@@ -307,6 +307,9 @@ async function loadManualCalendarItems(from, to, today) {
       series_id: r.series_id || null,
       series_index: r.series_index || null,
       series_count: r.series_count || null,
+      payment_mode: r.payment_mode || 'transfer',
+      cheque_number: r.cheque_number || null,
+      cheque_photo_url: r.cheque_photo_url || null,
       meta: {},
     };
   });
