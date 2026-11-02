@@ -938,7 +938,10 @@
         "entryAdded": "Entry added",
         "entryRemoved": "Entry removed",
         "pettyIn": "This sends money into {{drawer}} and raises its current balance.",
-        "pettyOut": "This takes money out of {{drawer}} and lowers its current balance."
+        "pettyOut": "This takes money out of {{drawer}} and lowers its current balance.",
+        "entryUpdated": "Entry updated",
+        "editEntry": "Edit entry",
+        "editEntryTitle": "Edit manual journal entry"
       },
       "reports": {
         "description": "From {{from}} → {{to}}. Revenue is reservation totals (by booking / created date) plus custom revenue. Owner share (each unit's % of nightly rate × nights) is an expense deducted from that revenue.",
@@ -1620,6 +1623,10 @@
         "how": "Every amount paid out in the workbooks is grouped by its cost label. Each category is predicted as a weighted average of its last six complete months, with the most recent month counting most. Tax and commissions are paid in lumps, so their monthly figure is an average to set aside, not a monthly bill.",
         "excluded": "Not counted as spending:",
         "unclassified": "Left out because the label was not recognised ({{amount}}):"
+      },
+      "alerts": {
+        "cashReview": "{{count}} cash payment(s) waiting for review",
+        "overdue": "{{count}} overdue payment(s)"
       }
     }
   }

@@ -1168,9 +1168,6 @@ router.post('/financial-system/manual-entries', requireRoles('admin', 'finance',
       if (!dev[0]) return res.status(400).json({ error: 'Choose which developer this entry is for' });
     }
 
-    const debitDrawer = await pettyLocationForAccount(debitAccount);
-    const creditDrawer = await pettyLocationForAccount(creditAccount);
-
     const row = await inTransaction(async (client) => {
       const { rows } = await client.query(
         `INSERT INTO financial_manual_entries
@@ -1180,34 +1177,129 @@ router.post('/financial-system/manual-entries', requireRoles('admin', 'finance',
          RETURNING *`,
         [entryType, description, amount, entryDate, notes, unitId, req.user.id, debitAccount, creditAccount, developerId]
       );
-      // Money sent to (or taken from) a petty cash drawer changes that drawer's current balance.
-      const moves = [
-        debitDrawer && { location: debitDrawer, type: 'in' },
-        creditDrawer && { location: creditDrawer, type: 'out' },
-      ].filter(Boolean);
-      for (const move of moves) {
-        await client.query(
-          `INSERT INTO petty_cash
-             (location, description, amount, entry_type, entry_date, created_by, paid_by, notes, status,
-              source, source_ref, entry_kind)
-           VALUES ($1, $2, $3, $4, $5::date, $6, 'company', $7, 'open', 'finance_transfer', $8, 'finance_transfer')`,
-          [
-            move.location,
-            String(description).slice(0, 500),
-            amount,
-            move.type,
-            entryDate,
-            req.user.id,
-            notes,
-            `manual:${rows[0].id}`,
-          ]
-        );
-      }
+      await syncManualPettyMoves(client, rows[0], req.user.id);
       return rows[0];
     });
 
     res.status(201).json(row);
   } catch (e) {
+    next(e);
+  }
+});
+
+/** Money sent to (or taken from) a petty cash drawer changes that drawer's current balance. */
+async function syncManualPettyMoves(client, entry, userId) {
+  const ref = `manual:${entry.id}`;
+  const { rows: existing } = await client.query(
+    `SELECT id, status FROM petty_cash WHERE source = 'finance_transfer' AND source_ref = $1`,
+    [ref]
+  );
+  if (existing.some((r) => String(r.status || 'open') !== 'open')) {
+    throw badRequest('The petty cash entry for this journal was already handed over. Correct it in Petty cash first.');
+  }
+  await client.query(`DELETE FROM petty_cash WHERE source = 'finance_transfer' AND source_ref = $1`, [ref]);
+  const debitDrawer = await pettyLocationForAccount(entry.debit_account_code);
+  const creditDrawer = await pettyLocationForAccount(entry.credit_account_code);
+  const moves = [
+    debitDrawer && { location: debitDrawer, type: 'in' },
+    creditDrawer && { location: creditDrawer, type: 'out' },
+  ].filter(Boolean);
+  for (const move of moves) {
+    await client.query(
+      `INSERT INTO petty_cash
+         (location, description, amount, entry_type, entry_date, created_by, paid_by, notes, status,
+          source, source_ref, entry_kind)
+       VALUES ($1, $2, $3, $4, $5::date, $6, 'company', $7, 'open', 'finance_transfer', $8, 'finance_transfer')`,
+      [
+        move.location,
+        String(entry.description || '').slice(0, 500),
+        entry.amount,
+        move.type,
+        String(entry.entry_date).slice(0, 10),
+        userId,
+        entry.notes || null,
+        ref,
+      ]
+    );
+  }
+}
+
+/** Edits a manual journal: accounts, amount, date, notes and developer. Calendar payments are edited there. */
+router.patch('/financial-system/manual-entries/:id', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!id) return res.status(400).json({ error: 'Invalid entry id' });
+    const { rows: found } = await query(`SELECT * FROM financial_manual_entries WHERE id = $1`, [id]);
+    const prev = found[0];
+    if (!prev) return res.status(404).json({ error: 'Entry not found' });
+    const { rows: linked } = await query(
+      `SELECT id FROM finance_calendar_payments WHERE journal_entry_id = $1 LIMIT 1`,
+      [id]
+    ).catch(() => ({ rows: [] }));
+    if (linked[0]) {
+      return res.status(409).json({ error: 'This entry comes from the payments calendar. Edit it there.' });
+    }
+
+    await refreshCustomAccounts();
+    const b = req.body || {};
+    const creditAccount = String(b.from_account ?? prev.credit_account_code ?? '').trim();
+    const debitAccount = String(b.to_account ?? prev.debit_account_code ?? '').trim();
+    if (!getAccount(debitAccount) || !getAccount(creditAccount)) {
+      return res.status(400).json({ error: 'Choose valid From and To accounts' });
+    }
+    if (debitAccount === creditAccount) return res.status(400).json({ error: 'From and To accounts must be different' });
+    const amount = round2(parseFloat(b.amount ?? prev.amount) || 0);
+    if (!(amount > 0)) return res.status(400).json({ error: 'amount must be greater than zero' });
+    const entryDate = String(b.entry_date || prev.entry_date).slice(0, 10);
+    if (entryDate < FINANCIAL_EPOCH) return res.status(400).json({ error: `entry_date cannot be before ${FINANCIAL_EPOCH}` });
+    await assertPeriodOpen(String(prev.entry_date).slice(0, 10));
+    await assertPeriodOpen(entryDate);
+
+    const notes = b.notes !== undefined ? (String(b.notes || '').trim() || null) : prev.notes;
+    const description =
+      b.notes !== undefined ? notes || `Manual journal ${creditAccount} → ${debitAccount}` : prev.description;
+
+    let developerId = null;
+    if ([debitAccount, creditAccount].some(isDeveloperAccount)) {
+      developerId = parseInt(b.developer_id ?? prev.developer_id, 10) || null;
+      const { rows: dev } = developerId
+        ? await query(`SELECT id FROM financial_developers WHERE id = $1`, [developerId])
+        : { rows: [] };
+      if (!dev[0]) return res.status(400).json({ error: 'Choose which developer this entry is for' });
+    }
+
+    const row = await inTransaction(async (client) => {
+      const { rows } = await client.query(
+        `UPDATE financial_manual_entries SET
+           entry_type = 'journal', description = $2, amount = $3, entry_date = $4::date, notes = $5,
+           debit_account_code = $6, credit_account_code = $7, developer_id = $8
+         WHERE id = $1
+         RETURNING *`,
+        [id, description, amount, entryDate, notes, debitAccount, creditAccount, developerId]
+      );
+      await syncManualPettyMoves(client, rows[0], req.user.id);
+      return rows[0];
+    });
+
+    await logAudit({
+      userId: req.user.id,
+      action: 'EDIT_MANUAL_ENTRY',
+      entityType: 'financial_manual_entry',
+      entityId: id,
+      details: {
+        before: {
+          amount: prev.amount,
+          entry_date: String(prev.entry_date).slice(0, 10),
+          from: prev.credit_account_code,
+          to: prev.debit_account_code,
+          developer_id: prev.developer_id,
+        },
+        after: { amount, entry_date: entryDate, from: creditAccount, to: debitAccount, developer_id: developerId },
+      },
+    });
+    res.json(row);
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
     next(e);
   }
 });

@@ -346,14 +346,48 @@ function rangeParams(fromDate, toDate, basis) {
   return { from_date: fromDate || undefined, to_date: toDate || undefined, basis: basis || undefined };
 }
 
-function CashReviewCard({ onOpen }) {
-  const { t } = useFinLocale();
-  const { data } = useQuery({
+/** Counts that need finance's attention: cash payments waiting for review and overdue calendar payments. */
+function useFinanceAlerts() {
+  const today = new Date().toISOString().slice(0, 10);
+  const cash = useQuery({
     queryKey: ['financial-system-cash-review', 'pending'],
     queryFn: () => api.get('/financial-system/cash-review').then((r) => r.data),
     staleTime: 30_000,
   });
-  const count = data?.pending_count || 0;
+  const calendar = useQuery({
+    queryKey: ['financial-system-payment-calendar', 'overdue', today],
+    queryFn: () =>
+      api
+        .get('/financial-system/payment-calendar', { params: { from: FINANCIAL_EPOCH, to: today } })
+        .then((r) => r.data),
+    staleTime: 60_000,
+  });
+  return {
+    cashReview: cash.data?.pending_count || 0,
+    cashReviewAmount: cash.data?.pending_amount || 0,
+    overdue: calendar.data?.summary?.overdue || 0,
+  };
+}
+
+/** Red circle with a count; hidden at zero. */
+function CountBadge({ count, label, className = '' }) {
+  if (!count) return null;
+  return (
+    <span
+      title={label}
+      aria-label={label}
+      className={`inline-flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-rose-600 px-1.5 text-xs font-bold leading-none text-white tabular-nums shadow-sm ${className}`}
+    >
+      {count > 99 ? '99+' : count}
+    </span>
+  );
+}
+
+function CashReviewCard({ onOpen }) {
+  const { t } = useFinLocale();
+  const alerts = useFinanceAlerts();
+  const count = alerts.cashReview;
+  const data = { pending_amount: alerts.cashReviewAmount };
   return (
     <button
       type="button"
@@ -371,8 +405,11 @@ function CashReviewCard({ onOpen }) {
           <Banknote className="w-6 h-6" />
         </div>
         <div className="flex-1">
-          <p className={`text-xs uppercase tracking-wider ${count ? 'text-orange-800' : 'text-emerald-800'}`}>
+          <p
+            className={`flex items-center gap-2 text-xs uppercase tracking-wider ${count ? 'text-orange-800' : 'text-emerald-800'}`}
+          >
             {t('pms.fin.home.cashReviewTitle')}
+            <CountBadge count={count} label={t('pms.fin.alerts.cashReview', { count })} />
           </p>
           <p className="font-semibold text-soul-blue">{t('pms.fin.home.cashReviewSubtitle')}</p>
           <p className="text-xs text-gray-500 mt-0.5">
@@ -397,6 +434,11 @@ function HomeView({ data, basisLabel, onOpenGroup, onOpenAccount, onOpenTreasury
   const outstanding = data?.outstanding || { amount: 0, count: 0 };
   const receipts = data?.receipts || {};
   const [addSubOpen, setAddSubOpen] = useState(false);
+  const alerts = useFinanceAlerts();
+  const toolBadges = {
+    'cash-review': { count: alerts.cashReview, label: t('pms.fin.alerts.cashReview', { count: alerts.cashReview }) },
+    'payment-calendar': { count: alerts.overdue, label: t('pms.fin.alerts.overdue', { count: alerts.overdue }) },
+  };
 
   return (
     <div className="space-y-8">
@@ -600,7 +642,10 @@ function HomeView({ data, basisLabel, onOpenGroup, onOpenAccount, onOpenTreasury
             <CalendarDays className="w-6 h-6" />
           </div>
           <div className="flex-1">
-            <p className="text-xs uppercase tracking-wider text-violet-800">{t('pms.fin.home.paymentCalendarTitle')}</p>
+            <p className="flex items-center gap-2 text-xs uppercase tracking-wider text-violet-800">
+              {t('pms.fin.home.paymentCalendarTitle')}
+              <CountBadge count={alerts.overdue} label={t('pms.fin.alerts.overdue', { count: alerts.overdue })} />
+            </p>
             <p className="font-semibold text-soul-blue">{t('pms.fin.home.paymentCalendarSubtitle')}</p>
             <p className="text-xs text-gray-500 mt-0.5">
               {t('pms.fin.home.paymentCalendarHint')}
@@ -683,8 +728,15 @@ function HomeView({ data, basisLabel, onOpenGroup, onOpenAccount, onOpenTreasury
                 key={tool.id}
                 type="button"
                 onClick={() => onOpenTool(tool.id)}
-                className="rounded-2xl border border-soul-line bg-white px-4 py-4 text-left hover:bg-soul-blue-50/40"
+                className="relative rounded-2xl border border-soul-line bg-white px-4 py-4 text-left hover:bg-soul-blue-50/40"
               >
+                {toolBadges[tool.id] ? (
+                  <CountBadge
+                    count={toolBadges[tool.id].count}
+                    label={toolBadges[tool.id].label}
+                    className="absolute top-2.5 end-2.5"
+                  />
+                ) : null}
                 <Icon className="w-5 h-5 text-soul-blue mb-2" />
                 <p className="text-sm font-semibold">{t(`pms.fin.tools.${tool.labelKey}`)}</p>
               </button>
@@ -1621,6 +1673,7 @@ function ManualEntriesTab({ fromDate, toDate, rangeParams: params }) {
   const { t } = useFinLocale();
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
   const emptyForm = {
     from_account: '',
@@ -1642,16 +1695,39 @@ function ManualEntriesTab({ fromDate, toDate, rangeParams: params }) {
     queryFn: () => api.get('/financial-system/manual-entries', { params }).then((r) => r.data),
   });
   const createEntry = useMutation({
-    mutationFn: (payload) => api.post('/financial-system/manual-entries', payload),
+    mutationFn: (payload) =>
+      editId
+        ? api.patch(`/financial-system/manual-entries/${editId}`, payload)
+        : api.post('/financial-system/manual-entries', payload),
     onSuccess: () => {
-      toast.success(t('pms.fin.manual.entryAdded'));
+      toast.success(editId ? t('pms.fin.manual.entryUpdated') : t('pms.fin.manual.entryAdded'));
       qc.invalidateQueries({ queryKey: ['financial-system-manual'] });
       qc.invalidateQueries({ queryKey: ['financial-system-portal'] });
       setShowForm(false);
+      setEditId(null);
       setForm(emptyForm);
     },
     onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
+
+  function openNew() {
+    setEditId(null);
+    setForm(emptyForm);
+    setShowForm(true);
+  }
+
+  function openEdit(row) {
+    setEditId(row.id);
+    setForm({
+      from_account: row.credit_account_code || '',
+      to_account: row.debit_account_code || '',
+      amount: String(row.amount ?? ''),
+      entry_date: String(row.entry_date || '').slice(0, 10),
+      notes: row.notes || '',
+      developer_id: row.developer_id ? String(row.developer_id) : '',
+    });
+    setShowForm(true);
+  }
   const removeEntry = useMutation({
     mutationFn: (id) => api.delete(`/financial-system/manual-entries/${id}`),
     onSuccess: () => {
@@ -1668,7 +1744,7 @@ function ManualEntriesTab({ fromDate, toDate, rangeParams: params }) {
     <div className="space-y-4">
       <div className="flex justify-between">
         <p className="text-sm text-gray-500">{t('pms.fin.manual.description')}</p>
-        <button type="button" className="btn-primary text-sm" onClick={() => setShowForm(true)}>
+        <button type="button" className="btn-primary text-sm" onClick={openNew}>
           <Plus className="w-4 h-4" /> {t('pms.fin.manual.addEntry')}
         </button>
       </div>
@@ -1725,7 +1801,18 @@ function ManualEntriesTab({ fromDate, toDate, rangeParams: params }) {
                       {row.notes || row.description || '—'}
                     </td>
                     <td className="text-right tabular-nums">{currency(row.amount)}</td>
-                    <td className="text-right">
+                    <td className="text-right whitespace-nowrap">
+                      {/* Calendar payments are edited from the payments calendar. */}
+                      {!String(row.notes || '').startsWith('Payment calendar #') ? (
+                        <button
+                          type="button"
+                          className="p-1.5 text-gray-400 hover:text-soul-blue"
+                          title={t('pms.fin.manual.editEntry')}
+                          onClick={() => openEdit(row)}
+                        >
+                          <PenLine className="w-4 h-4" />
+                        </button>
+                      ) : null}
                       <button type="button" className="p-1.5 text-gray-400 hover:text-rose-600" onClick={() => setDeleteId(row.id)}>
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -1740,7 +1827,7 @@ function ManualEntriesTab({ fromDate, toDate, rangeParams: params }) {
       <Modal
         open={showForm}
         onClose={() => setShowForm(false)}
-        title={t('pms.fin.manual.addEntryTitle')}
+        title={editId ? t('pms.fin.manual.editEntryTitle') : t('pms.fin.manual.addEntryTitle')}
         footer={
           <>
             <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>{t('pms.fin.cancel')}</button>
