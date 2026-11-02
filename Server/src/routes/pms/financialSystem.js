@@ -1,6 +1,7 @@
 
 const express = require('express');
-const { query } = require('../../config/db');
+const crypto = require('crypto');
+const { pool, query } = require('../../config/db');
 const { logAudit } = require('../../lib/audit');
 const { requireRoles } = require('../../middleware/auth');
 const {
@@ -1348,7 +1349,8 @@ router.delete('/financial-system/custom-accounts/:code', requireRoles('admin', '
       `SELECT
          (SELECT COUNT(*) FROM financial_manual_entries
            WHERE debit_account_code = $1 OR credit_account_code = $1)::int
-         + (SELECT COUNT(*) FROM finance_calendar_payments WHERE account_code = $1)::int AS n`,
+         + (SELECT COUNT(*) FROM finance_calendar_payments
+             WHERE account_code = $1 OR treasury_account_code = $1)::int AS n`,
       [code]
     );
     if ((used[0]?.n || 0) > 0) {
@@ -2054,129 +2056,283 @@ router.get('/financial-system/payment-calendar', requireRoles('admin', 'finance'
   }
 });
 
+const CALENDAR_STATUSES = ['pending', 'paid', 'cancelled'];
+
+function calendarStatus(value, fallback) {
+  const v = String(value || '').toLowerCase();
+  return CALENDAR_STATUSES.includes(v) ? v : fallback;
+}
+
+/** The treasury side must be a bank/cash account or its sub-account; the other side any other chart account. */
+function calendarAccountError(treasury, counter) {
+  if (treasury && !isTreasuryCode(treasury)) return 'Choose a bank or cash treasury account';
+  if (counter && !getAccount(counter)) return 'Choose a valid account';
+  if (treasury && counter && treasury === counter) return 'The treasury and the account must be different';
+  return null;
+}
+
+/** Same day each month, moved to the month's last day when the month is shorter. */
+function addMonthsOnDay(startIso, offset, day) {
+  const [y, m] = startIso.split('-').map(Number);
+  const first = new Date(Date.UTC(y, m - 1 + offset, 1));
+  const last = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
+  const mm = String(first.getUTCMonth() + 1).padStart(2, '0');
+  return `${first.getUTCFullYear()}-${mm}-${String(Math.min(day, last)).padStart(2, '0')}`;
+}
+
+function badRequest(message) {
+  const err = new Error(message);
+  err.status = 400;
+  return err;
+}
+
+/** Posts or re-posts the journal of a paid item: money out debits the account, money in debits the treasury. */
+async function postCalendarJournal(client, item, userId) {
+  if (!item.treasury_account_code || !item.account_code) {
+    throw badRequest('Choose the treasury and the account before marking it paid');
+  }
+  if (String(item.paid_date) < FINANCIAL_EPOCH) throw badRequest(`Paid date cannot be before ${FINANCIAL_EPOCH}`);
+  await assertPeriodOpen(item.paid_date);
+  const out = item.direction !== 'in';
+  const debit = out ? item.account_code : item.treasury_account_code;
+  const credit = out ? item.treasury_account_code : item.account_code;
+  const notes = `Payment calendar #${item.id}${item.notes ? ` · ${item.notes}` : ''}`;
+  if (item.journal_entry_id) {
+    const { rows: prior } = await client.query(`SELECT entry_date FROM financial_manual_entries WHERE id = $1`, [
+      item.journal_entry_id,
+    ]);
+    if (prior[0]) {
+      await assertPeriodOpen(prior[0].entry_date);
+      await client.query(
+        `UPDATE financial_manual_entries
+           SET description = $2, amount = $3, entry_date = $4::date, notes = $5,
+               debit_account_code = $6, credit_account_code = $7
+         WHERE id = $1`,
+        [item.journal_entry_id, item.title, item.amount, item.paid_date, notes, debit, credit]
+      );
+      return item.journal_entry_id;
+    }
+  }
+  const { rows } = await client.query(
+    `INSERT INTO financial_manual_entries
+       (entry_type, misc_flow, description, amount, entry_date, notes, unit_id, created_by,
+        debit_account_code, credit_account_code)
+     VALUES ('journal', NULL, $1, $2, $3::date, $4, NULL, $5, $6, $7)
+     RETURNING id`,
+    [item.title, item.amount, item.paid_date, notes, userId, debit, credit]
+  );
+  return rows[0].id;
+}
+
+async function removeCalendarJournal(client, journalId) {
+  if (!journalId) return;
+  const { rows } = await client.query(`SELECT entry_date FROM financial_manual_entries WHERE id = $1`, [journalId]);
+  if (!rows[0]) return;
+  await assertPeriodOpen(rows[0].entry_date);
+  await client.query(`DELETE FROM financial_manual_entries WHERE id = $1`, [journalId]);
+}
+
+async function inTransaction(work) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await work(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 router.post('/financial-system/payment-calendar', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     await ensureFinanceCalendarTable();
+    await refreshCustomAccounts();
     const b = req.body || {};
     const title = String(b.title || '').trim();
     const dueDate = calendarIsoDate(b.due_date);
     const amount = round2(parseFloat(b.amount) || 0);
     const direction = String(b.direction || 'out').toLowerCase() === 'in' ? 'in' : 'out';
-    const status = ['pending', 'paid', 'cancelled'].includes(String(b.status || '').toLowerCase())
-      ? String(b.status).toLowerCase()
-      : 'pending';
+    const treasury = String(b.treasury_account_code || '').trim();
+    const counter = String(b.account_code || '').trim();
+    const months = Math.min(Math.max(parseInt(b.repeat_months, 10) || 1, 1), 60);
     if (!title) return res.status(400).json({ error: 'Title is required' });
     if (!dueDate) return res.status(400).json({ error: 'Due date is required' });
+    if (!(amount > 0)) return res.status(400).json({ error: 'Amount must be greater than zero' });
+    if (!treasury || !counter) return res.status(400).json({ error: 'Choose the treasury and the account' });
+    const accountError = calendarAccountError(treasury, counter);
+    if (accountError) return res.status(400).json({ error: accountError });
+    const day = Math.min(Math.max(parseInt(b.day_of_month, 10) || Number(dueDate.slice(8, 10)), 1), 31);
 
-    const { rows } = await query(
-      `INSERT INTO finance_calendar_payments
-         (title, amount, currency, due_date, direction, category, status, paid_at, notes, account_code, related_ref, created_by, updated_by)
-       VALUES ($1, $2, $3, $4::date, $5, $6, $7, $8, $9, $10, $11, $12, $12)
-       RETURNING *`,
-      [
-        title,
-        amount,
-        String(b.currency || 'EGP').slice(0, 8),
-        dueDate,
-        direction,
-        String(b.category || 'other').slice(0, 64) || 'other',
-        status,
-        status === 'paid' ? new Date().toISOString() : null,
-        b.notes != null ? String(b.notes) : null,
-        b.account_code != null ? String(b.account_code).slice(0, 16) : null,
-        b.related_ref != null ? String(b.related_ref) : null,
-        req.user.id,
-      ]
-    );
-    res.status(201).json({ ok: true, item: rows[0] });
+    const status = months === 1 ? calendarStatus(b.status, 'pending') : 'pending';
+    const seriesId = months > 1 ? crypto.randomUUID() : null;
+    const items = await inTransaction(async (client) => {
+      const created = [];
+      for (let i = 0; i < months; i += 1) {
+        const due = seriesId ? addMonthsOnDay(dueDate, i, day) : dueDate;
+        const paid = status === 'paid';
+        const { rows } = await client.query(
+          `INSERT INTO finance_calendar_payments
+             (title, amount, currency, due_date, direction, category, status, paid_at, paid_date, notes,
+              account_code, treasury_account_code, related_ref, series_id, series_index, series_count,
+              created_by, updated_by)
+           VALUES ($1, $2, $3, $4::date, $5, $6, $7, $8, $9::date, $10, $11, $12, $13, $14, $15, $16, $17, $17)
+           RETURNING *`,
+          [
+            title,
+            amount,
+            String(b.currency || 'EGP').slice(0, 8),
+            due,
+            direction,
+            String(b.category || 'other').slice(0, 64) || 'other',
+            status,
+            paid ? new Date().toISOString() : null,
+            paid ? calendarIsoDate(b.paid_date) || due : null,
+            b.notes != null ? String(b.notes) : null,
+            counter,
+            treasury,
+            b.related_ref != null ? String(b.related_ref) : null,
+            seriesId,
+            seriesId ? i + 1 : null,
+            seriesId ? months : null,
+            req.user.id,
+          ]
+        );
+        let row = rows[0];
+        if (paid) {
+          const journalId = await postCalendarJournal(client, row, req.user.id);
+          const updated = await client.query(
+            `UPDATE finance_calendar_payments SET journal_entry_id = $2 WHERE id = $1 RETURNING *`,
+            [row.id, journalId]
+          );
+          row = updated.rows[0];
+        }
+        created.push(row);
+      }
+      return created;
+    });
+    res.status(201).json({ ok: true, item: items[0], items });
   } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
     next(e);
   }
 });
 
+/** Marking an item paid posts its journal at the amount sent, which becomes the item's amount. */
 router.patch('/financial-system/payment-calendar/:id', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     await ensureFinanceCalendarTable();
+    await refreshCustomAccounts();
     const id = parseInt(req.params.id, 10);
     if (!id) return res.status(400).json({ error: 'Invalid id' });
     const { rows: existing } = await query(`SELECT * FROM finance_calendar_payments WHERE id = $1`, [id]);
-    if (!existing[0]) return res.status(404).json({ error: 'Not found' });
+    const prev = existing[0];
+    if (!prev) return res.status(404).json({ error: 'Not found' });
 
     const b = req.body || {};
-    const title = b.title != null ? String(b.title).trim() : existing[0].title;
-    const dueDate = b.due_date != null ? calendarIsoDate(b.due_date) : String(existing[0].due_date).slice(0, 10);
-    const amount = b.amount != null ? round2(parseFloat(b.amount) || 0) : round2(parseFloat(existing[0].amount) || 0);
-    const direction =
-      b.direction != null
-        ? String(b.direction).toLowerCase() === 'in'
-          ? 'in'
-          : 'out'
-        : existing[0].direction;
-    let status = existing[0].status;
-    if (b.status != null && ['pending', 'paid', 'cancelled'].includes(String(b.status).toLowerCase())) {
-      status = String(b.status).toLowerCase();
+    const pick = (key, clean) => (b[key] !== undefined ? clean(b[key]) : prev[key]);
+    const item = {
+      ...prev,
+      title: b.title != null ? String(b.title).trim() : prev.title,
+      due_date: b.due_date != null ? calendarIsoDate(b.due_date) : String(prev.due_date).slice(0, 10),
+      amount: round2(parseFloat(b.amount != null ? b.amount : prev.amount) || 0),
+      direction: b.direction != null ? (String(b.direction).toLowerCase() === 'in' ? 'in' : 'out') : prev.direction,
+      category: b.category != null ? String(b.category).slice(0, 64) : prev.category,
+      status: calendarStatus(b.status, prev.status),
+      notes: pick('notes', (v) => (v != null ? String(v) : null)),
+      account_code: pick('account_code', (v) => (v ? String(v).slice(0, 16) : null)),
+      treasury_account_code: pick('treasury_account_code', (v) => (v ? String(v).slice(0, 16) : null)),
+      related_ref: pick('related_ref', (v) => (v != null ? String(v) : null)),
+    };
+    if (!item.title) return res.status(400).json({ error: 'Title is required' });
+    if (!item.due_date) return res.status(400).json({ error: 'Due date is required' });
+    const accountError = calendarAccountError(item.treasury_account_code, item.account_code);
+    if (accountError) return res.status(400).json({ error: accountError });
+
+    if (item.status === 'paid') {
+      if (!(item.amount > 0)) return res.status(400).json({ error: 'Paid amount must be greater than zero' });
+      item.paid_date =
+        calendarIsoDate(b.paid_date) ||
+        (prev.paid_date ? String(prev.paid_date).slice(0, 10) : null) ||
+        new Date().toISOString().slice(0, 10);
+      item.paid_at = prev.paid_at || new Date().toISOString();
+    } else {
+      item.paid_date = null;
+      item.paid_at = null;
     }
-    if (!title) return res.status(400).json({ error: 'Title is required' });
-    if (!dueDate) return res.status(400).json({ error: 'Due date is required' });
 
-    let paidAt = existing[0].paid_at;
-    if (status === 'paid' && !paidAt) paidAt = new Date().toISOString();
-    if (status !== 'paid') paidAt = null;
-
-    const { rows } = await query(
-      `UPDATE finance_calendar_payments SET
-         title = $2,
-         amount = $3,
-         due_date = $4::date,
-         direction = $5,
-         category = $6,
-         status = $7,
-         paid_at = $8,
-         notes = $9,
-         account_code = $10,
-         related_ref = $11,
-         updated_by = $12,
-         updated_at = now()
-       WHERE id = $1
-       RETURNING *`,
-      [
-        id,
-        title,
-        amount,
-        dueDate,
-        direction,
-        b.category != null ? String(b.category).slice(0, 64) : existing[0].category,
-        status,
-        paidAt,
-        b.notes !== undefined ? (b.notes != null ? String(b.notes) : null) : existing[0].notes,
-        b.account_code !== undefined
-          ? b.account_code != null
-            ? String(b.account_code).slice(0, 16)
-            : null
-          : existing[0].account_code,
-        b.related_ref !== undefined
-          ? b.related_ref != null
-            ? String(b.related_ref)
-            : null
-          : existing[0].related_ref,
-        req.user.id,
-      ]
-    );
-    res.json({ ok: true, item: rows[0] });
+    const saved = await inTransaction(async (client) => {
+      let journalId = prev.journal_entry_id || null;
+      if (item.status === 'paid') {
+        journalId = await postCalendarJournal(client, { ...item, journal_entry_id: journalId }, req.user.id);
+      } else if (journalId) {
+        await removeCalendarJournal(client, journalId);
+        journalId = null;
+      }
+      const { rows } = await client.query(
+        `UPDATE finance_calendar_payments SET
+           title = $2, amount = $3, due_date = $4::date, direction = $5, category = $6, status = $7,
+           paid_at = $8, paid_date = $9::date, notes = $10, account_code = $11, treasury_account_code = $12,
+           related_ref = $13, journal_entry_id = $14, updated_by = $15, updated_at = now()
+         WHERE id = $1
+         RETURNING *`,
+        [
+          id,
+          item.title,
+          item.amount,
+          item.due_date,
+          item.direction,
+          item.category,
+          item.status,
+          item.paid_at,
+          item.paid_date,
+          item.notes,
+          item.account_code,
+          item.treasury_account_code,
+          item.related_ref,
+          journalId,
+          req.user.id,
+        ]
+      );
+      return rows[0];
+    });
+    res.json({ ok: true, item: saved });
   } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
     next(e);
   }
 });
 
+/** ?scope=series also removes this series' later items that are not paid yet. */
 router.delete('/financial-system/payment-calendar/:id', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     await ensureFinanceCalendarTable();
     const id = parseInt(req.params.id, 10);
     if (!id) return res.status(400).json({ error: 'Invalid id' });
-    const { rowCount } = await query(`DELETE FROM finance_calendar_payments WHERE id = $1`, [id]);
-    if (!rowCount) return res.status(404).json({ error: 'Not found' });
-    res.json({ ok: true, id });
+    const { rows: existing } = await query(`SELECT * FROM finance_calendar_payments WHERE id = $1`, [id]);
+    const item = existing[0];
+    if (!item) return res.status(404).json({ error: 'Not found' });
+
+    const removed = await inTransaction(async (client) => {
+      await removeCalendarJournal(client, item.journal_entry_id);
+      await client.query(`DELETE FROM finance_calendar_payments WHERE id = $1`, [id]);
+      let count = 1;
+      if (req.query.scope === 'series' && item.series_id) {
+        const { rowCount } = await client.query(
+          `DELETE FROM finance_calendar_payments
+           WHERE series_id = $1 AND due_date >= $2::date AND status <> 'paid' AND journal_entry_id IS NULL`,
+          [item.series_id, String(item.due_date).slice(0, 10)]
+        );
+        count += rowCount;
+      }
+      return count;
+    });
+    res.json({ ok: true, id, removed });
   } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
     next(e);
   }
 });

@@ -296,11 +296,17 @@ async function loadManualCalendarItems(from, to, today) {
         today,
       }),
       account_code: r.account_code || null,
+      treasury_account_code: r.treasury_account_code || null,
       related_ref: r.related_ref || r.notes || null,
       notes: r.notes || null,
       editable: true,
       created_by_name: r.created_by_name || null,
       paid_at: r.paid_at || null,
+      paid_date: r.paid_date ? String(r.paid_date).slice(0, 10) : null,
+      journal_entry_id: r.journal_entry_id || null,
+      series_id: r.series_id || null,
+      series_index: r.series_index || null,
+      series_count: r.series_count || null,
       meta: {},
     };
   });

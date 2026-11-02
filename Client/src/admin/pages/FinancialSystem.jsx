@@ -2364,6 +2364,26 @@ function AgingTool({ rangeParams: params, onOpenAccount }) {
   );
 }
 
+/** Same day each month, moved to the month's last day when the month is shorter (matches the server). */
+function monthlyDueDates(startIso, months, day) {
+  if (!startIso) return [];
+  const [y, m] = startIso.split('-').map(Number);
+  const out = [];
+  for (let i = 0; i < months; i += 1) {
+    const first = new Date(Date.UTC(y, m - 1 + i, 1));
+    const last = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
+    const mm = String(first.getUTCMonth() + 1).padStart(2, '0');
+    out.push(`${first.getUTCFullYear()}-${mm}-${String(Math.min(day, last)).padStart(2, '0')}`);
+  }
+  return out;
+}
+
+function accountLabel(code) {
+  if (!code) return '';
+  const acct = getAccount(code);
+  return acct ? `${code} ${acct.name}` : code;
+}
+
 function PaymentCalendarTool() {
   const { t } = useFinLocale();
   const qc = useQueryClient();
@@ -2374,16 +2394,29 @@ function PaymentCalendarTool() {
   });
   const [selectedDay, setSelectedDay] = useState(today);
   const [editItem, setEditItem] = useState(null);
-  const [form, setForm] = useState({
+  const [confirm, setConfirm] = useState(null);
+  const emptyForm = (day) => ({
     title: '',
     amount: '',
-    due_date: today,
+    due_date: day || today,
     direction: 'out',
     category: 'other',
     status: 'pending',
     notes: '',
+    treasury_account_code: '',
     account_code: '',
+    repeat: false,
+    repeat_months: '12',
+    day_of_month: String(Number(String(day || today).slice(8, 10))),
   });
+  const [form, setForm] = useState(() => emptyForm(today));
+
+  const customAccounts = useCustomAccounts();
+  const accountOptions = useMemo(() => manualAccountOptions(), [customAccounts]);
+  const treasuryOptions = useMemo(() => {
+    const codes = treasuryCodes();
+    return accountOptions.filter((o) => codes.includes(o.value));
+  }, [accountOptions]);
 
   const range = useMemo(() => {
     const from = `${cursor.year}-${String(cursor.month + 1).padStart(2, '0')}-01`;
@@ -2400,6 +2433,12 @@ function PaymentCalendarTool() {
         .then((r) => r.data),
   });
 
+  const refreshBooks = () => {
+    qc.invalidateQueries({ queryKey: ['financial-system-payment-calendar'] });
+    qc.invalidateQueries({ queryKey: ['financial-system-portal'] });
+    qc.invalidateQueries({ queryKey: ['financial-system-manual'] });
+  };
+
   const saveMutation = useMutation({
     mutationFn: (payload) => {
       if (payload.id) {
@@ -2410,17 +2449,31 @@ function PaymentCalendarTool() {
     onSuccess: () => {
       toast.success(t('pms.fin.paymentCalendar.saved'));
       setEditItem(null);
-      qc.invalidateQueries({ queryKey: ['financial-system-payment-calendar'] });
+      refreshBooks();
+    },
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.paymentCalendar.saveFailed')),
+  });
+
+  const settleMutation = useMutation({
+    mutationFn: ({ id, body }) => api.patch(`/financial-system/payment-calendar/${id}`, body),
+    onSuccess: (_res, vars) => {
+      toast.success(
+        vars.body.status === 'paid' ? t('pms.fin.paymentCalendar.markedPaid') : t('pms.fin.paymentCalendar.markedUnpaid')
+      );
+      setConfirm(null);
+      setEditItem(null);
+      refreshBooks();
     },
     onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.paymentCalendar.saveFailed')),
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id) => api.delete(`/financial-system/payment-calendar/${id}`),
+    mutationFn: ({ id, series }) =>
+      api.delete(`/financial-system/payment-calendar/${id}`, { params: series ? { scope: 'series' } : undefined }),
     onSuccess: () => {
       toast.success(t('pms.fin.paymentCalendar.deleted'));
       setEditItem(null);
-      qc.invalidateQueries({ queryKey: ['financial-system-payment-calendar'] });
+      refreshBooks();
     },
     onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.paymentCalendar.deleteFailed')),
   });
@@ -2452,18 +2505,20 @@ function PaymentCalendarTool() {
   }, [cursor]);
 
   const dayItems = byDay.get(selectedDay) || [];
+  const seriesDates = useMemo(
+    () =>
+      form.repeat
+        ? monthlyDueDates(
+            form.due_date,
+            Math.min(Math.max(parseInt(form.repeat_months, 10) || 1, 1), 60),
+            Math.min(Math.max(parseInt(form.day_of_month, 10) || 1, 1), 31)
+          )
+        : [],
+    [form.repeat, form.due_date, form.repeat_months, form.day_of_month]
+  );
 
   function openCreate(day) {
-    setForm({
-      title: '',
-      amount: '',
-      due_date: day || selectedDay || today,
-      direction: 'out',
-      category: 'other',
-      status: 'pending',
-      notes: '',
-      account_code: '',
-    });
+    setForm(emptyForm(day || selectedDay || today));
     setEditItem({ mode: 'create' });
   }
 
@@ -2473,16 +2528,86 @@ function PaymentCalendarTool() {
       return;
     }
     setForm({
+      ...emptyForm(item.due_date),
       title: item.title || '',
       amount: String(item.amount ?? ''),
-      due_date: item.due_date,
       direction: item.direction || 'out',
       category: item.category || 'other',
       status: item.status === 'overdue' ? 'pending' : item.status || 'pending',
       notes: item.notes || '',
+      treasury_account_code: item.treasury_account_code || '',
       account_code: item.account_code || '',
     });
     setEditItem({ mode: 'edit', item });
+  }
+
+  function openConfirm(item) {
+    setConfirm({
+      item,
+      amount: String(item.amount ?? ''),
+      paid_date: item.paid_date || (item.due_date < today ? item.due_date : today),
+      treasury_account_code: item.treasury_account_code || '',
+      account_code: item.account_code || '',
+    });
+  }
+
+  function submitForm() {
+    if (!String(form.title || '').trim()) {
+      toast.error(t('pms.fin.paymentCalendar.titleRequired'));
+      return;
+    }
+    if (!form.due_date) {
+      toast.error(t('pms.fin.paymentCalendar.dueRequired'));
+      return;
+    }
+    if (!(parseFloat(form.amount) > 0)) {
+      toast.error(t('pms.fin.paymentCalendar.amountRequired'));
+      return;
+    }
+    if (!form.treasury_account_code || !form.account_code) {
+      toast.error(t('pms.fin.paymentCalendar.accountsRequired'));
+      return;
+    }
+    const creating = editItem?.mode === 'create';
+    const body = {
+      title: form.title.trim(),
+      amount: form.amount,
+      due_date: form.due_date,
+      direction: form.direction,
+      category: form.category,
+      notes: form.notes,
+      treasury_account_code: form.treasury_account_code,
+      account_code: form.account_code,
+    };
+    // A paid item keeps its status; saving re-posts its journal with the edited amount and accounts.
+    if (form.status !== 'paid') body.status = form.status;
+    if (creating && form.repeat) {
+      body.repeat_months = Math.min(Math.max(parseInt(form.repeat_months, 10) || 1, 1), 60);
+      body.day_of_month = Math.min(Math.max(parseInt(form.day_of_month, 10) || 1, 1), 31);
+      body.status = 'pending';
+    }
+    saveMutation.mutate({ id: creating ? null : editItem.item.source_id, body });
+  }
+
+  function submitConfirm() {
+    if (!(parseFloat(confirm.amount) > 0)) {
+      toast.error(t('pms.fin.paymentCalendar.amountRequired'));
+      return;
+    }
+    if (!confirm.treasury_account_code || !confirm.account_code) {
+      toast.error(t('pms.fin.paymentCalendar.accountsRequired'));
+      return;
+    }
+    settleMutation.mutate({
+      id: confirm.item.source_id,
+      body: {
+        status: 'paid',
+        amount: confirm.amount,
+        paid_date: confirm.paid_date,
+        treasury_account_code: confirm.treasury_account_code,
+        account_code: confirm.account_code,
+      },
+    });
   }
 
   function statusClass(status) {
@@ -2496,6 +2621,9 @@ function PaymentCalendarTool() {
     month: 'long',
     year: 'numeric',
   });
+
+  const directionKey = (direction) => (direction === 'in' ? 'In' : 'Out');
+  const editing = editItem?.mode === 'edit' ? editItem.item : null;
 
   if (isLoading) return <LoadingSpinner />;
 
@@ -2640,30 +2768,67 @@ function PaymentCalendarTool() {
             <p className="text-sm text-gray-400 py-8 text-center">{t('pms.fin.paymentCalendar.noDayItems')}</p>
           ) : (
             <ul className="space-y-2 max-h-[28rem] overflow-y-auto">
-              {dayItems.map((it) => (
-                <li key={it.id}>
-                  <button
-                    type="button"
-                    onClick={() => openEdit(it)}
-                    className={`w-full rounded-xl border px-3 py-2.5 text-left hover:border-soul-blue/40 ${statusClass(it.status)}`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="font-medium truncate">{it.title}</p>
-                        <p className="text-[11px] opacity-80 mt-0.5">
-                          {it.source === 'manual'
-                            ? t('pms.fin.paymentCalendar.manual')
-                            : t('pms.fin.paymentCalendar.accounting')}
-                          {it.account_code ? ` · ${it.account_code}` : ''}
-                          {' · '}
-                          {t(`pms.fin.paymentCalendar.status.${it.status}`)}
-                        </p>
+              {dayItems.map((it) => {
+                const canConfirm = it.source === 'manual' && (it.status === 'pending' || it.status === 'overdue');
+                return (
+                  <li key={it.id} className={`rounded-xl border ${statusClass(it.status)}`}>
+                    <button
+                      type="button"
+                      onClick={() => openEdit(it)}
+                      className="w-full px-3 py-2.5 text-left rounded-xl hover:bg-white/40"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="font-medium truncate">{it.title}</p>
+                          <p className="text-[11px] opacity-80 mt-0.5">
+                            {it.source === 'manual'
+                              ? t('pms.fin.paymentCalendar.manual')
+                              : t('pms.fin.paymentCalendar.accounting')}
+                            {it.series_count
+                              ? ` · ${t('pms.fin.paymentCalendar.seriesBadge', {
+                                  index: it.series_index,
+                                  count: it.series_count,
+                                })}`
+                              : ''}
+                            {' · '}
+                            {t(`pms.fin.paymentCalendar.status.${it.status}`)}
+                          </p>
+                          {it.treasury_account_code || it.account_code ? (
+                            <p className="text-[11px] opacity-80 mt-0.5 truncate">
+                              {it.direction === 'in'
+                                ? `${accountLabel(it.account_code)} → ${accountLabel(it.treasury_account_code)}`
+                                : `${accountLabel(it.treasury_account_code)} → ${accountLabel(it.account_code)}`}
+                            </p>
+                          ) : null}
+                          {it.status === 'paid' && it.paid_date ? (
+                            <p className="text-[11px] mt-0.5">
+                              {t('pms.fin.paymentCalendar.paidSummary', {
+                                amount: currency(it.amount),
+                                date: formatDate(it.paid_date),
+                              })}
+                            </p>
+                          ) : null}
+                        </div>
+                        <p className="font-semibold tabular-nums shrink-0">{currency(it.amount)}</p>
                       </div>
-                      <p className="font-semibold tabular-nums shrink-0">{currency(it.amount)}</p>
-                    </div>
-                  </button>
-                </li>
-              ))}
+                    </button>
+                    {canConfirm ? (
+                      <div className="px-3 pb-2.5">
+                        <button
+                          type="button"
+                          className="btn-primary text-xs w-full justify-center"
+                          onClick={() => openConfirm(it)}
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          {it.direction === 'in'
+                            ? t('pms.fin.paymentCalendar.confirmReceived')
+                            : t('pms.fin.paymentCalendar.confirmPaid')}
+                        </button>
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>
@@ -2687,48 +2852,32 @@ function PaymentCalendarTool() {
             </button>
           ) : (
             <>
-              {editItem?.mode === 'edit' ? (
-                <button
-                  type="button"
-                  className="btn-secondary text-rose-700 mr-auto"
-                  disabled={deleteMutation.isPending}
-                  onClick={() => deleteMutation.mutate(editItem.item.source_id)}
-                >
-                  {t('pms.fin.paymentCalendar.delete')}
-                </button>
+              {editing ? (
+                <div className="mr-auto flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="btn-secondary text-rose-700"
+                    disabled={deleteMutation.isPending}
+                    onClick={() => deleteMutation.mutate({ id: editing.source_id })}
+                  >
+                    {t('pms.fin.paymentCalendar.delete')}
+                  </button>
+                  {editing.series_id ? (
+                    <button
+                      type="button"
+                      className="btn-secondary text-rose-700"
+                      disabled={deleteMutation.isPending}
+                      onClick={() => deleteMutation.mutate({ id: editing.source_id, series: true })}
+                    >
+                      {t('pms.fin.paymentCalendar.deleteSeries')}
+                    </button>
+                  ) : null}
+                </div>
               ) : null}
               <button type="button" className="btn-secondary" onClick={() => setEditItem(null)}>
                 {t('pms.fin.paymentCalendar.cancel')}
               </button>
-              <button
-                type="button"
-                className="btn-primary"
-                disabled={saveMutation.isPending}
-                onClick={() => {
-                  if (!String(form.title || '').trim()) {
-                    toast.error(t('pms.fin.paymentCalendar.titleRequired'));
-                    return;
-                  }
-                  if (!form.due_date) {
-                    toast.error(t('pms.fin.paymentCalendar.dueRequired'));
-                    return;
-                  }
-                  const body = {
-                    title: form.title.trim(),
-                    amount: form.amount,
-                    due_date: form.due_date,
-                    direction: form.direction,
-                    category: form.category,
-                    status: form.status,
-                    notes: form.notes,
-                    account_code: form.account_code || null,
-                  };
-                  saveMutation.mutate({
-                    id: editItem?.mode === 'edit' ? editItem.item.source_id : null,
-                    body,
-                  });
-                }}
-              >
+              <button type="button" className="btn-primary" disabled={saveMutation.isPending} onClick={submitForm}>
                 {saveMutation.isPending ? t('pms.fin.paymentCalendar.saving') : t('pms.fin.paymentCalendar.save')}
               </button>
             </>
@@ -2765,6 +2914,29 @@ function PaymentCalendarTool() {
           </div>
         ) : (
           <div className="space-y-3">
+            {editing && editing.status === 'paid' ? (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-900">
+                <p className="font-medium">
+                  {t('pms.fin.paymentCalendar.paidSummary', {
+                    amount: currency(editing.amount),
+                    date: formatDate(editing.paid_date || editing.due_date),
+                  })}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button type="button" className="btn-secondary text-xs" onClick={() => openConfirm(editing)}>
+                    {t('pms.fin.paymentCalendar.changePaid')}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary text-xs text-rose-700"
+                    disabled={settleMutation.isPending}
+                    onClick={() => settleMutation.mutate({ id: editing.source_id, body: { status: 'pending' } })}
+                  >
+                    {t('pms.fin.paymentCalendar.markUnpaid')}
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <div>
               <label className="label">{t('pms.fin.paymentCalendar.title')} *</label>
               <input
@@ -2774,24 +2946,6 @@ function PaymentCalendarTool() {
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="label">{t('pms.fin.paymentCalendar.amount')}</label>
-                <input
-                  type="number"
-                  className="input"
-                  value={form.amount}
-                  onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="label">{t('pms.fin.paymentCalendar.dueDate')} *</label>
-                <input
-                  type="date"
-                  className="input"
-                  value={form.due_date}
-                  onChange={(e) => setForm((f) => ({ ...f, due_date: e.target.value }))}
-                />
-              </div>
               <div>
                 <label className="label">{t('pms.fin.paymentCalendar.direction')}</label>
                 <select
@@ -2804,27 +2958,125 @@ function PaymentCalendarTool() {
                 </select>
               </div>
               <div>
-                <label className="label">{t('pms.fin.paymentCalendar.statusLabel')}</label>
-                <select
+                <label className="label">{t('pms.fin.paymentCalendar.amount')} *</label>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
                   className="input"
-                  value={form.status}
-                  onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
-                >
-                  <option value="pending">{t('pms.fin.paymentCalendar.status.pending')}</option>
-                  <option value="paid">{t('pms.fin.paymentCalendar.status.paid')}</option>
-                  <option value="cancelled">{t('pms.fin.paymentCalendar.status.cancelled')}</option>
-                </select>
+                  value={form.amount}
+                  onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+                />
               </div>
             </div>
             <div>
-              <label className="label">{t('pms.fin.paymentCalendar.accountCode')}</label>
-              <input
-                className="input"
-                value={form.account_code}
-                onChange={(e) => setForm((f) => ({ ...f, account_code: e.target.value }))}
-                placeholder="e.g. 604000"
+              <label className="label">{t(`pms.fin.paymentCalendar.treasury${directionKey(form.direction)}`)} *</label>
+              <SearchableSelect
+                className="w-full"
+                value={form.treasury_account_code}
+                onChange={(v) => setForm((f) => ({ ...f, treasury_account_code: v }))}
+                placeholder={t('pms.fin.paymentCalendar.chooseTreasury')}
+                options={treasuryOptions}
               />
             </div>
+            <div>
+              <label className="label">{t(`pms.fin.paymentCalendar.counter${directionKey(form.direction)}`)} *</label>
+              <SearchableSelect
+                className="w-full"
+                value={form.account_code}
+                onChange={(v) => setForm((f) => ({ ...f, account_code: v }))}
+                placeholder={t('pms.fin.paymentCalendar.chooseAccount')}
+                options={accountOptions.filter((o) => o.value !== form.treasury_account_code)}
+              />
+            </div>
+
+            {editItem?.mode === 'create' ? (
+              <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={form.repeat}
+                  onChange={(e) => setForm((f) => ({ ...f, repeat: e.target.checked }))}
+                />
+                {t('pms.fin.paymentCalendar.repeatMonthly')}
+              </label>
+            ) : null}
+
+            {form.repeat && editItem?.mode === 'create' ? (
+              <div className="rounded-xl border border-soul-line bg-slate-50/60 p-3 space-y-3">
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="label">{t('pms.fin.paymentCalendar.firstMonth')}</label>
+                    <input
+                      type="month"
+                      className="input"
+                      value={String(form.due_date).slice(0, 7)}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, due_date: e.target.value ? `${e.target.value}-01` : f.due_date }))
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="label">{t('pms.fin.paymentCalendar.dayOfMonth')}</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="31"
+                      className="input"
+                      value={form.day_of_month}
+                      onChange={(e) => setForm((f) => ({ ...f, day_of_month: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="label">{t('pms.fin.paymentCalendar.months')}</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="60"
+                      className="input"
+                      value={form.repeat_months}
+                      onChange={(e) => setForm((f) => ({ ...f, repeat_months: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <p className="text-[11px] text-gray-500">{t('pms.fin.paymentCalendar.repeatHint')}</p>
+                {seriesDates.length ? (
+                  <p className="text-xs font-medium text-soul-blue">
+                    {t('pms.fin.paymentCalendar.seriesPreview', {
+                      count: seriesDates.length,
+                      amount: currency(parseFloat(form.amount) || 0),
+                      first: formatDate(seriesDates[0]),
+                      last: formatDate(seriesDates[seriesDates.length - 1]),
+                    })}
+                  </p>
+                ) : null}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">{t('pms.fin.paymentCalendar.dueDate')} *</label>
+                  <input
+                    type="date"
+                    className="input"
+                    value={form.due_date}
+                    onChange={(e) => setForm((f) => ({ ...f, due_date: e.target.value }))}
+                  />
+                </div>
+                {form.status !== 'paid' ? (
+                  <div>
+                    <label className="label">{t('pms.fin.paymentCalendar.statusLabel')}</label>
+                    <select
+                      className="input"
+                      value={form.status}
+                      onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
+                    >
+                      <option value="pending">{t('pms.fin.paymentCalendar.status.pending')}</option>
+                      <option value="cancelled">{t('pms.fin.paymentCalendar.status.cancelled')}</option>
+                    </select>
+                  </div>
+                ) : null}
+              </div>
+            )}
+
             <div>
               <label className="label">{t('pms.fin.paymentCalendar.notes')}</label>
               <textarea
@@ -2835,6 +3087,87 @@ function PaymentCalendarTool() {
             </div>
           </div>
         )}
+      </Modal>
+
+      <Modal
+        open={Boolean(confirm)}
+        onClose={() => setConfirm(null)}
+        title={t('pms.fin.paymentCalendar.confirmTitle')}
+        size="md"
+        footer={
+          <>
+            <button type="button" className="btn-secondary" onClick={() => setConfirm(null)}>
+              {t('pms.fin.paymentCalendar.cancel')}
+            </button>
+            <button type="button" className="btn-primary" disabled={settleMutation.isPending} onClick={submitConfirm}>
+              {settleMutation.isPending
+                ? t('pms.fin.paymentCalendar.saving')
+                : confirm?.item?.direction === 'in'
+                  ? t('pms.fin.paymentCalendar.confirmReceived')
+                  : t('pms.fin.paymentCalendar.confirmPaid')}
+            </button>
+          </>
+        }
+      >
+        {confirm ? (
+          <div className="space-y-3">
+            <div>
+              <p className="font-semibold text-soul-blue">{confirm.item.title}</p>
+              <p className="text-xs text-gray-500">
+                {formatDate(confirm.item.due_date)} · {t('pms.fin.paymentCalendar.plannedAmount')}{' '}
+                {currency(confirm.item.amount)}
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">{t('pms.fin.paymentCalendar.paidAmount')} *</label>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  className="input"
+                  value={confirm.amount}
+                  onChange={(e) => setConfirm((c) => ({ ...c, amount: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="label">{t('pms.fin.paymentCalendar.paidDate')} *</label>
+                <input
+                  type="date"
+                  min={FINANCIAL_EPOCH}
+                  className="input"
+                  value={confirm.paid_date}
+                  onChange={(e) => setConfirm((c) => ({ ...c, paid_date: e.target.value }))}
+                />
+              </div>
+            </div>
+            <p className="text-[11px] text-gray-500 -mt-1">{t('pms.fin.paymentCalendar.paidAmountHint')}</p>
+            <div>
+              <label className="label">
+                {t(`pms.fin.paymentCalendar.treasury${directionKey(confirm.item.direction)}`)} *
+              </label>
+              <SearchableSelect
+                className="w-full"
+                value={confirm.treasury_account_code}
+                onChange={(v) => setConfirm((c) => ({ ...c, treasury_account_code: v }))}
+                placeholder={t('pms.fin.paymentCalendar.chooseTreasury')}
+                options={treasuryOptions}
+              />
+            </div>
+            <div>
+              <label className="label">
+                {t(`pms.fin.paymentCalendar.counter${directionKey(confirm.item.direction)}`)} *
+              </label>
+              <SearchableSelect
+                className="w-full"
+                value={confirm.account_code}
+                onChange={(v) => setConfirm((c) => ({ ...c, account_code: v }))}
+                placeholder={t('pms.fin.paymentCalendar.chooseAccount')}
+                options={accountOptions.filter((o) => o.value !== confirm.treasury_account_code)}
+              />
+            </div>
+          </div>
+        ) : null}
       </Modal>
     </div>
   );
