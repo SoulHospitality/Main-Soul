@@ -1302,30 +1302,6 @@ router.get('/financial-system/recurring', requireRoles('admin', 'finance', 'fina
   }
 });
 
-router.put('/financial-system/recurring/:kind', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
-  try {
-    const kind = String(req.params.kind || '').toLowerCase();
-    if (!['utilities', 'buffet'].includes(kind)) {
-      return res.status(400).json({ error: 'Unknown recurring charge' });
-    }
-    await assertPeriodOpen(new Date().toISOString().slice(0, 10));
-    const amount = Math.max(0, parseFloat(req.body.amount_egp) || 0);
-    const day = Math.min(28, Math.max(1, parseInt(req.body.day_of_month, 10) || 1));
-    const active = req.body.is_active === 0 || req.body.is_active === false ? 0 : 1;
-    const { rows } = await query(
-      `UPDATE financial_recurring_charges
-       SET amount_egp = $2, day_of_month = $3, is_active = $4, updated_at = now(), updated_by = $5
-       WHERE kind = $1
-       RETURNING *`,
-      [kind, amount, day, active, req.user.id]
-    );
-    if (!rows[0]) return res.status(404).json({ error: 'Charge not found' });
-    res.json(rows[0]);
-  } catch (e) {
-    next(e);
-  }
-});
-
 router.delete('/financial-system/manual-entries/:id', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const { rows: existing } = await query(

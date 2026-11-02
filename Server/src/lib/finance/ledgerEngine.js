@@ -935,10 +935,7 @@ async function loadPortalData(from, to) {
     );
     recurring = rows;
   } catch (_) {
-    recurring = [
-      { kind: 'utilities', label: 'Campus Utilities', account_code: '608000', amount_egp: 0, day_of_month: 1, is_active: 1 },
-      { kind: 'buffet', label: 'Staff Buffet & Meals', account_code: '508000', amount_egp: 0, day_of_month: 1, is_active: 1 },
-    ];
+    recurring = [];
   }
 
   let settings = { gateway_mdr_pct: 1.5 };

@@ -1179,95 +1179,9 @@ function TransactionView({ txnId, fromDate, toDate, basis }) {
   );
 }
 
+/** Monthly charges are the fixed monthly charges; they post through the payments calendar. */
 function RecurringTool() {
-  const { t } = useFinLocale();
-  const qc = useQueryClient();
-  const { data = [], isLoading } = useQuery({
-    queryKey: ['financial-system-recurring'],
-    queryFn: () => api.get('/financial-system/recurring').then((r) => r.data),
-  });
-  const [drafts, setDrafts] = useState({});
-
-  const save = useMutation({
-    mutationFn: ({ kind, amount_egp, day_of_month }) =>
-      api.put(`/financial-system/recurring/${kind}`, { amount_egp, day_of_month }),
-    onSuccess: () => {
-      toast.success(t('pms.fin.recurring.saved'));
-      qc.invalidateQueries({ queryKey: ['financial-system-recurring'] });
-      qc.invalidateQueries({ queryKey: ['financial-system-portal'] });
-    },
-    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
-  });
-
-  if (isLoading) return <LoadingSpinner />;
-
-  const icons = { utilities: Zap, buffet: UtensilsCrossed };
-
-  return (
-    <div className="space-y-4">
-      <p className="text-sm text-gray-500">
-        {t('pms.fin.recurring.description')}
-      </p>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {(Array.isArray(data) ? data : []).filter((row) => row.kind !== 'rent').map((row) => {
-          const Icon = icons[row.kind] || Settings2;
-          const draft = drafts[row.kind] || {
-            amount_egp: row.amount_egp,
-            day_of_month: row.day_of_month,
-          };
-          return (
-            <div key={row.kind} className="rounded-2xl border border-soul-line bg-white p-5">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-xl bg-violet-50 text-violet-800 flex items-center justify-center">
-                  <Icon className="w-5 h-5" />
-                </div>
-                <div>
-                  <p className="font-semibold">{row.label}</p>
-                  <p className="text-[11px] font-mono text-gray-400">{row.account_code}</p>
-                </div>
-              </div>
-              <label className="label">{t('pms.fin.recurring.monthlyAmount')}</label>
-              <input
-                type="number"
-                min="0"
-                className="input w-full mb-3"
-                value={draft.amount_egp}
-                onChange={(e) =>
-                  setDrafts((d) => ({ ...d, [row.kind]: { ...draft, amount_egp: e.target.value } }))
-                }
-              />
-              <label className="label">{t('pms.fin.recurring.dayOfMonth')}</label>
-              <input
-                type="number"
-                min="1"
-                max="28"
-                className="input w-full mb-4"
-                value={draft.day_of_month}
-                onChange={(e) =>
-                  setDrafts((d) => ({ ...d, [row.kind]: { ...draft, day_of_month: e.target.value } }))
-                }
-              />
-              <button
-                type="button"
-                className="btn-primary w-full"
-                disabled={save.isPending}
-                onClick={() =>
-                  save.mutate({
-                    kind: row.kind,
-                    amount_egp: draft.amount_egp,
-                    day_of_month: draft.day_of_month,
-                  })
-                }
-              >
-                {t('pms.fin.save')}
-              </button>
-            </div>
-          );
-        })}
-      </div>
-      <FixedChargesSection />
-    </div>
-  );
+  return <FixedChargesSection />;
 }
 
 function TaxTab({ rangeParams: params }) {
@@ -4153,20 +4067,20 @@ function ExpenseForecastTool() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-500 max-w-3xl">
-        {t('pms.fin.forecast.description', { files: data.source_files.join(' + ') })}
+        {t('pms.fin.expenseForecast.description', { files: data.source_files.join(' + ') })}
       </p>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="rounded-2xl border border-violet-200 bg-violet-50/60 p-4">
-          <p className="text-xs text-violet-800">{t('pms.fin.forecast.nextMonth', { month: monthLabel(nextMonth) })}</p>
+          <p className="text-xs text-violet-800">{t('pms.fin.expenseForecast.nextMonth', { month: monthLabel(nextMonth) })}</p>
           <p className="text-2xl font-bold tabular-nums mt-1">{currency(data.totals.monthly_prediction)}</p>
         </div>
         <div className="rounded-2xl border border-soul-line bg-white p-4">
-          <p className="text-xs text-gray-400">{t('pms.fin.forecast.lastMonth', { month: monthLabel(data.last_complete_month) })}</p>
+          <p className="text-xs text-gray-400">{t('pms.fin.expenseForecast.lastMonth', { month: monthLabel(data.last_complete_month) })}</p>
           <p className="text-2xl font-bold tabular-nums mt-1">{currency(data.totals.history[data.last_complete_month] || 0)}</p>
         </div>
         <div className="rounded-2xl border border-soul-line bg-white p-4">
-          <p className="text-xs text-gray-400">{t('pms.fin.forecast.sixMonths')}</p>
+          <p className="text-xs text-gray-400">{t('pms.fin.expenseForecast.sixMonths')}</p>
           <p className="text-2xl font-bold tabular-nums mt-1">
             {currency(data.totals.monthly_prediction * data.forecast_months.length)}
           </p>
@@ -4177,14 +4091,14 @@ function ExpenseForecastTool() {
         <table className="table text-sm">
           <thead>
             <tr>
-              <th>{t('pms.fin.forecast.category')}</th>
+              <th>{t('pms.fin.expenseForecast.category')}</th>
               {historyMonths.map((m) => (
                 <th key={m} className="text-right text-gray-400">
                   {monthLabel(m)}
                 </th>
               ))}
-              <th className="text-right">{t('pms.fin.forecast.average')}</th>
-              <th className="text-right text-violet-800">{t('pms.fin.forecast.predicted')}</th>
+              <th className="text-right">{t('pms.fin.expenseForecast.average')}</th>
+              <th className="text-right text-violet-800">{t('pms.fin.expenseForecast.predicted')}</th>
             </tr>
           </thead>
           <tbody>
@@ -4211,14 +4125,14 @@ function ExpenseForecastTool() {
               openKey === c.key ? (
                 <tr key={`${c.key}-labels`}>
                   <td colSpan={historyMonths.length + 3} className="bg-slate-50/70 text-xs text-gray-600">
-                    {t('pms.fin.forecast.fromLabels')}{' '}
+                    {t('pms.fin.expenseForecast.fromLabels')}{' '}
                     {c.top_labels.map((l) => `${l.label} (${currency(l.amount)})`).join(' · ')}
                   </td>
                 </tr>
               ) : null,
             ])}
             <tr className="font-semibold">
-              <td>{t('pms.fin.forecast.total')}</td>
+              <td>{t('pms.fin.expenseForecast.total')}</td>
               {historyMonths.map((m) => (
                 <td key={m} className="text-right tabular-nums">
                   {currency(data.totals.history[m] || 0)}
@@ -4232,16 +4146,16 @@ function ExpenseForecastTool() {
       </div>
 
       <div className="rounded-2xl border border-soul-line bg-white p-4 text-xs text-gray-600 space-y-2">
-        <p className="font-medium text-gray-800">{t('pms.fin.forecast.howTitle')}</p>
-        <p>{t('pms.fin.forecast.how')}</p>
+        <p className="font-medium text-gray-800">{t('pms.fin.expenseForecast.howTitle')}</p>
+        <p>{t('pms.fin.expenseForecast.how')}</p>
         <p>
-          <span className="font-medium">{t('pms.fin.forecast.excluded')}</span>{' '}
+          <span className="font-medium">{t('pms.fin.expenseForecast.excluded')}</span>{' '}
           {data.excluded.map((e) => `${e.label} (${currency(e.amount)})`).join(' · ')}
         </p>
         {data.unclassified.length ? (
           <p>
             <span className="font-medium">
-              {t('pms.fin.forecast.unclassified', { amount: currency(data.unclassified_total) })}
+              {t('pms.fin.expenseForecast.unclassified', { amount: currency(data.unclassified_total) })}
             </span>{' '}
             {data.unclassified.slice(0, 12).map((u) => u.label).join(' · ')}
           </p>

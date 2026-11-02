@@ -1427,7 +1427,7 @@
         "netProfit": "Net profit"
       },
       "forecast": {
-        "description": "A prediction of monthly spending from {{files}}. It only reads that history; it does not change any balances or entries.",
+        "description": "13-week rolling forecast. Starting balance: {{balance}} (current treasury). Click a week to add manual overrides.",
         "week": "Week",
         "collections": "Collections",
         "ownerPayouts": "Owner payouts",
@@ -1444,19 +1444,7 @@
         "add": "Add",
         "entryAdded": "Forecast entry added",
         "entryRemoved": "Entry removed",
-        "vendor": "Vendor",
-        "nextMonth": "Predicted spend for {{month}}",
-        "lastMonth": "Actual spend in {{month}}",
-        "sixMonths": "Predicted spend, next 6 months",
-        "category": "Category",
-        "average": "6-month average",
-        "predicted": "Predicted / month",
-        "total": "Total",
-        "fromLabels": "From:",
-        "howTitle": "How the prediction works",
-        "how": "Every amount paid out in the workbooks is grouped by its cost label. Each category is predicted as a weighted average of its last six complete months, with the most recent month counting most. Tax and commissions are paid in lumps, so their monthly figure is an average to set aside, not a monthly bill.",
-        "excluded": "Not counted as spending:",
-        "unclassified": "Left out because the label was not recognised ({{amount}}):"
+        "vendor": "Vendor"
       },
       "tools": {
         "fixedAssets": "Fixed assets",
@@ -1617,6 +1605,21 @@
         "add": "Add developer",
         "namePlaceholder": "Developer name",
         "required": "Choose which developer this entry is for"
+      },
+      "expenseForecast": {
+        "description": "A prediction of monthly spending from {{files}}. It only reads that history; it does not change any balances or entries.",
+        "nextMonth": "Predicted spend for {{month}}",
+        "lastMonth": "Actual spend in {{month}}",
+        "sixMonths": "Predicted spend, next 6 months",
+        "category": "Category",
+        "average": "6-month average",
+        "predicted": "Predicted / month",
+        "total": "Total",
+        "fromLabels": "From:",
+        "howTitle": "How the prediction works",
+        "how": "Every amount paid out in the workbooks is grouped by its cost label. Each category is predicted as a weighted average of its last six complete months, with the most recent month counting most. Tax and commissions are paid in lumps, so their monthly figure is an average to set aside, not a monthly bill.",
+        "excluded": "Not counted as spending:",
+        "unclassified": "Left out because the label was not recognised ({{amount}}):"
       }
     }
   }
