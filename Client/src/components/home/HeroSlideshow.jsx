@@ -28,7 +28,9 @@ export default function HeroSlideshow({ slides, index, onChange }) {
           />
         </div>
       ))}
-      <div className="absolute inset-0 bg-gradient-to-b from-black/35 via-black/10 to-black/45" />
+      <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/15 to-black/55" />
+      {/* Soft shade behind the centred copy so it reads on any photo. */}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_70%_55%_at_50%_45%,rgba(0,0,0,0.32),transparent_75%)]" />
     </div>
   );
 }
@@ -46,7 +48,7 @@ export function SlideDots({ count, index, onChange, label }) {
           aria-current={i === index ? 'true' : undefined}
           className="group relative h-6 px-0.5"
         >
-          <span className="relative block h-[2px] w-9 overflow-hidden rounded-full bg-white/30">
+          <span className="relative block h-[3px] w-8 overflow-hidden rounded-full bg-white/35 sm:w-10">
             {i === index ? (
               <span
                 key={index}

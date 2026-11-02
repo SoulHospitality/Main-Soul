@@ -101,68 +101,85 @@ function Hero() {
     setAdvanced(true);
     setIndex(i);
   }, []);
-  const active = slideshow ? slides[Math.min(index, slides.length - 1)] : null;
+  const current = Math.min(index, slides.length - 1);
 
   // A slide's own headline wins; otherwise the hero-level text, then the built-in copy.
-  const titleLight = pick(active, 'title_light') || pick(hero, 'title_light') || t('home.heroTitleLight');
-  const titleEm = pick(active, 'title_em') || pick(hero, 'title_em') || t('home.heroTitleEm');
-  const subtitle = slideshow ? pick(active, 'subtitle') : pick(hero, 'subtitle');
+  const copy = (slide) => ({
+    titleLight: pick(slide, 'title_light') || pick(hero, 'title_light') || t('home.heroTitleLight'),
+    titleEm: pick(slide, 'title_em') || pick(hero, 'title_em') || t('home.heroTitleEm'),
+    subtitle: slideshow ? pick(slide, 'subtitle') : pick(hero, 'subtitle'),
+  });
+  const copies = slideshow ? slides.map(copy) : [copy(null)];
   const headingClass =
-    'g-display mx-auto max-w-5xl text-center text-[clamp(40px,5.6vw,92px)] !leading-[0.9] [text-shadow:0_2px_28px_rgba(0,0,0,0.45)]';
+    'g-display mx-auto max-w-[18ch] text-center text-[clamp(30px,4.2vw+14px,84px)] !leading-[0.95] [text-shadow:0_2px_28px_rgba(0,0,0,0.45)] [text-wrap:balance]';
 
   return (
     <section className="relative isolate flex min-h-[100svh] flex-col overflow-hidden bg-[#0b4a56] text-white">
       {slideshow ? (
-        <HeroSlideshow slides={slides} index={Math.min(index, slides.length - 1)} onChange={goTo} />
+        <HeroSlideshow slides={slides} index={current} onChange={goTo} />
       ) : (
         <HeroWaves videoUrl={hero.video_url} />
       )}
 
-      <div className="g-shell relative z-[2] flex w-full flex-1 flex-col items-center justify-center pb-24 pt-28 text-center sm:pb-12">
-        {advanced ? (
-          <div key={index} className="soul-fade-up">
-            <h1 className={headingClass}>
-              <span className="block">{titleLight}</span>
-              <em className="block">{titleEm}</em>
-            </h1>
+      <div className="g-shell relative z-[2] flex w-full flex-1 flex-col items-center justify-center pb-10 pt-24 text-center sm:pb-12 sm:pt-28">
+        {/* Every slide's copy shares one grid cell, so the block keeps the tallest slide's height
+            and the button and search below stay still while the slides change. */}
+        <div className="grid w-full items-end justify-items-center">
+          {copies.map((c, i) => {
+            const on = slideshow ? i === current : true;
+            return (
+              <div
+                key={i}
+                aria-hidden={on ? undefined : 'true'}
+                className={`col-start-1 row-start-1 flex w-full flex-col items-center ${on ? '' : 'invisible'}`}
+              >
+                {on && !advanced ? (
+                  <RevealLines
+                    as="h1"
+                    immediate
+                    delay={250}
+                    className={headingClass}
+                    lines={[
+                      <span key="l">{c.titleLight}</span>,
+                      <em key="e" className="mt-1 block">{c.titleEm}</em>,
+                    ]}
+                  />
+                ) : (
+                  <h1 key={on ? `on-${index}` : 'off'} className={`${headingClass} ${on ? 'soul-fade-up' : ''}`}>
+                    <span className="block">{c.titleLight}</span>
+                    <em className="mt-1 block">{c.titleEm}</em>
+                  </h1>
+                )}
+                {c.subtitle ? (
+                  <p
+                    key={on ? `sub-${index}` : 'sub-off'}
+                    className={`mx-auto mt-4 line-clamp-3 max-w-xl text-[15px] leading-relaxed text-white/90 [text-shadow:0_1px_14px_rgba(0,0,0,0.55)] [text-wrap:balance] sm:mt-5 sm:text-lg ${on ? 'soul-fade-up' : ''}`}
+                    style={{ animationDelay: advanced ? '0.1s' : '0.6s' }}
+                  >
+                    {c.subtitle}
+                  </p>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+
+        {slideshow ? (
+          <div className="mt-5 sm:mt-6">
+            <SlideDots count={slides.length} index={current} onChange={goTo} label={t('home.heroSlide')} />
           </div>
-        ) : (
-          <RevealLines
-            as="h1"
-            immediate
-            delay={250}
-            className={headingClass}
-            lines={[
-              <span key="l">{titleLight}</span>,
-              <em key="e">{titleEm}</em>,
-            ]}
-          />
-        )}
-        {subtitle ? (
-          <p
-            key={`sub-${slideshow ? index : 'v'}`}
-            className="soul-fade-up mx-auto mt-5 max-w-2xl text-base text-white/85 [text-shadow:0_1px_14px_rgba(0,0,0,0.45)] sm:text-lg"
-            style={{ animationDelay: advanced ? '0.1s' : '0.6s' }}
-          >
-            {subtitle}
-          </p>
         ) : null}
-        <div className="soul-fade-up mt-8 flex justify-center" style={{ animationDelay: '0.75s' }}>
-          <Link to="/search" className="g-btn g-btn-glass !border-white/15 !bg-white/[0.07] backdrop-blur-md hover:!border-white/30 hover:!bg-white/15">
+
+        <div className="soul-fade-up mt-6 flex justify-center sm:mt-8" style={{ animationDelay: '0.75s' }}>
+          <Link to="/search" className="g-btn g-btn-glass !border-white/35 !bg-white/15 backdrop-blur-md hover:!border-white/60 hover:!bg-white/25">
             {t('home.heroExplore')}
             <ArrowDot />
           </Link>
         </div>
 
-        <div className="soul-fade-up mt-8 w-full md:mt-10" style={{ animationDelay: '0.95s' }}>
+        <div className="soul-fade-up mx-auto mt-6 w-full max-w-xl md:mt-10 lg:max-w-none" style={{ animationDelay: '0.95s' }}>
           <HeroSearch ref={capsuleRef} />
         </div>
-
-        {slideshow ? (
-          <div className="mt-8">
-            <SlideDots count={slides.length} index={Math.min(index, slides.length - 1)} onChange={goTo} label={t('home.heroSlide')} />
-          </div>
-        ) : null}
 
         <div className="mt-8 hidden items-center justify-center gap-3 text-white/80 sm:flex">
           <span className="g-index">{t('home.heroScroll')}</span>
