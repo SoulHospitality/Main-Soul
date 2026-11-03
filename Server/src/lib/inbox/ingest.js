@@ -8,7 +8,6 @@ const { startAwaiting, recordResponse } = require('./sla');
 const { broadcast } = require('./realtime');
 const { fetchProfile } = require('./meta');
 const { aiAvailable, classify } = require('./ai');
-const { sendToCustomer } = require('./outbound');
 const { hasActiveStay } = require('./pmsLink');
 
 // Every channel is converted to this normalised shape before it touches the database:
@@ -119,9 +118,8 @@ async function afterInbound({ conversationId, isNew, newIdentity, identityId, cu
   broadcast('message', { conversation_id: conversationId });
   broadcast('conversation', { id: conversationId, new: isNew });
 
-  if (isQuietHours()) {
-    scheduleNightReply(conversationId);
-  } else if (isBusinessTime()) {
+  // No automatic reply after hours: the chat waits for the team, who answer with saved replies.
+  if (!isQuietHours() && isBusinessTime()) {
     await autoAssign(conversationId);
   }
 
@@ -180,34 +178,6 @@ async function applyClassification(conversationId, r) {
     await markExistingGuest(conversationId, conv.customer_id);
   }
   broadcast('conversation', { id: conversationId });
-}
-
-const nightTimers = new Map();
-
-function scheduleNightReply(conversationId) {
-  if (getSettings().night_mode === 'off') return;
-  if (!isQuietHours()) return;
-  clearTimeout(nightTimers.get(conversationId));
-  // Debounce: customers often send several messages in a row.
-  const t = setTimeout(() => {
-    nightTimers.delete(conversationId);
-    sendNightReply(conversationId).catch((err) => console.warn('[inbox] night reply failed:', err.message));
-  }, config.isProduction ? 20000 : 3000);
-  t.unref?.();
-  nightTimers.set(conversationId, t);
-}
-
-async function sendNightReply(conversationId) {
-  const s = await loadSettings();
-  const conv = await q.get('SELECT * FROM inbox_conversations WHERE id = ?', conversationId);
-  if (!conv || !isQuietHours() || !conv.awaiting_since) return;
-  if (s.night_mode === 'off') return;
-  // One scripted reply per closed period. A human reply resets the counter.
-  if (conv.night_ai_replies > 0) return;
-  const text = String(s.night_message || '').trim();
-  if (!text) return;
-  await q.run('UPDATE inbox_conversations SET night_ai_replies = night_ai_replies + 1 WHERE id = ?', conversationId);
-  await sendToCustomer(conversationId, { text, senderType: 'auto' });
 }
 
 /** A reply made directly in Meta Business Suite / the WhatsApp app: logged, and counts as a response. */

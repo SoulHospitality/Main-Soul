@@ -312,29 +312,6 @@ export default function InboxSettingsPage() {
                 />
               </div>
             </div>
-
-            <div className="pt-2">
-              <label className="block font-bold text-slate-700 mb-1">After-hours behavior</label>
-              <select
-                value={formSettings.night_mode === 'off' ? 'off' : 'message'}
-                onChange={(e) => setFormSettings({ ...formSettings, night_mode: e.target.value })}
-                className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50"
-              >
-                <option value="message">Send the script once (no AI)</option>
-                <option value="off">Off — leave the chat until staff are in</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block font-bold text-slate-700 mb-1">After-hours script</label>
-              <textarea
-                rows={5}
-                value={formSettings.night_message || ''}
-                onChange={(e) => setFormSettings({ ...formSettings, night_message: e.target.value })}
-                className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50"
-              />
-              <span className="text-[11px] text-slate-400 mt-1 block">Sent once per chat while the team is off. A staff reply clears it, so the next closed period can send it again.</span>
-            </div>
           </div>
 
           <div className="flex justify-end">

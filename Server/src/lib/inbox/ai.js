@@ -2,8 +2,7 @@ const { config } = require('./config');
 const { q, audit, parseJson } = require('./db');
 const { getSettings, getProjects } = require('./settings');
 
-// Assistive AI. Nothing generated here reaches a customer without a human, except the
-// guarded after-hours acknowledgement (see nightReply), which never quotes prices.
+// Assistive AI. Nothing generated here reaches a customer without a human.
 
 function aiAvailable() {
   return Boolean(config.ai.apiKey) && Boolean(getSettings().ai_enabled);
@@ -157,21 +156,4 @@ Output only the reply text.`,
 
 const PRICE_OR_PROMISE = /(\d[\d,.]{2,}|جنيه|egp|le\b|\$|usd|discount|خصم|confirmed|مؤكد|تم الحجز)/i;
 
-/** After-hours acknowledgement. Returns null when the generated text fails the safety guard. */
-async function nightReply(conversationId) {
-  const s = getSettings();
-  const text = await call({
-    system: `${await baseSystem()}\nIt is outside working hours; the reservations team starts at ${s.business_start} Cairo time. You are the automatic night assistant.
-Reply in the customer's language and dialect, at most 3 short lines:
-- greet them and say the reservations team will reply from ${s.business_start};
-- ask only for missing booking details: project, check-in and check-out dates, number of guests, and a phone number if we don't have one.
-Never mention prices, numbers, availability, discounts, or confirm anything. Do not answer questions about prices - say the team will send them.
-Output only the message text.`,
-    prompt: `<conversation>\n${await transcript(conversationId, 20)}\n</conversation>`,
-    maxTokens: 600,
-  });
-  if (!text || text.length > 600 || PRICE_OR_PROMISE.test(text)) return null;
-  return text;
-}
-
-module.exports = { aiAvailable, scrub, classify, summarize, suggestReply, nightReply, PRICE_OR_PROMISE };
+module.exports = { aiAvailable, scrub, classify, summarize, suggestReply, PRICE_OR_PROMISE };

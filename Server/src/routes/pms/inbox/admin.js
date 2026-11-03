@@ -85,7 +85,7 @@ router.get('/settings', requirePerm('settings.manage'), wrap(async (req, res) =>
 }));
 
 const NUMBER_KEYS = ['sla_target_min', 'sla_warning_min', 'reassign_window_min', 'max_auto_reassign', 'escalate_supervisor_min',
-  'escalate_manager_min', 'comment_sla_min', 'follow_up_escalate_min', 'presence_timeout_min', 'night_ai_max_replies'];
+  'escalate_manager_min', 'comment_sla_min', 'follow_up_escalate_min', 'presence_timeout_min'];
 
 router.put('/settings', requirePerm('settings.manage'), wrap(async (req, res) => {
   const patch = {};
@@ -105,7 +105,6 @@ router.put('/settings', requirePerm('settings.manage'), wrap(async (req, res) =>
   for (const k of ['business_start', 'business_end']) {
     if (k in patch && !/^([01]\d|2[0-3]):[0-5]\d$|^24:00$/.test(patch[k])) throw badRequest(`${k} must be HH:MM`);
   }
-  if ('night_mode' in patch && !['ai', 'message', 'off'].includes(patch.night_mode)) throw badRequest('Invalid night mode');
   const merged = { ...getSettings(), ...patch };
   if (merged.sla_warning_min >= merged.sla_target_min) throw badRequest('Warning must come before the SLA target');
   if (merged.sla_target_min < 1) throw badRequest('SLA target must be at least 1 minute');

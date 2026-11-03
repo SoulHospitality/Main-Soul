@@ -150,7 +150,10 @@ router.get('/conversations/:id', wrap(async (req, res) => {
       `SELECT m.id, m.direction, m.sender_type, m.user_id, m.body, m.attachments_json, m.delivery_status, m.error, m.created_at,
               u.name AS user_name
        FROM inbox_messages m LEFT JOIN inbox_users u ON u.id = m.user_id
-       WHERE m.conversation_id = ? ORDER BY m.created_at DESC, m.id DESC LIMIT 120`,
+       WHERE m.conversation_id = ?
+         -- Automatic after-hours replies are no longer shown; saved replies sent by staff are agent messages.
+         AND NOT (m.direction = 'out' AND m.sender_type IN ('auto', 'ai'))
+       ORDER BY m.created_at DESC, m.id DESC LIMIT 120`,
       conv.id,
     ),
     q.all(
