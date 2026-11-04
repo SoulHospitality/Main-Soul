@@ -726,6 +726,7 @@ function StaffKpiAmounts({ form, setForm }) {
               <option value="reservations">Reservations</option>
               <option value="unit_acquisitions">Unit acquisitions</option>
               <option value="reviews">Check-in reviews</option>
+              <option value="check_ins">Check-ins handled</option>
             </select>
           </div>
           {kpi.metric === 'reservations' ? (

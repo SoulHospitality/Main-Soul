@@ -39,7 +39,85 @@ function formatTarget(kpi) {
   if (kpi.metric === 'reviews') return `${kpi.target_value} average`;
   if (kpi.measure === 'value') return currency(kpi.target_value);
   if (kpi.metric === 'unit_acquisitions') return `${kpi.target_value} units`;
+  if (kpi.metric === 'check_ins') return `${kpi.target_value} check-ins`;
   return `${kpi.target_value} reservations`;
+}
+
+function formatAmount(kpi, value) {
+  if (value == null) return '—';
+  if (kpi.measure === 'value') return currency(value);
+  return String(Math.round(Number(value) * 10) / 10);
+}
+
+const STATUS_STYLES = {
+  not_started: 'bg-slate-100 text-slate-600',
+  early: 'bg-slate-100 text-slate-700',
+  on_track: 'bg-emerald-50 text-emerald-800',
+  at_risk: 'bg-amber-50 text-amber-800',
+  behind: 'bg-rose-50 text-rose-800',
+  achieved: 'bg-emerald-600 text-white',
+  missed: 'bg-rose-600 text-white',
+};
+
+const BAR_STYLES = {
+  on_track: 'bg-emerald-500',
+  achieved: 'bg-emerald-600',
+  at_risk: 'bg-amber-500',
+  behind: 'bg-rose-500',
+  missed: 'bg-rose-600',
+};
+
+function StatusChip({ kpi }) {
+  return (
+    <span className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLES[kpi.status] || STATUS_STYLES.early}`}>
+      {kpi.status_label || kpi.status}
+    </span>
+  );
+}
+
+function Importance({ weight }) {
+  const w = Number(weight) || 1;
+  return (
+    <span className="text-[11px] text-soul-muted" title={`Importance ${w} of 5`}>
+      {'●'.repeat(w)}
+      <span className="opacity-30">{'●'.repeat(5 - w)}</span>
+    </span>
+  );
+}
+
+/** Progress bar with a marker for where the KPI should be by today. */
+function PaceBar({ kpi }) {
+  const shown = Math.min(100, Math.max(0, Number(kpi.percent) || 0));
+  const expected = kpi.metric === 'reviews' ? null : kpi.pace?.expected_percent;
+  return (
+    <div className="relative mt-2 h-2 rounded-full bg-slate-100" aria-hidden="true">
+      <div className={`h-2 rounded-full ${BAR_STYLES[kpi.status] || 'bg-slate-400'}`} style={{ width: `${shown}%` }} />
+      {expected != null && kpi.status !== 'not_started' && expected < 100 ? (
+        <span className="absolute -top-1 h-4 w-0.5 rounded bg-soul-blue/70" style={{ left: `${Math.min(100, expected)}%` }} title="Expected by today" />
+      ) : null}
+    </div>
+  );
+}
+
+function paceLine(kpi) {
+  const p = kpi.pace || {};
+  if (kpi.status === 'not_started') return `Starts ${formatDay(kpi.starts_on)}`;
+  if (kpi.metric === 'reviews') {
+    if (kpi.status === 'early') return `Needs at least ${p.min_reviews || 3} reviews to judge · ${p.days_left} days left`;
+    return `${p.days_left ? `${p.days_left} days left` : 'Ended'}`;
+  }
+  const parts = [];
+  if (p.days_left) parts.push(`Expected by today ${formatAmount(kpi, p.expected)}`);
+  if (p.days_left && p.projected != null) parts.push(`on pace for ${formatAmount(kpi, p.projected)}`);
+  if (p.needed_per_day && kpi.status !== 'achieved') parts.push(`needs ${formatAmount(kpi, p.needed_per_day)}/day`);
+  parts.push(p.days_left ? `${p.days_left} days left` : 'ended');
+  return parts.join(' · ');
+}
+
+function ScoreRing({ score }) {
+  if (score == null) return <span className="text-sm text-soul-muted">—</span>;
+  const tone = score >= 90 ? 'text-emerald-700' : score >= 70 ? 'text-amber-700' : 'text-rose-700';
+  return <span className={`font-display text-xl tabular-nums ${tone}`}>{Math.round(score)}%</span>;
 }
 
 function emptyForm(metrics, teamKeys) {
@@ -54,6 +132,9 @@ function emptyForm(metrics, teamKeys) {
     scope: 'team',
     team_key: teamKeys[0] || 'mine',
     staff_ids: [],
+    title: '',
+    weight: 1,
+    notes: '',
   };
 }
 
@@ -139,8 +220,18 @@ export default function Kpi() {
       scope: form.scope,
       team_key: form.team_key,
       staff_ids: form.staff_ids,
+      title: form.title,
+      weight: Number(form.weight) || 1,
+      notes: form.notes,
     });
   }
+
+  const scored = staff.filter((person) => person.score != null);
+  const teamScore = scored.length ? scored.reduce((sum, person) => sum + person.score, 0) / scored.length : null;
+  const teamCounts = staff.reduce((acc, person) => {
+    for (const [key, value] of Object.entries(person.status_counts || {})) acc[key] = (acc[key] || 0) + value;
+    return acc;
+  }, {});
 
   return (
     <div className="space-y-6">
@@ -148,7 +239,8 @@ export default function Kpi() {
         <div>
           <h1 className="page-title">KPI</h1>
           <p className="page-subtitle">
-            Each person carries their own targets. Set the amount on their user record. Add the daily checklist here.
+            Every KPI shows where it should be by today, where the current pace lands, and a status. A person’s score is
+            the importance-weighted average of their running KPIs, each counted up to 100%.
           </p>
         </div>
         {data.can_manage ? (
@@ -158,6 +250,26 @@ export default function Kpi() {
           </div>
         ) : null}
       </div>
+
+      {staff.length > 1 ? (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+          <div className="card p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-soul-muted">Team score</p>
+            <p className="mt-1"><ScoreRing score={teamScore} /></p>
+          </div>
+          {[
+            ['on_track', 'On track'],
+            ['at_risk', 'At risk'],
+            ['behind', 'Behind'],
+            ['achieved', 'Achieved'],
+          ].map(([key, label]) => (
+            <div key={key} className="card p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-soul-muted">{label}</p>
+              <p className="mt-1 font-display text-xl tabular-nums text-soul-blue">{teamCounts[key] || 0}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       {!staff.length ? (
         <EmptyState title="No staff to show" />
@@ -174,21 +286,41 @@ export default function Kpi() {
                 }}
                 className={`card w-full p-4 text-left ${selectedStaff?.id === person.id ? 'ring-2 ring-[var(--pms-accent,#F28C28)]' : ''}`}
               >
-                <p className="font-semibold text-soul-blue">{person.full_name}</p>
-                <p className="text-xs text-soul-muted mt-1">
-                  {ROLE_LABELS[person.role] || person.role}
-                  {' · '}
-                  {person.kpis.length} KPI{person.kpis.length === 1 ? '' : 's'}
-                </p>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-soul-blue">{person.full_name}</p>
+                    <p className="text-xs text-soul-muted mt-1">
+                      {ROLE_LABELS[person.role] || person.role}
+                      {' · '}
+                      {person.kpis.length} KPI{person.kpis.length === 1 ? '' : 's'}
+                    </p>
+                  </div>
+                  <ScoreRing score={person.score} />
+                </div>
+                {Object.keys(person.status_counts || {}).length ? (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {Object.entries(person.status_counts).map(([key, count]) => (
+                      <span key={key} className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${STATUS_STYLES[key] || ''}`}>
+                        {count} {(data.statuses?.[key] || key).toLowerCase()}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
               </button>
             ))}
           </div>
 
           {selectedStaff ? (
             <section className="space-y-4">
-              <div>
-                <h2 className="font-semibold text-soul-blue">{selectedStaff.full_name}</h2>
-                <p className="text-sm text-soul-muted">{ROLE_LABELS[selectedStaff.role] || selectedStaff.role}</p>
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <h2 className="font-semibold text-soul-blue">{selectedStaff.full_name}</h2>
+                  <p className="text-sm text-soul-muted">{ROLE_LABELS[selectedStaff.role] || selectedStaff.role}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-soul-muted">Current score ({selectedStaff.scored_kpis || 0} KPI{selectedStaff.scored_kpis === 1 ? '' : 's'})</p>
+                  <ScoreRing score={selectedStaff.score} />
+                </div>
               </div>
               {!selectedStaff.kpis.length ? (
                 <EmptyState title="No KPIs yet" subtitle="A manager adds targets for this person from this page." />
@@ -202,9 +334,16 @@ export default function Kpi() {
                         onClick={() => setSelectedKpiId(kpi.id)}
                         className={`card p-4 text-left ${selectedKpi?.id === kpi.id ? 'ring-2 ring-[var(--pms-accent,#F28C28)]' : ''}`}
                       >
-                        <p className="font-semibold text-soul-blue">{kpi.metric_label}</p>
-                        <p className="text-xs text-soul-muted mt-1">{kpi.measure_label} · {formatTarget(kpi)}</p>
-                        <p className="mt-2 text-sm">{formatActual(kpi)} · {kpi.percent}%</p>
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="font-semibold text-soul-blue">{kpi.title || kpi.metric_label}</p>
+                          <StatusChip kpi={kpi} />
+                        </div>
+                        <p className="text-xs text-soul-muted mt-1">
+                          {kpi.title ? `${kpi.metric_label} · ` : ''}{kpi.measure_label} · {formatTarget(kpi)} · <Importance weight={kpi.weight} />
+                        </p>
+                        <p className="mt-2 text-sm">{formatActual(kpi)} · <span className="font-semibold">{kpi.percent}%</span></p>
+                        <PaceBar kpi={kpi} />
+                        <p className="text-[11px] text-soul-muted mt-1.5">{paceLine(kpi)}</p>
                         {kpi.checklist_weight ? (
                           <p className="text-xs text-soul-muted mt-1">Daily checklist is {kpi.checklist_weight}% of this KPI</p>
                         ) : null}
@@ -243,6 +382,23 @@ export default function Kpi() {
       >
         {form ? (
           <form id="kpi-form" className="space-y-4" onSubmit={submit}>
+            <div className="grid gap-4 sm:grid-cols-[1.4fr_1fr]">
+              <div>
+                <label className="label">Name (optional)</label>
+                <input className="input" placeholder="e.g. November bookings" value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} />
+              </div>
+              <div>
+                <label className="label">Importance</label>
+                <div className="inline-flex rounded-lg bg-slate-100 p-0.5">
+                  {[1, 2, 3, 4, 5].map((w) => (
+                    <button key={w} type="button" onClick={() => setForm((current) => ({ ...current, weight: w }))} className={`rounded-md px-3 py-1.5 text-xs font-medium ${Number(form.weight) === w ? 'bg-white text-soul-blue shadow-sm' : 'text-slate-500'}`}>
+                      {w}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-soul-muted mt-1">How much it counts in the person’s score</p>
+              </div>
+            </div>
             <div>
               <label className="label">Type</label>
               <select className="input" value={form.metric} onChange={(event) => changeMetric(event.target.value)}>
@@ -280,7 +436,9 @@ export default function Kpi() {
                       ? 'Target value (EGP)'
                       : form.metric === 'unit_acquisitions'
                         ? 'Units to add'
-                        : 'Number of reservations'}
+                        : form.metric === 'check_ins'
+                          ? 'Check-ins to handle'
+                          : 'Number of reservations'}
                 </label>
                 <input
                   className="input"
@@ -308,8 +466,14 @@ export default function Kpi() {
                 ? 'Only reviews from a guest who reserved that unit count. The average is given to the person who checked them in.'
                 : form.metric === 'unit_acquisitions'
                   ? 'Counts units this person adds during the period.'
-                  : 'Counts reservations this person makes during the period.'}
+                  : form.metric === 'check_ins'
+                    ? 'Counts check-ins this person hands over to guests during the period.'
+                    : 'Counts reservations this person makes during the period.'}
             </p>
+            <div>
+              <label className="label">Notes (optional)</label>
+              <textarea className="input min-h-[56px]" value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} />
+            </div>
 
             <div>
               <label className="label">Assign to</label>
@@ -534,6 +698,32 @@ function KpiDetail({ kpi, staffId, today, canManage, people, onDelete, deleting 
   const [open, setOpen] = useState(false);
   const [day, setDay] = useState(today && today >= kpi.starts_on && today <= kpi.deadline ? today : kpi.starts_on);
   const [form, setForm] = useState(null);
+  const [edit, setEdit] = useState(null);
+
+  const saveEdit = useMutation({
+    mutationFn: (payload) => api.patch(`/kpi/${kpi.id}`, payload).then((r) => r.data),
+    onSuccess: () => {
+      toast.success('KPI updated');
+      setEdit(null);
+      qc.invalidateQueries({ queryKey: ['kpi'] });
+    },
+    onError: (err) => toast.error(err.response?.data?.error || 'Could not update the KPI'),
+  });
+  const repeat = useMutation({
+    mutationFn: () => api.post(`/kpi/${kpi.id}/repeat`).then((r) => r.data),
+    onSuccess: (res) => {
+      toast.success(`Repeated for ${formatDay(res.starts_on)} – ${formatDay(res.deadline)}`);
+      qc.invalidateQueries({ queryKey: ['kpi'] });
+    },
+    onError: (err) => toast.error(err.response?.data?.error || 'Could not repeat the KPI'),
+  });
+  const yesterday = (() => {
+    if (!today) return null;
+    const d = new Date(`${today}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - 1);
+    return d.toISOString().slice(0, 10);
+  })();
+  const workDays = new Set(kpi.work_days || []);
 
   const createList = useMutation({
     mutationFn: (payload) => api.post(`/kpi/${kpi.id}/checklists`, payload).then((r) => r.data),
@@ -593,8 +783,13 @@ function KpiDetail({ kpi, staffId, today, canManage, people, onDelete, deleting 
   return (
     <section className="card overflow-hidden">
       <div className="px-5 py-4 border-b border-soul-line flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 className="font-semibold text-soul-blue">{kpi.metric_label}</h3>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="font-semibold text-soul-blue">{kpi.title || kpi.metric_label}</h3>
+            <StatusChip kpi={kpi} />
+            <Importance weight={kpi.weight} />
+          </div>
+          <p className="text-xs text-soul-muted mt-1">{paceLine(kpi)}</p>
           <p className="text-sm text-soul-muted mt-1">
             {formatDay(kpi.starts_on)} to {formatDay(kpi.deadline)}. Target {formatTarget(kpi)}. Result {formatActual(kpi)} ({kpi.metric_percent}% of the target).
           </p>
@@ -605,11 +800,34 @@ function KpiDetail({ kpi, staffId, today, canManage, people, onDelete, deleting 
           ) : (
             <p className="text-sm text-soul-muted mt-1">Overall {kpi.percent}%.</p>
           )}
+          {kpi.notes ? <p className="text-xs italic text-soul-muted mt-1">{kpi.notes}</p> : null}
           {kpi.created_by_name ? <p className="text-xs text-soul-muted mt-1">Added by {kpi.created_by_name}</p> : null}
         </div>
         <div className="flex flex-wrap gap-2">
           {canManage ? (
             <button type="button" className="btn-primary" onClick={openForm}>Add checklist</button>
+          ) : null}
+          {kpi.can_delete ? (
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => setEdit({
+                title: kpi.title || '',
+                target_value: String(kpi.target_value),
+                starts_on: kpi.starts_on,
+                deadline: kpi.deadline,
+                weight: kpi.weight || 1,
+                notes: kpi.notes || '',
+                measure: kpi.measure,
+              })}
+            >
+              Edit
+            </button>
+          ) : null}
+          {kpi.can_delete && canManage ? (
+            <button type="button" className="btn-secondary" onClick={() => repeat.mutate()} disabled={repeat.isPending} title="Copy this KPI, its people and checklists into the next period">
+              Repeat next period
+            </button>
           ) : null}
           {kpi.can_delete ? (
             <button type="button" className="btn-secondary" onClick={onDelete} disabled={deleting}>Remove</button>
@@ -632,6 +850,11 @@ function KpiDetail({ kpi, staffId, today, canManage, people, onDelete, deleting 
             />
           </div>
         </div>
+        {(kpi.checklists || []).length && day && !workDays.has(day) && day <= (today || day) ? (
+          <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-soul-muted">
+            This is a day off or approved leave for this person, so it doesn’t count towards the checklist.
+          </p>
+        ) : null}
         {(kpi.checklists || []).length ? (
           kpi.checklists.map((checklist) => (
             <div key={checklist.id} className="rounded-xl border border-soul-line p-4">
@@ -639,7 +862,7 @@ function KpiDetail({ kpi, staffId, today, canManage, people, onDelete, deleting 
                 <div>
                   <p className="font-semibold text-soul-blue">{checklist.title}</p>
                   <p className="text-xs text-soul-muted mt-1">
-                    {checklist.weight_percent}% of this KPI · {checklist.completion_percent}% of days completed
+                    {checklist.weight_percent}% of this KPI · {checklist.completion_percent}% of working days completed
                     {checklist.created_by_name ? ` · Added by ${checklist.created_by_name}` : ''}
                   </p>
                 </div>
@@ -657,9 +880,10 @@ function KpiDetail({ kpi, staffId, today, canManage, people, onDelete, deleting 
               <div className="mt-3 space-y-2">
                 {checklist.items.map((item) => {
                   const checked = (item.checked_dates || []).includes(day);
+                  // Staff tick today or yesterday; the manager who added the list can fix any day.
                   const canTick = Boolean(day)
                     && (!today || day <= today)
-                    && (Number(user?.id) === Number(staffId) || checklist.can_delete);
+                    && (checklist.can_delete || (Number(user?.id) === Number(staffId) && (!yesterday || day >= yesterday)));
                   return (
                     <label key={item.id} className="flex items-center gap-3 text-sm">
                       <input
@@ -826,6 +1050,79 @@ function KpiDetail({ kpi, staffId, today, canManage, people, onDelete, deleting 
               <p className="text-xs text-soul-muted">This goes to everyone on this KPI who you can assign.</p>
             )}
           </form>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={Boolean(edit)}
+        onClose={() => setEdit(null)}
+        title="Edit KPI"
+        size="lg"
+        footer={
+          <>
+            <button type="button" className="btn-secondary" onClick={() => setEdit(null)}>Cancel</button>
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={saveEdit.isPending}
+              onClick={() => saveEdit.mutate({ ...edit, target_value: Number(edit.target_value), weight: Number(edit.weight) })}
+            >
+              Save changes
+            </button>
+          </>
+        }
+      >
+        {edit ? (
+          <div className="space-y-4">
+            <p className="text-xs text-soul-muted">
+              {kpi.metric_label} · {kpi.measure_label}. Changes apply to everyone on this KPI.
+            </p>
+            <div>
+              <label className="label">Name</label>
+              <input className="input" value={edit.title} placeholder={kpi.metric_label} onChange={(e) => setEdit((c) => ({ ...c, title: e.target.value }))} />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div>
+                <label className="label">Target</label>
+                <input
+                  className="input"
+                  type="number"
+                  step={kpi.metric === 'reviews' || kpi.measure === 'value' ? '0.1' : '1'}
+                  min="1"
+                  max={kpi.metric === 'reviews' ? '5' : undefined}
+                  value={edit.target_value}
+                  onChange={(e) => setEdit((c) => ({ ...c, target_value: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="label">Starts</label>
+                <input className="input" type="date" value={edit.starts_on} onChange={(e) => setEdit((c) => ({ ...c, starts_on: e.target.value }))} />
+              </div>
+              <div>
+                <label className="label">Deadline</label>
+                <input className="input" type="date" value={edit.deadline} onChange={(e) => setEdit((c) => ({ ...c, deadline: e.target.value }))} />
+              </div>
+            </div>
+            <div>
+              <label className="label">Importance</label>
+              <div className="inline-flex rounded-lg bg-slate-100 p-0.5">
+                {[1, 2, 3, 4, 5].map((w) => (
+                  <button
+                    key={w}
+                    type="button"
+                    onClick={() => setEdit((c) => ({ ...c, weight: w }))}
+                    className={`rounded-md px-3 py-1.5 text-xs font-medium ${Number(edit.weight) === w ? 'bg-white text-soul-blue shadow-sm' : 'text-slate-500'}`}
+                  >
+                    {w}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="label">Notes</label>
+              <textarea className="input min-h-[56px]" value={edit.notes} onChange={(e) => setEdit((c) => ({ ...c, notes: e.target.value }))} />
+            </div>
+          </div>
         ) : null}
       </Modal>
     </section>

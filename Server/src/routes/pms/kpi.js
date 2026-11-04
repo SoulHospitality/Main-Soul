@@ -16,6 +16,12 @@ const {
   checklistCompletion,
   blendKpiPercent,
   eachDate,
+  dayCount,
+  kpiPace,
+  personScore,
+  statusCounts,
+  workingDays,
+  STATUS_LABELS,
 } = require('../../lib/kpi');
 
 const router = express.Router();
@@ -31,6 +37,35 @@ const ACTIVE_STAY_SQL = `
 function isoDate(value) {
   const raw = String(value || '').slice(0, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null;
+}
+
+function badRequest(message) {
+  return Object.assign(new Error(message), { status: 400 });
+}
+
+/** Validates a KPI coming from the KPI page or a user record. */
+function validateTargetInput(body, allowedMetrics) {
+  const metric = String(body?.metric || '');
+  if (!allowedMetrics.includes(metric)) throw badRequest('Choose a KPI type');
+  const allowedMeasures = measuresForMetric(metric);
+  const measure = allowedMeasures.includes(body?.measure) ? body.measure : allowedMeasures[0];
+  const targetValue = Number(body?.target_value);
+  const startsOn = isoDate(body?.starts_on);
+  const deadline = isoDate(body?.deadline);
+  if (metric === 'reviews') {
+    if (!(targetValue >= 1 && targetValue <= 5)) throw badRequest('The review target must be a rating from 1 to 5');
+  } else if (measure === 'value') {
+    if (!(targetValue > 0)) throw badRequest('Enter the reservation value for this period');
+  } else if (!Number.isFinite(targetValue) || targetValue < 1) {
+    throw badRequest('Enter the target number');
+  }
+  if (!startsOn || !deadline || deadline < startsOn) throw badRequest('The deadline must be on or after the start date');
+  if (dayCount(startsOn, deadline) > 120) throw badRequest('A KPI can cover at most 120 days');
+  const weight = body?.weight == null || body.weight === '' ? 1 : Number(body.weight);
+  if (!Number.isInteger(weight) || weight < 1 || weight > 5) throw badRequest('Importance must be from 1 to 5');
+  const title = body?.title ? String(body.title).trim().slice(0, 80) || null : null;
+  const notes = body?.notes ? String(body.notes).trim().slice(0, 500) || null : null;
+  return { metric, measure, targetValue, startsOn, deadline, weight, title, notes };
 }
 
 function cairoToday() {
@@ -108,6 +143,29 @@ async function progressFor(metric, measure, staffIds, from, to) {
        WHERE ${ACTIVE_STAY_SQL}
          AND COALESCE(r.sales_person_id, r.created_by) = ANY($3::int[])
          AND (r.created_at AT TIME ZONE 'Africa/Cairo')::date BETWEEN $1::date AND $2::date
+       GROUP BY 1, 2`,
+      [from, to, staffIds]
+    );
+    for (const row of rows) {
+      const staffId = Number(row.staff_id);
+      const amount = Number(row.amount) || 0;
+      totals.set(staffId, (totals.get(staffId) || 0) + amount);
+      daily.set(`${staffId}|${row.day}`, amount);
+    }
+    return { totals, daily };
+  }
+
+  if (metric === 'check_ins') {
+    const { rows } = await query(
+      `SELECT r.ops_handed_over_by AS staff_id,
+              (r.ops_handed_over_at AT TIME ZONE 'Africa/Cairo')::date::text AS day,
+              COUNT(*)::int AS amount
+       FROM reservations r
+       WHERE r.status <> 'cancelled'
+         AND COALESCE(r.ops_handed_over, 0)::int = 1
+         AND r.ops_handed_over_at IS NOT NULL
+         AND r.ops_handed_over_by = ANY($3::int[])
+         AND (r.ops_handed_over_at AT TIME ZONE 'Africa/Cairo')::date BETWEEN $1::date AND $2::date
        GROUP BY 1, 2`,
       [from, to, staffIds]
     );
@@ -211,6 +269,7 @@ async function loadVisibleTargets(user) {
   const { rows } = await query(
     `SELECT t.id, t.metric, COALESCE(t.measure, 'count') AS measure, t.target_value,
             t.starts_on::text AS starts_on, t.deadline::text AS deadline,
+            COALESCE(t.weight, 1)::int AS weight, t.title, t.notes,
             t.created_by, maker.full_name AS created_by_name,
             a.staff_user_id
      FROM kpi_targets t
@@ -241,6 +300,9 @@ router.get('/kpi', async (req, res, next) => {
           target_value: Number(row.target_value),
           starts_on: row.starts_on,
           deadline: row.deadline,
+          weight: Number(row.weight) || 1,
+          title: row.title,
+          notes: row.notes,
           created_by: row.created_by,
           created_by_name: row.created_by_name,
           staff_ids: [],
@@ -308,6 +370,32 @@ router.get('/kpi', async (req, res, next) => {
       }
     }
 
+    // Working days per person (days off and approved leave are not expected checklist days).
+    const personIds = directory.map((p) => Number(p.id));
+    const daysOffById = new Map();
+    const leaveById = new Map();
+    if (personIds.length && byTarget.size) {
+      const starts = [...byTarget.values()].map((t) => t.starts_on).sort();
+      const ends = [...byTarget.values()].map((t) => t.deadline).sort();
+      const [{ rows: offRows }, { rows: leaveRows }] = await Promise.all([
+        query(`SELECT id, days_off FROM staff_users WHERE id = ANY($1::int[])`, [personIds]),
+        query(
+          `SELECT staff_user_id, start_date::text AS start_date, end_date::text AS end_date
+           FROM staff_leave_requests
+           WHERE staff_user_id = ANY($1::int[]) AND status = 'approved'
+             AND start_date <= $3::date AND end_date >= $2::date
+             AND leave_type NOT IN ('paid_excuse', 'unpaid_excuse', 'early_leave', 'meeting', 'mission')`,
+          [personIds, starts[0], ends[ends.length - 1]]
+        ).catch(() => ({ rows: [] })),
+      ]);
+      for (const row of offRows) daysOffById.set(Number(row.id), row.days_off || []);
+      for (const row of leaveRows) {
+        const set = leaveById.get(Number(row.staff_user_id)) || new Set();
+        for (const d of eachDate(row.start_date, row.end_date)) set.add(d);
+        leaveById.set(Number(row.staff_user_id), set);
+      }
+    }
+
     const progressCache = new Map();
     async function progress(target) {
       const key = `${target.id}`;
@@ -331,17 +419,21 @@ router.get('/kpi', async (req, res, next) => {
         const actual = target.metric === 'reviews' ? (raw?.average ?? null) : (raw || 0);
         const reviewCount = target.metric === 'reviews' ? (raw?.count || 0) : null;
         const score = kpiProgress({ actual, targetValue: target.target_value });
+        const workDays = workingDays(stats.days, {
+          daysOff: daysOffById.get(Number(person.id)) || [],
+          leaveDates: leaveById.get(Number(person.id)) || new Set(),
+        });
         const checklists = (checklistByTarget.get(target.id) || [])
           .filter((checklist) => checklist.staff_ids.includes(Number(person.id)))
           .map((checklist) => {
             const checkedByDay = {};
-            for (const date of stats.days) {
+            for (const date of workDays) {
               checkedByDay[date] = checklist.items.filter((item) => (
                 tickSet.has(`${Number(person.id)}|${item.id}|${date}`)
               )).length;
             }
             const completion = checklistCompletion({
-              days: stats.days,
+              days: workDays,
               itemCount: checklist.items.length,
               checkedByDay,
             });
@@ -367,8 +459,27 @@ router.get('/kpi', async (req, res, next) => {
             percent: checklist.completion_percent,
           })),
         });
+        const pace = kpiPace({
+          metric: target.metric,
+          actual,
+          targetValue: target.target_value,
+          startsOn: target.starts_on,
+          deadline: target.deadline,
+          today,
+          reviewCount: reviewCount || 0,
+        });
+        // With a checklist, the blended percent decides achieved/missed at the end of the period.
+        let status = pace.status;
+        if (checklists.length && today > target.deadline) status = percent >= 100 ? 'achieved' : 'missed';
         kpis.push({
           id: target.id,
+          title: target.title,
+          notes: target.notes,
+          weight: target.weight,
+          status,
+          status_label: STATUS_LABELS[status] || status,
+          pace,
+          work_days: workDays,
           metric: target.metric,
           metric_label: METRIC_LABELS[target.metric] || target.metric,
           measure: target.measure,
@@ -398,11 +509,17 @@ router.get('/kpi', async (req, res, next) => {
           can_delete: req.user.role === 'admin' || Number(target.created_by) === Number(req.user.id),
         });
       }
+      // Current scorecard: KPIs running today, or ended in the last 7 days.
+      const current = kpis.filter((k) => k.starts_on <= today && dayCount(k.deadline, today) <= 8);
+      const score = personScore(current);
       staff.push({
         id: person.id,
         full_name: person.full_name,
         role: person.role,
         staff_code: person.staff_code,
+        score: score.score,
+        scored_kpis: score.counted,
+        status_counts: statusCounts(current),
         kpis,
       });
     }
@@ -419,6 +536,7 @@ router.get('/kpi', async (req, res, next) => {
         })),
       })),
       team_keys: teamKeysForRole(req.user.role),
+      statuses: STATUS_LABELS,
       team: assignable,
       staff,
     });
@@ -432,30 +550,10 @@ router.post('/kpi', async (req, res, next) => {
     if (!canManageKpi(req.user)) {
       return res.status(403).json({ error: 'Only the CEO and managers can add a KPI' });
     }
-    const metric = String(req.body?.metric || '');
-    if (!metricsForRole(req.user.role).includes(metric)) {
-      return res.status(400).json({ error: 'Choose a KPI type' });
-    }
-    const allowedMeasures = measuresForMetric(metric);
-    const measure = allowedMeasures.includes(req.body?.measure) ? req.body.measure : allowedMeasures[0];
-    const targetValue = Number(req.body?.target_value);
-    const startsOn = isoDate(req.body?.starts_on);
-    const deadline = isoDate(req.body?.deadline);
-    if (metric === 'reviews') {
-      if (!(targetValue >= 1 && targetValue <= 5)) {
-        return res.status(400).json({ error: 'The review target must be a rating from 1 to 5' });
-      }
-    } else if (measure === 'value') {
-      if (!(targetValue > 0)) return res.status(400).json({ error: 'Enter the reservation value for this period' });
-    } else if (!Number.isFinite(targetValue) || targetValue < 1) {
-      return res.status(400).json({ error: 'Enter the target number' });
-    }
-    if (!startsOn || !deadline || deadline < startsOn) {
-      return res.status(400).json({ error: 'The deadline must be on or after the start date' });
-    }
-    if (eachDate(startsOn, deadline).length > 120) {
-      return res.status(400).json({ error: 'A KPI can cover at most 120 days' });
-    }
+    const { metric, measure, targetValue, startsOn, deadline, weight, title, notes } = validateTargetInput(
+      req.body,
+      metricsForRole(req.user.role)
+    );
 
     const assignable = await loadAssignable(req.user);
     const allowed = new Map(assignable.map((row) => [Number(row.id), row]));
@@ -487,10 +585,10 @@ router.post('/kpi', async (req, res, next) => {
       await client.query('BEGIN');
       const { rows } = await client.query(
         `INSERT INTO kpi_targets
-           (metric, measure, target_value, reward_amount, min_percent, starts_on, deadline, created_by)
-         VALUES ($1,$2,$3,NULL,0,$4::date,$5::date,$6)
+           (metric, measure, target_value, reward_amount, min_percent, starts_on, deadline, created_by, weight, title, notes)
+         VALUES ($1,$2,$3,NULL,0,$4::date,$5::date,$6,$7,$8,$9)
          RETURNING id`,
-        [metric, measure, targetValue, startsOn, deadline, req.user.id]
+        [metric, measure, targetValue, startsOn, deadline, req.user.id, weight, title, notes]
       );
       targetId = rows[0].id;
       for (const person of unique) {
@@ -511,7 +609,7 @@ router.post('/kpi', async (req, res, next) => {
       action: 'KPI_TARGET_CREATE',
       entityType: 'kpi_target',
       entityId: targetId,
-      details: { metric, measure, staff: unique.length },
+      details: { metric, measure, title, weight, target_value: targetValue, starts_on: startsOn, deadline, staff: unique.length },
     });
     res.status(201).json({ id: targetId });
   } catch (err) {
@@ -520,15 +618,153 @@ router.post('/kpi', async (req, res, next) => {
   }
 });
 
+/** Change a KPI's target, dates, importance, name or notes (CEO or the manager who added it). */
+router.patch('/kpi/:id', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const { rows } = await query(
+      `SELECT id, metric, measure, target_value::float AS target_value, starts_on::text AS starts_on,
+              deadline::text AS deadline, COALESCE(weight, 1)::int AS weight, title, notes, created_by
+       FROM kpi_targets WHERE id = $1`,
+      [id]
+    );
+    const before = rows[0];
+    if (!before) return res.status(404).json({ error: 'KPI not found' });
+    if (req.user.role !== 'admin' && Number(before.created_by) !== Number(req.user.id)) {
+      return res.status(403).json({ error: 'Only the CEO or the manager who added this KPI can change it' });
+    }
+    const next = validateTargetInput({ ...before, ...req.body, metric: before.metric }, [before.metric]);
+    const { rows: updated } = await query(
+      `UPDATE kpi_targets
+       SET measure = $2, target_value = $3, starts_on = $4::date, deadline = $5::date, weight = $6, title = $7, notes = $8
+       WHERE id = $1
+       RETURNING id, metric, measure, target_value::float AS target_value, starts_on::text AS starts_on,
+                 deadline::text AS deadline, weight, title, notes`,
+      [id, next.measure, next.targetValue, next.startsOn, next.deadline, next.weight, next.title, next.notes]
+    );
+    await logAudit({
+      userId: req.user.id,
+      action: 'KPI_TARGET_UPDATE',
+      entityType: 'kpi_target',
+      entityId: id,
+      details: { title: next.title || METRIC_LABELS[before.metric], before, after: updated[0] },
+    });
+    res.json(updated[0]);
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+/** Copy a KPI into the next period of the same length, with the same people and checklists. */
+router.post('/kpi/:id/repeat', async (req, res, next) => {
+  try {
+    if (!canManageKpi(req.user)) return res.status(403).json({ error: 'Only the CEO and managers can repeat a KPI' });
+    const id = Number(req.params.id);
+    const { rows } = await query(
+      `SELECT id, metric, measure, target_value, starts_on::text AS starts_on, deadline::text AS deadline,
+              COALESCE(weight, 1)::int AS weight, title, notes, created_by
+       FROM kpi_targets WHERE id = $1`,
+      [id]
+    );
+    const source = rows[0];
+    if (!source) return res.status(404).json({ error: 'KPI not found' });
+    if (req.user.role !== 'admin' && Number(source.created_by) !== Number(req.user.id)) {
+      return res.status(403).json({ error: 'Only the CEO or the manager who added this KPI can repeat it' });
+    }
+    const length = dayCount(source.starts_on, source.deadline);
+    const shift = (iso, days) => {
+      const d = new Date(`${iso}T12:00:00Z`);
+      d.setUTCDate(d.getUTCDate() + days);
+      return d.toISOString().slice(0, 10);
+    };
+    // Whole calendar months repeat as the next calendar month; anything else keeps its length.
+    const startsDay = Number(source.starts_on.slice(8, 10));
+    const endsOnMonthEnd = shift(source.deadline, 1).slice(8, 10) === '01';
+    let startsOn = shift(source.deadline, 1);
+    let deadline = shift(startsOn, length - 1);
+    if (startsDay === 1 && endsOnMonthEnd) {
+      const nextMonthEnd = new Date(`${startsOn}T12:00:00Z`);
+      nextMonthEnd.setUTCMonth(nextMonthEnd.getUTCMonth() + 1, 0);
+      deadline = nextMonthEnd.toISOString().slice(0, 10);
+    }
+    const client = await pool.connect();
+    let newId;
+    try {
+      await client.query('BEGIN');
+      const { rows: created } = await client.query(
+        `INSERT INTO kpi_targets
+           (metric, measure, target_value, reward_amount, min_percent, starts_on, deadline, created_by, weight, title, notes)
+         VALUES ($1,$2,$3,NULL,0,$4::date,$5::date,$6,$7,$8,$9) RETURNING id`,
+        [source.metric, source.measure, source.target_value, startsOn, deadline, req.user.id, source.weight, source.title, source.notes]
+      );
+      newId = created[0].id;
+      await client.query(
+        `INSERT INTO kpi_target_assignees (target_id, staff_user_id)
+         SELECT $2, a.staff_user_id FROM kpi_target_assignees a
+         JOIN staff_users s ON s.id = a.staff_user_id AND COALESCE(s.is_active, 1)::int = 1
+         WHERE a.target_id = $1`,
+        [id, newId]
+      );
+      const { rows: lists } = await client.query(`SELECT id, title, weight_percent FROM kpi_checklists WHERE target_id = $1`, [id]);
+      for (const list of lists) {
+        const { rows: made } = await client.query(
+          `INSERT INTO kpi_checklists (target_id, title, weight_percent, created_by) VALUES ($1,$2,$3,$4) RETURNING id`,
+          [newId, list.title, list.weight_percent, req.user.id]
+        );
+        await client.query(
+          `INSERT INTO kpi_checklist_items (checklist_id, label, sort_order)
+           SELECT $2, label, sort_order FROM kpi_checklist_items WHERE checklist_id = $1`,
+          [list.id, made[0].id]
+        );
+        await client.query(
+          `INSERT INTO kpi_checklist_assignees (checklist_id, staff_user_id)
+           SELECT $2, ca.staff_user_id FROM kpi_checklist_assignees ca
+           JOIN kpi_target_assignees ta ON ta.staff_user_id = ca.staff_user_id AND ta.target_id = $3
+           WHERE ca.checklist_id = $1`,
+          [list.id, made[0].id, newId]
+        );
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+    await logAudit({
+      userId: req.user.id,
+      action: 'KPI_TARGET_REPEAT',
+      entityType: 'kpi_target',
+      entityId: newId,
+      details: { title: source.title || METRIC_LABELS[source.metric], from_kpi: id, starts_on: startsOn, deadline },
+    });
+    res.status(201).json({ id: newId, starts_on: startsOn, deadline });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.delete('/kpi/:id', async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const staffId = Number(req.query.staff_id);
-    const { rows } = await query(`SELECT created_by FROM kpi_targets WHERE id = $1`, [id]);
+    const { rows } = await query(
+      `SELECT created_by, metric, title, target_value, starts_on::text AS starts_on, deadline::text AS deadline
+       FROM kpi_targets WHERE id = $1`,
+      [id]
+    );
     if (!rows[0]) return res.status(404).json({ error: 'KPI not found' });
     if (req.user.role !== 'admin' && Number(rows[0].created_by) !== Number(req.user.id)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
+    await logAudit({
+      userId: req.user.id,
+      action: 'KPI_TARGET_DELETE',
+      entityType: 'kpi_target',
+      entityId: id,
+      details: { title: rows[0].title || METRIC_LABELS[rows[0].metric], before: rows[0], staff_id: staffId || null },
+    });
     if (staffId) {
       await query(`DELETE FROM kpi_target_assignees WHERE target_id = $1 AND staff_user_id = $2`, [id, staffId]);
       await query(
@@ -678,10 +914,13 @@ router.post('/kpi/checklists/:id/ticks', async (req, res, next) => {
     if (workDate < rows[0].starts_on || workDate > rows[0].deadline || workDate > today) {
       return res.status(400).json({ error: 'That day is outside this KPI' });
     }
-    const canTick = req.user.role === 'admin'
-      || Number(req.user.id) === staffId
-      || Number(rows[0].created_by) === Number(req.user.id);
+    const isManager = req.user.role === 'admin' || Number(rows[0].created_by) === Number(req.user.id);
+    const canTick = isManager || Number(req.user.id) === staffId;
     if (!canTick) return res.status(403).json({ error: 'Forbidden' });
+    // Staff tick their own list for today or yesterday; older days need their manager, so lists can't be backfilled.
+    if (!isManager && dayCount(workDate, today) > 2) {
+      return res.status(403).json({ error: 'You can tick today or yesterday. Ask your manager to fix older days.' });
+    }
 
     if (checked) {
       await query(
