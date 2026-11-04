@@ -71,7 +71,7 @@ export default function Tasks() {
       return 'Tasks assigned to you by your manager. You will also receive them by email.';
     }
     if (isReservationsManager) {
-      return 'Assign missions and targets to the reservation team (web and manual agents).';
+      return 'Assign missions and targets to the reservations team.';
     }
     if (canAdd) {
       return 'Assign a title, description, and deadline to someone on your team. Only you can edit tasks you create.';
@@ -90,7 +90,7 @@ export default function Tasks() {
       return 'When your manager adds a task, it will show up here and in your email.';
     }
     if (isReservationsManager) {
-      return 'Add a mission for a reservation agent. Every active web or manual agent is available.';
+      return 'Add a mission for a reservation agent. Every active reservations agent is available.';
     }
     if (canAdd) {
       return 'Add a task for someone on your team.';

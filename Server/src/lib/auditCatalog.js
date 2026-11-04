@@ -84,6 +84,7 @@ const AUDIT_CATEGORIES = [
       'UPSERT_RESERVATION_TARGET',
       'APPLY_RESERVATION_TARGETS',
       'UPDATE_USER_ACCESS',
+      'CHANGE_ROLE',
     ],
   },
   { key: 'inbox', prefixes: ['INBOX_'] },

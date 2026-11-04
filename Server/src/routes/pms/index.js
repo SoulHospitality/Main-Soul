@@ -361,10 +361,9 @@ function assertCanAssignRole(actorRole, targetRole) {
     err.status = 403;
     throw err;
   }
+  // Website and manual reservations were merged into 'reservations' (migration 147).
   const allowed = [
     'admin',
-    'reservations_web',
-    'reservations_manual',
     'reservations',
     'reservations_manager',
     'operations',
@@ -384,7 +383,7 @@ function assertCanAssignRole(actorRole, targetRole) {
   ];
   if (!allowed.includes(targetRole)) {
     const err = new Error(
-      'Invalid role. Use admin, reservations_web, reservations_manual, reservations_manager, unit_acquisition_agent, unit_acquisition_manager, operations, operations_supervisor, resale, resale_manager, finance, finance_manager, hr, hr_supervisor, owners_relations, marketing_pr, web_developer, or owner.'
+      'Invalid role. Use admin, reservations, reservations_manager, unit_acquisition_agent, unit_acquisition_manager, operations, operations_supervisor, resale, resale_manager, finance, finance_manager, hr, hr_supervisor, owners_relations, marketing_pr, web_developer, or owner.'
     );
     err.status = 400;
     throw err;
@@ -392,8 +391,6 @@ function assertCanAssignRole(actorRole, targetRole) {
   if (
     isHrTeamRole(actorRole) &&
     ![
-      'reservations_web',
-      'reservations_manual',
       'reservations',
       'reservations_manager',
       'operations',

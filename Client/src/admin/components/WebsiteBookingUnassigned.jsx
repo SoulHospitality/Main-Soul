@@ -71,7 +71,7 @@ export default function WebsiteBookingUnassigned() {
   const adminAssign = (id) => {
     const agentId = Number(adminPicks[id]);
     if (!agentId) {
-      toast.error('Select a website agent');
+      toast.error('Select an agent');
       return;
     }
     assignMutation.mutate({ id, assigned_sales_id: agentId });
@@ -93,7 +93,7 @@ export default function WebsiteBookingUnassigned() {
         <h2 className="font-semibold text-gray-900">Unassigned website requests</h2>
         <p className="text-xs text-gray-500">
           {isAdmin
-            ? 'Assign each request to any website reservations agent.'
+            ? 'Assign each request to any reservations agent.'
             : 'Claim a request to work it from your Requests list.'}
         </p>
       </div>

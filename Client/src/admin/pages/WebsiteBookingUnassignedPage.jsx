@@ -7,7 +7,7 @@ export default function WebsiteBookingUnassignedPage() {
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Unassigned Requests</h1>
         <p className="mt-1 text-sm text-gray-500">
-          New website reservations wait here until a website agent claims them.
+          New website reservations wait here until a reservations agent claims them.
         </p>
       </div>
       <WebsiteBookingsNav />

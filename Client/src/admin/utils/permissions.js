@@ -781,7 +781,8 @@ export function hasOfficeAttendance(role) {
   return r !== 'admin' && r !== 'owner';
 }
 
-const RESERVATION_ROLES = ['reservations_web', 'reservations_manual', 'reservations_manager'];
+// Website and manual reservations are one role now: 'reservations' handles both.
+const RESERVATION_ROLES = ['reservations', 'reservations_manager'];
 const FIELD_ROLES = ['operations_supervisor', 'operations'];
 
 /** Roles CEO / HR Manager can assign in User Management */
@@ -800,7 +801,6 @@ export const HR_MANAGED_STAFF_ROLES = [
 /** Staff list role filter (includes legacy / view-only roles) */
 export const HR_STAFF_FILTER_ROLES = [
   ...HR_MANAGED_STAFF_ROLES,
-  'reservations',
   'finance',
   'finance_manager',
   'hr_supervisor',
@@ -826,9 +826,9 @@ export function creatableRoles(actorRole) {
 
 export const ROLE_LABELS = {
   admin: 'CEO',
-  reservations: 'Reservations (legacy)',
-  reservations_web: 'Website Reservations',
-  reservations_manual: 'Manual Reservations',
+  reservations: 'Reservations',
+  reservations_web: 'Reservations (old website role)',
+  reservations_manual: 'Reservations (old manual role)',
   reservations_manager: 'Reservations Manager',
   unit_acquisition_agent: 'Unit Acquisition Agent',
   unit_acquisition_manager: 'Unit Acquisition Manager',

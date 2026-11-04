@@ -108,7 +108,7 @@ function formatDaysOff(days) {
 const EMPTY_STAFF_FORM = {
   full_name: '',
   email: '',
-  role: 'reservations_manual',
+  role: 'reservations',
   base_salary: '',
   is_active: 1,
   sales_commission_pct: '',
@@ -1193,7 +1193,7 @@ export default function Users() {
       setOwnerForm({ ...EMPTY_OWNER_FORM });
       setModal('add-owner');
     } else {
-      setStaffForm({ ...EMPTY_STAFF_FORM, role: staffRoleOptions[0] || 'reservations_manual' });
+      setStaffForm({ ...EMPTY_STAFF_FORM, role: staffRoleOptions[0] || 'reservations' });
       setModal('add-staff');
     }
   };

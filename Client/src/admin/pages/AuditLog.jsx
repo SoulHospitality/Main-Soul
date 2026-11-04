@@ -121,6 +121,7 @@ const ACTION_LABELS = {
   UPSERT_RESERVATION_TARGET: 'set a reservations target',
   APPLY_RESERVATION_TARGETS: 'applied reservations targets',
   UPDATE_USER_ACCESS: 'changed a user’s page access',
+  CHANGE_ROLE: 'changed a user’s role',
 };
 
 const RANGES = [

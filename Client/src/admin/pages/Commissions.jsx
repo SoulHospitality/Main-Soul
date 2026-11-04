@@ -343,7 +343,7 @@ export default function Commissions() {
       subtitle: 'Net amount due to owners',
     },
     {
-      label: 'Manual agents',
+      label: 'Manual bookings',
       value: finance?.manualAgentCommission ?? manual.agent_commission ?? 0,
       icon: Users,
       bg: 'bg-violet-50',
@@ -352,10 +352,10 @@ export default function Commissions() {
       iconClr: 'text-violet-600',
       valClr: 'text-violet-800',
       lblClr: 'text-violet-700',
-      subtitle: 'Per-agent % on manual bookings',
+      subtitle: 'Agent % on manual bookings',
     },
     {
-      label: 'Website agents',
+      label: 'Website bookings',
       value: finance?.websiteAgentCommission ?? website.agent_commission ?? 0,
       icon: Users,
       bg: 'bg-sky-50',
@@ -364,7 +364,7 @@ export default function Commissions() {
       iconClr: 'text-sky-600',
       valClr: 'text-sky-800',
       lblClr: 'text-sky-700',
-      subtitle: 'Per-agent % on website bookings',
+      subtitle: 'Agent % on website bookings',
     },
     {
       label: 'All agent commissions',
@@ -376,7 +376,7 @@ export default function Commissions() {
       iconClr: 'text-amber-600',
       valClr: 'text-amber-800',
       lblClr: 'text-amber-700',
-      subtitle: 'Manual + website agents',
+      subtitle: 'Manual + website bookings',
     },
     {
       label: 'Commission Profit',

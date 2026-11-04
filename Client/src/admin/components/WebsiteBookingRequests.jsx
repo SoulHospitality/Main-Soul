@@ -192,7 +192,7 @@ export default function WebsiteBookingRequests() {
     const pick = reassignPicks[booking.id];
     const agentId = Number(pick != null && pick !== '' ? pick : booking.assigned_sales_id);
     if (!agentId) {
-      toast.error('Select a website agent');
+      toast.error('Select an agent');
       return;
     }
     if (Number(booking.assigned_sales_id) === agentId) {
@@ -301,7 +301,7 @@ export default function WebsiteBookingRequests() {
           <p className="text-xs text-gray-500">
             Review guest contact, party size, stay dates, ID photos, and full payment breakdown. For
             InstaPay/Cash, collect at least 50% with evidence before accepting.
-            {isAdmin ? ' The CEO can reassign any request to another website agent.' : ''}
+            {isAdmin ? ' The CEO can reassign any request to another reservations agent.' : ''}
           </p>
         </div>
         <div className="overflow-x-auto">

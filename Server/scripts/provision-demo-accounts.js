@@ -48,16 +48,10 @@ const ACCOUNTS = [
     full_name: 'Demo Reservations Manager',
   },
   {
-    role: 'reservations_web',
+    role: 'reservations',
     username: 'demo.reservations.web',
     email: 'demo.reservations.web@soulhospitality.co',
-    full_name: 'Demo Website Reservations',
-  },
-  {
-    role: 'reservations_manual',
-    username: 'demo.reservations.manual',
-    email: 'demo.reservations.manual@soulhospitality.co',
-    full_name: 'Demo Manual Reservations',
+    full_name: 'Demo Reservations',
   },
   {
     role: 'reservations',

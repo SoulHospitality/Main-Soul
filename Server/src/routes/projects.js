@@ -20,6 +20,7 @@ const {
 const PROJECT_EDITOR_ROLES = [
   'admin',
   'reservations_manager',
+  'reservations',
   'reservations_web',
   'reservations_manual',
 ];

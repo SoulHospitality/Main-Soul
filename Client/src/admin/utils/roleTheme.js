@@ -21,7 +21,7 @@ export const ROLE_THEMES = {
   },
   reservations: {
     id: 'reservations',
-    eyebrow: 'Front desk',
+    eyebrow: 'Reservations desk',
     sidebarFrom: '#1a2d45',
     sidebarVia: '#283f5e',
     sidebarTo: '#34506f',
