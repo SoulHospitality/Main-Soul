@@ -80,7 +80,7 @@ function ProtectedRoute({ children, page, allowFirstLogin }) {
 
   const pages = Array.isArray(page) ? page : page ? [page] : [];
   if (pages.length && !pages.some((p) => canAccess(user, p))) {
-    return <Navigate to={defaultAdminPage(user.role)} replace />;
+    return <Navigate to={defaultAdminPage(user)} replace />;
   }
 
   const body = <Suspense fallback={<PageFallback />}>{children}</Suspense>;
@@ -94,7 +94,7 @@ function RoleRedirect() {
   if (loading) return <div className="min-h-screen flex items-center justify-center"><LoadingSpinner /></div>;
   if (!user) return <Navigate to={ADMIN_LOGIN} replace />;
   if (user.is_first_login) return <Navigate to={ADMIN_CHANGE_PASSWORD} replace />;
-  return <Navigate to={defaultAdminPage(user.role)} replace />;
+  return <Navigate to={defaultAdminPage(user)} replace />;
 }
 
 

@@ -83,6 +83,7 @@ const AUDIT_CATEGORIES = [
       'KPI_TARGET_CREATE',
       'UPSERT_RESERVATION_TARGET',
       'APPLY_RESERVATION_TARGETS',
+      'UPDATE_USER_ACCESS',
     ],
   },
   { key: 'inbox', prefixes: ['INBOX_'] },

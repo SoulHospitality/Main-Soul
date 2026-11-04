@@ -1,3 +1,16 @@
+import { PAGE_DEFS, customPageAccess } from './pageCatalog';
+
+/** Level granted on a page by a per-user access map: 'write' | 'read' | null. Undefined when the user follows their role. */
+function customLevel(user, page) {
+  const access = customPageAccess(user);
+  if (!access) return undefined;
+  return access[page]?.level || null;
+}
+
+function customWrite(user, page) {
+  return customLevel(user, page) === 'write';
+}
+
 export const ROLES = {
   ADMIN: 'admin',
   RESERVATIONS: 'reservations',
@@ -501,6 +514,11 @@ export function salesUsersForActor(users, actor) {
 export function hasPermission(user, permission) {
   if (!user) return false;
   if (user.role === 'admin') return true;
+  const [page, action] = String(permission).split(':');
+  if (PAGE_DEFS[page]) {
+    const level = customLevel(user, page);
+    if (level !== undefined) return action === 'read' ? Boolean(level) : level === 'write';
+  }
   return (PERMISSIONS[user.role] || []).includes(permission);
 }
 
@@ -540,6 +558,9 @@ export function canAccess(user, page) {
   if (page === 'holiday_requests' || page === 'loans' || page === 'wfh') {
     page = 'requests';
   }
+  // Per-user page access set by the CEO replaces the role's page list.
+  const custom = customPageAccess(user);
+  if (custom) return Boolean(custom[page]);
   const allowed = PAGE_ACCESS[user.role];
   if (allowed === true) return true;
   if (page === 'owner_statement' && STAFF_EDITOR_ROLES.has(user.role)) return true;
@@ -574,14 +595,17 @@ export function isStaffEditor(user) {
 }
 
 export function canManageUnits(user) {
+  if (customPageAccess(user)) return customWrite(user, 'units');
   return isStaffEditor(user);
 }
 
 export function canManageLongTermUnits(user) {
+  if (customPageAccess(user)) return customWrite(user, 'units_long_term');
   return isStaffEditor(user);
 }
 
 export function canReserveLongTermUnits(user) {
+  if (customPageAccess(user)) return customWrite(user, 'reservations');
   return isStaffEditor(user);
 }
 
@@ -596,6 +620,7 @@ const RESERVATION_DELETE_ROLES = new Set([
 ]);
 
 export function canDeleteReservations(user) {
+  if (customPageAccess(user)) return customWrite(user, 'reservations');
   return !!user && RESERVATION_DELETE_ROLES.has(user.role);
 }
 
@@ -607,14 +632,18 @@ export function canDeleteUnits(user) {
 }
 
 export function canManageReservations(user) {
+  if (customPageAccess(user)) return customWrite(user, 'reservations');
   return isStaffEditor(user);
 }
 
 export function canHandleWebsiteBookings(user) {
+  if (customPageAccess(user)) return customWrite(user, 'website_bookings');
   return !!user && (user.role === 'admin' || isWebsiteReservationsRole(user));
 }
 
 export function canViewAllReservations(user) {
+  const custom = customPageAccess(user);
+  if (custom) return custom.reservations?.scope === 'all';
   return !!user && (user.role === 'admin' || user.role === 'owners_relations');
 }
 
@@ -645,6 +674,7 @@ export function isFinanceRole(user) {
 
 /** Schedule grid create/move/edit stays (not just viewing). */
 export function canWriteSchedule(user) {
+  if (customPageAccess(user)) return customWrite(user, 'schedule');
   return (
     !!user &&
     (user.role === 'admin' ||
@@ -654,6 +684,7 @@ export function canWriteSchedule(user) {
 }
 
 export function canEditSchedulePricing(user) {
+  if (customPageAccess(user)) return customWrite(user, 'schedule');
   return !!user && user.role === 'admin';
 }
 
@@ -662,18 +693,22 @@ export function canAccessFinance(user) {
 }
 
 export function canAccessFinancialSystem(user) {
+  if (customPageAccess(user)) return Boolean(customLevel(user, 'financial_system'));
   return !!user && (user.role === 'admin' || isFinanceStaff(user));
 }
 
 export function canAccessReports(user) {
+  if (customPageAccess(user)) return Boolean(customLevel(user, 'reports'));
   return !!user && user.role === 'admin';
 }
 
 export function canManageUsers(user) {
+  if (customPageAccess(user)) return customWrite(user, 'users');
   return !!user && (user.role === 'admin' || isHrTeamRole(user.role));
 }
 
 export function canManageOwners(user) {
+  if (customPageAccess(user)) return customWrite(user, 'owners');
   return (
     !!user &&
     (user.role === 'admin' || user.role === 'unit_acquisition_manager')

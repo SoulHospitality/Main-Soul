@@ -28,6 +28,8 @@ import EmptyState from '../components/ui/EmptyState';
 import SearchFilter from '../components/ui/SearchFilter';
 import SortTh from '../components/ui/SortTh';
 import SearchableSelect from '../components/ui/SearchableSelect';
+import PageAccessEditor from '../components/users/PageAccessEditor';
+import { FIXED_ACCESS_ROLES } from '../utils/pageCatalog';
 import {
   ROLE_LABELS,
   ROLE_COLORS,
@@ -119,6 +121,8 @@ const EMPTY_STAFF_FORM = {
   manager_ids: [],
   petty_cash_location: '',
   kpis: [],
+  page_access: null,
+  page_access_initial: 'null',
 };
 
 const PETTY_CASH_SCOPES = [
@@ -1057,9 +1061,13 @@ export default function Users() {
 
   const saveStaffMutation = useMutation({
     mutationFn: async (d) => {
-      const { kpis, ...profile } = d;
+      const { kpis, page_access, page_access_initial, ...profile } = d;
       const res = editId ? await api.put(`/users/${editId}`, profile) : await api.post('/users', profile);
       const userId = editId || res.data?.id;
+      const accessChanged = JSON.stringify(page_access ?? null) !== (page_access_initial ?? 'null');
+      if (userId && isAdmin && accessChanged && !FIXED_ACCESS_ROLES.has(profile.role)) {
+        await api.put(`/users/${userId}/page-access`, { page_access });
+      }
       if (userId && Array.isArray(kpis)) {
         await api.put(`/users/${userId}/kpis`, {
           kpis: kpis.map((kpi) => ({
@@ -1234,6 +1242,8 @@ export default function Users() {
         ).map(String),
         petty_cash_location: u.petty_cash_location || '',
         kpis: [],
+        page_access: u.page_access || null,
+        page_access_initial: JSON.stringify(u.page_access || null),
       });
       try {
         const { data } = await api.get(`/users/${u.id}/kpis`);
@@ -1825,6 +1835,15 @@ export default function Users() {
             return staffForm.manager_id && String(u.id) === String(staffForm.manager_id);
           })}
         />
+        {isAdmin ? (
+          <div className="mt-5">
+            <PageAccessEditor
+              role={staffForm.role}
+              value={staffForm.page_access}
+              onChange={(page_access) => setStaffForm((f) => ({ ...f, page_access }))}
+            />
+          </div>
+        ) : null}
       </Modal>
 
       <Modal

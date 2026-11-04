@@ -2,6 +2,7 @@ const { q } = require('../../../lib/inbox/db');
 const { forbidden, notFound } = require('../../../lib/inbox/http');
 const { can, seesEveryChat } = require('../../../lib/inbox/permissions');
 const { getSettings, loadSettings } = require('../../../lib/inbox/settings');
+const { grantsRoute } = require('../../../lib/pageAccess');
 
 /** Resolves the PMS staff user to an inbox user (role from the PMS role or the Team override). */
 async function loadInboxUser(staffId) {
@@ -21,7 +22,7 @@ async function inboxAuth(req, res, next) {
 
 function requirePerm(permission) {
   return (req, res, next) => {
-    if (!can(req.inbox, permission)) return res.status(403).json({ error: 'Not allowed', code: 'forbidden' });
+    if (!can(req.inbox, permission) && !grantsRoute(req)) return res.status(403).json({ error: 'Not allowed', code: 'forbidden' });
     return next();
   };
 }

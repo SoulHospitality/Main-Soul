@@ -1,3 +1,4 @@
+import { customPageAccess } from '../../utils/pageCatalog';
 import { NavLink } from 'react-router-dom';
 import { Menu } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -35,7 +36,7 @@ const DOCK_PRIORITY = [
 export default function MobileDock({ onOpenMenu }) {
   const { user } = useAuth();
   const { canAccess } = usePermissions();
-  const items = visibleNavSections(canAccess, user?.role).flatMap((section) => section.items);
+  const items = visibleNavSections(canAccess, user?.role, Boolean(customPageAccess(user))).flatMap((section) => section.items);
   const byPath = new Map(items.map((item) => [item.path, item]));
   const pinned = DOCK_PRIORITY.map((path) => byPath.get(path)).filter(Boolean).slice(0, 4);
 

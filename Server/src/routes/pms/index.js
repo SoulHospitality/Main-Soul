@@ -122,6 +122,7 @@ const { refreshBooksReset, afterReset } = require('../../lib/finance/booksReset'
 const router = express.Router();
 router.use(authStaff);
 router.use(requirePasswordChanged);
+router.use(require('../../lib/pageAccess').pageAccessGuard);
 router.use(compat);
 router.use(require('./reportsAnalytics'));
 router.use(require('./reservationsPerformance'));
@@ -327,7 +328,7 @@ const STAFF_SELECT = `
   id, username, email, full_name, role, is_active, sales_commission_pct,
   operation_specialist_pct, operation_manager_pct, reservation_manager_pct,
   petty_cash_location, staff_code, base_salary, pending_base_salary,
-  salary_change_status, is_first_login, created_at, updated_at,
+  salary_change_status, is_first_login, created_at, updated_at, page_access,
   COALESCE(leave_casual_days, 0) AS leave_casual_days,
   COALESCE(leave_annual_days, 0) AS leave_annual_days,
   COALESCE(leave_unpaid_days, 0) AS leave_unpaid_days,
@@ -806,6 +807,42 @@ router.put('/users/:id', requireRoles(...USER_ACCOUNT_ROLES), async (req, res, n
   );
   if (!patchLayer) return next(new Error('PATCH /users/:id handler missing'));
   return patchLayer.route.stack[patchLayer.route.stack.length - 1].handle(req, res, next);
+});
+
+/** CEO only: set which pages a staff member can open and how (null = follow their role). */
+router.put('/users/:id/page-access', requireRoles('admin'), async (req, res, next) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only the CEO can change page access' });
+    const { sanitizePageAccess } = require('../../lib/pageAccess');
+    const { rows: existingRows } = await query(`SELECT id, role, page_access FROM staff_users WHERE id = $1`, [req.params.id]);
+    const existing = existingRows[0];
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    if (existing.role === 'admin' || existing.role === 'owner') {
+      return res.status(400).json({ error: 'CEO and owner accounts always follow their role' });
+    }
+    const pageAccess = sanitizePageAccess(req.body?.page_access ?? null);
+    const { rows } = await query(
+      `UPDATE staff_users SET page_access = $2::jsonb, updated_at = now() WHERE id = $1 RETURNING ${STAFF_SELECT}`,
+      [req.params.id, pageAccess == null ? null : JSON.stringify(pageAccess)]
+    );
+    await logAudit({
+      userId: req.user.id,
+      action: 'UPDATE_USER_ACCESS',
+      entityType: 'staff_user',
+      entityId: req.params.id,
+      details: {
+        staff_name: rows[0]?.full_name || null,
+        mode: pageAccess == null ? 'role defaults' : 'custom',
+        pages: pageAccess == null ? null : Object.keys(pageAccess).length,
+        before: existing.page_access || null,
+        after: pageAccess,
+      },
+    });
+    res.json({ ...rows[0], is_first_login: Boolean(Number(rows[0].is_first_login)) });
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
+    next(e);
+  }
 });
 
 router.post('/users/:id/approve-salary', requireRoles('admin'), async (req, res, next) => {

@@ -1,3 +1,4 @@
+import { customPageAccess } from '../../utils/pageCatalog';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../context/AuthContext';
@@ -119,15 +120,19 @@ export const NAV_SECTIONS = [
   },
 ];
 
-export function visibleNavSections(canAccess, role) {
+export function visibleNavSections(canAccess, role, customAccess = false) {
+  // With per-user page access the page list decides, not the role; each link is shown once.
+  const seen = new Set();
   return NAV_SECTIONS.map((section) => ({
     ...section,
-    items: section.items.filter(
-      (item) =>
-        canAccess(item.page) &&
-        (!item.roles || item.roles.includes(role)) &&
-        (!item.excludeRoles || !item.excludeRoles.includes(role))
-    ),
+    items: section.items.filter((item) => {
+      if (!canAccess(item.page)) return false;
+      if (item.excludeRoles && item.excludeRoles.includes(role)) return false;
+      if (!customAccess) return !item.roles || item.roles.includes(role);
+      if (seen.has(item.path)) return false;
+      seen.add(item.path);
+      return true;
+    }),
   })).filter((section) => section.items.length);
 }
 
@@ -243,7 +248,7 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
   const showLabels = isMobile || !collapsed;
   const sidebarW = isMobile ? 288 : collapsed ? 64 : 256;
 
-  const visibleSections = visibleNavSections(canAccess, user?.role);
+  const visibleSections = visibleNavSections(canAccess, user?.role, Boolean(customPageAccess(user)));
 
   const handleNavClick = () => {
     if (isMobile) onCloseMobile();

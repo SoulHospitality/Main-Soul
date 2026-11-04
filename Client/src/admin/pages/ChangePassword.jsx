@@ -45,7 +45,7 @@ export default function ChangePassword() {
       if (res.data?.token) applySession(res.data.token, res.data.user);
       await refreshUser();
       toast.success('Password updated');
-      navigate(defaultAdminPage(user?.role), { replace: true });
+      navigate(defaultAdminPage(user), { replace: true });
     } catch (err) {
       toast.error(err.response?.data?.error || 'Unable to change password');
     } finally {

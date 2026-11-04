@@ -37,6 +37,7 @@ function toPublicUser(row) {
     salary_change_status: row.salary_change_status || 'none',
     is_first_login:
       Boolean(Number(row.is_first_login)) && !isPasswordPolicyExempt(row.email),
+    page_access: row.page_access || null,
   };
 }
 

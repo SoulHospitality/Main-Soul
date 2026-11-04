@@ -1,5 +1,6 @@
 const { query } = require('../config/db');
 const { salesLabelBelongsToUser, aliasLabelsForName } = require('./salesNameMatch');
+const { customScope, pageGrant } = require('./pageAccess');
 
 const RESERVATIONS_TEAM_ROLES = new Set([
   'reservations',
@@ -152,7 +153,41 @@ async function pickLeastLoadedReservationsAgent() {
 }
 
 
+/**
+ * Reservation visibility. A per-user scope (page access → Reservations) overrides the role's rule:
+ * 'all' sees everything, 'team' sees own + direct reports, 'own' sees only their own reservations.
+ */
 function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
+  const scope = isAdmin(user) ? null : customScope(user, 'reservations');
+  if (scope === 'all') return { clause: '', params: [], nextIndex: paramIndex };
+  if (scope === 'team') return teamReservationClause(user, alias, paramIndex);
+  if (scope === 'own') return ownReservationClause(user, alias, paramIndex);
+  return roleReservationScopeClause(user, alias, paramIndex);
+}
+
+function teamReservationClause(user, alias, paramIndex) {
+  return {
+    clause: ` AND (
+      ${alias}.sales_person_id = $${paramIndex}
+      OR ${alias}.created_by = $${paramIndex}
+      OR ${alias}.sales_person_id IN (SELECT id FROM staff_users WHERE manager_id = $${paramIndex})
+      OR ${alias}.created_by IN (SELECT id FROM staff_users WHERE manager_id = $${paramIndex})
+      OR EXISTS (
+        SELECT 1 FROM staff_users s
+        WHERE s.manager_id = $${paramIndex}
+          AND s.role IN ('reservations', 'reservations_web', 'reservations_manual', 'hr', 'unit_acquisition_agent', 'resale')
+          AND ${alias}.sales_label IS NOT NULL
+          AND btrim(${alias}.sales_label) <> ''
+          AND lower(regexp_replace(btrim(${alias}.sales_label), '\\s+', ' ', 'g'))
+            = lower(regexp_replace(btrim(s.full_name), '\\s+', ' ', 'g'))
+      )
+    )`,
+    params: [user.id],
+    nextIndex: paramIndex + 1,
+  };
+}
+
+function roleReservationScopeClause(user, alias = 'r', paramIndex = 1) {
   if (hasBroadReservationAccess(user) || isAdmin(user)) {
     return { clause: '', params: [], nextIndex: paramIndex };
   }
@@ -218,6 +253,15 @@ function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
     return { clause: ' AND 1=0', params: [], nextIndex: paramIndex };
   }
 
+  const own = ownReservationClause(user, alias, paramIndex);
+  if (user.role === 'reservations_manual') {
+    own.clause += ` AND ${alias}.booking_id IS NULL AND LOWER(trim(COALESCE(${alias}.booking_source, ''))) NOT IN ('website', 'web')`;
+  }
+  return own;
+}
+
+/** Reservations the user sold, created, or that carry their name as the sales label. */
+function ownReservationClause(user, alias, paramIndex) {
   const name = String(user.full_name || '').trim();
   const params = [user.id];
   let nextIndex = paramIndex + 1;
@@ -277,15 +321,24 @@ function reservationScopeClause(user, alias = 'r', paramIndex = 1) {
   clause += `
   )`;
 
-  if (user.role === 'reservations_manual') {
-    clause += ` AND ${alias}.booking_id IS NULL AND LOWER(trim(COALESCE(${alias}.booking_source, ''))) NOT IN ('website', 'web')`;
-  }
-
   return { clause, params, nextIndex };
 }
 
 
 function bookingAssigneeClause(user, alias = 'b', paramIndex = 1) {
+  const scope = isAdmin(user) ? null : customScope(user, 'website_bookings');
+  if (scope) {
+    const col = alias ? `${alias}.assigned_sales_id` : 'assigned_sales_id';
+    if (scope === 'all') return { clause: '', params: [], nextIndex: paramIndex };
+    if (scope === 'team') {
+      return {
+        clause: ` AND (${col} = $${paramIndex} OR ${col} IN (SELECT id FROM staff_users WHERE manager_id = $${paramIndex}))`,
+        params: [user.id],
+        nextIndex: paramIndex + 1,
+      };
+    }
+    return { clause: ` AND ${col} = $${paramIndex}`, params: [user.id], nextIndex: paramIndex + 1 };
+  }
   if (user?.role === 'reservations_manual') {
     return { clause: ' AND FALSE', params: [], nextIndex: paramIndex };
   }
@@ -339,6 +392,34 @@ function isOwnReservation(user, reservation) {
 }
 
 async function assertReservationOwned(user, reservation) {
+  const scope = isAdmin(user) ? null : customScope(user, 'reservations');
+  if (scope) return assertReservationInScope(user, reservation, scope);
+  return assertReservationOwnedByRole(user, reservation);
+}
+
+async function assertReservationInScope(user, reservation, scope) {
+  if (scope === 'all' || isOwnReservation(user, reservation)) return;
+  if (scope === 'team') {
+    const ids = [reservation?.sales_person_id, reservation?.created_by]
+      .map((id) => Number(id))
+      .filter((id) => Number.isFinite(id) && id > 0);
+    if (ids.length) {
+      const { rows } = await query(
+        `SELECT 1 FROM staff_users WHERE manager_id = $1 AND id = ANY($2::int[]) LIMIT 1`,
+        [user.id, ids]
+      );
+      if (rows[0]) return;
+    }
+    const err = new Error('You can only access reservations for yourself and your team');
+    err.status = 403;
+    throw err;
+  }
+  const err = new Error('You can only access your own reservations');
+  err.status = 403;
+  throw err;
+}
+
+async function assertReservationOwnedByRole(user, reservation) {
   if (hasBroadReservationAccess(user) || isAdmin(user)) return;
   if (hasWebsiteAllReservationAccess(user)) {
     if (isWebsiteOriginReservation(reservation)) return;
@@ -419,7 +500,8 @@ async function assertAssignableSalesPerson(user, salesPersonId) {
 
 function assertBookingAssigned(user, booking) {
   if (isAdmin(user)) return;
-  if (!isWebsiteReservationsAgent(user)) {
+  const customWrite = pageGrant(user, 'website_bookings')?.level === 'write';
+  if (!isWebsiteReservationsAgent(user) && !customWrite) {
     const err = new Error('Only website reservation agents can manage website bookings');
     err.status = 403;
     throw err;

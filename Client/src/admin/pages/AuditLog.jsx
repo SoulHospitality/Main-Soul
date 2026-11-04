@@ -120,6 +120,7 @@ const ACTION_LABELS = {
   KPI_TARGET_CREATE: 'set a KPI target',
   UPSERT_RESERVATION_TARGET: 'set a reservations target',
   APPLY_RESERVATION_TARGETS: 'applied reservations targets',
+  UPDATE_USER_ACCESS: 'changed a user’s page access',
 };
 
 const RANGES = [

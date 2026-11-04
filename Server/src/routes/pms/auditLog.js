@@ -5,6 +5,7 @@ const { CATEGORY_KEYS, categorySql } = require('../../lib/auditCatalog');
 const { RESERVATION_AUDIT_TEAM_ROLES } = require('../../lib/reservationScope');
 const { FINANCE_AGENT_ROLES } = require('../../lib/financeScope');
 const { UNIT_ACQUISITION_ROLES } = require('../../lib/unitAcquisition');
+const { pageGrant, hasCustomAccess } = require('../../lib/pageAccess');
 
 const router = express.Router();
 
@@ -106,6 +107,14 @@ function decodeCursor(value) {
 
 async function resolveScope(user) {
   if (user.role === 'admin') return { admin: true, categories: CATEGORY_KEYS, teamIds: null };
+  // Per-user page access: 'all' sees everything, 'team' sees their direct reports in any area.
+  if (hasCustomAccess(user)) {
+    const grant = pageGrant(user, 'audit_log');
+    if (!grant) return null;
+    if (grant.scope === 'all') return { admin: true, categories: CATEGORY_KEYS, teamIds: null };
+    const { rows } = await query(`SELECT id FROM staff_users WHERE id = $1 OR manager_id = $1`, [user.id]);
+    return { admin: false, categories: CATEGORY_KEYS, teamIds: rows.map((r) => Number(r.id)) };
+  }
   const scope = MANAGER_SCOPES[user.role];
   if (!scope) return null;
   const { rows } = await query(

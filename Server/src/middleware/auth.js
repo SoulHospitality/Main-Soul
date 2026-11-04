@@ -3,6 +3,7 @@ const { query } = require('../config/db');
 const { getServiceClient } = require('../config/supabase');
 const { isPasswordPolicyExempt } = require('../lib/staffIdentity');
 const { tokenVersionMatches } = require('../lib/staffAuthSessions');
+const { grantsRoute } = require('../lib/pageAccess');
 
 async function authStaff(req, res, next) {
   try {
@@ -17,7 +18,7 @@ async function authStaff(req, res, next) {
 
     const { rows } = await query(
       `SELECT id, username, email, full_name, role, is_active, sales_commission_pct, petty_cash_location,
-              staff_code, base_salary, pending_base_salary, salary_change_status, is_first_login,
+              staff_code, base_salary, pending_base_salary, salary_change_status, is_first_login, page_access,
               COALESCE(auth_token_version, 0)::int AS auth_token_version
        FROM staff_users WHERE id = $1`,
       [payload.sub || payload.id]
@@ -41,6 +42,8 @@ function requireRoles(...roles) {
   return (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
     if (roles.length && !roles.includes(req.user.role) && req.user.role !== 'admin') {
+      // A per-user page grant (staff_users.page_access) opens the routes that belong to that page.
+      if (grantsRoute(req)) return next();
       return res.status(403).json({ error: 'Forbidden' });
     }
     next();
