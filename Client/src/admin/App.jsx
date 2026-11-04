@@ -41,9 +41,7 @@ const OwnerPayoutsPage = lazy(() =>
   import('./pages/OwnerPortalPages').then((m) => ({ default: m.OwnerPayoutsPage }))
 );
 const AcquisitionPipeline = lazy(() => import('./pages/AcquisitionPipeline'));
-const AcquisitionAudit = lazy(() => import('./pages/AcquisitionAudit'));
-const FinanceAudit = lazy(() => import('./pages/FinanceAudit'));
-const ReservationAudit = lazy(() => import('./pages/ReservationAudit'));
+const AuditLog = lazy(() => import('./pages/AuditLog'));
 const OwnerDateBlocks = lazy(() => import('./pages/OwnerDateBlocks'));
 const OwnerInspections = lazy(() => import('./pages/OwnerInspections'));
 const OwnerPortalComments = lazy(() => import('./pages/OwnerPortalComments'));
@@ -209,9 +207,10 @@ function AppRoutes() {
       <Route path="promo-codes" element={<ProtectedRoute page="promo_codes"><PromoCodes /></ProtectedRoute>} />
       <Route path="website" element={<ProtectedRoute page="website"><WebsiteControl /></ProtectedRoute>} />
       <Route path="acquisition" element={<ProtectedRoute page="acquisition"><AcquisitionPipeline /></ProtectedRoute>} />
-      <Route path="acquisition-audit" element={<ProtectedRoute page="acquisition_audit"><AcquisitionAudit /></ProtectedRoute>} />
-      <Route path="finance-audit" element={<ProtectedRoute page="finance_audit"><FinanceAudit /></ProtectedRoute>} />
-      <Route path="reservation-audit" element={<ProtectedRoute page="reservation_audit"><ReservationAudit /></ProtectedRoute>} />
+      <Route path="audit" element={<ProtectedRoute page="audit_log"><AuditLog /></ProtectedRoute>} />
+      <Route path="acquisition-audit" element={<Navigate to="/admin/audit?category=units,acquisition" replace />} />
+      <Route path="finance-audit" element={<Navigate to="/admin/audit?category=finance,payments" replace />} />
+      <Route path="reservation-audit" element={<Navigate to="/admin/audit?category=reservations,payments" replace />} />
       <Route path="owner" element={<ProtectedRoute page="owner"><OwnerDashboard /></ProtectedRoute>} />
       <Route path="owner/reservations" element={<ProtectedRoute page="owner_reservations"><OwnerReservations /></ProtectedRoute>} />
       <Route path="owner/statement" element={<ProtectedRoute page="owner_statement"><OwnerStatement /></ProtectedRoute>} />

@@ -34,14 +34,14 @@ const PAGE_ACCESS = {
   ]),
   reservations_manager: new Set([
     'tasks', 'reservations', 'schedule', 'calendar_sync', 'performance',
-    'reservation_audit', 'units', 'projects', 'inbox', 'leads',
+    'audit_log', 'units', 'projects', 'inbox', 'leads',
     'inbox_analytics', 'inbox_settings', ...STAFF_HR,
   ]),
   unit_acquisition_agent: new Set([
     'tasks', 'units', 'owner_comments', 'reservations', 'schedule', 'inbox', 'leads', ...STAFF_HR,
   ]),
   unit_acquisition_manager: new Set([
-    'tasks', 'units', 'reservations', 'schedule', 'acquisition', 'acquisition_audit',
+    'tasks', 'units', 'reservations', 'schedule', 'acquisition', 'audit_log',
     'owner_statement', 'owners', 'owner_comments', 'inbox', 'leads', 'inbox_analytics', ...STAFF_HR,
   ]),
   operations: new Set([
@@ -59,7 +59,7 @@ const PAGE_ACCESS = {
     'tasks', 'financial_system', 'units', 'reservations', 'schedule', 'inbox', ...STAFF_HR,
   ]),
   finance_manager: new Set([
-    'tasks', 'financial_system', 'finance_audit', 'units', 'reservations', 'schedule', 'inbox', ...STAFF_HR,
+    'tasks', 'financial_system', 'audit_log', 'units', 'reservations', 'schedule', 'inbox', ...STAFF_HR,
   ]),
   hr: new Set([
     'users', 'payroll', 'deductions', 'requests', 'holiday_access', 'job_offers',

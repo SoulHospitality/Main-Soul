@@ -41,6 +41,7 @@ export const NAV_SECTIONS = [
     items: [
       { path: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard, page: 'dashboard' },
       { path: '/admin/kpi', label: 'KPI', icon: Target, page: 'kpi' },
+      { path: '/admin/audit', label: 'Audit Log', icon: ClipboardList, page: 'audit_log' },
       { path: '/admin/tasks', label: 'Tasks', icon: ListTodo, page: 'tasks', excludeRoles: ['hr', 'hr_supervisor'] },
       { path: '/admin/website-performance', label: 'Website Performance', icon: Gauge, page: 'site_performance' },
       { path: '/admin/website', label: 'Website', icon: Globe, page: 'website' },
@@ -64,7 +65,6 @@ export const NAV_SECTIONS = [
       { path: '/admin/units-long-term', label: 'Units (Long Term)', icon: Building2, page: 'units_long_term' },
       { path: '/admin/projects', label: 'Destinations', icon: Building, page: 'projects' },
       { path: '/admin/acquisition', label: 'Owner leads', icon: Briefcase, page: 'acquisition' },
-      { path: '/admin/acquisition-audit', label: 'Audit', icon: ClipboardList, page: 'acquisition_audit' },
       { path: '/admin/owner-statement', label: 'Owner Statement', icon: FileBarChart2, page: 'owner_statement' },
       { path: '/admin/owner/blocks', label: 'Owner blocks', icon: CalendarDays, page: 'owner_blocks', roles: ['owners_relations'] },
       { path: '/admin/users', label: 'Owners', icon: UserCircle, page: 'owners', roles: ['unit_acquisition_manager'] },
@@ -81,7 +81,6 @@ export const NAV_SECTIONS = [
       { path: '/admin/schedule', label: 'Schedule', icon: CalendarRange, page: 'schedule' },
       { path: '/admin/calendar-sync', label: 'Calendar Sync', icon: Link2, page: 'calendar_sync' },
       { path: '/admin/performance', label: 'Performance', icon: Trophy, page: 'performance' },
-      { path: '/admin/reservation-audit', label: 'Reservation Audit', icon: ClipboardList, page: 'reservation_audit' },
     ],
   },
   {
@@ -97,7 +96,6 @@ export const NAV_SECTIONS = [
     label: 'Finance',
     items: [
       { path: '/admin/financial-system', label: 'Financial System', icon: Landmark, page: 'financial_system' },
-      { path: '/admin/finance-audit', label: 'Audit', icon: ClipboardList, page: 'finance_audit' },
       { path: '/admin/reports', label: 'Reports', icon: FileBarChart2, page: 'reports', roles: ['admin'] },
       { path: '/admin/commissions', label: 'Commissions', icon: BadgeDollarSign, page: 'commissions', agentLabel: 'My Profit', managerLabel: 'Team profit' },
       { path: '/admin/promo-codes', label: 'Promo Codes', icon: Tag, page: 'promo_codes' },

@@ -43,7 +43,7 @@ const { lookupProjectMinNights } = require('../../lib/minStay');
 const { beachAccessPersistValues, enrichUnitsWithBeachPolicy, withBeachPolicy, computeBeachAccessFee } = require('../../lib/beachAccess');
 const { normalizeProjectName } = require('../../lib/projectNames');
 const { guestsFromBedrooms } = require('../../lib/guestCapacity');
-const { logAudit } = require('../../lib/audit');
+const { logAudit, diffChanges } = require('../../lib/audit');
 const {
   isPartnerFeedUnit,
   queuePartnerInventoryNotify,
@@ -129,10 +129,8 @@ router.use(require('./reservationReceipt'));
 router.use(require('./reservationTargets'));
 router.use(require('./kpi'));
 router.use(require('./resalePerformance'));
-router.use(require('./acquisitionAudit'));
 router.use(require('./acquisitionPerformance'));
-router.use(require('./financeAudit'));
-router.use(require('./reservationAudit'));
+router.use(require('./auditLog'));
 router.use(require('./siteHealth'));
 router.use(require('./staffTasks'));
 router.use(require('./financialSystem'));
@@ -1226,10 +1224,7 @@ async function updateUnitHandler(req, res, next) {
     }
 
     const { rows: existingRows } = await query(
-      `SELECT other_details, price_fallback, wp_post_id, property_type, status,
-              project, compound, area, beds, listing_type, size_m2,
-              utilities_cost, cover_url, photo_urls, min_nights
-       FROM units WHERE id = $1`,
+      `SELECT * FROM units WHERE id = $1`,
       [req.params.id]
     );
     if (!existingRows[0]) return res.status(404).json({ error: 'Not found' });
@@ -1450,7 +1445,11 @@ async function updateUnitHandler(req, res, next) {
       action: 'UPDATE_UNIT',
       entityType: 'unit',
       entityId: req.params.id,
-      details: { listing_type: listingType, title: payload.title || payload.name },
+      details: {
+        listing_type: listingType,
+        title: payload.title || payload.name,
+        changes: diffChanges(existingRows[0], synced || rows[0]),
+      },
     });
     queuePartnerInventoryNotify({
       unitId: req.params.id,
@@ -2241,6 +2240,9 @@ router.patch(
         ? parseFloat(b.broker_total) || 0
         : brokerPerNight * nights;
 
+    // Full row before the edit, so the audit log can show what changed.
+    const { rows: beforeRows } = await query(`SELECT * FROM reservations WHERE id = $1`, [req.params.id]);
+
     const { rows } = await query(
       `UPDATE reservations SET
          status = COALESCE($1, status),
@@ -2359,6 +2361,7 @@ router.patch(
         check_in: rows[0]?.check_in || existing.check_in || null,
         check_out: rows[0]?.check_out || existing.check_out || null,
         status: rows[0]?.status || existing.status || null,
+        changes: diffChanges(beforeRows[0], rows[0]),
       },
     });
     res.json(rows[0]);
@@ -4139,53 +4142,6 @@ router.post('/treasury', requireRoles('admin'), async (req, res, next) => {
       [b.entry_type, b.category, b.description, b.amount, b.entry_date, b.reference, req.user.id]
     );
     res.status(201).json(rows[0]);
-  } catch (e) {
-    next(e);
-  }
-});
-
-router.get('/audit', requireRoles('admin'), async (req, res, next) => {
-  try {
-    const params = [];
-    const where = ['1=1'];
-    if (req.query.action) {
-      params.push(req.query.action);
-      where.push(`a.action = $${params.length}`);
-    }
-    if (req.query.user_id) {
-      params.push(Number(req.query.user_id));
-      where.push(`a.user_id = $${params.length}`);
-    }
-    if (req.query.from_date) {
-      params.push(req.query.from_date);
-      where.push(`a.created_at::date >= $${params.length}::date`);
-    }
-    if (req.query.to_date) {
-      params.push(req.query.to_date);
-      where.push(`a.created_at::date <= $${params.length}::date`);
-    }
-    if (req.query.search) {
-      params.push(`%${String(req.query.search).toLowerCase()}%`);
-      where.push(
-        `(lower(a.action) LIKE $${params.length} OR lower(COALESCE(a.entity_type,'')) LIKE $${params.length} OR lower(COALESCE(a.entity_id,'')) LIKE $${params.length} OR lower(COALESCE(u.full_name,'')) LIKE $${params.length} OR lower(COALESCE(u.username,'')) LIKE $${params.length})`
-      );
-    }
-    const { rows } = await query(
-      `SELECT a.*, u.full_name AS user_name, u.username
-       FROM audit_log a
-       LEFT JOIN staff_users u ON u.id = a.user_id
-       WHERE ${where.join(' AND ')}
-       ORDER BY a.created_at DESC
-       LIMIT 500`,
-      params
-    );
-    const { rows: actionRows } = await query(
-      `SELECT DISTINCT action FROM audit_log WHERE action IS NOT NULL ORDER BY action`
-    );
-    res.json({
-      logs: rows,
-      actions: actionRows.map((r) => r.action),
-    });
   } catch (e) {
     next(e);
   }
