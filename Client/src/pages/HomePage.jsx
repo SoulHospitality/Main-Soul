@@ -111,7 +111,7 @@ function Hero() {
   });
   const copies = slideshow ? slides.map(copy) : [copy(null)];
   const headingClass =
-    'g-display mx-auto max-w-[18ch] text-center text-[clamp(30px,4.2vw+14px,84px)] !leading-[0.95] [text-shadow:0_2px_28px_rgba(0,0,0,0.45)] [text-wrap:balance]';
+    'g-display mx-auto max-w-[18ch] text-center text-[clamp(30px,min(4.2vw+14px,8.5svh),84px)] !leading-[0.95] [text-shadow:0_2px_28px_rgba(0,0,0,0.45)] [text-wrap:balance]';
 
   return (
     <section className="relative isolate flex min-h-[100svh] flex-col overflow-hidden bg-[#0b4a56] text-white">
@@ -121,7 +121,8 @@ function Hero() {
         <HeroWaves videoUrl={hero.video_url} />
       )}
 
-      <div className="g-shell relative z-[2] flex w-full flex-1 flex-col items-center justify-center pb-10 pt-24 text-center sm:pb-12 sm:pt-28">
+      {/* Matching top and bottom padding keeps the stack centred on screen; it tightens on short screens. */}
+      <div className="g-shell relative z-[2] flex w-full flex-1 flex-col items-center justify-center pb-16 pt-24 text-center sm:py-28 [@media(max-height:760px)]:pb-14 [@media(max-height:760px)]:pt-20">
         {/* Every slide's copy shares one grid cell, so the block keeps the tallest slide's height
             and the button and search below stay still while the slides change. */}
         <div className="grid w-full items-end justify-items-center">
@@ -153,7 +154,7 @@ function Hero() {
                 {c.subtitle ? (
                   <p
                     key={on ? `sub-${index}` : 'sub-off'}
-                    className={`mx-auto mt-4 line-clamp-3 max-w-xl text-[15px] leading-relaxed text-white/90 [text-shadow:0_1px_14px_rgba(0,0,0,0.55)] [text-wrap:balance] sm:mt-5 sm:text-lg ${on ? 'soul-fade-up' : ''}`}
+                    className={`mx-auto mt-4 line-clamp-3 max-w-xl [@media(max-height:760px)]:line-clamp-2 text-[15px] leading-relaxed text-white/90 [text-shadow:0_1px_14px_rgba(0,0,0,0.55)] [text-wrap:balance] sm:mt-5 sm:text-lg ${on ? 'soul-fade-up' : ''}`}
                     style={{ animationDelay: advanced ? '0.1s' : '0.6s' }}
                   >
                     {c.subtitle}
@@ -165,28 +166,33 @@ function Hero() {
         </div>
 
         {slideshow ? (
-          <div className="mt-5 sm:mt-6">
+          <div className="mt-5 sm:mt-6 [@media(max-height:760px)]:mt-3">
             <SlideDots count={slides.length} index={current} onChange={goTo} label={t('home.heroSlide')} />
           </div>
         ) : null}
 
-        <div className="soul-fade-up mt-6 flex justify-center sm:mt-8" style={{ animationDelay: '0.75s' }}>
+        <div className="soul-fade-up mt-6 flex justify-center sm:mt-8 [@media(max-height:760px)]:mt-4" style={{ animationDelay: '0.75s' }}>
           <Link to="/search" className="g-btn g-btn-glass !border-white/35 !bg-white/15 backdrop-blur-md hover:!border-white/60 hover:!bg-white/25">
             {t('home.heroExplore')}
             <ArrowDot />
           </Link>
         </div>
 
-        <div className="soul-fade-up mx-auto mt-6 w-full max-w-xl md:mt-10 lg:max-w-none" style={{ animationDelay: '0.95s' }}>
+        <div className="soul-fade-up mx-auto mt-6 w-full max-w-xl md:mt-10 lg:max-w-none [@media(max-height:760px)]:mt-5" style={{ animationDelay: '0.95s' }}>
           <HeroSearch ref={capsuleRef} />
         </div>
 
-        <div className="mt-8 hidden items-center justify-center gap-3 text-white/80 sm:flex">
-          <span className="g-index">{t('home.heroScroll')}</span>
-          <span className="relative h-10 w-px overflow-hidden bg-white/20">
-            <span className="g-scroll-cue absolute inset-0 bg-white" />
-          </span>
-        </div>
+      </div>
+
+      {/* Scroll cue: bottom corner opposite the WhatsApp button, outside the centred stack. */}
+      <div
+        className="pointer-events-none absolute bottom-6 start-5 z-[2] hidden flex-col items-center gap-3 text-white/80 sm:flex md:bottom-8 md:start-8 [@media(max-height:620px)]:hidden"
+        aria-hidden="true"
+      >
+        <span className="g-index [writing-mode:vertical-rl]">{t('home.heroScroll')}</span>
+        <span className="relative h-10 w-px overflow-hidden bg-white/20">
+          <span className="g-scroll-cue absolute inset-0 bg-white" />
+        </span>
       </div>
     </section>
   );
