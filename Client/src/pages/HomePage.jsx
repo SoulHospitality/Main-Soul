@@ -121,8 +121,8 @@ function Hero() {
         <HeroWaves videoUrl={hero.video_url} />
       )}
 
-      {/* Matching top and bottom padding keeps the stack centred on screen; it tightens on short screens. */}
-      <div className="g-shell relative z-[2] flex w-full flex-1 flex-col items-center justify-center pb-16 pt-24 text-center sm:py-28 [@media(max-height:760px)]:pb-14 [@media(max-height:760px)]:pt-20">
+      {/* Extra top padding sits the stack slightly below centre; it tightens on short screens. */}
+      <div className="g-shell relative z-[2] flex w-full flex-1 flex-col items-center justify-center pb-12 pt-28 text-center sm:pb-20 sm:pt-36 [@media(max-height:760px)]:pb-10 [@media(max-height:760px)]:pt-24">
         {/* Every slide's copy shares one grid cell, so the block keeps the tallest slide's height
             and the button and search below stay still while the slides change. */}
         <div className="grid w-full items-end justify-items-center">
