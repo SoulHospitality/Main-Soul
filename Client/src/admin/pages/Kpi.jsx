@@ -165,9 +165,9 @@ export default function Kpi() {
   });
 
   const remove = useMutation({
-    mutationFn: ({ id, staffId }) => api.delete(`/kpi/${id}`, { params: { staff_id: staffId } }).then((r) => r.data),
-    onSuccess: () => {
-      toast.success('KPI removed');
+    mutationFn: ({ id, staffId }) => api.delete(`/kpi/${id}`, { params: staffId ? { staff_id: staffId } : {} }).then((r) => r.data),
+    onSuccess: (_res, vars) => {
+      toast.success(vars.staffId ? 'KPI removed for this person' : 'KPI deleted for the whole team');
       qc.invalidateQueries({ queryKey: ['kpi'] });
     },
     onError: (err) => toast.error(err.response?.data?.error || 'Could not remove the KPI'),
@@ -357,7 +357,7 @@ export default function Kpi() {
                       today={data.today}
                       canManage={data.can_manage}
                       people={staff.filter((person) => person.kpis.some((item) => item.id === selectedKpi.id))}
-                      onDelete={() => remove.mutate({ id: selectedKpi.id, staffId: selectedStaff.id })}
+                      onDelete={(scope) => remove.mutate({ id: selectedKpi.id, staffId: scope === 'all' ? undefined : selectedStaff.id })}
                       deleting={remove.isPending}
                     />
                   ) : null}
@@ -830,7 +830,30 @@ function KpiDetail({ kpi, staffId, today, canManage, people, onDelete, deleting 
             </button>
           ) : null}
           {kpi.can_delete ? (
-            <button type="button" className="btn-secondary" onClick={onDelete} disabled={deleting}>Remove</button>
+            <>
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={deleting}
+                onClick={() => {
+                  if (window.confirm('Remove this KPI for this person only? Everyone else keeps it.')) onDelete('one');
+                }}
+              >
+                Remove for this person
+              </button>
+              {people.length > 1 ? (
+                <button
+                  type="button"
+                  className="btn-secondary !border-rose-200 !text-rose-700 hover:!bg-rose-50"
+                  disabled={deleting}
+                  onClick={() => {
+                    if (window.confirm(`Delete “${kpi.title || kpi.metric_label}” for all ${people.length} people on it, with its checklists? This can’t be undone.`)) onDelete('all');
+                  }}
+                >
+                  Delete for whole team ({people.length})
+                </button>
+              ) : null}
+            </>
           ) : null}
         </div>
       </div>
