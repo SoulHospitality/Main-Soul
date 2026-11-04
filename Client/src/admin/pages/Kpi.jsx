@@ -109,7 +109,7 @@ function paceLine(kpi) {
   const parts = [];
   if (p.days_left) parts.push(`Expected by today ${formatAmount(kpi, p.expected)}`);
   if (p.days_left && p.projected != null) parts.push(`on pace for ${formatAmount(kpi, p.projected)}`);
-  if (p.needed_per_day && kpi.status !== 'achieved') parts.push(`needs ${formatAmount(kpi, p.needed_per_day)}/day`);
+  if (kpi.daily_target && kpi.status !== 'achieved') parts.push(`today’s target ${formatAmount(kpi, kpi.daily_target.amount)}`);
   parts.push(p.days_left ? `${p.days_left} days left` : 'ended');
   return parts.join(' · ');
 }

@@ -460,6 +460,16 @@ router.get('/kpi', async (req, res, next) => {
             percent: checklist.completion_percent,
           })),
         });
+        // One daily figure everywhere: what was left before today ÷ days left including today.
+        const daily = dailyTarget({
+          metric: target.metric,
+          targetValue: target.target_value,
+          actual,
+          todayValue: target.metric === 'reviews' ? 0 : stats.daily.get(`${Number(person.id)}|${today}`) || 0,
+          startsOn: target.starts_on,
+          deadline: target.deadline,
+          today,
+        });
         const pace = kpiPace({
           metric: target.metric,
           actual,
@@ -479,16 +489,8 @@ router.get('/kpi', async (req, res, next) => {
           weight: target.weight,
           status,
           status_label: STATUS_LABELS[status] || status,
-          pace,
-          daily_target: dailyTarget({
-            metric: target.metric,
-            targetValue: target.target_value,
-            actual,
-            todayValue: target.metric === 'reviews' ? 0 : stats.daily.get(`${Number(person.id)}|${today}`) || 0,
-            startsOn: target.starts_on,
-            deadline: target.deadline,
-            today,
-          }),
+          pace: daily ? { ...pace, needed_per_day: daily.amount } : pace,
+          daily_target: daily,
           work_days: workDays,
           metric: target.metric,
           metric_label: METRIC_LABELS[target.metric] || target.metric,
