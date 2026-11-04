@@ -1,6 +1,7 @@
 const express = require('express');
 const XLSX = require('xlsx');
 const { query, pool } = require('../../config/db');
+const { applyPayrollRules } = require('../../lib/hrPayrollRules');
 const { requireRoles } = require('../../middleware/auth');
 const { excelUpload } = require('../../config/cloudinary');
 const {
@@ -1212,9 +1213,19 @@ async function markAttendanceExcuse({ staff, date, checkIn, actorId }) {
   return { cell, counted_as_late: false };
 }
 
+/** HR payroll rules are recalculated for unpaid payrolls whenever payroll or a payslip is read. */
+async function applyRulesSafely(cycle, staffIds = null) {
+  try {
+    await applyPayrollRules({ pool, query, ...cycle, staffIds });
+  } catch (err) {
+    console.error('[hr-rules] could not apply payroll rules', err.message);
+  }
+}
+
 router.get('/hr/payroll', requireRoles(...HR_ROLES), async (req, res, next) => {
   try {
-    const { year, month, from, to } = parsePeriod(req);
+    const { year, month, from, to, through } = parsePeriod(req);
+    await applyRulesSafely({ year, month, from, through });
     const { rows } = await query(
       `SELECT
          u.id AS staff_user_id,
@@ -1304,7 +1315,8 @@ router.get('/hr/payroll', requireRoles(...HR_ROLES), async (req, res, next) => {
 
 router.post('/hr/payroll/mark-paid', requireRoles(...HR_ROLES), async (req, res, next) => {
   try {
-    const { year, month, from, to } = parsePeriod(req);
+    const { year, month, from, to, through } = parsePeriod(req);
+    await applyRulesSafely({ year, month, from, through });
     const ids = Array.isArray(req.body?.staff_user_ids)
       ? req.body.staff_user_ids.map(Number).filter((n) => Number.isInteger(n) && n > 0)
       : [];
@@ -1405,7 +1417,7 @@ router.get('/hr/payslip', async (req, res, next) => {
     if (req.user.role === 'owner') {
       return res.status(403).json({ error: 'Owner accounts do not have a staff payslip' });
     }
-    const { year, month, from, to } = parsePeriod(req);
+    const { year, month, from, to, through } = parsePeriod(req);
     let staffUserId = req.user.id;
     if (isHrActor(req.user) && req.query.staff_user_id) {
       staffUserId = Number(req.query.staff_user_id);
@@ -1414,6 +1426,7 @@ router.get('/hr/payslip', async (req, res, next) => {
     if (!isHrActor(req.user) && staffUserId !== req.user.id) {
       return res.status(403).json({ error: 'Forbidden' });
     }
+    await applyRulesSafely({ year, month, from, through }, [staffUserId]);
 
     const { rows: payrollRows } = await query(
       `SELECT * FROM staff_payroll_entries

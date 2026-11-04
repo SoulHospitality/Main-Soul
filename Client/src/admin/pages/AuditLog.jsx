@@ -122,6 +122,10 @@ const ACTION_LABELS = {
   APPLY_RESERVATION_TARGETS: 'applied reservations targets',
   UPDATE_USER_ACCESS: 'changed a user’s page access',
   CHANGE_ROLE: 'changed a user’s role',
+  CREATE_HR_RULE: 'added an HR rule',
+  UPDATE_HR_RULE: 'edited an HR rule',
+  DELETE_HR_RULE: 'deleted an HR rule',
+  APPLY_HR_RULES: 'applied HR rules to payroll',
 };
 
 const RANGES = [

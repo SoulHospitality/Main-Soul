@@ -133,6 +133,7 @@ const API_PAGES = [
   ['/hr/salary-deductions', 'deductions'],
   ['/hr/salary-bonuses', 'deductions'],
   ['/hr/deduction-rules', 'hr_rules'],
+  ['/hr/payroll-rules', 'hr_rules'],
   ['/hr/payslip', 'payslip'],
   ['/hr/payroll', 'payroll'],
 ].sort((a, b) => b[0].length - a[0].length);
