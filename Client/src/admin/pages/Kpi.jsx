@@ -206,16 +206,40 @@ function Segmented({ value, onChange, options }) {
   );
 }
 
+/** Today's share of the target: what's left before today ÷ days left (including today). */
+function DailyTargetBox({ kpi, size = 'sm' }) {
+  const d = kpi.daily_target;
+  if (!d || kpi.status === 'achieved') return null;
+  const met = d.met;
+  return (
+    <div
+      className={`shrink-0 rounded-lg border px-2.5 py-1.5 text-right ${met ? 'border-emerald-200 bg-emerald-50' : 'border-soul-line bg-white'}`}
+      title={`Still needed before today ${formatAmount(kpi, d.remaining_before_today)} ÷ ${d.days_left} day${d.days_left === 1 ? '' : 's'} left`}
+    >
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-soul-muted">Today’s target</p>
+      <p className={`font-semibold tabular-nums text-soul-blue ${size === 'lg' ? 'text-base' : 'text-sm'}`}>{formatAmount(kpi, d.amount)}</p>
+      <p className={`text-[11px] tabular-nums ${met ? 'text-emerald-700' : 'text-soul-muted'}`}>
+        {met ? '✓ ' : ''}{formatAmount(kpi, d.done_today)} done today
+      </p>
+    </div>
+  );
+}
+
 function KpiCard({ kpi, active, onClick }) {
   return (
     <button type="button" onClick={onClick} className={`card w-full p-4 text-left transition ${active ? 'ring-2 ring-[var(--pms-accent,#F28C28)]' : 'hover:shadow-md'}`}>
       <div className="flex items-start justify-between gap-2">
-        <p className="font-semibold text-soul-blue">{kpiName(kpi)}</p>
-        <StatusChip status={kpi.status} label={kpi.status_label} />
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="font-semibold text-soul-blue">{kpiName(kpi)}</p>
+            <StatusChip status={kpi.status} label={kpi.status_label} />
+          </div>
+          <p className="mt-1 text-xs text-soul-muted">
+            Target {formatTarget(kpi)} · {formatDay(kpi.starts_on, { day: 'numeric', month: 'short' })}–{formatDay(kpi.deadline, { day: 'numeric', month: 'short' })} · <Importance weight={kpi.weight} />
+          </p>
+        </div>
+        <DailyTargetBox kpi={kpi} />
       </div>
-      <p className="mt-1 text-xs text-soul-muted">
-        {formatTarget(kpi)} · {formatDay(kpi.starts_on, { day: 'numeric', month: 'short' })}–{formatDay(kpi.deadline, { day: 'numeric', month: 'short' })} · <Importance weight={kpi.weight} />
-      </p>
       <p className="mt-2 text-sm">
         {formatActual(kpi)} · <span className="font-semibold">{kpi.percent}%</span>
       </p>
@@ -1013,6 +1037,7 @@ function KpiDetail({ kpi, staffId, today, canManage, onEdit, onChecklist }) {
           <p className="mt-0.5 text-xs text-soul-muted">{paceLine(kpi)}</p>
           {kpi.notes ? <p className="mt-1 text-xs italic text-soul-muted">{kpi.notes}</p> : null}
         </div>
+        <DailyTargetBox kpi={kpi} size="lg" />
         <KpiActions kpi={kpi} canManage={canManage} staffId={staffId} onEdit={onEdit} onChecklist={onChecklist} />
       </header>
 

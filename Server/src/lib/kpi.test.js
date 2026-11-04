@@ -74,3 +74,22 @@ test('checklists only expect working days', () => {
   const days = ['2026-11-05', '2026-11-06', '2026-11-07'];
   assert.deepEqual(workingDays(days, { daysOff: ['fri'], leaveDates: new Set(['2026-11-07']) }), ['2026-11-05']);
 });
+
+const { dailyTarget } = require('./kpi');
+
+test('the daily target spreads what is left over the days left, including today', () => {
+  const base = { metric: 'reservations', targetValue: 30000, startsOn: '2026-11-01', deadline: '2026-11-30' };
+  const day1 = dailyTarget({ ...base, actual: 500, todayValue: 500, today: '2026-11-01' });
+  assert.equal(day1.amount, 1000);
+  assert.equal(day1.done_today, 500);
+  assert.equal(day1.percent, 50);
+  assert.equal(day1.met, false);
+  const day2 = dailyTarget({ ...base, actual: 500, todayValue: 0, today: '2026-11-02' });
+  assert.equal(day2.amount, Math.round((29500 / 29) * 100) / 100);
+  assert.equal(day2.days_left, 29);
+  const lastDay = dailyTarget({ ...base, actual: 29000, todayValue: 0, today: '2026-11-30' });
+  assert.equal(lastDay.amount, 1000);
+  assert.equal(dailyTarget({ ...base, actual: 31000, todayValue: 0, today: '2026-11-10' }).amount, 0);
+  assert.equal(dailyTarget({ ...base, metric: 'reviews', actual: 4, today: '2026-11-10' }), null);
+  assert.equal(dailyTarget({ ...base, actual: 0, today: '2026-12-01' }), null);
+});

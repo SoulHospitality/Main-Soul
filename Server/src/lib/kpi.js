@@ -165,6 +165,29 @@ function kpiPace({ metric, actual, targetValue, startsOn, deadline, today, revie
   };
 }
 
+/**
+ * Today's target for a running total: what is still missing before today, spread over the days left
+ * including today. It stays fixed for the day; `done_today` shows progress against it.
+ * Example: 30,000 over 30 days → 1,000; 500 done on day 1 → (30,000 − 500) / 29 on day 2.
+ */
+function dailyTarget({ metric, targetValue, actual, todayValue = 0, startsOn, deadline, today }) {
+  if (metric === 'reviews' || today < startsOn || today > deadline) return null;
+  const target = Number(targetValue) || 0;
+  const doneToday = Math.max(0, Number(todayValue) || 0);
+  const doneBefore = Math.max(0, (Number(actual) || 0) - doneToday);
+  const daysLeft = dayCount(today, deadline);
+  const remaining = Math.max(0, target - doneBefore);
+  const amount = daysLeft ? Math.round((remaining / daysLeft) * 100) / 100 : remaining;
+  return {
+    amount,
+    done_today: doneToday,
+    percent: amount > 0 ? Math.round((doneToday / amount) * 1000) / 10 : 100,
+    met: doneToday >= amount,
+    remaining_before_today: remaining,
+    days_left: daysLeft,
+  };
+}
+
 /** A person's score: importance-weighted average of their started KPIs, each capped at 100%. */
 function personScore(kpis) {
   const counted = (kpis || []).filter((k) => k.status !== 'not_started');
@@ -207,6 +230,7 @@ module.exports = {
   STATUS_LABELS,
   SCORE_CAP,
   kpiPace,
+  dailyTarget,
   personScore,
   statusCounts,
   workingDays,
