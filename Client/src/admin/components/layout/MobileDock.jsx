@@ -6,6 +6,7 @@ import { usePermissions } from '../../hooks/usePermissions';
 import { visibleNavSections } from './Sidebar';
 
 const SHORT_LABEL = {
+  '/admin/clock': 'Clock in',
   '/admin/dashboard': 'Home',
   '/admin/inbox': 'Inbox',
   '/admin/reservations': 'Bookings',
@@ -20,6 +21,7 @@ const SHORT_LABEL = {
 };
 
 const DOCK_PRIORITY = [
+  '/admin/clock',
   '/admin/dashboard',
   '/admin/inbox',
   '/admin/reservations',

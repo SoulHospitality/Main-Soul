@@ -1,69 +1,24 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Menu, Bell, Search, X } from 'lucide-react';
-import { io } from 'socket.io-client';
+import { Menu, Bell, Search, X, Volume2, VolumeX } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import api from '../../api/axios';
+import { useLiveNotifications } from '../../hooks/useLiveNotifications';
+import { notificationIcon } from '../../utils/notificationLinks';
+import { soundEnabled, setSoundEnabled, playChime } from '../../utils/chime';
 import { formatDateTime } from '../../utils/formatters';
 import { ROLE_LABELS, PMS_LABELS } from '../../utils/permissions';
 import { getRoleTheme } from '../../utils/roleTheme';
-
-const NOTIFICATION_ICONS = {
-  new_booking: '🏠',
-  booking_accepted: '✅',
-  booking_rejected: '❌',
-  reservation_created: '📝',
-  cancel_request: '⚠️',
-  payment_pending: '💳',
-  checkin_reminder: '📅',
-  checkin: '📅',
-  payment: '💳',
-  default: '🔔',
-};
-
-function notificationHref(n) {
-  if (n.type === 'new_booking') return '/admin/website-bookings/unassigned';
-  if (n.entity_type === 'booking') return '/admin/website-bookings';
-  if (n.entity_type === 'owner_comment') {
-    if (n.type === 'owner_comment_reply') return '/admin/owner/comments';
-    return `/admin/owner-comments${n.entity_id ? `?thread=${n.entity_id}` : ''}`;
-  }
-  if (n.entity_type === 'unit_inspection') {
-    if (n.type === 'owner_unit_inspection') return '/admin/owner/inspections';
-    return `/admin/operations?tab=inspections${n.entity_id ? `&inspection=${n.entity_id}` : ''}`;
-  }
-  if (n.entity_type === 'reservation' && n.entity_id) {
-    return `/admin/reservations?view=${n.entity_id}`;
-  }
-  if (n.type === 'booking_accepted' || n.type === 'booking_rejected') {
-    return '/admin/website-bookings/history';
-  }
-  return '/admin/reservations';
-}
 
 export default function Header({ onToggleSidebar, sidebarWidth = 256 }) {
   const { user } = useAuth();
   const theme = getRoleTheme(user?.role);
   const navigate = useNavigate();
-  const qc = useQueryClient();
   const [showNotifs, setShowNotifs] = useState(false);
   const [search, setSearch] = useState('');
   const [showSearch, setShowSearch] = useState(false);
+  const [sound, setSound] = useState(soundEnabled);
   const notifsRef = useRef(null);
-
-  const { data: notifData } = useQuery({
-    queryKey: ['notifications'],
-    queryFn: () => api.get('/notifications?limit=15').then((r) => r.data),
-    refetchInterval: 30000,
-    enabled: !!user?.id,
-  });
-
-  const markRead = useMutation({
-    mutationFn: (id) =>
-      id === 'all' ? api.put('/notifications/read-all') : api.put(`/notifications/${id}/read`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
-  });
+  const { notifications, unread, markRead, open } = useLiveNotifications(user);
 
   useEffect(() => {
     const handler = (e) => {
@@ -73,41 +28,22 @@ export default function Header({ onToggleSidebar, sidebarWidth = 256 }) {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  useEffect(() => {
-    if (!user?.id) return undefined;
-    const base = import.meta.env.VITE_API_URL || window.location.origin;
-    const socket = io(base, {
-      auth: { token: localStorage.getItem('pms_token') || '' },
-      transports: ['websocket', 'polling'],
-    });
-    const refresh = () => {
-      qc.invalidateQueries({ queryKey: ['notifications'] });
-      qc.invalidateQueries({ queryKey: ['website-bookings-pending'] });
-      qc.invalidateQueries({ queryKey: ['website-bookings-unassigned'] });
-      qc.invalidateQueries({ queryKey: ['website-bookings-history'] });
-    };
-    socket.on('pms:notification', refresh);
-    socket.on('sales:notification', refresh);
-    return () => {
-      socket.off('pms:notification', refresh);
-      socket.off('sales:notification', refresh);
-      socket.disconnect();
-    };
-  }, [user?.id, user?.role, qc]);
-
   const handleSearch = (e) => {
     e.preventDefault();
     if (search.trim()) navigate(`/admin/reservations?search=${encodeURIComponent(search.trim())}`);
   };
 
   const openNotification = (n) => {
-    markRead.mutate(n.id);
     setShowNotifs(false);
-    navigate(notificationHref(n));
+    open(n);
   };
 
-  const unread = notifData?.unreadCount || 0;
-  const notifications = notifData?.notifications || [];
+  const toggleSound = () => {
+    const next = !sound;
+    setSoundEnabled(next);
+    setSound(next);
+    if (next) playChime();
+  };
 
   return (
     <header
@@ -195,6 +131,16 @@ export default function Header({ onToggleSidebar, sidebarWidth = 256 }) {
             <div className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-24px)] bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-soul-line overflow-hidden animate-slide-in">
               <div className="flex items-center justify-between px-4 py-3 border-b border-soul-line bg-[var(--pms-header-tint)]">
                 <span className="font-semibold text-soul-blue text-sm">Notifications</span>
+                <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={toggleSound}
+                  className="rounded-lg p-1 text-soul-muted hover:text-soul-blue"
+                  title={sound ? 'Sound on: click to mute' : 'Sound off: click to turn on'}
+                  aria-label={sound ? 'Mute notification sound' : 'Turn on notification sound'}
+                >
+                  {sound ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+                </button>
                 {unread > 0 && (
                   <button
                     type="button"
@@ -205,8 +151,9 @@ export default function Header({ onToggleSidebar, sidebarWidth = 256 }) {
                     Mark all read
                   </button>
                 )}
+                </div>
               </div>
-              <div className="max-h-80 overflow-y-auto">
+              <div className="max-h-[min(28rem,70vh)] overflow-y-auto">
                 {notifications.length === 0 ? (
                   <div className="py-8 text-center text-soul-muted text-sm">No notifications</div>
                 ) : (
@@ -220,7 +167,7 @@ export default function Header({ onToggleSidebar, sidebarWidth = 256 }) {
                     >
                       <div className="flex items-start gap-3">
                         <span className="text-lg leading-none mt-0.5">
-                          {NOTIFICATION_ICONS[n.type] || NOTIFICATION_ICONS.default}
+                          {notificationIcon(n)}
                         </span>
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-medium text-soul-blue">{n.title}</div>

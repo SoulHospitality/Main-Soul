@@ -65,9 +65,10 @@ export function hourlyRate(baseSalary) {
 export const LEAVE_TYPE_LABELS = {
   casual: 'Casual',
   annual: 'Annual',
-  early_leave: 'Paid excuse',
-  paid_excuse: 'Paid excuse',
-  unpaid_excuse: 'Unpaid excuse',
+  early_leave: 'Excuse',
+  paid_excuse: 'Excuse',
+  excuse: 'Excuse',
+  unpaid_excuse: 'Excuse (unpaid, old type)',
   sick: 'Sick leave',
   holiday: 'Holiday',
   day_off: 'Day off',
@@ -84,7 +85,7 @@ export function formatUnpaidLeaveAvailable(leaveSnap) {
 
 export function isExcuseLeaveType(leaveType) {
   const t = String(leaveType || '');
-  return t === 'paid_excuse' || t === 'unpaid_excuse' || t === 'early_leave';
+  return t === 'paid_excuse' || t === 'unpaid_excuse' || t === 'early_leave' || t === 'excuse';
 }
 
 export function isMissionLeaveType(leaveType) {
@@ -98,20 +99,19 @@ export function isTimedLeaveType(leaveType) {
 
 export function requestableLeaveTypes(canRequestHolidays) {
   const unpaid = { value: 'unpaid', label: 'Unpaid leave (manager then HR)' };
-  const paidExcuse = { value: 'paid_excuse', label: 'Paid excuse (2/month, max 2h · manager then HR)' };
-  const unpaidExcuse = { value: 'unpaid_excuse', label: 'Unpaid excuse (hourly · manager then HR)' };
+  // One excuse type: up to 2 per payroll month (26th–25th), up to 2 hours each.
+  const excuse = { value: 'paid_excuse', label: 'Excuse (2 per month, up to 2h · manager then HR)' };
   const mission = { value: 'mission', label: 'Mission (paid time · manager then HR)' };
   if (canRequestHolidays) {
     return [
       { value: 'casual', label: 'Casual (manager then HR)' },
       { value: 'annual', label: 'Annual (manager then HR)' },
-      paidExcuse,
-      unpaidExcuse,
+      excuse,
       mission,
       unpaid,
     ];
   }
-  return [paidExcuse, unpaidExcuse, mission, unpaid];
+  return [excuse, mission, unpaid];
 }
 
 export function computeAttendanceAmount(baseSalary, { status, check_in } = {}) {

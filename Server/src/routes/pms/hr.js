@@ -63,8 +63,10 @@ const {
   describeRequestApproval,
   isUnpaidLeaveUnlimited,
   refreshDeductionRules,
+  DEFAULT_ATTENDANCE_CHECKOUT,
 } = require('../../lib/hrRules');
 const { loadManagerIds, sqlStaffManagedBy } = require('../../lib/staffManagers');
+const { notifyRequestSubmitted, notifyRequestReviewed, requestCategory } = require('../../lib/requestNotifications');
 
 const router = express.Router();
 
@@ -329,6 +331,7 @@ async function reviewStaffRequest({ table, id, actor, body, onApprove }) {
     }
     const { rows } = await client.query(sql, params);
     await client.query('COMMIT');
+    notifyRequestReviewed(kind, row, rows[0], actor);
     return presentStaffRequest(
       {
         ...rows[0],
@@ -795,7 +798,7 @@ async function upsertAttendanceRecord({
         inTime,
         null,
         computed.daily_rate,
-        computed.factor,
+        computed.penalty_type === 'amount' ? null : computed.factor,
       ]);
     } else {
       const computed = computeAbsenceDeduction(staff.base_salary);
@@ -809,7 +812,7 @@ async function upsertAttendanceRecord({
         null,
         !!notified,
         computed.daily_rate,
-        computed.factor,
+        computed.penalty_type === 'amount' ? null : computed.factor,
       ]);
     }
   }
@@ -950,7 +953,7 @@ async function applyLeaveTypeEffects(db, { staffId, leaveType, days, startDate, 
         null,
         null,
         unpaid.daily_rate,
-        unpaid.factor,
+        unpaid.penalty_type === 'amount' ? null : unpaid.factor,
       ]);
     }
   }
@@ -1753,6 +1756,167 @@ router.get('/hr/requests-history', async (req, res, next) => {
   }
 });
 
+const REQUEST_CATEGORIES = ['holiday', 'excuse', 'mission', 'wfh', 'loan'];
+
+/**
+ * Live counts for the sidebar and the Requests page:
+ * - review: requests waiting for this person's decision, by type;
+ * - mine: this person's own pending requests, by type, and decisions they haven't opened yet.
+ */
+router.get('/hr/requests/counts', async (req, res, next) => {
+  try {
+    if (req.user.role === 'owner') return res.status(403).json({ error: 'Forbidden' });
+    const blank = () => Object.fromEntries(REQUEST_CATEGORIES.map((c) => [c, 0]));
+    const review = blank();
+    const mine = blank();
+    const tables = [
+      ['staff_leave_requests', 'leave'],
+      ['staff_wfh_requests', 'wfh'],
+      ['staff_loan_requests', 'loan'],
+    ];
+    const lists = await Promise.all(
+      tables.map(([table]) => listStaffRequests({ user: req.user, query: { status: 'pending' } }, table))
+    );
+    lists.forEach((rows, i) => {
+      const kind = tables[i][1];
+      for (const row of rows) {
+        const cat = requestCategory(kind, row.leave_type);
+        if (String(row.staff_user_id) === String(req.user.id)) mine[cat] += 1;
+        else if ((row.can_review_slots || []).length) review[cat] += 1;
+      }
+    });
+    const { rows: unseen } = await query(
+      `SELECT COUNT(*)::int AS n FROM notifications
+       WHERE user_id = $1 AND COALESCE(is_read, 0) = 0
+         AND type IN ('request_approved', 'request_rejected', 'request_progress')`,
+      [req.user.id]
+    );
+    const sum = (o) => Object.values(o).reduce((a, b) => a + b, 0);
+    res.json({
+      review: { ...review, total: sum(review) },
+      mine: { ...mine, total: sum(mine) },
+      unseen_decisions: Number(unseen[0]?.n) || 0,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/** Mark the requester's "your request was approved/rejected" notifications as seen. */
+router.post('/hr/requests/seen', async (req, res, next) => {
+  try {
+    await query(
+      `UPDATE notifications SET is_read = 1
+       WHERE user_id = $1 AND COALESCE(is_read, 0) = 0
+         AND type IN ('request_approved', 'request_rejected', 'request_progress')`,
+      [req.user.id]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
+const SHIFT_START = '11:00';
+
+/**
+ * The signed-in person's own month: working days and days off, their shift, attendance so far,
+ * and every holiday, excuse, mission and work-from-home day (pending or approved) on it.
+ */
+router.get('/hr/my-schedule', async (req, res, next) => {
+  try {
+    if (req.user.role === 'owner') return res.status(403).json({ error: 'Forbidden' });
+    const today = cairoParts().date;
+    const month = /^d{4}-d{2}$/.test(String(req.query.month || '')) ? String(req.query.month) : today.slice(0, 7);
+    const [y, m] = month.split('-').map(Number);
+    const from = `${month}-01`;
+    const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    const to = `${month}-${String(last).padStart(2, '0')}`;
+
+    const { rows: staffRows } = await query(
+      `SELECT id, full_name, role, COALESCE(days_off, '{}') AS days_off,
+              COALESCE(office_attendance_exempt, false) AS office_attendance_exempt
+       FROM staff_users WHERE id = $1`,
+      [req.user.id]
+    );
+    const me = staffRows[0];
+    if (!me) return res.status(404).json({ error: 'Staff member not found' });
+    const office = hasOfficeAttendance(me.role) && !me.office_attendance_exempt;
+
+    const [leaves, wfh, attendance] = await Promise.all([
+      query(
+        `SELECT id, leave_type, start_date::text AS start_date, end_date::text AS end_date,
+                start_time::text AS start_time, end_time::text AS end_time, hours, days, status, reason
+         FROM staff_leave_requests
+         WHERE staff_user_id = $1 AND status IN ('pending', 'approved')
+           AND start_date <= $3::date AND end_date >= $2::date`,
+        [me.id, from, to]
+      ),
+      query(
+        `SELECT id, work_date::text AS work_date, status, reason
+         FROM staff_wfh_requests
+         WHERE staff_user_id = $1 AND status IN ('pending', 'approved')
+           AND work_date BETWEEN $2::date AND $3::date`,
+        [me.id, from, to]
+      ),
+      office
+        ? query(
+            `SELECT work_date::text AS work_date, status, check_in::text AS check_in, check_out::text AS check_out
+             FROM staff_attendance
+             WHERE staff_user_id = $1 AND work_date BETWEEN $2::date AND $3::date`,
+            [me.id, from, to]
+          )
+        : Promise.resolve({ rows: [] }),
+    ]);
+    const attendanceByDay = new Map(attendance.rows.map((r) => [r.work_date, r]));
+
+    const days = enumerateDateRange(from, to).map((date) => {
+      const items = [];
+      for (const l of leaves.rows) {
+        if (l.start_date <= date && l.end_date >= date) {
+          items.push({
+            kind: 'leave',
+            id: l.id,
+            category: requestCategory('leave', l.leave_type),
+            leave_type: normalizeExcuseLeaveType(l.leave_type),
+            status: l.status,
+            start_time: l.start_time ? l.start_time.slice(0, 5) : null,
+            end_time: l.end_time ? l.end_time.slice(0, 5) : null,
+            hours: l.hours != null ? Number(l.hours) : null,
+            start_date: l.start_date,
+            end_date: l.end_date,
+            reason: l.reason,
+          });
+        }
+      }
+      for (const w of wfh.rows) {
+        if (w.work_date === date) items.push({ kind: 'wfh', id: w.id, category: 'wfh', status: w.status, reason: w.reason });
+      }
+      const a = attendanceByDay.get(date);
+      return {
+        date,
+        day_off: isScheduledDayOff(me.days_off, date),
+        attendance: a
+          ? { status: a.status, check_in: a.check_in ? a.check_in.slice(0, 5) : null, check_out: a.check_out ? a.check_out.slice(0, 5) : null }
+          : null,
+        items,
+      };
+    });
+
+    res.json({
+      month,
+      today,
+      office_attendance: office,
+      days_off: me.days_off || [],
+      shift: office ? { start: SHIFT_START, end: DEFAULT_ATTENDANCE_CHECKOUT } : null,
+      can_request_wfh: canRequestWfh(me.role),
+      days,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.get('/hr/leave-requests', async (req, res, next) => {
   try {
     res.json(await listStaffRequests(req, 'staff_leave_requests'));
@@ -1768,6 +1932,8 @@ router.post('/hr/leave-requests', async (req, res, next) => {
     }
     const b = req.body || {};
     let leaveType = normalizeExcuseLeaveType(String(b.leave_type || 'casual').trim() || 'casual');
+    // There is one excuse type now (max 2 per payroll month); older clients may still send the paid/unpaid names.
+    if (leaveType === 'excuse' || leaveType === 'unpaid_excuse') leaveType = 'paid_excuse';
     if (leaveType === 'holiday') leaveType = 'annual';
     if (leaveType === 'day_off') leaveType = 'casual';
     const start = String(b.start_date || '').slice(0, 10);
@@ -1777,7 +1943,6 @@ router.post('/hr/leave-requests', async (req, res, next) => {
       'casual',
       'annual',
       'paid_excuse',
-      'unpaid_excuse',
       'sick',
       'unpaid',
       'mission',
@@ -1838,7 +2003,7 @@ router.post('/hr/leave-requests', async (req, res, next) => {
     }
     if (leaveType === 'paid_excuse' && snap.paid_excuse_remaining < 1) {
       return res.status(400).json({
-        error: `Paid excuse limit reached (maximum ${PAID_EXCUSE_MAX_PER_MONTH} per month)`,
+        error: `You’ve used all ${PAID_EXCUSE_MAX_PER_MONTH} excuses for this month (the 26th to the 25th)`,
       });
     }
 
@@ -1878,6 +2043,7 @@ router.post('/hr/leave-requests', async (req, res, next) => {
     } finally {
       client.release();
     }
+    notifyRequestSubmitted('leave', created);
 
     res.status(201).json(
       presentStaffRequest(
@@ -1937,7 +2103,7 @@ router.post('/hr/leave-requests/:id/review', async (req, res, next) => {
               null,
               null,
               unpaid.daily_rate,
-              unpaid.factor,
+              unpaid.penalty_type === 'amount' ? null : unpaid.factor,
             ]);
           }
         }
@@ -1975,7 +2141,7 @@ router.post('/hr/leave-requests/:id/review', async (req, res, next) => {
           const used = Number(usedRows[0]?.cnt) || 0;
           if (used + 1 > PAID_EXCUSE_MAX_PER_MONTH) {
             const err = new Error(
-              `Paid excuse limit reached (maximum ${PAID_EXCUSE_MAX_PER_MONTH} per cycle, 26th–25th)`
+              `Excuse limit reached (maximum ${PAID_EXCUSE_MAX_PER_MONTH} per month, 26th–25th)`
             );
             err.status = 400;
             throw err;
@@ -2125,7 +2291,7 @@ router.patch('/hr/leave-requests/:id/type', requireRoles(...HR_ROLES), async (re
             null,
             null,
             unpaid.daily_rate,
-            unpaid.factor,
+            unpaid.penalty_type === 'amount' ? null : unpaid.factor,
           ]);
         }
       }
@@ -2207,6 +2373,7 @@ router.post('/hr/loans', async (req, res, next) => {
        RETURNING *`,
       [staffUserId, amount, reason, policy.needsManager, policy.needsFinance, policy.needsHr]
     );
+    notifyRequestSubmitted('loan', rows[0]);
     res.status(201).json(
       presentStaffRequest(
         {
@@ -2311,6 +2478,7 @@ router.post('/hr/wfh', async (req, res, next) => {
        RETURNING *`,
       [staffUserId, workDate, reason || null, policy.needsManager, policy.needsHr]
     );
+    notifyRequestSubmitted('wfh', rows[0]);
     res.status(201).json(
       presentStaffRequest(
         {
@@ -2360,6 +2528,13 @@ router.post('/hr/wfh/:id/review', async (req, res, next) => {
   }
 });
 
+function autoHolidayAccessDate(createdAt) {
+  const d = createdAt instanceof Date ? new Date(createdAt) : new Date(createdAt);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setMonth(d.getMonth() + 6);
+  return d.toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' });
+}
+
 router.get('/hr/holiday-access', requireRoles(...HR_ROLES), async (req, res, next) => {
   try {
     const { rows } = await query(
@@ -2375,6 +2550,8 @@ router.get('/hr/holiday-access', requireRoles(...HR_ROLES), async (req, res, nex
         ...r,
         can_request_holidays: canRequestHolidays(r, now),
         tenure_months: monthsBetween(r.created_at, now),
+        // The day paid holidays open on their own (6 months after joining), whatever the current setting.
+        auto_access_on: autoHolidayAccessDate(r.created_at),
       }))
     );
   } catch (e) {
@@ -2889,5 +3066,8 @@ router.post(
     }
   }
 );
+
+// Shared with the phone clock-in routes (routes/pms/clock.js).
+router.attendanceHelpers = { upsertAttendanceRecord, loadStaffForHr };
 
 module.exports = router;

@@ -520,29 +520,107 @@ function RuleCard({ rule, units, staffById, onEdit, onDuplicate, onDelete, onTog
 
 /* ───────────────────────── attendance basics ───────────────────────── */
 
+const SHIFT_END_LABEL = '19:00';
+const KIND_LABELS = { lateness: 'Late arrival', absence: 'No-show', unpaid_leave: 'Unpaid leave day' };
+
+function toMinutes(hhmm) {
+  const m = String(hhmm || '').match(/^(\d{1,2}):(\d{2})/);
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+}
+
+function penaltyText(factor, type) {
+  const n = Number(factor) || 0;
+  if (!n) return 'No penalty';
+  return type === 'amount' ? currency(n) : `${n} day${n === 1 ? '' : 's'} of pay`;
+}
+
+/** Same matching as the server: start ≤ arrival ≤ end (no end = until the end of the shift); latest start wins. */
+function matchBand(bands, minutes) {
+  if (minutes == null) return null;
+  const hits = bands.filter((b) => minutes >= (b.start_minutes ?? 0) && (b.end_minutes == null || minutes <= b.end_minutes));
+  if (hits.length) return hits.sort((a, b) => (b.start_minutes ?? 0) - (a.start_minutes ?? 0))[0];
+  const earliest = Math.min(...bands.map((b) => b.start_minutes ?? 0));
+  if (minutes < earliest) return 'on_time';
+  return bands.filter((b) => (b.start_minutes ?? 0) <= minutes).sort((a, b) => (b.start_minutes ?? 0) - (a.start_minutes ?? 0))[0] || null;
+}
+
+function PenaltyInput({ factor, type, onFactor, onType }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <input
+        className="input w-24"
+        type="number"
+        min="0"
+        max={type === 'amount' ? 100000 : 10}
+        step={type === 'amount' ? '1' : '0.05'}
+        value={factor}
+        onChange={(e) => onFactor(e.target.value)}
+        aria-label="Penalty"
+      />
+      <select className="input w-auto py-2 text-xs" value={type} onChange={(e) => onType(e.target.value)} aria-label="Penalty unit">
+        <option value="days">day(s) of pay</option>
+        <option value="amount">EGP</option>
+      </select>
+    </div>
+  );
+}
+
 function BandRow({ row, onSave, onDelete, saving }) {
   const [label, setLabel] = useState(row.label);
   const [factor, setFactor] = useState(String(row.factor));
+  const [type, setType] = useState(row.penalty_type || 'days');
+  const [from, setFrom] = useState(minutesLabel(row.start_minutes));
   const [until, setUntil] = useState(minutesLabel(row.end_minutes));
   const lateness = row.kind === 'lateness';
+  const dirty =
+    label !== row.label ||
+    Number(factor) !== Number(row.factor) ||
+    type !== (row.penalty_type || 'days') ||
+    (lateness && (from !== minutesLabel(row.start_minutes) || until !== minutesLabel(row.end_minutes)));
   return (
     <tr className="border-t border-soul-line/70 align-middle">
       <td className="px-4 py-2.5">
-        <input className="input" value={label} onChange={(e) => setLabel(e.target.value)} />
+        <input className="input min-w-[9rem]" value={label} onChange={(e) => setLabel(e.target.value)} />
       </td>
-      <td className="px-3 py-2.5 text-xs text-soul-muted">{{ lateness: 'Late arrival', absence: 'No-show', unpaid_leave: 'Unpaid leave day' }[row.kind] || row.kind}</td>
+      <td className="px-3 py-2.5 text-xs text-soul-muted">{KIND_LABELS[row.kind] || row.kind}</td>
       <td className="px-3 py-2.5">
-        {lateness ? <input type="time" className="input w-28" value={until} onChange={(e) => setUntil(e.target.value)} /> : <span className="text-soul-muted">—</span>}
+        {lateness ? <input type="time" className="input w-28" value={from} onChange={(e) => setFrom(e.target.value)} /> : <span className="text-soul-muted">—</span>}
       </td>
       <td className="px-3 py-2.5">
-        <input className="input w-24" type="number" min="0" max="10" step="0.05" value={factor} onChange={(e) => setFactor(e.target.value)} />
+        {lateness ? (
+          <div className="flex items-center gap-1">
+            <input type="time" className="input w-28" value={until} onChange={(e) => setUntil(e.target.value)} />
+            {until ? (
+              <button type="button" className="text-[11px] text-soul-muted hover:text-soul-blue" onClick={() => setUntil('')} title="Clear: until the end of the shift">
+                clear
+              </button>
+            ) : (
+              <span className="whitespace-nowrap text-[11px] text-soul-muted">end of shift</span>
+            )}
+          </div>
+        ) : (
+          <span className="text-soul-muted">—</span>
+        )}
+      </td>
+      <td className="px-3 py-2.5">
+        <PenaltyInput factor={factor} type={type} onFactor={setFactor} onType={setType} />
       </td>
       <td className="px-4 py-2.5 text-right whitespace-nowrap">
         <button
           type="button"
-          className="btn-secondary !px-3 !py-1.5 text-xs"
-          disabled={saving}
-          onClick={() => onSave({ id: row.id, label, factor: Number(factor), end_minutes: lateness ? until : row.end_minutes, active: row.active })}
+          className={`${dirty ? 'btn-primary' : 'btn-secondary'} !px-3 !py-1.5 text-xs`}
+          disabled={saving || !dirty}
+          onClick={() =>
+            onSave({
+              id: row.id,
+              label,
+              factor: Number(factor),
+              penalty_type: type,
+              start_minutes: lateness ? from : row.start_minutes,
+              end_minutes: lateness ? until || null : row.end_minutes,
+              active: row.active,
+            })
+          }
         >
           Save
         </button>
@@ -556,9 +634,13 @@ function BandRow({ row, onSave, onDelete, saving }) {
   );
 }
 
+const BLANK_BAND = { label: '', start_minutes: '12:01', end_minutes: '', factor: '1', penalty_type: 'days' };
+
 function AttendanceBasics() {
   const qc = useQueryClient();
-  const [draft, setDraft] = useState({ label: '', end_minutes: '13:00', factor: '1' });
+  const [draft, setDraft] = useState(BLANK_BAND);
+  const [tryTime, setTryTime] = useState('11:40');
+  const [trySalary, setTrySalary] = useState('9000');
   const { data, isLoading } = useQuery({
     queryKey: ['hr-deduction-rules'],
     queryFn: () => api.get('/hr/deduction-rules').then((r) => r.data),
@@ -576,7 +658,7 @@ function AttendanceBasics() {
     mutationFn: (row) => api.post('/hr/deduction-rules', row),
     onSuccess: () => {
       toast.success('Band added');
-      setDraft({ label: '', end_minutes: '13:00', factor: '1' });
+      setDraft(BLANK_BAND);
       refresh();
     },
     onError: (err) => toast.error(err.response?.data?.error || 'Could not add the band'),
@@ -592,53 +674,93 @@ function AttendanceBasics() {
 
   if (isLoading) return <LoadingSpinner />;
   const rows = (Array.isArray(data) ? data : []).sort(
-    (a, b) => (a.kind === 'lateness' ? 0 : 1) - (b.kind === 'lateness' ? 0 : 1) || (a.end_minutes ?? 9999) - (b.end_minutes ?? 9999)
+    (a, b) => (a.kind === 'lateness' ? 0 : 1) - (b.kind === 'lateness' ? 0 : 1) || (a.start_minutes ?? 9999) - (b.start_minutes ?? 9999)
   );
+  const bands = rows.filter((r) => r.kind === 'lateness' && r.active !== false);
+  const hit = matchBand(bands, toMinutes(tryTime));
+  const rate = (Number(trySalary) || 0) / 30;
+  const tryAmount = hit && hit !== 'on_time' ? (hit.penalty_type === 'amount' ? Number(hit.factor) : rate * Number(hit.factor)) : 0;
 
   return (
     <div className="space-y-4">
       <p className="text-sm text-soul-muted">
-        These are applied the moment attendance is recorded. A late arrival falls in the first band whose time it is on or before.
-        The amount is the multiplier × the daily rate (base salary ÷ 30).
+        Applied the moment attendance is recorded (including phone clock-ins). A late arrival gets the penalty of the band it falls in:
+        from the start time to the end time. Leave the end empty to run until the end of the shift ({SHIFT_END_LABEL}). The penalty is
+        either days of pay (base salary ÷ 30 per day) or a fixed amount in EGP.
       </p>
       <section className="card overflow-x-auto">
-        <table className="w-full min-w-[640px] text-sm">
+        <table className="w-full min-w-[820px] text-sm">
           <thead>
             <tr className="text-left text-xs text-soul-muted">
               <th className="px-4 py-3 font-medium">Name</th>
               <th className="px-3 py-3 font-medium">Applies to</th>
-              <th className="px-3 py-3 font-medium">Arrived by</th>
-              <th className="px-3 py-3 font-medium">Daily rate ×</th>
+              <th className="px-3 py-3 font-medium">From</th>
+              <th className="px-3 py-3 font-medium">Until</th>
+              <th className="px-3 py-3 font-medium">Penalty</th>
               <th className="px-4 py-3" />
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => (
-              <BandRow key={`${row.id}-${row.end_minutes}-${row.factor}`} row={row} onSave={(r) => save.mutate(r)} onDelete={(r) => remove.mutate(r)} saving={save.isPending} />
+              <BandRow
+                key={`${row.id}-${row.start_minutes}-${row.end_minutes}-${row.factor}-${row.penalty_type}`}
+                row={row}
+                onSave={(r) => save.mutate(r)}
+                onDelete={(r) => remove.mutate(r)}
+                saving={save.isPending}
+              />
             ))}
           </tbody>
         </table>
       </section>
-      <form
-        className="card flex flex-wrap items-end gap-3 p-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-          create.mutate({ ...draft, factor: Number(draft.factor) });
-        }}
-      >
-        <Field label="New lateness band">
-          <input className="input" required value={draft.label} placeholder="e.g. 12:01–13:00" onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))} />
-        </Field>
-        <Field label="Arrived by">
-          <input type="time" className="input w-32" required value={draft.end_minutes} onChange={(e) => setDraft((d) => ({ ...d, end_minutes: e.target.value }))} />
-        </Field>
-        <Field label="Daily rate ×">
-          <input type="number" className="input w-24" min="0" max="10" step="0.05" required value={draft.factor} onChange={(e) => setDraft((d) => ({ ...d, factor: e.target.value }))} />
-        </Field>
-        <button type="submit" className="btn-primary" disabled={create.isPending}>
-          Add band
-        </button>
-      </form>
+
+      <div className="grid gap-4 lg:grid-cols-[1fr_20rem]">
+        <form
+          className="card flex flex-wrap items-end gap-3 p-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            create.mutate({ ...draft, end_minutes: draft.end_minutes || null, factor: Number(draft.factor) });
+          }}
+        >
+          <Field label="New lateness band">
+            <input className="input" required value={draft.label} placeholder="e.g. 12:01 onwards" onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))} />
+          </Field>
+          <Field label="From">
+            <input type="time" className="input w-32" required value={draft.start_minutes} onChange={(e) => setDraft((d) => ({ ...d, start_minutes: e.target.value }))} />
+          </Field>
+          <Field label="Until" hint="Empty = end of shift">
+            <input type="time" className="input w-32" value={draft.end_minutes} onChange={(e) => setDraft((d) => ({ ...d, end_minutes: e.target.value }))} />
+          </Field>
+          <Field label="Penalty">
+            <PenaltyInput
+              factor={draft.factor}
+              type={draft.penalty_type}
+              onFactor={(factor) => setDraft((d) => ({ ...d, factor }))}
+              onType={(penalty_type) => setDraft((d) => ({ ...d, penalty_type }))}
+            />
+          </Field>
+          <button type="submit" className="btn-primary" disabled={create.isPending}>
+            Add band
+          </button>
+        </form>
+
+        <section className="card space-y-3 p-4">
+          <p className="text-sm font-semibold text-soul-blue">Try it</p>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Arrives at">
+              <input type="time" className="input" value={tryTime} onChange={(e) => setTryTime(e.target.value)} />
+            </Field>
+            <Field label="Base salary">
+              <input type="number" className="input" value={trySalary} onChange={(e) => setTrySalary(e.target.value)} />
+            </Field>
+          </div>
+          <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-soul-blue">
+            {hit === 'on_time' || !hit
+              ? 'On time: no penalty.'
+              : `${hit.label} · ${penaltyText(hit.factor, hit.penalty_type)} → ${currency(Math.round(tryAmount * 100) / 100)}`}
+          </p>
+        </section>
+      </div>
     </div>
   );
 }

@@ -4,7 +4,7 @@ const A = '/admin';
 
 /** Admin path of each page in the access catalog (used to land custom-access users on a page they have). */
 const PAGE_PATHS = {
-  dashboard: 'dashboard', kpi: 'kpi', audit_log: 'audit', tasks: 'tasks', site_performance: 'website-performance',
+  dashboard: 'dashboard', clock_in: 'clock', kpi: 'kpi', audit_log: 'audit', tasks: 'tasks', site_performance: 'website-performance',
   website: 'website', inbox: 'inbox', leads: 'leads', inbox_analytics: 'inbox-analytics', inbox_settings: 'inbox-settings',
   units: 'units', units_long_term: 'units-long-term', projects: 'projects', acquisition: 'acquisition',
   owner_statement: 'owner-statement', owner_blocks: 'owner/blocks', owners: 'users', owner_comments: 'owner-comments',

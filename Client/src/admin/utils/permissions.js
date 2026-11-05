@@ -554,6 +554,8 @@ export function canAccess(user, page) {
   if (!user) return false;
   if (user.role === 'admin') return true;
   if (page === 'profile' || page === 'change-password') return true;
+  // Every staff member clocks in from their phone, whatever their page list.
+  if (page === 'clock_in') return user.role !== 'owner';
   // Legacy paths still resolve to the merged Requests page.
   if (page === 'holiday_requests' || page === 'loans' || page === 'wfh') {
     page = 'requests';

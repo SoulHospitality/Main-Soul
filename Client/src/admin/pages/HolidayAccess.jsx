@@ -16,6 +16,28 @@ const ACCESS_LABELS = {
   denied: 'Blocked',
 };
 
+/** The day paid holidays open on their own (6 months after joining), and how far away it is. */
+function AutoAccessDate({ row }) {
+  if (!row.auto_access_on) return <span className="text-soul-muted">—</span>;
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' });
+  const days = Math.round((new Date(`${row.auto_access_on}T12:00:00Z`) - new Date(`${today}T12:00:00Z`)) / 86400000);
+  const mode = row.holiday_access || 'auto';
+  const note =
+    mode === 'granted'
+      ? 'granted early by HR'
+      : mode === 'denied'
+        ? 'blocked by HR, won’t open on its own'
+        : days > 0
+          ? `in ${days} day${days === 1 ? '' : 's'}`
+          : 'open';
+  return (
+    <div>
+      <div className={days > 0 && mode === 'auto' ? 'font-medium text-soul-blue' : 'text-soul-muted'}>{formatDate(row.auto_access_on)}</div>
+      <div className={`text-[11px] ${mode === 'denied' ? 'text-rose-700' : days > 0 && mode === 'auto' ? 'text-amber-700' : 'text-soul-muted'}`}>{note}</div>
+    </div>
+  );
+}
+
 export default function HolidayAccess() {
   const qc = useQueryClient();
   const { user } = usePermissions();
@@ -77,6 +99,7 @@ export default function HolidayAccess() {
                   <th>Staff</th>
                   <th>Joined</th>
                   <th>Tenure</th>
+                  <th>Opens automatically</th>
                   <th>Setting</th>
                   <th>Paid holidays</th>
                 </tr>
@@ -95,6 +118,7 @@ export default function HolidayAccess() {
                     </td>
                     <td className="whitespace-nowrap">{formatDate(r.created_at)}</td>
                     <td>{r.tenure_months} mo</td>
+                    <td className="whitespace-nowrap"><AutoAccessDate row={r} /></td>
                     <td>
                       <select
                         className="input py-1 text-sm"

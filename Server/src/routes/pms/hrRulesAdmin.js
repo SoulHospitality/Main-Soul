@@ -15,7 +15,7 @@ const { logAudit } = require('../../lib/audit');
 const router = express.Router();
 const HR_RULE_ROLES = ['admin', 'hr', 'hr_supervisor'];
 
-const BAND_FIELDS = 'id, rule_key, kind, label, factor, end_minutes, active, sort_order';
+const BAND_FIELDS = 'id, rule_key, kind, label, factor, start_minutes, end_minutes, penalty_type, active, sort_order';
 
 function cairoTodayIso() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' });
@@ -53,12 +53,30 @@ router.get('/hr/deduction-rules', requireRoles(...HR_RULE_ROLES), async (_req, r
   }
 });
 
-function parseFactor(value) {
+function parsePenaltyType(value) {
+  return value === 'amount' ? 'amount' : 'days';
+}
+
+/** Days of pay: 0–10 days. Fixed amount: 0–100,000 EGP. */
+function parseFactor(value, penaltyType = 'days') {
   const factor = Number(value);
-  if (!Number.isFinite(factor) || factor < 0 || factor > 10) {
-    throw Object.assign(new Error('The multiplier must be between 0 and 10'), { status: 400 });
+  const max = penaltyType === 'amount' ? 100000 : 10;
+  if (!Number.isFinite(factor) || factor < 0 || factor > max) {
+    throw Object.assign(
+      new Error(penaltyType === 'amount' ? 'The penalty must be between 0 and 100,000 EGP' : 'The penalty must be between 0 and 10 days of pay'),
+      { status: 400 }
+    );
   }
   return factor;
+}
+
+/** Start is required for a band; the end can be empty (= until the end of the shift). */
+function parseBandWindow(body) {
+  const start = parseEndMinutes(body?.start_minutes);
+  const end = parseEndMinutes(body?.end_minutes);
+  if (start == null) throw Object.assign(new Error('Set when this lateness starts'), { status: 400 });
+  if (end != null && end < start) throw Object.assign(new Error('The end must be after the start'), { status: 400 });
+  return { start, end };
 }
 
 function parseEndMinutes(value) {
@@ -78,16 +96,19 @@ router.put('/hr/deduction-rules/:id', requireRoles(...HR_RULE_ROLES), async (req
   try {
     const label = String(req.body?.label || '').trim().slice(0, 120);
     if (!label) return res.status(400).json({ error: 'Name the rule' });
-    const factor = parseFactor(req.body?.factor);
-    const endMinutes = parseEndMinutes(req.body?.end_minutes);
+    const penaltyType = parsePenaltyType(req.body?.penalty_type);
+    const factor = parseFactor(req.body?.factor, penaltyType);
     const { rows: before } = await query(`SELECT ${BAND_FIELDS} FROM hr_deduction_rules WHERE id = $1`, [Number(req.params.id)]);
     if (!before[0]) return res.status(404).json({ error: 'Rule not found' });
+    const lateness = before[0].kind === 'lateness';
+    const window = lateness ? parseBandWindow(req.body) : { start: before[0].start_minutes, end: before[0].end_minutes };
     const { rows } = await query(
       `UPDATE hr_deduction_rules
-       SET label = $2, factor = $3, end_minutes = $4, active = COALESCE($5, active)
+       SET label = $2, factor = $3, start_minutes = $4, end_minutes = $5, penalty_type = $6, active = COALESCE($7, active),
+           sort_order = CASE WHEN kind = 'lateness' THEN $4 ELSE sort_order END
        WHERE id = $1
        RETURNING ${BAND_FIELDS}`,
-      [Number(req.params.id), label, factor, before[0].kind === 'lateness' ? endMinutes : before[0].end_minutes, req.body?.active]
+      [Number(req.params.id), label, factor, window.start, window.end, penaltyType, req.body?.active]
     );
     await refreshDeductionRules();
     await logAudit({
@@ -104,19 +125,19 @@ router.put('/hr/deduction-rules/:id', requireRoles(...HR_RULE_ROLES), async (req
   }
 });
 
-/** Adds a lateness band ("arrived by HH:MM → × daily rate"). Other kinds are built as payroll rules. */
+/** Adds a lateness band: arrivals from start to end (or the end of the shift) get this penalty. */
 router.post('/hr/deduction-rules', requireRoles(...HR_RULE_ROLES), async (req, res, next) => {
   try {
     const label = String(req.body?.label || '').trim().slice(0, 120);
     if (label.length < 2) return res.status(400).json({ error: 'Name the band' });
-    const factor = parseFactor(req.body?.factor);
-    const endMinutes = parseEndMinutes(req.body?.end_minutes);
-    if (endMinutes == null) return res.status(400).json({ error: 'Set the latest arrival time for this band' });
+    const penaltyType = parsePenaltyType(req.body?.penalty_type);
+    const factor = parseFactor(req.body?.factor, penaltyType);
+    const window = parseBandWindow(req.body);
     const { rows } = await query(
-      `INSERT INTO hr_deduction_rules (rule_key, kind, label, factor, end_minutes, sort_order)
-       VALUES ($1, 'lateness', $2, $3, $4, $4)
+      `INSERT INTO hr_deduction_rules (rule_key, kind, label, factor, start_minutes, end_minutes, penalty_type, sort_order)
+       VALUES ($1, 'lateness', $2, $3, $4, $5, $6, $4)
        RETURNING ${BAND_FIELDS}`,
-      [`lateness_${Date.now()}`, label, factor, endMinutes]
+      [`lateness_${Date.now()}`, label, factor, window.start, window.end, penaltyType]
     );
     await refreshDeductionRules();
     await logAudit({ userId: req.user.id, action: 'CREATE_HR_RULE', entityType: 'hr_deduction_rule', entityId: rows[0].id, details: { name: label, after: rows[0] } });

@@ -4,10 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../context/AuthContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import { ROLE_LABELS, PMS_LABELS, canSeeRequestQueue } from '../../utils/permissions';
-import {
-  countActionableRequests,
-  useAcknowledgedRequestIds,
-} from '../../utils/requestAcknowledgements';
+import { Fragment } from 'react';
+import { useRequestCounts, REQUEST_CATEGORIES } from '../../hooks/useRequestCounts';
 import { getRoleTheme } from '../../utils/roleTheme';
 import api from '../../api/axios';
 import {
@@ -33,6 +31,7 @@ import {
   Target,
   BarChart3,
   Sliders,
+  Fingerprint,
 } from 'lucide-react';
 
 export const NAV_SECTIONS = [
@@ -41,6 +40,7 @@ export const NAV_SECTIONS = [
     label: 'Overview',
     items: [
       { path: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard, page: 'dashboard' },
+      { path: '/admin/clock', label: 'Clock in', icon: Fingerprint, page: 'clock_in' },
       { path: '/admin/kpi', label: 'KPI', icon: Target, page: 'kpi' },
       { path: '/admin/audit', label: 'Audit Log', icon: ClipboardList, page: 'audit_log' },
       { path: '/admin/tasks', label: 'Tasks', icon: ListTodo, page: 'tasks', excludeRoles: ['hr', 'hr_supervisor'] },
@@ -147,7 +147,7 @@ function PendingCountBadge({ count, compact = false }) {
           : 'min-w-[1.35rem] h-[1.35rem] px-1.5 text-[11px] leading-none ml-auto'
       }`}
       style={{ background: 'var(--pms-accent, #F28C28)' }}
-      aria-label={`${count} pending website booking${count === 1 ? '' : 's'}`}
+      aria-label={`${count} waiting`}
     >
       {label}
     </span>
@@ -163,9 +163,6 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
   const showWebsitePending = canAccess('website_bookings');
   const showReviewPending = canSeeRequestQueue(user);
   const showJobPending = canAccess('job_offers');
-  const acknowledgedLeave = useAcknowledgedRequestIds('leave', user?.id);
-  const acknowledgedLoans = useAcknowledgedRequestIds('loan', user?.id);
-  const acknowledgedWfh = useAcknowledgedRequestIds('wfh', user?.id);
   const { data: pendingBookings = [] } = useQuery({
     queryKey: ['website-bookings-pending'],
     queryFn: () =>
@@ -183,41 +180,10 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
   const pendingWebsiteCount = Array.isArray(pendingBookings) ? pendingBookings.length : 0;
   const unassignedWebsiteCount = Array.isArray(unassignedBookings) ? unassignedBookings.length : 0;
   const websiteNeedsReviewCount = pendingWebsiteCount + unassignedWebsiteCount;
-  const { data: pendingLeave = [] } = useQuery({
-    queryKey: ['hr-leave-requests', user?.id, 'pending'],
-    queryFn: () =>
-      api.get('/hr/leave-requests', { params: { status: 'pending' } }).then((r) => r.data),
-    enabled: showReviewPending && !!user?.id,
-    refetchInterval: 30000,
-  });
-  const pendingLeaveCount = countActionableRequests(pendingLeave, {
-    kind: 'leave',
-    userId: user?.id,
-    acknowledged: acknowledgedLeave,
-  });
-  const { data: pendingLoans = [] } = useQuery({
-    queryKey: ['hr-loans', user?.id, 'pending'],
-    queryFn: () => api.get('/hr/loans', { params: { status: 'pending' } }).then((r) => r.data),
-    enabled: showReviewPending && !!user?.id,
-    refetchInterval: 30000,
-  });
-  const { data: pendingWfh = [] } = useQuery({
-    queryKey: ['hr-wfh', user?.id, 'pending'],
-    queryFn: () => api.get('/hr/wfh', { params: { status: 'pending' } }).then((r) => r.data),
-    enabled: showReviewPending && !!user?.id,
-    refetchInterval: 30000,
-  });
-  const pendingLoanCount = countActionableRequests(pendingLoans, {
-    kind: 'loan',
-    userId: user?.id,
-    acknowledged: acknowledgedLoans,
-  });
-  const pendingWfhCount = countActionableRequests(pendingWfh, {
-    kind: 'wfh',
-    userId: user?.id,
-    acknowledged: acknowledgedWfh,
-  });
-  const pendingRequestsCount = pendingLeaveCount + pendingLoanCount + pendingWfhCount;
+  // Live: goes up when a request arrives and down when it's approved or rejected (socket + polling).
+  const requestCounts = useRequestCounts(user, canAccess('requests'));
+  const reviewCounts = requestCounts.review;
+  const pendingRequestsCount = (reviewCounts.total || 0) + (requestCounts.unseen_decisions || 0);
   const { data: jobSummary } = useQuery({
     queryKey: ['recruitment-summary'],
     queryFn: () => api.get('/recruitment/summary').then((r) => r.data),
@@ -318,30 +284,24 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
                       ? websiteNeedsReviewCount
                       : item.badge === 'requests_pending'
                         ? pendingRequestsCount
-                      : item.badge === 'leave_pending'
-                        ? pendingLeaveCount
-                        : item.badge === 'loan_pending'
-                          ? pendingLoanCount
-                          : item.badge === 'wfh_pending'
-                            ? pendingWfhCount
-                            : item.badge === 'job_pending'
+                      : item.badge === 'job_pending'
                               ? pendingJobCount
                               : item.badge === 'owner_comments_unread'
                                 ? ownerCommentsUnread
                                 : 0;
                   const navTo =
-                    item.badge === 'requests_pending' && pendingRequestsCount > 0
-                      ? pendingLeaveCount > 0
-                        ? `${item.path}?type=holiday&view=incoming`
-                        : pendingWfhCount > 0
-                          ? `${item.path}?type=wfh`
-                          : `${item.path}?type=loans`
-                      : item.badge === 'leave_pending' && pendingLeaveCount > 0
-                        ? `${item.path}?view=incoming`
+                    item.badge === 'requests_pending' && reviewCounts.total > 0
+                      ? `${item.path}?tab=review`
+                      : item.badge === 'requests_pending' && requestCounts.unseen_decisions > 0
+                        ? `${item.path}?tab=mine`
                         : item.path;
+                  const typeChips =
+                    item.badge === 'requests_pending' && showLabels && reviewCounts.total > 0
+                      ? REQUEST_CATEGORIES.filter((c) => reviewCounts[c.id] > 0)
+                      : [];
                   return (
+                    <Fragment key={item.path}>
                     <NavLink
-                      key={item.path}
                       to={navTo}
                       end={Boolean(item.end)}
                       onClick={handleNavClick}
@@ -357,6 +317,25 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
                       {showLabels && <span className="truncate">{label}</span>}
                       {showLabels ? <PendingCountBadge count={pendingCount} /> : null}
                     </NavLink>
+                    {typeChips.length ? (
+                      <div className="flex flex-wrap gap-1 pb-1 pl-11 pr-2">
+                        {typeChips.map((c) => (
+                          <NavLink
+                            key={c.id}
+                            to={`${item.path}?tab=review&type=${c.id}`}
+                            onClick={handleNavClick}
+                            className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-medium text-white/80 hover:bg-white/20 hover:text-white"
+                            title={`${reviewCounts[c.id]} ${c.label.toLowerCase()} request${reviewCounts[c.id] === 1 ? '' : 's'} waiting for you`}
+                          >
+                            {c.short}
+                            <span className="rounded-full px-1 text-[9px] font-bold text-white" style={{ background: 'var(--pms-accent, #F28C28)' }}>
+                              {reviewCounts[c.id]}
+                            </span>
+                          </NavLink>
+                        ))}
+                      </div>
+                    ) : null}
+                    </Fragment>
                   );
                 })}
               </div>

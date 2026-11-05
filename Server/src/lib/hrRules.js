@@ -70,7 +70,7 @@ async function refreshDeductionRules() {
   try {
     const { query } = require('../config/db');
     const { rows } = await query(
-      `SELECT rule_key, kind, label, factor, end_minutes, active
+      `SELECT rule_key, kind, label, factor, start_minutes, end_minutes, penalty_type, active
        FROM hr_deduction_rules
        WHERE active = true`
     );
@@ -80,6 +80,26 @@ async function refreshDeductionRules() {
   }
 }
 
+const SHIFT_END_MINUTES = 19 * 60;
+
+/** A penalty is either days of pay (× daily rate) or a fixed EGP amount. */
+function penaltyAmount(rate, factor, penaltyType = 'days') {
+  const n = Number(factor) || 0;
+  return roundMoney(penaltyType === 'amount' ? n : rate * n);
+}
+
+function describePenalty(factor, penaltyType = 'days') {
+  const n = Number(factor) || 0;
+  if (!n) return 'no penalty';
+  if (penaltyType === 'amount') return `EGP ${n.toLocaleString('en-EG')}`;
+  return `${n} × daily rate`;
+}
+
+/**
+ * Which lateness band an arrival falls in. Each band runs from its start to its end (inclusive);
+ * a band with no end runs until the end of the shift (and covers anything later).
+ * Arriving before every band is on time. Overlapping bands: the one that starts latest wins.
+ */
 function latenessFactor(arrivalMinutes) {
   if (!Number.isFinite(arrivalMinutes)) {
     const err = new Error('Arrival time is required for lateness');
@@ -88,13 +108,31 @@ function latenessFactor(arrivalMinutes) {
   }
   const bands = (liveDeductionRules || [])
     .filter((row) => row.kind === 'lateness')
-    .sort((a, b) => Number(a.end_minutes) - Number(b.end_minutes));
+    .sort((a, b) => Number(a.end_minutes ?? 1e9) - Number(b.end_minutes ?? 1e9));
   if (bands.length) {
-    const match = bands.find((row) => arrivalMinutes <= Number(row.end_minutes)) || bands[bands.length - 1];
+    // Bands saved before start times existed start a minute after the previous band ends.
+    let prevEnd = null;
+    const ranged = bands.map((row) => {
+      const start = row.start_minutes != null ? Number(row.start_minutes) : prevEnd != null ? prevEnd + 1 : SHIFT_START_MINUTES;
+      const end = row.end_minutes != null ? Number(row.end_minutes) : null;
+      prevEnd = end;
+      return { row, start, end };
+    });
+    const hits = ranged.filter((b) => arrivalMinutes >= b.start && (b.end == null || arrivalMinutes <= b.end));
+    let match = hits.sort((a, b) => b.start - a.start)[0];
+    if (!match) {
+      const earliest = Math.min(...ranged.map((b) => b.start));
+      if (arrivalMinutes < earliest) {
+        return { factor: 0, band: 'on_time', label: 'On time', penalty_type: 'days' };
+      }
+      // In a gap between bands: use the last band that had started.
+      match = ranged.filter((b) => b.start <= arrivalMinutes).sort((a, b) => b.start - a.start)[0];
+    }
     return {
-      factor: Number(match.factor) || 0,
-      band: match.rule_key,
-      label: match.label,
+      factor: Number(match.row.factor) || 0,
+      band: match.row.rule_key,
+      label: match.row.label,
+      penalty_type: match.row.penalty_type === 'amount' ? 'amount' : 'days',
     };
   }
   if (arrivalMinutes <= GRACE_END_MINUTES) {
@@ -125,10 +163,17 @@ function latenessFactor(arrivalMinutes) {
   };
 }
 
-function ruleFactor(kind, fallback) {
+function ruleFor(kind, fallback) {
   const row = (liveDeductionRules || []).find((item) => item.kind === kind);
   const factor = Number(row?.factor);
-  return Number.isFinite(factor) ? factor : fallback;
+  return {
+    factor: Number.isFinite(factor) ? factor : fallback,
+    penalty_type: row?.penalty_type === 'amount' ? 'amount' : 'days',
+  };
+}
+
+function ruleFactor(kind, fallback) {
+  return ruleFor(kind, fallback).factor;
 }
 
 function absenceFactor() {
@@ -146,32 +191,35 @@ function computeLatenessDeduction(baseSalary, arrivalTime) {
   const late = latenessFactor(minutes);
   return {
     ...late,
+    penalty_type: late.penalty_type || 'days',
     daily_rate: rate,
-    amount: roundMoney(rate * late.factor),
+    amount: penaltyAmount(rate, late.factor, late.penalty_type),
     arrival_minutes: minutes,
   };
 }
 
 function computeAbsenceDeduction(baseSalary) {
   const rate = dailyRate(baseSalary);
-  const factor = absenceFactor();
+  const rule = ruleFor('absence', 2);
   return {
-    factor,
+    factor: rule.factor,
+    penalty_type: rule.penalty_type,
     daily_rate: rate,
-    amount: roundMoney(rate * factor),
+    amount: penaltyAmount(rate, rule.factor, rule.penalty_type),
     notified: false,
-    label: 'No show · 2 × daily rate',
+    label: `No show · ${describePenalty(rule.factor, rule.penalty_type)}`,
   };
 }
 
 function computeUnpaidLeaveDeduction(baseSalary) {
   const rate = dailyRate(baseSalary);
-  const factor = ruleFactor('unpaid_leave', 1);
+  const rule = ruleFor('unpaid_leave', 1);
   return {
-    factor,
+    factor: rule.factor,
+    penalty_type: rule.penalty_type,
     daily_rate: rate,
-    amount: roundMoney(rate * factor),
-    label: `Unpaid leave · ${factor} × daily rate`,
+    amount: penaltyAmount(rate, rule.factor, rule.penalty_type),
+    label: `Unpaid leave · ${describePenalty(rule.factor, rule.penalty_type)}`,
   };
 }
 
@@ -226,7 +274,7 @@ function assertExcuseWindow(leaveType, startTime, endTime) {
   const hours = excuseHoursFromTimes(startTime, endTime);
   const type = normalizeExcuseLeaveType(leaveType);
   if (type === 'paid_excuse' && hours > PAID_EXCUSE_MAX_HOURS + 1e-9) {
-    const err = new Error(`Paid excuses are limited to ${PAID_EXCUSE_MAX_HOURS} hours each`);
+    const err = new Error(`An excuse can be at most ${PAID_EXCUSE_MAX_HOURS} hours`);
     err.status = 400;
     throw err;
   }
@@ -1209,6 +1257,9 @@ function splitSalaryAdjustments(deductionRows = []) {
 }
 
 module.exports = {
+  penaltyAmount,
+  describePenalty,
+  SHIFT_END_MINUTES,
   DAYS_IN_MONTH,
   HOURS_IN_DAY,
   SHIFT_START_MINUTES,

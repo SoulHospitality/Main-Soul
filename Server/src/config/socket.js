@@ -1,17 +1,5 @@
 let io = null;
 
-const NOTIF_ROLES = new Set([
-  'reservations',
-  'reservations_web',
-  'reservations_manual',
-  'reservations_manager',
-  'admin',
-  'finance',
-  'finance_manager',
-  'sales',
-  'Sales',
-]);
-
 function initSocket(server) {
   const { Server } = require('socket.io');
   const jwt = require('jsonwebtoken');
@@ -68,10 +56,8 @@ function initSocket(server) {
 
   io.on('connection', (socket) => {
     const userId = socket.staff?.id;
-    const role = socket.staff?.role;
-    if (userId && NOTIF_ROLES.has(role)) {
-      socket.join(`sales-user:${userId}`);
-    }
+    // Every staff member gets their own room so notifications and request updates reach them live.
+    if (userId) socket.join(`sales-user:${userId}`);
     require('../lib/inbox/realtime').attachSocket(socket);
   });
 
@@ -90,4 +76,12 @@ function emitSalesNotification(userId, payload) {
   io.to(room).emit('NEW_NOTIFICATION', payload);
 }
 
-module.exports = { initSocket, getIo, emitSalesNotification };
+/** Send any event to a list of staff members (e.g. "requests changed" so their badges refresh). */
+function emitToUsers(userIds, event, payload = {}) {
+  if (!io) return;
+  for (const id of new Set((userIds || []).map(Number).filter((n) => Number.isFinite(n) && n > 0))) {
+    io.to(`sales-user:${id}`).emit(event, payload);
+  }
+}
+
+module.exports = { initSocket, getIo, emitSalesNotification, emitToUsers };
