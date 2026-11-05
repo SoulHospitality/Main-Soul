@@ -37,6 +37,15 @@ api.interceptors.response.use(
     return res;
   },
   (err) => {
+    // Some errors arrive as { error: { code, message } } (e.g. from the hosting proxy or Google);
+    // pages show `error` as text, so turn it into a string here instead of crashing the page.
+    const data = err.response?.data;
+    if (data && typeof data === 'object' && data.error && typeof data.error === 'object') {
+      data.error = String(data.error.message || data.error.code || 'Request failed');
+    }
+    if (err.response && !err.response.data?.error && (err.response.status === 502 || err.response.status === 504)) {
+      err.response.data = { error: 'The server took too long to answer. Please try again.' };
+    }
     if (err.response?.status === 401) {
       localStorage.removeItem('pms_token');
       localStorage.removeItem('pms_user');

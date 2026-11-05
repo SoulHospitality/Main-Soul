@@ -35,7 +35,8 @@ Suggesting units
 - Use search_units. Share at most 5 units at a time: for each, its name, one short line (bedrooms, guests, price) and its link exactly as returned.
 - Only use units, prices, links and availability returned by the tools. Never invent or guess them.
 - If they don't like the suggestions, ask what to change if helpful and call search_units again: units already shown are skipped automatically, so you get new ones (again at most 5).
-- If nothing matches, say so and suggest what could be relaxed (dates, budget, area, bedrooms).
+- Search with destination names in English, as list_destinations shows them (الساحل = North Coast, الجونة = El Gouna, السخنة = Ain Sokhna).
+- If nothing matches, say so plainly and suggest what could be changed (dates, budget, area, bedrooms), using the destinations the tool returns. Never guess a reason (for example that a place is closed).
 - Prices are in EGP. With dates, give the stay total from the tools (it includes fees; a refundable deposit may apply). Without dates, give the "from" price per night and ask for dates for an exact total. Use check_availability_and_price for one unit and exact dates.
 - To book, the customer can use the unit's link on the website; offer an agent if they'd like help booking.
 
@@ -61,6 +62,7 @@ function requireProvider() {
   if (!p) {
     const err = new Error('The chatbot needs an AI key on the server: GEMINI_API_KEY (or ANTHROPIC_API_KEY).');
     err.status = 503;
+    err.code = 'NO_AI_KEY';
     throw err;
   }
   return p;
@@ -244,6 +246,60 @@ async function runTool(name, input, ctx) {
   }
 }
 
+const GEMINI_BACKUP_MODEL = () => process.env.GEMINI_BACKUP_MODEL || 'gemini-flash-lite-latest';
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Gemini sometimes answers 503 ("high demand") or 429. Retry the main model once, then use the
+ * backup model (Flash-Lite by default) so the customer still gets an answer.
+ */
+const GEMINI_CALL_TIMEOUT_MS = 20_000;
+
+function geminiBusy(err) {
+  if ([429, 500, 502, 503, 504].includes(Number(err?.status))) return true;
+  return /timeout|timed out|abort|deadline|fetch failed|network|socket|ECONNRESET|ETIMEDOUT|EAI_AGAIN|UND_ERR/i.test(String(err?.name || '') + String(err?.message || '') + String(err?.cause?.code || ''));
+}
+
+// After the main model is busy, skip it for a few minutes instead of waiting on it every message.
+let mainBusyUntil = 0;
+
+async function geminiGenerate(request) {
+  const all = [...new Set([geminiModel(), GEMINI_BACKUP_MODEL()])];
+  const models = Date.now() < mainBusyUntil && all.length > 1 ? all.slice(1) : all;
+  let lastErr;
+  for (const [index, model] of models.entries()) {
+    // The main model gets one try (it can hang when Google is overloaded); the backup gets two.
+    const attempts = index === 0 ? 1 : 2;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try {
+        return await geminiClient().models.generateContent({
+          model,
+          ...request,
+          config: { ...request.config, httpOptions: { timeout: GEMINI_CALL_TIMEOUT_MS } },
+        });
+      } catch (err) {
+        lastErr = err;
+        if (!geminiBusy(err)) throw err;
+        if (attempt < attempts - 1) await sleep(1500);
+      }
+    }
+    if (model === geminiModel()) mainBusyUntil = Date.now() + 5 * 60 * 1000;
+    if (index < models.length - 1) console.warn('[chatbot] Gemini model busy, using the backup:', model, '→', models[index + 1]);
+  }
+  throw lastErr;
+}
+
+/** Gemini errors carry their JSON body as the message; keep just the readable part. */
+function aiErrorText(err) {
+  const raw = String(err?.message || err || '');
+  try {
+    const parsed = JSON.parse(raw);
+    return String(parsed?.error?.message || raw).slice(0, 300);
+  } catch {
+    return raw.slice(0, 300);
+  }
+}
+
 const dayLine = (session) => `Today is ${cairoToday()} (Egypt). The customer's name is ${session.customer_name}.`;
 
 /**
@@ -275,8 +331,7 @@ const PROVIDERS = {
   gemini: {
     userTurn: (text) => ({ role: 'user', parts: [{ text }] }),
     async step(session, history) {
-      const response = await geminiClient().models.generateContent({
-        model: geminiModel(),
+      const response = await geminiGenerate({
         contents: history,
         config: {
           systemInstruction: `${SYSTEM_PROMPT}\n\n${dayLine(session)}`,
@@ -340,7 +395,10 @@ async function botTurn(session, customerText) {
   let outTok = 0;
   let refused = false;
 
+  const startedAt = Date.now();
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
+    // Never keep a customer waiting more than ~100 s: hand the chat to the team instead.
+    if (Date.now() - startedAt > 100_000) break;
     const step = await adapter.step(session, history);
     inTok += step.tokensIn;
     outTok += step.tokensOut;
@@ -382,21 +440,40 @@ async function botTurn(session, customerText) {
 /**
  * A customer message. While the bot is in charge it answers; once handed off, messages go to the inbox.
  */
-function receive(sessionId, text) {
+const typing = new Set();
+
+/**
+ * A customer message: saved straight away, then answered in the background. The page polls the
+ * session until bot_typing is false, so no web request waits on the AI.
+ */
+async function accept(sessionId, text) {
+  const session = await loadSession(sessionId);
+  if (!session) {
+    const err = new Error('Chat not found');
+    err.status = 404;
+    throw err;
+  }
+  const body = String(text || '').trim().slice(0, 2000);
+  if (!body) {
+    const err = new Error('Write a message');
+    err.status = 400;
+    throw err;
+  }
+  await addMessage(session.id, 'customer', body);
+  if (session.status !== 'handed_off') typing.add(session.id);
+  receive(session.id, body)
+    .catch(async (err) => {
+      console.error('[chatbot] reply failed', err.message);
+      await addMessage(session.id, 'system', err.code === 'NO_AI_KEY' ? err.message : `The assistant failed: ${aiErrorText(err)}`).catch(() => {});
+    })
+    .finally(() => typing.delete(session.id));
+}
+
+/** Runs after the customer message is saved: the bot answers, or the message goes to the inbox. */
+function receive(sessionId, body) {
   return serial(sessionId, async () => {
     const session = await loadSession(sessionId);
-    if (!session) {
-      const err = new Error('Chat not found');
-      err.status = 404;
-      throw err;
-    }
-    const body = String(text || '').trim().slice(0, 2000);
-    if (!body) {
-      const err = new Error('Write a message');
-      err.status = 400;
-      throw err;
-    }
-    await addMessage(session.id, 'customer', body);
+    if (!session) return { handed_off: false };
 
     if (session.status === 'handed_off') {
       await forwardToInbox(session, body);
@@ -407,9 +484,9 @@ function receive(sessionId, text) {
     try {
       turn = await botTurn(session, body);
     } catch (err) {
-      if (err.status === 503) throw err;
+      if (err.code === 'NO_AI_KEY') throw err;
       console.error('[chatbot] reply failed', err.message);
-      turn = { reply: BUSY_REPLY, cards: null, handoff: { reason: 'The assistant was unavailable', summary: `Error: ${err.message}` } };
+      turn = { reply: BUSY_REPLY, cards: null, handoff: { reason: 'The assistant was unavailable', summary: `Error: ${aiErrorText(err)}` } };
     }
     await addMessage(session.id, 'bot', turn.reply, turn.cards);
     if (turn.handoff) {
@@ -433,8 +510,9 @@ async function sessionView(sessionId) {
     inbox_conversation_id: session.inbox_conversation_id,
     shown_units: (session.shown_unit_ids || []).length,
     tokens: { input: session.input_tokens, output: session.output_tokens },
+    bot_typing: typing.has(session.id),
     messages: rows,
   };
 }
 
-module.exports = { createSession, receive, sessionView, activeProvider, SYSTEM_PROMPT, _test: { botTurn, handOff, runTool } };
+module.exports = { createSession, accept, receive, sessionView, activeProvider, SYSTEM_PROMPT, _test: { botTurn, handOff, runTool } };

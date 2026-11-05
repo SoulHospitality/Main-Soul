@@ -5,7 +5,7 @@
 const express = require('express');
 const { query } = require('../../config/db');
 const { requireRoles } = require('../../middleware/auth');
-const { createSession, receive, sessionView, activeProvider } = require('../../lib/chatbot/assistant');
+const { createSession, accept, sessionView, activeProvider } = require('../../lib/chatbot/assistant');
 
 const router = express.Router();
 const TEST_ROLES = ['admin'];
@@ -23,7 +23,7 @@ function wrap(fn) {
 
 router.get('/chatbot/status', requireRoles(...TEST_ROLES), wrap(async (_req, res) => {
   const p = activeProvider();
-  res.json({ ai_configured: Boolean(p), provider: p?.name || null, model: p?.model || null, effort: p?.name === 'claude' ? process.env.CHATBOT_EFFORT || 'low' : null });
+  res.json({ ai_configured: Boolean(p), provider: p?.name || null, model: p?.model || null, backup_model: p?.name === 'gemini' ? process.env.GEMINI_BACKUP_MODEL || 'gemini-flash-lite-latest' : null, effort: p?.name === 'claude' ? process.env.CHATBOT_EFFORT || 'low' : null });
 }));
 
 router.get('/chatbot/sessions', requireRoles(...TEST_ROLES), wrap(async (_req, res) => {
@@ -52,8 +52,9 @@ router.get('/chatbot/sessions/:id', requireRoles(...TEST_ROLES), wrap(async (req
 }));
 
 router.post('/chatbot/sessions/:id/messages', requireRoles(...TEST_ROLES), wrap(async (req, res) => {
-  await receive(Number(req.params.id), req.body?.text);
-  res.json(await sessionView(Number(req.params.id)));
+  // Returns at once with bot_typing: true; the reply arrives on the next polls.
+  await accept(Number(req.params.id), req.body?.text);
+  res.status(202).json(await sessionView(Number(req.params.id)));
 }));
 
 router.delete('/chatbot/sessions/:id', requireRoles(...TEST_ROLES), wrap(async (req, res) => {

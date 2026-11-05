@@ -151,7 +151,8 @@ export default function ChatbotTest() {
     queryFn: () => api.get(`/chatbot/sessions/${activeId}`).then((r) => r.data),
     enabled: Boolean(activeId),
     // After a hand-off, keep checking for agent replies from the Live Inbox.
-    refetchInterval: (q) => (q.state.data?.status === 'handed_off' ? 4000 : false),
+    // While the bot is writing, check often; after a hand-off, keep checking for agent replies.
+    refetchInterval: (q) => (q.state.data?.bot_typing ? 1500 : q.state.data?.status === 'handed_off' ? 4000 : false),
   });
 
   useEffect(() => {
@@ -168,7 +169,7 @@ export default function ChatbotTest() {
     onError: (e) => toast.error(e.response?.data?.error || 'Could not start a chat'),
   });
   const send = useMutation({
-    mutationFn: (text) => api.post(`/chatbot/sessions/${activeId}/messages`, { text }, { timeout: 180000 }).then((r) => r.data),
+    mutationFn: (text) => api.post(`/chatbot/sessions/${activeId}/messages`, { text }).then((r) => r.data),
     onMutate: (text) => {
       setPendingText(text);
       setDraft('');
@@ -199,7 +200,7 @@ export default function ChatbotTest() {
 
   const submit = (text) => {
     const t = String(text || '').trim();
-    if (!t || send.isPending || !activeId) return;
+    if (!t || send.isPending || view?.bot_typing || !activeId) return;
     send.mutate(t);
   };
 
@@ -304,8 +305,10 @@ export default function ChatbotTest() {
                   <Bubble key={m.id} m={m} channel={view.channel_kind} />
                 ))}
                 {pendingText ? (
+                  <Bubble m={{ id: 'pending', role: 'customer', body: pendingText, created_at: new Date().toISOString() }} channel={view.channel_kind} />
+                ) : null}
+                {pendingText || view.bot_typing ? (
                   <>
-                    <Bubble m={{ id: 'pending', role: 'customer', body: pendingText, created_at: new Date().toISOString() }} channel={view.channel_kind} />
                     {view.status !== 'handed_off' ? (
                       <div className="flex items-center gap-1 pl-1 text-soul-muted">
                         <span className="h-2 w-2 animate-bounce rounded-full bg-slate-300" />
@@ -339,7 +342,7 @@ export default function ChatbotTest() {
                     }
                   }}
                 />
-                <button type="submit" className="btn-primary h-10 px-3" disabled={send.isPending || !draft.trim()} aria-label="Send">
+                <button type="submit" className="btn-primary h-10 px-3" disabled={send.isPending || view.bot_typing || !draft.trim()} aria-label="Send">
                   <Send className="h-4 w-4" />
                 </button>
               </form>
@@ -351,7 +354,7 @@ export default function ChatbotTest() {
       {view?.tokens?.input ? (
         <p className="text-right text-[11px] text-soul-muted">
           This chat used {view.tokens.input.toLocaleString()} input and {view.tokens.output.toLocaleString()} output tokens
-          {status.data?.model ? ` · ${status.data.provider === 'gemini' ? 'Gemini' : 'Claude'} ${status.data.model}${status.data.effort ? `, effort ${status.data.effort}` : ''}` : ''}.
+          {status.data?.model ? ` · ${status.data.provider === 'gemini' ? 'Gemini' : 'Claude'} ${status.data.model}${status.data.backup_model ? ` (backup ${status.data.backup_model})` : ''}${status.data.effort ? `, effort ${status.data.effort}` : ''}` : ''}.
         </p>
       ) : null}
     </div>

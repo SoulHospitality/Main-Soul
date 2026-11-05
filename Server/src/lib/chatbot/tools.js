@@ -64,6 +64,57 @@ async function listDestinations() {
 }
 
 /**
+ * Customers name places in Arabic, Franco-Arabic or English; units are stored with English names.
+ * Each entry: words the customer may use → what to look for in area / compound / city / title.
+ */
+const PLACE_ALIASES = [
+  { says: ['الساحل', 'الساحل الشمالي', 'ساحل', 'sahel', 'sa7el', 'el sahel', 'north coast', 'northcoast'], match: ['North Coast', 'Sahel'] },
+  { says: ['مراسي', 'marassi', 'marasi'], match: ['Marassi'] },
+  { says: ['الجونة', 'جونة', 'gouna', 'el gouna', 'elgouna'], match: ['Gouna'] },
+  { says: ['السخنة', 'العين السخنة', 'سخنة', 'sokhna', 'ain sokhna', 'el sokhna', 'el-sokhna'], match: ['Sokhna'] },
+  { says: ['الغردقة', 'غردقة', 'hurghada', 'ghardaqa'], match: ['Hurghada'] },
+  { says: ['شرم', 'شرم الشيخ', 'sharm', 'sharm el sheikh'], match: ['Sharm'] },
+  { says: ['دهب', 'dahab'], match: ['Dahab'] },
+  { says: ['القاهرة', 'قاهرة', 'cairo'], match: ['Cairo'] },
+  { says: ['التجمع', 'القاهرة الجديدة', 'new cairo', 'tagamoa', 'el tagamoa'], match: ['New Cairo', 'Tagamoa'] },
+  { says: ['الشيخ زايد', 'زايد', 'sheikh zayed', 'zayed'], match: ['Zayed'] },
+  { says: ['العلمين', 'العلمين الجديدة', 'alamein', 'el alamein', 'new alamein'], match: ['Alamein'] },
+  { says: ['اسكندرية', 'الإسكندرية', 'الاسكندرية', 'alexandria', 'alex'], match: ['Alexandria', 'Alex'] },
+  { says: ['هاسيندا', 'hacienda'], match: ['Hacienda'] },
+  { says: ['سيدي عبد الرحمن', 'sidi abdel rahman', 'sidi abd el rahman'], match: ['Sidi Abdel Rahman', 'Sidi Abd'] },
+  { says: ['الماظة', 'almaza', 'almaza bay'], match: ['Almaza'] },
+  { says: ['مارينا', 'marina'], match: ['Marina'] },
+  { says: ['تلال', 'telal'], match: ['Telal'] },
+  { says: ['سوما باي', 'سوما', 'soma bay', 'soma'], match: ['Soma'] },
+  { says: ['الجلالة', 'جلالة', 'galala', 'el galala'], match: ['Galala'] },
+];
+
+function normalizePlace(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/ة/g, 'ه')
+    .replace(/[ً-ْ]/g, '')
+    .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** ILIKE patterns for a destination the customer named (their words plus the English names we store). */
+function destinationPatterns(destination) {
+  const raw = String(destination || '').trim();
+  if (!raw) return [];
+  const said = normalizePlace(raw);
+  const terms = new Set([raw]);
+  for (const place of PLACE_ALIASES) {
+    if (place.says.some((w) => said.includes(normalizePlace(w)) || (said.length >= 4 && normalizePlace(w).includes(said)))) {
+      place.match.forEach((m) => terms.add(m));
+    }
+  }
+  return [...terms].map((t) => `%${t}%`);
+}
+
+/**
  * Up to 5 random matching units the customer hasn't been shown yet. With dates, only units free for
  * the whole stay, priced for the stay; without dates, priced at tonight's rate.
  */
@@ -76,7 +127,13 @@ async function searchUnits(input, { shownIds = [] } = {}) {
     i += 1;
   };
   const destination = String(input.destination || '').trim();
-  if (destination) add(`(u.area ILIKE $? OR u.compound ILIKE $? OR u.project ILIKE $? OR u.city ILIKE $? OR u.title ILIKE $?)`, `%${destination}%`);
+  const patterns = destinationPatterns(destination);
+  if (patterns.length) {
+    add(
+      `(u.area ILIKE ANY($?::text[]) OR u.compound ILIKE ANY($?::text[]) OR u.project ILIKE ANY($?::text[]) OR u.city ILIKE ANY($?::text[]) OR u.title ILIKE ANY($?::text[]))`,
+      patterns
+    );
+  }
   const guests = Number(input.guests);
   if (guests > 0) add(`u.guests >= $?`, guests);
   const bedrooms = Number(input.bedrooms);
@@ -148,6 +205,13 @@ async function searchUnits(input, { shownIds = [] } = {}) {
     skipped_for_budget: outsideBudget,
     prices_note: nights > 0 ? 'stay_total_egp includes cleaning/access/service fees; a refundable security deposit may apply.' : 'Nightly prices change by date; ask for dates to give an exact total.',
     results,
+    // With nothing to show, give the model real options instead of letting it guess why.
+    ...(results.length
+      ? {}
+      : {
+          note: 'No unit matches all of these. Tell the customer plainly and suggest changing one thing (dates, area, bedrooms, guests or budget). Do not guess a reason.',
+          destinations_we_have: (await listDestinations()).destinations.map((d) => `${d.destination} (${d.units} units)`),
+        }),
   };
 }
 
@@ -243,7 +307,7 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        destination: { type: 'string', description: 'Area, compound or city, e.g. "North Coast", "Marassi", "El Gouna". Empty for anywhere.' },
+        destination: { type: 'string', description: 'Area, compound or city in English as in list_destinations, e.g. "North Coast", "Marassi", "El Gouna" (translate Arabic names: الساحل = North Coast). Empty for anywhere.' },
         check_in: { type: 'string', description: 'YYYY-MM-DD, or empty.' },
         check_out: { type: 'string', description: 'YYYY-MM-DD, or empty.' },
         guests: { type: 'integer', description: 'Total number of guests, or 0.' },
