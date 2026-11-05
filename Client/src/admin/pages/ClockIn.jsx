@@ -38,7 +38,11 @@ function timeOf(iso) {
 }
 
 function errorText(err, fallback) {
-  if (err?.name === 'NotAllowedError') return 'Fingerprint / Face ID was cancelled or timed out.';
+  if (err?.name === 'NotAllowedError') {
+    return /iPhone|iPad/i.test(navigator.userAgent)
+      ? 'Face ID was cancelled or didn’t start. Tap the button again. If it keeps happening, turn on iCloud Keychain (Settings → your name → iCloud → Passwords & Keychain).'
+      : 'Fingerprint was cancelled or timed out. Tap the button again.';
+  }
   if (err?.name === 'InvalidStateError') return 'This phone is already set up.';
   return err?.response?.data?.error || err?.message || fallback;
 }
@@ -233,6 +237,7 @@ function TeamPanel() {
 }
 
 function PhoneClock() {
+  const qc = useQueryClient();
   const { status, setStatus } = useClock();
   const data = status.data;
   const { pos, error: posError } = usePosition(Boolean(data));
@@ -271,10 +276,33 @@ function PhoneClock() {
       .catch(() => {});
   }, [data?.clocked_in, pos, site, distance, setStatus]);
 
+  // iPhones only open Face ID when it starts straight from the tap: any network wait in between and
+  // Safari refuses (shown as 'timed out'). So the challenge is fetched ahead of time and refreshed
+  // before it expires (the server accepts it for 5 minutes), and the tap uses it immediately.
+  const purpose = data?.device ? 'punch' : 'register';
+  const challenge = useQuery({
+    queryKey: ['clock-challenge', purpose],
+    queryFn: () => api.post(purpose === 'punch' ? '/clock/options' : '/clock/passkey/options').then((r) => r.data),
+    enabled: Boolean(data),
+    staleTime: 3 * 60 * 1000,
+    refetchInterval: 3 * 60 * 1000,
+    refetchOnWindowFocus: true,
+    retry: 1,
+  });
+  const readyChallenge = () => {
+    const fresh = challenge.data && Date.now() - challenge.dataUpdatedAt < 4 * 60 * 1000;
+    if (fresh) return challenge.data;
+    challenge.refetch();
+    toast(challenge.error ? errorText(challenge.error, 'Could not get ready') : 'Getting ready… tap again in a second.');
+    return null;
+  };
+  const nextChallenge = () => qc.invalidateQueries({ queryKey: ['clock-challenge'] });
+
   const setUp = async () => {
+    const opts = readyChallenge();
+    if (!opts) return;
     setBusy(true);
     try {
-      const { data: opts } = await api.post('/clock/passkey/options');
       const response = await startRegistration({ optionsJSON: opts.options });
       const label = /iPhone/i.test(navigator.userAgent) ? 'iPhone' : /Android/i.test(navigator.userAgent) ? 'Android phone' : 'Phone';
       const { data: res } = await api.post('/clock/passkey/register', { token: opts.token, response, label });
@@ -284,15 +312,17 @@ function PhoneClock() {
       toast.error(errorText(e, 'Could not set up fingerprint / Face ID'));
     } finally {
       setBusy(false);
+      nextChallenge();
     }
   };
 
   const punch = async (action) => {
     if (!pos) return toast.error('Waiting for your location…');
     if (action === 'in' && !inside) return toast.error(`You need to be within ${site.radius_m} m of the office to clock in.`);
+    const opts = readyChallenge();
+    if (!opts) return;
     setBusy(true);
     try {
-      const { data: opts } = await api.post('/clock/options');
       const response = await startAuthentication({ optionsJSON: opts.options });
       const { data: res } = await api.post('/clock/punch', { action, token: opts.token, response, location: pos });
       setStatus(res);
@@ -302,6 +332,7 @@ function PhoneClock() {
       status.refetch();
     } finally {
       setBusy(false);
+      nextChallenge();
     }
   };
 

@@ -212,6 +212,7 @@ router.post('/clock/passkey/options', handle(async (req, res) => {
     userDisplayName: me.full_name,
     userID: new TextEncoder().encode(`staff-${me.id}`),
     attestationType: 'none',
+    timeout: 120000,
     authenticatorSelection: { authenticatorAttachment: 'platform', residentKey: 'preferred', userVerification: 'required' },
   });
   res.json({ options, token: challengeToken(me.id, options.challenge, 'register') });
@@ -260,6 +261,7 @@ router.post('/clock/options', handle(async (req, res) => {
   const options = await generateAuthenticationOptions({
     rpID,
     userVerification: 'required',
+    timeout: 120000,
     allowCredentials: creds.map((c) => ({ id: c.credential_id, transports: c.transports || undefined })),
   });
   res.json({ options, token: challengeToken(me.id, options.challenge, 'punch') });
