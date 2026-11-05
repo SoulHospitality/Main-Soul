@@ -58,19 +58,32 @@ router.get('/conversations', wrap(async (req, res) => {
   const params = [...vis.params];
   const now = Date.now();
 
+  // Queue (whose chats) and state (what they need) are separate, like most team inboxes.
+  const queueWhere = [];
+  const queueParams = [];
   switch (view) {
     case 'all': break;
-    case 'mine': where.push(`${onChatSql()} AND c.status <> 'closed'`); params.push(user.id, user.id); break;
-    case 'unassigned': where.push(`c.status <> 'closed' AND c.assigned_user_id IS NULL AND NOT EXISTS (
+    case 'closed': queueWhere.push("c.status = 'closed'"); break;
+    case 'unassigned': queueWhere.push(`c.status <> 'closed' AND c.assigned_user_id IS NULL AND NOT EXISTS (
       SELECT 1 FROM inbox_conversation_assignees a WHERE a.conversation_id = c.id)`); break;
-    case 'needs_reply': where.push("c.status = 'needs_reply'"); break;
-    case 'overdue': where.push("c.status = 'needs_reply' AND c.sla_due_at IS NOT NULL AND c.sla_due_at <= ?"); params.push(now); break;
-    case 'waiting': where.push("c.status = 'waiting_customer'"); break;
-    case 'snoozed': where.push("c.status = 'snoozed'"); break;
-    case 'closed': where.push("c.status = 'closed'"); break;
-    case 'hot': where.push("l.temperature = 'hot' AND c.status <> 'closed'"); break;
-    default: where.push("c.status <> 'closed'");
+    case 'open': queueWhere.push("c.status <> 'closed'"); break;
+    // Older views still work as states on all open chats.
+    case 'needs_reply': case 'overdue': case 'waiting': case 'snoozed': case 'hot':
+      queueWhere.push("c.status <> 'closed'"); break;
+    case 'mine':
+    default: queueWhere.push(`${onChatSql()} AND c.status <> 'closed'`); queueParams.push(user.id, user.id);
   }
+  const STATE_SQL = {
+    needs_reply: "c.status = 'needs_reply'",
+    overdue: "c.status = 'needs_reply' AND c.sla_due_at IS NOT NULL AND c.sla_due_at <= ?",
+    waiting: "c.status = 'waiting_customer'",
+    snoozed: "c.status = 'snoozed'",
+    hot: "l.temperature = 'hot'",
+  };
+  const state = STATE_SQL[req.query.state] ? req.query.state : STATE_SQL[view] ? view : null;
+  where.push(...queueWhere);
+  params.push(...queueParams);
+  if (state) { where.push(STATE_SQL[state]); if (state === 'overdue') params.push(now); }
   if (channel) { where.push('c.channel_kind = ?'); params.push(String(channel)); }
   if (type) { where.push('c.type = ?'); params.push(String(type)); }
   if (assigned === 'none') {
@@ -126,19 +139,28 @@ router.get('/conversations', wrap(async (req, res) => {
   );
   await fillGuestNames(rows);
 
-  const counts = await q.get(
+  const queueCounts = await q.get(
     `SELECT
-       COUNT(*) AS "all",
        COUNT(*) FILTER (WHERE ${onChatSql()} AND c.status <> 'closed') AS mine,
        COUNT(*) FILTER (WHERE c.assigned_user_id IS NULL AND c.status <> 'closed' AND NOT EXISTS (
          SELECT 1 FROM inbox_conversation_assignees a WHERE a.conversation_id = c.id)) AS unassigned,
-       COUNT(*) FILTER (WHERE c.status = 'needs_reply') AS needs_reply,
-       COUNT(*) FILTER (WHERE c.status = 'needs_reply' AND c.sla_due_at <= ?) AS overdue,
-       COUNT(*) FILTER (WHERE c.status = 'waiting_customer') AS waiting,
-       COUNT(*) FILTER (WHERE c.status = 'snoozed') AS snoozed
+       COUNT(*) FILTER (WHERE c.status <> 'closed') AS open
      FROM inbox_conversations c WHERE ${vis.sql}`,
-    user.id, user.id, now, ...vis.params,
+    user.id, user.id, ...vis.params,
   );
+  const stateCounts = await q.get(
+    `SELECT
+       COUNT(*) FILTER (WHERE c.status = 'needs_reply') AS needs_reply,
+       COUNT(*) FILTER (WHERE c.status = 'needs_reply' AND c.sla_due_at IS NOT NULL AND c.sla_due_at <= ?) AS overdue,
+       COUNT(*) FILTER (WHERE c.status = 'waiting_customer') AS waiting,
+       COUNT(*) FILTER (WHERE c.status = 'snoozed') AS snoozed,
+       COUNT(*) FILTER (WHERE l.temperature = 'hot') AS hot,
+       COUNT(*) AS total
+     FROM inbox_conversations c LEFT JOIN inbox_leads l ON l.id = c.current_lead_id
+     WHERE ${[vis.sql, ...queueWhere].join(' AND ')}`,
+    now, ...vis.params, ...queueParams,
+  );
+  const counts = { ...queueCounts, states: stateCounts };
   res.json({ items: rows, counts, viewers: viewersSnapshot(), now });
 }));
 
@@ -151,8 +173,8 @@ router.get('/conversations/:id', wrap(async (req, res) => {
               u.name AS user_name
        FROM inbox_messages m LEFT JOIN inbox_users u ON u.id = m.user_id
        WHERE m.conversation_id = ?
-         -- Automatic after-hours replies are no longer shown; saved replies sent by staff are agent messages.
-         AND NOT (m.direction = 'out' AND m.sender_type IN ('auto', 'ai'))
+         -- Old after-hours scripts stay hidden; chatbot replies ('ai') are shown so agents see the whole chat.
+         AND NOT (m.direction = 'out' AND m.sender_type = 'auto')
        ORDER BY m.created_at DESC, m.id DESC LIMIT 120`,
       conv.id,
     ),
@@ -375,6 +397,38 @@ router.post('/conversations/:id/status', wrap(async (req, res) => {
         from: conv.status, to: status, snooze_until: snoozeUntil || undefined,
         closed_without_reply: closing && conv.awaiting_since ? true : undefined,
       },
+    });
+  });
+  broadcast('conversation', { id: conv.id });
+  res.json({ ok: true });
+}));
+
+router.post('/conversations/:id/close', wrap(async (req, res) => {
+  const conv = await loadConversation(int(req.params.id), req.inbox);
+  await ensureCanAct(conv, req.inbox);
+  const type = req.body?.type;
+  if (type !== undefined && type !== null && !TYPES.includes(type)) throw badRequest('Invalid type');
+  const note = String(req.body?.note || '').trim().slice(0, 4000);
+  const current = await q.get('SELECT type FROM inbox_conversations WHERE id = ?', conv.id);
+  const finalType = type || current.type;
+  if (!finalType || finalType === 'unknown') throw badRequest('Choose who this is before closing', 'type_required');
+  const now = Date.now();
+  await tx(async () => {
+    if (finalType !== current.type) {
+      await q.run('UPDATE inbox_conversations SET type = ? WHERE id = ?', finalType, conv.id);
+      await audit({ conversationId: conv.id, userId: req.inbox.id, type: 'classified', data: { type: finalType } });
+    }
+    if (note) {
+      await q.insert('INSERT INTO inbox_notes (conversation_id, user_id, body, created_at) VALUES (?,?,?,?)', conv.id, req.inbox.id, `Closing note: ${note}`, now);
+    }
+    await q.run(
+      `UPDATE inbox_conversations SET status = 'closed', snooze_until = NULL, closed_at = ?, awaiting_since = NULL,
+         sla_start_at = NULL, sla_due_at = NULL WHERE id = ?`,
+      now, conv.id,
+    );
+    await audit({
+      conversationId: conv.id, userId: req.inbox.id, type: 'status_changed',
+      data: { from: conv.status, to: 'closed', closed_without_reply: conv.awaiting_since ? true : undefined, note: note ? true : undefined },
     });
   });
   broadcast('conversation', { id: conv.id });

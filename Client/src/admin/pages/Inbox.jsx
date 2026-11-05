@@ -1,80 +1,124 @@
-import { useState, useEffect, useRef, useMemo, forwardRef, useImperativeHandle } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import {
-  MessageSquare, Search, Send, Paperclip, Sparkles,
-  X, ChevronLeft, Lock, PanelRight
-} from 'lucide-react';
+import { ChevronLeft, Keyboard, MessageSquare, PanelRight, Sparkles, X } from 'lucide-react';
 import { useInbox, useInboxEvents } from '../inbox/InboxContext';
 import { inboxApi, errorMessage } from '../inbox/api';
-import { CHANNELS, VIEWS, STATUS_LABELS, CONVERSATION_TYPES, timeAgo, fmtTime, nextCairoTime } from '../inbox/utils';
-import { Avatar, ChannelDot, PresenceDot, SlaChip, StageChip, Chip, useNow } from '../inbox/ui';
-import Attachment from '../inbox/Attachment';
+import { CHANNELS, CONVERSATION_TYPES } from '../inbox/utils';
+import { Avatar, ChannelDot, PresenceDot, SlaChip, useNow } from '../inbox/ui';
 import GuestRail from '../inbox/GuestRail';
+import ConversationList, { QUEUES } from '../inbox/ConversationList';
+import Thread from '../inbox/Thread';
+import Composer from '../inbox/Composer';
+import { AssignButton, CloseDialog, SnoozeButton, StateButtons, snoozeOptions } from '../inbox/ChatActions';
+
+const SHORTCUTS = [
+  ['J / K', 'Next / previous chat'],
+  ['R', 'Reply (focus the box)'],
+  ['N', 'Write an internal note'],
+  ['/', 'Saved replies'],
+  ['A', 'Take the chat yourself'],
+  ['W', 'Waiting on the guest'],
+  ['S', 'Snooze'],
+  ['E', 'Close'],
+  ['Esc', 'Leave the reply box'],
+  ['?', 'Show these shortcuts'],
+];
+
+function parsePeople(conv) {
+  if (!conv) return [];
+  let rows = [];
+  if (Array.isArray(conv.assignees)) rows = conv.assignees;
+  else if (typeof conv.assignees === 'string') {
+    try {
+      rows = JSON.parse(conv.assignees);
+    } catch {
+      rows = [];
+    }
+  }
+  if (rows.length) return rows;
+  return conv.assigned_user_id ? [{ id: conv.assigned_user_id, name: conv.assigned_name }] : [];
+}
+
+function summaryText(s) {
+  if (!s) return '';
+  return [s.summary, s.next_action ? `Next: ${s.next_action}` : ''].filter(Boolean).join('\n');
+}
 
 export default function InboxPage() {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const qc = useQueryClient();
   const { me, can, setPresence, setViewing, userName, connected, viewers } = useInbox();
   const now = useNow(30000);
+  const activeId = params.get('c') ? Number(params.get('c')) : null;
+  const myId = me?.user?.id;
 
-  const activeConvId = searchParams.get('c') ? Number(searchParams.get('c')) : null;
-
-  const [activeView, setActiveView] = useState('mine');
-  const [activeChannel, setActiveChannel] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [queue, setQueue] = useState(() => {
+    try {
+      return localStorage.getItem('inbox-queue') || 'mine';
+    } catch {
+      return 'mine';
+    }
+  });
+  const [state, setState] = useState('');
+  const [channel, setChannel] = useState('');
+  const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
-  const [showRightPanel, setShowRightPanel] = useState(() => window.innerWidth >= 1536);
-  const messagesEndRef = useRef(null);
+  const [showRail, setShowRail] = useState(() => window.innerWidth >= 1536);
+  const [selected, setSelected] = useState(() => new Set());
+  const [closing, setClosing] = useState(null); // { ids: [...] }
+  const [busy, setBusy] = useState(false);
+  const [menu, setMenu] = useState(null); // 'assign' | 'snooze'
+  const [showKeys, setShowKeys] = useState(false);
+  const endRef = useRef(null);
   const composerRef = useRef(null);
-  const listRefreshTimer = useRef(null);
-  const threadRefreshTimer = useRef(null);
+  const listTimer = useRef(null);
+  const threadTimer = useRef(null);
 
   useEffect(() => {
-    const t = setTimeout(() => setSearchDebounced(searchQuery.trim()), 300);
+    try {
+      localStorage.setItem('inbox-queue', queue);
+    } catch {
+      /* ignore */
+    }
+  }, [queue]);
+  useEffect(() => {
+    const t = setTimeout(() => setSearchDebounced(search.trim()), 300);
     return () => clearTimeout(t);
-  }, [searchQuery]);
-
-  // Set viewing conversation for presence socket
+  }, [search]);
   useEffect(() => {
-    setViewing(activeConvId);
+    setViewing(activeId);
     return () => setViewing(null);
-  }, [activeConvId, setViewing]);
+  }, [activeId, setViewing]);
 
-  // Fetch conversations list
-  const { data: convData, isLoading: loadingConvs, refetch: refetchConvs } = useQuery({
-    queryKey: ['inbox-conversations', activeView, activeChannel, searchDebounced],
-    queryFn: () => inboxApi.get('/conversations', {
-      view: activeView,
-      channel: activeChannel || undefined,
-      search: searchDebounced || undefined,
-    }),
+  const list = useQuery({
+    queryKey: ['inbox-conversations', queue, state, channel, searchDebounced],
+    queryFn: () => inboxApi.get('/conversations', { view: queue, state: state || undefined, channel: channel || undefined, search: searchDebounced || undefined }),
     refetchInterval: 45000,
     refetchOnWindowFocus: false,
     staleTime: 15000,
+    placeholderData: (prev) => prev,
   });
+  const conversations = useMemo(() => list.data?.items || [], [list.data]);
+  const counts = list.data?.counts || {};
+  const viewerMap = Object.keys(viewers || {}).length ? viewers : list.data?.viewers || {};
+  const othersOn = useCallback(
+    (id) => (viewerMap?.[id] || viewerMap?.[String(id)] || []).filter((uid) => Number(uid) !== Number(myId)),
+    [viewerMap, myId]
+  );
 
-  const conversations = convData?.items || [];
-  const counts = convData?.counts || {};
-  const viewerMap = Object.keys(viewers || {}).length ? viewers : (convData?.viewers || {});
-
-  const othersOn = (conversationId) => {
-    const ids = viewerMap?.[conversationId] || viewerMap?.[String(conversationId)] || [];
-    return ids.filter((id) => Number(id) !== Number(me?.user?.id));
-  };
-
-  // Fetch active conversation detail & messages
-  const { data: currentConv, refetch: refetchCurrentConv } = useQuery({
-    queryKey: ['inbox-conversation', activeConvId],
-    queryFn: () => inboxApi.get(`/conversations/${activeConvId}`),
-    enabled: Boolean(activeConvId),
+  const detail = useQuery({
+    queryKey: ['inbox-conversation', activeId],
+    queryFn: () => inboxApi.get(`/conversations/${activeId}`),
+    enabled: Boolean(activeId),
     refetchInterval: 60000,
     refetchOnWindowFocus: false,
     staleTime: 10000,
   });
+  const conv = detail.data?.conversation || null;
+  const people = parsePeople(conv);
 
-  // Fetch quick replies & templates
   const { data: quickReplies = [] } = useQuery({
     queryKey: ['inbox-quick-replies'],
     queryFn: () => inboxApi.get('/admin/quick-replies'),
@@ -82,827 +126,484 @@ export default function InboxPage() {
   });
   const replies = (Array.isArray(quickReplies) && quickReplies.length ? quickReplies : null) || me?.templates || [];
 
-  // Listen for realtime events
+  const refreshAll = useCallback(() => {
+    list.refetch();
+    if (activeId) detail.refetch();
+  }, [list, detail, activeId]);
+
   useInboxEvents((type, data) => {
-    if (type === 'message' && data?.conversation_id === activeConvId) {
-      clearTimeout(threadRefreshTimer.current);
-      threadRefreshTimer.current = setTimeout(() => refetchCurrentConv(), 1500);
+    if (type === 'message' && data?.conversation_id === activeId) {
+      clearTimeout(threadTimer.current);
+      threadTimer.current = setTimeout(() => detail.refetch(), 1200);
     }
     if (type === 'conversation' || type === 'message') {
-      clearTimeout(listRefreshTimer.current);
-      listRefreshTimer.current = setTimeout(() => refetchConvs(), 1500);
+      clearTimeout(listTimer.current);
+      listTimer.current = setTimeout(() => list.refetch(), 1200);
     }
   });
 
+  // Opening a chat you're on clears its unread count.
   useEffect(() => {
-    if (currentConv?.messages?.length || currentConv?.notes?.length) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
-    }
-  }, [currentConv?.messages, currentConv?.notes]);
+    if (!conv?.id || !conv.unread_count) return;
+    inboxApi.post(`/conversations/${conv.id}/read`).then(() => list.refetch()).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conv?.id, conv?.unread_count]);
 
-  const selectConversation = (id) => {
-    setSearchParams({ c: id });
+  const thread = useMemo(() => {
+    const messages = (detail.data?.messages || []).map((m) => ({ ...m, kind: 'message' }));
+    const notes = (detail.data?.notes || []).map((n) => ({ id: `note-${n.id}`, kind: 'note', user_id: n.user_id, user_name: n.user_name, body: n.body, created_at: n.created_at }));
+    return [...messages, ...notes].sort((a, b) => Number(a.created_at) - Number(b.created_at));
+  }, [detail.data]);
+
+  useEffect(() => {
+    if (thread.length) endRef.current?.scrollIntoView({ behavior: 'auto' });
+  }, [thread.length, activeId]);
+
+  const select = (id) => setParams({ c: id });
+  const back = () =>
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('c');
+      return next;
+    });
+
+  // ── actions ──
+  const act = async (fn, ok) => {
+    try {
+      await fn();
+      if (ok) toast.success(ok);
+      refreshAll();
+    } catch (err) {
+      toast.error(errorMessage(err));
+    }
+  };
+  const assign = (id, userId) => act(() => inboxApi.post(`/conversations/${id}/assign`, { user_id: userId }), Number(userId) === Number(myId) ? 'You’re on this chat' : `Assigned to ${userName(userId)}`);
+  const unassign = (id, userId) => act(() => inboxApi.post(`/conversations/${id}/assign`, { user_id: userId, remove: true }), 'Removed from the chat');
+  const setStatus = (id, status, extra = {}) => act(() => inboxApi.post(`/conversations/${id}/status`, { status, ...extra }), null);
+  const snooze = (id, at) =>
+    act(() => inboxApi.post(`/conversations/${id}/status`, { status: 'snoozed', snooze_until: at }), `Snoozed until ${new Date(at).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Cairo' })}`);
+  const setType = (type) => conv && act(() => inboxApi.post(`/conversations/${conv.id}/type`, { type }), `Marked as ${CONVERSATION_TYPES[type] || type}`);
+
+  const confirmClose = async ({ type, note }) => {
+    setBusy(true);
+    const ids = closing.ids;
+    let done = 0;
+    for (const id of ids) {
+      try {
+        await inboxApi.post(`/conversations/${id}/close`, { type, note: ids.length === 1 ? note : undefined });
+        done += 1;
+      } catch (err) {
+        toast.error(errorMessage(err));
+      }
+    }
+    setBusy(false);
+    setClosing(null);
+    setSelected(new Set());
+    if (done) toast.success(done === 1 ? 'Chat closed' : `${done} chats closed`);
+    // Move on to the next chat in the queue, like closing a ticket.
+    if (ids.includes(activeId)) {
+      const rest = conversations.filter((c) => !ids.includes(c.id));
+      if (rest[0] && window.innerWidth >= 1024) select(rest[0].id);
+      else back();
+    }
+    refreshAll();
   };
 
-  const handleSendMessage = (text, asNote, file) => {
-    if ((!text && !file) || !activeConvId) return;
+  const summarize = async () => {
+    if (!conv) return '';
+    try {
+      const res = await inboxApi.post(`/conversations/${conv.id}/ai/summary`);
+      return summaryText(res?.summary);
+    } catch (err) {
+      toast.error(errorMessage(err, 'Could not summarise'));
+      return '';
+    }
+  };
+
+  const send = (text, asNote, file) => {
+    if ((!text && !file) || !activeId) return;
     const tempId = `local-${Date.now()}`;
     const stamp = Date.now();
-    const mine = { id: me?.user?.id, name: me?.user?.name };
+    const mine = { id: myId, name: me?.user?.name };
     const localUrl = file ? URL.createObjectURL(file) : null;
-    const pendingAttachments = file
-      ? [{ type: (file.type || 'file').split('/')[0] || 'file', url: localUrl, mime: file.type, filename: file.name }]
-      : [];
-    qc.setQueryData(['inbox-conversation', activeConvId], (old) => {
+    qc.setQueryData(['inbox-conversation', activeId], (old) => {
       if (!old) return old;
-      if (asNote) {
-        return { ...old, notes: [...(old.notes || []), { id: tempId, body: text, user_id: mine.id, user_name: mine.name, created_at: stamp }] };
-      }
+      if (asNote) return { ...old, notes: [...(old.notes || []), { id: tempId, body: text, user_id: mine.id, user_name: mine.name, created_at: stamp }] };
       return {
         ...old,
-        messages: [...(old.messages || []), {
-          id: tempId, direction: 'out', sender_type: 'agent', body: text, user_id: mine.id, user_name: mine.name,
-          created_at: stamp, delivery_status: 'pending', attachments: pendingAttachments,
-        }],
+        messages: [
+          ...(old.messages || []),
+          {
+            id: tempId, direction: 'out', sender_type: 'agent', body: text, user_id: mine.id, user_name: mine.name, created_at: stamp, delivery_status: 'pending',
+            attachments: file ? [{ type: (file.type || 'file').split('/')[0] || 'file', url: localUrl, mime: file.type, filename: file.name }] : [],
+          },
+        ],
       };
     });
     let request;
-    if (asNote) {
-      request = inboxApi.post(`/conversations/${activeConvId}/notes`, { body: text });
-    } else if (file) {
+    if (asNote) request = inboxApi.post(`/conversations/${activeId}/notes`, { body: text });
+    else if (file) {
       const form = new FormData();
       form.append('file', file);
       if (text) form.append('caption', text);
-      request = inboxApi.upload(`/conversations/${activeConvId}/attachments`, form);
-    } else {
-      request = inboxApi.post(`/conversations/${activeConvId}/messages`, { text });
-    }
-    request.then((res) => {
-      if (localUrl) setTimeout(() => URL.revokeObjectURL(localUrl), 1500);
-      if (asNote || !res?.message) return;
-      qc.setQueryData(['inbox-conversation', activeConvId], (old) => {
-        if (!old) return old;
-        return {
-          ...old,
-          messages: (old.messages || []).map((m) => (m.id === tempId
-            ? { ...res.message, user_name: mine.name, attachments: res.message.attachments || [] }
-            : m)),
-        };
+      request = inboxApi.upload(`/conversations/${activeId}/attachments`, form);
+    } else request = inboxApi.post(`/conversations/${activeId}/messages`, { text });
+    const convId = activeId;
+    request
+      .then((res) => {
+        if (localUrl) setTimeout(() => URL.revokeObjectURL(localUrl), 1500);
+        if (!asNote && res?.message) {
+          qc.setQueryData(['inbox-conversation', convId], (old) =>
+            old ? { ...old, messages: (old.messages || []).map((m) => (m.id === tempId ? { ...res.message, user_name: mine.name, attachments: res.message.attachments || [] } : m)) } : old
+          );
+        }
+        list.refetch();
+      })
+      .catch((err) => {
+        qc.setQueryData(['inbox-conversation', convId], (old) => {
+          if (!old) return old;
+          if (asNote) return { ...old, notes: (old.notes || []).filter((n) => n.id !== tempId) };
+          return { ...old, messages: (old.messages || []).map((m) => (m.id === tempId ? { ...m, delivery_status: 'failed', error: errorMessage(err, 'Not sent') } : m)) };
+        });
+        toast.error(errorMessage(err, 'Message not sent'));
       });
-    }).catch((err) => {
-      qc.setQueryData(['inbox-conversation', activeConvId], (old) => {
-        if (!old) return old;
-        if (asNote) return { ...old, notes: (old.notes || []).filter((n) => n.id !== tempId) };
-        return {
-          ...old,
-          messages: (old.messages || []).map((m) => (m.id === tempId
-            ? { ...m, delivery_status: 'failed', error: errorMessage(err, 'Not sent') }
-            : m)),
-        };
-      });
-      toast.error(errorMessage(err, 'Failed to send message'));
+  };
+
+  const suggest = async () => {
+    if (!activeId) return '';
+    const res = await inboxApi.post(`/conversations/${activeId}/ai/suggest`);
+    return res?.text || res?.suggestion || '';
+  };
+
+  // ── bulk ──
+  const toggleSelect = (id) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
     });
-  };
-
-  const handleAiSuggest = async () => {
-    if (!activeConvId) return '';
-    const res = await inboxApi.post(`/conversations/${activeConvId}/ai-suggest`);
-    return res?.suggestion || '';
-  };
-
-  const handleUpdateStatus = async (status) => {
-    if (!activeConvId) return;
-    if (status === 'closed' && (!currentConv?.conversation?.type || currentConv.conversation.type === 'unknown')) {
-      setShowRightPanel(true);
-      toast.error('Choose who this guest is before closing the chat');
-      return;
+  const bulk = async (fn, label) => {
+    const ids = [...selected];
+    let ok = 0;
+    for (const id of ids) {
+      try {
+        await fn(id);
+        ok += 1;
+      } catch (err) {
+        toast.error(errorMessage(err));
+      }
     }
-    try {
-      await inboxApi.post(`/conversations/${activeConvId}/status`, { status });
-      toast.success(`Status updated to ${STATUS_LABELS[status] || status}`);
-      refetchCurrentConv();
-      refetchConvs();
-    } catch (err) {
-      toast.error(errorMessage(err));
-    }
+    if (ok) toast.success(`${label}: ${ok} chat${ok === 1 ? '' : 's'}`);
+    setSelected(new Set());
+    refreshAll();
   };
 
-  const claimConversation = async (id) => {
-    if (!me?.user?.id) return;
-    try {
-      await inboxApi.post(`/conversations/${id}/assign`, { user_id: me.user.id });
-      toast.success('You are on this chat');
-      refetchCurrentConv();
-      refetchConvs();
-    } catch (err) {
-      toast.error(errorMessage(err));
-    }
-  };
-
-  const removeAssignee = async (id, userId) => {
-    try {
-      await inboxApi.post(`/conversations/${id}/assign`, { user_id: userId, remove: true });
-      toast.success('Removed from this chat');
-      refetchCurrentConv();
-      refetchConvs();
-    } catch (err) {
-      toast.error(errorMessage(err));
-    }
-  };
-
-  const peopleOn = (conv) => {
-    if (!conv) return [];
-    let rows = [];
-    if (Array.isArray(conv.assignees)) rows = conv.assignees;
-    else if (typeof conv.assignees === 'string') {
-      try { rows = JSON.parse(conv.assignees); } catch { rows = []; }
-    }
-    if (rows.length) return rows;
-    if (conv.assigned_user_id) return [{ id: conv.assigned_user_id, name: conv.assigned_name || userName(conv.assigned_user_id) }];
-    return [];
-  };
-
-  const setConversationType = async (type) => {
-    if (!activeConvId || !type) return;
-    try {
-      await inboxApi.post(`/conversations/${activeConvId}/type`, { type });
-      toast.success(`Marked as ${CONVERSATION_TYPES[type] || type}`);
-      refetchCurrentConv();
-      refetchConvs();
-    } catch (err) {
-      toast.error(errorMessage(err));
-    }
-  };
-
-  const startStayRequest = async () => {
-    if (!activeConvId) return;
-    try {
-      await inboxApi.post(`/conversations/${activeConvId}/leads`, {});
-      toast.success('Stay request opened');
-      refetchCurrentConv();
-      refetchConvs();
-    } catch (err) {
-      toast.error(errorMessage(err));
-    }
-  };
-
-  const snoozeUntilMorning = async () => {
-    if (!activeConvId) return;
-    try {
-      await inboxApi.post(`/conversations/${activeConvId}/status`, {
-        status: 'snoozed',
-        snooze_until: nextCairoTime(me?.rules?.business_start || '11:00'),
-      });
-      toast.success('Snoozed until the team is back');
-      refetchCurrentConv();
-      refetchConvs();
-    } catch (err) {
-      toast.error(errorMessage(err));
-    }
-  };
-
-  const thread = useMemo(() => {
-    const messages = (currentConv?.messages || []).map((m) => ({ ...m, kind: 'message' }));
-    const notes = (currentConv?.notes || []).map((n) => ({
-      id: `note-${n.id}`,
-      kind: 'note',
-      sender_type: 'note',
-      user_id: n.user_id,
-      user_name: n.user_name,
-      body: n.body,
-      created_at: n.created_at,
-    }));
-    return [...messages, ...notes].sort((a, b) => Number(a.created_at) - Number(b.created_at));
-  }, [currentConv]);
-
+  // ── keyboard ──
   useEffect(() => {
     const onKey = (e) => {
       if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
       const tag = document.activeElement?.tagName;
-      const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || document.activeElement?.isContentEditable;
-      if (typing) return;
-      if (e.key === 'j' || e.key === 'k') {
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || document.activeElement?.isContentEditable) return;
+      if (closing) return;
+      const k = e.key;
+      if (k === 'j' || k === 'k') {
         e.preventDefault();
-        const down = e.key === 'j';
-        const idx = conversations.findIndex((c) => c.id === activeConvId);
-        const next = down
-          ? conversations[idx < 0 ? 0 : Math.min(conversations.length - 1, idx + 1)]
-          : conversations[idx <= 0 ? 0 : idx - 1];
-        if (next) selectConversation(next.id);
-      } else if (e.key === 'n' && activeConvId) {
+        const idx = conversations.findIndex((c) => c.id === activeId);
+        const next = k === 'j' ? conversations[idx < 0 ? 0 : Math.min(conversations.length - 1, idx + 1)] : conversations[idx <= 0 ? 0 : idx - 1];
+        if (next) select(next.id);
+      } else if (k === '?') setShowKeys((v) => !v);
+      else if (!conv) return;
+      else if (k === 'r') {
+        e.preventDefault();
+        composerRef.current?.focus();
+      } else if (k === 'n') {
+        e.preventDefault();
         composerRef.current?.toggleNote();
-      } else if (e.key === '/' && activeConvId) {
+      } else if (k === '/') {
         e.preventDefault();
         composerRef.current?.openReplies();
-      }
+      } else if (k === 'a' && !people.some((p) => Number(p.id) === Number(myId))) assign(conv.id, myId);
+      else if (k === 'w' && conv.status !== 'closed') setStatus(conv.id, 'waiting_customer');
+      else if (k === 's') setMenu('snooze');
+      else if (k === 'e' && conv.status !== 'closed') setClosing({ ids: [conv.id], type: conv.type });
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [conversations, activeConvId]);
+  });
+
+  const queueCount = (key) => (key === 'closed' ? null : counts[key]);
+  const windowClosed = conv?.window && conv.window.open === false;
 
   return (
     <div className="inbox-shell flex-row bg-slate-50 font-sans">
-      <aside className="hidden w-52 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
-        <div className="border-b border-slate-200 px-3 py-3">
-          <div className="flex items-center justify-between gap-2">
-            <h1 className="text-sm font-bold text-slate-900">Inbox</h1>
-            <span className={`inline-flex items-center gap-1 text-[10px] font-semibold ${connected ? 'text-emerald-700' : 'text-amber-700'}`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-              {connected ? 'Live' : 'Connecting'}
-            </span>
-          </div>
-          <p className="mt-1 text-[11px] text-slate-500">Guest chats across WhatsApp, Instagram, and Messenger.</p>
+      {/* Queues */}
+      <aside className="hidden w-48 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
+        <div className="flex items-center justify-between border-b border-slate-200 px-3 py-3">
+          <h1 className="text-sm font-bold text-slate-900">Inbox</h1>
+          <span className={`inline-flex items-center gap-1 text-[10px] font-semibold ${connected ? 'text-emerald-700' : 'text-amber-700'}`} title={connected ? 'Live updates on' : 'Reconnecting'}>
+            <span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+            {connected ? 'Live' : '…'}
+          </span>
         </div>
-        <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 py-2" aria-label="Inbox views">
-          {VIEWS.map((view) => (
+        <nav className="flex-1 space-y-0.5 overflow-y-auto p-2" aria-label="Queues">
+          {QUEUES.map((qd) => (
             <button
-              key={view.key}
+              key={qd.key}
               type="button"
-              onClick={() => setActiveView(view.key)}
-              className={`flex h-9 w-full items-center justify-between rounded-lg px-2.5 text-left text-xs font-medium ${
-                activeView === view.key ? 'bg-soul-blue text-white' : 'text-slate-600 hover:bg-slate-100'
-              }`}
+              onClick={() => {
+                setQueue(qd.key);
+                setState('');
+                setSelected(new Set());
+              }}
+              className={`flex h-9 w-full items-center justify-between rounded-lg px-2.5 text-left text-sm font-medium ${queue === qd.key ? 'bg-soul-blue text-white' : 'text-slate-600 hover:bg-slate-100'}`}
             >
-              <span className="truncate">{view.label}</span>
-              {counts[view.key] !== undefined ? (
-                <span className={`ml-2 rounded-full px-1.5 text-[10px] ${activeView === view.key ? 'bg-white/20' : 'bg-slate-100 text-slate-600'}`}>{counts[view.key]}</span>
-              ) : null}
+              {qd.label}
+              {queueCount(qd.key) ? <span className={`rounded-full px-1.5 text-[10px] font-bold ${queue === qd.key ? 'bg-white/20' : 'bg-slate-100 text-slate-600'}`}>{queueCount(qd.key)}</span> : null}
             </button>
           ))}
-          <p className="px-2.5 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Channel</p>
-          <button
-            type="button"
-            onClick={() => setActiveChannel('')}
-            className={`flex h-8 w-full items-center rounded-lg px-2.5 text-left text-xs ${!activeChannel ? 'bg-slate-100 font-semibold text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}
-          >
-            All channels
-          </button>
-          {Object.entries(CHANNELS).map(([key, channel]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setActiveChannel(key === activeChannel ? '' : key)}
-              className={`flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs ${activeChannel === key ? 'bg-slate-100 font-semibold text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}
-            >
-              <ChannelDot kind={key} />
-              {channel.label}
+          <p className="px-2.5 pb-1 pt-4 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Channel</p>
+          {[['', 'All channels'], ...Object.entries(CHANNELS).map(([k, c]) => [k, c.label])].map(([k, label]) => (
+            <button key={k || 'all'} type="button" onClick={() => setChannel(k)} className={`flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs ${channel === k ? 'bg-slate-100 font-semibold text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}>
+              {k ? <ChannelDot kind={k} /> : null}
+              {label}
             </button>
           ))}
         </nav>
         <div className="space-y-2 border-t border-slate-200 p-2">
-          <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-[11px]">
-            {['online', 'away', 'offline'].map((presence) => (
-              <button
-                key={presence}
-                type="button"
-                onClick={() => setPresence(presence)}
-                className={`flex flex-1 items-center justify-center gap-1 rounded-md py-1.5 font-medium capitalize ${
-                  me?.user?.presence === presence ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
-                }`}
-              >
-                <PresenceDot presence={presence} />
-                {presence === 'online' ? 'On' : presence === 'away' ? 'Away' : 'Off'}
+          <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-[11px]" title="Your status: new chats are routed to people who are online">
+            {['online', 'away', 'offline'].map((p) => (
+              <button key={p} type="button" onClick={() => setPresence(p)} className={`flex flex-1 items-center justify-center gap-1 rounded-md py-1.5 font-medium ${me?.user?.presence === p ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>
+                <PresenceDot presence={p} />
+                {p === 'online' ? 'On' : p === 'away' ? 'Away' : 'Off'}
               </button>
             ))}
           </div>
+          <button type="button" onClick={() => setShowKeys(true)} className="flex w-full items-center justify-center gap-1.5 rounded-lg py-1.5 text-[11px] text-slate-500 hover:bg-slate-50">
+            <Keyboard className="h-3.5 w-3.5" /> Shortcuts <kbd className="rounded bg-slate-100 px-1">?</kbd>
+          </button>
         </div>
       </aside>
-      <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        {/* Thread list */}
-        <div className={`${activeConvId ? 'hidden lg:flex' : 'flex'} w-full min-h-0 flex-shrink-0 flex-col border-r border-slate-200 bg-white lg:w-72 xl:w-80`}>
-          {/* Filters & Search */}
-          <div className="p-3 border-b border-slate-200 space-y-2 bg-slate-50/50">
-            {/* Search Input */}
-            <div className="relative">
-              <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search chats, phone, name…"
-                className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-base focus:outline-none focus:ring-2 focus:ring-soul-blue/20 sm:text-sm"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
 
-            {/* View Filter Tabs */}
-            <div className="flex items-center gap-2 lg:hidden">
-              <select
-                aria-label="Inbox view"
-                value={activeView}
-                onChange={(event) => setActiveView(event.target.value)}
-                className="h-10 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2 text-sm font-medium text-slate-800"
-              >
-                {VIEWS.map((view) => (
-                  <option key={view.key} value={view.key}>
-                    {view.label}{counts[view.key] !== undefined ? ` (${counts[view.key]})` : ''}
-                  </option>
-                ))}
-              </select>
-              <select
-                aria-label="My status"
-                value={me?.user?.presence || 'offline'}
-                onChange={(event) => setPresence(event.target.value)}
-                className="h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm capitalize text-slate-700"
-              >
-                <option value="online">Online</option>
-                <option value="away">Away</option>
-                <option value="offline">Offline</option>
-              </select>
-            </div>
-            <div className="flex items-center gap-1.5 overflow-x-auto pt-1 text-[11px] lg:hidden">
-              <span className="text-slate-400 font-medium">Channel:</span>
+      <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        {/* List */}
+        <div className={`${activeId ? 'hidden lg:flex' : 'flex'} min-h-0 w-full flex-shrink-0 flex-col border-r border-slate-200 bg-white lg:w-80 xl:w-[22rem]`}>
+          <div className="flex items-center gap-2 border-b border-slate-200 p-2 lg:hidden">
+            <select aria-label="Queue" value={queue} onChange={(e) => { setQueue(e.target.value); setState(''); }} className="h-10 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2 text-sm font-medium">
+              {QUEUES.map((qd) => (
+                <option key={qd.key} value={qd.key}>
+                  {qd.label}
+                  {queueCount(qd.key) ? ` (${queueCount(qd.key)})` : ''}
+                </option>
+              ))}
+            </select>
+            <select aria-label="Channel" value={channel} onChange={(e) => setChannel(e.target.value)} className="h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm">
+              <option value="">All channels</option>
+              {Object.entries(CHANNELS).map(([k, c]) => (
+                <option key={k} value={k}>{c.label}</option>
+              ))}
+            </select>
+            <select aria-label="My status" value={me?.user?.presence || 'offline'} onChange={(e) => setPresence(e.target.value)} className="h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm">
+              <option value="online">On</option>
+              <option value="away">Away</option>
+              <option value="offline">Off</option>
+            </select>
+          </div>
+          <ConversationList
+            items={conversations}
+            loading={list.isLoading}
+            activeId={activeId}
+            onSelect={select}
+            queue={queue}
+            state={state}
+            onState={setState}
+            stateCounts={counts.states}
+            search={search}
+            onSearch={setSearch}
+            selected={selected}
+            onToggleSelect={toggleSelect}
+            peopleOn={parsePeople}
+            myId={myId}
+            othersOn={othersOn}
+            userName={userName}
+            now={now}
+          />
+          {selected.size ? (
+            <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-200 bg-slate-900 px-3 py-2 text-white">
+              <span className="text-xs font-semibold">{selected.size} selected</span>
+              <button type="button" className="rounded-md bg-white/10 px-2 py-1 text-[11px] font-semibold hover:bg-white/20" onClick={() => bulk((id) => inboxApi.post(`/conversations/${id}/assign`, { user_id: myId }), 'Taken')}>
+                Take
+              </button>
               <button
                 type="button"
-                onClick={() => setActiveChannel('')}
-                className={`px-2 py-0.5 rounded ${!activeChannel ? 'font-bold text-soul-blue bg-blue-50' : 'text-slate-500 hover:text-slate-800'}`}
+                className="rounded-md bg-white/10 px-2 py-1 text-[11px] font-semibold hover:bg-white/20"
+                onClick={() => {
+                  const at = snoozeOptions(me?.rules?.business_start || '11:00').find((o) => o.key === 'morning').at;
+                  bulk((id) => inboxApi.post(`/conversations/${id}/status`, { status: 'snoozed', snooze_until: at }), 'Snoozed till tomorrow');
+                }}
               >
-                All
+                Snooze
               </button>
-              {Object.entries(CHANNELS).map(([k, c]) => (
-                <button
-                  key={k}
-                  type="button"
-                  onClick={() => setActiveChannel(k === activeChannel ? '' : k)}
-                  className={`flex shrink-0 items-center gap-1 rounded px-2 py-0.5 transition-colors ${
-                    activeChannel === k ? `${c.soft} font-bold border border-current` : 'text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  <ChannelDot kind={k} />
-                  {c.label}
-                </button>
-              ))}
+              <button type="button" className="rounded-md bg-emerald-500 px-2 py-1 text-[11px] font-semibold hover:bg-emerald-600" onClick={() => setClosing({ ids: [...selected] })}>
+                Close
+              </button>
+              <button type="button" className="ml-auto rounded p-1 hover:bg-white/10" onClick={() => setSelected(new Set())} aria-label="Clear selection">
+                <X className="h-4 w-4" />
+              </button>
             </div>
-          </div>
-
-          {/* Conversations Items Stream */}
-          <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto overscroll-contain">
-            {loadingConvs ? (
-              <div className="p-8 text-center text-xs text-slate-400">Loading conversations…</div>
-            ) : conversations.length === 0 ? (
-              <div className="p-8 text-center text-xs text-slate-400">
-                No conversations found in this view.
-              </div>
-            ) : (
-              conversations.map((conv) => {
-                const isActive = conv.id === activeConvId;
-                const waiting = conv.status === 'needs_reply';
-                const overdue = waiting && conv.sla_due_at && Number(conv.sla_due_at) <= now && !(conv.sla_start_at && now < Number(conv.sla_start_at));
-                const watching = othersOn(conv.id);
-                return (
-                  <div
-                    key={conv.id}
-                    onClick={() => selectConversation(conv.id)}
-                    className={`p-3 cursor-pointer transition-all hover:bg-slate-50 relative border-l-4 ${
-                      isActive
-                        ? 'bg-blue-50/70 border-l-soul-blue'
-                        : overdue
-                        ? 'bg-rose-50/70 border-l-rose-500'
-                        : waiting || conv.unread_count > 0
-                        ? 'bg-amber-50/40 border-l-amber-500'
-                        : 'border-l-transparent'
-                    }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <Avatar name={conv.customer_name} url={conv.avatar_url} kind={conv.channel_kind} size="md" />
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-1">
-                          <h3 className="truncate text-xs font-bold text-slate-900">
-                            {conv.customer_name || 'Guest'}
-                            {conv.type && conv.type !== 'unknown' ? (
-                              <span className="ml-1.5 font-medium text-soul-blue">{CONVERSATION_TYPES[conv.type]}</span>
-                            ) : null}
-                          </h3>
-                          <span className="text-[10px] text-slate-400 flex-shrink-0">
-                            {timeAgo(conv.last_message_at, now)}
-                          </span>
-                        </div>
-
-                        <p className="text-xs text-slate-500 truncate mt-0.5">
-                          {conv.last_message_preview || 'No messages yet'}
-                        </p>
-
-                        <div className="mt-1.5 flex items-center justify-between gap-1">
-                          <div className="flex min-w-0 items-center gap-1 overflow-hidden">
-                            <span className="hidden sm:contents">
-                              {conv.stage_key ? (
-                                <StageChip stageKey={conv.stage_key} />
-                              ) : (
-                                <Chip className="bg-slate-100 text-slate-600">{CONVERSATION_TYPES[conv.type] || conv.type}</Chip>
-                              )}
-                              {conv.temperature === 'hot' ? <Chip className="bg-rose-100 text-rose-700">Hot</Chip> : null}
-                            </span>
-                            <SlaChip conversation={conv} now={now} />
-                            <Chip className={`max-w-[9rem] truncate ${peopleOn(conv).length ? 'bg-slate-100 text-slate-600' : 'bg-orange-50 text-orange-700'}`}>
-                              {peopleOn(conv).length
-                                ? peopleOn(conv).map((p) => (Number(p.id) === Number(me?.user?.id) ? 'You' : p.name)).join(', ')
-                                : 'Unassigned'}
-                            </Chip>
-                            {watching.length > 0 ? (
-                              <Chip className="hidden bg-amber-50 text-amber-800 sm:inline-flex" title="Someone else has this chat open">
-                                {watching.map((id) => userName(id)).join(', ')}
-                              </Chip>
-                            ) : null}
-                          </div>
-
-                          {conv.unread_count > 0 && (
-                            <span className="w-5 h-5 rounded-full bg-soul-blue text-white font-bold text-[10px] flex items-center justify-center flex-shrink-0">
-                              {conv.unread_count}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
+          ) : null}
         </div>
 
-        {/* Middle Column: Active Conversation Feed */}
-        <div className={`${activeConvId ? 'flex' : 'hidden lg:flex'} min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-100`}>
-          {activeConvId && currentConv?.conversation ? (
+        {/* Chat */}
+        <div className={`${activeId ? 'flex' : 'hidden lg:flex'} min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-100`}>
+          {activeId && conv ? (
             <>
-              <div className="flex flex-shrink-0 items-center gap-1.5 border-b border-slate-200 bg-white px-2 py-2 shadow-sm sm:px-3">
-                <button
-                  type="button"
-                  className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-slate-600 hover:bg-slate-100 lg:hidden"
-                  aria-label="Back to conversations"
-                  onClick={() => setSearchParams((prev) => {
-                    const next = new URLSearchParams(prev);
-                    next.delete('c');
-                    return next;
-                  })}
-                >
+              <div className="flex flex-shrink-0 flex-wrap items-center gap-1.5 border-b border-slate-200 bg-white px-2 py-2 sm:px-3">
+                <button type="button" className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-slate-600 hover:bg-slate-100 lg:hidden" aria-label="Back" onClick={back}>
                   <ChevronLeft className="h-5 w-5" />
                 </button>
-                <Avatar
-                  name={currentConv.conversation.customer_name}
-                  url={currentConv.conversation.avatar_url}
-                  kind={currentConv.conversation.channel_kind}
-                  size="sm"
-                />
+                <Avatar name={conv.customer_name} url={conv.avatar_url} kind={conv.channel_kind} size="sm" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
-                    <h2 className="truncate text-sm font-bold text-slate-900">
-                      {currentConv.conversation.customer_name || 'Guest'}
-                    </h2>
-                    <ChannelDot kind={currentConv.conversation.channel_kind} />
+                    <h2 className="truncate text-sm font-bold text-slate-900">{conv.customer_name || 'Guest'}</h2>
+                    <span className="text-[10px] text-slate-400">#{conv.id}</span>
                   </div>
-                  <p className="truncate text-[11px] text-slate-500">
-                    {CONVERSATION_TYPES[currentConv.conversation.type] || 'Unclassified'}
-                    {' · '}
-                    {peopleOn(currentConv.conversation).map((p) => p.name).join(', ') || 'Unassigned'}
-                  </p>
+                  <div className="flex flex-wrap items-center gap-1 text-[11px] text-slate-500">
+                    <span>{CHANNELS[conv.channel_kind]?.label}</span>
+                    {conv.type && conv.type !== 'unknown' ? <span>· {CONVERSATION_TYPES[conv.type]}</span> : null}
+                    <SlaChip conversation={conv} now={now} />
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setShowRightPanel(!showRightPanel)}
-                  className={`inline-flex h-10 shrink-0 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-semibold ${
-                    showRightPanel ? 'border-soul-blue bg-soul-blue text-white' : 'border-slate-200 bg-white text-slate-700'
-                  }`}
-                  aria-label="Guest record"
-                >
-                  <PanelRight className="h-4 w-4" />
-                  <span className="hidden sm:inline">Guest</span>
-                </button>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <AssignButton
+                    users={me?.users}
+                    people={people}
+                    myId={myId}
+                    canAssign={can('conv.assign')}
+                    onAssign={(uid) => assign(conv.id, uid)}
+                    onRemove={(uid) => unassign(conv.id, uid)}
+                    open={menu === 'assign'}
+                    setOpen={(v) => setMenu(v ? 'assign' : null)}
+                  />
+                  {conv.status !== 'closed' ? (
+                    <SnoozeButton onSnooze={(at) => snooze(conv.id, at)} businessStart={me?.rules?.business_start || '11:00'} open={menu === 'snooze'} setOpen={(v) => setMenu(v ? 'snooze' : null)} />
+                  ) : null}
+                  <StateButtons
+                    status={conv.status}
+                    onWaiting={() => setStatus(conv.id, 'waiting_customer')}
+                    onReopen={() => setStatus(conv.id, 'needs_reply')}
+                    onClose={() => setClosing({ ids: [conv.id], type: conv.type })}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowRail((v) => !v)}
+                    className={`grid h-9 w-9 place-items-center rounded-lg border ${showRail ? 'border-soul-blue bg-soul-blue text-white' : 'border-slate-200 bg-white text-slate-600'}`}
+                    aria-label="Guest details"
+                    title="Guest details"
+                  >
+                    <PanelRight className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
 
-              {othersOn(currentConv.conversation.id).length > 0 && (
-                <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-xs font-medium text-amber-900">
-                  {othersOn(currentConv.conversation.id).map((id) => userName(id)).join(', ')} {othersOn(currentConv.conversation.id).length === 1 ? 'is' : 'are'} also in this chat. Check before you reply.
+              {othersOn(conv.id).length ? (
+                <div className="border-b border-amber-200 bg-amber-50 px-4 py-1.5 text-xs font-medium text-amber-900">
+                  👀 {othersOn(conv.id).map((id) => userName(id)).join(', ')} {othersOn(conv.id).length === 1 ? 'has' : 'have'} this chat open too. Check before you reply.
                 </div>
-              )}
+              ) : null}
+              {conv.status === 'snoozed' && conv.snooze_until ? (
+                <div className="border-b border-indigo-200 bg-indigo-50 px-4 py-1.5 text-xs text-indigo-900">
+                  Snoozed until {new Date(Number(conv.snooze_until)).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Cairo' })}. It comes back on its own, or when the guest writes.
+                </div>
+              ) : null}
+              {conv.ai_summary?.summary ? (
+                <details className="border-b border-slate-200 bg-white px-4 py-1.5 text-xs text-slate-600">
+                  <summary className="cursor-pointer font-semibold text-indigo-700">
+                    <Sparkles className="mr-1 inline h-3.5 w-3.5" />
+                    Summary
+                  </summary>
+                  <p dir="auto" className="mt-1 whitespace-pre-wrap">{summaryText(conv.ai_summary)}</p>
+                </details>
+              ) : null}
 
-              {/* Chat Message History Stream */}
-              <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain px-3 py-3 sm:space-y-3 sm:p-4">
-                {thread.length === 0 ? (
-                  <div className="p-12 text-center text-xs text-slate-400">No messages in this chat yet.</div>
-                ) : (
-                  thread.map((msg) => {
-                    const isNote = msg.sender_type === 'note' || msg.kind === 'note';
-                    const isInbound = msg.direction === 'in';
-                    const isAi = msg.sender_type === 'ai';
-                    const isScript = msg.sender_type === 'auto';
-                    const isExternal = msg.sender_type === 'external';
-
-                    if (isNote) {
-                      return (
-                        <div key={msg.id} className="mx-auto w-full max-w-lg space-y-1 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 shadow-sm sm:text-xs">
-                          <div className="flex items-center justify-between text-[11px] font-bold text-amber-700">
-                            <span className="flex items-center gap-1">
-                              <Lock className="w-3 h-3" /> Internal Staff Note — {msg.user_name || userName(msg.user_id)}
-                            </span>
-                            <span>{fmtTime(msg.created_at)}</span>
-                          </div>
-                          <p className="whitespace-pre-wrap">{msg.body}</p>
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <div
-                        key={msg.id}
-                        className={`flex flex-col ${isInbound ? 'items-start' : 'items-end'}`}
-                      >
-                        <div
-                          className={`max-w-[85%] space-y-1.5 rounded-2xl p-3 text-sm shadow-sm sm:max-w-xl sm:text-xs ${
-                            isInbound
-                              ? 'bg-white text-slate-800 rounded-tl-sm border border-slate-200'
-                              : isScript
-                              ? 'bg-slate-700 text-white rounded-tr-sm'
-                              : isAi
-                              ? 'bg-indigo-600 text-white rounded-tr-sm'
-                              : 'bg-soul-blue text-white rounded-tr-sm'
-                          }`}
-                        >
-                          <div className={`flex items-center justify-between gap-4 text-[10px] ${isInbound ? 'text-slate-400' : 'text-white/70'}`}>
-                            <span className="font-semibold">
-                              {isInbound
-                                ? currentConv.conversation.customer_name
-                                : isScript
-                                ? 'After-hours script'
-                                : isAi
-                                ? 'AI draft'
-                                : isExternal
-                                ? 'Sent outside the inbox'
-                                : (msg.user_name || userName(msg.user_id))}
-                            </span>
-                            <span>{fmtTime(msg.created_at)}</span>
-                          </div>
-
-                          <p className="whitespace-pre-wrap break-words leading-relaxed [overflow-wrap:anywhere]">
-                            {msg.body}
-                          </p>
-                          {msg.delivery_status === 'pending' && (
-                            <p className={`text-[10px] ${isInbound ? 'text-slate-400' : 'text-white/70'}`}>Sending…</p>
-                          )}
-                          {msg.delivery_status === 'failed' && (
-                            <p className={`text-[10px] font-semibold ${isInbound ? 'text-rose-600' : 'text-rose-100'}`}>Not delivered{msg.error ? `: ${msg.error}` : ''}</p>
-                          )}
-
-                          {(Array.isArray(msg.attachments) ? msg.attachments : []).map((attachment, index) => (
-                            <Attachment key={`${msg.id}-${index}`} message={msg} index={index} attachment={attachment} />
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-                <div ref={messagesEndRef} />
+              <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain px-3 py-3 sm:px-5">
+                <Thread items={thread} customerName={conv.customer_name} userName={userName} endRef={endRef} />
               </div>
 
-              <ChatComposer
+              <Composer
+                key={conv.id}
                 ref={composerRef}
-                conversationId={activeConvId}
-                customerName={currentConv.conversation.customer_name}
+                conversationId={conv.id}
+                customerName={conv.customer_name}
                 agentName={me?.user?.name}
                 replies={replies}
                 aiAvailable={Boolean(me?.aiAvailable)}
-                onSend={handleSendMessage}
-                onSuggest={handleAiSuggest}
+                windowClosed={windowClosed}
+                channelKind={conv.channel_kind}
+                onSend={send}
+                onSuggest={suggest}
               />
             </>
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-              <div className="w-16 h-16 rounded-2xl bg-slate-200 text-slate-400 flex items-center justify-center mb-4">
-                <MessageSquare className="w-8 h-8" />
+            <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
+              <div className="mb-4 grid h-16 w-16 place-items-center rounded-2xl bg-slate-200 text-slate-400">
+                <MessageSquare className="h-8 w-8" />
               </div>
-              <h2 className="text-base font-bold text-slate-700">Choose a guest</h2>
+              <h2 className="text-base font-bold text-slate-700">Pick a chat</h2>
               <p className="mt-1 max-w-sm text-xs text-slate-400">
-                Reply from here, record the stay, and label the chat before you close it.
+                Oldest waiting guests are at the top. Press <kbd className="rounded bg-slate-200 px-1">J</kbd> to start, <kbd className="rounded bg-slate-200 px-1">?</kbd> for all shortcuts.
               </p>
             </div>
           )}
         </div>
 
-        {/* Right Column: PMS Lead Panel */}
-        {showRightPanel && activeConvId && currentConv?.conversation && (
+        {/* Guest details */}
+        {showRail && activeId && conv ? (
           <div className="absolute inset-0 z-20 overflow-y-auto bg-white p-4 pb-8 2xl:static 2xl:z-auto 2xl:w-80 2xl:flex-shrink-0 2xl:border-l 2xl:border-slate-200 2xl:pb-4">
-            <button
-              type="button"
-              className="mb-3 inline-flex h-11 items-center gap-1 text-sm font-semibold text-soul-blue 2xl:hidden"
-              onClick={() => setShowRightPanel(false)}
-            >
-              <ChevronLeft className="h-4 w-4" />
-              Back to chat
+            <button type="button" className="mb-3 inline-flex h-10 items-center gap-1 text-sm font-semibold text-soul-blue 2xl:hidden" onClick={() => setShowRail(false)}>
+              <ChevronLeft className="h-4 w-4" /> Back to chat
             </button>
             <GuestRail
-              conversation={currentConv.conversation}
-              customer={currentConv.customer}
-              leads={currentConv.leads}
-              followUps={currentConv.followUps}
-              me={me}
-              can={can}
-              now={now}
-              people={peopleOn(currentConv.conversation)}
-              onType={setConversationType}
-              onStatus={handleUpdateStatus}
-              onRemove={(userId) => removeAssignee(currentConv.conversation.id, userId)}
-              onClaim={() => claimConversation(currentConv.conversation.id)}
-              onSnooze={snoozeUntilMorning}
-              onChanged={() => { refetchCurrentConv(); refetchConvs(); }}
-              onStartLead={startStayRequest}
+              conversation={conv}
+              customer={detail.data?.customer}
+              leads={detail.data?.leads}
+              followUps={detail.data?.followUps}
+              onType={setType}
+              onChanged={refreshAll}
+              onStartLead={() => act(() => inboxApi.post(`/conversations/${conv.id}/leads`, {}), 'Stay request opened')}
             />
           </div>
-        )}
+        ) : null}
       </div>
 
+      {closing ? (
+        <CloseDialog
+          count={closing.ids.length}
+          currentType={closing.type}
+          busy={busy}
+          onCancel={() => setClosing(null)}
+          onConfirm={confirmClose}
+          onSummarize={closing.ids.length === 1 && me?.aiAvailable ? summarize : null}
+        />
+      ) : null}
+
+      {showKeys ? (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 p-4" onClick={() => setShowKeys(false)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="mb-3 text-base font-bold text-slate-900">Keyboard shortcuts</h2>
+            <dl className="space-y-1.5 text-sm">
+              {SHORTCUTS.map(([k, d]) => (
+                <div key={k} className="flex items-center justify-between gap-3">
+                  <dt className="text-slate-600">{d}</dt>
+                  <dd>
+                    <kbd className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-xs font-semibold text-slate-700">{k}</kbd>
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
-
-function fillReply(text, agentName, customerName) {
-  return String(text || '')
-    .replace(/\{\{\s*agent_name\s*\}\}/gi, () => agentName || '')
-    .replace(/\{\{\s*customer_name\s*\}\}/gi, () => customerName || '');
-}
-
-const ChatComposer = forwardRef(function ChatComposer({
-  conversationId, customerName, agentName, replies, aiAvailable, onSend, onSuggest,
-}, ref) {
-  const [body, setBody] = useState('');
-  const [note, setNote] = useState(false);
-  const [openReplies, setOpenReplies] = useState(false);
-  const [suggesting, setSuggesting] = useState(false);
-  const [file, setFile] = useState(null);
-  const inputRef = useRef(null);
-  const fileRef = useRef(null);
-  const slash = body.startsWith('/') ? body.slice(1).trim().toLowerCase() : null;
-  const matches = slash === null
-    ? replies
-    : replies.filter((qr) => `${qr.shortcut || ''} ${qr.title || ''}`.toLowerCase().includes(slash));
-
-  useEffect(() => {
-    setBody('');
-    setNote(false);
-    setOpenReplies(false);
-    setFile(null);
-    if (inputRef.current) inputRef.current.style.height = 'auto';
-  }, [conversationId]);
-
-  useEffect(() => {
-    const el = inputRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 144)}px`;
-  }, [body]);
-
-  useImperativeHandle(ref, () => ({
-    toggleNote() {
-      setNote((v) => !v);
-      inputRef.current?.focus();
-    },
-    openReplies() {
-      setNote(false);
-      setOpenReplies(true);
-      setBody((value) => (value.startsWith('/') ? value : '/'));
-      inputRef.current?.focus();
-    },
-  }), []);
-
-  const chooseFile = (event) => {
-    const next = event.target.files?.[0];
-    event.target.value = '';
-    if (!next) return;
-    if (next.size > 16 * 1024 * 1024) {
-      toast.error('File must be under 16 MB');
-      return;
-    }
-    setNote(false);
-    setFile(next);
-  };
-
-  const applyReply = (text) => fillReply(text, agentName, customerName);
-
-  const submit = (event) => {
-    event?.preventDefault();
-    const text = applyReply(body).trim();
-    if (!text && !file) return;
-    if (note && !text) return;
-    setBody('');
-    setOpenReplies(false);
-    if (inputRef.current) inputRef.current.style.height = 'auto';
-    const sendingFile = note ? null : file;
-    setFile(null);
-    onSend(text, note, sendingFile);
-  };
-
-  return (
-    <div className="flex-shrink-0 border-t border-slate-200 bg-white px-2 py-2 shadow-lg sm:px-3 sm:py-3">
-      <div className="mb-2 flex items-center gap-2">
-        <div className="flex min-w-0 flex-1 items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-xs">
-          <button type="button" onClick={() => setNote(false)} className={`h-9 flex-1 rounded-md px-2 font-medium ${!note ? 'bg-white text-soul-blue shadow-sm' : 'text-slate-600'}`}>Reply</button>
-          <button type="button" onClick={() => setNote(true)} className={`h-9 flex-1 rounded-md px-2 font-medium ${note ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-600'}`}>Note</button>
-        </div>
-        {aiAvailable && (
-          <button
-            type="button"
-            disabled={suggesting}
-            aria-label="AI draft"
-            onClick={async () => {
-              setSuggesting(true);
-              try {
-                const suggestion = await onSuggest();
-                if (suggestion) setBody(suggestion);
-                else toast.error('No AI suggestion generated');
-              } catch (err) {
-                toast.error(errorMessage(err, 'AI suggest failed'));
-              } finally {
-                setSuggesting(false);
-              }
-            }}
-            className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 text-xs font-semibold text-indigo-700"
-          >
-            <Sparkles className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">{suggesting ? 'Thinking…' : 'AI draft'}</span>
-          </button>
-        )}
-        {replies.length > 0 && (
-          <button type="button" onClick={() => setOpenReplies((v) => !v)} className="h-10 shrink-0 rounded-lg border border-slate-200 bg-slate-100 px-2.5 text-xs font-medium text-slate-700">
-            Saved
-          </button>
-        )}
-      </div>
-      {(openReplies || slash !== null) && matches.length > 0 && (
-        <div className="mb-2 max-h-36 divide-y divide-slate-100 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-1 text-sm sm:text-xs">
-          {matches.map((qr) => (
-            <button
-              key={qr.id}
-              type="button"
-              onClick={() => { setBody(applyReply(qr.body)); setOpenReplies(false); inputRef.current?.focus(); }}
-              className="flex w-full flex-col items-start gap-0.5 rounded px-2 py-2 text-left hover:bg-white sm:flex-row sm:items-center sm:justify-between"
-            >
-              <span className="font-bold text-slate-800">{qr.title || qr.shortcut}</span>
-              <span className="line-clamp-1 text-slate-400 sm:max-w-xs">{applyReply(qr.body)}</span>
-            </button>
-          ))}
-        </div>
-      )}
-      {file && (
-        <div className="mb-2 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700">
-          <Paperclip className="h-3.5 w-3.5" />
-          <span className="max-w-[16rem] truncate">{file.name}</span>
-          <button type="button" onClick={() => setFile(null)} aria-label="Remove attachment" className="text-slate-400 hover:text-rose-600">
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
-      <form onSubmit={submit} className="flex items-end gap-2">
-        <input
-          ref={fileRef}
-          type="file"
-          className="hidden"
-          accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,audio/mpeg,audio/ogg,audio/aac,audio/mp4,application/pdf"
-          onChange={chooseFile}
-        />
-        <button
-          type="button"
-          onClick={() => fileRef.current?.click()}
-          className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40"
-          aria-label="Attach a file"
-          title="Image, video, audio, or PDF, up to 16 MB"
-        >
-          <Paperclip className="h-4 w-4" />
-        </button>
-        <textarea
-          ref={inputRef}
-          rows={1}
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey && slash !== null && matches[0]) {
-              e.preventDefault();
-              setBody(applyReply(matches[0].body));
-              setOpenReplies(false);
-              return;
-            }
-            const coarse = window.matchMedia('(pointer: coarse)').matches;
-            if (e.key === 'Enter' && !e.shiftKey && !coarse) {
-              e.preventDefault();
-              submit();
-            }
-          }}
-          placeholder={note ? 'Internal note' : `Message ${customerName || 'guest'}`}
-          className={`max-h-36 min-h-11 flex-1 resize-none rounded-xl border bg-slate-50 p-2.5 text-base focus:outline-none focus:ring-2 sm:text-sm ${note ? 'border-amber-300 bg-amber-50/20 focus:ring-amber-400/30' : 'border-slate-200 focus:ring-soul-blue/20'}`}
-        />
-        <button type="submit" aria-label={note ? 'Save note' : 'Send'} disabled={(!body.trim() && !file) || (note && !body.trim())} className={`flex h-11 shrink-0 items-center gap-1.5 rounded-xl px-3 text-xs font-bold shadow disabled:opacity-50 ${note ? 'bg-amber-500 text-white' : 'bg-soul-blue text-white'}`}>
-          <Send className="h-4 w-4" />
-          <span className="hidden sm:inline">{note ? 'Save' : 'Send'}</span>
-        </button>
-      </form>
-      <p className="mt-1.5 hidden text-[10px] text-slate-400 lg:block">J and K move the queue. N switches to a note. / inserts a saved reply.</p>
-    </div>
-  );
-});
-
