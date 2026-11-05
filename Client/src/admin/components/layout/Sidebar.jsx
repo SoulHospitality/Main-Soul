@@ -40,7 +40,7 @@ export const NAV_SECTIONS = [
     label: 'Overview',
     items: [
       { path: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard, page: 'dashboard' },
-      { path: '/admin/clock', label: 'Clock in', icon: Fingerprint, page: 'clock_in' },
+      { path: '/admin/clock', label: 'Clock in', adminLabel: 'Clock-ins', icon: Fingerprint, page: 'clock_in' },
       { path: '/admin/kpi', label: 'KPI', icon: Target, page: 'kpi' },
       { path: '/admin/audit', label: 'Audit Log', icon: ClipboardList, page: 'audit_log' },
       { path: '/admin/tasks', label: 'Tasks', icon: ListTodo, page: 'tasks', excludeRoles: ['hr', 'hr_supervisor'] },
@@ -113,7 +113,7 @@ export const NAV_SECTIONS = [
       { path: '/admin/tasks', label: 'Tasks', icon: ListTodo, page: 'tasks', roles: ['hr', 'hr_supervisor'] },
       { path: '/admin/deductions', label: 'Deductions/Bonus', icon: MinusCircle, page: 'deductions' },
       { path: '/admin/hr-rules', label: 'HR rules', icon: Sliders, page: 'hr_rules' },
-      { path: '/admin/payslip', label: 'Payslip', icon: Receipt, page: 'payslip' },
+      { path: '/admin/payslip', label: 'Payslip', icon: Receipt, page: 'payslip', excludeRoles: ['admin'] },
       { path: '/admin/payroll', label: 'Payrolls', icon: Wallet, page: 'payroll' },
       { path: '/admin/job-offers', label: 'Job offers', icon: ClipboardList, page: 'job_offers', badge: 'job_pending' },
     ],
@@ -267,7 +267,9 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
               <div className="space-y-0.5">
                 {section.items.map((item) => {
                   const label =
-                    item.managerLabel && user?.role === 'reservations_manager'
+                    item.adminLabel && user?.role === 'admin'
+                      ? item.adminLabel
+                      : item.managerLabel && user?.role === 'reservations_manager'
                         ? item.managerLabel
                       : item.page === 'requests' && item.agentLabel && !showReviewPending
                         ? item.agentLabel

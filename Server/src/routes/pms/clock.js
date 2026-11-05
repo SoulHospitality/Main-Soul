@@ -152,7 +152,7 @@ async function statusPayload(req, me) {
     todayEvents(me.id, date),
     credentialsFor(me.id),
     query(
-      `SELECT status, check_in::text AS check_in, check_out::text AS check_out, deduction_amount
+      `SELECT check_in::text AS check_in, check_out::text AS check_out
        FROM staff_attendance WHERE staff_user_id = $1 AND work_date = $2::date`,
       [me.id, date]
     ),
@@ -169,10 +169,14 @@ async function statusPayload(req, me) {
     clocked_in: isOpen(events),
     events: events.map((e) => ({ kind: e.kind, source: e.source, at: e.at, distance_m: e.distance_m != null ? Math.round(Number(e.distance_m)) : null })),
     device: creds[0] ? { label: creds[0].device_label, since: creds[0].created_at, last_used_at: creds[0].last_used_at } : null,
-    attendance: a
-      ? { status: a.status, check_in: a.check_in ? a.check_in.slice(0, 5) : null, check_out: a.check_out ? a.check_out.slice(0, 5) : null, deduction_amount: Number(a.deduction_amount) || 0 }
-      : null,
+    // Staff see their times only; lateness status and penalties stay with HR.
+    attendance: a ? { check_in: a.check_in ? a.check_in.slice(0, 5) : null, check_out: a.check_out ? a.check_out.slice(0, 5) : null } : null,
   };
+}
+
+/** CEOs don't clock in; they see everyone's clock-ins instead. */
+function staffOnly(req) {
+  if (req.user?.role === 'admin') throw new HttpError(403, 'CEOs don’t clock in.');
 }
 
 function handle(fn) {
@@ -194,6 +198,7 @@ router.get('/clock/status', handle(async (req, res) => {
 // ── Registering this phone's fingerprint / Face ID ──
 
 router.post('/clock/passkey/options', handle(async (req, res) => {
+  staffOnly(req);
   if (!isPhoneRequest(req)) throw new HttpError(403, 'Set up clock-in from your phone.');
   const me = await loadMe(req.user.id);
   const existing = await credentialsFor(me.id);
@@ -213,6 +218,7 @@ router.post('/clock/passkey/options', handle(async (req, res) => {
 }));
 
 router.post('/clock/passkey/register', handle(async (req, res) => {
+  staffOnly(req);
   if (!isPhoneRequest(req)) throw new HttpError(403, 'Set up clock-in from your phone.');
   const me = await loadMe(req.user.id);
   if ((await credentialsFor(me.id)).length) throw new HttpError(409, 'A phone is already set up for you.');
@@ -245,6 +251,7 @@ router.post('/clock/passkey/register', handle(async (req, res) => {
 // ── Clocking in and out ──
 
 router.post('/clock/options', handle(async (req, res) => {
+  staffOnly(req);
   if (!isPhoneRequest(req)) throw new HttpError(403, 'Clock in from your phone.');
   const me = await loadMe(req.user.id);
   const creds = await credentialsFor(me.id);
@@ -306,6 +313,7 @@ async function recordClockOut(me, date, minutes) {
 }
 
 router.post('/clock/punch', handle(async (req, res) => {
+  staffOnly(req);
   if (!isPhoneRequest(req)) throw new HttpError(403, 'Clock in from your phone.');
   const action = req.body?.action === 'out' ? 'out' : 'in';
   const me = await loadMe(req.user.id);
@@ -370,6 +378,7 @@ router.post('/clock/punch', handle(async (req, res) => {
  * distance and only clocks out when the phone is clearly outside (distance minus accuracy > radius).
  */
 router.post('/clock/left-area', handle(async (req, res) => {
+  staffOnly(req);
   const me = await loadMe(req.user.id);
   const location = readLocation(req.body);
   const site = await activeSite();
@@ -435,6 +444,85 @@ router.get('/clock/team', requireRoles(...HR_CLOCK_ROLES), handle(async (_req, r
         };
       }),
   });
+}));
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Everyone's clock-ins for a date range, one row per person per day: first in, last out, each
+ * in/out pair, time inside, and automatic clock-outs. Filter by person (id or name) and dates.
+ */
+router.get('/clock/history', requireRoles(...HR_CLOCK_ROLES), handle(async (req, res) => {
+  const { date: today } = cairoParts();
+  const to = ISO_DAY.test(String(req.query.to || '')) ? String(req.query.to) : today;
+  const from = ISO_DAY.test(String(req.query.from || '')) ? String(req.query.from) : to;
+  if (from > to) throw new HttpError(400, 'The start date must be before the end date');
+  const span = Math.round((new Date(`${to}T12:00:00Z`) - new Date(`${from}T12:00:00Z`)) / 86400000) + 1;
+  if (span > 93) throw new HttpError(400, 'Choose up to 3 months at a time');
+  const params = [from, to];
+  const where = ['e.work_date BETWEEN $1::date AND $2::date'];
+  const staffId = Number(req.query.staff_id);
+  if (Number.isInteger(staffId) && staffId > 0) {
+    params.push(staffId);
+    where.push(`e.staff_user_id = $${params.length}`);
+  }
+  const name = String(req.query.q || '').trim();
+  if (name) {
+    params.push(`%${name}%`);
+    where.push(`(u.full_name ILIKE $${params.length} OR u.staff_code ILIKE $${params.length})`);
+  }
+  const [events, staff] = await Promise.all([
+    query(
+      `SELECT e.staff_user_id, e.work_date::text AS work_date, e.kind, e.source, e.at, u.full_name, u.role, u.staff_code
+       FROM staff_clock_events e JOIN staff_users u ON u.id = e.staff_user_id
+       WHERE ${where.join(' AND ')}
+       ORDER BY e.work_date DESC, u.full_name, e.at, e.id`,
+      params
+    ),
+    query(
+      `SELECT id, full_name, role, staff_code FROM staff_users
+       WHERE COALESCE(is_active, 1)::int = 1 AND role NOT IN ('owner', 'admin') ORDER BY full_name`
+    ),
+  ]);
+  const days = new Map();
+  for (const e of events.rows) {
+    const key = `${e.staff_user_id}|${e.work_date}`;
+    if (!days.has(key)) {
+      days.set(key, { staff_user_id: e.staff_user_id, full_name: e.full_name, role: e.role, staff_code: e.staff_code, date: e.work_date, events: [] });
+    }
+    days.get(key).events.push(e);
+  }
+  const rows = [...days.values()].map((d) => {
+    const sessions = [];
+    for (const e of d.events) {
+      if (e.kind === 'in') sessions.push({ in: e.at, out: null, out_source: null });
+      else if (sessions.length && !sessions[sessions.length - 1].out) {
+        sessions[sessions.length - 1].out = e.at;
+        sessions[sessions.length - 1].out_source = e.source;
+      }
+    }
+    const open = sessions.length > 0 && !sessions[sessions.length - 1].out;
+    let minutesIn = 0;
+    for (const s of sessions) {
+      const end = s.out ? new Date(s.out) : d.date === today ? new Date() : null;
+      if (end) minutesIn += Math.max(0, Math.round((end - new Date(s.in)) / 60000));
+    }
+    return {
+      staff_user_id: d.staff_user_id,
+      full_name: d.full_name,
+      role: d.role,
+      staff_code: d.staff_code,
+      date: d.date,
+      first_in: sessions[0]?.in || null,
+      last_out: [...sessions].reverse().find((s) => s.out)?.out || null,
+      sessions,
+      still_in: open && d.date === today,
+      forgot_out: open && d.date !== today,
+      minutes_in: minutesIn,
+      auto_outs: d.events.filter((e) => e.source === 'left_area').length,
+    };
+  });
+  res.json({ from, to, today, staff: staff.rows, rows });
 }));
 
 router.delete('/clock/devices/:staffId', requireRoles(...HR_CLOCK_ROLES), handle(async (req, res) => {

@@ -8,7 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
 import { ROLE_LABELS } from '../utils/permissions';
-import { currency } from '../utils/formatters';
+import ClockHistory from './clock/ClockHistory';
 import { playChime } from '../utils/chime';
 
 const HR_ROLES = new Set(['admin', 'hr', 'hr_supervisor']);
@@ -367,20 +367,14 @@ function PhoneClock() {
       )}
 
       {att ? (
-        <section className="card grid grid-cols-3 gap-2 text-center">
+        <section className="card grid grid-cols-2 gap-2 text-center">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-soul-muted">Check-in</p>
-            <p className="font-semibold text-soul-blue">{att.check_in || '—'}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-soul-muted">First clock-in</p>
+            <p className="font-semibold tabular-nums text-soul-blue">{att.check_in || '—'}</p>
           </div>
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-soul-muted">Status</p>
-            <p className={`font-semibold ${att.status === 'late' ? 'text-amber-700' : att.status === 'on_time' ? 'text-emerald-700' : 'text-soul-blue'}`}>
-              {{ on_time: 'On time', late: 'Late', no_show: 'Absent', holiday: 'Holiday', wfh: 'WFH', day_off: 'Day off' }[att.status] || att.status}
-            </p>
-          </div>
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-soul-muted">Penalty</p>
-            <p className="font-semibold text-soul-blue">{att.deduction_amount ? currency(att.deduction_amount) : '—'}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-soul-muted">Last clock-out</p>
+            <p className="font-semibold tabular-nums text-soul-blue">{att.check_out || (data.clocked_in ? 'Still in' : '—')}</p>
           </div>
         </section>
       ) : null}
@@ -413,24 +407,42 @@ function PhoneClock() {
 export default function ClockIn() {
   const { user } = useAuth();
   const phone = useMemo(isPhoneDevice, []);
+  const isAdmin = user?.role === 'admin';
   const isHr = HR_ROLES.has(user?.role);
   const [showTeam, setShowTeam] = useState(!phone);
+
+  // CEOs don't clock in: they get everyone's clock-ins, on any device.
+  if (isAdmin) {
+    return (
+      <div className="space-y-5">
+        <div className="page-header mb-0">
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-soul-muted">Attendance</p>
+          <h1 className="page-title mt-1">Clock-ins</h1>
+          <p className="page-subtitle">Everyone’s phone clock-ins and clock-outs. Filter by person and dates; tap a day to see each clock-in.</p>
+        </div>
+        <ClockHistory />
+        <TeamPanel />
+      </div>
+    );
+  }
+
+  const managerPanels = (
+    <>
+      <ClockHistory />
+      <TeamPanel />
+    </>
+  );
 
   return (
     <div className="space-y-5">
       <div className="page-header mb-0">
         <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-soul-muted">Attendance</p>
         <h1 className="page-title mt-1">Clock in</h1>
-        {!phone ? (
-          <p className="page-subtitle">
-            Staff clock in and out from their phones with fingerprint or Face ID, inside the office area.
-          </p>
-        ) : null}
       </div>
 
-      {phone && user?.role !== 'admin' ? (
+      {phone ? (
         <PhoneClock />
-      ) : !phone ? (
+      ) : (
         <div className="card flex items-start gap-4">
           <Smartphone className="h-10 w-10 shrink-0 text-soul-blue" />
           <div>
@@ -441,18 +453,18 @@ export default function ClockIn() {
             </p>
           </div>
         </div>
-      ) : null}
+      )}
 
       {isHr ? (
         phone ? (
           <div className="space-y-3">
             <button type="button" className="btn-secondary w-full justify-center" onClick={() => setShowTeam((v) => !v)}>
-              <Users className="h-4 w-4" /> {showTeam ? 'Hide team' : 'Team & office location'}
+              <Users className="h-4 w-4" /> {showTeam ? 'Hide team' : 'Team clock-ins & office location'}
             </button>
-            {showTeam ? <TeamPanel /> : null}
+            {showTeam ? managerPanels : null}
           </div>
         ) : (
-          <TeamPanel />
+          managerPanels
         )
       ) : null}
     </div>

@@ -51,7 +51,7 @@ export default function MobileDock({ onOpenMenu }) {
           className={({ isActive }) => `pms-dock__item ${isActive ? 'pms-dock__item--active' : ''}`}
         >
           <item.icon className="h-5 w-5" strokeWidth={1.75} />
-          <span>{SHORT_LABEL[item.path] || item.label}</span>
+          <span>{user?.role === 'admin' && item.adminLabel ? item.adminLabel : SHORT_LABEL[item.path] || item.label}</span>
         </NavLink>
       ))}
       <button type="button" className="pms-dock__item" onClick={onOpenMenu}>

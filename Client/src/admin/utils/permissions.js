@@ -552,6 +552,8 @@ export function canEditStaffTask(user, task) {
 
 export function canAccess(user, page) {
   if (!user) return false;
+  // CEOs aren't on payroll, so they have no payslip.
+  if (page === 'payslip' && user.role === 'admin') return false;
   if (user.role === 'admin') return true;
   if (page === 'profile' || page === 'change-password') return true;
   // Every staff member clocks in from their phone, whatever their page list.
