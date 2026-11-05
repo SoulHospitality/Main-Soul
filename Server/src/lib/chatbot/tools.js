@@ -292,7 +292,34 @@ async function checkStay(input) {
   };
 }
 
-/** Tool definitions sent to Claude. Strict schemas keep the arguments valid. */
+/**
+ * Public promo codes running now: active, not expired, not used up. Codes tied to a sales agent are
+ * personal to that agent's customers, so they're never offered by the bot.
+ */
+async function activeOffers() {
+  const { rows } = await query(
+    `SELECT code, discount_percent, discount_amount, description, expires_at, COALESCE(once_per_guest, true) AS once_per_guest
+     FROM promo_codes
+     WHERE active = true
+       AND (expires_at IS NULL OR expires_at > now())
+       AND (max_uses IS NULL OR used_count < max_uses)
+       AND sales_person_id IS NULL
+     ORDER BY COALESCE(discount_percent, 0) DESC, COALESCE(discount_amount, 0) DESC
+     LIMIT 5`
+  );
+  return {
+    offers: rows.map((r) => ({
+      code: r.code,
+      discount: Number(r.discount_percent) > 0 ? `${Number(r.discount_percent)}% off` : Number(r.discount_amount) > 0 ? `EGP ${money(r.discount_amount)} off` : null,
+      details: r.description ? plain(r.description, 200) : null,
+      valid_until: r.expires_at ? new Date(r.expires_at).toISOString().slice(0, 10) : null,
+      once_per_guest: r.once_per_guest,
+    })).filter((o) => o.discount),
+    how_to_use: 'Enter the code at checkout on the website; the discount comes off the stay total.',
+  };
+}
+
+/** Tool definitions sent to the AI. Strict schemas keep the arguments valid. */
 const TOOLS = [
   {
     name: 'list_destinations',
@@ -345,6 +372,13 @@ const TOOLS = [
     strict: true,
   },
   {
+    name: 'get_active_offers',
+    description:
+      'Promo codes running right now (code, discount, valid until). Check it when you share results or when the customer asks about offers or discounts, and mention a code if there is one. Never invent codes or discounts.',
+    input_schema: { type: 'object', properties: {}, required: [], additionalProperties: false },
+    strict: true,
+  },
+  {
     name: 'hand_off_to_agent',
     description:
       'Pass the chat to a human reservations agent in the Soul inbox. Use it when the customer asks for something outside units, details, prices and availability (an existing booking, payment, a complaint, a discount or negotiation, special arrangements, owners or partnerships, a job), asks for a person, wants to book and needs help, or you cannot find a suitable unit after a few tries. After calling it, tell the customer an agent will reply here shortly.',
@@ -364,4 +398,4 @@ const TOOLS = [
   },
 ];
 
-module.exports = { TOOLS, searchUnits, unitDetails, checkStay, listDestinations, unitLink, MAX_RESULTS };
+module.exports = { TOOLS, searchUnits, unitDetails, checkStay, listDestinations, activeOffers, unitLink, MAX_RESULTS };
