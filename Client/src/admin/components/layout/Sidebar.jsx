@@ -32,6 +32,7 @@ import {
   BarChart3,
   Sliders,
   Fingerprint,
+  Bot,
 } from 'lucide-react';
 
 export const NAV_SECTIONS = [
@@ -56,6 +57,8 @@ export const NAV_SECTIONS = [
       { path: '/admin/leads', label: 'Leads & Pipeline', icon: Target, page: 'leads' },
       { path: '/admin/inbox-analytics', label: 'Inbox Analytics', icon: BarChart3, page: 'inbox_analytics' },
       { path: '/admin/inbox-settings', label: 'Inbox Settings', icon: Sliders, page: 'inbox_settings' },
+      // Test stage: CEO only until it goes live on Instagram and Messenger.
+      { path: '/admin/chatbot', label: 'Chatbot (test)', icon: Bot, page: 'chatbot_test', roles: ['admin'] },
     ],
   },
   {

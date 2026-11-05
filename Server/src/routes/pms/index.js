@@ -149,6 +149,7 @@ router.use(require('./siteSettingsAdmin'));
 router.use(require('./hr'));
 router.use(require('./hrRulesAdmin'));
 router.use(require('./clock'));
+router.use(require('./chatbot'));
 router.use(require('./inbox'));
 router.use(require('./soully'));
 

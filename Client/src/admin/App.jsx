@@ -52,6 +52,7 @@ const Reports = lazy(() => import('./pages/Reports'));
 const Performance = lazy(() => import('./pages/Performance'));
 const Kpi = lazy(() => import('./pages/Kpi'));
 const ClockIn = lazy(() => import('./pages/ClockIn'));
+const ChatbotTest = lazy(() => import('./pages/ChatbotTest'));
 const SitePerformance = lazy(() => import('./pages/SitePerformance'));
 const WebsiteControl = lazy(() => import('./pages/WebsiteControl'));
 const Tasks = lazy(() => import('./pages/Tasks'));
@@ -158,6 +159,7 @@ function AppRoutes() {
       <Route path="performance" element={<ProtectedRoute page="performance"><Performance /></ProtectedRoute>} />
       <Route path="kpi" element={<ProtectedRoute page="kpi"><Kpi /></ProtectedRoute>} />
       <Route path="clock" element={<ProtectedRoute page="clock_in"><ClockIn /></ProtectedRoute>} />
+      <Route path="chatbot" element={<ProtectedRoute page="chatbot_test"><ChatbotTest /></ProtectedRoute>} />
       <Route path="website-performance" element={<ProtectedRoute page="site_performance"><SitePerformance /></ProtectedRoute>} />
       <Route path="guest-errors" element={<Navigate to="/admin/website-performance" replace />} />
       <Route path="site-performance" element={<Navigate to="/admin/website-performance" replace />} />

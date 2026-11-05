@@ -30,6 +30,7 @@ const {
   monthsBetween,
   HR_TEAM_ROLES,
   assertCanEditStaffCompensation,
+  canEditStaffCompensation,
   nextPayrollPeriod,
   payrollCycleBounds,
   payrollCycleForDate,
@@ -66,6 +67,7 @@ const {
   DEFAULT_ATTENDANCE_CHECKOUT,
 } = require('../../lib/hrRules');
 const { loadManagerIds, sqlStaffManagedBy } = require('../../lib/staffManagers');
+const { logAudit } = require('../../lib/audit');
 const { notifyRequestSubmitted, notifyRequestReviewed, requestCategory } = require('../../lib/requestNotifications');
 
 const router = express.Router();
@@ -2535,25 +2537,197 @@ function autoHolidayAccessDate(createdAt) {
   return d.toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' });
 }
 
-router.get('/hr/holiday-access', requireRoles(...HR_ROLES), async (req, res, next) => {
-  try {
-    const { rows } = await query(
-      `SELECT id, full_name, role, staff_code, is_active, created_at,
-              COALESCE(holiday_access, 'auto') AS holiday_access
-       FROM staff_users
-       WHERE role NOT IN ('owner', 'admin')
-       ORDER BY full_name`
-    );
-    const now = new Date();
-    res.json(
-      rows.map((r) => ({
-        ...r,
+const BALANCE_FIELDS = { casual: 'leave_casual_days', annual: 'leave_annual_days', unpaid: 'leave_unpaid_days' };
+
+/**
+ * Everyone's holiday picture in one go: access setting and the date it opens on its own, balances
+ * (what's left after pending requests), excuses used this pay month, days taken this year and what's next.
+ */
+async function holidayAccessRows(staffId = null) {
+  const today = cairoParts().date;
+  const cycle = payrollCycleForDate(today);
+  const yearStart = `${today.slice(0, 4)}-01-01`;
+  const params = [];
+  let filter = '';
+  if (staffId) {
+    params.push(staffId);
+    filter = `AND u.id = $${params.length}`;
+  }
+  const { rows } = await query(
+    `SELECT id, full_name, role, staff_code, is_active, created_at,
+            COALESCE(holiday_access, 'auto') AS holiday_access,
+            COALESCE(leave_casual_days, 0)::int AS leave_casual_days,
+            COALESCE(leave_annual_days, 0)::int AS leave_annual_days,
+            COALESCE(leave_unpaid_days, 0)::int AS leave_unpaid_days
+     FROM staff_users u
+     WHERE role NOT IN ('owner', 'admin') ${filter}
+     ORDER BY full_name`,
+    params
+  );
+  const ids = rows.map((r) => r.id);
+  if (!ids.length) return { rows: [], cycle, today };
+  const [pending, taken, excuses, upcoming] = await Promise.all([
+    query(
+      `SELECT staff_user_id, leave_type, COALESCE(SUM(days), 0)::int AS days, COUNT(*)::int AS n
+       FROM staff_leave_requests WHERE status = 'pending' AND staff_user_id = ANY($1::int[])
+       GROUP BY staff_user_id, leave_type`,
+      [ids]
+    ),
+    query(
+      `SELECT staff_user_id, leave_type, COALESCE(SUM(days), 0)::int AS days
+       FROM staff_leave_requests
+       WHERE status = 'approved' AND start_date >= $2::date AND start_date < ($2::date + interval '1 year') AND staff_user_id = ANY($1::int[])
+         AND leave_type IN ('casual', 'annual', 'unpaid', 'sick')
+       GROUP BY staff_user_id, leave_type`,
+      [ids, yearStart]
+    ),
+    query(
+      `SELECT staff_user_id, COUNT(*)::int AS n
+       FROM staff_leave_requests
+       WHERE leave_type IN ('paid_excuse', 'early_leave') AND status IN ('pending', 'approved')
+         AND start_date >= $2::date AND start_date < $3::date AND staff_user_id = ANY($1::int[])
+       GROUP BY staff_user_id`,
+      [ids, cycle.from, cycle.to]
+    ),
+    query(
+      `SELECT DISTINCT ON (staff_user_id) staff_user_id, leave_type, start_date::text AS start_date, end_date::text AS end_date
+       FROM staff_leave_requests
+       WHERE status = 'approved' AND end_date >= $2::date AND staff_user_id = ANY($1::int[])
+         AND leave_type IN ('casual', 'annual', 'unpaid', 'sick')
+       ORDER BY staff_user_id, start_date`,
+      [ids, today]
+    ),
+  ]);
+  const key = (r) => `${r.staff_user_id}|${normalizeExcuseLeaveType(r.leave_type)}`;
+  const pendingBy = new Map(pending.rows.map((r) => [key(r), r]));
+  const takenBy = new Map(taken.rows.map((r) => [key(r), Number(r.days) || 0]));
+  const excusesBy = new Map(excuses.rows.map((r) => [r.staff_user_id, Number(r.n) || 0]));
+  const nextBy = new Map(upcoming.rows.map((r) => [r.staff_user_id, r]));
+  const unlimited = isUnpaidLeaveUnlimited();
+  const now = new Date();
+  return {
+    today,
+    cycle,
+    rows: rows.map((r) => {
+      const pend = (t) => Number(pendingBy.get(`${r.id}|${t}`)?.days) || 0;
+      const pendingRequests = pending.rows.filter((p) => p.staff_user_id === r.id).reduce((sum, p) => sum + (Number(p.n) || 0), 0);
+      const used = excusesBy.get(r.id) || 0;
+      return {
+        id: r.id,
+        full_name: r.full_name,
+        role: r.role,
+        staff_code: r.staff_code,
+        is_active: r.is_active,
+        created_at: r.created_at,
+        holiday_access: r.holiday_access,
         can_request_holidays: canRequestHolidays(r, now),
         tenure_months: monthsBetween(r.created_at, now),
         // The day paid holidays open on their own (6 months after joining), whatever the current setting.
         auto_access_on: autoHolidayAccessDate(r.created_at),
-      }))
+        balances: {
+          casual: { balance: r.leave_casual_days, pending: pend('casual'), available: Math.max(0, r.leave_casual_days - pend('casual')), taken_this_year: takenBy.get(`${r.id}|casual`) || 0 },
+          annual: { balance: r.leave_annual_days, pending: pend('annual'), available: Math.max(0, r.leave_annual_days - pend('annual')), taken_this_year: takenBy.get(`${r.id}|annual`) || 0 },
+          unpaid: {
+            balance: unlimited ? null : r.leave_unpaid_days,
+            unlimited,
+            pending: pend('unpaid'),
+            available: unlimited ? null : Math.max(0, r.leave_unpaid_days - pend('unpaid')),
+            taken_this_year: takenBy.get(`${r.id}|unpaid`) || 0,
+          },
+          sick: { taken_this_year: takenBy.get(`${r.id}|sick`) || 0 },
+        },
+        excuses: { used, max: PAID_EXCUSE_MAX_PER_MONTH, remaining: Math.max(0, PAID_EXCUSE_MAX_PER_MONTH - used) },
+        pending_requests: pendingRequests,
+        next_leave: nextBy.get(r.id) || null,
+      };
+    }),
+  };
+}
+
+router.get('/hr/holiday-access', requireRoles(...HR_ROLES), async (_req, res, next) => {
+  try {
+    const { rows, cycle, today } = await holidayAccessRows();
+    // ?full=1 also returns today and the current pay month (for the excuse count); without it, the plain list.
+    if (_req.query.full === '1') return res.json({ today, cycle: { from: cycle.from, through: cycle.through }, rows });
+    res.json(rows);
+  } catch (e) {
+    next(e);
+  }
+});
+
+function parseBalanceChanges(body) {
+  const changes = {};
+  for (const [name, col] of Object.entries(BALANCE_FIELDS)) {
+    if (body?.[name] === undefined || body?.[name] === null || body?.[name] === '') continue;
+    const n = Number(body[name]);
+    if (!Number.isInteger(n) || n < 0 || n > 365) {
+      throw Object.assign(new Error(`The ${name} balance must be a whole number of days (0–365)`), { status: 400 });
+    }
+    changes[col] = n;
+  }
+  if (!Object.keys(changes).length) throw Object.assign(new Error('Nothing to change'), { status: 400 });
+  return changes;
+}
+
+/** Set one person's casual / annual / unpaid balances (whole days). */
+router.patch('/hr/holiday-access/:id/balances', requireRoles(...HR_ROLES), async (req, res, next) => {
+  try {
+    const staff = await loadStaffForHr(Number(req.params.id));
+    assertCanEditStaffCompensation(req.user, staff.id, 'holiday balances');
+    const changes = parseBalanceChanges(req.body);
+    const cols = Object.keys(changes);
+    const before = Object.fromEntries(cols.map((c) => [c, Number(staff[c]) || 0]));
+    await query(
+      `UPDATE staff_users SET ${cols.map((c, i) => `${c} = $${i + 2}`).join(', ')}, updated_at = now() WHERE id = $1`,
+      [staff.id, ...cols.map((c) => changes[c])]
     );
+    await logAudit({
+      userId: req.user.id,
+      action: 'LEAVE_BALANCE_UPDATE',
+      entityType: 'staff_user',
+      entityId: staff.id,
+      details: { name: staff.full_name, before, after: changes, note: String(req.body?.note || '').slice(0, 300) || undefined },
+    });
+    const { rows } = await holidayAccessRows(staff.id);
+    res.json(rows[0]);
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
+    next(e);
+  }
+});
+
+/**
+ * Change many people's balances at once: set to a number, or add / take away days
+ * (e.g. "+1 annual day for everyone this month"). Balances never go below 0.
+ */
+router.post('/hr/holiday-access/balances/bulk', requireRoles(...HR_ROLES), async (req, res, next) => {
+  try {
+    const field = BALANCE_FIELDS[String(req.body?.type || '')];
+    if (!field) return res.status(400).json({ error: 'Choose casual, annual or unpaid' });
+    const mode = ['set', 'add', 'subtract'].includes(req.body?.mode) ? req.body.mode : null;
+    if (!mode) return res.status(400).json({ error: 'Choose set, add or take away' });
+    const value = Number(req.body?.days);
+    if (!Number.isInteger(value) || value < 0 || value > 365) return res.status(400).json({ error: 'Days must be a whole number (0–365)' });
+    const ids = [...new Set((req.body?.staff_ids || []).map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+    if (!ids.length) return res.status(400).json({ error: 'Choose at least one person' });
+    if (ids.some((id) => !canEditStaffCompensation(req.user, id))) {
+      return res.status(403).json({ error: 'Only HR, an HR Manager, or a CEO can change holiday balances' });
+    }
+    const expr = mode === 'set' ? '$2' : mode === 'add' ? `COALESCE(${field}, 0) + $2` : `GREATEST(0, COALESCE(${field}, 0) - $2)`;
+    const { rows } = await query(
+      `UPDATE staff_users SET ${field} = LEAST(365, ${expr}), updated_at = now()
+       WHERE id = ANY($1::int[]) AND role NOT IN ('owner', 'admin')
+       RETURNING id, full_name, ${field} AS days`,
+      [ids, value]
+    );
+    await logAudit({
+      userId: req.user.id,
+      action: 'LEAVE_BALANCE_BULK_UPDATE',
+      entityType: 'staff_user',
+      entityId: null,
+      details: { name: `${rows.length} staff`, type: req.body.type, mode, days: value, staff: rows.map((r) => r.full_name), note: String(req.body?.note || '').slice(0, 300) || undefined },
+    });
+    res.json({ updated: rows.length });
   } catch (e) {
     next(e);
   }
@@ -2573,12 +2747,8 @@ router.patch('/hr/holiday-access/:id', requireRoles(...HR_ROLES), async (req, re
                  COALESCE(holiday_access, 'auto') AS holiday_access`,
       [access, staff.id]
     );
-    const row = rows[0];
-    res.json({
-      ...row,
-      can_request_holidays: canRequestHolidays(row),
-      tenure_months: monthsBetween(row.created_at, new Date()),
-    });
+    const { rows: full } = await holidayAccessRows(rows[0].id);
+    res.json(full[0]);
   } catch (e) {
     next(e);
   }
