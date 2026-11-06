@@ -4,14 +4,14 @@ import { CONVERSATION_TYPES, timeAgo } from './utils';
 
 /** Queues answer "whose chats"; states answer "what do they need". */
 export const QUEUES = [
+  { key: 'open', label: 'All open' },
   { key: 'mine', label: 'Mine' },
   { key: 'unassigned', label: 'Unassigned' },
-  { key: 'open', label: 'All open' },
   { key: 'closed', label: 'Closed' },
 ];
 
 export const STATES = [
-  { key: '', label: 'All' },
+  { key: '', label: 'Everything' },
   { key: 'needs_reply', label: 'Needs reply' },
   { key: 'overdue', label: 'Overdue', tone: 'text-rose-700' },
   { key: 'waiting', label: 'Waiting on guest' },
@@ -45,13 +45,14 @@ export default function ConversationList({
   othersOn,
   userName,
   now,
+  showStates = true,
 }) {
   const selecting = selected.size > 0;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="space-y-2 border-b border-slate-200 bg-white p-3">
+      <div className="space-y-2 border-b border-slate-200 bg-white p-2.5 lg:flex lg:h-14 lg:flex-col lg:justify-center lg:space-y-0 lg:py-0">
         <div className="relative">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
             type="search"
             value={search}
@@ -60,13 +61,13 @@ export default function ConversationList({
             className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-8 text-base focus:bg-white focus:outline-none focus:ring-2 focus:ring-soul-blue/20 sm:text-sm"
           />
           {search ? (
-            <button type="button" onClick={() => onSearch('')} className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-700" aria-label="Clear search">
+            <button type="button" onClick={() => onSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700" aria-label="Clear search">
               <X className="h-4 w-4" />
             </button>
           ) : null}
         </div>
-        {queue !== 'closed' ? (
-          <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-0.5">
+        {showStates && queue !== 'closed' ? (
+          <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-0.5 lg:hidden">
             {STATES.map((s) => {
               const n = s.key ? stateCounts?.[s.key] : stateCounts?.total;
               const on = state === s.key;

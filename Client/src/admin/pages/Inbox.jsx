@@ -2,13 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { ChevronLeft, Keyboard, MessageSquare, PanelRight, Sparkles, X } from 'lucide-react';
+import { CheckCircle2, ChevronLeft, Inbox as InboxIcon, Keyboard, MessageSquare, PanelRight, Sparkles, User, UserX, X } from 'lucide-react';
 import { useInbox, useInboxEvents } from '../inbox/InboxContext';
 import { inboxApi, errorMessage } from '../inbox/api';
 import { CHANNELS, CONVERSATION_TYPES } from '../inbox/utils';
 import { Avatar, ChannelDot, PresenceDot, SlaChip, useNow } from '../inbox/ui';
 import GuestRail from '../inbox/GuestRail';
-import ConversationList, { QUEUES } from '../inbox/ConversationList';
+import ConversationList, { QUEUES, STATES } from '../inbox/ConversationList';
 import Thread from '../inbox/Thread';
 import Composer from '../inbox/Composer';
 import { AssignButton, CloseDialog, SnoozeButton, StateButtons, snoozeOptions } from '../inbox/ChatActions';
@@ -56,16 +56,16 @@ export default function InboxPage() {
 
   const [queue, setQueue] = useState(() => {
     try {
-      return localStorage.getItem('inbox-queue') || 'mine';
+      return localStorage.getItem('inbox-queue-v2') || 'open';
     } catch {
-      return 'mine';
+      return 'open';
     }
   });
   const [state, setState] = useState('');
   const [channel, setChannel] = useState('');
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
-  const [showRail, setShowRail] = useState(() => window.innerWidth >= 1536);
+  const [showRail, setShowRail] = useState(() => window.innerWidth >= 1440);
   const [selected, setSelected] = useState(() => new Set());
   const [closing, setClosing] = useState(null); // { ids: [...] }
   const [busy, setBusy] = useState(false);
@@ -78,7 +78,7 @@ export default function InboxPage() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('inbox-queue', queue);
+      localStorage.setItem('inbox-queue-v2', queue);
     } catch {
       /* ignore */
     }
@@ -337,57 +337,94 @@ export default function InboxPage() {
 
   return (
     <div className="inbox-shell flex-row bg-slate-50 font-sans">
-      {/* Queues */}
-      <aside className="hidden w-48 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
-        <div className="flex items-center justify-between border-b border-slate-200 px-3 py-3">
-          <h1 className="text-sm font-bold text-slate-900">Inbox</h1>
+      {/* Sidebar: one place to choose what you see. Queues (whose), status (what's needed), channel, then you. */}
+      <aside className="hidden w-52 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
+        <div className="flex h-14 items-center justify-between border-b border-slate-200 px-4">
+          <h1 className="text-base font-bold text-slate-900">Inbox</h1>
           <span className={`inline-flex items-center gap-1 text-[10px] font-semibold ${connected ? 'text-emerald-700' : 'text-amber-700'}`} title={connected ? 'Live updates on' : 'Reconnecting'}>
             <span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-            {connected ? 'Live' : '…'}
+            {connected ? 'Live' : 'Reconnecting'}
           </span>
         </div>
-        <nav className="flex-1 space-y-0.5 overflow-y-auto p-2" aria-label="Queues">
-          {QUEUES.map((qd) => (
-            <button
-              key={qd.key}
-              type="button"
-              onClick={() => {
-                setQueue(qd.key);
-                setState('');
-                setSelected(new Set());
-              }}
-              className={`flex h-9 w-full items-center justify-between rounded-lg px-2.5 text-left text-sm font-medium ${queue === qd.key ? 'bg-soul-blue text-white' : 'text-slate-600 hover:bg-slate-100'}`}
-            >
-              {qd.label}
-              {queueCount(qd.key) ? <span className={`rounded-full px-1.5 text-[10px] font-bold ${queue === qd.key ? 'bg-white/20' : 'bg-slate-100 text-slate-600'}`}>{queueCount(qd.key)}</span> : null}
-            </button>
-          ))}
-          <p className="px-2.5 pb-1 pt-4 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Channel</p>
-          {[['', 'All channels'], ...Object.entries(CHANNELS).map(([k, c]) => [k, c.label])].map(([k, label]) => (
-            <button key={k || 'all'} type="button" onClick={() => setChannel(k)} className={`flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs ${channel === k ? 'bg-slate-100 font-semibold text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}>
-              {k ? <ChannelDot kind={k} /> : null}
-              {label}
-            </button>
-          ))}
+        <nav className="min-h-0 flex-1 overflow-y-auto px-2 py-3" aria-label="Inbox filters">
+          <p className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Queues</p>
+          <div className="space-y-0.5">
+            {QUEUES.map((qd) => {
+              const Icon = { open: InboxIcon, mine: User, unassigned: UserX, closed: CheckCircle2 }[qd.key];
+              const on = queue === qd.key;
+              const n = queueCount(qd.key);
+              return (
+                <button
+                  key={qd.key}
+                  type="button"
+                  onClick={() => {
+                    setQueue(qd.key);
+                    setState('');
+                    setSelected(new Set());
+                  }}
+                  className={`flex h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-sm font-medium ${on ? 'bg-soul-blue text-white' : 'text-slate-700 hover:bg-slate-100'}`}
+                >
+                  <Icon className={`h-4 w-4 ${on ? 'text-white' : 'text-slate-400'}`} />
+                  <span className="flex-1">{qd.label}</span>
+                  {n ? <span className={`rounded-full px-1.5 text-[11px] font-bold ${on ? 'bg-white/20' : qd.key === 'unassigned' ? 'bg-orange-100 text-orange-700' : 'bg-slate-100 text-slate-600'}`}>{n}</span> : null}
+                </button>
+              );
+            })}
+          </div>
+
+          {queue !== 'closed' ? (
+            <>
+              <p className="px-2 pb-1.5 pt-5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Status</p>
+              <div className="space-y-0.5">
+                {STATES.map((st) => {
+                  const on = state === st.key;
+                  const n = st.key ? counts.states?.[st.key] : counts.states?.total;
+                  const alert = st.key === 'overdue' && n > 0;
+                  return (
+                    <button
+                      key={st.key || 'all'}
+                      type="button"
+                      onClick={() => setState(st.key)}
+                      className={`flex h-8 w-full items-center justify-between rounded-lg px-2.5 text-left text-[13px] ${on ? 'bg-slate-100 font-semibold text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}
+                    >
+                      <span className={alert ? 'font-semibold text-rose-700' : ''}>{st.label}</span>
+                      {n ? <span className={`text-[11px] font-semibold ${alert ? 'rounded-full bg-rose-100 px-1.5 text-rose-700' : 'text-slate-400'}`}>{n}</span> : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          ) : null}
+
+          <p className="px-2 pb-1.5 pt-5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Channel</p>
+          <div className="space-y-0.5">
+            {[['', 'All channels'], ...Object.entries(CHANNELS).map(([k, c]) => [k, c.label])].map(([k, label]) => (
+              <button key={k || 'all'} type="button" onClick={() => setChannel(k)} className={`flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[13px] ${channel === k ? 'bg-slate-100 font-semibold text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}>
+                {k ? <ChannelDot kind={k} /> : <span className="h-2.5 w-2.5" />}
+                {label}
+              </button>
+            ))}
+          </div>
         </nav>
-        <div className="space-y-2 border-t border-slate-200 p-2">
-          <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-[11px]" title="Your status: new chats are routed to people who are online">
+        <div className="space-y-1.5 border-t border-slate-200 p-2">
+          <p className="px-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">You are</p>
+          <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-[11px]" title="New chats are routed to people who are online">
             {['online', 'away', 'offline'].map((p) => (
               <button key={p} type="button" onClick={() => setPresence(p)} className={`flex flex-1 items-center justify-center gap-1 rounded-md py-1.5 font-medium ${me?.user?.presence === p ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>
                 <PresenceDot presence={p} />
-                {p === 'online' ? 'On' : p === 'away' ? 'Away' : 'Off'}
+                {p === 'online' ? 'Online' : p === 'away' ? 'Away' : 'Off'}
               </button>
             ))}
           </div>
           <button type="button" onClick={() => setShowKeys(true)} className="flex w-full items-center justify-center gap-1.5 rounded-lg py-1.5 text-[11px] text-slate-500 hover:bg-slate-50">
-            <Keyboard className="h-3.5 w-3.5" /> Shortcuts <kbd className="rounded bg-slate-100 px-1">?</kbd>
+            <Keyboard className="h-3.5 w-3.5" /> Keyboard shortcuts <kbd className="rounded bg-slate-100 px-1">?</kbd>
           </button>
         </div>
       </aside>
 
       <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
         {/* List */}
-        <div className={`${activeId ? 'hidden lg:flex' : 'flex'} min-h-0 w-full flex-shrink-0 flex-col border-r border-slate-200 bg-white lg:w-80 xl:w-[22rem]`}>
+        <div className={`${activeId ? 'hidden lg:flex' : 'flex'} min-h-0 w-full flex-shrink-0 flex-col border-r border-slate-200 bg-white lg:w-[19rem] 2xl:w-[22rem]`}>
           <div className="flex items-center gap-2 border-b border-slate-200 p-2 lg:hidden">
             <select aria-label="Queue" value={queue} onChange={(e) => { setQueue(e.target.value); setState(''); }} className="h-10 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2 text-sm font-medium">
               {QUEUES.map((qd) => (
@@ -458,7 +495,7 @@ export default function InboxPage() {
         <div className={`${activeId ? 'flex' : 'hidden lg:flex'} min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-100`}>
           {activeId && conv ? (
             <>
-              <div className="flex flex-shrink-0 flex-wrap items-center gap-1.5 border-b border-slate-200 bg-white px-2 py-2 sm:px-3">
+              <div className="flex min-h-14 flex-shrink-0 flex-wrap items-center gap-1.5 border-b border-slate-200 bg-white px-2 py-2 sm:px-4">
                 <button type="button" className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-slate-600 hover:bg-slate-100 lg:hidden" aria-label="Back" onClick={back}>
                   <ChevronLeft className="h-5 w-5" />
                 </button>
@@ -559,8 +596,8 @@ export default function InboxPage() {
 
         {/* Guest details */}
         {showRail && activeId && conv ? (
-          <div className="absolute inset-0 z-20 overflow-y-auto bg-white p-4 pb-8 2xl:static 2xl:z-auto 2xl:w-80 2xl:flex-shrink-0 2xl:border-l 2xl:border-slate-200 2xl:pb-4">
-            <button type="button" className="mb-3 inline-flex h-10 items-center gap-1 text-sm font-semibold text-soul-blue 2xl:hidden" onClick={() => setShowRail(false)}>
+          <div className="absolute inset-0 z-20 overflow-y-auto bg-white p-4 pb-8 xl:static xl:z-auto xl:w-[19rem] xl:flex-shrink-0 xl:border-l xl:border-slate-200 xl:pb-4 2xl:w-80">
+            <button type="button" className="mb-3 inline-flex h-10 items-center gap-1 text-sm font-semibold text-soul-blue xl:hidden" onClick={() => setShowRail(false)}>
               <ChevronLeft className="h-4 w-4" /> Back to chat
             </button>
             <GuestRail
