@@ -11,7 +11,7 @@ export const QUEUES = [
 ];
 
 export const STATES = [
-  { key: '', label: 'Everything' },
+  { key: '', label: 'Active' },
   { key: 'needs_reply', label: 'Needs reply' },
   { key: 'overdue', label: 'Overdue', tone: 'text-rose-700' },
   { key: 'waiting', label: 'Waiting on guest' },

@@ -84,6 +84,8 @@ router.get('/conversations', wrap(async (req, res) => {
   where.push(...queueWhere);
   params.push(...queueParams);
   if (state) { where.push(STATE_SQL[state]); if (state === 'overdue') params.push(now); }
+  // Snoozed chats are out of the way until they wake up (or the guest writes); see them under Snoozed.
+  else if (view !== 'closed' && view !== 'all') where.push("c.status <> 'snoozed'");
   if (channel) { where.push('c.channel_kind = ?'); params.push(String(channel)); }
   if (type) { where.push('c.type = ?'); params.push(String(type)); }
   if (assigned === 'none') {
@@ -141,10 +143,10 @@ router.get('/conversations', wrap(async (req, res) => {
 
   const queueCounts = await q.get(
     `SELECT
-       COUNT(*) FILTER (WHERE ${onChatSql()} AND c.status <> 'closed') AS mine,
-       COUNT(*) FILTER (WHERE c.assigned_user_id IS NULL AND c.status <> 'closed' AND NOT EXISTS (
+       COUNT(*) FILTER (WHERE ${onChatSql()} AND c.status NOT IN ('closed', 'snoozed')) AS mine,
+       COUNT(*) FILTER (WHERE c.assigned_user_id IS NULL AND c.status NOT IN ('closed', 'snoozed') AND NOT EXISTS (
          SELECT 1 FROM inbox_conversation_assignees a WHERE a.conversation_id = c.id)) AS unassigned,
-       COUNT(*) FILTER (WHERE c.status <> 'closed') AS open
+       COUNT(*) FILTER (WHERE c.status NOT IN ('closed', 'snoozed')) AS open
      FROM inbox_conversations c WHERE ${vis.sql}`,
     user.id, user.id, ...vis.params,
   );
@@ -155,7 +157,7 @@ router.get('/conversations', wrap(async (req, res) => {
        COUNT(*) FILTER (WHERE c.status = 'waiting_customer') AS waiting,
        COUNT(*) FILTER (WHERE c.status = 'snoozed') AS snoozed,
        COUNT(*) FILTER (WHERE l.temperature = 'hot') AS hot,
-       COUNT(*) AS total
+       COUNT(*) FILTER (WHERE c.status <> 'snoozed') AS total
      FROM inbox_conversations c LEFT JOIN inbox_leads l ON l.id = c.current_lead_id
      WHERE ${[vis.sql, ...queueWhere].join(' AND ')}`,
     now, ...vis.params, ...queueParams,
@@ -253,6 +255,14 @@ router.get('/conversations/:id/guest', wrap(async (req, res) => {
   res.json({ phone: customer.phone, ...(await guestHistory(customer.phone)) });
 }));
 
+/** Replying to a closed chat brings it back as "waiting on guest" so it isn't lost in Closed. */
+async function reopenIfClosed(conv, userId) {
+  if (conv.status !== 'closed') return;
+  await q.run("UPDATE inbox_conversations SET status = 'waiting_customer', closed_at = NULL WHERE id = ? AND status = 'closed'", conv.id);
+  await audit({ conversationId: conv.id, userId, type: 'reopened', data: { by: 'agent_reply' } });
+  broadcast('conversation', { id: conv.id });
+}
+
 router.post('/conversations/:id/messages', wrap(async (req, res) => {
   const conv = await loadConversation(int(req.params.id), req.inbox);
   await ensureCanAct(conv, req.inbox);
@@ -266,6 +276,7 @@ router.post('/conversations/:id/messages', wrap(async (req, res) => {
     userId: req.inbox.id,
   });
   await addAssignee(conv.id, req.inbox.id, { byUserId: req.inbox.id, reason: 'reply' });
+  await reopenIfClosed(conv, req.inbox.id);
   res.json({ message: publicMessage(message) });
 }));
 
@@ -312,6 +323,7 @@ router.post('/conversations/:id/attachments', wrap(async (req, res) => {
     userId: req.inbox.id,
   });
   await addAssignee(conv.id, req.inbox.id, { byUserId: req.inbox.id, reason: 'reply' });
+  await reopenIfClosed(conv, req.inbox.id);
   res.json({ message: publicMessage(message) });
 }));
 

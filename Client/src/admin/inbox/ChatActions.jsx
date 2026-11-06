@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { AlarmClock, CheckCircle2, ChevronDown, Hourglass, RotateCcw, UserPlus } from 'lucide-react';
+import { AlarmClock, CheckCircle2, ChevronDown, MoreHorizontal, RotateCcw, UserPlus } from 'lucide-react';
 import { PresenceDot } from './ui';
 import { CONVERSATION_TYPES, nextCairoTime, toLocalInput, fromLocalInput } from './utils';
 
@@ -51,7 +51,7 @@ export function SnoozeButton({ onSnooze, businessStart, open, setOpen, compact =
     <div className="relative">
       <button type="button" onClick={() => setOpen(!open)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" title="Snooze (S)">
         <AlarmClock className="h-4 w-4" />
-        {compact ? null : <span className="hidden md:inline">Snooze</span>}
+        {compact ? null : <span className="hidden 2xl:inline">Snooze</span>}
       </button>
       <Menu open={open} onClose={() => setOpen(false)}>
         <p className="px-2.5 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Bring it back</p>
@@ -88,7 +88,7 @@ export function AssignButton({ users, people, myId, canAssign, onAssign, onRemov
     <div className="relative">
       <button type="button" onClick={() => setOpen(!open)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" title="Assign (A = take it yourself)">
         <UserPlus className="h-4 w-4" />
-        <span className="hidden max-w-[9rem] truncate md:inline">
+        <span className="hidden max-w-[8rem] truncate sm:inline lg:hidden xl:inline">
           {people.length ? people.map((p) => (Number(p.id) === Number(myId) ? 'You' : p.name)).join(', ') : 'Unassigned'}
         </span>
         <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
@@ -120,27 +120,54 @@ export function AssignButton({ users, people, myId, canAssign, onAssign, onRemov
   );
 }
 
-export function StateButtons({ status, onWaiting, onReopen, onClose }) {
+/** The main action: Close an open chat, or Reopen a closed one. */
+export function CloseButton({ status, onReopen, onClose }) {
   if (status === 'closed') {
     return (
-      <button type="button" onClick={onReopen} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+      <button type="button" onClick={onReopen} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50" title="Reopen this chat">
         <RotateCcw className="h-4 w-4" /> Reopen
       </button>
     );
   }
   return (
-    <>
-      {status !== 'waiting_customer' ? (
-        <button type="button" onClick={onWaiting} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" title="Waiting on the guest (W)">
-          <Hourglass className="h-4 w-4" />
-          <span className="hidden lg:inline">Waiting on guest</span>
-        </button>
-      ) : null}
-      <button type="button" onClick={onClose} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700" title="Close (E)">
-        <CheckCircle2 className="h-4 w-4" />
-        <span className="hidden sm:inline">Close</span>
+    <button type="button" onClick={onClose} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700" title="Close (E)">
+      <CheckCircle2 className="h-4 w-4" /> Close
+    </button>
+  );
+}
+
+/** Less frequent actions, kept out of the way. Replying already marks a chat "waiting on guest". */
+export function MoreMenu({ status, open, setOpen, onNeedsReply, onWaiting, onSummary, aiAvailable }) {
+  const items = [
+    status !== 'needs_reply' && status !== 'closed'
+      ? { key: 'nr', label: 'Needs a reply', hint: 'Put it back at the top of the queue', onClick: onNeedsReply }
+      : null,
+    status === 'needs_reply' ? { key: 'w', label: 'Waiting on guest', hint: 'No reply needed from us now (W)', onClick: onWaiting } : null,
+    aiAvailable ? { key: 'ai', label: 'AI summary', hint: 'Who they are and what they need', onClick: onSummary } : null,
+  ].filter(Boolean);
+  if (!items.length) return null;
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => setOpen(!open)} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50" aria-label="More actions" title="More">
+        <MoreHorizontal className="h-4 w-4" />
       </button>
-    </>
+      <Menu open={open} onClose={() => setOpen(false)}>
+        {items.map((it) => (
+          <button
+            key={it.key}
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              it.onClick();
+            }}
+            className="flex w-full flex-col items-start rounded-lg px-2.5 py-2 text-left hover:bg-slate-50"
+          >
+            <span className="text-sm font-medium text-slate-800">{it.label}</span>
+            <span className="text-[11px] text-slate-500">{it.hint}</span>
+          </button>
+        ))}
+      </Menu>
+    </div>
   );
 }
 

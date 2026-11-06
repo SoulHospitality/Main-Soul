@@ -27,7 +27,7 @@ function writeDraft(id, text) {
   }
 }
 
-const Composer = forwardRef(function Composer({ conversationId, customerName, agentName, replies, aiAvailable, windowClosed, channelKind, onSend, onSuggest }, ref) {
+const Composer = forwardRef(function Composer({ conversationId, customerName, agentName, replies, aiAvailable, windowClosed, channelKind, closed, unassigned, onSend, onSuggest }, ref) {
   const [body, setBody] = useState(() => readDraft(conversationId));
   const [note, setNote] = useState(false);
   const [openReplies, setOpenReplies] = useState(false);
@@ -95,6 +95,11 @@ const Composer = forwardRef(function Composer({ conversationId, customerName, ag
 
   return (
     <div className={`flex-shrink-0 border-t bg-white px-2 py-2 sm:px-3 ${note ? 'border-amber-300' : 'border-slate-200'}`}>
+      {!note && (closed || unassigned) ? (
+        <p className="mb-1.5 px-1 text-[11px] text-slate-500">
+          {closed ? 'This chat is closed. Replying reopens it.' : 'Nobody is on this chat yet. Replying adds you to it.'}
+        </p>
+      ) : null}
       {windowClosed && !note && channelKind !== 'whatsapp' ? (
         <p className="mb-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-900">
           The guest’s last message was over 24 hours ago, so Meta may not deliver this reply. Keep it short and relevant to their request.

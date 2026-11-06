@@ -11,7 +11,7 @@ import GuestRail from '../inbox/GuestRail';
 import ConversationList, { QUEUES, STATES } from '../inbox/ConversationList';
 import Thread from '../inbox/Thread';
 import Composer from '../inbox/Composer';
-import { AssignButton, CloseDialog, SnoozeButton, StateButtons, snoozeOptions } from '../inbox/ChatActions';
+import { AssignButton, CloseButton, CloseDialog, MoreMenu, SnoozeButton, snoozeOptions } from '../inbox/ChatActions';
 
 const SHORTCUTS = [
   ['J / K', 'Next / previous chat'],
@@ -173,8 +173,10 @@ export default function InboxPage() {
       await fn();
       if (ok) toast.success(ok);
       refreshAll();
+      return true;
     } catch (err) {
       toast.error(errorMessage(err));
+      return false;
     }
   };
   const assign = (id, userId) => act(() => inboxApi.post(`/conversations/${id}/assign`, { user_id: userId }), Number(userId) === Number(myId) ? 'You’re on this chat' : `Assigned to ${userName(userId)}`);
@@ -183,6 +185,15 @@ export default function InboxPage() {
   const snooze = (id, at) =>
     act(() => inboxApi.post(`/conversations/${id}/status`, { status: 'snoozed', snooze_until: at }), `Snoozed until ${new Date(at).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Cairo' })}`);
   const setType = (type) => conv && act(() => inboxApi.post(`/conversations/${conv.id}/type`, { type }), `Marked as ${CONVERSATION_TYPES[type] || type}`);
+
+  // After a chat leaves the queue (closed or snoozed), open the next one, like working through tickets.
+  const goNext = (doneIds) => {
+    const idx = conversations.findIndex((c) => c.id === activeId);
+    const rest = conversations.filter((c) => !doneIds.includes(c.id));
+    const next = rest[Math.min(Math.max(idx, 0), rest.length - 1)];
+    if (next && window.innerWidth >= 1024) select(next.id);
+    else back();
+  };
 
   const confirmClose = async ({ type, note }) => {
     setBusy(true);
@@ -200,12 +211,7 @@ export default function InboxPage() {
     setClosing(null);
     setSelected(new Set());
     if (done) toast.success(done === 1 ? 'Chat closed' : `${done} chats closed`);
-    // Move on to the next chat in the queue, like closing a ticket.
-    if (ids.includes(activeId)) {
-      const rest = conversations.filter((c) => !ids.includes(c.id));
-      if (rest[0] && window.innerWidth >= 1024) select(rest[0].id);
-      else back();
-    }
+    if (ids.includes(activeId)) goNext(ids);
     refreshAll();
   };
 
@@ -511,7 +517,7 @@ export default function InboxPage() {
                     <SlaChip conversation={conv} now={now} />
                   </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-1.5">
+                <div className="flex shrink-0 items-center gap-1">
                   <AssignButton
                     users={me?.users}
                     people={people}
@@ -523,23 +529,36 @@ export default function InboxPage() {
                     setOpen={(v) => setMenu(v ? 'assign' : null)}
                   />
                   {conv.status !== 'closed' ? (
-                    <SnoozeButton onSnooze={(at) => snooze(conv.id, at)} businessStart={me?.rules?.business_start || '11:00'} open={menu === 'snooze'} setOpen={(v) => setMenu(v ? 'snooze' : null)} />
+                    <SnoozeButton onSnooze={async (at) => { const id = conv.id; if ((await snooze(id, at)) && state !== 'snoozed') goNext([id]); }} businessStart={me?.rules?.business_start || '11:00'} open={menu === 'snooze'} setOpen={(v) => setMenu(v ? 'snooze' : null)} />
                   ) : null}
-                  <StateButtons
+                  <MoreMenu
                     status={conv.status}
+                    open={menu === 'more'}
+                    setOpen={(v) => setMenu(v ? 'more' : null)}
+                    aiAvailable={Boolean(me?.aiAvailable)}
+                    onNeedsReply={() => setStatus(conv.id, 'needs_reply')}
                     onWaiting={() => setStatus(conv.id, 'waiting_customer')}
-                    onReopen={() => setStatus(conv.id, 'needs_reply')}
-                    onClose={() => setClosing({ ids: [conv.id], type: conv.type })}
+                    onSummary={async () => {
+                      const t = toast.loading('Summarising…');
+                      const text = await summarize();
+                      toast.dismiss(t);
+                      if (text) detail.refetch();
+                    }}
                   />
                   <button
                     type="button"
                     onClick={() => setShowRail((v) => !v)}
                     className={`grid h-9 w-9 place-items-center rounded-lg border ${showRail ? 'border-soul-blue bg-soul-blue text-white' : 'border-slate-200 bg-white text-slate-600'}`}
                     aria-label="Guest details"
-                    title="Guest details"
+                    title="Guest details: who they are, their stays and the stay request"
                   >
                     <PanelRight className="h-4 w-4" />
                   </button>
+                  <CloseButton
+                    status={conv.status}
+                    onReopen={() => setStatus(conv.id, 'needs_reply')}
+                    onClose={() => setClosing({ ids: [conv.id], type: conv.type })}
+                  />
                 </div>
               </div>
 
@@ -576,6 +595,8 @@ export default function InboxPage() {
                 replies={replies}
                 aiAvailable={Boolean(me?.aiAvailable)}
                 windowClosed={windowClosed}
+                closed={conv.status === 'closed'}
+                unassigned={!people.length}
                 channelKind={conv.channel_kind}
                 onSend={send}
                 onSuggest={suggest}
