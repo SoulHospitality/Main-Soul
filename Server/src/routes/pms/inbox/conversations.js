@@ -147,8 +147,11 @@ router.get('/conversations', wrap(async (req, res) => {
 
   const rows = await q.all(
     `${LIST_SELECT} WHERE ${where.join(' AND ')}
-     ORDER BY CASE WHEN c.status = 'needs_reply' THEN 0 ELSE 1 END, COALESCE(c.sla_due_at, 9000000000000000) ASC,
-              c.last_message_at DESC NULLS LAST
+     ORDER BY ${state === 'overdue'
+       // Overdue: whoever has waited longest without a reply comes first.
+       ? 'COALESCE(c.awaiting_since, c.sla_due_at) ASC NULLS LAST, c.id ASC'
+       // Everywhere else: newest message first.
+       : 'c.last_message_at DESC NULLS LAST, c.id DESC'}
      LIMIT ${view === 'all' ? 200 : 80}`,
     ...params,
   );
@@ -379,7 +382,8 @@ router.post('/conversations/:id/assign', wrap(async (req, res) => {
   const to = req.body?.user_id ? int(req.body.user_id, 'user') : null;
   if (!to) throw badRequest('Choose a staff member');
   const removing = Boolean(req.body?.remove);
-  if (to !== req.inbox.id && !can(req.inbox, 'conv.assign')) throw forbidden('Only supervisors can change other people on a chat');
+  // Chats are routed automatically; people can only take a chat themselves (replying does it too) or leave it.
+  if (to !== req.inbox.id) throw forbidden('Chats are assigned automatically. You can only take or leave a chat yourself.');
   if (!(await q.get('SELECT 1 AS x FROM inbox_users WHERE id = ? AND active = 1 AND role IS NOT NULL', to))) {
     throw badRequest('User not found');
   }

@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { inboxApi } from './api';
 import StayRequest from './StayRequest';
+import LeadBox from './LeadBox';
 import { Avatar, ChannelDot } from './ui';
 import { CHANNELS, CONVERSATION_TYPES, fmtDate, fmtMoney } from './utils';
 
@@ -83,6 +84,11 @@ export default function GuestRail({
           </div>
         </div>
       ) : null}
+
+      <div className="border-t border-slate-200 pt-3">
+        <Label>Lead</Label>
+        <LeadBox key={lead?.id || 'none'} conversation={conversation} customer={customer} lead={lead} onChanged={onChanged} />
+      </div>
 
       <div className="border-t border-slate-200 pt-3">
         <Label>Stay request</Label>

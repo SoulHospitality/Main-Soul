@@ -176,3 +176,17 @@ export function bookingSourceFor(leadSource) {
   if (s === 'website') return 'Website';
   return 'Private';
 }
+
+/**
+ * Security: links customers send are never shown or opened in the inbox.
+ * Anything that looks like a URL (http…, www…, or name.tld/…) becomes "🔒 link hidden".
+ */
+const LINK_RE = /(?<![@\w.-])(?:(?:https?:\/\/|www\.)\S+|[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.(?:[a-z]{2,24}\/\S*|(?:com|net|org|io|me|ly|co|eg|info|biz|app|link|xyz|site|online|shop|store|page|live|tv|gl|to|cc|ru|cn|tk|ml|ga|cf|gq|top|click|at|gg|sh|ai)\b))/gi;
+export const LINK_HIDDEN = '🔒 link hidden';
+export function hideLinks(text) {
+  return String(text || '').replace(LINK_RE, LINK_HIDDEN);
+}
+export function hasLink(text) {
+  LINK_RE.lastIndex = 0;
+  return LINK_RE.test(String(text || ''));
+}

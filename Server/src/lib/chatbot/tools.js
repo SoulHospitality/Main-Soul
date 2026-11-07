@@ -395,6 +395,22 @@ const TOOLS = [
     strict: true,
   },
   {
+    name: 'save_lead',
+    description:
+      'Save the customer as a lead once they have given their name and phone number (call it again if they correct them, or when you learn the destination). Never invent a name or number.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'The name the customer gave.' },
+        phone: { type: 'string', description: 'The phone number exactly as the customer wrote it.' },
+        destination: { type: 'string', description: 'Where they want to go, in English (e.g. "North Coast"), or empty.' },
+      },
+      required: ['name', 'phone', 'destination'],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
     name: 'hand_off_to_agent',
     description:
       'Pass the chat to a human reservations agent in the Soul inbox. Use it when the customer asks for something outside units, details, prices and availability (an existing booking, payment, a complaint, a discount or negotiation, special arrangements, owners or partnerships, a job), asks for a person, wants to book and needs help, or you cannot find a suitable unit after a few tries. After calling it, tell the customer an agent will reply here shortly.',

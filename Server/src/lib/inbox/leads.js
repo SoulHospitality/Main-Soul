@@ -38,16 +38,19 @@ async function createLead({ conversationId = null, customerId, userId = null, fi
   const now = Date.now();
   const data = cleanFields({ source: conv?.source, ...fields });
   const owner = conv?.assigned_user_id || userId;
+  // New leads start as Interested unless a status is chosen.
+  const wanted = fields.stage_key ? await q.get('SELECT key FROM inbox_lead_stages WHERE key = ? AND active = 1', String(fields.stage_key)) : null;
+  const startStage = wanted?.key || (await q.get("SELECT key FROM inbox_lead_stages WHERE key = 'interested' AND active = 1"))?.key || 'new';
   const lead = await tx(async () => {
     const { id } = await q.insert(
       `INSERT INTO inbox_leads (customer_id, conversation_id, stage_key, owner_user_id, source, campaign, project, unit_type, unit_id,
          check_in, check_out, guests, budget, temperature, created_by, created_at, updated_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      customerId ?? conv.customer_id, conversationId, 'new', owner, data.source, data.campaign ?? conv?.ad_id ?? null,
+      customerId ?? conv.customer_id, conversationId, startStage, owner, data.source, data.campaign ?? conv?.ad_id ?? null,
       data.project, data.unit_type, data.unit_id, data.check_in, data.check_out, data.guests, data.budget, data.temperature,
       userId, now, now,
     );
-    await q.run('INSERT INTO inbox_lead_stage_history (lead_id, from_stage, to_stage, user_id, at) VALUES (?,?,?,?,?)', id, null, 'new', userId, now);
+    await q.run('INSERT INTO inbox_lead_stage_history (lead_id, from_stage, to_stage, user_id, at) VALUES (?,?,?,?,?)', id, null, startStage, userId, now);
     if (conversationId) {
       await q.run(
         "UPDATE inbox_conversations SET current_lead_id = ?, type = CASE WHEN type = 'unknown' THEN 'sales_lead' ELSE type END WHERE id = ?",
@@ -75,7 +78,7 @@ async function updateLead(leadId, input, user) {
       `UPDATE inbox_leads SET ${keys.map((k) => `${k} = ?`).join(', ')}, updated_at = ? WHERE id = ?`,
       ...keys.map((k) => data[k]), Date.now(), leadId,
     );
-    await audit({ conversationId: lead.conversation_id, leadId, userId: user.id, type: 'lead_updated', data: changes });
+    await audit({ conversationId: lead.conversation_id, leadId, userId: user?.id ?? null, type: 'lead_updated', data: changes });
   });
   if (lead.conversation_id) broadcast('conversation', { id: lead.conversation_id });
   broadcast('lead', { id: leadId });
@@ -120,15 +123,17 @@ async function changeStage(leadId, toKey, opts, user) {
   const customer = await q.get('SELECT * FROM inbox_customers WHERE id = ?', lead.customer_id);
 
   // A real PMS reservation is enough evidence to move a closed lead to won.
-  if (from.kind !== 'open' && from.key !== toKey && !opts.reservation_id && !can(user, 'leads.reopen')) {
-    throw forbidden('Only a manager can reopen a closed lead');
+  // Statuses move freely (No answer → Interested is normal); only a Done booking needs a manager to change.
+  if (from.kind === 'won' && from.key !== toKey && !opts.reservation_id && !can(user, 'leads.reopen')) {
+    throw forbidden('Only a manager can change a lead that is Done');
   }
   if (to.requires_phone && !customer.phone) {
     throw badRequest('Add the customer phone number before moving to this stage', 'phone_required');
   }
-  if (to.kind === 'lost') {
-    const reason = await q.get('SELECT key FROM inbox_lost_reasons WHERE key = ? AND active = 1', opts.lost_reason_key || '');
-    if (!reason) throw badRequest('Choose a lost reason', 'lost_reason_required');
+  // The status itself is the reason now (Low budget, No answer…); an extra lost reason is optional.
+  if (to.kind === 'lost' && opts.lost_reason_key) {
+    const reason = await q.get('SELECT key FROM inbox_lost_reasons WHERE key = ? AND active = 1', opts.lost_reason_key);
+    if (!reason) throw badRequest('Unknown lost reason');
   }
   const hasFutureFollowUp = await q.get(
     "SELECT 1 AS x FROM inbox_follow_ups WHERE lead_id = ? AND status = 'open' AND due_at > ?", leadId, Date.now(),

@@ -91,9 +91,24 @@ router.post('/leads/:id/owner', wrap(async (req, res) => {
 }));
 
 /** Free units for the lead's dates with the prices on file (or ad-hoc dates from the query string). */
+/** Destinations (areas) and their projects (compounds) with published units, for the stay search. */
+router.get('/availability/places', wrap(async (_req, res) => {
+  const rows = await q.all(
+    `SELECT COALESCE(NULLIF(trim(area), ''), 'Other') AS destination, NULLIF(trim(compound), '') AS project, COUNT(*)::int AS units
+     FROM units WHERE status = 'published' AND COALESCE(listing_type, 'rent') <> 'long_term'
+     GROUP BY 1, 2 ORDER BY 1, 2`,
+  );
+  const map = new Map();
+  for (const r of rows) {
+    if (!map.has(r.destination)) map.set(r.destination, { destination: r.destination, projects: [] });
+    if (r.project) map.get(r.destination).projects.push(r.project);
+  }
+  res.json({ items: [...map.values()] });
+}));
+
 router.get('/availability', wrap(async (req, res) => {
-  const { check_in: checkIn, check_out: checkOut, project, guests, bedrooms } = req.query;
-  const items = await availableUnits({ checkIn, checkOut, project, guests, bedrooms, limit: 80 });
+  const { check_in: checkIn, check_out: checkOut, project, destination, guests, bedrooms } = req.query;
+  const items = await availableUnits({ checkIn, checkOut, project, destination, guests, bedrooms, limit: 80 });
   if (!items) throw badRequest('Choose valid check-in and check-out dates');
   res.json({ items });
 }));

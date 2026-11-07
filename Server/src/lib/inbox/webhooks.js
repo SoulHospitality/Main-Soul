@@ -17,10 +17,29 @@ const channelByInstagram = (entryId) =>
     String(entryId), String(entryId),
   );
 
+/**
+ * Messenger / Instagram attachments, normalised so the inbox can show every kind:
+ * photos, GIFs, videos, reels, story mentions, shared posts, audio, files and locations.
+ * Shared links ("fallback") are kept only as "a link was shared"; the inbox never opens them.
+ */
+const PAGE_MEDIA_TYPES = {
+  image: 'image', animated_image: 'image', sticker: 'image', share: 'image', ig_post: 'image',
+  video: 'video', ig_reel: 'video', reel: 'video',
+  story_mention: 'story', audio: 'audio', file: 'file',
+};
 function pageAttachments(list = []) {
   return list
-    .filter((a) => a.payload?.url)
-    .map((a) => ({ type: a.type === 'file' ? 'file' : a.type, url: a.payload.url }));
+    .map((a) => {
+      const p = a.payload || {};
+      if (a.type === 'location' || p.coordinates) {
+        const c = p.coordinates || {};
+        return { type: 'location', title: p.title || a.title || null, lat: c.lat ?? null, lng: c.long ?? c.lng ?? null };
+      }
+      if (a.type === 'fallback' || a.type === 'template') return { type: 'link', title: p.title || a.title || null };
+      if (!p.url) return null;
+      return { type: PAGE_MEDIA_TYPES[a.type] || 'file', source: a.type, url: p.url, title: p.title || null };
+    })
+    .filter(Boolean);
 }
 
 // An ad click can arrive as its own event just before the customer's first message.

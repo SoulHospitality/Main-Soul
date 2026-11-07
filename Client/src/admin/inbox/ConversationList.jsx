@@ -1,12 +1,11 @@
 import { Search, X } from 'lucide-react';
 import { Avatar, Chip, SlaChip } from './ui';
-import { CONVERSATION_TYPES, timeAgo } from './utils';
+import { CONVERSATION_TYPES, hideLinks, timeAgo } from './utils';
 
 /** Queues answer "whose chats"; states answer "what do they need". */
 export const QUEUES = [
   { key: 'open', label: 'All open' },
   { key: 'mine', label: 'Mine' },
-  { key: 'unassigned', label: 'Unassigned' },
   { key: 'closed', label: 'Closed' },
 ];
 
@@ -137,7 +136,7 @@ export default function ConversationList({
                     </p>
                     <span className="shrink-0 text-[10px] text-slate-400">{timeAgo(conv.last_message_at, now)}</span>
                   </div>
-                  <p className={`mt-0.5 truncate text-xs ${conv.unread_count > 0 ? 'text-slate-700' : 'text-slate-500'}`}>{conv.last_message_preview || 'No messages yet'}</p>
+                  <p className={`mt-0.5 truncate text-xs ${conv.unread_count > 0 ? 'text-slate-700' : 'text-slate-500'}`}>{conv.last_message_preview ? hideLinks(conv.last_message_preview) : 'No messages yet'}</p>
                   <div className="mt-1.5 flex flex-wrap items-center gap-1">
                     {overdue || conv.status === 'needs_reply' ? <SlaChip conversation={conv} now={now} /> : null}
                     {conv.status === 'waiting_customer' ? <Chip className="bg-slate-100 text-slate-600">Waiting on guest</Chip> : null}

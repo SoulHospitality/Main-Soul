@@ -51,7 +51,7 @@ const ISO = /^\d{4}-\d{2}-\d{2}$/;
  * Units free for [checkIn, checkOut) with the nightly prices on file.
  * Same occupancy rules as the guest website search, without requiring every night to be priced.
  */
-async function availableUnits({ checkIn, checkOut, project = null, guests = null, bedrooms = null, includeLongTerm = false, limit = 60 }) {
+async function availableUnits({ checkIn, checkOut, project = null, destination = null, guests = null, bedrooms = null, includeLongTerm = false, limit = 60 }) {
   if (!ISO.test(checkIn || '') || !ISO.test(checkOut || '') || checkOut <= checkIn) return null;
   const where = ["u.status = 'published'"];
   const params = [checkIn, checkOut];
@@ -59,6 +59,10 @@ async function availableUnits({ checkIn, checkOut, project = null, guests = null
   if (project && project !== 'Other') {
     params.push(project);
     where.push(`u.compound ILIKE $${params.length}`);
+  }
+  if (destination) {
+    params.push(String(destination));
+    where.push(`u.area ILIKE $${params.length}`);
   }
   if (Number(guests) > 0) {
     params.push(Number(guests));
@@ -71,7 +75,7 @@ async function availableUnits({ checkIn, checkOut, project = null, guests = null
   params.push(Math.min(200, Math.max(1, Number(limit) || 60)));
   const limitIdx = params.length;
   const sql = `
-    SELECT u.id, u.title, u.unit_number, u.compound, u.beds, u.baths, u.guests, u.listing_type,
+    SELECT u.id, u.title, u.unit_number, u.compound, u.area, u.beds, u.baths, u.guests, u.listing_type,
            u.cover_url, u.price_currency, p.priced_nights, p.total,
            ($2::date - $1::date) AS nights
     FROM units u

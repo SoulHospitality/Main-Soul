@@ -233,4 +233,4 @@ async function ingestComment({ channel, platform, comment }) {
   return r.id || null;
 }
 
-module.exports = { ingestInbound, ingestEcho, ingestDeliveryStatus, ingestComment, applyClassification, markExistingGuest };
+module.exports = { findOrCreateIdentity, ingestInbound, ingestEcho, ingestDeliveryStatus, ingestComment, applyClassification, markExistingGuest };

@@ -11,7 +11,9 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { query } = require('../../config/db');
 const { config } = require('../inbox/config');
 const { q } = require('../inbox/db');
-const { ingestInbound } = require('../inbox/ingest');
+const { ingestInbound, findOrCreateIdentity } = require('../inbox/ingest');
+const { createLead, updateLead } = require('../inbox/leads');
+const { normalizePhone } = require('../inbox/http');
 const { broadcast } = require('../inbox/realtime');
 const { TOOLS, searchUnits, unitDetails, checkStay, listDestinations, activeOffers, unitLink } = require('./tools');
 
@@ -29,9 +31,12 @@ How you write
 
 The conversation
 1. If the first message is only a greeting, reply with a greeting and "how can I help?" and nothing else. Arabic: "أهلاً بحضرتك 🙂 أقدر أساعد حضرتك إزاي؟" English: "Hi! How can I help you?"
-2. When they want to book or are looking for a place, ask for everything you need in ONE message: where, which dates (check-in and check-out), how many guests and how many bedrooms. For example: "تمام 🙂 حضرتك حابب تحجز فين، ومن إمتى لإمتى، وكام فرد وكام أوضة؟" / "Sure! Where would you like to stay, which dates, and how many guests and bedrooms?" If they already told you some of these, only ask for what's missing, still in one message.
-3. Check who's staying (see the booking policy below) before showing units.
-4. Show the results with search_units, and call get_active_offers too.
+2. When they tell you what they need, before anything else ask for their name and phone number in one short message, for example "تمام 🙂 ممكن اسم حضرتك ورقم الموبايل عشان أبعتلك التفاصيل؟" / "Sure! Can I have your name and phone number so I can send you the details?"
+   - If they give them, call save_lead (name, phone, and the destination if you know it), then go on to step 3 in the same reply.
+   - If they'd rather not, say "مفيش مشكلة" / "No problem" and go on to step 3 in the same reply. Don't ask again.
+3. Ask for everything you need for the search in ONE message: where, which dates (check-in and check-out), how many guests and how many bedrooms. For example: "تمام 🙂 حضرتك حابب تحجز فين، ومن إمتى لإمتى، وكام فرد وكام أوضة؟" / "Sure! Where would you like to stay, which dates, and how many guests and bedrooms?" If they already told you some of these, only ask for what's missing, still in one message.
+4. Check who's staying (see the booking policy below) before showing units.
+5. Show the results with search_units, and call get_active_offers too.
 - Never ask about the budget. Only use a budget if the customer mentions one themselves.
 - If they're not sure where to go, use list_destinations and name a few places, plainly.
 
@@ -159,6 +164,41 @@ async function demoChannel(kind) {
 
 const externalUserId = (session) => `chatbot-${session.token.slice(0, 16)}`;
 
+/**
+ * The customer gave their name and phone: make (or update) them as an inbox customer on this channel
+ * and open a lead (status Interested, destination if known). Contact info is the phone plus the
+ * Instagram / Messenger account the chat came from.
+ */
+async function saveLead(session, input) {
+  const name = String(input.name || '').trim().slice(0, 120);
+  const phone = normalizePhone(input.phone);
+  if (!name) return { error: 'Ask for their name first.' };
+  if (!phone) return { error: 'That phone number does not look right. Ask them to check it.' };
+  const destination = String(input.destination || '').trim().slice(0, 120) || null;
+  const channel = await demoChannel(session.channel_kind);
+  const now = Date.now();
+  const { identity } = await findOrCreateIdentity({
+    channel,
+    externalUserId: externalUserId(session),
+    profile: { name, username: session.customer_name },
+    phone,
+    simulated: true,
+    now,
+  });
+  await q.run('UPDATE inbox_customers SET name = ?, phone = ?, updated_at = ? WHERE id = ?', name, phone, now, identity.customer_id);
+  const fresh = await loadSession(session.id);
+  let leadId = fresh?.lead_id;
+  if (leadId && (await q.get('SELECT 1 AS x FROM inbox_leads WHERE id = ?', leadId))) {
+    if (destination) await updateLead(leadId, { project: destination }, null);
+  } else {
+    const lead = await createLead({ customerId: identity.customer_id, fields: { stage_key: 'interested', project: destination, source: `chatbot_${session.channel_kind}` } });
+    leadId = lead.id;
+    await query('UPDATE chatbot_sessions SET lead_id = $2, updated_at = now() WHERE id = $1', [session.id, leadId]);
+  }
+  session.lead_id = leadId;
+  return { ok: true, saved: { name, phone: `+${phone}`, destination }, note: 'Saved. Thank them briefly and carry on with the booking questions.' };
+}
+
 async function forwardToInbox(session, text) {
   const channel = await demoChannel(session.channel_kind);
   return ingestInbound({
@@ -187,6 +227,10 @@ async function handOff(session, { reason, summary, lastCustomerText }) {
   const result = await forwardToInbox(session, lastCustomerText || 'Customer asked to talk to the team.');
   const conversationId = result?.conversationId;
   if (!conversationId) throw new Error('Could not open the inbox conversation');
+  if (session.lead_id) {
+    await q.run('UPDATE inbox_leads SET conversation_id = COALESCE(conversation_id, ?) WHERE id = ?', conversationId, session.lead_id);
+    await q.run("UPDATE inbox_conversations SET current_lead_id = ?, type = CASE WHEN type = 'unknown' THEN 'sales_lead' ELSE type END WHERE id = ?", session.lead_id, conversationId);
+  }
   // The chat before the hand-off, so the agent can read it in order (the last customer message is already in).
   const transcript = earlier.filter((m, idx) => !(idx === earlier.length - 1 && m.role === 'customer' && m.body === lastCustomerText));
   for (const m of transcript) {
@@ -253,6 +297,9 @@ async function runTool(name, input, ctx) {
       return listDestinations();
     case 'search_units': {
       const result = await searchUnits(input, { shownIds: ctx.shownIds });
+      if (ctx.session.lead_id && input.destination) {
+        updateLead(ctx.session.lead_id, { project: String(input.destination).slice(0, 120) }, null).catch(() => {});
+      }
       if (result.results?.length) {
         for (const u of result.results) ctx.shownIds.push(String(u.id));
         ctx.cards = result.results.map(({ id, slug, title, link, image, destination, bedrooms, max_guests, avg_price_per_night_egp, price_per_night_from_egp, stay_total_egp, nights }) => ({
@@ -270,6 +317,8 @@ async function runTool(name, input, ctx) {
       return checkStay(input);
     case 'get_active_offers':
       return activeOffers();
+    case 'save_lead':
+      return saveLead(ctx.session, input);
     case 'hand_off_to_agent':
       ctx.handoff = { reason: String(input.reason || 'Needs the team'), summary: String(input.summary_for_agent || '') };
       return { ok: true, note: `The chat is now with the team. Tell the customer, in ${ctx.replyLanguage || 'their language'} only, that a team member will reply here shortly.` };
@@ -444,7 +493,7 @@ async function botTurn(session, customerText) {
   history.push(adapter.userTurn(customerText));
   // Answer in the language of this message only (Arabic letters → Egyptian Arabic, otherwise English).
   session.replyLanguage = isArabicText(customerText) ? 'Egyptian Arabic' : 'English';
-  const ctx = { shownIds: [...(session.shown_unit_ids || [])], cards: null, handoff: null, replyLanguage: session.replyLanguage };
+  const ctx = { session, shownIds: [...(session.shown_unit_ids || [])], cards: null, handoff: null, replyLanguage: session.replyLanguage };
   let reply = '';
   let inTok = 0;
   let outTok = 0;

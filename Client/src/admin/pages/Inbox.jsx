@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { CheckCircle2, ChevronLeft, Inbox as InboxIcon, Keyboard, MessageSquare, PanelRight, Sparkles, User, UserX, X } from 'lucide-react';
+import { CheckCircle2, ChevronLeft, Inbox as InboxIcon, Keyboard, MessageSquare, PanelRight, Sparkles, User, X } from 'lucide-react';
 import { useInbox, useInboxEvents } from '../inbox/InboxContext';
 import { inboxApi, errorMessage } from '../inbox/api';
 import { CHANNELS, CONVERSATION_TYPES } from '../inbox/utils';
@@ -56,12 +56,14 @@ export default function InboxPage() {
 
   const [queue, setQueue] = useState(() => {
     try {
-      return localStorage.getItem('inbox-queue-v2') || 'open';
+      const saved = localStorage.getItem('inbox-queue-v2');
+      return QUEUES.some((qd) => qd.key === saved) ? saved : 'open';
     } catch {
       return 'open';
     }
   });
   const [state, setState] = useState('');
+  const [leadStage, setLeadStage] = useState('');
   const [channel, setChannel] = useState('');
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
@@ -94,8 +96,8 @@ export default function InboxPage() {
   }, [activeId, setViewing]);
 
   const list = useQuery({
-    queryKey: ['inbox-conversations', queue, state, channel, searchDebounced],
-    queryFn: () => inboxApi.get('/conversations', { view: queue, state: state || undefined, channel: channel || undefined, search: searchDebounced || undefined }),
+    queryKey: ['inbox-conversations', queue, state, channel, leadStage, searchDebounced],
+    queryFn: () => inboxApi.get('/conversations', { view: queue, state: state || undefined, channel: channel || undefined, stage: leadStage || undefined, search: searchDebounced || undefined }),
     refetchInterval: 45000,
     refetchOnWindowFocus: false,
     staleTime: 15000,
@@ -374,7 +376,7 @@ export default function InboxPage() {
           <p className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Queues</p>
           <div className="space-y-0.5">
             {QUEUES.map((qd) => {
-              const Icon = { open: InboxIcon, mine: User, unassigned: UserX, closed: CheckCircle2 }[qd.key];
+              const Icon = { open: InboxIcon, mine: User, closed: CheckCircle2 }[qd.key];
               const on = queue === qd.key;
               const n = queueCount(qd.key);
               return (
@@ -390,7 +392,7 @@ export default function InboxPage() {
                 >
                   <Icon className={`h-4 w-4 ${on ? 'text-white' : 'text-slate-400'}`} />
                   <span className="flex-1">{qd.label}</span>
-                  {n ? <span className={`rounded-full px-1.5 text-[11px] font-bold ${on ? 'bg-white/20' : qd.key === 'unassigned' ? 'bg-orange-100 text-orange-700' : 'bg-slate-100 text-slate-600'}`}>{n}</span> : null}
+                  {n ? <span className={`rounded-full px-1.5 text-[11px] font-bold ${on ? 'bg-white/20' : 'bg-slate-100 text-slate-600'}`}>{n}</span> : null}
                 </button>
               );
             })}
@@ -417,6 +419,23 @@ export default function InboxPage() {
                   );
                 })}
               </div>
+            </>
+          ) : null}
+
+          {(me?.stages || []).length ? (
+            <>
+              <p className="px-2 pb-1.5 pt-5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Lead status</p>
+              <select
+                aria-label="Lead status"
+                value={leadStage}
+                onChange={(e) => setLeadStage(e.target.value)}
+                className={`mx-1 h-9 w-[calc(100%-0.5rem)] rounded-lg border px-2 text-[13px] ${leadStage ? 'border-soul-blue bg-blue-50 font-semibold text-soul-blue' : 'border-slate-200 bg-white text-slate-600'}`}
+              >
+                <option value="">Any lead status</option>
+                {(me?.stages || []).map((st) => (
+                  <option key={st.key} value={st.key}>{st.name_en}</option>
+                ))}
+              </select>
             </>
           ) : null}
 
@@ -456,6 +475,12 @@ export default function InboxPage() {
                   {qd.label}
                   {queueCount(qd.key) ? ` (${queueCount(qd.key)})` : ''}
                 </option>
+              ))}
+            </select>
+            <select aria-label="Lead status" value={leadStage} onChange={(e) => setLeadStage(e.target.value)} className="h-10 w-24 rounded-lg border border-slate-200 bg-white px-2 text-sm">
+              <option value="">Lead</option>
+              {(me?.stages || []).map((st) => (
+                <option key={st.key} value={st.key}>{st.name_en}</option>
               ))}
             </select>
             <select aria-label="Channel" value={channel} onChange={(e) => setChannel(e.target.value)} className="h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm">
@@ -540,7 +565,7 @@ export default function InboxPage() {
                     users={me?.users}
                     people={people}
                     myId={myId}
-                    canAssign={can('conv.assign')}
+                    canAssign={false}
                     onAssign={(uid) => assign(conv.id, uid)}
                     onRemove={(uid) => unassign(conv.id, uid)}
                     open={menu === 'assign'}

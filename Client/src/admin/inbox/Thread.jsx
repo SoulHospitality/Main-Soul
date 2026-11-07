@@ -1,6 +1,6 @@
 import { Bot, Lock } from 'lucide-react';
 import Attachment from './Attachment';
-import { fmtTime } from './utils';
+import { fmtTime, hideLinks } from './utils';
 
 function dayKey(ts) {
   return new Date(Number(ts)).toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' });
@@ -70,7 +70,7 @@ export default function Thread({ items, customerName, userName, endRef }) {
                 </span>
                 <span>{fmtTime(msg.created_at)}</span>
               </div>
-              <p dir="auto" className="whitespace-pre-wrap break-words leading-relaxed [overflow-wrap:anywhere]">{msg.body}</p>
+              <p dir="auto" className="whitespace-pre-wrap break-words leading-relaxed [overflow-wrap:anywhere]">{inbound ? hideLinks(msg.body) : msg.body}</p>
               {(Array.isArray(msg.attachments) ? msg.attachments : []).map((attachment, index) => (
                 <Attachment key={`${msg.id}-${index}`} message={msg} index={index} attachment={attachment} />
               ))}

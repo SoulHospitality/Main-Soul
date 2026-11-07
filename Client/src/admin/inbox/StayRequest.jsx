@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { CalendarPlus, Search } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
@@ -17,7 +18,18 @@ export default function StayRequest({ conversationId, lead, customer, onChanged 
     check_out: lead?.check_out || '',
     guests: lead?.guests ? String(lead.guests) : '',
     bedrooms: '',
+    destination: '',
+    project: '',
   });
+  const { data: places } = useQuery({
+    queryKey: ['inbox-places'],
+    queryFn: () => inboxApi.get('/availability/places'),
+    staleTime: 10 * 60 * 1000,
+  });
+  const destinations = places?.items || [];
+  const projects = form.destination
+    ? destinations.find((d) => d.destination === form.destination)?.projects || []
+    : destinations.flatMap((d) => d.projects);
   const [items, setItems] = useState(null);
   const [loading, setLoading] = useState(false);
   const [booking, setBooking] = useState(null); // { lead, unit }
@@ -70,6 +82,18 @@ export default function StayRequest({ conversationId, lead, customer, onChanged 
             <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Check-out</span>
             <input type="date" className="input h-9 py-1 text-xs" min={form.check_in || undefined} value={form.check_out} onChange={(e) => set({ check_out: e.target.value })} />
           </label>
+          <select className="input h-9 py-1 text-xs" value={form.destination} onChange={(e) => set({ destination: e.target.value, project: '' })} aria-label="Destination">
+            <option value="">Any destination</option>
+            {destinations.map((d) => (
+              <option key={d.destination} value={d.destination}>{d.destination}</option>
+            ))}
+          </select>
+          <select className="input h-9 py-1 text-xs" value={form.project} onChange={(e) => set({ project: e.target.value })} aria-label="Project">
+            <option value="">Any project</option>
+            {[...new Set(projects)].sort().map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
           <input type="number" min="1" className="input h-9 py-1 text-xs" placeholder="Guests" value={form.guests} onChange={(e) => set({ guests: e.target.value })} />
           <input type="number" min="1" className="input h-9 py-1 text-xs" placeholder="Bedrooms" value={form.bedrooms} onChange={(e) => set({ bedrooms: e.target.value })} />
         </div>

@@ -78,7 +78,7 @@ function StageModal({ open, lead, stage, needFollowUp, onClose, onDone, onBook }
       footer={(
         <>
           <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
-          <button type="button" className="btn-primary" disabled={saving || (stage.kind === 'lost' && !lost.key)} onClick={submit}>
+          <button type="button" className="btn-primary" disabled={saving} onClick={submit}>
             {saving ? 'Saving…' : 'Confirm'}
           </button>
         </>
@@ -87,7 +87,7 @@ function StageModal({ open, lead, stage, needFollowUp, onClose, onDone, onBook }
       <div className="space-y-4">
         {stage.kind === 'lost' && (
           <>
-            <Field label="Lost reason">
+            <Field label="Lost reason (optional)">
               <select className="input" value={lost.key} onChange={(e) => setLost({ ...lost, key: e.target.value })}>
                 <option value="">Choose…</option>
                 {(me?.lostReasons || []).map((r) => <option key={r.key} value={r.key}>{r.name_en}</option>)}
