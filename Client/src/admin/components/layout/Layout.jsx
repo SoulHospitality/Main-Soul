@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import MobileDock from './MobileDock';
@@ -22,6 +23,9 @@ export default function Layout({ children }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  const { pathname } = useLocation();
+  // The Live Inbox is a full-screen workspace: no page padding, edge to edge under the header.
+  const fullBleed = pathname.replace(/\/+$/, '') === '/admin/inbox';
   const role = user?.role || 'admin';
   const sidebarWidth = isMobile ? 0 : collapsed ? 64 : 256;
 
@@ -38,6 +42,7 @@ export default function Layout({ children }) {
     <div
       className="pms-shell min-h-screen"
       data-pms-role={role}
+      data-full-bleed={fullBleed ? 'inbox' : undefined}
       style={roleThemeVars(role)}
     >
       {isMobile && mobileOpen && (
@@ -63,9 +68,13 @@ export default function Layout({ children }) {
         className="pms-main pt-16 min-h-screen transition-all duration-300"
         style={{ marginLeft: sidebarWidth }}
       >
-        <div className={isMobile ? 'p-3 sm:p-4' : 'p-6 lg:p-8'}>
-          <div className="pms-content soul-fade-up">{children}</div>
-        </div>
+        {fullBleed ? (
+          children
+        ) : (
+          <div className={isMobile ? 'p-3 sm:p-4' : 'p-6 lg:p-8'}>
+            <div className="pms-content soul-fade-up">{children}</div>
+          </div>
+        )}
       </main>
 
       {isMobile ? <MobileDock onOpenMenu={() => setMobileOpen(true)} /> : null}

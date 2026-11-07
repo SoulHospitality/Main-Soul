@@ -523,7 +523,8 @@ router.post('/users', requireRoles(...USER_ACCOUNT_ROLES), async (req, res, next
       return res.status(400).json({ error: 'Staff ID is required' });
     }
     const daysOff = normalizeDaysOff(b.days_off);
-    if (!isOwner && !daysOff.length) {
+    // CEOs aren't on attendance, so they have no days off to set.
+    if (!isOwner && role !== 'admin' && !daysOff.length) {
       return res.status(400).json({ error: 'Choose at least one day off' });
     }
     await assertStaffCodeAvailable(staff_code);
@@ -706,7 +707,7 @@ router.patch('/users/:id', requireRoles(...USER_ACCOUNT_ROLES), async (req, res,
     let daysOff = null;
     if (b.days_off !== undefined) {
       daysOff = normalizeDaysOff(b.days_off);
-      if (nextRole !== 'owner' && !daysOff.length) {
+      if (nextRole !== 'owner' && nextRole !== 'admin' && !daysOff.length) {
         return res.status(400).json({ error: 'Choose at least one day off' });
       }
     }

@@ -1266,7 +1266,7 @@ router.get('/hr/payroll', requireRoles(...HR_ROLES), async (req, res, next) => {
        LEFT JOIN staff_payroll_entries p
          ON p.staff_user_id = u.id AND p.period_year = $3 AND p.period_month = $4
        LEFT JOIN staff_users payer ON payer.id = p.paid_by
-       WHERE u.role <> 'owner'
+       WHERE u.role NOT IN ('owner', 'admin')
        ORDER BY u.full_name`,
       [from, to, year, month]
     );
@@ -1348,7 +1348,7 @@ router.post('/hr/payroll/mark-paid', requireRoles(...HR_ROLES), async (req, res,
          WHERE bonus_date >= $1::date AND bonus_date < $2::date
          GROUP BY staff_user_id
        ) b ON b.staff_user_id = u.id
-       WHERE u.role <> 'owner'
+       WHERE u.role NOT IN ('owner', 'admin')
          AND u.is_active = 1
          ${ids.length ? `AND u.id = ANY($3::int[])` : ''}`,
       ids.length ? [from, to, ids] : [from, to]
@@ -1551,7 +1551,10 @@ router.post('/hr/salary-bonuses', requireRoles(...HR_ROLES), async (req, res, ne
     if (Number.isNaN(amount) || amount <= 0 || !reason) {
       return res.status(400).json({ error: 'Amount and reason are required' });
     }
-    await loadStaffForHr(staffUserId);
+    const bonusStaff = await loadStaffForHr(staffUserId);
+    if (bonusStaff.role === 'admin') {
+      return res.status(403).json({ error: 'CEOs are not on payroll, so they have no bonuses' });
+    }
     const { rows } = await query(
       `INSERT INTO staff_salary_bonuses (staff_user_id, amount, reason, bonus_date, created_by)
        VALUES ($1,$2,$3,$4::date,$5)
@@ -1620,7 +1623,7 @@ router.post('/hr/salary-deductions', requireRoles(...HR_ROLES), async (req, res,
 
     const staff = await loadStaffForHr(staffUserId);
     if (staff.role === 'admin') {
-      return res.status(403).json({ error: 'Admins do not have salary deductions' });
+      return res.status(403).json({ error: 'CEOs are not on payroll, so they have no deductions' });
     }
     let amount;
     let reason = String(b.reason || '').trim();
@@ -3109,7 +3112,7 @@ router.post(
         `SELECT id, staff_code, full_name, base_salary, role,
                 COALESCE(office_attendance_exempt, false) AS office_attendance_exempt,
                 COALESCE(days_off, '{}') AS days_off
-         FROM staff_users WHERE role <> 'owner'`
+         FROM staff_users WHERE role NOT IN ('owner', 'admin')`
       );
 
       parsed = parsed.concat(fillMissingOfficeAbsences(parsed, staffRows));

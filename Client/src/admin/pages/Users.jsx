@@ -534,6 +534,12 @@ function StaffForm({
           </div>
           )
         ) : null}
+        {form.role === 'admin' ? (
+          <div className="sm:col-span-2 rounded-xl border border-soul-line bg-slate-50 px-3 py-2 text-sm text-soul-muted">
+            CEOs aren’t on payroll or attendance, so there’s no salary, leave balance or days off to set.
+          </div>
+        ) : (
+        <>
         <div>
           <label className="label">Base Salary (EGP) *</label>
           <input
@@ -614,6 +620,8 @@ function StaffForm({
             Choose at least one weekly day off. Those days show in purple on attendance and are skipped by the Excel import.
           </p>
         </div>
+        </>
+        )}
         {form.role === 'operations_supervisor' && (
           <div className="sm:col-span-2">
             <label className="label">Petty cash access *</label>
@@ -1278,15 +1286,16 @@ export default function Users() {
   };
 
   const handleSaveStaff = () => {
-    if (!staffForm.full_name?.trim() || !staffForm.email?.trim() || staffForm.base_salary === '') {
-      toast.error('Name, email, and base salary are required');
+    const ceo = staffForm.role === 'admin';
+    if (!staffForm.full_name?.trim() || !staffForm.email?.trim() || (!ceo && staffForm.base_salary === '')) {
+      toast.error(ceo ? 'Name and email are required' : 'Name, email, and base salary are required');
       return;
     }
     if (!String(staffForm.staff_code || '').trim()) {
       toast.error('Staff ID is required');
       return;
     }
-    if (!Array.isArray(staffForm.days_off) || staffForm.days_off.length < 1) {
+    if (!ceo && (!Array.isArray(staffForm.days_off) || staffForm.days_off.length < 1)) {
       toast.error('Choose at least one day off');
       return;
     }
@@ -1314,7 +1323,7 @@ export default function Users() {
     }
     saveStaffMutation.mutate({
       ...staffForm,
-      base_salary: Number(staffForm.base_salary),
+      base_salary: ceo ? 0 : Number(staffForm.base_salary),
       leave_casual_days: Number(staffForm.leave_casual_days) || 0,
       leave_annual_days: Number(staffForm.leave_annual_days) || 0,
       days_off: Array.isArray(staffForm.days_off) ? staffForm.days_off : [],
@@ -1681,11 +1690,17 @@ export default function Users() {
                       </span>
                     </td>
                     <td>
-                      <div>{currency(u.base_salary || 0)}</div>
-                      <div className="mt-0.5 text-[11px] text-soul-muted">
-                        Casual {u.leave_casual_days ?? 0} · Annual {u.leave_annual_days ?? 0} · Unpaid Unlimited
-                        {' · '}Days off {formatDaysOff(u.days_off)}
-                      </div>
+                      {u.role === 'admin' ? (
+                        <div className="text-[11px] text-soul-muted">Not on payroll</div>
+                      ) : (
+                        <>
+                          <div>{currency(u.base_salary || 0)}</div>
+                          <div className="mt-0.5 text-[11px] text-soul-muted">
+                            Casual {u.leave_casual_days ?? 0} · Annual {u.leave_annual_days ?? 0} · Unpaid Unlimited
+                            {' · '}Days off {formatDaysOff(u.days_off)}
+                          </div>
+                        </>
+                      )}
                       {u.salary_change_status === 'pending' && (
                         <div className="mt-1 text-[11px] text-amber-700">
                           Pending: {currency(u.pending_base_salary)}
