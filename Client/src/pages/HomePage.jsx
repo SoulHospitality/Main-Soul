@@ -5,7 +5,7 @@ import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
 import HeroSearch from '../components/home/HeroSearch';
 import HeroWaves from '../components/home/HeroWaves';
-import HeroSlideshow, { SlideDots } from '../components/home/HeroSlideshow';
+import HeroSlideshow, { SlideDots, slideMs } from '../components/home/HeroSlideshow';
 import CompoundGrid from '../components/home/CompoundGrid';
 import TrustSection from '../components/home/TrustSection';
 import HostCta from '../components/home/HostCta';
@@ -167,7 +167,7 @@ function Hero() {
 
         {slideshow ? (
           <div className="mt-5 sm:mt-6 [@media(max-height:760px)]:mt-3">
-            <SlideDots count={slides.length} index={current} onChange={goTo} label={t('home.heroSlide')} />
+            <SlideDots count={slides.length} index={current} onChange={goTo} label={t('home.heroSlide')} duration={slideMs(slides[current])} />
           </div>
         ) : null}
 

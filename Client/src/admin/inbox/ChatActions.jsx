@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { AlarmClock, CheckCircle2, ChevronDown, MoreHorizontal, RotateCcw, UserPlus } from 'lucide-react';
+import { AlarmClock, BellRing, CheckCircle2, ChevronDown, MoreHorizontal, RotateCcw, UserPlus } from 'lucide-react';
 import { PresenceDot } from './ui';
 import { CONVERSATION_TYPES, nextCairoTime, toLocalInput, fromLocalInput } from './utils';
 
@@ -45,14 +45,24 @@ export function snoozeOptions(businessStart = '11:00') {
   ];
 }
 
-export function SnoozeButton({ onSnooze, businessStart, open, setOpen, compact = false }) {
+export function SnoozeButton({ onSnooze, businessStart, open, setOpen, compact = false, alarm = false, snoozed = false }) {
   const [custom, setCustom] = useState(() => toLocalInput(Date.now() + 2 * 3600000));
   return (
     <div className="relative">
-      <button type="button" onClick={() => setOpen(!open)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" title="Snooze (S)">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className={`inline-flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold hover:bg-slate-50 ${alarm ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-slate-200 bg-white text-slate-700'}`}
+        title={alarm ? 'Snooze alarm set (S to change)' : 'Snooze (S)'}
+      >
         <AlarmClock className="h-4 w-4" />
-        {compact ? null : <span className="hidden 2xl:inline">Snooze</span>}
+        {compact ? null : <span className="hidden sm:inline">{snoozed ? 'Snoozed' : 'Snooze'}</span>}
       </button>
+      {alarm ? (
+        <span className="pointer-events-none absolute -right-1.5 -top-1.5 grid h-4 w-4 place-items-center rounded-full bg-rose-600 text-white shadow ring-2 ring-white" aria-label="Snooze alarm">
+          <BellRing className="h-2.5 w-2.5" />
+        </span>
+      ) : null}
       <Menu open={open} onClose={() => setOpen(false)}>
         <p className="px-2.5 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Bring it back</p>
         {snoozeOptions(businessStart).map((o) => (

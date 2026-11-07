@@ -202,6 +202,8 @@ export default function BookingDrawer({
         amount: gross,
         email: formState.email,
         phone: formState.phone,
+        unitSlug: unit?.slug,
+        unitId: unit?.id,
       });
       setPromo({
         code: result.code,
@@ -483,8 +485,19 @@ export default function BookingDrawer({
               </div>
               <div className="flex items-center justify-between text-sm text-soul-muted">
                 <span>{t('booking.subtotalNights', { count: nights || '—' })}</span>
-                <span className="font-semibold text-soul-blue">{money(subtotal)}</span>
+                <span className="font-semibold text-soul-blue">
+                  {quote?.offer?.discount_egp ? (
+                    <span className="mr-1.5 text-xs font-normal text-soul-muted line-through">{money(quote.subtotal_before_offer)}</span>
+                  ) : null}
+                  {money(subtotal)}
+                </span>
               </div>
+              {quote?.offer?.discount_egp ? (
+                <div className="flex items-center justify-between rounded-lg bg-emerald-50 px-2 py-1 text-sm text-emerald-800">
+                  <span>{quote.offer.name} · {quote.offer.discount_percent}%</span>
+                  <span className="font-semibold">−{money(quote.offer.discount_egp)}</span>
+                </div>
+              ) : null}
               {cleaning > 0 && (
                 <div className="flex items-center justify-between text-sm text-soul-muted">
                   <span>{t('booking.cleaning')}</span>

@@ -1,11 +1,5 @@
 const { query } = require('../../config/db');
 const { reservationScopeClause, bookingAssigneeClause } = require('../reservationScope');
-const {
-  canManageStaffTasks,
-  staffTaskScopeSql,
-  presentStaffTaskForViewer,
-} = require('../staffTasks');
-const { staffTaskTablesReady } = require('../staffTaskSchema');
 const { soullyCan } = require('./access');
 const { FINANCIAL_EPOCH, clampFromDate } = require('../financialEpoch');
 
@@ -185,57 +179,6 @@ async function stayBoard(user, input) {
   }
 }
 
-async function myTasks(user) {
-  if (!soullyCan(user, 'tasks')) return denied('tasks');
-  try {
-    const ready = await staffTaskTablesReady();
-    if (!ready.staff_tasks) return { tasks: [], message: 'Tasks are not set up yet.' };
-    const me = user.id;
-    const sql = user.role === 'admin'
-      ? `SELECT t.title, t.deadline::text AS deadline, t.completed_at, t.assignee_id, t.created_by,
-                a.full_name AS assignee_name, m.full_name AS created_by_name
-         FROM staff_tasks t
-         JOIN staff_users a ON a.id = t.assignee_id
-         JOIN staff_users m ON m.id = t.created_by
-         WHERE ${staffTaskScopeSql('$1', 'a', user.role)}
-         ORDER BY (t.completed_at IS NULL) DESC, t.deadline ASC
-         LIMIT 40`
-      : canManageStaffTasks(user)
-        ? `SELECT t.title, t.deadline::text AS deadline, t.completed_at, t.assignee_id, t.created_by,
-                  a.full_name AS assignee_name, m.full_name AS created_by_name
-           FROM staff_tasks t
-           JOIN staff_users a ON a.id = t.assignee_id
-           JOIN staff_users m ON m.id = t.created_by
-           WHERE t.assignee_id = $1 OR ${staffTaskScopeSql('$1', 'a', user.role)}
-           ORDER BY (t.completed_at IS NULL) DESC, t.deadline ASC
-           LIMIT 15`
-        : `SELECT t.title, t.deadline::text AS deadline, t.completed_at, t.assignee_id, t.created_by,
-                  a.full_name AS assignee_name, m.full_name AS created_by_name
-           FROM staff_tasks t
-           JOIN staff_users a ON a.id = t.assignee_id
-           JOIN staff_users m ON m.id = t.created_by
-           WHERE t.assignee_id = $1
-           ORDER BY (t.completed_at IS NULL) DESC, t.deadline ASC
-           LIMIT 15`;
-    const params = user.role === 'admin' ? [] : [me];
-    const { rows } = await query(sql, params);
-    const tasks = rows.map((row) => {
-      const shown = presentStaffTaskForViewer(row, user);
-      return {
-        title: shown.title,
-        deadline: shown.deadline,
-        done: Boolean(shown.completed_at),
-        mine: String(row.assignee_id) === String(me),
-        assigned_by_me: String(row.created_by) === String(me),
-        assignee: shown.assignee_name || null,
-      };
-    });
-    return { count: tasks.length, tasks };
-  } catch (err) {
-    console.error('[soully] tasks', err.message);
-    return failed();
-  }
-}
 
 async function websiteQueue(user) {
   if (!soullyCan(user, 'website_bookings')) return denied('website_bookings');
@@ -640,22 +583,7 @@ async function businessReport(user, input) {
       const { rows: units } = await query(
         `SELECT COALESCE(status, 'unknown') AS status, COUNT(*)::int AS count FROM units GROUP BY status ORDER BY count DESC`
       );
-      let openTasks = null;
-      try {
-        const ready = await staffTaskTablesReady();
-        if (ready.staff_tasks) {
-          const { rows: taskRows } = await query(
-            `SELECT COUNT(*) FILTER (WHERE completed_at IS NULL)::int AS open,
-                    COUNT(*) FILTER (WHERE completed_at IS NULL AND deadline::date < $1::date)::int AS overdue
-             FROM staff_tasks`,
-            [date]
-          );
-          openTasks = taskRows[0] || null;
-        }
-      } catch (err) {
-        console.error('[soully] snapshot tasks', err.message);
-      }
-      return { date, stays: rows[0] || {}, units, open_tasks: openTasks };
+      return { date, stays: rows[0] || {}, units };
     }
 
     if (topic === 'money') {
@@ -831,12 +759,6 @@ const TOOL_DEFS = [
     },
   },
   {
-    name: 'my_tasks',
-    page: 'tasks',
-    description: 'Open and recently finished staff tasks this login can see. Read only.',
-    input_schema: { type: 'object', properties: {} },
-  },
-  {
     name: 'website_queue',
     page: 'website_bookings',
     description: 'Pending and held website booking requests this login can see. Read only.',
@@ -909,7 +831,6 @@ async function runTool(user, name, input) {
   if (name === 'search_units') return searchUnits(user, args);
   if (name === 'search_reservations') return searchReservations(user, args);
   if (name === 'stay_board') return stayBoard(user, args);
-  if (name === 'my_tasks') return myTasks(user);
   if (name === 'website_queue') return websiteQueue(user);
   if (name === 'find_staff') return findStaff(user, args);
   if (name === 'housekeeping_today') return housekeepingToday(user, args);

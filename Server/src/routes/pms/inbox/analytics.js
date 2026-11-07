@@ -3,7 +3,7 @@ const { q } = require('../../../lib/inbox/db');
 const { badRequest, forbidden, wrap } = require('../../../lib/inbox/http');
 const { can } = require('../../../lib/inbox/permissions');
 const { getSettings } = require('../../../lib/inbox/settings');
-const { localHour, localDay } = require('../../../lib/inbox/hours');
+const { localHour, localDay, businessSeconds } = require('../../../lib/inbox/hours');
 
 const router = express.Router();
 
@@ -31,7 +31,6 @@ const pct = (a, b) => (b ? Math.round((a / b) * 1000) / 10 : null);
  *  - Qualified conversion (official KPI): Won / leads that reached a "qualified" stage.
  */
 router.get('/analytics', wrap(async (req, res) => {
-  if (!can(req.inbox, 'analytics.team')) throw forbidden('Not allowed');
   const now = Date.now();
   const to = Number(req.query.to) || now;
   const from = Number(req.query.from) || to - 7 * 86400000;
@@ -46,11 +45,14 @@ router.get('/analytics', wrap(async (req, res) => {
   const stages = await q.all('SELECT * FROM inbox_lead_stages ORDER BY position');
   const stageByKey = Object.fromEntries(stages.map((st) => [st.key, st]));
 
-  const responses = await q.all(
+  const responses = (await q.all(
     `SELECT * FROM inbox_responses WHERE responded_at >= ? AND responded_at < ?
      ${byOnly('AND (user_id = ? OR (user_id IS NULL AND assigned_user_id = ?))')}`,
     from, to, ...(only ? [only, only] : []),
-  );
+  )).map((r) => {
+    const seconds = businessSeconds(Number(r.awaiting_since), Number(r.responded_at));
+    return { ...r, seconds_sla: seconds, within_sla: seconds <= s.sla_target_min * 60 ? 1 : 0 };
+  });
   const conversations = await q.all(
     `SELECT id, channel_kind, source, created_at, assigned_user_id FROM inbox_conversations WHERE created_at >= ? AND created_at < ?
      ${byOnly('AND id IN (SELECT conversation_id FROM inbox_assignments WHERE to_user_id = ?)')}`,
@@ -96,6 +98,8 @@ router.get('/analytics', wrap(async (req, res) => {
   const live = await q.get(
     `SELECT
        COUNT(*) FILTER (WHERE status <> 'closed') AS open,
+       COUNT(*) FILTER (WHERE status <> 'closed' AND status <> 'snoozed' AND unread_count > 0) AS unread,
+       COUNT(*) FILTER (WHERE status = 'snoozed') AS snoozed,
        COUNT(*) FILTER (WHERE status = 'needs_reply') AS needs_reply,
        COUNT(*) FILTER (WHERE status = 'needs_reply' AND sla_due_at IS NOT NULL AND sla_due_at <= ?) AS overdue,
        COUNT(*) FILTER (WHERE status = 'needs_reply' AND sla_due_at IS NOT NULL AND sla_due_at > ? AND sla_due_at - ? <= ?) AS at_risk,
@@ -114,6 +118,39 @@ router.get('/analytics', wrap(async (req, res) => {
     "SELECT COUNT(*) AS n, COUNT(*) FILTER (WHERE created_at <= ?) AS overdue FROM inbox_comments WHERE status = 'new'",
     now - s.comment_sla_min * 60000,
   );
+
+  // ---- all chats (every chat on the inbox, whatever the period)
+  const allWhere = only ? `WHERE (c.assigned_user_id = ? OR EXISTS (SELECT 1 FROM inbox_conversation_assignees a WHERE a.conversation_id = c.id AND a.user_id = ?))` : '';
+  const allP = only ? [only, only] : [];
+  const [allTotals, allTypes, allChannels, allStages, closedInPeriod] = await Promise.all([
+    q.get(
+      `SELECT COUNT(*) AS total,
+         COUNT(*) FILTER (WHERE c.status <> 'closed') AS open,
+         COUNT(*) FILTER (WHERE c.status = 'closed') AS closed,
+         COUNT(*) FILTER (WHERE c.status = 'snoozed') AS snoozed,
+         COUNT(*) FILTER (WHERE c.status <> 'closed' AND c.unread_count > 0) AS unread,
+         COUNT(*) FILTER (WHERE c.status = 'needs_reply' AND c.sla_due_at IS NOT NULL AND c.sla_due_at <= ?) AS overdue,
+         COUNT(*) FILTER (WHERE c.assigned_user_id IS NULL AND c.status <> 'closed') AS unassigned,
+         COUNT(*) FILTER (WHERE c.current_lead_id IS NOT NULL) AS with_lead
+       FROM inbox_conversations c ${allWhere}`,
+      now, ...allP,
+    ),
+    q.all(`SELECT COALESCE(c.type, 'unknown') AS key, COUNT(*) AS n FROM inbox_conversations c ${allWhere} GROUP BY 1 ORDER BY 2 DESC`, ...allP),
+    q.all(`SELECT c.channel_kind AS key, COUNT(*) AS n, COUNT(*) FILTER (WHERE c.status <> 'closed') AS open FROM inbox_conversations c ${allWhere} GROUP BY 1 ORDER BY 2 DESC`, ...allP),
+    q.all(
+      `SELECT l.stage_key AS key, COUNT(*) AS n FROM inbox_conversations c JOIN inbox_leads l ON l.id = c.current_lead_id ${allWhere} GROUP BY 1 ORDER BY 2 DESC`,
+      ...allP,
+    ),
+    q.get(`SELECT COUNT(*) AS n FROM inbox_conversations c WHERE c.closed_at >= ? AND c.closed_at < ? ${only ? 'AND c.assigned_user_id = ?' : ''}`, from, to, ...onlyP),
+  ]);
+  const num = (o) => Object.fromEntries(Object.entries(o || {}).map(([k, v]) => [k, Number(v) || 0]));
+  const allChats = {
+    ...num(allTotals),
+    closed_in_period: Number(closedInPeriod?.n) || 0,
+    by_type: allTypes.map((r) => ({ key: r.key, count: Number(r.n) })),
+    by_channel: allChannels.map((r) => ({ key: r.key, count: Number(r.n), open: Number(r.open) })),
+    by_stage: allStages.map((r) => ({ key: r.key, name_en: stageByKey[r.key]?.name_en || r.key, count: Number(r.n) })),
+  };
 
   // ---- overview
   const rt = stats(responses.map((r) => r.seconds_sla));
@@ -165,7 +202,12 @@ router.get('/analytics', wrap(async (req, res) => {
       role: u.role,
       presence: u.presence,
       chats_assigned: new Set(assignments.filter((a) => a.to_user_id === u.id).map((a) => a.conversation_id)).size,
-      messages_sent: sent.find((x) => x.user_id === u.id)?.n || 0,
+      // Chats the system handed to this person in turn (new chats and guests back after a long silence).
+      rotations: assignments.filter((a) => a.to_user_id === u.id && ['auto', 'sticky', 'rotation'].includes(a.reason)).length,
+      rotations_returning: assignments.filter((a) => a.to_user_id === u.id && a.reason === 'rotation').length,
+      reassigned_to: assignments.filter((a) => a.to_user_id === u.id && ['sla_breach', 'agent_offline'].includes(a.reason)).length,
+      taken: assignments.filter((a) => a.to_user_id === u.id && ['claim', 'takeover', 'reply', 'manual'].includes(a.reason)).length,
+      messages_sent: Number(sent.find((x) => x.user_id === u.id)?.n) || 0,
       replies: mine.length,
       avg_response: myStats.avg,
       median_response: myStats.median,
@@ -180,8 +222,8 @@ router.get('/analytics', wrap(async (req, res) => {
       bookings: myWonPeriod.length,
       booking_value: myWonPeriod.reduce((a, l) => a + (Number(l.booking_value) || 0), 0),
       follow_ups_done: followUpsDone.filter((f) => f.assigned_user_id === u.id).length,
-      waiting_now: waiting.n || 0,
-      overdue_now: waiting.overdue || 0,
+      waiting_now: Number(waiting.n) || 0,
+      overdue_now: Number(waiting.overdue) || 0,
     };
   }).filter((a) => only || a.role !== 'admin' || a.replies || a.leads);
 
@@ -265,12 +307,14 @@ router.get('/analytics', wrap(async (req, res) => {
   res.json({
     period: { from, to },
     scope: only ? 'user' : 'team',
+    allChats,
+    rotation_after_hours: Number(s.rotation_after_hours) || 0,
     live: {
-      ...live,
-      follow_ups_due: liveFollowUps?.due || 0,
-      follow_ups_overdue: liveFollowUps?.overdue || 0,
-      comments_open: openComments?.n || 0,
-      comments_overdue: openComments?.overdue || 0,
+      ...num(live),
+      follow_ups_due: Number(liveFollowUps?.due) || 0,
+      follow_ups_overdue: Number(liveFollowUps?.overdue) || 0,
+      comments_open: Number(openComments?.n) || 0,
+      comments_overdue: Number(openComments?.overdue) || 0,
     },
     overview,
     agents,

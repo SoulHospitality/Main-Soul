@@ -22,6 +22,9 @@ const DEFAULTS = {
 
   // Routing
   allow_agent_claim: true,
+  // A guest who writes again after this many hours of silence starts a new rotation:
+  // the chat goes to the next agent in turn. 0 turns it off.
+  rotation_after_hours: 24,
   presence_timeout_min: 3,
 
   // Messaging policy

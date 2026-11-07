@@ -45,6 +45,7 @@ const LIST_SELECT = `
   SELECT c.id, c.status, c.type, c.priority, c.channel_kind, c.assigned_user_id, c.awaiting_since, c.sla_start_at,
          c.sla_due_at, c.sla_breached, c.escalation_level, c.last_message_at, c.last_inbound_at, c.last_message_preview,
          c.unread_count, c.snooze_until, c.current_lead_id, c.source,
+         c.snooze_alarm_at, c.snooze_alarm_by, c.snooze_alarm_seen,
          cu.name AS customer_name, cu.avatar_url, cu.phone,
          ch.name AS channel_name, u.name AS assigned_name,
          l.stage_key, l.temperature,
@@ -73,31 +74,30 @@ router.get('/conversations', wrap(async (req, res) => {
   // Queue (whose chats) and state (what they need) are separate, like most team inboxes.
   const queueWhere = [];
   const queueParams = [];
+  // Closed chats have no page of their own; a search still finds them.
+  const searching = Boolean(String(search || '').trim());
+  const openOnly = searching ? '1 = 1' : "c.status <> 'closed'";
   switch (view) {
     case 'all': break;
-    case 'closed': queueWhere.push("c.status = 'closed'"); break;
-    case 'unassigned': queueWhere.push(`c.status <> 'closed' AND c.assigned_user_id IS NULL AND NOT EXISTS (
-      SELECT 1 FROM inbox_conversation_assignees a WHERE a.conversation_id = c.id)`); break;
-    case 'open': queueWhere.push("c.status <> 'closed'"); break;
+    case 'open': queueWhere.push(openOnly); break;
     // Older views still work as states on all open chats.
-    case 'needs_reply': case 'overdue': case 'waiting': case 'snoozed': case 'hot':
-      queueWhere.push("c.status <> 'closed'"); break;
+    case 'unread': case 'needs_reply': case 'overdue': case 'snoozed':
+      queueWhere.push(openOnly); break;
     case 'mine':
-    default: queueWhere.push(`${onChatSql()} AND c.status <> 'closed'`); queueParams.push(user.id, user.id);
+    default: queueWhere.push(`${onChatSql()} AND ${openOnly}`); queueParams.push(user.id, user.id);
   }
   const STATE_SQL = {
+    unread: "c.unread_count > 0 AND c.status <> 'snoozed'",
     needs_reply: "c.status = 'needs_reply'",
     overdue: "c.status = 'needs_reply' AND c.sla_due_at IS NOT NULL AND c.sla_due_at <= ?",
-    waiting: "c.status = 'waiting_customer'",
     snoozed: "c.status = 'snoozed'",
-    hot: "l.temperature = 'hot'",
   };
   const state = STATE_SQL[req.query.state] ? req.query.state : STATE_SQL[view] ? view : null;
   where.push(...queueWhere);
   params.push(...queueParams);
   if (state) { where.push(STATE_SQL[state]); if (state === 'overdue') params.push(now); }
   // Snoozed chats are out of the way until they wake up (or the guest writes); see them under Snoozed.
-  else if (view !== 'closed' && view !== 'all') where.push("c.status <> 'snoozed'");
+  else if (view !== 'all' && !searching) where.push("c.status <> 'snoozed'");
   if (channel) { where.push('c.channel_kind = ?'); params.push(String(channel)); }
   if (type) { where.push('c.type = ?'); params.push(String(type)); }
   if (assigned === 'none') {
@@ -168,11 +168,10 @@ router.get('/conversations', wrap(async (req, res) => {
   );
   const stateCountsP = q.get(
     `SELECT
+       COUNT(*) FILTER (WHERE c.unread_count > 0 AND c.status <> 'snoozed') AS unread,
        COUNT(*) FILTER (WHERE c.status = 'needs_reply') AS needs_reply,
        COUNT(*) FILTER (WHERE c.status = 'needs_reply' AND c.sla_due_at IS NOT NULL AND c.sla_due_at <= ?) AS overdue,
-       COUNT(*) FILTER (WHERE c.status = 'waiting_customer') AS waiting,
        COUNT(*) FILTER (WHERE c.status = 'snoozed') AS snoozed,
-       COUNT(*) FILTER (WHERE l.temperature = 'hot') AS hot,
        COUNT(*) FILTER (WHERE c.status <> 'snoozed') AS total
      FROM inbox_conversations c LEFT JOIN inbox_leads l ON l.id = c.current_lead_id
      WHERE ${[vis.sql, ...queueWhere].join(' AND ')}`,
@@ -181,7 +180,15 @@ router.get('/conversations', wrap(async (req, res) => {
   const [rows, queueCounts, stateCounts] = await Promise.all([rowsP, queueCountsP, stateCountsP]);
   // Not awaited: names arrive with the next refresh (a live update is sent when one is found).
   fillGuestNames(rows).catch(() => {});
-  const counts = { ...queueCounts, states: stateCounts };
+  // Lead status counts for the sidebar (open chats this person can see).
+  const stageRows = await q.all(
+    `SELECT l.stage_key, COUNT(*) AS n
+     FROM inbox_conversations c JOIN inbox_leads l ON l.id = c.current_lead_id
+     WHERE ${vis.sql} AND c.status <> 'closed'
+     GROUP BY l.stage_key`,
+    ...vis.params,
+  );
+  const counts = { ...queueCounts, states: stateCounts, stages: Object.fromEntries(stageRows.map((r) => [r.stage_key, Number(r.n)])) };
   res.json({ items: rows, counts, viewers: viewersSnapshot(), now });
 }));
 
@@ -414,11 +421,18 @@ router.post('/conversations/:id/status', wrap(async (req, res) => {
   await tx(async () => {
     await q.run(
       `UPDATE inbox_conversations SET status = ?, snooze_until = ?, closed_at = ?,
+         snooze_alarm_at = CASE WHEN ?::int = 1 THEN ?::bigint WHEN ?::int = 1 THEN NULL ELSE snooze_alarm_at END,
+         snooze_alarm_by = CASE WHEN ?::int = 1 THEN ?::int WHEN ?::int = 1 THEN NULL ELSE snooze_alarm_by END,
+         snooze_alarm_seen = CASE WHEN ?::int = 1 THEN 0 ELSE snooze_alarm_seen END,
          awaiting_since = CASE WHEN ?::int = 1 THEN NULL ELSE awaiting_since END,
          sla_start_at = CASE WHEN ?::int = 1 THEN NULL ELSE sla_start_at END,
          sla_due_at = CASE WHEN ?::int = 1 THEN NULL ELSE sla_due_at END
        WHERE id = ?`,
-      status, snoozeUntil, closing ? now : null, closing, closing, closing, conv.id,
+      status, snoozeUntil, closing ? now : null,
+      status === 'snoozed', snoozeUntil, closing,
+      status === 'snoozed', req.inbox.id, closing,
+      status === 'snoozed',
+      closing, closing, closing, conv.id,
     );
     await audit({
       conversationId: conv.id, userId: req.inbox.id, type: 'status_changed',
@@ -430,6 +444,36 @@ router.post('/conversations/:id/status', wrap(async (req, res) => {
   });
   broadcast('conversation', { id: conv.id });
   res.json({ ok: true });
+}));
+
+/**
+ * Snooze alarm. "seen" = the person opened the chat after it rang (the sound stops);
+ * "clear" = they left or closed it, so the red bell goes away.
+ */
+router.post('/conversations/:id/alarm', wrap(async (req, res) => {
+  const conv = await loadConversation(int(req.params.id), req.inbox);
+  const action = req.body?.action === 'clear' ? 'clear' : 'seen';
+  if (!conv.snooze_alarm_at || conv.status === 'snoozed') return res.json({ ok: true });
+  if (action === 'clear') {
+    await q.run('UPDATE inbox_conversations SET snooze_alarm_at = NULL, snooze_alarm_by = NULL, snooze_alarm_seen = 0 WHERE id = ?', conv.id);
+  } else {
+    await q.run('UPDATE inbox_conversations SET snooze_alarm_seen = 1 WHERE id = ?', conv.id);
+  }
+  broadcast('conversation', { id: conv.id });
+  res.json({ ok: true });
+}));
+
+/** Snooze alarms of this person that are due and still ringing (used everywhere in the PMS). */
+router.get('/alarms', wrap(async (req, res) => {
+  const rows = await q.all(
+    `SELECT c.id, c.snooze_alarm_at, cu.name AS customer_name
+     FROM inbox_conversations c JOIN inbox_customers cu ON cu.id = c.customer_id
+     WHERE c.snooze_alarm_by = ? AND c.snooze_alarm_at IS NOT NULL AND c.snooze_alarm_at <= ?
+       AND c.status <> 'snoozed' AND c.snooze_alarm_seen = 0 AND c.status <> 'closed'
+     ORDER BY c.snooze_alarm_at DESC LIMIT 10`,
+    req.inbox.id, Date.now(),
+  );
+  res.json({ items: rows });
 }));
 
 router.post('/conversations/:id/close', wrap(async (req, res) => {
@@ -452,7 +496,7 @@ router.post('/conversations/:id/close', wrap(async (req, res) => {
     }
     await q.run(
       `UPDATE inbox_conversations SET status = 'closed', snooze_until = NULL, closed_at = ?, awaiting_since = NULL,
-         sla_start_at = NULL, sla_due_at = NULL WHERE id = ?`,
+         sla_start_at = NULL, sla_due_at = NULL, snooze_alarm_at = NULL, snooze_alarm_by = NULL, snooze_alarm_seen = 0 WHERE id = ?`,
       now, conv.id,
     );
     await audit({

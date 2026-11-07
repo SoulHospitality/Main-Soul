@@ -158,16 +158,6 @@ function StatusChip({ status, label }) {
   );
 }
 
-function Importance({ weight }) {
-  const w = Number(weight) || 1;
-  return (
-    <span className="text-[11px] tracking-tight text-soul-muted" title={`Importance ${w} of 5`} aria-label={`Importance ${w} of 5`}>
-      {'●'.repeat(w)}
-      <span className="opacity-30">{'●'.repeat(5 - w)}</span>
-    </span>
-  );
-}
-
 function PaceBar({ kpi }) {
   const shown = Math.min(100, Math.max(0, Number(kpi.percent) || 0));
   const expected = kpi.metric === 'reviews' ? null : kpi.pace?.expected_percent;
@@ -235,7 +225,7 @@ function KpiCard({ kpi, active, onClick }) {
             <StatusChip status={kpi.status} label={kpi.status_label} />
           </div>
           <p className="mt-1 text-xs text-soul-muted">
-            Target {formatTarget(kpi)} · {formatDay(kpi.starts_on, { day: 'numeric', month: 'short' })}–{formatDay(kpi.deadline, { day: 'numeric', month: 'short' })} · <Importance weight={kpi.weight} />
+            Target {formatTarget(kpi)} · {formatDay(kpi.starts_on, { day: 'numeric', month: 'short' })}–{formatDay(kpi.deadline, { day: 'numeric', month: 'short' })}
           </p>
         </div>
         <DailyTargetBox kpi={kpi} />
@@ -334,6 +324,14 @@ function useTick() {
   });
 }
 
+/** Checklist edits only change later days, so each day shows the items it had. */
+function itemOnDay(item, day) {
+  if (!day) return !item.active_until;
+  if (item.active_from && day < item.active_from) return false;
+  if (item.active_until && day > item.active_until) return false;
+  return true;
+}
+
 function ChecklistItems({ checklist, kpi, staffId, day, today, canFixAnyDay }) {
   const { user } = useAuth();
   const tick = useTick();
@@ -342,7 +340,7 @@ function ChecklistItems({ checklist, kpi, staffId, day, today, canFixAnyDay }) {
   const editable = Boolean(day) && (!today || day <= today) && (canFixAnyDay || checklist.can_delete || (own && (!yesterday || day >= yesterday)));
   return (
     <ul className="mt-2 space-y-1.5">
-      {checklist.items.map((item) => {
+      {checklist.items.filter((item) => itemOnDay(item, day)).map((item) => {
         const checked = (item.checked_dates || []).includes(day);
         return (
           <li key={item.id}>
@@ -381,8 +379,9 @@ function WeekStrip({ kpi, day, setDay, today }) {
     let checked = 0;
     let total = 0;
     for (const c of kpi.checklists || []) {
-      total += c.items.length;
-      checked += c.items.filter((it) => (it.checked_dates || []).includes(d)).length;
+      const onList = c.items.filter((it) => itemOnDay(it, d));
+      total += onList.length;
+      checked += onList.filter((it) => (it.checked_dates || []).includes(d)).length;
     }
     return { checked, total };
   };
@@ -539,19 +538,38 @@ function AddChecklistModal({ kpi, onClose }) {
   );
 }
 
-function EditKpiModal({ kpi, onClose }) {
+function EditKpiModal({ kpi, today, onClose }) {
   const qc = useQueryClient();
+  const started = Boolean(today) && kpi.starts_on <= today;
+  const finished = Boolean(today) && kpi.deadline < today;
   const [edit, setEdit] = useState({
     title: kpi.title || '',
     target_value: String(kpi.target_value),
     starts_on: kpi.starts_on,
     deadline: kpi.deadline,
-    weight: kpi.weight || 1,
     notes: kpi.notes || '',
     measure: kpi.measure,
   });
+  const ownLists = (kpi.checklists || []).filter((c) => c.can_delete);
+  const [lists, setLists] = useState(() =>
+    ownLists.map((c) => ({
+      id: c.id,
+      title: c.title,
+      weight_percent: String(c.weight_percent),
+      items: c.items.filter((it) => !it.active_until || (today && it.active_until >= today)).map((it) => ({ id: it.id, label: it.label })),
+    }))
+  );
   const save = useMutation({
-    mutationFn: () => api.patch(`/kpi/${kpi.id}`, { ...edit, target_value: Number(edit.target_value), weight: Number(edit.weight) }).then((r) => r.data),
+    mutationFn: async () => {
+      await api.patch(`/kpi/${kpi.id}`, { ...edit, target_value: Number(edit.target_value) });
+      for (const list of lists) {
+        await api.patch(`/kpi/${kpi.id}/checklists/${list.id}`, {
+          title: list.title,
+          weight_percent: Number(list.weight_percent),
+          items: list.items.filter((it) => it.label.trim()),
+        });
+      }
+    },
     onSuccess: () => {
       toast.success('KPI updated');
       qc.invalidateQueries({ queryKey: ['kpi'] });
@@ -559,6 +577,7 @@ function EditKpiModal({ kpi, onClose }) {
     },
     onError: (err) => toast.error(err.response?.data?.error || 'Could not update the KPI'),
   });
+  const setList = (i, patch) => setLists((all) => all.map((l, k) => (k === i ? { ...l, ...patch } : l)));
   const set = (patch) => setEdit((c) => ({ ...c, ...patch }));
   return (
     <Modal
@@ -569,12 +588,19 @@ function EditKpiModal({ kpi, onClose }) {
       footer={
         <>
           <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
-          <button type="button" className="btn-primary" disabled={save.isPending} onClick={() => save.mutate()}>Save changes</button>
+          <button type="button" className="btn-primary" disabled={save.isPending || finished} onClick={() => save.mutate()}>Save changes</button>
         </>
       }
     >
       <div className="space-y-4">
         <p className="text-xs text-soul-muted">{kpi.metric_label} · {kpi.measure_label}. Changes apply to everyone on this KPI.</p>
+        {finished ? (
+          <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-soul-muted">This KPI has finished. Its results are final and can’t be changed.</p>
+        ) : started ? (
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Changes apply from today on. Days before today are already counted and stay as they were.
+          </p>
+        ) : null}
         <div>
           <label className="label">Name</label>
           <input className="input" value={edit.title} placeholder={kpi.metric_label} onChange={(e) => set({ title: e.target.value })} />
@@ -586,17 +612,53 @@ function EditKpiModal({ kpi, onClose }) {
           </div>
           <div>
             <label className="label">Starts</label>
-            <input className="input" type="date" value={edit.starts_on} onChange={(e) => set({ starts_on: e.target.value })} />
+            <input className="input disabled:opacity-60" type="date" disabled={started} title={started ? 'This KPI has started, so its start date stays' : undefined} value={edit.starts_on} onChange={(e) => set({ starts_on: e.target.value })} />
           </div>
           <div>
             <label className="label">Deadline</label>
-            <input className="input" type="date" value={edit.deadline} onChange={(e) => set({ deadline: e.target.value })} />
+            <input className="input" type="date" min={today || undefined} value={edit.deadline} onChange={(e) => set({ deadline: e.target.value })} />
           </div>
         </div>
-        <div>
-          <label className="label">Importance</label>
-          <Segmented value={Number(edit.weight)} onChange={(weight) => set({ weight })} options={[1, 2, 3, 4, 5].map((w) => ({ value: w, label: String(w) }))} />
-        </div>
+        {lists.map((list, i) => (
+          <div key={list.id} className="space-y-3 rounded-xl border border-soul-line p-4">
+            <p className="text-sm font-semibold text-soul-blue">Daily checklist</p>
+            <div className="grid gap-4 sm:grid-cols-[1.5fr_1fr]">
+              <div>
+                <label className="label">Checklist name</label>
+                <input className="input" value={list.title} onChange={(e) => setList(i, { title: e.target.value })} />
+              </div>
+              <div>
+                <label className="label">Share of the KPI (%)</label>
+                <input className="input" type="number" min="1" max="100" step="1" value={list.weight_percent} onChange={(e) => setList(i, { weight_percent: e.target.value })} />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="label">Things to tick every working day</label>
+              {list.items.map((item, k) => (
+                <div key={item.id || `new-${k}`} className="flex gap-2">
+                  <span className="grid h-10 w-7 shrink-0 place-items-center text-xs text-soul-muted">{k + 1}.</span>
+                  <input
+                    className="input"
+                    value={item.label}
+                    placeholder="Another item"
+                    onChange={(e) => setList(i, { items: list.items.map((it, j) => (j === k ? { ...it, label: e.target.value } : it)) })}
+                  />
+                  {list.items.length > 1 ? (
+                    <button type="button" className="rounded-lg px-2 text-soul-muted hover:bg-rose-50 hover:text-rose-700" aria-label="Remove item" onClick={() => setList(i, { items: list.items.filter((_, j) => j !== k) })}>
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+              {list.items.length < 12 ? (
+                <button type="button" className="text-sm font-medium text-soul-blue hover:underline" onClick={() => setList(i, { items: [...list.items, { id: null, label: '' }] })}>
+                  + Add item
+                </button>
+              ) : null}
+              {started ? <p className="text-[11px] text-soul-muted">New items start today; removed items stay on the days they were ticked.</p> : null}
+            </div>
+          </div>
+        ))}
         <div>
           <label className="label">Notes</label>
           <textarea className="input min-h-[56px]" value={edit.notes} onChange={(e) => set({ notes: e.target.value })} />
@@ -625,7 +687,6 @@ function NewKpiWizard({ data, onClose }) {
     period: 'this_month',
     ...periodPreset('this_month', today),
     title: '',
-    weight: 1,
     notes: '',
     scope: 'team',
     team_key: teamKeys[0] || 'mine',
@@ -666,7 +727,6 @@ function NewKpiWizard({ data, onClose }) {
         team_key: form.team_key,
         staff_ids: form.staff_ids,
         title: form.title,
-        weight: Number(form.weight) || 1,
         notes: form.notes,
       });
       if (form.withChecklist) {
@@ -758,6 +818,11 @@ function NewKpiWizard({ data, onClose }) {
               );
             })}
           </div>
+        </div>
+      ) : null}
+
+      {step === 1 ? (
+        <div className="space-y-5">
           {metric?.measures?.length > 1 ? (
             <div>
               <label className="label">Count by</label>
@@ -768,11 +833,6 @@ function NewKpiWizard({ data, onClose }) {
               />
             </div>
           ) : null}
-        </div>
-      ) : null}
-
-      {step === 1 ? (
-        <div className="space-y-5">
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label className="label">
@@ -806,11 +866,6 @@ function NewKpiWizard({ data, onClose }) {
             <p className="text-[11px] text-soul-muted">
               {formatDay(form.starts_on)} → {formatDay(form.deadline)} · {length} day{length === 1 ? '' : 's'}
             </p>
-          </div>
-          <div>
-            <label className="label">Importance</label>
-            <Segmented value={Number(form.weight)} onChange={(weight) => set({ weight })} options={[1, 2, 3, 4, 5].map((w) => ({ value: w, label: String(w) }))} />
-            <p className="mt-1 text-[11px] text-soul-muted">How much this KPI counts in the person’s overall score (1 = normal, 5 = most important).</p>
           </div>
         </div>
       ) : null}
@@ -905,8 +960,8 @@ function NewKpiWizard({ data, onClose }) {
                   : teamKeys.length > 1
                     ? (TEAM_LABELS[form.team_key] || form.team_key).toLowerCase()
                     : `your team (${team.length})`}
-              </b>{' '}
-              · importance {form.weight}/5.
+              </b>
+              .
             </p>
             {form.withChecklist ? (
               <p className="mt-1">
@@ -956,14 +1011,14 @@ function useKpiActions() {
   return { remove, repeat, removeChecklist };
 }
 
-function KpiActions({ kpi, canManage, staffId, onEdit, onChecklist, compact }) {
+function KpiActions({ kpi, canManage, staffId, onEdit, onChecklist, compact, today }) {
   const { remove, repeat } = useKpiActions();
   const people = kpi.people?.length || 1;
   if (!kpi.can_delete && !canManage) return null;
   const btn = compact ? 'rounded-lg p-2 text-soul-muted hover:bg-soul-blue-50 hover:text-soul-blue' : 'btn-secondary inline-flex items-center gap-1.5 !px-3 !py-1.5 text-xs';
   return (
     <div className="flex flex-wrap gap-1.5">
-      {canManage ? (
+      {canManage && !kpi.checklists?.length && !(today && kpi.deadline < today) ? (
         <button type="button" className={btn} onClick={onChecklist} title="Add daily checklist">
           <ClipboardList className="h-4 w-4" />
           {compact ? null : 'Checklist'}
@@ -1028,7 +1083,6 @@ function KpiDetail({ kpi, staffId, today, canManage, onEdit, onChecklist }) {
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="font-semibold text-soul-blue">{kpiName(kpi)}</h3>
             <StatusChip status={kpi.status} label={kpi.status_label} />
-            <Importance weight={kpi.weight} />
           </div>
           <p className="mt-1 text-sm text-soul-muted">
             {formatActual(kpi)} of {formatTarget(kpi)} · <b className="text-soul-blue">{kpi.percent}%</b>
@@ -1038,7 +1092,7 @@ function KpiDetail({ kpi, staffId, today, canManage, onEdit, onChecklist }) {
           {kpi.notes ? <p className="mt-1 text-xs italic text-soul-muted">{kpi.notes}</p> : null}
         </div>
         <DailyTargetBox kpi={kpi} size="lg" />
-        <KpiActions kpi={kpi} canManage={canManage} staffId={staffId} onEdit={onEdit} onChecklist={onChecklist} />
+        <KpiActions kpi={kpi} canManage={canManage} staffId={staffId} onEdit={onEdit} onChecklist={onChecklist} today={today} />
       </header>
 
       <div className="flex gap-1 border-b border-soul-line px-3 pt-2">
@@ -1115,7 +1169,7 @@ function KpiDetail({ kpi, staffId, today, canManage, onEdit, onChecklist }) {
           ) : (
             <div className="rounded-xl border border-dashed border-soul-line p-6 text-center">
               <p className="text-sm text-soul-muted">No daily checklist on this KPI.</p>
-              {canManage ? (
+              {canManage && !(today && kpi.deadline < today) ? (
                 <button type="button" className="btn-primary mt-3" onClick={onChecklist}>
                   Add a daily checklist
                 </button>
@@ -1208,7 +1262,7 @@ function MyDay({ me, today, canManage, onEdit, onChecklist, grouped }) {
           <p className="text-xs font-semibold uppercase tracking-wide text-soul-muted">My score</p>
           <p className="mt-1"><Score score={me.score} size="text-4xl" /></p>
           <p className="mt-1 text-xs text-soul-muted">
-            {me.scored_kpis ? `Across ${me.scored_kpis} running KPI${me.scored_kpis === 1 ? '' : 's'}, weighted by importance` : 'No running KPIs'}
+            {me.scored_kpis ? `Across ${me.scored_kpis} running KPI${me.scored_kpis === 1 ? '' : 's'}, each counting the same` : 'No running KPIs'}
           </p>
         </section>
       </div>
@@ -1388,7 +1442,6 @@ function ManageView({ grouped, today, canManage, onEdit, onChecklist }) {
                   <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setOpen(isOpen ? null : k.id)} aria-expanded={isOpen}>
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="font-semibold text-soul-blue">{kpiName(k)}</p>
-                      <Importance weight={k.weight} />
                       {k.checklists?.length ? <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-soul-muted">+ checklist</span> : null}
                     </div>
                     <p className="mt-0.5 text-xs text-soul-muted">
@@ -1402,7 +1455,7 @@ function ManageView({ grouped, today, canManage, onEdit, onChecklist }) {
                       ))}
                     </div>
                   </button>
-                  <KpiActions kpi={k} canManage={canManage} onEdit={() => onEdit(k)} onChecklist={() => onChecklist(k)} compact />
+                  <KpiActions kpi={k} canManage={canManage} onEdit={() => onEdit(k)} onChecklist={() => onChecklist(k)} compact today={today} />
                 </div>
                 {isOpen ? (
                   <div className="overflow-x-auto border-t border-soul-line">
@@ -1466,7 +1519,7 @@ export default function Kpi() {
           <h1 className="page-title">KPI</h1>
           <p className="page-subtitle">
             Targets are measured automatically. Each KPI shows where it should be by today and where the current pace lands; a person’s
-            score is the importance-weighted average of their running KPIs, each counted up to 100%.
+            score is the average of their running KPIs (all count the same), each counted up to 100%.
           </p>
         </div>
         {canManage ? (
@@ -1502,7 +1555,7 @@ export default function Kpi() {
       ) : null}
 
       {wizard ? <NewKpiWizard data={data} onClose={() => setWizard(false)} /> : null}
-      {editing ? <EditKpiModal kpi={editing} onClose={() => setEditing(null)} /> : null}
+      {editing ? <EditKpiModal kpi={editing} today={data.today} onClose={() => setEditing(null)} /> : null}
       {checklistFor ? <AddChecklistModal kpi={checklistFor} onClose={() => setChecklistFor(null)} /> : null}
     </div>
   );

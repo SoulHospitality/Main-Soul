@@ -117,6 +117,7 @@ async function assign(conversationId, toUserId, { byUserId = null, reason }) {
       reason === 'sla_breach' || reason === 'agent_offline' ? 1 : 0,
       conversationId,
     );
+    if (reason !== 'rotation') await q.run('UPDATE inbox_conversations SET rotate_pending = 0 WHERE id = ? AND rotate_pending = 1', conversationId);
     await q.run(
       'INSERT INTO inbox_assignments (conversation_id, from_user_id, to_user_id, by_user_id, reason, at) VALUES (?,?,?,?,?,?)',
       conversationId, conv.assigned_user_id, toUserId, byUserId, reason, now,
@@ -164,6 +165,14 @@ async function autoAssign(conversationId, { exclude = [], reason = 'auto' } = {}
   if (!conv || conv.status === 'closed') return null;
 
   const candidates = await availableAgents(exclude);
+  // A new rotation skips the "keep the previous agent" rule: the next agent in turn takes it.
+  if (conv.rotate_pending) {
+    const pick = candidates[0];
+    if (!pick) return null;
+    await q.run('UPDATE inbox_conversations SET rotate_pending = 0 WHERE id = ?', conversationId);
+    await assign(conversationId, pick.id, { reason: 'rotation' });
+    return pick.id;
+  }
   const members = await assigneeIds(conversationId, conv.assigned_user_id);
   const stillHere = members.find((id) => !exclude.includes(id) && candidates.some((c) => c.id === id));
   if (stillHere) return stillHere;

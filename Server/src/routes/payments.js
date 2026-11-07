@@ -149,6 +149,7 @@ router.post('/paymob-webhook', async (req, res, next) => {
           guestId: checkoutPayload.user_id,
           bookingId: booking.id,
           amountBeforeDiscount: checkoutPayload.amount_before_promo || checkoutPayload.total_egp,
+          unitId: checkoutPayload.unit_id || null,
         });
       } catch (promoErr) {
         console.warn('[payments] promo redeem failed', promoErr.message);

@@ -1,6 +1,6 @@
 const { q, tx, audit } = require('./db');
 const { getSettings, loadSettings } = require('./settings');
-const { isBusinessTime, nextBusinessStart } = require('./hours');
+const { isBusinessTime, nextBusinessStart, businessSeconds } = require('./hours');
 const { assign, autoAssign, availableAgents, handleAgentOffline, assigneeIds } = require('./assignment');
 const { broadcast, notify, usersWithRoles } = require('./realtime');
 
@@ -24,7 +24,8 @@ async function recordResponse(conversationId, userId, at = Date.now()) {
   const s = getSettings();
   const isFirst = !(await q.get('SELECT 1 AS x FROM inbox_responses WHERE conversation_id = ? LIMIT 1', conversationId));
   const secondsRaw = Math.max(0, Math.round((at - conv.awaiting_since) / 1000));
-  const secondsSla = Math.max(0, Math.round((at - conv.sla_start_at) / 1000));
+  // Working-hours time only: nights don't count against the agent.
+  const secondsSla = businessSeconds(conv.awaiting_since, at);
   await q.run(
     `INSERT INTO inbox_responses (conversation_id, user_id, assigned_user_id, channel_kind, awaiting_since, sla_start_at,
        responded_at, seconds_raw, seconds_sla, within_sla, is_first) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
@@ -65,12 +66,15 @@ async function checkPresence(now, s) {
 }
 
 async function wakeSnoozed(now) {
-  const due = await q.all("SELECT id, assigned_user_id FROM inbox_conversations WHERE status = 'snoozed' AND snooze_until <= ?", now);
+  const due = await q.all("SELECT id, assigned_user_id, snooze_alarm_by FROM inbox_conversations WHERE status = 'snoozed' AND snooze_until <= ?", now);
   for (const c of due) {
     await q.run("UPDATE inbox_conversations SET status = 'needs_reply', snooze_until = NULL WHERE id = ?", c.id);
     await audit({ conversationId: c.id, type: 'snooze_ended', at: now });
-    await notify(await assigneeIds(c.id, c.assigned_user_id), { kind: 'snooze', title: 'Snoozed chat is back', conversationId: c.id });
+    const people = await assigneeIds(c.id, c.assigned_user_id);
+    if (c.snooze_alarm_by && !people.includes(c.snooze_alarm_by)) people.push(c.snooze_alarm_by);
+    await notify(people, { kind: 'snooze', title: 'Snoozed chat is back', conversationId: c.id });
     broadcast('conversation', { id: c.id });
+    broadcast('alarm', { id: c.id, user_id: c.snooze_alarm_by });
   }
 }
 

@@ -31,6 +31,7 @@ function sanitizeContent(body) {
       slides: merged.hero.slides
         .map((s) => ({
           src: cleanUrl(s?.src),
+          seconds: Math.min(60, Math.max(2, Math.round(Number(s?.seconds) || 7))),
           title_light_en: cleanText(s?.title_light_en, 80),
           title_light_ar: cleanText(s?.title_light_ar, 80),
           title_em_en: cleanText(s?.title_em_en, 80),

@@ -184,6 +184,22 @@ async function quoteStay({
     });
   }
 
+  // A running offer for this unit takes its percentage off the nightly prices (not the fees).
+  let offer = null;
+  const subtotalBeforeOffer = subtotal;
+  try {
+    const { bestOfferForUnit } = require('../lib/offers');
+    offer = await bestOfferForUnit(unit);
+  } catch (_) {
+    offer = null;
+  }
+  let offerDiscount = 0;
+  if (offer && subtotal > 0) {
+    offerDiscount = Math.round(subtotal * (Number(offer.discount_percent) / 100));
+    subtotal = Math.max(0, subtotal - offerDiscount);
+    for (const n of perNight) n.price = Math.round(n.price * (1 - Number(offer.discount_percent) / 100));
+  }
+
   const fees = await computeFees(unit, { nights, subtotal, adults, teens });
   const total = subtotal + fees.fees_total;
 
@@ -192,6 +208,10 @@ async function quoteStay({
     nights,
     perNight,
     subtotal,
+    subtotal_before_offer: subtotalBeforeOffer,
+    offer: offer
+      ? { id: offer.id, name: offer.name, name_ar: offer.name_ar, discount_percent: offer.discount_percent, discount_egp: offerDiscount }
+      : null,
     base_subtotal: roundMoney(baseSubtotal),
     tenant_markup_pct: tenantMarkupPct,
     ...fees,

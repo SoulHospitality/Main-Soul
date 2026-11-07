@@ -106,6 +106,10 @@ async function ensureLocationProjectsTable() {
     await query(`ALTER TABLE public.location_projects ADD COLUMN IF NOT EXISTS beach_access_days text`);
     await query(`ALTER TABLE public.location_projects ADD COLUMN IF NOT EXISTS beach_access_flat_egp numeric`);
     await query(`ALTER TABLE public.location_projects ADD COLUMN IF NOT EXISTS beach_access_flat_studio_egp numeric`);
+    await query(`ALTER TABLE public.location_projects ADD COLUMN IF NOT EXISTS rules text`);
+    await query(`ALTER TABLE public.location_projects ADD COLUMN IF NOT EXISTS rules_ar text`);
+    await query(`ALTER TABLE public.location_projects ADD COLUMN IF NOT EXISTS location_url text`);
+    await query(`ALTER TABLE public.location_projects ADD COLUMN IF NOT EXISTS address text`);
     locationProjectsTableChecked = true;
   } catch (err) {
     console.error('Failed to ensure location_projects table:', err?.message || err);
@@ -125,7 +129,8 @@ async function loadCatalogRows() {
               beach_access_extra_egp,
               beach_access_days,
               beach_access_flat_egp,
-              beach_access_flat_studio_egp
+              beach_access_flat_studio_egp,
+              rules, rules_ar, location_url, address
        FROM location_projects
        ORDER BY sort_order ASC, destination ASC, name ASC`
     );
@@ -391,6 +396,16 @@ router.put(
           ? parseMinNightsValue(minNightsRaw, existing[0].min_nights || DEFAULT_MIN_STAY_NIGHTS)
           : null;
 
+      // House rules and the project's location (map link).
+      const textOrKeep = (key, max) => (req.body?.[key] !== undefined ? String(req.body[key] || '').trim().slice(0, max) || null : existing[0][key] ?? null);
+      const rules = textOrKeep('rules', 6000);
+      const rulesAr = textOrKeep('rules_ar', 6000);
+      const address = textOrKeep('address', 300);
+      let locationUrl = textOrKeep('location_url', 1000);
+      if (locationUrl && !/^https?:\/\//i.test(locationUrl)) {
+        return res.status(400).json({ error: 'The location must be a link (https://…)' });
+      }
+
       const uploaded = uploadedImageUrl(req);
       let imageUrl = existing[0].image_url;
       let imageChanged = false;
@@ -439,6 +454,7 @@ router.put(
            beach_access_days = CASE WHEN $9::boolean THEN $12 ELSE beach_access_days END,
            beach_access_flat_egp = CASE WHEN $9::boolean THEN $13 ELSE beach_access_flat_egp END,
            beach_access_flat_studio_egp = CASE WHEN $9::boolean THEN $14 ELSE beach_access_flat_studio_egp END,
+           rules = $15, rules_ar = $16, location_url = $17, address = $18,
            updated_at = now()
          WHERE id = $1`,
         [
@@ -456,6 +472,10 @@ router.put(
           beach ? beach.beach_access_days : null,
           beach ? beach.beach_access_flat_egp : null,
           beach ? beach.beach_access_flat_studio_egp : null,
+          rules,
+          rulesAr,
+          locationUrl,
+          address,
         ]
       );
 

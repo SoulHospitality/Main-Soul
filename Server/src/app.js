@@ -115,6 +115,7 @@ function createApp() {
   app.use('/api/wishlist', wishlistRoutes);
   app.use('/api/promo-codes', promoRoutes);
   app.use('/api/site-popup', require('./routes/sitePopup'));
+  app.use('/api/offers', require('./routes/offers'));
   app.use('/api/site-content', require('./routes/siteContent'));
   app.use('/api/recruitment', recruitmentRoutes);
   app.use('/api/sales', salesRoutes);

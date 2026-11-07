@@ -191,7 +191,7 @@ async function searchUnits(input, { shownIds = [] } = {}) {
     const { map } = await loadTodayPriceMap(pool.map((r) => r.wp_post_id));
     for (const row of pool) {
       if (results.length >= MAX_RESULTS) break;
-      const raw = map.get(Number(row.wp_post_id)) || Number(row.price_fallback) || 0;
+      const raw = map.get(Number(row.wp_post_id)) || 0;
       const price = raw > 0 ? applyGuestTenantMarkup(raw, row) : null;
       if (price && ((maxNight && price > maxNight) || (minNight && price < minNight))) {
         outsideBudget += 1;
@@ -257,7 +257,7 @@ async function unitDetails(input) {
   const facilities = await projectFacilitiesMap([unit.compound || unit.project]);
   const projectFacilities = facilities.get(String(unit.compound || unit.project || '').toLowerCase()) || [];
   const { map } = await loadTodayPriceMap([unit.wp_post_id]);
-  const raw = map.get(Number(unit.wp_post_id)) || Number(unit.price_fallback) || 0;
+  const raw = map.get(Number(unit.wp_post_id)) || 0;
   return {
     ...card(unit, { price_per_night_from_egp: raw > 0 ? money(applyGuestTenantMarkup(raw, unit)) : null }),
     min_nights: Number(unit.min_nights) || null,

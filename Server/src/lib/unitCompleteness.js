@@ -54,7 +54,7 @@ function assessUnitCompleteness(unit, { hasPrice = false } = {}) {
 
   if (!hasText(descriptionText(unit))) missing.push('description');
   if (!hasAmenities(unit)) missing.push('amenities');
-  if (!hasText(unit.source_url || unit.location_link)) missing.push('location link');
+  // Location now lives on the project, not the unit.
   if (!hasPhotos(unit)) missing.push('photos');
 
   return { complete: missing.length === 0, missing };

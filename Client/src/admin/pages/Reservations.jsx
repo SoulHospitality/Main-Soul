@@ -7,7 +7,8 @@ import toast from 'react-hot-toast';
 import api from '../api/axios';
 import { usePermissions } from '../hooks/usePermissions';
 import { useLiveUsdRate } from '../hooks/useLiveUsdRate';
-import { canDeleteReservations as canDeleteReservationsFor, salesUsersForActor } from '../utils/permissions';
+import { salesUsersForActor } from '../utils/permissions';
+import { RefundApprovalsButton } from '../components/RefundApprovals';
 import { useSortableTable } from '../hooks/useSortableTable';
 import Modal from '../components/ui/Modal';
 import Badge from '../components/ui/Badge';
@@ -158,7 +159,7 @@ export function reservationEditPayload(form) {
   return payload;
 }
 
-export function ReservationForm({ form, setForm, units, users, isNew, transferProof, onTransferProofChange, editId, allowPastDates, lockSalesPerson = false, currentUserName = '' }) {
+export function ReservationForm({ form, setForm, units, users, isNew, transferProof, onTransferProofChange, editId, allowPastDates, lockSalesPerson = false, currentUserName = '', original = null, canGoBelowMin = false }) {
   
   const selectedUnit = units.find(u => String(u.id) === String(form.unit_id));
   const skipTotalSync = useRef(!isNew);
@@ -198,6 +199,28 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
 
   const total = parseFloat(form.total_amount) || 0;
   const downPmt = parseFloat(form.down_payment) || 0;
+  // The unit's minimum nightly price (EGP); converted for USD stays.
+  const minEgp = Number(selectedUnit?.price_per_night) || 0;
+  const minNight = isUsd ? (usdRate > 0 ? Math.ceil((minEgp / usdRate) * 100) / 100 : 0) : minEgp;
+  const priceNow = parseFloat(form.price_per_night) || 0;
+  const belowMin = !form.is_owner_reservation && minNight > 0 && priceNow > 0 && priceNow + 0.009 < minNight;
+  const unitName = (id) => {
+    const u = units.find((x) => String(x.id) === String(id));
+    return u ? unitSelectLabel(u) : '—';
+  };
+  const changes = !isNew && original
+    ? [
+      ['Unit', unitName(original.unit_id), unitName(form.unit_id), String(original.unit_id) !== String(form.unit_id)],
+      ['Check-in', formatDate(original.check_in), formatDate(form.check_in), isoDateOnly(original.check_in) !== isoDateOnly(form.check_in)],
+      ['Check-out', formatDate(original.check_out), formatDate(form.check_out), isoDateOnly(original.check_out) !== isoDateOnly(form.check_out)],
+      ['Nights', String(original.nights ?? calcNights(original.check_in, original.check_out)), String(nights), Number(original.nights ?? calcNights(original.check_in, original.check_out)) !== nights],
+      [`Price per night (${cur})`, String(original.price_per_night ?? ''), String(form.price_per_night ?? ''), Math.abs((parseFloat(original.price_per_night) || 0) - priceNow) > 0.009],
+      [`Total (${cur})`, String(original.total_amount ?? ''), String(form.total_amount ?? ''), Math.abs((parseFloat(original.total_amount) || 0) - total) > 0.009],
+      ['Guest', original.guest_name || '—', form.guest_name || '—', (original.guest_name || '') !== (form.guest_name || '')],
+      ['Phone', original.guest_phone || '—', form.guest_phone || '—', (original.guest_phone || '') !== (form.guest_phone || '')],
+      ['Guests', `${original.adults ?? 0} adults, ${original.children ?? 0} children`, `${form.adults ?? 0} adults, ${form.children ?? 0} children`, Number(original.adults ?? 0) !== Number(form.adults ?? 0) || Number(original.children ?? 0) !== Number(form.children ?? 0)],
+    ].filter((row) => row[3])
+    : [];
   const unitHkFees = selectedUnit ? housekeepingFeeForUnit(selectedUnit) : 0;
   const defaultHkFees = isUsd ? (usdRate > 0 ? Math.round((unitHkFees / usdRate) * 100) / 100 : 0) : unitHkFees;
   const hkFees = form.housekeeping_fees !== '' && form.housekeeping_fees != null
@@ -220,6 +243,36 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
   return (
     <div className="space-y-5">
       
+      {!isNew && original ? (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-semibold text-gray-900">Reservation #{original.id}</p>
+            <p className="text-xs text-gray-500">
+              Paid so far <b className="text-gray-800">{currency(original.amount_paid || 0)}</b>
+              {original.payment_status ? ` · ${String(original.payment_status).replace(/_/g, ' ')}` : ''}
+            </p>
+          </div>
+          {changes.length ? (
+            <div className="mt-2 overflow-hidden rounded-lg border border-amber-200 bg-white">
+              <p className="bg-amber-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-800">What changes when you save</p>
+              <table className="w-full text-xs">
+                <tbody>
+                  {changes.map(([label, from, to]) => (
+                    <tr key={label} className="border-t border-amber-100">
+                      <td className="px-3 py-1.5 text-gray-500">{label}</td>
+                      <td className="px-3 py-1.5 text-gray-400 line-through">{from}</td>
+                      <td className="px-3 py-1.5 font-semibold text-gray-900">{to}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="mt-1 text-[11px] text-gray-400">No changes yet.</p>
+          )}
+        </div>
+      ) : null}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label className="label">Unit *</label>
@@ -358,8 +411,17 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
           </div>
           <div>
             <label className="label">Price per Night ({cur}) *</label>
-            <input type="number" min="0" step="0.01" className="input" value={form.price_per_night}
-              onChange={e => setForm(f => ({ ...f, price_per_night: e.target.value }))} placeholder="0.00" />
+            <input type="number" min={canGoBelowMin ? 0 : minNight || 0} step="0.01" className={`input ${belowMin ? '!border-rose-400 bg-rose-50' : ''}`} value={form.price_per_night}
+              onChange={e => setForm(f => ({ ...f, price_per_night: e.target.value }))} placeholder={minNight ? String(minNight) : '0.00'} />
+            {minNight > 0 && !form.is_owner_reservation ? (
+              <p className={`mt-1 text-[11px] ${belowMin ? 'font-semibold text-rose-700' : 'text-gray-500'}`}>
+                {belowMin
+                  ? canGoBelowMin
+                    ? `Below this unit's minimum of ${cur} ${minNight.toLocaleString('en-EG')}. Only the CEO can save this.`
+                    : `Can't go under this unit's minimum of ${cur} ${minNight.toLocaleString('en-EG')} a night.`
+                  : `Minimum ${cur} ${minNight.toLocaleString('en-EG')} a night`}
+              </p>
+            ) : null}
           </div>
           <div>
             <label className="label">Total Amount ({cur}) <span className="text-blue-400 text-xs">(auto)</span></label>
@@ -1205,8 +1267,8 @@ export default function Reservations() {
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [editId, setEditId] = useState(null);
+  const [editOriginal, setEditOriginal] = useState(null);
   const [viewRes, setViewRes] = useState(null);
-  const [cancelId, setCancelId] = useState(null);
   
   const [cancelReqOpen,  setCancelReqOpen]  = useState(false);
   const [cancelReqId,    setCancelReqId]    = useState(null);
@@ -1281,18 +1343,6 @@ export default function Reservations() {
     onError: (e) => toast.error(e.response?.data?.error || 'Error saving'),
   });
 
-  const cancelMutation = useMutation({
-    mutationFn: (id) => api.delete(`/reservations/${id}`),
-    onSuccess: (_data, id) => {
-      qc.setQueriesData({ queryKey: ['reservations'] }, (old) =>
-        Array.isArray(old) ? old.filter((r) => r.id !== id) : old
-      );
-      qc.invalidateQueries({ queryKey: ['reservations'] });
-      toast.success('Reservation deleted');
-      setCancelId(null);
-    },
-    onError: (e) => toast.error(e.response?.data?.error || 'Error deleting'),
-  });
 
   
   const cancelRequestMutation = useMutation({
@@ -1312,7 +1362,7 @@ export default function Reservations() {
 
   
   const approveCancelMutation = useMutation({
-    mutationFn: ({ id, cancel_type }) => api.delete(`/reservations/${id}`, { data: { cancel_type } }),
+    mutationFn: ({ id, cancel_type }) => api.post(`/reservations/${id}/cancel-request`, { cancel_type }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['reservations'] }); toast.success('Reservation cancelled'); },
     onError: (e) => toast.error(e.response?.data?.error || 'Error cancelling'),
   });
@@ -1432,12 +1482,23 @@ export default function Reservations() {
   };
   const openEdit = (r) => {
     setForm(reservationToEditForm(r));
+    setEditOriginal(r);
     setEditId(r.id); setModal('form');
   };
 
   const handleSave = () => {
     if (!form.guest_phone?.trim())
       return toast.error('Mobile number is required');
+    {
+      const unit = units.find((u) => String(u.id) === String(form.unit_id));
+      const minEgp = Number(unit?.price_per_night) || 0;
+      const rate = Number(form.exchange_rate) || 0;
+      const min = form.currency === 'USD' ? (rate > 0 ? minEgp / rate : 0) : minEgp;
+      const price = parseFloat(form.price_per_night) || 0;
+      if (!isAdmin && !form.is_owner_reservation && min > 0 && price > 0 && price + 0.009 < min) {
+        return toast.error(`The nightly price can't be under this unit's minimum (${form.currency === 'USD' ? 'USD' : 'EGP'} ${Math.ceil(min).toLocaleString('en-EG')})`);
+      }
+    }
     if (editId) {
       if (form.currency === 'USD' && !(Number(form.exchange_rate) > 0))
         return toast.error('The live USD rate is still loading — try again in a moment');
@@ -1543,7 +1604,6 @@ export default function Reservations() {
 
   const canWrite = canManageReservations;
   const canCreate = canWrite;
-  const canDeleteReservations = canDeleteReservationsFor(user);
   const canPay = canAccessFinance || isManualReservations || isAdmin;
   const canApprove = isAdmin;
   const canView = canWrite || isAdmin || isReservations || isOwnersRelations;
@@ -1660,6 +1720,7 @@ export default function Reservations() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <RefundApprovalsButton />
           {(isAdmin) && <button onClick={exportExcel} className="btn-secondary"><Download className="w-4 h-4" />Export Excel</button>}
           {canWrite && (
             <button onClick={() => setBlockModal(true)}
@@ -1936,9 +1997,9 @@ export default function Reservations() {
                               <ArrowRightLeft className="w-3.5 h-3.5" />
                             </button>
                           )}
-                          {canDeleteReservations && (
-                            <button onClick={() => setCancelId(r.id)} className="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50" title="Delete reservation">
-                              <Trash2 className="w-3.5 h-3.5" />
+                          {canWrite && r.status !== 'cancelled' && (
+                            <button onClick={() => openCancelReq(r.id)} className="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50" title="Cancel (refunds go to finance for approval)">
+                              <Ban className="w-3.5 h-3.5" />
                             </button>
                           )}
                         </div>
@@ -2112,7 +2173,7 @@ export default function Reservations() {
 
       
       <Modal open={modal === 'form'} onClose={() => { setModal(null); setTransferProof(null); }}
-        title="Edit Reservation" size="xl"
+        title={editOriginal ? `Edit reservation · ${editOriginal.guest_name || ''}` : 'Edit reservation'} size="xl"
         footer={<>
           <button onClick={() => { setModal(null); setTransferProof(null); }} className="btn-secondary">Cancel</button>
           <button onClick={handleSave} disabled={saveMutation.isPending} className="btn-primary">
@@ -2122,6 +2183,7 @@ export default function Reservations() {
       >
         <ReservationForm form={form} setForm={setForm} units={bookableUnits} users={salesUsers}
           isNew={false} editId={editId} transferProof={transferProof} onTransferProofChange={setTransferProof}
+          original={editOriginal} canGoBelowMin={isAdmin}
           allowPastDates={allowPastDates}
           lockSalesPerson={!isAdmin}
           currentUserName={user?.full_name || user?.username || ''} />
@@ -2188,9 +2250,6 @@ export default function Reservations() {
         <PaymentForm form={pmtForm} setForm={setPmtForm} onFileChange={setPmtFile} reservation={viewDetail} />
       </Modal>
 
-      <ConfirmDialog open={!!cancelId} onClose={() => setCancelId(null)}
-        onConfirm={() => cancelMutation.mutate(cancelId)} loading={cancelMutation.isPending}
-        title="Delete Reservation" message="Are you sure you want to permanently delete this reservation? It will be removed from the list." confirmText="Delete" danger />
 
       {previewPhotos.length > 0 && (
         <IdDocumentPreviewModal

@@ -58,4 +58,30 @@ function isQuietHours(ts = Date.now()) {
   return !isBusinessTime(ts, { business_start: '11:00', business_end: '22:00' });
 }
 
-module.exports = { localMinutes, localHour, localDay, isBusinessTime, nextBusinessStart, isQuietHours };
+/**
+ * Working-hours seconds between two moments: time outside business hours (nights) is not counted,
+ * so a message at 21:55 answered at 11:05 the next morning took 10 minutes, not 13 hours.
+ */
+function businessSeconds(fromTs, toTs, opts) {
+  const a = Number(fromTs);
+  const b = Number(toTs);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a) return 0;
+  const { start, end } = businessWindow(opts);
+  if (end - start >= 1440 || start === end) return Math.round((b - a) / 1000);
+  let total = 0;
+  let t = a;
+  for (let guard = 0; t < b && guard < 2000; guard += 1) {
+    if (!isBusinessTime(t, opts)) {
+      t = Math.max(t + 60000, nextBusinessStart(t, opts));
+      continue;
+    }
+    const m = localMinutes(t);
+    const left = ((end - m + 1440) % 1440 || 1440) * 60000 - (t % 60000);
+    const stop = Math.min(b, t + left);
+    total += stop - t;
+    t = stop;
+  }
+  return Math.round(total / 1000);
+}
+
+module.exports = { localMinutes, localHour, localDay, isBusinessTime, nextBusinessStart, isQuietHours, businessSeconds };

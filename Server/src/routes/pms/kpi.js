@@ -62,11 +62,18 @@ function validateTargetInput(body, allowedMetrics) {
   }
   if (!startsOn || !deadline || deadline < startsOn) throw badRequest('The deadline must be on or after the start date');
   if (dayCount(startsOn, deadline) > 120) throw badRequest('A KPI can cover at most 120 days');
-  const weight = body?.weight == null || body.weight === '' ? 1 : Number(body.weight);
-  if (!Number.isInteger(weight) || weight < 1 || weight > 5) throw badRequest('Importance must be from 1 to 5');
+  // Every KPI counts the same in a person's score.
+  const weight = 1;
   const title = body?.title ? String(body.title).trim().slice(0, 80) || null : null;
   const notes = body?.notes ? String(body.notes).trim().slice(0, 500) || null : null;
   return { metric, measure, targetValue, startsOn, deadline, weight, title, notes };
+}
+
+/** True when a checklist item was on the list that day (edits keep earlier days as they were). */
+function itemOnDay(item, date) {
+  if (item.active_from && date < item.active_from) return false;
+  if (item.active_until && date > item.active_until) return false;
+  return true;
 }
 
 function cairoToday() {
@@ -321,6 +328,7 @@ router.get('/kpi', async (req, res, next) => {
         `SELECT c.id, c.target_id, c.title, c.weight_percent::float AS weight_percent, c.created_by,
                 maker.full_name AS created_by_name,
                 i.id AS item_id, i.label, i.sort_order,
+                i.active_from::text AS item_from, i.active_until::text AS item_until,
                 a.staff_user_id
          FROM kpi_checklists c
          LEFT JOIN staff_users maker ON maker.id = c.created_by
@@ -350,7 +358,7 @@ router.get('/kpi', async (req, res, next) => {
           checklist.push(entry);
         }
         if (row.item_id && !entry.items.some((item) => item.id === row.item_id)) {
-          entry.items.push({ id: row.item_id, label: row.label });
+          entry.items.push({ id: row.item_id, label: row.label, active_from: row.item_from || null, active_until: row.item_until || null });
         }
         if (row.staff_user_id && !entry.staff_ids.includes(Number(row.staff_user_id))) {
           entry.staff_ids.push(Number(row.staff_user_id));
@@ -427,9 +435,13 @@ router.get('/kpi', async (req, res, next) => {
         const checklists = (checklistByTarget.get(target.id) || [])
           .filter((checklist) => checklist.staff_ids.includes(Number(person.id)))
           .map((checklist) => {
+            // Each day is scored with the items that were on the list that day.
             const checkedByDay = {};
+            const itemCountByDay = {};
             for (const date of workDays) {
-              checkedByDay[date] = checklist.items.filter((item) => (
+              const onList = checklist.items.filter((item) => itemOnDay(item, date));
+              itemCountByDay[date] = onList.length;
+              checkedByDay[date] = onList.filter((item) => (
                 tickSet.has(`${Number(person.id)}|${item.id}|${date}`)
               )).length;
             }
@@ -437,6 +449,7 @@ router.get('/kpi', async (req, res, next) => {
               days: workDays,
               itemCount: checklist.items.length,
               checkedByDay,
+              itemCountByDay,
             });
             return {
               id: checklist.id,
@@ -447,6 +460,8 @@ router.get('/kpi', async (req, res, next) => {
               items: checklist.items.map((item) => ({
                 id: item.id,
                 label: item.label,
+                active_from: item.active_from,
+                active_until: item.active_until,
                 checked_dates: stats.days.filter((date) => tickSet.has(`${Number(person.id)}|${item.id}|${date}`)),
               })),
               completion_percent: completion.percent,
@@ -630,7 +645,11 @@ router.post('/kpi', async (req, res, next) => {
   }
 });
 
-/** Change a KPI's target, dates, importance, name or notes (CEO or the manager who added it). */
+/**
+ * Change a KPI's name, target, period or notes (CEO or the manager who added it).
+ * Edits only change the days still to come: a running KPI keeps its start date, and the deadline
+ * can't move before today. The daily target already spreads what is left over the days left.
+ */
 router.patch('/kpi/:id', async (req, res, next) => {
   try {
     const id = Number(req.params.id);
@@ -646,6 +665,19 @@ router.patch('/kpi/:id', async (req, res, next) => {
       return res.status(403).json({ error: 'Only the CEO or the manager who added this KPI can change it' });
     }
     const next = validateTargetInput({ ...before, ...req.body, metric: before.metric }, [before.metric]);
+    const today = cairoToday();
+    if (before.deadline < today) {
+      return res.status(400).json({ error: 'This KPI has finished. Its results are final, so it can no longer be changed.' });
+    }
+    if (before.starts_on <= today) {
+      if (next.startsOn !== before.starts_on) {
+        return res.status(400).json({ error: 'This KPI has started, so its start date stays. Changes apply from today on.' });
+      }
+      if (next.measure !== before.measure) {
+        return res.status(400).json({ error: 'This KPI has started, so what it counts stays the same.' });
+      }
+    }
+    if (next.deadline < today) return res.status(400).json({ error: 'The deadline can\u2019t be before today' });
     const { rows: updated } = await query(
       `UPDATE kpi_targets
        SET measure = $2, target_value = $3, starts_on = $4::date, deadline = $5::date, weight = $6, title = $7, notes = $8
@@ -726,7 +758,7 @@ router.post('/kpi/:id/repeat', async (req, res, next) => {
         );
         await client.query(
           `INSERT INTO kpi_checklist_items (checklist_id, label, sort_order)
-           SELECT $2, label, sort_order FROM kpi_checklist_items WHERE checklist_id = $1`,
+           SELECT $2, label, sort_order FROM kpi_checklist_items WHERE checklist_id = $1 AND active_until IS NULL`,
           [list.id, made[0].id]
         );
         await client.query(
@@ -813,6 +845,10 @@ router.post('/kpi/:id/checklists', async (req, res, next) => {
       [targetId]
     );
     if (!targets[0]) return res.status(404).json({ error: 'KPI not found' });
+    const { rows: existing } = await query(`SELECT 1 FROM kpi_checklists WHERE target_id = $1 LIMIT 1`, [targetId]);
+    if (existing.length) return res.status(400).json({ error: 'This KPI already has a checklist. Edit it instead.' });
+    if (targets[0].deadline < cairoToday()) return res.status(400).json({ error: 'This KPI has finished' });
+    const startToday = targets[0].starts_on <= cairoToday() ? cairoToday() : null;
     const title = String(req.body?.title || '').trim().slice(0, 120);
     if (title.length < 2) return res.status(400).json({ error: 'Name the checklist' });
     const weight = Number(req.body?.weight_percent);
@@ -862,8 +898,8 @@ router.post('/kpi/:id/checklists', async (req, res, next) => {
       checklistId = rows[0].id;
       for (let index = 0; index < labels.length; index += 1) {
         await client.query(
-          `INSERT INTO kpi_checklist_items (checklist_id, label, sort_order) VALUES ($1,$2,$3)`,
-          [checklistId, labels[index], index]
+          `INSERT INTO kpi_checklist_items (checklist_id, label, sort_order, active_from) VALUES ($1,$2,$3,$4::date)`,
+          [checklistId, labels[index], index, startToday]
         );
       }
       for (const staffId of chosen) {
@@ -880,6 +916,100 @@ router.post('/kpi/:id/checklists', async (req, res, next) => {
       client.release();
     }
     res.status(201).json({ id: checklistId });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Edit a checklist: name, share of the KPI, and its items. Past days keep the list they had:
+ * a removed item stops yesterday, a new item starts today, a renamed item keeps its ticks.
+ */
+router.patch('/kpi/:id/checklists/:checklistId', async (req, res, next) => {
+  try {
+    const targetId = Number(req.params.id);
+    const id = Number(req.params.checklistId);
+    const { rows } = await query(
+      `SELECT c.created_by, t.starts_on::text AS starts_on, t.deadline::text AS deadline
+       FROM kpi_checklists c JOIN kpi_targets t ON t.id = c.target_id
+       WHERE c.id = $1 AND c.target_id = $2`,
+      [id, targetId]
+    );
+    const list = rows[0];
+    if (!list) return res.status(404).json({ error: 'Checklist not found' });
+    if (req.user.role !== 'admin' && Number(list.created_by) !== Number(req.user.id)) {
+      return res.status(403).json({ error: 'Only the CEO or the manager who added this checklist can change it' });
+    }
+    const today = cairoToday();
+    if (list.deadline < today) return res.status(400).json({ error: 'This KPI has finished. Its results are final.' });
+    const title = String(req.body?.title || '').trim().slice(0, 120);
+    if (title.length < 2) return res.status(400).json({ error: 'Name the checklist' });
+    const weight = Number(req.body?.weight_percent);
+    if (!(weight > 0 && weight <= 100)) {
+      return res.status(400).json({ error: 'Choose how much of the KPI this checklist is, from 1 to 100' });
+    }
+    const { rows: others } = await query(
+      `SELECT COALESCE(SUM(weight_percent), 0)::float AS used FROM kpi_checklists WHERE target_id = $1 AND id <> $2`,
+      [targetId, id]
+    );
+    if (Number(others[0]?.used || 0) + weight > 100) {
+      return res.status(400).json({ error: 'Checklists on this KPI cannot add up to more than 100%' });
+    }
+    const wanted = (Array.isArray(req.body?.items) ? req.body.items : [])
+      .map((item) => (typeof item === 'string' ? { label: item } : item || {}))
+      .map((item) => ({ id: Number(item.id) || null, label: String(item.label || '').trim().slice(0, 160) }))
+      .filter((item) => item.label)
+      .slice(0, 12);
+    if (!wanted.length) return res.status(400).json({ error: 'Add at least one item to check each day' });
+
+    const started = list.starts_on <= today;
+    const d = new Date(`${today}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - 1);
+    const yesterday = d.toISOString().slice(0, 10);
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`UPDATE kpi_checklists SET title = $2, weight_percent = $3 WHERE id = $1`, [id, title, weight]);
+      const { rows: current } = await client.query(
+        `SELECT id, active_from::text AS active_from FROM kpi_checklist_items
+         WHERE checklist_id = $1 AND (active_until IS NULL OR active_until >= $2::date)`,
+        [id, today]
+      );
+      const keep = new Set(wanted.filter((item) => item.id).map((item) => item.id));
+      for (const item of current) {
+        if (keep.has(Number(item.id))) continue;
+        // Never on a past day: drop it. Otherwise it stays on the earlier days only.
+        const unused = !started || (item.active_from && item.active_from >= today);
+        if (unused) await client.query(`DELETE FROM kpi_checklist_items WHERE id = $1`, [item.id]);
+        else await client.query(`UPDATE kpi_checklist_items SET active_until = $2::date WHERE id = $1`, [item.id, yesterday]);
+      }
+      const currentIds = new Set(current.map((item) => Number(item.id)));
+      for (let index = 0; index < wanted.length; index += 1) {
+        const item = wanted[index];
+        if (item.id && currentIds.has(item.id)) {
+          await client.query(`UPDATE kpi_checklist_items SET label = $2, sort_order = $3 WHERE id = $1`, [item.id, item.label, index]);
+        } else {
+          await client.query(
+            `INSERT INTO kpi_checklist_items (checklist_id, label, sort_order, active_from) VALUES ($1,$2,$3,$4::date)`,
+            [id, item.label, index, started ? today : null]
+          );
+        }
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+    await logAudit({
+      userId: req.user.id,
+      action: 'KPI_CHECKLIST_UPDATE',
+      entityType: 'kpi_target',
+      entityId: targetId,
+      details: { checklist_id: id, title, weight_percent: weight, items: wanted.map((item) => item.label) },
+    });
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }
@@ -913,7 +1043,8 @@ router.post('/kpi/checklists/:id/ticks', async (req, res, next) => {
     if (!staffId || !itemId || !workDate) return res.status(400).json({ error: 'Choose the person, the item, and the day' });
 
     const { rows } = await query(
-      `SELECT c.created_by, t.starts_on::text AS starts_on, t.deadline::text AS deadline
+      `SELECT c.created_by, t.starts_on::text AS starts_on, t.deadline::text AS deadline,
+              i.active_from::text AS active_from, i.active_until::text AS active_until
        FROM kpi_checklists c
        JOIN kpi_targets t ON t.id = c.target_id
        JOIN kpi_checklist_items i ON i.checklist_id = c.id AND i.id = $2
@@ -926,6 +1057,7 @@ router.post('/kpi/checklists/:id/ticks', async (req, res, next) => {
     if (workDate < rows[0].starts_on || workDate > rows[0].deadline || workDate > today) {
       return res.status(400).json({ error: 'That day is outside this KPI' });
     }
+    if (!itemOnDay(rows[0], workDate)) return res.status(400).json({ error: 'That item was not on the list that day' });
     const isManager = req.user.role === 'admin' || Number(rows[0].created_by) === Number(req.user.id);
     const canTick = isManager || Number(req.user.id) === staffId;
     if (!canTick) return res.status(403).json({ error: 'Forbidden' });

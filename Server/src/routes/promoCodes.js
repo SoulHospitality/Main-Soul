@@ -6,7 +6,7 @@ const router = express.Router();
 
 router.post('/validate', optionalGuest, async (req, res, next) => {
   try {
-    const { code, amount, email, phone } = req.body || {};
+    const { code, amount, email, phone, unit_id: unitId, unit_slug: unitSlug } = req.body || {};
     if (!normalizeCode(code)) {
       return res.status(400).json({ valid: false, error: 'Promo code is required' });
     }
@@ -17,6 +17,8 @@ router.post('/validate', optionalGuest, async (req, res, next) => {
       email: email || req.guest?.email,
       phone,
       guestId: req.guest?.id,
+      unitId: unitId || null,
+      unitSlug: unitSlug || null,
     });
 
     res.json({

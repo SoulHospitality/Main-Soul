@@ -2,16 +2,23 @@ import { useEffect } from 'react';
 
 export const SLIDE_MS = 7000;
 
+/** How long a slide stays on screen: its own seconds (2-60), else the default. */
+export function slideMs(slide) {
+  const s = Number(slide?.seconds);
+  return Number.isFinite(s) && s >= 2 && s <= 60 ? Math.round(s * 1000) : SLIDE_MS;
+}
+
 /** Cross-fading photo backdrop; the parent owns `index` so the headline can follow the active slide. */
 export default function HeroSlideshow({ slides, index, onChange }) {
   const count = slides.length;
+  const ms = slideMs(slides[index]);
 
   useEffect(() => {
     if (count < 2) return undefined;
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return undefined;
-    const id = window.setTimeout(() => onChange((index + 1) % count), SLIDE_MS);
+    const id = window.setTimeout(() => onChange((index + 1) % count), ms);
     return () => window.clearTimeout(id);
-  }, [index, count, onChange]);
+  }, [index, count, onChange, ms]);
 
   return (
     <div className="absolute inset-0 overflow-hidden bg-[#0b4f73]" aria-hidden="true">
@@ -35,7 +42,7 @@ export default function HeroSlideshow({ slides, index, onChange }) {
   );
 }
 
-export function SlideDots({ count, index, onChange, label }) {
+export function SlideDots({ count, index, onChange, label, duration = SLIDE_MS }) {
   if (count < 2) return null;
   return (
     <div className="flex items-center justify-center gap-2.5">
@@ -53,7 +60,7 @@ export function SlideDots({ count, index, onChange, label }) {
               <span
                 key={index}
                 className="hero-dot-fill absolute inset-0 origin-left bg-white"
-                style={{ animationDuration: `${SLIDE_MS}ms` }}
+                style={{ animationDuration: `${duration}ms` }}
               />
             ) : null}
           </span>

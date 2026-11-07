@@ -55,7 +55,6 @@ const ClockIn = lazy(() => import('./pages/ClockIn'));
 const ChatbotTest = lazy(() => import('./pages/ChatbotTest'));
 const SitePerformance = lazy(() => import('./pages/SitePerformance'));
 const WebsiteControl = lazy(() => import('./pages/WebsiteControl'));
-const Tasks = lazy(() => import('./pages/Tasks'));
 const PettyCash = lazy(() => import('./pages/PettyCash'));
 
 const InboxPage = lazy(() => import('./pages/Inbox'));
@@ -164,7 +163,7 @@ function AppRoutes() {
       <Route path="guest-errors" element={<Navigate to="/admin/website-performance" replace />} />
       <Route path="site-performance" element={<Navigate to="/admin/website-performance" replace />} />
       <Route path="booking-health" element={<Navigate to="/admin/website-performance" replace />} />
-      <Route path="tasks" element={<ProtectedRoute page="tasks"><Tasks /></ProtectedRoute>} />
+      <Route path="tasks" element={<Navigate to="/admin" replace />} />
 
       
       <Route path="financial-system" element={<ProtectedRoute page="financial_system"><FinancialSystem /></ProtectedRoute>} />

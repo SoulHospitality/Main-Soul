@@ -2511,7 +2511,7 @@ router.delete('/financial-system/payment-calendar/:id', requireRoles('admin', 'f
   }
 });
 
-const CASH_REVIEW_METHODS = ['cash', 'instapay', 'bank_transfer'];
+const CASH_REVIEW_METHODS = ['cash', 'instapay', 'bank_transfer', 'card', 'other'];
 
 function mapCashReviewRow(r) {
   return {
@@ -2603,11 +2603,12 @@ router.post('/financial-system/cash-review/:id', requireRoles('admin', 'finance'
     const amount = b.amount != null && b.amount !== '' ? round2(parseFloat(b.amount) || 0) : round2(parseFloat(prev.amount) || 0);
     let method = String(b.payment_method || prev.payment_method || 'cash').toLowerCase();
     if (!(amount > 0)) return res.status(400).json({ error: 'Amount must be greater than zero' });
-    if (!CASH_REVIEW_METHODS.includes(method)) return res.status(400).json({ error: 'Choose cash, InstaPay or bank transfer' });
+    if (!CASH_REVIEW_METHODS.includes(method)) return res.status(400).json({ error: 'Choose cash, InstaPay, bank transfer, card or other' });
     // USD reservations are always settled as cash (booked to Cash USD), as when the payment is recorded.
     if (String(prev.currency || '').toUpperCase() === 'USD') method = 'cash';
-    const bankAccount = method === 'cash' ? null : normalizeBankAccount(b.bank_account || prev.bank_account);
-    if (method !== 'cash' && !bankAccount) return res.status(400).json({ error: 'Choose the ADIB or CIB account' });
+    const needsBank = method === 'instapay' || method === 'bank_transfer';
+    const bankAccount = needsBank ? normalizeBankAccount(b.bank_account || prev.bank_account) : null;
+    if (needsBank && !bankAccount) return res.status(400).json({ error: 'Choose the ADIB or CIB account' });
 
     const prevAmount = round2(parseFloat(prev.amount) || 0);
     const changed =
@@ -2752,7 +2753,7 @@ async function reservationNetCollected(reservationId, client = { query }) {
   return round2(Math.max(0, Number(rows[0]?.net) || 0));
 }
 
-router.get('/financial-system/cancel-requests', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+router.get('/financial-system/cancel-requests', requireRoles('admin', 'finance', 'finance_manager', 'reservations_manager'), async (req, res, next) => {
   try {
     const approved = req.query.status === 'approved';
     const { rows } = await query(
@@ -2760,12 +2761,15 @@ router.get('/financial-system/cancel-requests', requireRoles('admin', 'finance',
               to_char(r.check_in, 'YYYY-MM-DD') AS check_in, to_char(r.check_out, 'YYYY-MM-DD') AS check_out,
               COALESCE(r.total_amount, 0)::float AS total_amount,
               COALESCE(u.unit_number, u.title, 'Unit') AS unit_name,
-              requester.full_name AS requested_by_name, decider.full_name AS decided_by_name
+              requester.full_name AS requested_by_name, decider.full_name AS decided_by_name,
+              mgr.full_name AS manager_approved_by_name, ceo.full_name AS admin_approved_by_name
        FROM reservation_cancel_requests cr
        JOIN reservations r ON r.id = cr.reservation_id
        LEFT JOIN units u ON u.id = r.unit_id
        LEFT JOIN staff_users requester ON requester.id = cr.requested_by
        LEFT JOIN staff_users decider ON decider.id = cr.decided_by
+       LEFT JOIN staff_users mgr ON mgr.id = cr.manager_approved_by
+       LEFT JOIN staff_users ceo ON ceo.id = cr.admin_approved_by
        WHERE cr.status = $1
        ORDER BY ${approved ? 'cr.decided_at DESC' : 'cr.requested_at ASC'}
        LIMIT 300`,
@@ -2791,6 +2795,40 @@ router.get('/financial-system/cancel-requests', requireRoles('admin', 'finance',
   }
 });
 
+/**
+ * The two approvals a refund needs before finance pays it: the reservations manager, then the CEO.
+ * step = 'manager' (reservations manager or CEO) or 'admin' (CEO only).
+ */
+router.post('/financial-system/cancel-requests/:id/approve-step', requireRoles('admin', 'reservations_manager'), async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const step = req.body?.step === 'admin' ? 'admin' : 'manager';
+    if (step === 'admin' && req.user.role !== 'admin') return res.status(403).json({ error: 'Only the CEO gives the final approval' });
+    const { rows } = await query(`SELECT * FROM reservation_cancel_requests WHERE id = $1`, [id]);
+    const request = rows[0];
+    if (!request) return res.status(404).json({ error: 'Cancellation request not found' });
+    if (request.status !== 'pending') return res.status(409).json({ error: 'This request was already decided' });
+    if (step === 'admin' && !request.manager_approved_at && req.user.role !== 'admin') {
+      return res.status(409).json({ error: 'The reservations manager approves first' });
+    }
+    const col = step === 'admin' ? 'admin' : 'manager';
+    const { rows: updated } = await query(
+      `UPDATE reservation_cancel_requests SET ${col}_approved_by = $2, ${col}_approved_at = now() WHERE id = $1 RETURNING *`,
+      [id, req.user.id]
+    );
+    await logAudit({
+      userId: req.user.id,
+      action: step === 'admin' ? 'APPROVE_REFUND_CEO' : 'APPROVE_REFUND_MANAGER',
+      entityType: 'reservation',
+      entityId: request.reservation_id,
+      details: { request_id: id, requested_refund: Number(request.requested_refund) || 0 },
+    });
+    res.json({ ok: true, request: updated[0] });
+  } catch (e) {
+    next(e);
+  }
+});
+
 /** Finance decides the refund: amount (0 keeps everything) and the treasury it leaves from. */
 router.post('/financial-system/cancel-requests/:id/approve', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
@@ -2805,6 +2843,14 @@ router.post('/financial-system/cancel-requests/:id/approve', requireRoles('admin
     const request = found[0];
     if (!request) return res.status(404).json({ error: 'Cancellation request not found' });
     if (request.status !== 'pending') return res.status(409).json({ error: 'This request was already decided' });
+    // Paying out needs both approvals; the CEO paying it out counts as the CEO's approval.
+    if (!request.manager_approved_at) {
+      return res.status(409).json({ error: 'Waiting for the reservations manager to approve this refund' });
+    }
+    if (!request.admin_approved_at) {
+      if (req.user.role !== 'admin') return res.status(409).json({ error: 'Waiting for the CEO to approve this refund' });
+      await query(`UPDATE reservation_cancel_requests SET admin_approved_by = $2, admin_approved_at = now() WHERE id = $1`, [id, req.user.id]);
+    }
 
     const b = req.body || {};
     const refund = round2(parseFloat(b.refund_amount) || 0);

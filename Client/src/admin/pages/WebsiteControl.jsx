@@ -51,7 +51,7 @@ async function uploadImage(file) {
 
 const HERO_MAX_SLIDES = 4;
 const VIDEO_MAX_BYTES = 100 * 1024 * 1024;
-const EMPTY_SLIDE = { src: '', title_light_en: '', title_light_ar: '', title_em_en: '', title_em_ar: '', subtitle_en: '', subtitle_ar: '' };
+const EMPTY_SLIDE = { src: '', seconds: 7, title_light_en: '', title_light_ar: '', title_em_en: '', title_em_ar: '', subtitle_en: '', subtitle_ar: '' };
 
 /** Direct browser → Cloudinary upload so the video never passes through the API server. */
 async function uploadVideo(file, onProgress) {
@@ -307,6 +307,18 @@ function HomepageTab({ editor }) {
                     </div>
                   </div>
                   <ImageField label="Photo" value={slide.src} onChange={(v) => setSlide('src', v)} />
+                  <label className="flex items-center gap-2 text-sm">
+                    <span className="font-medium text-gray-700">Show for</span>
+                    <input
+                      type="number"
+                      min={2}
+                      max={60}
+                      className="input-field w-20"
+                      value={slide.seconds ?? 7}
+                      onChange={(e) => setSlide('seconds', e.target.value === '' ? '' : Number(e.target.value))}
+                    />
+                    <span className="text-gray-500">seconds</span>
+                  </label>
                   <BilingualField label="Headline (light)" obj={slide} base="title_light" onChange={setSlide} />
                   <BilingualField label="Headline (italic)" obj={slide} base="title_em" onChange={setSlide} />
                   <BilingualField label="Subtitle" obj={slide} base="subtitle" onChange={setSlide} textarea />

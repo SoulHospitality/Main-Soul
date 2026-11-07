@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { inboxApi } from './api';
 import StayRequest from './StayRequest';
 import LeadBox from './LeadBox';
-import { Avatar, ChannelDot } from './ui';
+import { Avatar } from './ui';
 import { CHANNELS, CONVERSATION_TYPES, fmtDate, fmtMoney } from './utils';
 
 function Label({ children }) {
@@ -33,11 +33,10 @@ export default function GuestRail({
   return (
     <div className="space-y-4">
       <div className="flex items-start gap-3">
-        <Avatar name={conversation.customer_name} url={conversation.avatar_url} kind={conversation.channel_kind} />
+        <Avatar name={conversation.customer_name} url={conversation.avatar_url} />
         <div className="min-w-0">
           <h2 className="truncate text-sm font-bold text-slate-900">{conversation.customer_name || 'Guest'}</h2>
           <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
-            <ChannelDot kind={conversation.channel_kind} />
             {channelLabel}
             {conversation.phone ? ` · ${conversation.phone}` : ''}
           </p>

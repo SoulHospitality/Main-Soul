@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Paperclip, Send, Sparkles, X, MessageSquareText, Lock } from 'lucide-react';
+import { Paperclip, Send, Sparkles, X, MessageSquareText, Lock, Settings2 } from 'lucide-react';
 import { errorMessage } from './api';
 
 function fillReply(text, agentName, customerName) {
@@ -27,7 +27,20 @@ function writeDraft(id, text) {
   }
 }
 
-const Composer = forwardRef(function Composer({ conversationId, customerName, agentName, replies, aiAvailable, windowClosed, channelKind, closed, unassigned, onSend, onSuggest }, ref) {
+const DAY = 24 * 3600 * 1000;
+
+/** Where the guest is in Meta's reply window. */
+function replyWindow(channelKind, lastInboundAt) {
+  const last = Number(lastInboundAt) || 0;
+  if (!last) return { state: 'open' };
+  const age = Date.now() - last;
+  if (age < DAY) return { state: 'open' };
+  if (channelKind === 'whatsapp') return { state: 'whatsapp_template' };
+  if (age < 7 * DAY) return { state: 'human_agent' };
+  return { state: 'too_late' };
+}
+
+const Composer = forwardRef(function Composer({ conversationId, customerName, agentName, replies, aiAvailable, lastInboundAt, channelKind, closed, unassigned, onSend, onSuggest, onManageReplies }, ref) {
   const [body, setBody] = useState(() => readDraft(conversationId));
   const [note, setNote] = useState(false);
   const [openReplies, setOpenReplies] = useState(false);
@@ -64,12 +77,15 @@ const Composer = forwardRef(function Composer({ conversationId, customerName, ag
   }), []);
 
   const apply = (text) => fillReply(text, agentName, customerName);
+  const win = replyWindow(channelKind, lastInboundAt);
+  const blocked = win.state === 'too_late' && !note;
 
   const submit = (e) => {
     e?.preventDefault();
     const text = apply(body).trim();
     if (!text && !file) return;
     if (note && !text) return;
+    if (blocked) return;
     setBody('');
     setOpenReplies(false);
     const sending = note ? null : file;
@@ -100,13 +116,36 @@ const Composer = forwardRef(function Composer({ conversationId, customerName, ag
           {closed ? 'This chat is closed. Replying reopens it.' : 'Nobody is on this chat yet. Replying adds you to it.'}
         </p>
       ) : null}
-      {windowClosed && !note && channelKind !== 'whatsapp' ? (
+      {!note && win.state === 'human_agent' ? (
         <p className="mb-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-900">
-          The guest’s last message was over 24 hours ago, so Meta may not deliver this reply. Keep it short and relevant to their request.
+          The guest last wrote over 24 hours ago. Your reply goes with Meta’s human-agent tag (allowed up to 7 days), so keep it about their request.
         </p>
       ) : null}
-      {(openReplies || slash !== null) && matches.length > 0 ? (
-        <div className="mb-2 max-h-44 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-1">
+      {!note && win.state === 'too_late' ? (
+        <p className="mb-2 rounded-lg bg-rose-50 px-2.5 py-1.5 text-[11px] text-rose-800">
+          The guest last wrote more than 7 days ago. Messenger and Instagram don’t allow a reply this late: wait for them to write, or call them. You can still add a note.
+        </p>
+      ) : null}
+      {!note && win.state === 'whatsapp_template' ? (
+        <p className="mb-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-900">
+          The guest last wrote over 24 hours ago. WhatsApp only delivers an approved template now; a normal message will not arrive.
+        </p>
+      ) : null}
+      {openReplies || (slash !== null && matches.length > 0) ? (
+        <div className="mb-2 max-h-52 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-1">
+          {onManageReplies ? (
+            <button
+              type="button"
+              onClick={() => {
+                setOpenReplies(false);
+                onManageReplies();
+              }}
+              className="mb-0.5 flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-[11px] font-semibold text-soul-blue hover:bg-white"
+            >
+              <Settings2 className="h-3.5 w-3.5" /> Add, edit or remove saved replies
+            </button>
+          ) : null}
+          {!matches.length ? <p className="px-2 py-1.5 text-[11px] text-slate-400">No saved reply matches.</p> : null}
           {matches.map((r) => (
             <button
               key={r.id}
@@ -189,11 +228,9 @@ const Composer = forwardRef(function Composer({ conversationId, customerName, ag
           <button type="button" onClick={() => fileRef.current?.click()} className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 hover:bg-white hover:text-slate-800" aria-label="Attach a file" title="Image, video, audio or PDF, up to 16 MB">
             <Paperclip className="h-4 w-4" />
           </button>
-          {replies.length ? (
-            <button type="button" onClick={() => setOpenReplies((v) => !v)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 hover:bg-white hover:text-slate-800" aria-label="Saved replies" title="Saved replies (/)">
-              <MessageSquareText className="h-4 w-4" />
-            </button>
-          ) : null}
+          <button type="button" onClick={() => setOpenReplies((v) => !v)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 hover:bg-white hover:text-slate-800" aria-label="Saved replies" title="Saved replies (/)">
+            <MessageSquareText className="h-4 w-4" />
+          </button>
           {aiAvailable ? (
             <button type="button" disabled={suggesting} onClick={suggest} className="inline-flex h-8 items-center gap-1 rounded-lg px-2 text-[11px] font-semibold text-indigo-600 hover:bg-white disabled:opacity-50" title="Draft a reply with AI">
               <Sparkles className="h-3.5 w-3.5" />
@@ -203,7 +240,7 @@ const Composer = forwardRef(function Composer({ conversationId, customerName, ag
           <button
             type="submit"
             aria-label={note ? 'Save note' : 'Send'}
-            disabled={(!body.trim() && !file) || (note && !body.trim())}
+            disabled={(!body.trim() && !file) || (note && !body.trim()) || blocked}
             className={`ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-bold text-white disabled:opacity-40 ${note ? 'bg-amber-500' : 'bg-soul-blue'}`}
           >
             <Send className="h-3.5 w-3.5" />

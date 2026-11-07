@@ -21,65 +21,64 @@ const STAFF_EDITOR = new Set([
 
 const PAGE_ACCESS = {
   reservations: new Set([
-    'tasks', 'reservations', 'schedule', 'calendar_sync', 'website_bookings',
+    'reservations', 'schedule', 'calendar_sync', 'website_bookings',
     'units', 'projects', 'inbox', 'leads', ...STAFF_HR,
   ]),
   reservations_web: new Set([
-    'tasks', 'reservations', 'schedule', 'calendar_sync', 'website_bookings',
+    'reservations', 'schedule', 'calendar_sync', 'website_bookings',
     'units', 'projects', 'inbox', 'leads', ...STAFF_HR,
   ]),
   reservations_manual: new Set([
-    'tasks', 'reservations', 'schedule', 'calendar_sync', 'units', 'projects',
+    'reservations', 'schedule', 'calendar_sync', 'units', 'projects',
     'inbox', 'leads', ...STAFF_HR,
   ]),
   reservations_manager: new Set([
-    'tasks', 'reservations', 'schedule', 'calendar_sync', 'performance',
+    'reservations', 'schedule', 'calendar_sync', 'performance',
     'audit_log', 'units', 'projects', 'inbox', 'leads',
     'inbox_analytics', 'inbox_settings', ...STAFF_HR,
   ]),
   unit_acquisition_agent: new Set([
-    'tasks', 'units', 'owner_comments', 'reservations', 'schedule', 'inbox', 'leads', ...STAFF_HR,
+    'units', 'owner_comments', 'reservations', 'schedule', 'inbox', 'leads', ...STAFF_HR,
   ]),
   unit_acquisition_manager: new Set([
-    'tasks', 'units', 'reservations', 'schedule', 'acquisition', 'audit_log',
+    'units', 'reservations', 'schedule', 'acquisition', 'audit_log',
     'owner_statement', 'owners', 'owner_comments', 'inbox', 'leads', 'inbox_analytics', ...STAFF_HR,
   ]),
   operations: new Set([
-    'tasks', 'units', 'operations', 'ops_checkins', 'hk_today', 'unit_inspections',
+    'units', 'operations', 'ops_checkins', 'hk_today', 'unit_inspections',
     'ops_team', 'reservations', 'schedule', 'inbox', ...STAFF_HR,
   ]),
   operations_supervisor: new Set([
-    'tasks', 'units', 'operations', 'ops_checkins', 'ops_comments', 'hk_today',
+    'units', 'operations', 'ops_checkins', 'ops_comments', 'hk_today',
     'unit_inspections', 'ops_team', 'damage_reports', 'reservations', 'schedule',
     'petty_cash', ...STAFF_HR,
   ]),
-  resale: new Set(['tasks', 'units', 'reservations', 'inbox', ...STAFF_HR]),
-  resale_manager: new Set(['tasks', 'units', 'reservations', 'inbox', ...STAFF_HR]),
+  resale: new Set(['units', 'reservations', 'inbox', ...STAFF_HR]),
+  resale_manager: new Set(['units', 'reservations', 'inbox', ...STAFF_HR]),
   finance: new Set([
-    'tasks', 'financial_system', 'units', 'reservations', 'schedule', 'inbox', ...STAFF_HR,
+    'financial_system', 'units', 'reservations', 'schedule', 'inbox', ...STAFF_HR,
   ]),
   finance_manager: new Set([
-    'tasks', 'financial_system', 'audit_log', 'units', 'reservations', 'schedule', 'inbox', ...STAFF_HR,
+    'financial_system', 'audit_log', 'units', 'reservations', 'schedule', 'inbox', ...STAFF_HR,
   ]),
   hr: new Set([
     'users', 'payroll', 'deductions', 'requests', 'holiday_access', 'job_offers',
-    'attendance', 'payslip', 'tasks', 'profile', 'reservations', 'units',
+    'attendance', 'payslip', 'profile', 'reservations', 'units',
   ]),
   hr_supervisor: new Set([
     'users', 'payroll', 'deductions', 'requests', 'holiday_access', 'job_offers',
-    'attendance', 'payslip', 'tasks', 'profile', 'reservations', 'units',
+    'attendance', 'payslip', 'profile', 'reservations', 'units',
   ]),
   owners_relations: new Set([
     'units', 'reservations', 'schedule', 'owner_statement', 'owner_blocks',
-    'owner_comments', 'damage_reports', 'tasks', ...STAFF_HR,
+    'owner_comments', 'damage_reports', ...STAFF_HR,
   ]),
-  marketing_pr: new Set(['tasks', 'reservations', 'units', 'schedule', 'website', ...STAFF_HR]),
-  web_developer: new Set(['tasks', 'site_performance', 'website', ...STAFF_HR]),
+  marketing_pr: new Set(['reservations', 'units', 'schedule', 'website', ...STAFF_HR]),
+  web_developer: new Set(['site_performance', 'website', ...STAFF_HR]),
 };
 
 const GUIDE = [
   { page: 'dashboard', path: '/admin/dashboard', label: 'Dashboard', hint: 'The home counts for this role.' },
-  { page: 'tasks', path: '/admin/tasks', label: 'Tasks', hint: 'Open tasks, mark yours done with a photo, or assign one if you are a manager.' },
   { page: 'units', path: '/admin/units', label: 'Units', hint: 'Search and edit short-term chalets and apartments. Long-term units are a separate page.' },
   { page: 'units_long_term', path: '/admin/units-long-term', label: 'Long-term units', hint: 'Same inventory, monthly stays.' },
   { page: 'projects', path: '/admin/projects', label: 'Destinations', hint: 'Compounds and projects the units belong to.' },

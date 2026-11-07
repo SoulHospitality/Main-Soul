@@ -1,22 +1,24 @@
-import { Search, X } from 'lucide-react';
+import { BellRing, Search, X } from 'lucide-react';
 import { Avatar, Chip, SlaChip } from './ui';
-import { CONVERSATION_TYPES, hideLinks, timeAgo } from './utils';
+import { CHANNELS, CONVERSATION_TYPES, hideLinks, timeAgo } from './utils';
 
 /** Queues answer "whose chats"; states answer "what do they need". */
 export const QUEUES = [
   { key: 'open', label: 'All open' },
   { key: 'mine', label: 'Mine' },
-  { key: 'closed', label: 'Closed' },
 ];
 
 export const STATES = [
   { key: '', label: 'Active' },
-  { key: 'needs_reply', label: 'Needs reply' },
+  { key: 'unread', label: 'Unread' },
   { key: 'overdue', label: 'Overdue', tone: 'text-rose-700' },
-  { key: 'waiting', label: 'Waiting on guest' },
   { key: 'snoozed', label: 'Snoozed' },
-  { key: 'hot', label: 'Hot' },
 ];
+
+/** The red bell: a chat you snoozed (still snoozed, or back and not dealt with yet). */
+export function hasAlarm(conv, myId) {
+  return Boolean(conv?.snooze_alarm_at) && Number(conv.snooze_alarm_by) === Number(myId);
+}
 
 function waitingFor(conv, now) {
   if (conv.status !== 'needs_reply' || !conv.awaiting_since) return null;
@@ -65,7 +67,7 @@ export default function ConversationList({
             </button>
           ) : null}
         </div>
-        {showStates && queue !== 'closed' ? (
+        {showStates ? (
           <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-0.5 lg:hidden">
             {STATES.map((s) => {
               const n = s.key ? stateCounts?.[s.key] : stateCounts?.total;
@@ -94,7 +96,7 @@ export default function ConversationList({
         ) : !items.length ? (
           <div className="p-8 text-center">
             <p className="text-sm font-medium text-slate-600">{queue === 'mine' && !state ? 'You’re all caught up 🎉' : 'Nothing here'}</p>
-            <p className="mt-1 text-xs text-slate-400">{queue === 'mine' ? 'Chats you’re on show here. Check Unassigned for new ones.' : 'Try another filter.'}</p>
+            <p className="mt-1 text-xs text-slate-400">{queue === 'mine' ? 'Chats you’re on show here. New chats come to you in turn.' : search ? 'Closed chats show up in search too.' : 'Try another filter.'}</p>
           </div>
         ) : (
           items.map((conv) => {
@@ -115,9 +117,9 @@ export default function ConversationList({
                   active ? 'border-l-soul-blue bg-blue-50/70' : isSelected ? 'border-l-soul-blue/40 bg-blue-50/40' : overdue ? 'border-l-rose-500 hover:bg-slate-50' : conv.unread_count > 0 ? 'border-l-amber-400 hover:bg-slate-50' : 'border-l-transparent hover:bg-slate-50'
                 }`}
               >
-                <div className="relative">
+                <div className="relative flex w-14 shrink-0 flex-col items-center">
                   <span className={`${selecting || isSelected ? 'hidden' : 'group-hover:hidden'}`}>
-                    <Avatar name={conv.customer_name} url={conv.avatar_url} kind={conv.channel_kind} size="md" />
+                    <Avatar name={conv.customer_name} url={conv.avatar_url} size="md" />
                   </span>
                   <span
                     className={`${selecting || isSelected ? 'flex' : 'hidden group-hover:flex'} h-10 w-10 items-center justify-center`}
@@ -128,20 +130,21 @@ export default function ConversationList({
                   >
                     <input type="checkbox" readOnly checked={isSelected} className="h-4 w-4 cursor-pointer" aria-label="Select chat" />
                   </span>
+                  <span className="mt-1 max-w-full truncate text-[9.5px] font-semibold leading-none text-slate-500">{CHANNELS[conv.channel_kind]?.label || conv.channel_kind}</span>
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
-                    <p className={`truncate text-sm ${conv.unread_count > 0 ? 'font-bold text-slate-900' : 'font-semibold text-slate-800'}`}>
-                      {conv.customer_name || 'Guest'}
+                    <p className={`flex min-w-0 items-center gap-1 text-sm ${conv.unread_count > 0 ? 'font-bold text-slate-900' : 'font-semibold text-slate-800'}`}>
+                      <span className="truncate">{conv.customer_name || 'Guest'}</span>
+                      {hasAlarm(conv, myId) ? <BellRing className="h-3.5 w-3.5 shrink-0 text-rose-600" aria-label="Snooze alarm" /> : null}
                     </p>
                     <span className="shrink-0 text-[10px] text-slate-400">{timeAgo(conv.last_message_at, now)}</span>
                   </div>
                   <p className={`mt-0.5 truncate text-xs ${conv.unread_count > 0 ? 'text-slate-700' : 'text-slate-500'}`}>{conv.last_message_preview ? hideLinks(conv.last_message_preview) : 'No messages yet'}</p>
                   <div className="mt-1.5 flex flex-wrap items-center gap-1">
                     {overdue || conv.status === 'needs_reply' ? <SlaChip conversation={conv} now={now} /> : null}
-                    {conv.status === 'waiting_customer' ? <Chip className="bg-slate-100 text-slate-600">Waiting on guest</Chip> : null}
                     {conv.status === 'snoozed' ? <Chip className="bg-indigo-50 text-indigo-700">Snoozed</Chip> : null}
-                    {conv.temperature === 'hot' ? <Chip className="bg-rose-50 text-rose-700">Hot</Chip> : null}
+                    {conv.status === 'closed' ? <Chip className="bg-slate-100 text-slate-500">Closed</Chip> : null}
                     {conv.type && conv.type !== 'unknown' ? <Chip className="bg-slate-100 text-slate-600">{CONVERSATION_TYPES[conv.type]}</Chip> : null}
                     {queue !== 'mine' ? (
                       <Chip className={people.length ? 'bg-slate-100 text-slate-600' : 'bg-orange-50 text-orange-700'}>

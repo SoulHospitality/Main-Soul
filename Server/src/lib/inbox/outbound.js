@@ -1,6 +1,5 @@
 const { q, tx } = require('./db');
 const { HttpError, badRequest, preview } = require('./http');
-const { getSettings } = require('./settings');
 const { sendPageMessage, sendWhatsApp } = require('./meta');
 const { recordResponse } = require('./sla');
 const { broadcast } = require('./realtime');
@@ -12,6 +11,21 @@ function messagingWindow(conv, now = Date.now()) {
   if (!conv.last_inbound_at) return { open: false, closesAt: null };
   const closesAt = conv.last_inbound_at + DAY;
   return { open: now < closesAt, closesAt };
+}
+
+/** Meta's "outside of allowed window" errors, said in plain words with what to do next. */
+function friendlySendError(err, conv, now) {
+  const raw = err?.message || 'Send failed';
+  const code = err?.meta?.code ?? err?.details?.code;
+  const sub = err?.meta?.error_subcode ?? err?.details?.error_subcode;
+  const windowError = /outside of allowed window|outside the allowed window|24 hour|re-engagement/i.test(raw) || sub === 2018278 || sub === 2534022 || code === 131047;
+  if (!windowError) return raw;
+  const hours = conv.last_inbound_at ? Math.floor((now - conv.last_inbound_at) / 3600000) : null;
+  const ago = hours == null ? 'a while ago' : hours < 48 ? `${hours} hours ago` : `${Math.floor(hours / 24)} days ago`;
+  if (conv.channel_kind === 'whatsapp') {
+    return `The guest last wrote ${ago}. After 24 hours WhatsApp only allows an approved template message.`;
+  }
+  return `The guest last wrote ${ago}. Meta allows replies within 24 hours, or up to 7 days once the app has the Human Agent permission (Meta App Review). Ask the guest to message again, or call them.`;
 }
 
 /** Must run inside tx(): the savepoint keeps the transaction usable after a unique violation. */
@@ -49,8 +63,15 @@ async function sendToCustomer(conversationId, { text, attachment, template, send
   let tag = null;
   const win = messagingWindow(conv, now);
   const within7Days = conv.last_inbound_at && now - conv.last_inbound_at < 7 * DAY;
-  if (!template && !win.open && !customer.is_simulated && senderType === 'agent' && conv.channel_kind !== 'whatsapp'
-    && getSettings().messenger_human_agent_tag && within7Days) {
+  const pageChannel = conv.channel_kind === 'messenger' || conv.channel_kind === 'instagram';
+  if (!template && !win.open && !customer.is_simulated && pageChannel && !within7Days) {
+    throw badRequest(
+      'The guest last wrote more than 7 days ago. Messenger and Instagram don\u2019t allow a reply this late; wait for them to message again, or call them.',
+      'window_closed',
+    );
+  }
+  // Between 24 hours and 7 days after the guest's last message, Meta only delivers human replies sent with this tag.
+  if (!template && !win.open && !customer.is_simulated && senderType === 'agent' && pageChannel && within7Days) {
     tag = 'HUMAN_AGENT';
   }
 
@@ -79,7 +100,7 @@ async function sendToCustomer(conversationId, { text, attachment, template, send
       }
     }
   } catch (err) {
-    error = err.message || 'Send failed';
+    error = friendlySendError(err, conv, now);
   }
 
   await tx(async () => {

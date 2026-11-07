@@ -277,6 +277,30 @@ export default function InboxSettingsPage() {
             </div>
           </div>
 
+          {/* Auto rotation */}
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+            <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <Clock className="w-4 h-4 text-soul-blue" />
+              Auto rotation
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">New rotation after the guest is silent for (hours)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={720}
+                  value={formSettings.rotation_after_hours ?? 24}
+                  onChange={(e) => setFormSettings({ ...formSettings, rotation_after_hours: Number(e.target.value) })}
+                  className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50"
+                />
+                <span className="text-[11px] text-slate-400 mt-1 block">
+                  When a guest writes again after this long, the chat goes to the next agent in turn instead of whoever had it. 24 = one day. 0 turns it off.
+                </span>
+              </div>
+            </div>
+          </div>
+
           {/* Business Hours & Night Mode */}
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">

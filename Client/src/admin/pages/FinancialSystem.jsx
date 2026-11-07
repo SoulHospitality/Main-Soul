@@ -55,6 +55,7 @@ import {
 } from '../../lib/finance/chartOfAccounts';
 import { VAT_OUTPUT_PCT, WHT_STANDARD_PCT, WHT_REDUCED_PCT } from '../../lib/finance/taxEngine';
 import { PettyCashSection } from './PettyCash';
+import { RefundApprovalSteps, refundReady } from '../components/RefundApprovals';
 import { FinLocaleProvider, useFinLocale } from '../context/FinLocaleContext';
 
 const GROUP_META = {
@@ -3256,7 +3257,8 @@ function PaymentCalendarTool() {
   );
 }
 
-const CASH_REVIEW_METHODS = ['cash', 'instapay', 'bank_transfer'];
+const CASH_REVIEW_METHODS = ['cash', 'instapay', 'bank_transfer', 'card', 'other'];
+const BANK_METHODS = ['instapay', 'bank_transfer'];
 
 function CashReviewTool() {
   const { t } = useFinLocale();
@@ -3301,7 +3303,7 @@ function CashReviewTool() {
     review &&
     (Math.abs((parseFloat(review.amount) || 0) - review.item.amount) > 0.004 ||
       review.payment_method !== review.item.payment_method ||
-      (review.payment_method !== 'cash' && review.bank_account !== (review.item.bank_account || '')));
+      (BANK_METHODS.includes(review.payment_method) && review.bank_account !== (review.item.bank_account || '')));
 
   function submitReview() {
     if (!(parseFloat(review.amount) > 0)) {
@@ -3313,7 +3315,7 @@ function CashReviewTool() {
       body: {
         amount: review.amount,
         payment_method: review.payment_method,
-        bank_account: review.payment_method === 'cash' ? null : review.bank_account,
+        bank_account: BANK_METHODS.includes(review.payment_method) ? review.bank_account : null,
         note: review.note.trim() || undefined,
       },
     });
@@ -3509,7 +3511,7 @@ function CashReviewTool() {
               </div>
             ) : null}
 
-            {!isUsd && review.payment_method !== 'cash' ? (
+            {!isUsd && BANK_METHODS.includes(review.payment_method) ? (
               <BankAccountPicker
                 label={t('pms.fin.cashReview.bankAccount')}
                 value={review.bank_account}
@@ -3958,6 +3960,7 @@ function CancelRequestsTool() {
                 <th className="text-right">
                   {tab === 'pending' ? t('pms.fin.cancelRequests.requestedRefund') : t('pms.fin.cancelRequests.refunded')}
                 </th>
+                <th>Approvals</th>
                 <th />
               </tr>
             </thead>
@@ -3988,11 +3991,14 @@ function CancelRequestsTool() {
                       <p className="text-[11px] font-normal text-gray-500">{accountLabel(it.treasury_account_code)}</p>
                     ) : null}
                   </td>
+                  <td className="min-w-[13rem]"><RefundApprovalSteps item={it} /></td>
                   <td className="text-right">
                     {tab === 'pending' ? (
                       <button
                         type="button"
-                        className="btn-primary text-xs"
+                        className="btn-primary text-xs disabled:opacity-50"
+                        disabled={!it.manager_approved_at}
+                        title={refundReady(it) ? undefined : 'Needs the reservations manager and the CEO to approve first'}
                         onClick={() =>
                           setDecide({
                             item: it,

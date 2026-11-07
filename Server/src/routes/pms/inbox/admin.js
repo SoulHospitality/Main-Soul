@@ -1,7 +1,7 @@
 const express = require('express');
 const { config } = require('../../../lib/inbox/config');
 const { q, tx, audit } = require('../../../lib/inbox/db');
-const { badRequest, forbidden, int, notFound, wrap } = require('../../../lib/inbox/http');
+const { HttpError, badRequest, forbidden, int, notFound, wrap } = require('../../../lib/inbox/http');
 const { OVERRIDE_ROLES, can } = require('../../../lib/inbox/permissions');
 const { encrypt, decrypt } = require('../../../lib/inbox/security');
 const { DEFAULTS, getSettings, updateSettings } = require('../../../lib/inbox/settings');
@@ -85,7 +85,7 @@ router.get('/settings', requirePerm('settings.manage'), wrap(async (req, res) =>
 }));
 
 const NUMBER_KEYS = ['sla_target_min', 'sla_warning_min', 'reassign_window_min', 'max_auto_reassign', 'escalate_supervisor_min',
-  'escalate_manager_min', 'comment_sla_min', 'follow_up_escalate_min', 'presence_timeout_min'];
+  'escalate_manager_min', 'comment_sla_min', 'follow_up_escalate_min', 'presence_timeout_min', 'rotation_after_hours'];
 
 router.put('/settings', requirePerm('settings.manage'), wrap(async (req, res) => {
   const patch = {};
@@ -320,10 +320,62 @@ router.put('/lost-reasons', requirePerm('settings.manage'), wrap(async (req, res
 
 // ---------- Saved replies
 router.get('/quick-replies', wrap(async (req, res) => {
-  const items = await q.all(
-    'SELECT id, title, body, shortcut FROM inbox_templates WHERE active = 1 ORDER BY title',
+  const rows = await q.all(
+    `SELECT t.id, t.title, t.body, t.shortcut, t.created_by, u.name AS created_by_name
+     FROM inbox_templates t LEFT JOIN inbox_users u ON u.id = t.created_by
+     WHERE t.active = 1 ORDER BY t.title`,
   );
-  res.json(items);
+  const manager = can(req.inbox, 'templates.manage');
+  res.json(rows.map((r) => ({ ...r, can_edit: manager || Number(r.created_by) === Number(req.inbox.id) })));
+}));
+
+/** Everyone on the inbox can add saved replies; they edit and remove their own (managers: any). */
+function cleanReply(b, { partial = false } = {}) {
+  const title = b.title == null ? null : String(b.title).trim().slice(0, 100);
+  const body = b.body == null ? null : String(b.body).slice(0, 4000);
+  if (!partial && (!title || !String(body || '').trim())) throw badRequest('Give the reply a title and text');
+  if (partial && title === '') throw badRequest('Give the reply a title');
+  if (partial && body != null && !body.trim()) throw badRequest('The reply text is empty');
+  const shortcut = 'shortcut' in b ? (b.shortcut ? String(b.shortcut).trim().replace(/^\//, '').slice(0, 40) || null : null) : undefined;
+  return { title, body, shortcut };
+}
+
+async function editableReply(req) {
+  const row = await q.get('SELECT id, created_by FROM inbox_templates WHERE id = ? AND active = 1', int(req.params.id));
+  if (!row) throw new HttpError(404, 'Saved reply not found');
+  if (!can(req.inbox, 'templates.manage') && Number(row.created_by) !== Number(req.inbox.id)) {
+    throw new HttpError(403, 'You can only change saved replies you added');
+  }
+  return row;
+}
+
+router.post('/quick-replies', wrap(async (req, res) => {
+  const r = cleanReply(req.body || {});
+  const { id } = await q.insert(
+    'INSERT INTO inbox_templates (title, body, shortcut, created_by, created_at) VALUES (?,?,?,?,?)',
+    r.title, r.body, r.shortcut || null, req.inbox.id, Date.now(),
+  );
+  broadcast('settings', {});
+  res.json({ id });
+}));
+
+router.patch('/quick-replies/:id', wrap(async (req, res) => {
+  const row = await editableReply(req);
+  const r = cleanReply(req.body || {}, { partial: true });
+  await q.run(
+    `UPDATE inbox_templates SET title = COALESCE(?, title), body = COALESCE(?, body),
+       shortcut = CASE WHEN ?::int = 1 THEN ? ELSE shortcut END, updated_at = ? WHERE id = ?`,
+    r.title, r.body, r.shortcut !== undefined, r.shortcut ?? null, Date.now(), row.id,
+  );
+  broadcast('settings', {});
+  res.json({ ok: true });
+}));
+
+router.delete('/quick-replies/:id', wrap(async (req, res) => {
+  const row = await editableReply(req);
+  await q.run('UPDATE inbox_templates SET active = 0, updated_at = ? WHERE id = ?', Date.now(), row.id);
+  broadcast('settings', {});
+  res.json({ ok: true });
 }));
 
 router.get('/templates', requirePerm('templates.manage'), wrap(async (req, res) => {

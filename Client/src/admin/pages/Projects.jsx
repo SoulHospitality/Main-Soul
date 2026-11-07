@@ -259,6 +259,7 @@ export default function Projects() {
   const [editName, setEditName] = useState('');
   const [editFacilities, setEditFacilities] = useState([]);
   const [editMinNights, setEditMinNights] = useState(4);
+  const [editInfo, setEditInfo] = useState({ rules: '', rules_ar: '', location_url: '', address: '' });
   const [editBeach, setEditBeach] = useState({ ...EMPTY_BEACH });
   const [editImageFile, setEditImageFile] = useState(null);
   const [editImagePreview, setEditImagePreview] = useState('');
@@ -315,9 +316,15 @@ export default function Projects() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, name, facilities, minNights, beach, imageFile }) => {
+    mutationFn: ({ id, name, facilities, minNights, beach, imageFile, info }) => {
       const fd = new FormData();
       if (name) fd.append('name', name);
+      if (info) {
+        fd.append('rules', info.rules || '');
+        fd.append('rules_ar', info.rules_ar || '');
+        fd.append('location_url', info.location_url || '');
+        fd.append('address', info.address || '');
+      }
       fd.append('facilities', JSON.stringify(facilities || []));
       fd.append('min_nights', String(minNights));
       appendBeachFields(fd, beach || EMPTY_BEACH);
@@ -527,6 +534,7 @@ export default function Projects() {
     setEditName(row.name || '');
     setEditFacilities(Array.isArray(row.facilities) ? row.facilities : []);
     setEditMinNights(Math.max(1, Number(row.min_nights) || 4));
+    setEditInfo({ rules: row.rules || '', rules_ar: row.rules_ar || '', location_url: row.location_url || '', address: row.address || '' });
     setEditBeach(beachFromRow(row));
     clearEditImage();
   }
@@ -930,6 +938,7 @@ export default function Projects() {
                                   minNights: Math.max(1, parseInt(editMinNights, 10) || 4),
                                   beach: editBeach,
                                   imageFile: editImageFile,
+                                  info: editInfo,
                                 });
                               }}
                             >
@@ -987,6 +996,46 @@ export default function Projects() {
                             onChange={(e) => setEditMinNights(e.target.value)}
                             required
                           />
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div>
+                            <label className="label">Location (map link)</label>
+                            <input
+                              type="url"
+                              className="input"
+                              placeholder="https://maps.app.goo.gl/…"
+                              value={editInfo.location_url}
+                              onChange={(e) => setEditInfo((v) => ({ ...v, location_url: e.target.value }))}
+                            />
+                            <p className="mt-1 text-[11px] text-gray-500">Used for every unit in this project.</p>
+                          </div>
+                          <div>
+                            <label className="label">Address / directions</label>
+                            <input
+                              className="input"
+                              placeholder="Km 128 Alexandria–Matrouh road"
+                              value={editInfo.address}
+                              onChange={(e) => setEditInfo((v) => ({ ...v, address: e.target.value }))}
+                            />
+                          </div>
+                          <div>
+                            <label className="label">Project rules</label>
+                            <textarea
+                              className="input min-h-[110px]"
+                              placeholder={'One rule per line, e.g.\nFamilies only\nNo pets\nQuiet hours after midnight'}
+                              value={editInfo.rules}
+                              onChange={(e) => setEditInfo((v) => ({ ...v, rules: e.target.value }))}
+                            />
+                          </div>
+                          <div>
+                            <label className="label">Project rules (Arabic)</label>
+                            <textarea
+                              dir="rtl"
+                              className="input min-h-[110px]"
+                              value={editInfo.rules_ar}
+                              onChange={(e) => setEditInfo((v) => ({ ...v, rules_ar: e.target.value }))}
+                            />
+                          </div>
                         </div>
                         <div>
                           <label className="label">Homepage slide photo</label>

@@ -123,6 +123,7 @@ const API_PAGES = [
   ['/reports', 'reports'],
   ['/commissions', 'commissions'],
   ['/promo-codes', 'promo_codes'],
+  ['/offers', 'promo_codes'],
   ['/hr/attendance', 'attendance'],
   ['/hr/leave-requests', 'requests'],
   ['/hr/loans', 'requests'],

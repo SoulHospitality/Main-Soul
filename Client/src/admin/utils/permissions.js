@@ -50,7 +50,6 @@ const STAFF_HR_TABS = [
 ];
 
 const RESERVATIONS_PAGE_ACCESS = new Set([
-  'tasks',
   'reservations',
   'schedule',
   'inbox',
@@ -58,7 +57,6 @@ const RESERVATIONS_PAGE_ACCESS = new Set([
 ]);
 
 const RESERVATIONS_MANUAL_PAGE_ACCESS = new Set([
-  'tasks',
   'reservations',
   'schedule',
   'calendar_sync',
@@ -69,7 +67,6 @@ const RESERVATIONS_MANUAL_PAGE_ACCESS = new Set([
 ]);
 
 const RESERVATIONS_WEB_PAGE_ACCESS = new Set([
-  'tasks',
   'reservations',
   'schedule',
   'calendar_sync',
@@ -80,12 +77,11 @@ const RESERVATIONS_WEB_PAGE_ACCESS = new Set([
   ...STAFF_HR_TABS,
 ]);
 
-const RESALE_PAGE_ACCESS = new Set(['tasks', 'units', 'reservations', 'inbox', ...STAFF_HR_TABS]);
+const RESALE_PAGE_ACCESS = new Set(['units', 'reservations', 'inbox', ...STAFF_HR_TABS]);
 
-const RESALE_MANAGER_PAGE_ACCESS = new Set(['tasks', 'units', 'reservations', 'inbox', ...STAFF_HR_TABS]);
+const RESALE_MANAGER_PAGE_ACCESS = new Set(['units', 'reservations', 'inbox', ...STAFF_HR_TABS]);
 
 const FINANCE_PAGE_ACCESS = new Set([
-  'tasks',
   'financial_system',
   'units',
   'reservations',
@@ -95,7 +91,6 @@ const FINANCE_PAGE_ACCESS = new Set([
 ]);
 
 const FINANCE_MANAGER_PAGE_ACCESS = new Set([
-  'tasks',
   'financial_system',
   'audit_log',
   'units',
@@ -106,7 +101,6 @@ const FINANCE_MANAGER_PAGE_ACCESS = new Set([
 ]);
 
 const RESERVATIONS_MANAGER_PAGE_ACCESS = new Set([
-  'tasks',
   'reservations',
   'schedule',
   'calendar_sync',
@@ -122,7 +116,6 @@ const RESERVATIONS_MANAGER_PAGE_ACCESS = new Set([
 ]);
 
 const UNIT_ACQUISITION_AGENT_PAGE_ACCESS = new Set([
-  'tasks',
   'units',
   'owner_comments',
   'reservations',
@@ -133,7 +126,6 @@ const UNIT_ACQUISITION_AGENT_PAGE_ACCESS = new Set([
 ]);
 
 const UNIT_ACQUISITION_MANAGER_PAGE_ACCESS = new Set([
-  'tasks',
   'units',
   'reservations',
   'schedule',
@@ -150,7 +142,6 @@ const UNIT_ACQUISITION_MANAGER_PAGE_ACCESS = new Set([
 ]);
 
 const OPERATIONS_PAGE_ACCESS = new Set([
-  'tasks',
   'units',
   'operations',
   'ops_checkins',
@@ -164,7 +155,6 @@ const OPERATIONS_PAGE_ACCESS = new Set([
 ]);
 
 const OPERATIONS_SUPERVISOR_PAGE_ACCESS = new Set([
-  'tasks',
   'units',
   'operations',
   'ops_checkins',
@@ -179,17 +169,15 @@ const OPERATIONS_SUPERVISOR_PAGE_ACCESS = new Set([
   ...STAFF_HR_TABS,
 ]);
 
-const HOUSEKEEPING_PAGE_ACCESS = new Set(['tasks', 'housekeeping', 'hk_today', ...STAFF_HR_TABS]);
+const HOUSEKEEPING_PAGE_ACCESS = new Set(['housekeeping', 'hk_today', ...STAFF_HR_TABS]);
 
 const HOUSEKEEPING_SUPERVISOR_PAGE_ACCESS = new Set([
-  'tasks',
   'housekeeping',
   'hk_today',
   ...STAFF_HR_TABS,
 ]);
 
 const MARKETING_PR_PAGE_ACCESS = new Set([
-  'tasks',
   'reservations',
   'units',
   'schedule',
@@ -197,7 +185,7 @@ const MARKETING_PR_PAGE_ACCESS = new Set([
   ...STAFF_HR_TABS,
 ]);
 
-const WEB_DEVELOPER_PAGE_ACCESS = new Set(['tasks', 'site_performance', 'website', ...STAFF_HR_TABS]);
+const WEB_DEVELOPER_PAGE_ACCESS = new Set(['site_performance', 'website', ...STAFF_HR_TABS]);
 
 const RESERVATIONS_PERMISSIONS = [
   'dashboard:read',
@@ -272,7 +260,6 @@ const HR_PAGE_ACCESS = new Set([
   'job_offers',
   'attendance',
   'payslip',
-  'tasks',
   'profile',
   'kpi',
 ]);
@@ -417,7 +404,6 @@ const PAGE_ACCESS = {
     'owner_blocks',
     'owner_comments',
     'damage_reports',
-    'tasks',
     ...STAFF_HR_TABS,
   ]),
   finance: FINANCE_PAGE_ACCESS,

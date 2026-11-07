@@ -6,6 +6,7 @@ import { LocaleProvider } from './context/LocaleContext';
 import RouteFallback from './components/RouteFallback';
 import WhatsAppFAB from './components/layout/WhatsAppFAB';
 import WebsiteEntryPopup from './components/WebsiteEntryPopup';
+import OfferPopup from './components/OfferPopup';
 import SiteTelemetryBridge from './components/SiteTelemetryBridge';
 import { reportError } from './utils/siteTelemetry';
 
@@ -87,6 +88,7 @@ export default function App() {
             </Suspense>
             <WhatsAppFAB />
             <WebsiteEntryPopup />
+            <OfferPopup />
           </CurrencyProvider>
         </LocaleProvider>
       </BrowserRouter>

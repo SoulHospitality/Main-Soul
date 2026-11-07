@@ -2,16 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { CheckCircle2, ChevronLeft, Inbox as InboxIcon, Keyboard, MessageSquare, PanelRight, Sparkles, User, X } from 'lucide-react';
+import { ChevronLeft, ClipboardList, Inbox as InboxIcon, Keyboard, MessageSquare, Sparkles, User, X } from 'lucide-react';
 import { useInbox, useInboxEvents } from '../inbox/InboxContext';
 import { inboxApi, errorMessage } from '../inbox/api';
 import { CHANNELS, CONVERSATION_TYPES } from '../inbox/utils';
-import { Avatar, ChannelDot, PresenceDot, SlaChip, useNow } from '../inbox/ui';
+import QuickRepliesManager from '../inbox/QuickReplies';
+import { Avatar, PresenceDot, SlaChip, useNow } from '../inbox/ui';
 import GuestRail from '../inbox/GuestRail';
-import ConversationList, { QUEUES, STATES } from '../inbox/ConversationList';
+import ConversationList, { QUEUES, STATES, hasAlarm } from '../inbox/ConversationList';
 import Thread from '../inbox/Thread';
 import Composer from '../inbox/Composer';
-import { AssignButton, CloseButton, CloseDialog, MoreMenu, SnoozeButton, snoozeOptions } from '../inbox/ChatActions';
+import { CloseButton, CloseDialog, SnoozeButton, snoozeOptions } from '../inbox/ChatActions';
 
 const SHORTCUTS = [
   ['J / K', 'Next / previous chat'],
@@ -19,7 +20,7 @@ const SHORTCUTS = [
   ['N', 'Write an internal note'],
   ['/', 'Saved replies'],
   ['A', 'Take the chat yourself'],
-  ['W', 'Waiting on the guest'],
+  ['L', 'Lead & reservation panel'],
   ['S', 'Snooze'],
   ['E', 'Close'],
   ['Esc', 'Leave the reply box'],
@@ -74,6 +75,7 @@ export default function InboxPage() {
   const [busy, setBusy] = useState(false);
   const [menu, setMenu] = useState(null); // 'assign' | 'snooze'
   const [showKeys, setShowKeys] = useState(false);
+  const [manageReplies, setManageReplies] = useState(false);
   const endRef = useRef(null);
   const composerRef = useRef(null);
   const listTimer = useRef(null);
@@ -123,12 +125,29 @@ export default function InboxPage() {
   const conv = detail.data?.conversation || null;
   const people = parsePeople(conv);
 
+  const alarmDue = (c) => hasAlarm(c, myId) && c.status !== 'snoozed' && Number(c.snooze_alarm_at) <= Date.now();
+  const openedAlarm = useRef(null);
+  useEffect(() => {
+    if (!conv || !alarmDue(conv)) return;
+    openedAlarm.current = conv.id;
+    if (!conv.snooze_alarm_seen) inboxApi.post(`/conversations/${conv.id}/alarm`, { action: 'seen' }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conv?.id, conv?.snooze_alarm_at, conv?.status]);
+  useEffect(() => {
+    const prev = openedAlarm.current;
+    if (prev && prev !== activeId) {
+      openedAlarm.current = null;
+      inboxApi.post(`/conversations/${prev}/alarm`, { action: 'clear' }).then(() => list.refetch()).catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId]);
+
   const { data: quickReplies = [] } = useQuery({
     queryKey: ['inbox-quick-replies'],
     queryFn: () => inboxApi.get('/admin/quick-replies'),
     enabled: Boolean(me),
   });
-  const replies = (Array.isArray(quickReplies) && quickReplies.length ? quickReplies : null) || me?.templates || [];
+  const replies = Array.isArray(quickReplies) ? quickReplies : me?.templates || [];
 
   const refreshAll = useCallback(() => {
     list.refetch();
@@ -185,7 +204,6 @@ export default function InboxPage() {
     }
   };
   const assign = (id, userId) => act(() => inboxApi.post(`/conversations/${id}/assign`, { user_id: userId }), Number(userId) === Number(myId) ? 'You’re on this chat' : `Assigned to ${userName(userId)}`);
-  const unassign = (id, userId) => act(() => inboxApi.post(`/conversations/${id}/assign`, { user_id: userId, remove: true }), 'Removed from the chat');
   const setStatus = (id, status, extra = {}) => act(() => inboxApi.post(`/conversations/${id}/status`, { status, ...extra }), null);
   const snooze = (id, at) =>
     act(() => inboxApi.post(`/conversations/${id}/status`, { status: 'snoozed', snooze_until: at }), `Snoozed until ${new Date(at).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Cairo' })}`);
@@ -352,7 +370,7 @@ export default function InboxPage() {
         e.preventDefault();
         composerRef.current?.openReplies();
       } else if (k === 'a' && !people.some((p) => Number(p.id) === Number(myId))) assign(conv.id, myId);
-      else if (k === 'w' && conv.status !== 'closed') setStatus(conv.id, 'waiting_customer');
+      else if (k === 'l') setShowRail((v) => !v);
       else if (k === 's') setMenu('snooze');
       else if (k === 'e' && conv.status !== 'closed') setClosing({ ids: [conv.id], type: conv.type });
     };
@@ -360,8 +378,27 @@ export default function InboxPage() {
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  const queueCount = (key) => (key === 'closed' ? null : counts[key]);
-  const windowClosed = conv?.window && conv.window.open === false;
+  const queueCount = (key) => counts[key];
+  const onChat = people.some((p) => Number(p.id) === Number(myId));
+  const leadStageSelect = (me?.stages || []).length ? (
+    <div className="pt-1.5">
+      <p className="px-2.5 pb-1 text-[11px] font-medium text-slate-500">Lead status</p>
+      <select
+        aria-label="Lead status"
+        value={leadStage}
+        onChange={(e) => setLeadStage(e.target.value)}
+        className={`mx-1 h-9 w-[calc(100%-0.5rem)] rounded-lg border px-2 text-[13px] ${leadStage ? 'border-soul-blue bg-blue-50 font-semibold text-soul-blue' : 'border-slate-200 bg-white text-slate-600'}`}
+      >
+        <option value="">Any lead status</option>
+        {(me?.stages || []).map((st) => (
+          <option key={st.key} value={st.key}>
+            {st.name_en}
+            {counts.stages?.[st.key] ? ` (${counts.stages[st.key]})` : ''}
+          </option>
+        ))}
+      </select>
+    </div>
+  ) : null;
 
   return (
     <div className="inbox-shell flex-row bg-slate-50 font-sans">
@@ -378,7 +415,7 @@ export default function InboxPage() {
           <p className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Queues</p>
           <div className="space-y-0.5">
             {QUEUES.map((qd) => {
-              const Icon = { open: InboxIcon, mine: User, closed: CheckCircle2 }[qd.key];
+              const Icon = { open: InboxIcon, mine: User }[qd.key];
               const on = queue === qd.key;
               const n = queueCount(qd.key);
               return (
@@ -398,11 +435,10 @@ export default function InboxPage() {
                 </button>
               );
             })}
+            {leadStageSelect}
           </div>
 
-          {queue !== 'closed' ? (
-            <>
-              <p className="px-2 pb-1.5 pt-5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Status</p>
+          <p className="px-2 pb-1.5 pt-5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Status</p>
               <div className="space-y-0.5">
                 {STATES.map((st) => {
                   const on = state === st.key;
@@ -421,31 +457,11 @@ export default function InboxPage() {
                   );
                 })}
               </div>
-            </>
-          ) : null}
-
-          {(me?.stages || []).length ? (
-            <>
-              <p className="px-2 pb-1.5 pt-5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Lead status</p>
-              <select
-                aria-label="Lead status"
-                value={leadStage}
-                onChange={(e) => setLeadStage(e.target.value)}
-                className={`mx-1 h-9 w-[calc(100%-0.5rem)] rounded-lg border px-2 text-[13px] ${leadStage ? 'border-soul-blue bg-blue-50 font-semibold text-soul-blue' : 'border-slate-200 bg-white text-slate-600'}`}
-              >
-                <option value="">Any lead status</option>
-                {(me?.stages || []).map((st) => (
-                  <option key={st.key} value={st.key}>{st.name_en}</option>
-                ))}
-              </select>
-            </>
-          ) : null}
 
           <p className="px-2 pb-1.5 pt-5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Channel</p>
           <div className="space-y-0.5">
             {[['', 'All channels'], ...Object.entries(CHANNELS).map(([k, c]) => [k, c.label])].map(([k, label]) => (
               <button key={k || 'all'} type="button" onClick={() => setChannel(k)} className={`flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[13px] ${channel === k ? 'bg-slate-100 font-semibold text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}>
-                {k ? <ChannelDot kind={k} /> : <span className="h-2.5 w-2.5" />}
                 {label}
               </button>
             ))}
@@ -550,7 +566,7 @@ export default function InboxPage() {
                 <button type="button" className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-slate-600 hover:bg-slate-100 lg:hidden" aria-label="Back" onClick={back}>
                   <ChevronLeft className="h-5 w-5" />
                 </button>
-                <Avatar name={conv.customer_name} url={conv.avatar_url} kind={conv.channel_kind} size="sm" />
+                <Avatar name={conv.customer_name} url={conv.avatar_url} size="sm" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
                     <h2 className="truncate text-sm font-bold text-slate-900">{conv.customer_name || 'Guest'}</h2>
@@ -562,42 +578,36 @@ export default function InboxPage() {
                     <SlaChip conversation={conv} now={now} />
                   </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  <AssignButton
-                    users={me?.users}
-                    people={people}
-                    myId={myId}
-                    canAssign={false}
-                    onAssign={(uid) => assign(conv.id, uid)}
-                    onRemove={(uid) => unassign(conv.id, uid)}
-                    open={menu === 'assign'}
-                    setOpen={(v) => setMenu(v ? 'assign' : null)}
-                  />
+                <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                  <div className="inline-flex h-9 max-w-[12rem] items-center gap-1.5 rounded-lg bg-slate-50 px-2.5 text-xs ring-1 ring-inset ring-slate-200" title="Staff on this chat">
+                    <User className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    <span className="truncate font-semibold text-slate-700">
+                      {people.length ? people.map((p) => (Number(p.id) === Number(myId) ? 'You' : p.name)).join(', ') : 'Unassigned'}
+                    </span>
+                    {!onChat && conv.status !== 'closed' ? (
+                      <button type="button" onClick={() => assign(conv.id, myId)} className="shrink-0 rounded-md bg-soul-blue px-1.5 py-0.5 text-[10px] font-bold text-white hover:bg-soul-blue/90" title="Take it yourself (A)">
+                        Take
+                      </button>
+                    ) : null}
+                  </div>
                   {conv.status !== 'closed' ? (
-                    <SnoozeButton onSnooze={async (at) => { const id = conv.id; if ((await snooze(id, at)) && state !== 'snoozed') goNext([id]); }} businessStart={me?.rules?.business_start || '11:00'} open={menu === 'snooze'} setOpen={(v) => setMenu(v ? 'snooze' : null)} />
+                    <SnoozeButton
+                      alarm={hasAlarm(conv, myId)}
+                      snoozed={conv.status === 'snoozed'}
+                      onSnooze={async (at) => { const id = conv.id; if ((await snooze(id, at)) && state !== 'snoozed') goNext([id]); }}
+                      businessStart={me?.rules?.business_start || '11:00'}
+                      open={menu === 'snooze'}
+                      setOpen={(v) => setMenu(v ? 'snooze' : null)}
+                    />
                   ) : null}
-                  <MoreMenu
-                    status={conv.status}
-                    open={menu === 'more'}
-                    setOpen={(v) => setMenu(v ? 'more' : null)}
-                    aiAvailable={Boolean(me?.aiAvailable)}
-                    onNeedsReply={() => setStatus(conv.id, 'needs_reply')}
-                    onWaiting={() => setStatus(conv.id, 'waiting_customer')}
-                    onSummary={async () => {
-                      const t = toast.loading('Summarising…');
-                      const text = await summarize();
-                      toast.dismiss(t);
-                      if (text) detail.refetch();
-                    }}
-                  />
                   <button
                     type="button"
                     onClick={() => setShowRail((v) => !v)}
-                    className={`grid h-9 w-9 place-items-center rounded-lg border ${showRail ? 'border-soul-blue bg-soul-blue text-white' : 'border-slate-200 bg-white text-slate-600'}`}
-                    aria-label="Guest details"
-                    title="Guest details: who they are, their stays and the stay request"
+                    className={`inline-flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold ${showRail ? 'border-soul-blue bg-soul-blue text-white' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
+                    title="Create a lead or make a reservation (L)"
                   >
-                    <PanelRight className="h-4 w-4" />
+                    <ClipboardList className="h-4 w-4" />
+                    <span className="hidden sm:inline">Lead / Reservation</span>
                   </button>
                   <CloseButton
                     status={conv.status}
@@ -639,7 +649,8 @@ export default function InboxPage() {
                 agentName={me?.user?.name}
                 replies={replies}
                 aiAvailable={Boolean(me?.aiAvailable)}
-                windowClosed={windowClosed}
+                lastInboundAt={conv.last_inbound_at}
+                onManageReplies={() => setManageReplies(true)}
                 closed={conv.status === 'closed'}
                 unassigned={!people.length}
                 channelKind={conv.channel_kind}
@@ -654,7 +665,7 @@ export default function InboxPage() {
               </div>
               <h2 className="text-base font-bold text-slate-700">Pick a chat</h2>
               <p className="mt-1 max-w-sm text-xs text-slate-400">
-                Oldest waiting guests are at the top. Press <kbd className="rounded bg-slate-200 px-1">J</kbd> to start, <kbd className="rounded bg-slate-200 px-1">?</kbd> for all shortcuts.
+                Newest messages are at the top. Press <kbd className="rounded bg-slate-200 px-1">J</kbd> to start, <kbd className="rounded bg-slate-200 px-1">?</kbd> for all shortcuts.
               </p>
             </div>
           )}
@@ -687,6 +698,8 @@ export default function InboxPage() {
           onSummarize={closing.ids.length === 1 && me?.aiAvailable ? summarize : null}
         />
       ) : null}
+
+      {manageReplies ? <QuickRepliesManager replies={replies} onClose={() => setManageReplies(false)} /> : null}
 
       {showKeys ? (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 p-4" onClick={() => setShowKeys(false)}>

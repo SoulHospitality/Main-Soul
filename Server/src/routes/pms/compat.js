@@ -1947,6 +1947,23 @@ router.put(
     const b = cur.body;
     // Only admins reassign the salesperson; other editors keep whoever booked it.
     if (!isAdmin(req.user)) delete b.sales_person_id;
+    // A nightly price can't go under the unit's minimum (the CEO can).
+    if ((b.price_per_night != null && b.price_per_night !== '') || (b.unit_id && String(b.unit_id) !== String(existing.unit_id))) {
+      const { assertAboveMinimum } = require('../../lib/minNightlyPrice');
+      const flag = (v) => v === true || v === 1 || v === '1' || v === 'true' || v === 'on';
+      const { rows: curRows } = await query(`SELECT price_per_night, is_owner_reservation, status FROM reservations WHERE id = $1`, [req.params.id]);
+      try {
+        await assertAboveMinimum({
+          unitId: b.unit_id || existing.unit_id,
+          pricePerNight: b.price_per_night != null && b.price_per_night !== '' ? parseFloat(b.price_per_night) : curRows[0]?.price_per_night,
+          user: req.user,
+          isOwnerStay: b.is_owner_reservation !== undefined ? flag(b.is_owner_reservation) : Number(curRows[0]?.is_owner_reservation) === 1,
+          isHold: (b.status || curRows[0]?.status) === 'hold',
+        });
+      } catch (err) {
+        return res.status(err.status || 400).json({ error: err.message, code: err.code });
+      }
+    }
     const checkIn = b.check_in || existing.check_in;
     const checkOut = b.check_out || existing.check_out;
     const ci = new Date(checkIn);

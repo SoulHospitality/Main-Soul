@@ -58,13 +58,13 @@ test('review KPIs need enough reviews before they are judged', () => {
   assert.equal(kpiPace({ ...base, today: '2026-12-01', actual: null, reviewCount: 0 }).status, 'missed');
 });
 
-test('a person score weights KPIs by importance and caps each at 100%', () => {
+test('a person score is the plain average of started KPIs, each capped at 100%', () => {
   const kpis = [
-    { status: 'on_track', percent: 150, weight: 1 },
-    { status: 'behind', percent: 40, weight: 3 },
-    { status: 'not_started', percent: 0, weight: 5 },
+    { status: 'on_track', percent: 150 },
+    { status: 'behind', percent: 40 },
+    { status: 'not_started', percent: 0 },
   ];
-  assert.deepEqual(personScore(kpis), { score: 55, counted: 2 });
+  assert.deepEqual(personScore(kpis), { score: 70, counted: 2 });
   assert.deepEqual(personScore([]), { score: null, counted: 0 });
   assert.deepEqual(statusCounts(kpis), { on_track: 1, behind: 1, not_started: 1 });
 });

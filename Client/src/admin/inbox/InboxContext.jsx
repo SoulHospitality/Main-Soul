@@ -4,11 +4,33 @@ import { io } from 'socket.io-client';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { inboxApi } from './api';
+import { playAlarm } from '../utils/chime';
 
 const InboxContext = createContext(null);
 
 const PRESENCE_KEY = 'inbox_presence';
 const HEARTBEAT_MS = 30000;
+const ALARM_MS = 10000;
+const RUNG_KEY = 'inbox-alarms-rung';
+
+function readRung() {
+  try {
+    return JSON.parse(localStorage.getItem(RUNG_KEY) || '{}') || {};
+  } catch {
+    return {};
+  }
+}
+function markRung(id, at) {
+  try {
+    const all = readRung();
+    all[id] = at;
+    const keys = Object.keys(all);
+    if (keys.length > 200) delete all[keys[0]];
+    localStorage.setItem(RUNG_KEY, JSON.stringify(all));
+  } catch {
+    /* private mode: it may ring again after a reload */
+  }
+}
 
 let audioCtx;
 function beep() {
@@ -60,12 +82,48 @@ export function InboxProvider({ children }) {
     socketRef.current?.emit('inbox:heartbeat', { viewing: viewingRef.current });
   }, []);
 
+  // ── snooze alarms: ring for 10 seconds when a chat you snoozed is due; opening it stops the sound ──
+  const ringing = useRef(new Map()); // conversation id -> stop()
+  const stopRinging = useCallback((id) => {
+    const stop = ringing.current.get(Number(id));
+    if (stop) {
+      stop();
+      ringing.current.delete(Number(id));
+    }
+  }, []);
+  const { data: alarmData, refetch: refetchAlarms } = useQuery({
+    queryKey: ['inbox-alarms'],
+    queryFn: () => inboxApi.get('/alarms'),
+    enabled: Boolean(me?.access),
+    refetchInterval: 30000,
+    staleTime: 10000,
+  });
+  useEffect(() => {
+    const rung = readRung();
+    for (const a of alarmData?.items || []) {
+      const id = Number(a.id);
+      if (rung[id] === Number(a.snooze_alarm_at) || ringing.current.has(id)) continue;
+      markRung(id, Number(a.snooze_alarm_at));
+      if (viewingRef.current === id) {
+        inboxApi.post(`/conversations/${id}/alarm`, { action: 'seen' }).catch(() => {});
+        continue;
+      }
+      ringing.current.set(id, playAlarm(ALARM_MS));
+      setTimeout(() => stopRinging(id), ALARM_MS);
+      toast(`⏰ Snoozed chat is back: ${a.customer_name || 'Guest'}`, { duration: ALARM_MS, icon: '🔔' });
+    }
+  }, [alarmData, stopRinging]);
+
   const setViewing = useCallback((id) => {
     const next = id ? Number(id) : null;
     if (viewingRef.current === next) return;
     viewingRef.current = next;
+    if (next && ringing.current.has(next)) {
+      stopRinging(next);
+      inboxApi.post(`/conversations/${next}/alarm`, { action: 'seen' }).catch(() => {});
+    }
     sendHeartbeat();
-  }, [sendHeartbeat]);
+  }, [sendHeartbeat, stopRinging]);
 
   const setPresence = useCallback(async (presence, { remember = true } = {}) => {
     await inboxApi.post('/me/presence', { presence });
@@ -102,6 +160,7 @@ export function InboxProvider({ children }) {
     };
     const onEvent = ({ type, data } = {}) => {
       if (type === 'viewers') setViewers(data || {});
+      if (type === 'alarm') refetchAlarms();
       // Start-up data (team, stages, settings) only changes with these; chat events refresh the list/chat themselves.
       if (type === 'presence' || type === 'users' || type === 'settings') {
         scheduleRefetch();
@@ -143,7 +202,7 @@ export function InboxProvider({ children }) {
       socketRef.current = null;
       setConnected(false);
     };
-  }, [access, user?.id, qc, scheduleRefetch, sendHeartbeat]);
+  }, [access, user?.id, qc, scheduleRefetch, sendHeartbeat, refetchAlarms]);
 
   const subscribe = useCallback((fn) => {
     listeners.current.add(fn);

@@ -442,8 +442,9 @@ function UnitForm({ form, setForm, listingType = 'rent' }) {
         ) : (
           <>
             <div>
-              <label className="label">Fallback nightly (EGP)</label>
-              <input type="number" min="0" step="0.01" className="input" value={form.price_per_night} onChange={e => setForm(f => ({ ...f, price_per_night: e.target.value }))} placeholder="Display price per night" />
+              <label className="label">Minimum nightly price (EGP)</label>
+              <input type="number" min="0" step="0.01" className="input" value={form.price_per_night} onChange={e => setForm(f => ({ ...f, price_per_night: e.target.value }))} placeholder="Lowest price a night can be booked at" />
+              <p className="mt-1 text-[11px] text-gray-500">Reservations can’t go under this per night. It doesn’t fill the schedule: set nightly prices there.</p>
             </div>
             <div>
               <label className="label">Utilities Cost Per Night (EGP)</label>
@@ -473,10 +474,7 @@ function UnitForm({ form, setForm, listingType = 'rent' }) {
           <p className="sm:col-span-2 text-xs text-gray-400 -mt-2">
             Compound facilities are managed on Destinations → project (shared by all units in that project).
           </p>
-          <div className="sm:col-span-2">
-            <label className="label">Location / maps link</label>
-            <input type="url" className="input" value={form.location_link} onChange={e => setForm(f => ({ ...f, location_link: e.target.value }))} placeholder="https://maps.google.com/…" />
-          </div>
+          <p className="sm:col-span-2 text-xs text-gray-400">Location and house rules come from the project (Destinations → project).</p>
           <div className="sm:col-span-2">
             <label className="label">Cover photo (Google Drive file)</label>
             <input
@@ -616,6 +614,12 @@ export default function Units({ listingType = 'rent' }) {
         bedrooms: filterBedrooms || undefined,
       },
     }).then(r => r.data),
+  });
+
+  const { data: statusCounts } = useQuery({
+    queryKey: ['units', 'status-counts', listingType],
+    queryFn: () => api.get('/units/status-counts', { params: { listing_type: listingType } }).then((r) => r.data),
+    staleTime: 30000,
   });
 
   const projectFilterOptions = useMemo(() => {
@@ -814,7 +818,6 @@ export default function Units({ listingType = 'rent' }) {
       description: form.description,
       amenities: form.amenities,
       location_link: form.location_link,
-      source_url: form.location_link,
       photos_folder_url: form.photos_folder_url || '',
       cover_drive_url: form.cover_drive_url || '',
       cover_url: form.cover_url || '',
@@ -867,10 +870,10 @@ export default function Units({ listingType = 'rent' }) {
 
       <div className="flex gap-1.5 overflow-x-auto whitespace-nowrap pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {[
-            { value: '', label: 'All' },
-            { value: 'published', label: 'Published' },
-            { value: 'unpublished', label: 'Unpublished' },
-            { value: 'draft', label: 'Draft' },
+            { value: '', label: 'All', count: statusCounts?.total },
+            { value: 'published', label: 'Published', count: statusCounts?.published },
+            { value: 'unpublished', label: 'Unpublished', count: statusCounts?.unpublished },
+            { value: 'draft', label: 'Draft', count: statusCounts?.draft },
           ].map((chip) => {
             const active = filterStatus === chip.value;
             return (
@@ -885,6 +888,7 @@ export default function Units({ listingType = 'rent' }) {
                 }`}
               >
                 {chip.label}
+                {chip.count != null ? <span className="ml-1.5 rounded-full bg-white/80 px-1.5 text-[11px] font-bold tabular-nums ring-1 ring-inset ring-soul-line">{chip.count}</span> : null}
               </button>
             );
           })}
@@ -964,7 +968,7 @@ export default function Units({ listingType = 'rent' }) {
                   <DollarSign className="w-4 h-4" />
                   {isLongTerm
                     ? <>{currency(u.price_monthly)} / month</>
-                    : <>{currency(u.price_per_night || u.price_fallback)} / night</>}
+                    : <>Min {currency(u.price_per_night || u.price_fallback)} / night</>}
                 </div>
               )}
               {isLongTerm && u.min_nights > 0 && (

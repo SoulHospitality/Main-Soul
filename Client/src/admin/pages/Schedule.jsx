@@ -419,14 +419,6 @@ function ReservationDetailModal({
                 >
                   <Ban className="w-4 h-4" /> Cancel
                 </button>
-                <button
-                  type="button"
-                  className="btn-secondary text-rose-700 border-rose-200 hover:bg-rose-50"
-                  disabled={cancelling || deleting}
-                  onClick={() => onDelete?.(res)}
-                >
-                  <Trash2 className="w-4 h-4" /> Delete
-                </button>
               </>
             )}
           </div>
@@ -729,7 +721,7 @@ function HoldDetailModal({ open, onClose, holdId, onConfirm, onDelete, deleting 
 
           <button onClick={() => onDelete(holdId)} disabled={deleting}
             className="w-full btn-danger flex items-center justify-center gap-2 text-sm">
-            <Trash2 className="w-3.5 h-3.5" />{deleting ? 'Deleting…' : 'Delete Hold'}
+            <Trash2 className="w-3.5 h-3.5" />{deleting ? 'Releasing…' : 'Release hold'}
           </button>
         </div>
       ) : <p className="text-gray-400 text-center py-8 text-sm">Hold not found</p>}
@@ -885,7 +877,6 @@ export default function Schedule() {
   const [detailResId,       setDetailResId]       = useState(null);
   const [detailSeed,        setDetailSeed]        = useState(null);
   const [cancelConfirmId,   setCancelConfirmId]   = useState(null);
-  const [deleteConfirmId,   setDeleteConfirmId]   = useState(null);
   const [transferRes,       setTransferRes]       = useState(null);
 
   
@@ -1195,7 +1186,7 @@ export default function Schedule() {
     mutationFn: (id) => api.delete(`/reservations/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['schedule'] });
-      toast.success('Hold deleted');
+      toast.success('Hold released');
       setHoldDetailModal(false);
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Error deleting hold'),
@@ -1219,19 +1210,6 @@ export default function Schedule() {
     onError: (e) => toast.error(e.response?.data?.error || 'Error cancelling reservation'),
   });
 
-  const deleteReservationMutation = useMutation({
-    mutationFn: (id) => api.delete(`/reservations/${id}`),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['schedule'] });
-      qc.invalidateQueries({ queryKey: ['reservations'] });
-      qc.invalidateQueries({ queryKey: ['reservation-detail'] });
-      toast.success('Reservation deleted');
-      setDeleteConfirmId(null);
-      setDetailModal(false);
-      setDetailSeed(null);
-    },
-    onError: (e) => toast.error(e.response?.data?.error || 'Error deleting reservation'),
-  });
 
   
   const goPrevMonth = () => { if (viewMonth === 0) { setViewYear(y=>y-1); setViewMonth(11); } else setViewMonth(m=>m-1); };
@@ -2490,7 +2468,6 @@ export default function Schedule() {
         canWrite={canWrite}
         showCommission={isAdmin || isOwnersRelations}
         cancelling={cancelReservationMutation.isPending}
-        deleting={deleteReservationMutation.isPending}
         onMoveUnit={(res) => {
           setTransferRes(res);
           setDetailModal(false);
@@ -2502,7 +2479,6 @@ export default function Schedule() {
         onCancel={(res) => {
           setCancelConfirmId(res.id);
         }}
-        onDelete={(res) => setDeleteConfirmId(res.id)}
       />
 
       <ConfirmDialog
@@ -2521,16 +2497,6 @@ export default function Schedule() {
         danger
       />
 
-      <ConfirmDialog
-        open={!!deleteConfirmId}
-        onClose={() => setDeleteConfirmId(null)}
-        onConfirm={() => deleteReservationMutation.mutate(deleteConfirmId)}
-        loading={deleteReservationMutation.isPending}
-        title="Delete reservation?"
-        message="Permanently delete this reservation from the system. This cannot be undone."
-        confirmText="Delete"
-        danger
-      />
 
       <TransferReservationModal
         open={!!transferRes}

@@ -133,7 +133,6 @@ router.use(require('./resalePerformance'));
 router.use(require('./acquisitionPerformance'));
 router.use(require('./auditLog'));
 router.use(require('./siteHealth'));
-router.use(require('./staffTasks'));
 router.use(require('./financialSystem'));
 router.use(require('./pettyCashAccounts'));
 router.use(housekeepingOps);
@@ -144,6 +143,7 @@ router.use(require('./ownerComments'));
 router.use(ownerPortal);
 router.use(roadmapScaffold);
 router.use(require('./promoCodesAdmin'));
+router.use(require('./offersAdmin'));
 router.use(require('./sitePopupAdmin'));
 router.use(require('./siteSettingsAdmin'));
 router.use(require('./hr'));
@@ -957,6 +957,31 @@ router.delete('/users/:id', requireRoles(...HR_ROUTE_ROLES), async (req, res, ne
 });
 
 
+/** How many units are published, unpublished (taken off the site) and still drafts. */
+router.get('/units/status-counts', async (req, res, next) => {
+  try {
+    const params = [];
+    let where = 'TRUE';
+    const { listing_type } = req.query;
+    if (listing_type && String(listing_type).toLowerCase() !== 'all') {
+      params.push(normalizeListingType(listing_type));
+      where = `COALESCE(listing_type, 'rent') = $1`;
+    }
+    const unpublished = `(other_details ~* '"listing_unpublished"[[:space:]]*:[[:space:]]*true')`;
+    const { rows } = await query(
+      `SELECT COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE status = 'published')::int AS published,
+              COUNT(*) FILTER (WHERE ${unpublished})::int AS unpublished,
+              COUNT(*) FILTER (WHERE status = 'draft' AND NOT ${unpublished})::int AS draft
+       FROM units WHERE ${where}`,
+      params
+    );
+    res.json(rows[0] || { total: 0, published: 0, unpublished: 0, draft: 0 });
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.get('/units', async (req, res, next) => {
   try {
     const { search, status, ops_status, project, area, destination, bedrooms, listing_type } = req.query;
@@ -1210,18 +1235,7 @@ router.post('/units', requireRoles(...UNIT_EDITOR_ROLES), async (req, res, next)
       missing: completeness.missing,
       status,
     };
-    if (!isLongTerm && Number(priceFallback) > 0 && rows[0].wp_post_id) {
-      try {
-        const { seedUnitFallbackHorizon } = require('../../lib/seedFallbackPrices');
-        const seeded = await seedUnitFallbackHorizon(rows[0], {
-          months: 3,
-          source: 'unit-create-fallback',
-        });
-        payload.schedule_prices_seeded = seeded.seeded || 0;
-      } catch (seedErr) {
-        console.warn('[units] fallback schedule seed failed:', seedErr.message);
-      }
-    }
+    // The minimum nightly price is a floor for reservations; it no longer fills the schedule.
     await logAudit({
       userId: req.user.id,
       action: 'CREATE_UNIT',
@@ -1950,6 +1964,16 @@ router.post(
     }
 
     const isOwnerResEarly = truthyFlag(b.is_owner_reservation);
+    {
+      const { assertAboveMinimum } = require('../../lib/minNightlyPrice');
+      try {
+        await assertAboveMinimum({
+          unitId: b.unit_id, pricePerNight, user: req.user, isOwnerStay: isOwnerResEarly, isHold: truthyFlag(b.is_hold),
+        });
+      } catch (err) {
+        return res.status(err.status || 400).json({ error: err.message, code: err.code });
+      }
+    }
     const party = parsePartyCounts(b, { isOwner: isOwnerResEarly || truthyFlag(b.is_hold) });
     if (!truthyFlag(b.is_hold) && !isOwnerResEarly) {
       if (party.adults < 1) {
@@ -2277,6 +2301,22 @@ router.patch(
         ? parseFloat(b.broker_total) || 0
         : brokerPerNight * nights;
 
+    if ((b.price_per_night != null && b.price_per_night !== '') || (b.unit_id && b.unit_id !== existing.unit_id)) {
+      const { assertAboveMinimum } = require('../../lib/minNightlyPrice');
+      const { rows: cur } = await query(`SELECT price_per_night, is_owner_reservation, status FROM reservations WHERE id = $1`, [req.params.id]);
+      try {
+        await assertAboveMinimum({
+          unitId: b.unit_id || existing.unit_id,
+          pricePerNight: b.price_per_night != null && b.price_per_night !== '' ? parseFloat(b.price_per_night) : cur[0]?.price_per_night,
+          user: req.user,
+          isOwnerStay: b.is_owner_reservation !== undefined ? truthyFlag(b.is_owner_reservation) : Number(cur[0]?.is_owner_reservation) === 1,
+          isHold: (b.status || cur[0]?.status) === 'hold',
+        });
+      } catch (err) {
+        return res.status(err.status || 400).json({ error: err.message, code: err.code });
+      }
+    }
+
     // Full row before the edit, so the audit log can show what changed.
     const { rows: beforeRows } = await query(`SELECT * FROM reservations WHERE id = $1`, [req.params.id]);
 
@@ -2542,62 +2582,13 @@ router.delete(
     const existing = await loadReservationAccess(id);
     if (!existing) return res.status(404).json({ error: 'Reservation not found' });
     await assertReservationOwned(req.user, existing);
-
-    const bookingId = existing.booking_id;
-    const { rows: payCount } = await query(
-      `SELECT COUNT(*)::int AS n FROM payments WHERE reservation_id = $1`,
-      [id]
-    );
-    if (Number(payCount[0]?.n) > 0) {
+    // Reservations are never deleted: cancel them, and any refund goes to the financial system for approval.
+    if (String(existing.status) !== 'cancelled') {
       const { applyCancellation } = require('../../lib/finance/applyCancellation');
-      const updated = await applyCancellation({
-        reservationId: id,
-        user: req.user,
-        body: req.body || {},
-      });
+      const updated = await applyCancellation({ reservationId: id, user: req.user, body: req.body || {} });
       return res.json(updated);
     }
-    const { assertPeriodOpen } = require('../../lib/finance/periodLock');
-    await assertPeriodOpen(existing.check_in, 'This stay');
-
-    await query(`DELETE FROM commissions WHERE reservation_id = $1`, [id]);
-    await query(
-      `UPDATE petty_cash SET linked_reservation_id = NULL WHERE linked_reservation_id = $1`,
-      [id]
-    );
-    const { rows } = await query(`DELETE FROM reservations WHERE id = $1 RETURNING *`, [id]);
-
-    try {
-      const { resyncReservationBlocks } = require('../../lib/reservationBlocks');
-      if (rows[0]) {
-        await resyncReservationBlocks(rows[0], { ...rows[0], status: 'cancelled' });
-      }
-    } catch (err) {
-      console.warn('[reservations] block release on delete failed', err.message);
-    }
-
-    
-    if (bookingId) {
-      const { cancelWebsiteBooking } = require('../../services/bookingWorkflow');
-      await cancelWebsiteBooking(bookingId, req.body?.cancel_type
-        ? `cancelled_by_staff:${req.body.cancel_type}`
-        : 'cancelled_by_staff');
-    }
-
-    await logAudit({
-      userId: req.user.id,
-      action: 'DELETE_RESERVATION',
-      entityType: 'reservation',
-      entityId: id,
-      details: {
-        guest_name: rows[0]?.guest_name || null,
-        unit_id: rows[0]?.unit_id || null,
-        check_in: rows[0]?.check_in || null,
-        check_out: rows[0]?.check_out || null,
-      },
-    });
-
-    res.json(rows[0]);
+    return res.status(409).json({ error: 'Reservations can’t be deleted. This one is already cancelled.' });
   } catch (e) {
     next(e);
   }

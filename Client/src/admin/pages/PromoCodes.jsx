@@ -8,6 +8,8 @@ import ConfirmDialog from '../components/ui/ConfirmDialog';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import EmptyState from '../components/ui/EmptyState';
 import WebsitePopupSection from '../components/WebsitePopupSection';
+import ScopePicker from '../components/ScopePicker';
+import OffersSection from '../components/OffersSection';
 import { currency, formatDate, formatDateTime } from '../utils/formatters';
 
 const EMPTY_FORM = {
@@ -21,6 +23,7 @@ const EMPTY_FORM = {
   active: true,
   once_per_guest: true,
   sales_person_id: '',
+  scope: { destinations: [], projects: [], unit_ids: [] },
 };
 
 function toForm(promo) {
@@ -37,6 +40,7 @@ function toForm(promo) {
     active: promo.active !== false,
     once_per_guest: promo.once_per_guest !== false,
     sales_person_id: promo.sales_person_id != null ? String(promo.sales_person_id) : '',
+    scope: { destinations: promo.destinations || [], projects: promo.projects || [], unit_ids: promo.unit_ids || [] },
   };
 }
 
@@ -51,6 +55,9 @@ function toPayload(form) {
     active: form.active,
     once_per_guest: form.once_per_guest,
     sales_person_id: form.sales_person_id || null,
+    destinations: form.scope?.destinations || [],
+    projects: form.scope?.projects || [],
+    unit_ids: form.scope?.unit_ids || [],
   };
 }
 
@@ -167,6 +174,8 @@ function PromoForm({ form, setForm, salesUsers = [] }) {
         </div>
       </div>
 
+      <ScopePicker value={form.scope} onChange={(scope) => setForm((f) => ({ ...f, scope }))} />
+
       <label className="flex items-start gap-3 rounded-xl border border-soul-line bg-slate-50 px-3 py-2.5">
         <input
           type="checkbox"
@@ -279,13 +288,15 @@ export default function PromoCodes() {
         <div className="page-header mb-0">
           <h1 className="page-title">Promo codes</h1>
           <p className="page-subtitle">
-            Discount codes for checkout, plus the single website entry popup.
+            Discount codes for checkout, offers with a website popup, and the website entry popup.
           </p>
         </div>
         <button type="button" onClick={openCreate} className="btn-primary">
           <Plus className="h-4 w-4" /> New promo
         </button>
       </div>
+
+      <OffersSection />
 
       <WebsitePopupSection />
 
@@ -314,6 +325,7 @@ export default function PromoCodes() {
                 <tr>
                   <th>Code</th>
                   <th>Discount</th>
+                  <th>Applies to</th>
                   <th>Uses</th>
                   <th>Per guest</th>
                   <th>Expires</th>
@@ -334,6 +346,7 @@ export default function PromoCodes() {
                       ) : null}
                     </td>
                     <td className="whitespace-nowrap font-medium">{discountLabel(p)}</td>
+                    <td className="max-w-[14rem] truncate text-xs text-gray-600" title={p.applies_to}>{p.applies_to || 'All units'}</td>
                     <td className="whitespace-nowrap tabular-nums">
                       {p.used_count || 0}
                       {p.max_uses != null ? ` / ${p.max_uses}` : ''}

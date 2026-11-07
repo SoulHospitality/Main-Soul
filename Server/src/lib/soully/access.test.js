@@ -20,7 +20,7 @@ test('web developer cannot read finance, reservations, or other staff', () => {
   assert.equal(soullyCan(user, 'users'), false);
   assert.equal(soullyCan(user, 'payslip'), true);
   const pages = allowedGuide(user).map((item) => item.page);
-  assert.ok(pages.includes('tasks'));
+  assert.ok(pages.includes('site_performance'));
   assert.equal(pages.includes('financial_system'), false);
 });
 

@@ -79,10 +79,13 @@ function kpiProgress({ actual, targetValue }) {
   };
 }
 
-function checklistCompletion({ days, itemCount, checkedByDay }) {
-  const total = Number(itemCount) || 0;
-  if (!days?.length || total < 1) return { percent: 0, days: [] };
-  const daily = days.map((date) => {
+/** Daily checklist completion. `itemCountByDay` lets a day keep the list it had (edits only change later days). */
+function checklistCompletion({ days, itemCount, checkedByDay, itemCountByDay = null }) {
+  const fallback = Number(itemCount) || 0;
+  const scored = (days || []).filter((date) => (itemCountByDay ? Number(itemCountByDay[date]) || 0 : fallback) > 0);
+  if (!scored.length) return { percent: 0, days: [] };
+  const daily = scored.map((date) => {
+    const total = itemCountByDay ? Number(itemCountByDay[date]) || 0 : fallback;
     const checked = Math.max(0, Math.min(total, Number(checkedByDay?.[date]) || 0));
     return {
       date,
@@ -188,16 +191,12 @@ function dailyTarget({ metric, targetValue, actual, todayValue = 0, startsOn, de
   };
 }
 
-/** A person's score: importance-weighted average of their started KPIs, each capped at 100%. */
+/** A person's score: the plain average of their started KPIs (all count the same), each capped at 100%. */
 function personScore(kpis) {
   const counted = (kpis || []).filter((k) => k.status !== 'not_started');
-  const weightSum = counted.reduce((sum, k) => sum + (Number(k.weight) || 1), 0);
-  if (!weightSum) return { score: null, counted: 0 };
-  const total = counted.reduce(
-    (sum, k) => sum + Math.min(SCORE_CAP, Math.max(0, Number(k.percent) || 0)) * (Number(k.weight) || 1),
-    0
-  );
-  return { score: Math.round((total / weightSum) * 10) / 10, counted: counted.length };
+  if (!counted.length) return { score: null, counted: 0 };
+  const total = counted.reduce((sum, k) => sum + Math.min(SCORE_CAP, Math.max(0, Number(k.percent) || 0)), 0);
+  return { score: Math.round((total / counted.length) * 10) / 10, counted: counted.length };
 }
 
 function statusCounts(kpis) {

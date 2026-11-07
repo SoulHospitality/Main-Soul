@@ -42,7 +42,6 @@ export const PAGE_GROUPS = [
       { key: 'dashboard', label: 'Dashboard', levels: R },
       { key: 'kpi', label: 'KPI', levels: RW },
       { key: 'audit_log', label: 'Audit Log', levels: R, scopes: ['team', 'all'] },
-      { key: 'tasks', label: 'Tasks', levels: RW },
       { key: 'site_performance', label: 'Website Performance', levels: R },
       { key: 'website', label: 'Website', levels: RW },
     ],

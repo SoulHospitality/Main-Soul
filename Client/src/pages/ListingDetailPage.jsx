@@ -91,7 +91,7 @@ const GUEST_REGULATION_KEYS = [
 ];
 
 export default function ListingDetailPage() {
-  const { t } = useLocale();
+  const { t, isRtl } = useLocale();
   const { slug } = useParams();
   const [params] = useSearchParams();
   const { user } = useAuth();
@@ -522,6 +522,38 @@ export default function ListingDetailPage() {
                 {!amenities.length && !facilities.length && (
                   <p className="text-sm text-soul-muted m-0">{t('listing.amenitiesEmpty')}</p>
                 )}
+
+                {(() => {
+                  const info = unit?.project_info || {};
+                  const rulesText = (isRtl && info.rules_ar) || info.rules || '';
+                  const rules = rulesText.split(/\n+/).map((r) => r.replace(/^[-•*\s]+/, '').trim()).filter(Boolean);
+                  if (!rules.length && !info.location_url && !info.address) return null;
+                  return (
+                    <div className="mt-10 grid gap-8 sm:grid-cols-2">
+                      {rules.length ? (
+                        <div>
+                          <h3 className="g-index mb-4 text-soul-muted">{isRtl ? 'قواعد المشروع' : 'House rules'}</h3>
+                          <ul className="border-t border-soul-line">
+                            {rules.map((r) => (
+                              <li key={r} className="border-b border-soul-line py-3 text-[15px] text-soul-blue">{r}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                      {info.location_url || info.address ? (
+                        <div>
+                          <h3 className="g-index mb-4 text-soul-muted">{isRtl ? 'الموقع' : 'Location'}</h3>
+                          {info.address ? <p className="mb-3 text-[15px] text-soul-blue">{info.address}</p> : null}
+                          {info.location_url ? (
+                            <a href={info.location_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center rounded-full border border-soul-blue px-4 py-2 text-sm font-semibold text-soul-blue hover:bg-soul-blue hover:text-white">
+                              {isRtl ? 'افتح الخريطة' : 'Open in Maps'}
+                            </a>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })()}
               </section>
 
               {!isLongTerm && (

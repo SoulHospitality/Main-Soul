@@ -805,10 +805,10 @@
         "paymentCalendarSubtitle": "Upcoming and overdue payments by due date",
         "paymentCalendarHint": "Synced from accounting · add manual items when needed",
         "workspace": "Workspace",
-        "cashReviewTitle": "Cash review",
-        "cashReviewSubtitle": "Check cash collected on reservations",
-        "cashReviewHint": "{{count}} cash payment(s) waiting for finance to check the amount and payment method",
-        "cashReviewClear": "All cash payments are checked",
+        "cashReviewTitle": "Reservation collection",
+        "cashReviewSubtitle": "Check the method and amount of every reservation payment",
+        "cashReviewHint": "{{count}} payment(s) waiting for finance to check the method and amount",
+        "cashReviewClear": "All reservation payments are checked",
         "cancelRequestsTitle": "Cancellation requests",
         "cancelRequestsSubtitle": "Approve refunds for cancelled reservations",
         "cancelRequestsHint": "{{count}} cancelled reservation(s) waiting for finance to decide the refund"
@@ -1471,7 +1471,7 @@
         "apVendors": "AP / Vendors",
         "monthlyCharges": "Monthly charges",
         "arControls": "AR controls",
-        "cashReview": "Cash review",
+        "cashReview": "Reservation collection",
         "cancelRequests": "Cancellation requests",
         "expenseForecast": "Expense forecast"
       },
@@ -1503,12 +1503,12 @@
         "systemLocked": "System account (used automatically, cannot be deleted)"
       },
       "cashReview": {
-        "description": "Every cash payment collected on a reservation by staff outside finance waits here. Check the amount and the payment method, correct them if needed, and confirm.",
+        "description": "Every payment collected on a reservation by staff outside finance waits here, whatever the method. Check the payment method and the amount, correct them if needed, and confirm.",
         "pendingTab": "Waiting",
         "reviewedTab": "Reviewed",
         "waiting": "Waiting for review",
         "waitingAmount": "Amount waiting",
-        "empty": "No cash payments are waiting for review",
+        "empty": "No reservation payments are waiting to be checked",
         "emptyReviewed": "No reviewed payments yet",
         "guest": "Guest",
         "unit": "Unit",
@@ -1518,9 +1518,9 @@
         "amount": "Amount",
         "method": "Method",
         "review": "Review",
-        "reviewTitle": "Review cash payment",
+        "reviewTitle": "Check reservation payment",
         "reservationTotal": "Reservation total {{total}} · paid so far {{paid}}",
-        "usdNote": "USD reservation at {{rate}} EGP per USD. Enter the amount in EGP; it stays a cash payment.",
+        "usdNote": "USD reservation at {{rate}} EGP per USD. Enter the amount in EGP.",
         "amountReceived": "Amount actually received (EGP)",
         "paymentMethod": "Payment method",
         "bankAccount": "Received in account",
@@ -1537,7 +1537,9 @@
         "methods": {
           "cash": "Cash",
           "instapay": "InstaPay",
-          "bank_transfer": "Bank transfer"
+          "bank_transfer": "Bank transfer",
+          "card": "Card",
+          "other": "Other"
         }
       },
       "cheque": {
@@ -1625,7 +1627,7 @@
         "unclassified": "Left out because the label was not recognised ({{amount}}):"
       },
       "alerts": {
-        "cashReview": "{{count}} cash payment(s) waiting for review",
+        "cashReview": "{{count}} reservation payment(s) waiting to be checked",
         "overdue": "{{count}} overdue payment(s)"
       }
     }

@@ -56,7 +56,7 @@ async function sendPageMessage(channel, recipient, { text, attachment, tag }) {
     ? { attachment: { type: attachmentType(attachment.mime), payload: { url: attachment.url, is_reusable: true } } }
     : { text };
   const body = instagramLogin
-    ? { recipient, message }
+    ? { recipient, message, ...(tag ? { messaging_type: 'MESSAGE_TAG', tag } : {}) }
     : {
       recipient,
       message,

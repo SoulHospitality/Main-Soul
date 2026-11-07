@@ -90,6 +90,20 @@ async function ingestInbound({ channel, externalUserId, profile = {}, message, p
       await audit({ conversationId: conv.id, type: 'ad_referral', data: message.referral, at: ts });
     }
 
+    // Back after a long silence: a new rotation (the next agent in turn gets it, not the previous one).
+    const rotateAfter = Number(getSettings().rotation_after_hours) || 0;
+    const lastIn = Number(conv.last_inbound_at) || 0;
+    const rotate = !isNew && rotateAfter > 0 && lastIn > 0 && ts - lastIn > rotateAfter * 3600000;
+    if (rotate) {
+      const previous = await q.all('SELECT user_id FROM inbox_conversation_assignees WHERE conversation_id = ?', conv.id);
+      await q.run('DELETE FROM inbox_conversation_assignees WHERE conversation_id = ?', conv.id);
+      await q.run('UPDATE inbox_conversations SET assigned_user_id = NULL, assigned_at = NULL, rotate_pending = 1 WHERE id = ?', conv.id);
+      await audit({
+        conversationId: conv.id, type: 'rotation_started',
+        data: { silent_hours: Math.round((ts - lastIn) / 3600000), previous: previous.map((p) => p.user_id) }, at: ts,
+      });
+    }
+
     const attachments = message.attachments?.length ? message.attachments : null;
     const body = message.text || '';
     await q.run(

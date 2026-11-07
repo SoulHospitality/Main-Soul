@@ -376,9 +376,19 @@ router.get('/:idOrSlug', async (req, res, next) => {
       rows[0].compound || rows[0].project,
     ]);
     const { today, map: todayPriceByWp } = await loadTodayPriceMap([rows[0].wp_post_id]);
-    res.json(
-      await withBeachPolicy(attachFacilities(rows[0], facilitiesByProject, todayPriceByWp, today))
-    );
+    const payload = await withBeachPolicy(attachFacilities(rows[0], facilitiesByProject, todayPriceByWp, today));
+    // Location and house rules belong to the project.
+    try {
+      const { rows: proj } = await query(
+        `SELECT rules, rules_ar, location_url, address FROM location_projects
+         WHERE lower(trim(name)) = lower(trim($1)) LIMIT 1`,
+        [rows[0].compound || rows[0].project || '']
+      );
+      if (proj[0]) payload.project_info = proj[0];
+    } catch (_) {
+      /* older database without the columns */
+    }
+    res.json(payload);
   } catch (err) {
     next(err);
   }

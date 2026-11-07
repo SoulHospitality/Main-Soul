@@ -2,6 +2,7 @@ const express = require('express');
 const { query } = require('../../config/db');
 const { requireRoles } = require('../../middleware/auth');
 const { normalizeCode } = require('../../lib/promoCodes');
+const { scopeFrom, describeScope } = require('../../lib/offerScope');
 
 const router = express.Router();
 
@@ -20,6 +21,10 @@ function mapPromo(row) {
     used_count: Number(row.used_count) || 0,
     once_per_guest: row.once_per_guest !== false,
     redemption_count: row.redemption_count != null ? Number(row.redemption_count) : undefined,
+    unit_ids: row.unit_ids || [],
+    projects: row.projects || [],
+    destinations: row.destinations || [],
+    applies_to: describeScope({ unit_ids: row.unit_ids || [], projects: row.projects || [], destinations: row.destinations || [] }),
   };
 }
 
@@ -89,11 +94,12 @@ router.post('/promo-codes', requireRoles('admin'), async (req, res, next) => {
       return res.status(400).json({ error: 'Invalid expiry date' });
     }
 
+    const scope = scopeFrom(b);
     const { rows } = await query(
       `INSERT INTO promo_codes
          (code, discount_percent, discount_amount, active, expires_at, max_uses,
-          description, once_per_guest, sales_person_id, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,now())
+          description, once_per_guest, sales_person_id, unit_ids, projects, destinations, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::uuid[],$11::text[],$12::text[],now())
        RETURNING *`,
       [
         code,
@@ -107,6 +113,9 @@ router.post('/promo-codes', requireRoles('admin'), async (req, res, next) => {
           ? false
           : true,
         salesPersonFrom(b.sales_person_id),
+        scope.unit_ids,
+        scope.projects,
+        scope.destinations,
       ]
     );
     res.status(201).json(mapPromo(rows[0]));
@@ -197,6 +206,9 @@ router.put('/promo-codes/:id', requireRoles('admin'), async (req, res, next) => 
          description = $8,
          once_per_guest = $9,
          sales_person_id = $10,
+         unit_ids = $11::uuid[],
+         projects = $12::text[],
+         destinations = $13::text[],
          updated_at = now()
        WHERE id = $1
        RETURNING *`,
@@ -217,6 +229,9 @@ router.put('/promo-codes/:id', requireRoles('admin'), async (req, res, next) => 
         b.sales_person_id !== undefined
           ? salesPersonFrom(b.sales_person_id)
           : existing[0].sales_person_id,
+        b.unit_ids !== undefined ? scopeFrom(b).unit_ids : existing[0].unit_ids || [],
+        b.projects !== undefined ? scopeFrom(b).projects : existing[0].projects || [],
+        b.destinations !== undefined ? scopeFrom(b).destinations : existing[0].destinations || [],
       ]
     );
     res.json(mapPromo(rows[0]));

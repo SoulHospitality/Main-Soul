@@ -1,4 +1,5 @@
 const { query } = require('../config/db');
+const { appliesToUnit } = require('./offerScope');
 
 function normalizeCode(code) {
   return String(code || '')
@@ -66,13 +67,38 @@ async function guestAlreadyRedeemed(promoId, guestKey) {
 }
 
 
-async function validatePromo({ code, amount, email, phone, guestId, allowRepeat = false } = {}) {
+/** The unit a promo is being used on: an object, or looked up by id or slug. */
+async function resolveUnit({ unit, unitId, unitSlug } = {}) {
+  if (unit && (unit.compound || unit.area || unit.project)) return unit;
+  const id = unit?.id || unitId;
+  if (!id && !unitSlug) return null;
+  const { rows } = await query(
+    `SELECT id, compound, project, area FROM units WHERE ${id ? 'id::text = $1' : 'slug = $1'} LIMIT 1`,
+    [String(id || unitSlug)]
+  );
+  return rows[0] || null;
+}
+
+/** A promo limited to some units/projects/destinations is refused anywhere else. */
+async function assertPromoFitsUnit(promo, where) {
+  const scope = { unit_ids: promo.unit_ids || [], projects: promo.projects || [], destinations: promo.destinations || [] };
+  if (!scope.unit_ids.length && !scope.projects.length && !scope.destinations.length) return;
+  const unit = await resolveUnit(where);
+  if (!unit || !appliesToUnit(scope, unit)) {
+    const err = new Error('This promo code is not valid for this unit');
+    err.status = 409;
+    throw err;
+  }
+}
+
+async function validatePromo({ code, amount, email, phone, guestId, allowRepeat = false, unit = null, unitId = null, unitSlug = null } = {}) {
   const promo = await findActivePromo(code);
   if (!promo) {
     const err = new Error('Invalid or expired promo code');
     err.status = 404;
     throw err;
   }
+  await assertPromoFitsUnit(promo, { unit, unitId, unitSlug });
 
   const key = guestKeyFrom({ email, phone, guestId });
   const oncePerGuest = promo.once_per_guest !== false;
@@ -103,6 +129,8 @@ async function redeemPromo({
   amountBeforeDiscount,
   client,
   allowRepeat = false,
+  unit = null,
+  unitId = null,
 } = {}) {
   const normalized = normalizeCode(code);
   if (!normalized) return null;
@@ -122,6 +150,7 @@ async function redeemPromo({
     err.status = 400;
     throw err;
   }
+  if (unit || unitId) await assertPromoFitsUnit(promo, { unit, unitId });
 
   const key = guestKeyFrom({ email, phone, guestId });
   if (!key) {
@@ -221,5 +250,6 @@ module.exports = {
   guestAlreadyRedeemed,
   validatePromo,
   redeemPromo,
+  assertPromoFitsUnit,
   promoSalesPersonForBooking,
 };

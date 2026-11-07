@@ -111,7 +111,8 @@ async function priceTransferStay({ source, unit, checkIn, checkOut }) {
       pricePerNight = nights > 0 ? accommodation / nights : 0;
     }
   } else {
-    const fallback = Number(unit.price_fallback) || Number(source.price_per_night) || 0;
+    // No schedule price on the new unit: keep the stay's own nightly rate, never under the unit's minimum.
+    const fallback = Math.max(Number(source.price_per_night) || 0, Number(unit.price_fallback) || 0);
     if (!(fallback > 0)) {
       const err = new Error('New unit has no price for these dates');
       err.status = 400;
@@ -140,7 +141,7 @@ async function priceTransferStay({ source, unit, checkIn, checkOut }) {
   };
 }
 
-async function applyOptionalPromo({ source, promoCode, amount }) {
+async function applyOptionalPromo({ source, promoCode, amount, unit = null }) {
   const code = String(promoCode || '').trim();
   if (!code) return { promo: null, discount: 0, total: roundMoney(amount) };
 
@@ -150,6 +151,7 @@ async function applyOptionalPromo({ source, promoCode, amount }) {
     email: source.guest_email,
     phone: source.guest_phone,
     allowRepeat: true,
+    unit,
   });
   return {
     promo: {
@@ -215,6 +217,7 @@ async function buildTransferPlan(source, { unit_id, check_in, check_out, promo_c
     source,
     promoCode: promo_code,
     amount: priced.stay_before_promo,
+    unit,
   });
   const totalAmount = roundMoney(promo.total + priced.insurance);
   const amountPaid = Number(source.amount_paid) || 0;

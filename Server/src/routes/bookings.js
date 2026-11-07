@@ -79,6 +79,7 @@ router.post('/checkout', authGuest, upload.array('id_photos', 10), attachCloudin
           email: guest_email || req.guest?.email,
           phone: guest_phone,
           guestId: req.guest?.id,
+          unit,
         });
         total = promoApplied.discounted_total;
       } catch (promoErr) {
@@ -171,6 +172,9 @@ router.post('/checkout', authGuest, upload.array('id_photos', 10), attachCloudin
     );
 
     const booking = rows[0];
+    if (quote.offer?.id && booking?.id) {
+      await query(`UPDATE bookings SET offer_id = $2, offer_discount_egp = $3 WHERE id = $1`, [booking.id, quote.offer.id, quote.offer.discount_egp || 0]).catch(() => {});
+    }
     if (promoApplied?.code) {
       try {
         const { redeemPromo } = require('../lib/promoCodes');

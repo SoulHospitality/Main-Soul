@@ -86,7 +86,8 @@ async function buildRatesPayload(connection, { monthsAhead = GUEST_AVAILABILITY_
       [map.wp_post_id, from, to]
     );
     const byDate = new Map(prices.map((p) => [p.date, p.price]));
-    const fallback = Number(map.price_fallback) || null;
+    // Only real schedule prices go to channels; the unit's minimum price is not a nightly rate.
+    const fallback = null;
     const days = [];
     for (let d = new Date(`${from}T00:00:00`); localIso(d) < to; d.setDate(d.getDate() + 1)) {
       const iso = localIso(d);
