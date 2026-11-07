@@ -145,7 +145,8 @@ router.get('/conversations', wrap(async (req, res) => {
     }));
   }
 
-  const rows = await q.all(
+  // The list and both counts run at the same time.
+  const rowsP = q.all(
     `${LIST_SELECT} WHERE ${where.join(' AND ')}
      ORDER BY ${state === 'overdue'
        // Overdue: whoever has waited longest without a reply comes first.
@@ -155,10 +156,8 @@ router.get('/conversations', wrap(async (req, res) => {
      LIMIT ${view === 'all' ? 200 : 80}`,
     ...params,
   );
-  // Not awaited: names arrive with the next refresh (a live update is sent when one is found).
-  fillGuestNames(rows).catch(() => {});
 
-  const queueCounts = await q.get(
+  const queueCountsP = q.get(
     `SELECT
        COUNT(*) FILTER (WHERE ${onChatSql()} AND c.status NOT IN ('closed', 'snoozed')) AS mine,
        COUNT(*) FILTER (WHERE c.assigned_user_id IS NULL AND c.status NOT IN ('closed', 'snoozed') AND NOT EXISTS (
@@ -167,7 +166,7 @@ router.get('/conversations', wrap(async (req, res) => {
      FROM inbox_conversations c WHERE ${vis.sql}`,
     user.id, user.id, ...vis.params,
   );
-  const stateCounts = await q.get(
+  const stateCountsP = q.get(
     `SELECT
        COUNT(*) FILTER (WHERE c.status = 'needs_reply') AS needs_reply,
        COUNT(*) FILTER (WHERE c.status = 'needs_reply' AND c.sla_due_at IS NOT NULL AND c.sla_due_at <= ?) AS overdue,
@@ -179,6 +178,9 @@ router.get('/conversations', wrap(async (req, res) => {
      WHERE ${[vis.sql, ...queueWhere].join(' AND ')}`,
     now, ...vis.params, ...queueParams,
   );
+  const [rows, queueCounts, stateCounts] = await Promise.all([rowsP, queueCountsP, stateCountsP]);
+  // Not awaited: names arrive with the next refresh (a live update is sent when one is found).
+  fillGuestNames(rows).catch(() => {});
   const counts = { ...queueCounts, states: stateCounts };
   res.json({ items: rows, counts, viewers: viewersSnapshot(), now });
 }));

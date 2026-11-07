@@ -13,6 +13,38 @@ const { loadInboxUser } = require('./common');
 const publicRouter = express.Router();
 const router = express.Router();
 
+/** Chats waiting on this person (plus unassigned ones they may take): the sidebar badge. */
+async function badgeFor(u) {
+  const counts = await q.get(
+    `SELECT
+       COUNT(*) FILTER (WHERE status = 'needs_reply' AND (
+         assigned_user_id = ? OR EXISTS (
+           SELECT 1 FROM inbox_conversation_assignees a WHERE a.conversation_id = inbox_conversations.id AND a.user_id = ?
+         ))) AS mine_waiting,
+       COUNT(*) FILTER (WHERE status = 'needs_reply' AND assigned_user_id IS NULL AND NOT EXISTS (
+         SELECT 1 FROM inbox_conversation_assignees a WHERE a.conversation_id = inbox_conversations.id
+       )) AS unassigned_waiting
+     FROM inbox_conversations WHERE status = 'needs_reply'`,
+    u.id, u.id,
+  );
+  const s = getSettings();
+  return (Number(counts?.mine_waiting) || 0) + (can(u, 'conv.assign') || s.allow_agent_claim ? Number(counts?.unassigned_waiting) || 0 : 0);
+}
+
+/** Light endpoint for the PMS sidebar badge (instead of the whole /me payload). */
+publicRouter.get('/badge', wrap(async (req, res) => {
+  let u;
+  try {
+    await loadSettings();
+    u = await loadInboxUser(req.user.id);
+  } catch (err) {
+    if (/inbox_/.test(err.message)) return res.json({ badge: 0 });
+    throw err;
+  }
+  if (!u?.role) return res.json({ badge: 0 });
+  res.json({ badge: await badgeFor(u) });
+}));
+
 /** Everything the UI needs to boot. Also answers "no access" so the sidebar can hide the inbox. */
 publicRouter.get('/me', wrap(async (req, res) => {
   let u;
@@ -25,30 +57,25 @@ publicRouter.get('/me', wrap(async (req, res) => {
   }
   if (!u?.role) return res.json({ access: false });
   const s = getSettings();
-  const counts = await q.get(
-    `SELECT
-       COUNT(*) FILTER (WHERE status = 'needs_reply' AND (
-         assigned_user_id = ? OR EXISTS (
-           SELECT 1 FROM inbox_conversation_assignees a WHERE a.conversation_id = inbox_conversations.id AND a.user_id = ?
-         ))) AS mine_waiting,
-       COUNT(*) FILTER (WHERE status = 'needs_reply' AND assigned_user_id IS NULL AND NOT EXISTS (
-         SELECT 1 FROM inbox_conversation_assignees a WHERE a.conversation_id = inbox_conversations.id
-       )) AS unassigned_waiting
-     FROM inbox_conversations`,
-    u.id, u.id,
-  );
+  const [badge, users, channels, stages, lostReasons, templates, projects] = await Promise.all([
+    badgeFor(u),
+    q.all('SELECT id, name, role, pms_role, presence, active, in_rotation FROM inbox_users WHERE role IS NOT NULL ORDER BY active DESC, name'),
+    q.all('SELECT id, kind, name, active FROM inbox_channels ORDER BY kind, name'),
+    q.all('SELECT * FROM inbox_lead_stages WHERE active = 1 ORDER BY position'),
+    q.all('SELECT * FROM inbox_lost_reasons WHERE active = 1 ORDER BY position'),
+    q.all('SELECT id, title, body, shortcut FROM inbox_templates WHERE active = 1 ORDER BY title'),
+    getProjects(),
+  ]);
   res.json({
     access: true,
     user: { id: u.id, name: u.name, role: u.role, pms_role: u.pms_role, presence: u.presence, in_rotation: u.in_rotation },
     permissions: permissionsFor(u),
-    badge: (counts?.mine_waiting || 0) + (can(u, 'conv.assign') || s.allow_agent_claim ? counts?.unassigned_waiting || 0 : 0),
-    users: await q.all(
-      'SELECT id, name, role, pms_role, presence, active, in_rotation FROM inbox_users WHERE role IS NOT NULL ORDER BY active DESC, name',
-    ),
-    channels: await q.all('SELECT id, kind, name, active FROM inbox_channels ORDER BY kind, name'),
-    stages: await q.all('SELECT * FROM inbox_lead_stages WHERE active = 1 ORDER BY position'),
-    lostReasons: await q.all('SELECT * FROM inbox_lost_reasons WHERE active = 1 ORDER BY position'),
-    templates: await q.all('SELECT id, title, body, shortcut FROM inbox_templates WHERE active = 1 ORDER BY title'),
+    badge,
+    users,
+    channels,
+    stages,
+    lostReasons,
+    templates,
     rules: {
       company_name: s.company_name,
       business_start: s.business_start,
@@ -56,7 +83,7 @@ publicRouter.get('/me', wrap(async (req, res) => {
       sla_target_min: s.sla_target_min,
       sla_warning_min: s.sla_warning_min,
       comment_sla_min: s.comment_sla_min,
-      projects: await getProjects(),
+      projects,
       lead_sources: s.lead_sources,
       allow_agent_claim: s.allow_agent_claim,
     },

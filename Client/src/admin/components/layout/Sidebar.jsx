@@ -202,12 +202,14 @@ export default function Sidebar({ collapsed, isMobile, mobileOpen, onCloseMobile
   });
   const ownerCommentsUnread = ownerCommentsSummary?.counts?.unread || 0;
   const { data: inboxMeData } = useQuery({
+    // One small query for the badge (chats waiting on me, plus unassigned ones I can take).
     queryKey: ['inbox-me-badge'],
-    queryFn: () => api.get('/inbox/me').then((r) => r.data),
+    queryFn: () => api.get('/inbox/badge').then((r) => r.data),
     enabled: canAccess('inbox'),
-    refetchInterval: 15000,
+    refetchInterval: 30000,
+    refetchIntervalInBackground: false,
   });
-  const inboxNeedsReplyCount = inboxMeData?.stats?.needs_reply || 0;
+  const inboxNeedsReplyCount = inboxMeData?.badge || 0;
 
   const handleLogout = () => {
     logout();

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Bot, Lock } from 'lucide-react';
 import Attachment from './Attachment';
 import { fmtTime, hideLinks } from './utils';
@@ -16,11 +17,24 @@ function dayLabel(ts) {
 }
 
 /** Messages and internal notes in one timeline, grouped by day. */
-export default function Thread({ items, customerName, userName, endRef }) {
-  if (!items.length) return <div className="p-12 text-center text-xs text-slate-400">No messages in this chat yet.</div>;
+// Long chats (lots of photos and videos) render the latest messages first; older ones on request.
+const RECENT = 40;
+
+export default function Thread({ items: allItems, customerName, userName, endRef }) {
+  const [showAll, setShowAll] = useState(false);
+  if (!allItems.length) return <div className="p-12 text-center text-xs text-slate-400">No messages in this chat yet.</div>;
+  const hidden = showAll ? 0 : Math.max(0, allItems.length - RECENT);
+  const items = hidden ? allItems.slice(hidden) : allItems;
   let lastDay = null;
   return (
     <>
+      {hidden ? (
+        <div className="flex justify-center">
+          <button type="button" onClick={() => setShowAll(true)} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50">
+            Show {hidden} earlier message{hidden === 1 ? '' : 's'}
+          </button>
+        </div>
+      ) : null}
       {items.map((msg) => {
         const day = dayKey(msg.created_at);
         const divider = day !== lastDay ? (

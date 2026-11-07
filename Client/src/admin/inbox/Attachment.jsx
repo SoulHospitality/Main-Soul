@@ -111,7 +111,7 @@ export default function Attachment({ message, index = 0, attachment }) {
   if (showKind === 'video') {
     return (
       <>
-        <video src={url} controls preload="metadata" className="max-h-72 max-w-full rounded-lg" />
+        <video src={url} controls preload="none" className="max-h-72 max-w-full rounded-lg bg-black/80" />
         {kind === 'story' ? <p className="mt-0.5 text-[10px] opacity-70">Mentioned you in their story</p> : null}
       </>
     );

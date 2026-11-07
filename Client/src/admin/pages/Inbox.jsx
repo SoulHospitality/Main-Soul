@@ -98,7 +98,8 @@ export default function InboxPage() {
   const list = useQuery({
     queryKey: ['inbox-conversations', queue, state, channel, leadStage, searchDebounced],
     queryFn: () => inboxApi.get('/conversations', { view: queue, state: state || undefined, channel: channel || undefined, stage: leadStage || undefined, search: searchDebounced || undefined }),
-    refetchInterval: 45000,
+    // Live updates do the work while connected; polling is only a safety net.
+    refetchInterval: connected ? 120000 : 30000,
     refetchOnWindowFocus: false,
     staleTime: 15000,
     placeholderData: (prev) => prev,
@@ -115,7 +116,7 @@ export default function InboxPage() {
     queryKey: ['inbox-conversation', activeId],
     queryFn: () => inboxApi.get(`/conversations/${activeId}`),
     enabled: Boolean(activeId),
-    refetchInterval: 60000,
+    refetchInterval: connected ? false : 60000,
     refetchOnWindowFocus: false,
     staleTime: 10000,
   });
@@ -137,11 +138,12 @@ export default function InboxPage() {
   useInboxEvents((type, data) => {
     if (type === 'message' && data?.conversation_id === activeId) {
       clearTimeout(threadTimer.current);
-      threadTimer.current = setTimeout(() => detail.refetch(), 1200);
+      threadTimer.current = setTimeout(() => detail.refetch(), 800);
     }
     if (type === 'conversation' || type === 'message') {
       clearTimeout(listTimer.current);
-      listTimer.current = setTimeout(() => list.refetch(), 1200);
+      // Bursts of events (many chats updating) become one list refresh.
+      listTimer.current = setTimeout(() => list.refetch(), 2500);
     }
   });
 
@@ -626,7 +628,7 @@ export default function InboxPage() {
               ) : null}
 
               <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain px-3 py-3 sm:px-5">
-                <Thread items={thread} customerName={conv.customer_name} userName={userName} endRef={endRef} />
+                <Thread key={conv.id} items={thread} customerName={conv.customer_name} userName={userName} endRef={endRef} />
               </div>
 
               <Composer

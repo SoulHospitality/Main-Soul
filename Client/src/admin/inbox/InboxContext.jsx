@@ -102,7 +102,8 @@ export function InboxProvider({ children }) {
     };
     const onEvent = ({ type, data } = {}) => {
       if (type === 'viewers') setViewers(data || {});
-      if (type === 'presence' || type === 'users' || type === 'settings' || type === 'conversation' || type === 'message') {
+      // Start-up data (team, stages, settings) only changes with these; chat events refresh the list/chat themselves.
+      if (type === 'presence' || type === 'users' || type === 'settings') {
         scheduleRefetch();
       }
       if (type === 'notification') {
