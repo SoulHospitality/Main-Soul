@@ -8,7 +8,8 @@ const { quoteStay, toIsoDate, nightsBetween, todayIsoBusiness } = require('../..
 const { applyGuestTenantMarkup } = require('../commission');
 const { appendStayAvailabilityFilters, loadTodayPriceMap, projectFacilitiesMap } = require('../../routes/units');
 
-const MAX_RESULTS = 5;
+// Two at a time keeps the chat readable; "show me others" brings the next two.
+const MAX_RESULTS = 2;
 const POOL = 30;
 const SITE = () => String(process.env.FRONTEND_URL || 'https://soulhospitality.co').split(',')[0].trim().replace(/\/$/, '');
 
@@ -157,7 +158,9 @@ async function searchUnits(input, { shownIds = [] } = {}) {
 
   const { rows: countRows } = await query(`SELECT count(*)::int AS c FROM units u WHERE ${where.join(' AND ')}`, params);
   const { rows: pool } = await query(
-    `SELECT ${UNIT_COLUMNS} FROM units u WHERE ${where.join(' AND ')} ORDER BY random() LIMIT ${POOL}`,
+    // Best fit first: the smallest unit that takes the group (then fewest bedrooms), random among equals.
+    `SELECT ${UNIT_COLUMNS} FROM units u WHERE ${where.join(' AND ')}
+     ORDER BY ${guests > 0 ? 'COALESCE(u.guests, 99) ASC, COALESCE(u.beds, 99) ASC, ' : ''}random() LIMIT ${POOL}`,
     params
   );
 
@@ -338,7 +341,7 @@ const TOOLS = [
   {
     name: 'search_units',
     description:
-      'Find up to 5 random units that match what the customer wants and that they have not been shown yet. With check_in and check_out, only units free for the whole stay are returned, with the stay total. Call it again for "show me others": units already shown are skipped automatically. Use 0 or an empty string for anything the customer has not said.',
+      'Find the 2 best-fitting units the customer has not been shown yet (closest size to the group first). With check_in and check_out, only units free for the whole stay are returned, with the stay total. Call it again for "show me others": units already shown are skipped automatically. Use 0 or an empty string for anything the customer has not said.',
     input_schema: {
       type: 'object',
       properties: {

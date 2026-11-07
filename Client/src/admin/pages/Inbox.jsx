@@ -65,7 +65,8 @@ export default function InboxPage() {
   const [channel, setChannel] = useState('');
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
-  const [showRail, setShowRail] = useState(() => window.innerWidth >= 1440);
+  // Guest details stay closed until someone opens them, so the chat gets the room.
+  const [showRail, setShowRail] = useState(false);
   const [selected, setSelected] = useState(() => new Set());
   const [closing, setClosing] = useState(null); // { ids: [...] }
   const [busy, setBusy] = useState(false);
@@ -184,7 +185,24 @@ export default function InboxPage() {
   const setStatus = (id, status, extra = {}) => act(() => inboxApi.post(`/conversations/${id}/status`, { status, ...extra }), null);
   const snooze = (id, at) =>
     act(() => inboxApi.post(`/conversations/${id}/status`, { status: 'snoozed', snooze_until: at }), `Snoozed until ${new Date(at).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Cairo' })}`);
-  const setType = (type) => conv && act(() => inboxApi.post(`/conversations/${conv.id}/type`, { type }), `Marked as ${CONVERSATION_TYPES[type] || type}`);
+  // Classification shows at once; the server catches up in the background.
+  const setType = async (type) => {
+    if (!conv) return;
+    const id = conv.id;
+    const before = conv.type;
+    const patch = (t) => {
+      qc.setQueryData(['inbox-conversation', id], (old) => (old ? { ...old, conversation: { ...old.conversation, type: t } } : old));
+      qc.setQueriesData({ queryKey: ['inbox-conversations'] }, (old) => (old?.items ? { ...old, items: old.items.map((c) => (c.id === id ? { ...c, type: t } : c)) } : old));
+    };
+    patch(type);
+    try {
+      await inboxApi.post(`/conversations/${id}/type`, { type });
+      toast.success(`Marked as ${CONVERSATION_TYPES[type] || type}`);
+    } catch (err) {
+      patch(before);
+      toast.error(errorMessage(err));
+    }
+  };
 
   // After a chat leaves the queue (closed or snoozed), open the next one, like working through tickets.
   const goNext = (doneIds) => {
@@ -625,10 +643,8 @@ export default function InboxPage() {
               conversation={conv}
               customer={detail.data?.customer}
               leads={detail.data?.leads}
-              followUps={detail.data?.followUps}
               onType={setType}
               onChanged={refreshAll}
-              onStartLead={() => act(() => inboxApi.post(`/conversations/${conv.id}/leads`, {}), 'Stay request opened')}
             />
           </div>
         ) : null}

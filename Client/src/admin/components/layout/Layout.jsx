@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
@@ -27,6 +27,22 @@ export default function Layout({ children }) {
   // The Live Inbox is a full-screen workspace: no page padding, edge to edge under the header.
   const fullBleed = pathname.replace(/\/+$/, '') === '/admin/inbox';
   const role = user?.role || 'admin';
+
+  // Opening the Live Inbox folds the sidebar to icons for more room; leaving puts it back as it was.
+  const sidebarBeforeInbox = useRef(null);
+  useEffect(() => {
+    if (fullBleed) {
+      if (sidebarBeforeInbox.current === null) {
+        setCollapsed((was) => {
+          sidebarBeforeInbox.current = was;
+          return true;
+        });
+      }
+    } else if (sidebarBeforeInbox.current !== null) {
+      setCollapsed(sidebarBeforeInbox.current);
+      sidebarBeforeInbox.current = null;
+    }
+  }, [fullBleed]);
   const sidebarWidth = isMobile ? 0 : collapsed ? 64 : 256;
 
   useEffect(() => {

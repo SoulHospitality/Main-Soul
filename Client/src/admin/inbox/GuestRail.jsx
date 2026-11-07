@@ -1,8 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { CalendarPlus } from 'lucide-react';
 import { inboxApi } from './api';
-import LeadPanel from './LeadPanel';
+import StayRequest from './StayRequest';
 import { Avatar, ChannelDot } from './ui';
 import { CHANNELS, CONVERSATION_TYPES, fmtDate, fmtMoney } from './utils';
 
@@ -15,10 +14,8 @@ export default function GuestRail({
   conversation,
   customer,
   leads,
-  followUps,
   onType,
   onChanged,
-  onStartLead,
 }) {
   const { data: history } = useQuery({
     queryKey: ['inbox-guest-history', conversation.id],
@@ -89,14 +86,7 @@ export default function GuestRail({
 
       <div className="border-t border-slate-200 pt-3">
         <Label>Stay request</Label>
-        {lead ? (
-          <LeadPanel lead={lead} followUps={followUps} customer={customer} onChanged={onChanged} />
-        ) : (
-          <button type="button" onClick={onStartLead} className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700">
-            <CalendarPlus className="h-3.5 w-3.5" />
-            Open a stay request
-          </button>
-        )}
+        <StayRequest key={lead?.id || 'new'} conversationId={conversation.id} lead={lead} customer={customer} onChanged={onChanged} />
       </div>
     </div>
   );

@@ -16,6 +16,18 @@ const { loadConversation, ensureCanAct, visibilitySql, onChatSql } = require('./
 
 const router = express.Router();
 
+// Guest names from Meta are filled in the background, and each identity is tried at most every 6 hours,
+// so opening the list or a chat never waits on Meta.
+const PROFILE_RETRY_MS = 6 * 3600 * 1000;
+const profileTried = new Map();
+function shouldTryProfile(identityKey) {
+  const last = profileTried.get(identityKey);
+  if (last && Date.now() - last < PROFILE_RETRY_MS) return false;
+  profileTried.set(identityKey, Date.now());
+  if (profileTried.size > 5000) profileTried.clear();
+  return true;
+}
+
 const TYPES = ['unknown', 'sales_lead', 'existing_guest', 'owner', 'broker', 'complaint', 'supplier', 'spam', 'other'];
 
 function publicMessage(row) {
@@ -112,7 +124,7 @@ router.get('/conversations', wrap(async (req, res) => {
           row.id,
         );
         const channel = await q.get('SELECT * FROM inbox_channels WHERE id = (SELECT channel_id FROM inbox_conversations WHERE id = ?)', row.id);
-        if (!identity?.external_id || !channel) return;
+        if (!identity?.external_id || !channel || !shouldTryProfile(identity.id)) return;
         const profile = await fetchProfile(channel, identity.external_id);
         if (!profile?.name) return;
         await q.run(
@@ -126,6 +138,7 @@ router.get('/conversations', wrap(async (req, res) => {
         );
         row.customer_name = profile.name;
         if (!row.avatar_url && profile.avatar) row.avatar_url = profile.avatar;
+        broadcast('conversation', { id: row.id });
       } catch (err) {
         console.warn('[inbox] name lookup failed:', err.message);
       }
@@ -139,7 +152,8 @@ router.get('/conversations', wrap(async (req, res) => {
      LIMIT ${view === 'all' ? 200 : 80}`,
     ...params,
   );
-  await fillGuestNames(rows);
+  // Not awaited: names arrive with the next refresh (a live update is sent when one is found).
+  fillGuestNames(rows).catch(() => {});
 
   const queueCounts = await q.get(
     `SELECT
@@ -201,26 +215,23 @@ router.get('/conversations/:id', wrap(async (req, res) => {
     listAssignees(conv.id),
     q.get('SELECT id, kind, name FROM inbox_channels WHERE id = ?', conv.channel_id),
   ]);
-  if (!customer?.name && (conv.channel_kind === 'messenger' || conv.channel_kind === 'instagram') && Number(customer?.is_simulated) !== 1) {
-    try {
+  if (!customer?.name && (conv.channel_kind === 'messenger' || conv.channel_kind === 'instagram') && Number(customer?.is_simulated) !== 1
+    && shouldTryProfile(conv.identity_id)) {
+    (async () => {
       const identity = await q.get('SELECT id, external_id FROM inbox_customer_identities WHERE id = ?', conv.identity_id);
       const fullChannel = await q.get('SELECT * FROM inbox_channels WHERE id = ?', conv.channel_id);
       const profile = identity?.external_id && fullChannel ? await fetchProfile(fullChannel, identity.external_id) : null;
-      if (profile?.name) {
-        await q.run(
-          'UPDATE inbox_customers SET name = COALESCE(name, ?), avatar_url = COALESCE(avatar_url, ?), updated_at = ? WHERE id = ?',
-          profile.name, profile.avatar, Date.now(), customer.id,
-        );
-        await q.run(
-          'UPDATE inbox_customer_identities SET display_name = COALESCE(display_name, ?), username = COALESCE(username, ?) WHERE id = ?',
-          profile.name, profile.username, identity.id,
-        );
-        customer.name = profile.name;
-        if (!customer.avatar_url && profile.avatar) customer.avatar_url = profile.avatar;
-      }
-    } catch (err) {
-      console.warn('[inbox] name lookup failed:', err.message);
-    }
+      if (!profile?.name) return;
+      await q.run(
+        'UPDATE inbox_customers SET name = COALESCE(name, ?), avatar_url = COALESCE(avatar_url, ?), updated_at = ? WHERE id = ?',
+        profile.name, profile.avatar, Date.now(), customer.id,
+      );
+      await q.run(
+        'UPDATE inbox_customer_identities SET display_name = COALESCE(display_name, ?), username = COALESCE(username, ?) WHERE id = ?',
+        profile.name, profile.username, identity.id,
+      );
+      broadcast('conversation', { id: conv.id });
+    })().catch((err) => console.warn('[inbox] name lookup failed:', err.message));
   }
   res.json({
     conversation: {

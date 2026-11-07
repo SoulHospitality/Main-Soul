@@ -13,7 +13,7 @@ const { config } = require('../inbox/config');
 const { q } = require('../inbox/db');
 const { ingestInbound } = require('../inbox/ingest');
 const { broadcast } = require('../inbox/realtime');
-const { TOOLS, searchUnits, unitDetails, checkStay, listDestinations, activeOffers } = require('./tools');
+const { TOOLS, searchUnits, unitDetails, checkStay, listDestinations, activeOffers, unitLink } = require('./tools');
 
 const AnthropicClient = Anthropic.default || Anthropic;
 const MAX_TOOL_ROUNDS = 8;
@@ -22,7 +22,7 @@ const EFFORT = () => process.env.CHATBOT_EFFORT || 'low';
 const SYSTEM_PROMPT = `You work on the reservations team at Soul Hospitality (in Arabic: سول), a holiday-home company in Egypt, answering customers on Instagram and Facebook Messenger. Write exactly like a real reservations agent texting from the company account: short, polite, practical.
 
 How you write
-- Match the customer's language. Arabic or Franco-Arabic (e.g. "3ayez sha2a") → everyday Egyptian Arabic (عامية مصرية), never Fusha. Address the customer as حضرتك and use the same polite forms for everyone (تحب، حابب، تقدر، عايز); don't guess gender from the name. Anything written in Arabic letters, even "هاي", gets an Arabic reply. English → plain, friendly English.
+- Reply in the customer's language only, never both: if they write English, every word you send is English; if they write Arabic or Franco-Arabic (e.g. "3ayez sha2a"), reply in everyday Egyptian Arabic (عامية مصرية), never Fusha. Never add a translation or mix the two. Address the customer as حضرتك and use the same polite forms for everyone (تحب، حابب، تقدر، عايز); don't guess gender from the name. Anything written in Arabic letters, even "هاي", gets an Arabic reply. English → plain, friendly English.
 - Sound like a person, not a bot. No compliments or commentary about the customer's choices, places or dates. Never write things like "اختيار ممتاز", "اختيار تحفة", "من الأماكن الجميلة جدًا", "وقت رايق", "great choice", "lovely spot", "perfect timing". Just get to the point the way an agent would ("تمام", "حاضر", "تمام يا فندم", "Sure", "Got it").
 - Short messages, no headings, tables, bold text or long lists. Plain URLs for links. At most one emoji, and only now and then.
 - Don't say you're an AI or a bot. If a customer sincerely asks whether they're talking to a person, say you're Soul's virtual assistant and that a team member can join anytime.
@@ -36,10 +36,10 @@ The conversation
 - If they're not sure where to go, use list_destinations and name a few places, plainly.
 
 Showing units
-- At most 5 at a time. One short line to start, then each unit on its own line: name, bedrooms and guests, the price per night, and its link exactly as returned. End with a short question like "حاجة منهم مناسبة لحضرتك؟" / "Does any of these work for you?"
+- At most 2 units at a time, the best fit first: search_units already orders them so the closest size to the group comes first (2 guests → units for 2; 3 guests → units for 4). One short line to start, then each unit on its own line: name, bedrooms and guests, the price per night, and its link exactly as returned. End with a short question like "حاجة منهم مناسبة لحضرتك؟" / "Does any of these work for you?"
 - Show the nightly price only (avg_price_per_night_egp, or price_per_night_from_egp without dates). Don't give stay totals unless the customer asks for the total.
 - If there's an active promo code, mention it once, after the units: the code, the discount, and that it's entered at checkout. If there's none, don't talk about offers.
-- If they want other options, call search_units again; units already shown are skipped, so you get new ones (again at most 5).
+- If they want other options, call search_units again; units already shown are skipped, so you get the next best fit (again at most 2), which may be a bigger unit (for example a unit for 4 when they're 2).
 - If nothing matches, say so plainly and suggest one thing to change (dates, area or bedrooms), using the destinations the tool returns. Never guess a reason.
 - Availability always depends on the dates. Never say a place is "always available", "available most of the time" or similar. If they ask in general, answer like "ده بيختلف حسب التواريخ اللي حضرتك عايزها" / "It depends on your dates" and ask for them. With dates, only say what the tools return.
 - Only use units, prices, links, availability and offers that the tools return. Never invent or estimate them.
@@ -176,13 +176,21 @@ async function handOff(session, { reason, summary, lastCustomerText }) {
     `SELECT role, body, units, created_at FROM chatbot_messages WHERE session_id = $1 AND role IN ('customer', 'bot') ORDER BY id`,
     [session.id]
   );
+  // Internal unit codes for everything the bot suggested, for the agent only.
+  const { rows: shownUnits } = await query(
+    `SELECT id::text AS id, title, slug, COALESCE(NULLIF(trim(unit_number), ''), NULLIF(trim(internal_code), '')) AS code
+     FROM units WHERE id::text = ANY($1::text[])`,
+    [(session.shown_unit_ids || []).map(String)]
+  );
+  const codeOf = new Map(shownUnits.map((u) => [u.id, u.code]));
+  const unitLine = (u) => `• ${codeOf.get(String(u.id)) || u.code || 'no code'} · ${u.title} · ${u.link || unitLink(u.slug)}`;
   const result = await forwardToInbox(session, lastCustomerText || 'Customer asked to talk to the team.');
   const conversationId = result?.conversationId;
   if (!conversationId) throw new Error('Could not open the inbox conversation');
   // The chat before the hand-off, so the agent can read it in order (the last customer message is already in).
   const transcript = earlier.filter((m, idx) => !(idx === earlier.length - 1 && m.role === 'customer' && m.body === lastCustomerText));
   for (const m of transcript) {
-    const unitLines = Array.isArray(m.units) && m.units.length ? `\n${m.units.map((u) => `• ${u.title}: ${u.link}`).join('\n')}` : '';
+    const unitLines = Array.isArray(m.units) && m.units.length ? `\n${m.units.map(unitLine).join('\n')}` : '';
     await q.run(
       `INSERT INTO inbox_messages (conversation_id, direction, sender_type, channel_kind, body, delivery_status, created_at)
        VALUES (?,?,?,?,?,?,?)`,
@@ -199,7 +207,11 @@ async function handOff(session, { reason, summary, lastCustomerText }) {
     `INSERT INTO inbox_notes (conversation_id, user_id, body, created_at) VALUES (?,?,?,?)`,
     conversationId,
     null,
-    `🤖 Chatbot hand-off: ${reason}\n${summary}`.slice(0, 4000),
+    [
+      `🤖 Chatbot hand-off: ${reason}`,
+      summary,
+      shownUnits.length ? `Units suggested (code · name · link):\n${shownUnits.map((u) => unitLine({ ...u, link: unitLink(u.slug) })).join('\n')}` : '',
+    ].filter(Boolean).join('\n\n').slice(0, 4000),
     Date.now()
   );
   broadcast('conversation', { id: conversationId });
@@ -260,7 +272,7 @@ async function runTool(name, input, ctx) {
       return activeOffers();
     case 'hand_off_to_agent':
       ctx.handoff = { reason: String(input.reason || 'Needs the team'), summary: String(input.summary_for_agent || '') };
-      return { ok: true, note: 'The chat is now with the team. Tell the customer a team member will reply here shortly.' };
+      return { ok: true, note: `The chat is now with the team. Tell the customer, in ${ctx.replyLanguage || 'their language'} only, that a team member will reply here shortly.` };
     default:
       return { error: `Unknown tool ${name}` };
   }
@@ -321,7 +333,8 @@ function aiErrorText(err) {
 }
 
 // The customer's name isn't given to the AI: it addresses everyone as حضرتك and shouldn't guess gender from a name.
-const dayLine = () => `Today is ${cairoToday()} (Egypt).`;
+const dayLine = (session) =>
+  `Today is ${cairoToday()} (Egypt).${session?.replyLanguage ? ` The customer's last message is in ${session.replyLanguage}: reply in ${session.replyLanguage} only.` : ''}`;
 
 /**
  * Each provider keeps its own conversation format in session.history. step() makes one model call,
@@ -402,10 +415,25 @@ async function callClaude(session, history) {
 }
 
 // First failure: ask the customer to resend (the AI service is usually back in seconds).
-const RETRY_REPLY = 'Sorry, give me a second, something didn’t go through. Could you send that again? 🙏\nمعلش ثانية بس، الرسالة ماوصلتش كويس. ممكن تبعتها تاني؟ 🙏';
+const RETRY_REPLY = {
+  en: 'Sorry, something didn’t go through. Could you send that again? 🙏',
+  ar: 'معلش، الرسالة ماوصلتش كويس. ممكن حضرتك تبعتها تاني؟ 🙏',
+};
+// Arabic letters, or Franco-Arabic: Latin letters with 2/3/5/7 for Arabic sounds, or common Egyptian words.
+const FRANCO_WORDS = /\b(3ayez|3ayza|3awez|3ayzeen|ana|ahlan|ezay|ezayak|ezayek|keda|msh|mesh|mafeesh|fel|3ndak|3andak|3andko|sha2a|shaleh|ahgez|a7gez|momken|leh|feen|emta|tamam|yalla|ya3ny|wala)\b/gi;
+const isArabicText = (text) => {
+  const t = String(text || '');
+  if (/[\u0600-\u06FF]/.test(t)) return true;
+  if (/[a-z][2357][a-z]|\b[2357](?!(?:st|nd|rd|th)\b)[a-z]{2,}/i.test(t)) return true;
+  return (t.match(FRANCO_WORDS) || []).length >= 2;
+};
+const inLanguage = (texts, customerText) => (isArabicText(customerText) ? texts.ar : texts.en);
 const failures = new Map();
 
-const BUSY_REPLY = 'Sorry, something went wrong on our side. A team member will reply here shortly.\nمعلش حصلت مشكلة عندنا، حد من فريقنا هيرد عليك هنا حالًا.';
+const BUSY_REPLY = {
+  en: 'Sorry, something went wrong on our side. A team member will reply here shortly.',
+  ar: 'معلش حصلت مشكلة عندنا، حد من فريقنا هيرد على حضرتك هنا حالًا.',
+};
 
 async function botTurn(session, customerText) {
   const provider = requireProvider();
@@ -414,7 +442,9 @@ async function botTurn(session, customerText) {
   const sameProvider = !session.ai_provider || session.ai_provider === provider.name;
   const history = sameProvider && Array.isArray(session.history) ? session.history : [];
   history.push(adapter.userTurn(customerText));
-  const ctx = { shownIds: [...(session.shown_unit_ids || [])], cards: null, handoff: null };
+  // Answer in the language of this message only (Arabic letters → Egyptian Arabic, otherwise English).
+  session.replyLanguage = isArabicText(customerText) ? 'Egyptian Arabic' : 'English';
+  const ctx = { shownIds: [...(session.shown_unit_ids || [])], cards: null, handoff: null, replyLanguage: session.replyLanguage };
   let reply = '';
   let inTok = 0;
   let outTok = 0;
@@ -458,7 +488,7 @@ async function botTurn(session, customerText) {
 
   if (refused || !reply) {
     if (!ctx.handoff) ctx.handoff = { reason: refused ? 'The assistant could not answer this' : 'The assistant could not finish its reply', summary: 'Please read the chat above.' };
-    reply = reply || BUSY_REPLY;
+    reply = reply || inLanguage(BUSY_REPLY, customerText);
   }
 
   await query(
@@ -523,10 +553,10 @@ function receive(sessionId, body) {
       failures.set(session.id, count);
       // Twice in a row: a person takes over instead of leaving the customer stuck.
       turn = count < 2
-        ? { reply: RETRY_REPLY, cards: null, handoff: null }
-        : { reply: BUSY_REPLY, cards: null, handoff: { reason: 'The assistant was unavailable', summary: `Error: ${aiErrorText(err)}` } };
+        ? { reply: inLanguage(RETRY_REPLY, body), cards: null, handoff: null, retry: true }
+        : { reply: inLanguage(BUSY_REPLY, body), cards: null, handoff: { reason: 'The assistant was unavailable', summary: `Error: ${aiErrorText(err)}` } };
     }
-    if (turn.reply !== RETRY_REPLY) failures.delete(session.id);
+    if (!turn.retry) failures.delete(session.id);
     await addMessage(session.id, 'bot', turn.reply, turn.cards);
     if (turn.handoff) {
       await handOff(await loadSession(session.id), { ...turn.handoff, lastCustomerText: body });
