@@ -11,7 +11,7 @@ import { useAuth } from '../context/AuthContext';
 import { isOwnerRole as checkOwner } from '../utils/permissions';
 import { FINANCIAL_EPOCH } from '../utils/financialEpoch';
 import { buildOwnerStatementHtml } from '../utils/ownerStatementDoc';
-import { openDocument } from '../utils/brandDocument';
+import { downloadDocumentPdf, openDocument } from '../utils/brandDocument';
 
 const cairoToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' });
 
@@ -89,23 +89,17 @@ export default function OwnerStatement() {
   };
 
   const downloadPdf = async () => {
-    if (!requested) return;
+    if (!data || !requested) return;
     setPdfLoading(true);
     try {
-      const res = await api.get('/reports/export/owner-statement/pdf', {
-        params: { unit_id: requested.unitId, from_date: requested.from, to_date: requested.to || '' },
-        responseType: 'blob',
-      });
-      const url = window.URL.createObjectURL(res.data);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Owner_Statement_${requested.from}_to_${requested.to || cairoToday()}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-    } catch {
-      toast.error('Could not make the PDF. Use Print → Save as PDF instead.');
+      const unitName = String(data.unit?.unit_number || data.unit?.name || 'unit').replace(/[^w-]+/g, '_');
+      await downloadDocumentPdf(
+        buildOwnerStatementHtml(data, { from: requested.from, to: requested.to, internal: isStaff && internal, actions: false }),
+        `Owner_statement_${unitName}_${requested.from}_to_${requested.to || cairoToday()}.pdf`
+      );
+    } catch (err) {
+      console.error('[owner statement] pdf', err);
+      toast.error('Could not make the PDF here. Use Print → Save as PDF instead.');
     } finally {
       setPdfLoading(false);
     }
@@ -188,13 +182,11 @@ export default function OwnerStatement() {
             ) : <span />}
             <div className="flex gap-2">
               <button type="button" onClick={print} className="btn-secondary">
-                <Printer className="h-4 w-4" /> Print / Save as PDF
+                <Printer className="h-4 w-4" /> Print
               </button>
-              {user?.role === 'admin' ? (
-                <button type="button" onClick={downloadPdf} disabled={pdfLoading} className="btn-secondary disabled:opacity-60">
-                  <Download className="h-4 w-4" /> {pdfLoading ? 'Making PDF…' : 'PDF file'}
-                </button>
-              ) : null}
+              <button type="button" onClick={downloadPdf} disabled={pdfLoading} className="btn-primary disabled:opacity-60">
+                <Download className="h-4 w-4" /> {pdfLoading ? 'Making the PDF…' : 'Download PDF'}
+              </button>
             </div>
           </div>
           <iframe ref={frameRef} title="Owner statement" srcDoc={html} onLoad={fitFrame} className="h-[1100px] w-full rounded-2xl border-0 bg-transparent" />

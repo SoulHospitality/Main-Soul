@@ -31,7 +31,7 @@ function offerParams(pathname, params) {
     const project = params.get('project') || params.get('compound') || '';
     return destination || project ? { destination, project } : {};
   }
-  if (/^\/(admin|sales|checkout|sign-in|sign-up)/.test(pathname)) return null;
+  if (/^\/(admin|sales|checkout|sign-in|sign-up|receipt)/.test(pathname)) return null;
   return {};
 }
 

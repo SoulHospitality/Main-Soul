@@ -12,6 +12,7 @@ function shouldShowOnPath(pathname) {
   if (pathname.startsWith('/sales')) return false;
   if (pathname.startsWith('/sign-in') || pathname.startsWith('/sign-up')) return false;
   if (pathname.startsWith('/checkout')) return false;
+  if (pathname.startsWith('/receipt')) return false;
   return true;
 }
 

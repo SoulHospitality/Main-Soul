@@ -2567,7 +2567,8 @@ router.get('/financial-system/cash-review', requireRoles('admin', 'finance', 'fi
       `${CASH_REVIEW_SELECT}
        WHERE p.finance_review_status = $1
          AND ($2::text IS NULL OR lower(COALESCE(p.payment_method, 'cash')) = $2)
-       ORDER BY ${reviewed ? 'p.finance_reviewed_at DESC' : 'p.created_at ASC'}, p.id ASC
+       -- Newest recorded first.
+       ORDER BY ${reviewed ? 'p.finance_reviewed_at DESC' : 'p.created_at DESC'}, p.id DESC
        LIMIT 300`,
       [reviewed ? 'reviewed' : 'pending', method]
     );

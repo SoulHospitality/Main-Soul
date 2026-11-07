@@ -121,6 +121,36 @@ router.get('/reservations/:id/receipt.pdf', requireRoles(...STAFF_EDITOR_ROLES),
   }
 });
 
+/** A link to the guest's receipt and a ready WhatsApp message (opened from the staff member's WhatsApp). */
+router.get('/reservations/:id/receipt/share', requireRoles(...STAFF_EDITOR_ROLES), async (req, res, next) => {
+  try {
+    const { receiptUrl, guestReceipt, whatsappNumber } = require('../../lib/receiptLink');
+    const r = await guestReceipt(Number(req.params.id));
+    if (!r) return res.status(404).json({ error: 'Reservation not found' });
+    const url = receiptUrl(r.id);
+    const arabic = /[؀-ۿ]/.test(r.guest_name || '');
+    const first = String(r.guest_name || '').trim().split(/\s+/)[0] || '';
+    const message = arabic
+      ? `أهلاً ${first} 👋
+ده إيصال حجز حضرتك في ${r.project || 'Soul Hospitality'} (${r.check_in} → ${r.check_out}):
+${url}
+تقدر تحمّله PDF من نفس الصفحة. شكراً لاختيارك Soul Hospitality 🌊`
+      : `Hi ${first} 👋
+Here is the receipt for your stay at ${r.project || 'Soul Hospitality'} (${r.check_in} to ${r.check_out}):
+${url}
+You can download it as a PDF from the same page. Thank you for choosing Soul Hospitality 🌊`;
+    const phone = whatsappNumber(r.guest_phone);
+    res.json({
+      url,
+      phone,
+      message,
+      whatsapp_url: phone ? `https://wa.me/${phone}?text=${encodeURIComponent(message)}` : null,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post('/reservations/:id/receipt/email', requireRoles(...STAFF_EDITOR_ROLES), async (req, res, next) => {
   try {
     const loaded = await loadReceipt(req.params.id);

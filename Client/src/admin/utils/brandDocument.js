@@ -32,7 +32,7 @@ const STYLES = `
   .v { margin-top: 3px; font-size: 14px; font-weight: 600; }
   .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 22px 0 6px; }
   .tile { background: var(--sand); border-radius: 10px; padding: 12px 14px; }
-  .tile .v { font-size: 17px; font-variant-numeric: tabular-nums; }
+  .tile .v { font-size: 15px; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .tile.hero { background: var(--navy); color: #fff; }
   .tile.hero .k { color: rgba(255,255,255,0.7); }
   h2 { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); margin: 28px 0 10px; }
@@ -118,4 +118,109 @@ export function openDocument(html) {
   win.document.close();
   win.focus();
   return true;
+}
+
+const PDF_CSS = `
+  html, body { background: #fff !important; padding: 0 !important; margin: 0 !important; }
+  .sheet { box-shadow: none !important; border-radius: 0 !important; max-width: none !important; width: 820px !important; }
+  .actions { display: none !important; }
+`;
+
+async function toDataUrl(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('image');
+  const blob = await res.blob();
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+  });
+}
+
+/**
+ * Saves a branded document as a real PDF file, made in the browser so Arabic names render correctly.
+ * The page is laid out off-screen, drawn to a canvas, and cut into A4 pages between rows (never through one).
+ */
+export async function downloadDocumentPdf(html, filename) {
+  const { jsPDF } = await import('jspdf');
+  const frame = document.createElement('iframe');
+  frame.setAttribute('aria-hidden', 'true');
+  Object.assign(frame.style, { position: 'fixed', left: '-10000px', top: '0', width: '820px', height: '1200px', border: '0' });
+  document.body.appendChild(frame);
+  try {
+    await new Promise((resolve) => {
+      frame.onload = resolve;
+      frame.srcdoc = html.replace('</style>', `${PDF_CSS}</style>`);
+    });
+    const doc = frame.contentDocument;
+    if (doc.fonts?.ready) await doc.fonts.ready;
+    // Images must be inline for the drawing step.
+    for (const img of doc.querySelectorAll('img')) {
+      try {
+        img.src = await toDataUrl(img.src);
+        await img.decode().catch(() => {});
+      } catch {
+        img.remove();
+      }
+    }
+    const sheet = doc.querySelector('.sheet');
+    const width = Math.ceil(sheet.offsetWidth);
+    const height = Math.ceil(sheet.scrollHeight);
+
+    // Where a page may end: just below a row, a tile, a heading block… never through one.
+    const top0 = sheet.getBoundingClientRect().top;
+    const blocks = [...sheet.querySelectorAll('tr, .tile, .parties > div, h2, .sum .row, .note, .foot, .head, .doc-title')]
+      .map((el) => {
+        const r = el.getBoundingClientRect();
+        return [r.top - top0, r.bottom - top0];
+      });
+
+    const style = doc.querySelector('style').textContent.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    const body = new XMLSerializer().serializeToString(sheet);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+      <foreignObject x="0" y="0" width="100%" height="100%">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px;background:#fff;color:#14213d;font-family:'Segoe UI',system-ui,-apple-system,Arial,sans-serif"><style>${style}</style>${body}</div>
+      </foreignObject></svg>`;
+    const image = new Image();
+    image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+    await image.decode();
+    const scale = 2;
+    const canvas = document.createElement('canvas');
+    canvas.width = width * scale;
+    canvas.height = height * scale;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+    const pdf = new jsPDF({ unit: 'pt', format: 'a4', compress: true });
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    const pxPerPage = Math.floor((pageH / pageW) * width);
+    let y = 0;
+    let first = true;
+    while (y < height - 1) {
+      let end = Math.min(height, y + pxPerPage);
+      if (end < height) {
+        // Move the cut up above any block it would split.
+        for (const [a, b] of blocks) if (a < end && b > end && a > y + 40) end = Math.min(end, Math.floor(a) - 2);
+      }
+      const slice = document.createElement('canvas');
+      slice.width = canvas.width;
+      slice.height = Math.ceil((end - y) * scale);
+      const sctx = slice.getContext('2d');
+      sctx.fillStyle = '#fff';
+      sctx.fillRect(0, 0, slice.width, slice.height);
+      sctx.drawImage(canvas, 0, y * scale, canvas.width, slice.height, 0, 0, slice.width, slice.height);
+      if (!first) pdf.addPage();
+      pdf.addImage(slice.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, pageW, ((end - y) / width) * pageW);
+      first = false;
+      y = end;
+    }
+    pdf.save(filename);
+    return true;
+  } finally {
+    frame.remove();
+  }
 }

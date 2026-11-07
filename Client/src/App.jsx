@@ -13,6 +13,7 @@ import { reportError } from './utils/siteTelemetry';
 const HomePage = lazy(() => import('./pages/HomePage'));
 const SearchPage = lazy(() => import('./pages/SearchPage'));
 const ListingDetailPage = lazy(() => import('./pages/ListingDetailPage'));
+const ReceiptPage = lazy(() => import('./pages/ReceiptPage'));
 const CheckoutPage = lazy(() => import('./pages/CheckoutPage'));
 const PaymentPage = lazy(() => import('./pages/PaymentPage'));
 const PaymentCallbackPage = lazy(() => import('./pages/PaymentCallbackPage'));
@@ -60,6 +61,7 @@ export default function App() {
                 <Route path="/long-term" element={<Navigate to="/search" replace />} />
                 <Route path="/for-sale" element={<Navigate to="/search" replace />} />
                 <Route path="/listings/:slug" element={<ListingDetailPage />} />
+                <Route path="/receipt/:token" element={<ReceiptPage />} />
                 <Route path="/checkout" element={<CheckoutPage />} />
                 <Route path="/checkout/payment" element={<PaymentPage />} />
                 <Route path="/checkout/payment/callback" element={<PaymentCallbackPage />} />

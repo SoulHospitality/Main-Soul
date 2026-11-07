@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { Plus, Edit2, Eye, Ban, CreditCard, CalendarDays, Upload, Download, CheckCircle, AlertCircle, Lock, Trash2, Maximize2, X, FileText, ArrowRightLeft, Printer } from 'lucide-react';
+import { Plus, Edit2, Eye, Ban, CreditCard, CalendarDays, Upload, Download, CheckCircle, AlertCircle, Lock, Trash2, Maximize2, X, FileText, ArrowRightLeft, Printer, MessageCircle } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
@@ -1577,6 +1577,28 @@ export default function Reservations() {
     }
   };
 
+  // Opens WhatsApp with the guest's number and a message holding their receipt link.
+  const handleWhatsAppReceipt = async (reservationOrId) => {
+    const id = typeof reservationOrId === 'object' ? reservationOrId?.id : reservationOrId;
+    if (!id) return;
+    // Open the tab now (inside the click) so pop-up blockers allow it, then point it at WhatsApp.
+    const tab = window.open('', '_blank');
+    try {
+      const { data } = await api.get(`/reservations/${id}/receipt/share`);
+      if (!data.whatsapp_url) {
+        tab?.close();
+        try { await navigator.clipboard.writeText(data.message); } catch { /* clipboard blocked */ }
+        toast.error('This guest has no valid mobile number. The message with the receipt link was copied instead.');
+        return;
+      }
+      if (tab) tab.location.href = data.whatsapp_url;
+      else window.location.href = data.whatsapp_url;
+    } catch (err) {
+      tab?.close();
+      toast.error(err.response?.data?.error || 'Could not prepare the receipt link');
+    }
+  };
+
   const openCancelReq  = (id) => { setCancelReqId(id); setCancelReason(''); setCancelType('non_refundable'); setRefundAmount(''); setCancelReqOpen(true); };
   const openRefundDone = (id) => { setRefundDoneId(id); setRefundFile(null); setRefundDoneOpen(true); };
   const handleCancelReq = () => {
@@ -1987,6 +2009,16 @@ export default function Reservations() {
                               <Printer className="w-3.5 h-3.5" />
                             </button>
                           )}
+                          {canGenerateReceipt && r.guest_phone && (
+                            <button
+                              type="button"
+                              onClick={() => handleWhatsAppReceipt(r.id)}
+                              className="p-1.5 rounded text-gray-400 hover:text-green-700 hover:bg-green-50"
+                              title="Send the receipt to the guest on WhatsApp"
+                            >
+                              <MessageCircle className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                           {canWrite && r.status !== 'cancelled' && (
                             <button onClick={() => openEdit(r)} className="p-1.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50" title="Edit">
                               <Edit2 className="w-3.5 h-3.5" />
@@ -2080,6 +2112,16 @@ export default function Reservations() {
                                 title="Generate receipt"
                               >
                                 <Printer className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            {canGenerateReceipt && r.guest_phone && (
+                              <button
+                                type="button"
+                                onClick={() => handleWhatsAppReceipt(r.id)}
+                                className="p-1.5 rounded text-gray-400 hover:text-green-700 hover:bg-green-50"
+                                title="Send the receipt to the guest on WhatsApp"
+                              >
+                                <MessageCircle className="w-3.5 h-3.5" />
                               </button>
                             )}
                             {canWrite && r.status !== 'cancelled' && (
@@ -2200,6 +2242,11 @@ export default function Reservations() {
                 onClick={() => handleGenerateReceipt(viewDetail)}
               >
                 <Printer className="w-4 h-4" /> Generate receipt
+              </button>
+            ) : null}
+            {canGenerateReceipt && viewDetail?.guest_phone ? (
+              <button type="button" className="btn-secondary !text-green-700" onClick={() => handleWhatsAppReceipt(viewDetail)}>
+                <MessageCircle className="w-4 h-4" /> Send receipt on WhatsApp
               </button>
             ) : null}
             {canWrite && viewDetail && viewDetail.status !== 'cancelled' && Number(viewDetail.is_owner_reservation) !== 1 && (
