@@ -3257,20 +3257,23 @@ function PaymentCalendarTool() {
   );
 }
 
-const CASH_REVIEW_METHODS = ['cash', 'instapay', 'bank_transfer', 'card', 'other'];
+const CASH_REVIEW_METHODS = ['cash', 'instapay', 'bank_transfer', 'credit_card', 'paymob_card', 'online', 'other'];
 const BANK_METHODS = ['instapay', 'bank_transfer'];
 
 function CashReviewTool() {
   const { t } = useFinLocale();
   const qc = useQueryClient();
   const [tab, setTab] = useState('pending');
+  const [method, setMethod] = useState('');
   const [review, setReview] = useState(null);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['financial-system-cash-review', tab],
+    queryKey: ['financial-system-cash-review', tab, method],
     queryFn: () =>
       api
-        .get('/financial-system/cash-review', { params: tab === 'reviewed' ? { status: 'reviewed' } : {} })
+        .get('/financial-system/cash-review', {
+          params: { ...(tab === 'reviewed' ? { status: 'reviewed' } : {}), ...(method ? { method } : {}) },
+        })
         .then((r) => r.data),
   });
 
@@ -3347,6 +3350,21 @@ function CashReviewTool() {
             }`}
           >
             {id === 'pending' ? t('pms.fin.cashReview.pendingTab') : t('pms.fin.cashReview.reviewedTab')}
+          </button>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {['', ...CASH_REVIEW_METHODS].map((m) => (
+          <button
+            key={m || 'all'}
+            type="button"
+            onClick={() => setMethod(m)}
+            className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ring-inset ${
+              method === m ? 'bg-soul-blue text-white ring-soul-blue' : 'bg-white text-gray-600 ring-soul-line hover:ring-soul-blue/50'
+            }`}
+          >
+            {m ? methodLabel(m) : t('pms.fin.cashReview.allMethods')}
+            {m && data?.by_method?.[m] ? <span className="ml-1 opacity-70">{data.by_method[m]}</span> : null}
           </button>
         ))}
       </div>

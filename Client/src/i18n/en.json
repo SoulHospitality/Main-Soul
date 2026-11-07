@@ -1538,9 +1538,12 @@
           "cash": "Cash",
           "instapay": "InstaPay",
           "bank_transfer": "Bank transfer",
-          "card": "Card",
-          "other": "Other"
-        }
+          "other": "Other",
+          "credit_card": "Credit card",
+          "paymob_card": "Card (Paymob)",
+          "online": "Online"
+        },
+        "allMethods": "All methods"
       },
       "cheque": {
         "paidBy": "Paid by",

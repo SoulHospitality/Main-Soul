@@ -359,8 +359,13 @@ const TOOLS = [
           enum: ['yes', 'not_asked'],
           description: 'Booking policy: "yes" only after the customer said the guests are a family (married couple, parents and children, or relatives such as siblings). Otherwise "not_asked".',
         },
+        contact: {
+          type: 'string',
+          enum: ['saved', 'declined', 'not_asked'],
+          description: 'Name and phone, asked right before showing units: "saved" after save_lead succeeded, "declined" if you asked and they did not want to give them, otherwise "not_asked".',
+        },
       },
-      required: ['destination', 'check_in', 'check_out', 'guests', 'bedrooms', 'property_type', 'min_price_per_night', 'max_price_per_night', 'max_total_budget', 'guests_are_family'],
+      required: ['destination', 'check_in', 'check_out', 'guests', 'bedrooms', 'property_type', 'min_price_per_night', 'max_price_per_night', 'max_total_budget', 'guests_are_family', 'contact'],
       additionalProperties: false,
     },
     strict: true,
@@ -411,19 +416,43 @@ const TOOLS = [
     strict: true,
   },
   {
+    name: 'request_urgent_call',
+    description:
+      'The customer asked for a manager or a person. Call it only once you know exactly what the problem or request is AND have their name and phone number. It puts them on the team\'s urgent call list and passes the chat to the team. Then tell them someone will call them urgently, soon.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'The name the customer gave.' },
+        phone: { type: 'string', description: 'The phone number exactly as the customer wrote it.' },
+        problem: {
+          type: 'string',
+          description: 'For the team, in English: the exact problem or request in the customer\'s words, with any booking details (unit, dates, booking number).',
+        },
+      },
+      required: ['name', 'phone', 'problem'],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
     name: 'hand_off_to_agent',
     description:
-      'Pass the chat to a human reservations agent in the Soul inbox. Use it when the customer asks for something outside units, details, prices and availability (an existing booking, payment, a complaint, a discount or negotiation, special arrangements, owners or partnerships, a job), asks for a person, wants to book and needs help, or you cannot find a suitable unit after a few tries. After calling it, tell the customer an agent will reply here shortly.',
+      'Pass the chat to a human reservations agent in the Soul inbox. Use it when the customer asks for something outside units, details, prices and availability (an existing booking, payment, a complaint, a discount or negotiation, special arrangements, a job), wants to book and needs help, or you cannot find a suitable unit after a few tries. Not for owners (send them the owners link) and not when they ask for a manager or a person (use request_urgent_call). After calling it, tell the customer an agent will reply here shortly.',
     input_schema: {
       type: 'object',
       properties: {
         reason: { type: 'string', description: 'Short reason, e.g. "wants a discount", "existing booking change".' },
+        asked_for_manager_or_person: {
+          type: 'string',
+          enum: ['yes', 'no'],
+          description: '"yes" if at any point the customer asked for a manager, a supervisor or a person to talk to.',
+        },
         summary_for_agent: {
           type: 'string',
           description: 'For the agent, in English: what the customer wants, their details (dates, guests, budget, destination) and the units already suggested.',
         },
       },
-      required: ['reason', 'summary_for_agent'],
+      required: ['reason', 'asked_for_manager_or_person', 'summary_for_agent'],
       additionalProperties: false,
     },
     strict: true,

@@ -26,6 +26,7 @@ import {
   Trophy,
   Gauge,
   MessageSquareText,
+  PhoneCall,
   ShieldAlert,
   Target,
   BarChart3,
@@ -52,6 +53,7 @@ export const NAV_SECTIONS = [
     label: 'Inbox & CRM',
     items: [
       { path: '/admin/inbox', label: 'Live Inbox', icon: MessageSquareText, page: 'inbox', badge: 'inbox_needs_reply' },
+      { path: '/admin/urgent-calls', label: 'Urgent calls', icon: PhoneCall, page: 'inbox' },
       { path: '/admin/leads', label: 'Leads & Pipeline', icon: Target, page: 'leads' },
       { path: '/admin/inbox-analytics', label: 'Inbox Analytics', icon: BarChart3, page: 'inbox_analytics' },
       { path: '/admin/inbox-settings', label: 'Inbox Settings', icon: Sliders, page: 'inbox_settings' },

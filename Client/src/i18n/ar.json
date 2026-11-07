@@ -1538,9 +1538,12 @@
           "cash": "نقدي",
           "instapay": "إنستاباي",
           "bank_transfer": "تحويل بنكي",
-          "card": "بطاقة",
-          "other": "أخرى"
-        }
+          "other": "أخرى",
+          "credit_card": "بطاقة ائتمان",
+          "paymob_card": "بطاقة (Paymob)",
+          "online": "أونلاين"
+        },
+        "allMethods": "كل الطرق"
       },
       "cheque": {
         "paidBy": "طريقة الدفع",

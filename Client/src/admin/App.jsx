@@ -60,6 +60,7 @@ const PettyCash = lazy(() => import('./pages/PettyCash'));
 const InboxPage = lazy(() => import('./pages/Inbox'));
 const LeadsPage = lazy(() => import('./pages/Leads'));
 const InboxAnalyticsPage = lazy(() => import('./pages/InboxAnalytics'));
+const UrgentCallsPage = lazy(() => import('./pages/UrgentCalls'));
 const InboxSettingsPage = lazy(() => import('./pages/InboxSettings'));
 
 function PageFallback() {
@@ -225,6 +226,7 @@ function AppRoutes() {
       <Route path="damage-reports" element={<ProtectedRoute page="damage_reports"><OpsDamageReports /></ProtectedRoute>} />
       <Route path="inbox" element={<ProtectedRoute page="inbox"><InboxPage /></ProtectedRoute>} />
       <Route path="leads" element={<ProtectedRoute page="leads"><LeadsPage /></ProtectedRoute>} />
+      <Route path="urgent-calls" element={<ProtectedRoute page="inbox"><UrgentCallsPage /></ProtectedRoute>} />
       <Route path="inbox-analytics" element={<ProtectedRoute page="inbox_analytics"><InboxAnalyticsPage /></ProtectedRoute>} />
       <Route path="inbox-settings" element={<ProtectedRoute page="inbox_settings"><InboxSettingsPage /></ProtectedRoute>} />
 

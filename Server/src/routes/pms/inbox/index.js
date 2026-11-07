@@ -12,6 +12,7 @@ inner.use(require('./conversations'));
 inner.use(require('./leads'));
 inner.use(require('./comments'));
 inner.use(require('./analytics'));
+inner.use(require('./urgentCalls'));
 const admin = require('./admin');
 // The admin app calls /api/pms/inbox/admin/...; keep the unprefixed routes too.
 inner.use('/admin', admin);

@@ -2511,7 +2511,7 @@ router.delete('/financial-system/payment-calendar/:id', requireRoles('admin', 'f
   }
 });
 
-const CASH_REVIEW_METHODS = ['cash', 'instapay', 'bank_transfer', 'card', 'other'];
+const CASH_REVIEW_METHODS = ['cash', 'instapay', 'bank_transfer', 'credit_card', 'paymob_card', 'online', 'other'];
 
 function mapCashReviewRow(r) {
   return {
@@ -2562,11 +2562,19 @@ const CASH_REVIEW_SELECT = `
 router.get('/financial-system/cash-review', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const reviewed = req.query.status === 'reviewed';
+    const method = CASH_REVIEW_METHODS.includes(String(req.query.method || '')) ? String(req.query.method) : null;
     const { rows } = await query(
       `${CASH_REVIEW_SELECT}
        WHERE p.finance_review_status = $1
+         AND ($2::text IS NULL OR lower(COALESCE(p.payment_method, 'cash')) = $2)
        ORDER BY ${reviewed ? 'p.finance_reviewed_at DESC' : 'p.created_at ASC'}, p.id ASC
        LIMIT 300`,
+      [reviewed ? 'reviewed' : 'pending', method]
+    );
+    // Waiting payments per method, for the filter chips.
+    const { rows: methods } = await query(
+      `SELECT lower(COALESCE(payment_method, 'cash')) AS m, COUNT(*)::int AS n
+       FROM payments WHERE finance_review_status = $1 GROUP BY 1`,
       [reviewed ? 'reviewed' : 'pending']
     );
     const { rows: totals } = await query(
@@ -2577,6 +2585,7 @@ router.get('/financial-system/cash-review', requireRoles('admin', 'finance', 'fi
       items: rows.map(mapCashReviewRow),
       pending_count: totals[0]?.count || 0,
       pending_amount: round2(totals[0]?.amount || 0),
+      by_method: Object.fromEntries(methods.map((r) => [r.m, r.n])),
     });
   } catch (e) {
     if (e.code === '42703') return res.json({ items: [], pending_count: 0, pending_amount: 0 });
@@ -2603,7 +2612,7 @@ router.post('/financial-system/cash-review/:id', requireRoles('admin', 'finance'
     const amount = b.amount != null && b.amount !== '' ? round2(parseFloat(b.amount) || 0) : round2(parseFloat(prev.amount) || 0);
     let method = String(b.payment_method || prev.payment_method || 'cash').toLowerCase();
     if (!(amount > 0)) return res.status(400).json({ error: 'Amount must be greater than zero' });
-    if (!CASH_REVIEW_METHODS.includes(method)) return res.status(400).json({ error: 'Choose cash, InstaPay, bank transfer, card or other' });
+    if (!CASH_REVIEW_METHODS.includes(method)) return res.status(400).json({ error: 'Choose a payment method from the list' });
     // USD reservations are always settled as cash (booked to Cash USD), as when the payment is recorded.
     if (String(prev.currency || '').toUpperCase() === 'USD') method = 'cash';
     const needsBank = method === 'instapay' || method === 'bank_transfer';
