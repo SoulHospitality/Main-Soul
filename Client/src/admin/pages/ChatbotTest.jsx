@@ -54,11 +54,7 @@ function UnitCards({ units }) {
               {u.max_guests ? ` · ${u.max_guests} guests` : ''}
             </p>
             <p className="text-[11px] font-semibold text-soul-blue">
-              {u.stay_total
-                ? `EGP ${Number(u.stay_total).toLocaleString('en-EG')} · ${u.nights} nights`
-                : u.price_per_night
-                  ? `from EGP ${Number(u.price_per_night).toLocaleString('en-EG')}/night`
-                  : ''}
+              {u.price_per_night ? `EGP ${Number(u.price_per_night).toLocaleString('en-EG')} / night` : ''}
             </p>
           </div>
         </a>

@@ -119,6 +119,12 @@ function destinationPatterns(destination) {
  * the whole stay, priced for the stay; without dates, priced at tonight's rate.
  */
 async function searchUnits(input, { shownIds = [] } = {}) {
+  // Families only: no results until the customer has said who's staying.
+  if (input.guests_are_family !== 'yes') {
+    return {
+      error: 'Not searched yet. First ask whether the booking is for a family (married couple, parents and children, or relatives), following the booking policy, then search with guests_are_family "yes".',
+    };
+  }
   const { where, params } = baseWhere();
   let i = 1;
   const add = (sql, value) => {
@@ -203,7 +209,9 @@ async function searchUnits(input, { shownIds = [] } = {}) {
     },
     matching_units_not_yet_shown: countRows[0].c,
     skipped_for_budget: outsideBudget,
-    prices_note: nights > 0 ? 'stay_total_egp includes cleaning/access/service fees; a refundable security deposit may apply.' : 'Nightly prices change by date; ask for dates to give an exact total.',
+    prices_note: nights > 0
+      ? 'Tell the customer the nightly price (avg_price_per_night_egp). Give stay_total_egp (includes fees; a refundable deposit may apply) only if they ask for the total.'
+      : 'Tell the customer the "from" price per night (price_per_night_from_egp); it changes by date.',
     results,
     // With nothing to show, give the model real options instead of letting it guess why.
     ...(results.length
@@ -343,8 +351,13 @@ const TOOLS = [
         min_price_per_night: { type: 'number', description: 'EGP, or 0.' },
         max_price_per_night: { type: 'number', description: 'EGP, or 0.' },
         max_total_budget: { type: 'number', description: 'EGP for the whole stay (needs dates), or 0.' },
+        guests_are_family: {
+          type: 'string',
+          enum: ['yes', 'not_asked'],
+          description: 'Booking policy: "yes" only after the customer said the guests are a family (married couple, parents and children, or relatives such as siblings). Otherwise "not_asked".',
+        },
       },
-      required: ['destination', 'check_in', 'check_out', 'guests', 'bedrooms', 'property_type', 'min_price_per_night', 'max_price_per_night', 'max_total_budget'],
+      required: ['destination', 'check_in', 'check_out', 'guests', 'bedrooms', 'property_type', 'min_price_per_night', 'max_price_per_night', 'max_total_budget', 'guests_are_family'],
       additionalProperties: false,
     },
     strict: true,
