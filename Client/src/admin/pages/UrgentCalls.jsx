@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { MessageSquare, Phone, PhoneCall, Plus } from 'lucide-react';
 import { inboxApi, errorMessage } from '../inbox/api';
-import { useInboxEvents } from '../inbox/InboxContext';
+import { useInbox, useInboxEvents } from '../inbox/InboxContext';
 import Modal from '../components/ui/Modal';
 
 const TABS = [
@@ -31,34 +31,79 @@ export default function UrgentCallsPage() {
   const [form, setForm] = useState({ name: '', phone: '', notes: '' });
   const [outcomes, setOutcomes] = useState({});
 
+  const { me } = useInbox();
+  const KEY = ['urgent-calls'];
+  // One request holds every tab: switching tabs is instant and needs no loading.
   const { data, isLoading } = useQuery({
-    queryKey: ['urgent-calls', tab],
-    queryFn: () => inboxApi.get('/urgent-calls', { status: tab }),
-    refetchInterval: 30000,
+    queryKey: KEY,
+    queryFn: () => inboxApi.get('/urgent-calls'),
+    refetchInterval: 60000,
+    staleTime: 20000,
   });
-  useInboxEvents((type) => {
-    if (type === 'urgent_call') qc.invalidateQueries({ queryKey: ['urgent-calls'] });
+  // Someone else changed a call: refresh once (several changes in a row become one request).
+  const refreshTimer = useRef(null);
+  useInboxEvents((type, ev) => {
+    if (type !== 'urgent_call' || Number(ev?.by) === Number(me?.user?.id)) return;
+    clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(() => qc.invalidateQueries({ queryKey: KEY }), 800);
   });
 
+  const putRow = (row) =>
+    qc.setQueryData(KEY, (old) => {
+      const list = old?.items || [];
+      const exists = list.some((c) => c.id === row.id);
+      return { ...old, items: exists ? list.map((c) => (c.id === row.id ? { ...c, ...row } : c)) : [row, ...list] };
+    });
+
+  // Changes show at once; the server's answer then replaces the row (or the change is undone on error).
   const update = useMutation({
     mutationFn: ({ id, ...body }) => inboxApi.patch(`/urgent-calls/${id}`, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['urgent-calls'] }),
-    onError: (err) => toast.error(errorMessage(err)),
+    onMutate: async ({ id, ...body }) => {
+      await qc.cancelQueries({ queryKey: KEY });
+      const before = qc.getQueryData(KEY);
+      const row = before?.items?.find((c) => c.id === id);
+      if (row) {
+        const handled = body.status && body.status !== 'open' && row.status === 'open';
+        putRow({
+          ...row,
+          ...body,
+          updated_at: new Date().toISOString(),
+          ...(handled ? { handled_by_name: me?.user?.name || 'You', handled_at: new Date().toISOString() } : {}),
+        });
+      }
+      return { before };
+    },
+    onSuccess: (row) => row && putRow(row),
+    onError: (err, _vars, ctx) => {
+      if (ctx?.before) qc.setQueryData(KEY, ctx.before);
+      toast.error(errorMessage(err));
+    },
   });
   const create = useMutation({
     mutationFn: () => inboxApi.post('/urgent-calls', form),
-    onSuccess: () => {
+    onSuccess: (row) => {
       toast.success('Added to urgent calls');
       setAdding(false);
       setForm({ name: '', phone: '', notes: '' });
       setTab('open');
-      qc.invalidateQueries({ queryKey: ['urgent-calls'] });
+      if (row) putRow(row);
     },
     onError: (err) => toast.error(errorMessage(err)),
   });
 
-  const items = data?.items || [];
-  const counts = data?.counts || {};
+  const all = useMemo(() => data?.items || [], [data]);
+  const counts = useMemo(() => {
+    const c = { open: 0, called: 0, done: 0 };
+    for (const row of all) c[row.status] = (c[row.status] || 0) + 1;
+    return c;
+  }, [all]);
+  const items = useMemo(() => {
+    const list = all.filter((c) => c.status === tab);
+    // To call: who waited longest first. Called and done: most recent first.
+    return tab === 'open'
+      ? list.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+      : list.sort((a, b) => new Date(b.handled_at || b.updated_at) - new Date(a.handled_at || a.updated_at));
+  }, [all, tab]);
 
   return (
     <div className="space-y-4">
@@ -117,12 +162,12 @@ export default function UrgentCallsPage() {
                     <PhoneCall className="h-3.5 w-3.5" /> Call
                   </a>
                   {c.status !== 'called' ? (
-                    <button type="button" className="btn-secondary !px-3 !py-1.5 text-xs" onClick={() => update.mutate({ id: c.id, status: 'called', outcome: outcomes[c.id] ?? c.outcome })}>
+                    <button type="button" className="btn-secondary !px-3 !py-1.5 text-xs" onClick={() => update.mutate({ id: c.id, status: 'called', ...(outcomes[c.id] !== undefined ? { outcome: outcomes[c.id] } : {}) })}>
                       Mark called
                     </button>
                   ) : null}
                   {c.status !== 'done' ? (
-                    <button type="button" className="btn-primary !px-3 !py-1.5 text-xs" onClick={() => update.mutate({ id: c.id, status: 'done', outcome: outcomes[c.id] ?? c.outcome })}>
+                    <button type="button" className="btn-primary !px-3 !py-1.5 text-xs" onClick={() => update.mutate({ id: c.id, status: 'done', ...(outcomes[c.id] !== undefined ? { outcome: outcomes[c.id] } : {}) })}>
                       Done
                     </button>
                   ) : (
@@ -141,7 +186,18 @@ export default function UrgentCallsPage() {
                   onChange={(e) => setOutcomes((o) => ({ ...o, [c.id]: e.target.value }))}
                 />
                 {outcomes[c.id] !== undefined && outcomes[c.id] !== (c.outcome ?? '') ? (
-                  <button type="button" className="btn-secondary !py-1 text-xs" onClick={() => update.mutate({ id: c.id, outcome: outcomes[c.id] })}>
+                  <button
+                    type="button"
+                    className="btn-secondary !py-1 text-xs"
+                    onClick={() => {
+                      update.mutate({ id: c.id, outcome: outcomes[c.id] });
+                      setOutcomes((o) => {
+                        const next = { ...o };
+                        delete next[c.id];
+                        return next;
+                      });
+                    }}
+                  >
                     Save
                   </button>
                 ) : null}
@@ -159,7 +215,7 @@ export default function UrgentCallsPage() {
           footer={
             <>
               <button type="button" className="btn-secondary" onClick={() => setAdding(false)}>Cancel</button>
-              <button type="button" className="btn-primary" disabled={create.isPending} onClick={() => create.mutate()}>Add</button>
+              <button type="button" className="btn-primary" disabled={create.isPending} onClick={() => create.mutate()}>{create.isPending ? 'Adding…' : 'Add'}</button>
             </>
           }
         >
