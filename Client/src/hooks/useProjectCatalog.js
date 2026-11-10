@@ -62,6 +62,7 @@ export function useProjectCatalog() {
           image: item.image_url || fallback?.image || '/soul-brand/coast-1.jpg',
           area: item.destination,
           sortOrder: Number(item.sort_order) || 0,
+          unitCount: Number(item.unit_count) || 0,
         };
       });
     }

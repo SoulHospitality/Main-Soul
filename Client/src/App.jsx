@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from 'react';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { CurrencyProvider } from './context/CurrencyContext';
 import { LocaleProvider } from './context/LocaleContext';
@@ -38,6 +38,14 @@ const Faq = lazy(() => import('./pages/StaticPages').then((m) => ({ default: m.F
 const Legal = lazy(() => import('./pages/StaticPages').then((m) => ({ default: m.LegalPage })));
 const Owners = lazy(() => import('./pages/BecomeAHostPage'));
 const ContactPage = lazy(() => import('./pages/ContactPage'));
+// Standalone brand portfolio: reachable only by its link, with no way into the rest of the site.
+const PortfolioPage = lazy(() => import('./pages/portfolio/PortfolioPage'));
+
+/** Site-wide extras (WhatsApp button, popups) are left off the standalone portfolio page. */
+function SiteOnly({ children }) {
+  const { pathname } = useLocation();
+  return pathname.startsWith('/portfolio') ? null : children;
+}
 
 function GuestNotFound() {
   useEffect(() => {
@@ -79,6 +87,7 @@ export default function App() {
                 <Route path="/contact" element={<ContactPage />} />
                 <Route path="/faq" element={<Faq />} />
                 <Route path="/owners" element={<Owners />} />
+                <Route path="/portfolio" element={<PortfolioPage />} />
                 <Route path="/host-onboarding" element={<Owners />} />
                 <Route path="/terms" element={<Legal kind="terms" />} />
                 <Route path="/privacy" element={<Legal kind="privacy" />} />
@@ -88,9 +97,11 @@ export default function App() {
                 <Route path="*" element={<GuestNotFound />} />
               </Routes>
             </Suspense>
-            <WhatsAppFAB />
-            <WebsiteEntryPopup />
-            <OfferPopup />
+            <SiteOnly>
+              <WhatsAppFAB />
+              <WebsiteEntryPopup />
+              <OfferPopup />
+            </SiteOnly>
           </CurrencyProvider>
         </LocaleProvider>
       </BrowserRouter>

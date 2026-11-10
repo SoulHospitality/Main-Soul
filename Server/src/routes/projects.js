@@ -193,6 +193,20 @@ router.get('/catalog', async (_req, res, next) => {
   try {
     const rows = await loadCatalogRows();
     const payload = catalogResponse(rows);
+    // Published stays per project, for the property-count badges on guest pages.
+    try {
+      const { rows: counts } = await query(
+        `SELECT lower(trim(COALESCE(NULLIF(project, ''), compound))) AS name, COUNT(*)::int AS n
+         FROM units WHERE status = 'published' GROUP BY 1`
+      );
+      const byName = new Map(counts.map((c) => [c.name, c.n]));
+      payload.data.items = payload.data.items.map((item) => ({
+        ...item,
+        unit_count: byName.get(String(item.name || '').trim().toLowerCase()) || 0,
+      }));
+    } catch (_) {
+      /* counts are optional */
+    }
     const unitOrder = await getUnitOrder();
     if (unitOrder.destinations && unitOrder.destinations.length) {
       const rank = (d) => {

@@ -1,0 +1,107 @@
+/* Soul Hospitality portfolio page: obsidian and sand rhythm, gold and sage accents. */
+.pf {
+  --pf-ink: #0d1117;
+  --pf-ink-2: #141a22;
+  --pf-sand: #f7f4ef;
+  --pf-sand-2: #ece6dc;
+  --pf-gold: #c5a880;
+  --pf-gold-deep: #a88a60;
+  --pf-sage: #7a9a95;
+  --pf-stone: #a3a3a3;
+  --pf-cream: #f4efe6;
+  background: var(--pf-ink);
+  color: var(--pf-cream);
+  font-family: 'Inter', system-ui, sans-serif;
+  overflow-x: clip;
+}
+.pf-serif {
+  font-family: 'Cormorant Garamond', 'Playfair Display', Georgia, serif;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+.pf-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+}
+.pf-shell {
+  width: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding-left: 20px;
+  padding-right: 20px;
+}
+@media (min-width: 768px) {
+  .pf-shell { padding-left: 40px; padding-right: 40px; }
+}
+
+/* Scroll reveals */
+.pf-reveal {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: opacity 0.9s cubic-bezier(0.22, 1, 0.36, 1), transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: var(--pf-delay, 0ms);
+}
+.pf-reveal.is-in { opacity: 1; transform: none; }
+.pf-zoom img {
+  transform: scale(1.05);
+  transition: transform 1.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.pf-zoom.is-in img { transform: scale(1); }
+
+/* Mist behind the hero lines */
+.pf-mist {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(80px);
+  opacity: 0.35;
+  will-change: transform;
+  animation: pfDrift 26s ease-in-out infinite alternate;
+}
+@keyframes pfDrift {
+  from { transform: translate3d(-4%, 0, 0) scale(1); }
+  to { transform: translate3d(6%, -5%, 0) scale(1.12); }
+}
+
+/* Scroll pill */
+@keyframes pfNudge {
+  0%, 100% { transform: translateY(0); opacity: 0.5; }
+  50% { transform: translateY(6px); opacity: 1; }
+}
+.pf-nudge { animation: pfNudge 2.2s ease-in-out infinite; }
+
+/* Pillar cards */
+.pf-card {
+  position: relative;
+  isolation: isolate;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.015));
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: border-color 0.5s ease, transform 0.5s ease, box-shadow 0.5s ease;
+}
+.pf-card::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  border-radius: inherit;
+  background: radial-gradient(420px circle at var(--mx, 50%) var(--my, 0%), rgba(197, 168, 128, 0.18), transparent 60%);
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+.pf-card:hover { border-color: rgba(197, 168, 128, 0.35); transform: translateY(-4px); box-shadow: 0 30px 60px -30px rgba(197, 168, 128, 0.35); }
+.pf-card:hover::before { opacity: 1; }
+
+/* Partner marquee */
+@keyframes pfMarquee { to { transform: translateX(-50%); } }
+.pf-marquee { animation: pfMarquee 38s linear infinite; }
+.pf-marquee-wrap:hover .pf-marquee { animation-play-state: paused; }
+.pf-fade-x {
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pf-reveal, .pf-zoom img { transition: none; opacity: 1; transform: none; }
+  .pf-mist, .pf-nudge, .pf-marquee { animation: none; }
+}
