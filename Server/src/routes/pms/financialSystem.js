@@ -1510,13 +1510,150 @@ router.get('/financial-system/aging', requireRoles('admin', 'finance', 'finance_
     const { from, to } = dateRange(req);
     const built = await buildFinancialPortal(from, to);
     const asOf = to || new Date().toISOString().slice(0, 10);
+    const aging = agingFromReservations(built.reservations, asOf);
+    // Money already recorded on a stay but not yet confirmed: the Collect button sends it to the finance agent.
+    const rows = Object.values(aging.buckets).flatMap((b) => b.rows);
+    const ids = rows.map((r) => r.reservation_id).filter(Boolean);
+    if (ids.length) {
+      const { rows: waiting } = await query(
+        `SELECT reservation_id, id, amount, payment_method, finance_review_status
+         FROM payments
+         WHERE reservation_id = ANY($1::int[]) AND ${UNCONFIRMED_PAYMENT_SQL}
+         ORDER BY created_at DESC`,
+        [ids]
+      ).catch(() => ({ rows: [] }));
+      const byRes = new Map();
+      for (const p of waiting) {
+        const list = byRes.get(String(p.reservation_id)) || [];
+        list.push({
+          id: p.id,
+          amount: round2(parseFloat(p.amount) || 0),
+          payment_method: p.payment_method,
+          with_finance: p.finance_review_status === 'pending',
+        });
+        byRes.set(String(p.reservation_id), list);
+      }
+      for (const r of rows) {
+        const list = byRes.get(String(r.reservation_id)) || [];
+        r.pending_payments = list;
+        r.pending_amount = round2(list.reduce((s, p) => s + p.amount, 0));
+        r.with_finance = list.length > 0 && list.every((p) => p.with_finance);
+      }
+    }
     res.json({
       from_date: from,
       to_date: to,
       ar_balance: built.kpis?.guest_ar || 0,
-      ...agingFromReservations(built.reservations, asOf),
+      ...aging,
     });
   } catch (e) {
+    next(e);
+  }
+});
+
+// A payment recorded on a stay that finance has not confirmed yet (not the "awaiting collection" placeholder).
+const UNCONFIRMED_PAYMENT_SQL = `COALESCE(kind, 'collection') = 'collection'
+  AND COALESCE(amount, 0) > 0
+  AND COALESCE(notes, '') <> 'Awaiting collection (manual reservation)'
+  AND lower(COALESCE(status, '')) NOT IN ('failed', 'cancelled', 'refunded')
+  AND (finance_review_status = 'pending'
+       OR (COALESCE(is_approved, 0) = 0 AND lower(COALESCE(status, '')) = 'pending'))`;
+
+/**
+ * Outstanding → Collect. When money for the stay was already recorded and is waiting, it is handed to the
+ * finance agent (Reservation collection) instead of being recorded twice. Otherwise the rest is recorded now.
+ */
+router.post('/financial-system/aging/:reservationId/collect', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
+  try {
+    const reservationId = String(req.params.reservationId || '');
+    const { rows: resRows } = await query(
+      `SELECT id, currency, exchange_rate, COALESCE(total_amount, 0) AS total_amount, COALESCE(amount_paid, 0) AS amount_paid
+       FROM reservations WHERE id::text = $1`,
+      [reservationId]
+    );
+    const reservation = resRows[0];
+    if (!reservation) return res.status(404).json({ error: 'Reservation not found' });
+
+    const { rows: existing } = await query(
+      `SELECT * FROM payments WHERE reservation_id = $1 AND ${UNCONFIRMED_PAYMENT_SQL} ORDER BY created_at DESC`,
+      [reservation.id]
+    );
+    if (existing.length) {
+      const toSend = existing.filter((p) => p.finance_review_status !== 'pending').map((p) => p.id);
+      if (toSend.length) {
+        await query(
+          `UPDATE payments SET finance_review_status = 'pending', finance_reviewed_by = NULL, finance_reviewed_at = NULL
+           WHERE id = ANY($1::int[])`,
+          [toSend]
+        );
+      }
+      await logAudit({
+        userId: req.user.id,
+        action: 'SEND_PAYMENT_TO_FINANCE_REVIEW',
+        entityType: 'reservation',
+        entityId: reservation.id,
+        details: { payment_ids: existing.map((p) => p.id) },
+      });
+      return res.json({
+        sent_to_finance: true,
+        already_with_finance: toSend.length === 0,
+        amount: round2(existing.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)),
+        count: existing.length,
+      });
+    }
+
+    const b = req.body || {};
+    const amount = round2(parseFloat(b.amount) || 0);
+    if (!(amount > 0)) return res.status(400).json({ error: 'Enter the amount collected' });
+    let method = String(b.payment_method || 'cash').toLowerCase();
+    if (!CASH_REVIEW_METHODS.includes(method)) return res.status(400).json({ error: 'Choose a payment method from the list' });
+    if (String(reservation.currency || '').toUpperCase() === 'USD') method = 'cash';
+    const needsBank = method === 'instapay' || method === 'bank_transfer';
+    const bankAccount = needsBank ? normalizeBankAccount(b.bank_account) : null;
+    if (needsBank && !bankAccount) return res.status(400).json({ error: 'Choose the ADIB or CIB account' });
+    const paymentDate = /^\d{4}-\d{2}-\d{2}$/.test(String(b.payment_date || '')) ? b.payment_date : new Date().toISOString().slice(0, 10);
+    await assertPeriodOpen(paymentDate, 'This payment date');
+
+    const { rows } = await query(
+      `INSERT INTO payments (
+         reservation_id, amount, payment_date, payment_method, reference_number, notes, created_by, status,
+         is_approved, approved_by, approved_at, paid_at, bank_account, kind
+       ) VALUES ($1, $2, $3::date, $4, $5, $6, $7, 'successful', 1, $7, now(), now(), $8, 'collection')
+       RETURNING *`,
+      [
+        reservation.id,
+        amount,
+        paymentDate,
+        method,
+        String(b.reference_number || '').trim().slice(0, 200) || null,
+        String(b.notes || '').trim().slice(0, 1000) || 'Collected from Outstanding',
+        req.user.id,
+        bankAccount,
+      ]
+    );
+    await query(
+      `UPDATE payments SET status = 'cancelled'
+       WHERE reservation_id = $1 AND status = 'pending'
+         AND notes = 'Awaiting collection (manual reservation)' AND id <> $2`,
+      [reservation.id, rows[0].id]
+    );
+    const { syncReservationPaymentStatus } = require('../../lib/syncReservationPayment');
+    await syncReservationPaymentStatus(reservation.id);
+    await logAudit({
+      userId: req.user.id,
+      action: 'RECORD_PAYMENT',
+      entityType: 'payment',
+      entityId: rows[0].id,
+      details: {
+        before: null,
+        after: { amount, payment_method: method, status: 'successful', kind: 'collection' },
+        reservation_id: reservation.id,
+        source: 'outstanding',
+      },
+    });
+    res.status(201).json({ sent_to_finance: false, payment: rows[0] });
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
     next(e);
   }
 });
@@ -2650,7 +2787,12 @@ router.post('/financial-system/cash-review/:id', requireRoles('admin', 'finance'
         `UPDATE payments SET
            amount = $2, payment_method = $3, bank_account = $4,
            finance_review_status = 'reviewed', finance_reviewed_by = $5, finance_reviewed_at = now(),
-           finance_review_note = $6, finance_review_original = $7::jsonb
+           finance_review_note = $6, finance_review_original = $7::jsonb,
+           -- Money sent from Outstanding that was still waiting for approval counts once finance confirms it.
+           is_approved = 1,
+           status = CASE WHEN lower(COALESCE(status, '')) = 'pending' THEN 'successful' ELSE status END,
+           approved_by = COALESCE(approved_by, $5), approved_at = COALESCE(approved_at, now()),
+           paid_at = COALESCE(paid_at, now())
          WHERE id = $1
          RETURNING *`,
         [
@@ -2668,6 +2810,12 @@ router.post('/financial-system/cash-review/:id', requireRoles('admin', 'finance'
       return rows[0];
     });
 
+    await query(
+      `UPDATE payments SET status = 'cancelled'
+       WHERE reservation_id = $1 AND status = 'pending'
+         AND notes = 'Awaiting collection (manual reservation)' AND id <> $2`,
+      [saved.reservation_id, saved.id]
+    );
     const { syncReservationPaymentStatus } = require('../../lib/syncReservationPayment');
     await syncReservationPaymentStatus(saved.reservation_id);
     await logAudit({

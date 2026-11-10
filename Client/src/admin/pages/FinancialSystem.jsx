@@ -2330,12 +2330,163 @@ function AgingDetail({ row }) {
   );
 }
 
+/** The button on an outstanding stay: collect the rest, or hand money already recorded to the finance agent. */
+function AgingCollectButton({ row, onCollect, onSend, sending }) {
+  const { t } = useFinLocale();
+  const stop = (fn) => (e) => {
+    e.stopPropagation();
+    fn();
+  };
+  if (row.with_finance) {
+    return (
+      <span className="inline-flex whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+        {t('pms.fin.aging.withFinance', { amount: currency(row.pending_amount) })}
+      </span>
+    );
+  }
+  if (row.pending_payments?.length) {
+    return (
+      <button type="button" className="btn-secondary !px-2.5 !py-1 text-xs whitespace-nowrap" disabled={sending} onClick={stop(onSend)}>
+        {t('pms.fin.aging.sendToFinance', { amount: currency(row.pending_amount) })}
+      </button>
+    );
+  }
+  return (
+    <button type="button" className="btn-primary !px-2.5 !py-1 text-xs whitespace-nowrap" onClick={stop(onCollect)}>
+      {t('pms.fin.aging.collect')}
+    </button>
+  );
+}
+
+function AgingCollectModal({ row, onClose }) {
+  const { t } = useFinLocale();
+  const qc = useQueryClient();
+  const [form, setForm] = useState({
+    amount: String(row.amount),
+    payment_method: 'cash',
+    bank_account: '',
+    payment_date: new Date().toISOString().slice(0, 10),
+    reference_number: '',
+    notes: '',
+  });
+  const save = useMutation({
+    mutationFn: () =>
+      api
+        .post(`/financial-system/aging/${row.reservation_id}/collect`, {
+          ...form,
+          bank_account: BANK_METHODS.includes(form.payment_method) ? form.bank_account : null,
+        })
+        .then((r) => r.data),
+    onSuccess: (res) => {
+      toast.success(res.sent_to_finance ? t('pms.fin.aging.sentToFinance') : t('pms.fin.aging.collected'));
+      qc.invalidateQueries({ queryKey: ['financial-system-aging'] });
+      qc.invalidateQueries({ queryKey: ['financial-system-portal'] });
+      qc.invalidateQueries({ queryKey: ['financial-system-cash-review'] });
+      onClose();
+    },
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.aging.collectFailed')),
+  });
+  const amount = Number(form.amount) || 0;
+  const tooMuch = amount > row.amount + 0.009;
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={t('pms.fin.aging.collectTitle', { name: row.guest_name || '' })}
+      footer={
+        <>
+          <button type="button" className="btn-secondary" onClick={onClose}>{t('pms.fin.aging.cancel')}</button>
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={save.isPending || !(amount > 0) || tooMuch || (BANK_METHODS.includes(form.payment_method) && !form.bank_account)}
+            onClick={() => save.mutate()}
+          >
+            {save.isPending ? t('pms.fin.aging.collecting') : t('pms.fin.aging.collectConfirm', { amount: currency(amount) })}
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-gray-600">
+          {row.unit_name} · {formatDate(row.check_in)} → {formatDate(row.check_out)}
+          <div className="mt-1 font-semibold text-red-600">{t('pms.fin.aging.toCollect')}: {currency(row.amount)}</div>
+        </div>
+        <div>
+          <label className="label">{t('pms.fin.cashReview.amountReceived')}</label>
+          <input
+            type="number"
+            min="0.01"
+            step="0.01"
+            className="input w-full"
+            value={form.amount}
+            onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+          />
+          {tooMuch ? <p className="mt-1 text-xs text-red-600">{t('pms.fin.aging.tooMuch', { amount: currency(row.amount) })}</p> : null}
+        </div>
+        <div>
+          <p className="label">{t('pms.fin.cashReview.paymentMethod')}</p>
+          <div className="grid grid-cols-3 gap-2">
+            {CASH_REVIEW_METHODS.map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setForm((f) => ({ ...f, payment_method: m }))}
+                className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
+                  form.payment_method === m
+                    ? 'border-[#1e5fbf] bg-[#eef4ff] text-[#1e5fbf]'
+                    : 'border-[#e6ebf2] bg-white text-[#5b6b80] hover:bg-[#f6f8fb]'
+                }`}
+              >
+                {t(`pms.fin.cashReview.methods.${m}`)}
+              </button>
+            ))}
+          </div>
+        </div>
+        {BANK_METHODS.includes(form.payment_method) ? (
+          <BankAccountPicker
+            label={t('pms.fin.cashReview.bankAccount')}
+            value={form.bank_account}
+            onChange={(v) => setForm((f) => ({ ...f, bank_account: v }))}
+          />
+        ) : null}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className="label">{t('pms.fin.aging.paymentDate')}</label>
+            <input type="date" className="input w-full" value={form.payment_date} onChange={(e) => setForm((f) => ({ ...f, payment_date: e.target.value }))} />
+          </div>
+          <div>
+            <label className="label">{t('pms.fin.aging.reference')}</label>
+            <input className="input w-full" value={form.reference_number} onChange={(e) => setForm((f) => ({ ...f, reference_number: e.target.value }))} />
+          </div>
+        </div>
+        <div>
+          <label className="label">{t('pms.fin.cashReview.note')}</label>
+          <textarea className="input w-full min-h-[60px]" value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} />
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function AgingTool({ rangeParams: params, onOpenAccount }) {
   const { t } = useFinLocale();
+  const qc = useQueryClient();
   const [openRow, setOpenRow] = useState(null);
+  const [collecting, setCollecting] = useState(null);
   const { data, isLoading } = useQuery({
     queryKey: ['financial-system-aging', params],
     queryFn: () => api.get('/financial-system/aging', { params }).then((r) => r.data),
+  });
+  const sendToFinance = useMutation({
+    mutationFn: (row) => api.post(`/financial-system/aging/${row.reservation_id}/collect`, {}).then((r) => r.data),
+    onSuccess: (res) => {
+      toast.success(res.already_with_finance ? t('pms.fin.aging.alreadyWithFinance') : t('pms.fin.aging.sentToFinance'));
+      qc.invalidateQueries({ queryKey: ['financial-system-aging'] });
+      qc.invalidateQueries({ queryKey: ['financial-system-cash-review'] });
+      qc.invalidateQueries({ queryKey: ['financial-system-portal'] });
+    },
+    onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.aging.collectFailed')),
   });
   if (isLoading) return <LoadingSpinner />;
   const buckets = data?.buckets || {};
@@ -2372,6 +2523,7 @@ function AgingTool({ rangeParams: params, onOpenAccount }) {
                   <th className="text-right">{t('pms.fin.aging.fullBill')}</th>
                   <th className="text-right">{t('pms.fin.aging.paid')}</th>
                   <th className="text-right">{t('pms.fin.aging.toCollect')}</th>
+                  <th />
                   <th className="w-8" />
                 </tr>
               </thead>
@@ -2391,13 +2543,21 @@ function AgingTool({ rangeParams: params, onOpenAccount }) {
                       <td className="text-right tabular-nums">{currency(r.full_bill)}</td>
                       <td className="text-right tabular-nums text-emerald-700">{currency(r.paid)}</td>
                       <td className="text-right tabular-nums font-semibold text-red-600">{currency(r.amount)}</td>
+                      <td className="text-right">
+                        <AgingCollectButton
+                          row={r}
+                          onCollect={() => setCollecting(r)}
+                          onSend={() => sendToFinance.mutate(r)}
+                          sending={sendToFinance.isPending}
+                        />
+                      </td>
                       <td>
                         <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-90' : ''}`} />
                       </td>
                     </tr>,
                     open ? (
                       <tr key={`${r.reservation_id}-detail`}>
-                        <td colSpan={8} className="!p-0">
+                        <td colSpan={9} className="!p-0">
                           <AgingDetail row={r} />
                         </td>
                       </tr>
@@ -2409,6 +2569,7 @@ function AgingTool({ rangeParams: params, onOpenAccount }) {
           </div>
         ) : null
       )}
+      {collecting ? <AgingCollectModal row={collecting} onClose={() => setCollecting(null)} /> : null}
     </div>
   );
 }

@@ -1021,7 +1021,21 @@
         "stay": "Stay {{from}} → {{to}}",
         "sales": "Sales: {{name}}",
         "paymentStatus": "Payment: {{status}}",
-        "openReservation": "Open reservation"
+        "openReservation": "Open reservation",
+        "collect": "Collect",
+        "collectTitle": "Collect the rest from {{name}}",
+        "collectConfirm": "Collect {{amount}}",
+        "collecting": "Saving…",
+        "collected": "Payment recorded",
+        "collectFailed": "Could not save the collection",
+        "tooMuch": "More than what is left to collect ({{amount}})",
+        "paymentDate": "Payment date",
+        "reference": "Reference (optional)",
+        "cancel": "Cancel",
+        "sendToFinance": "Send {{amount}} to finance agent",
+        "sentToFinance": "Sent to the finance agent in Reservation collection",
+        "alreadyWithFinance": "Already with the finance agent",
+        "withFinance": "With finance agent · {{amount}}"
       },
       "insurance": {
         "description": "Guest insurance is held on account {{code}} at check-in. Record a custom payout on checkout — refund any amount and retain the rest as damage revenue ({{damageCode}}).",

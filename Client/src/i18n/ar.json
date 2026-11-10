@@ -1021,7 +1021,21 @@
         "stay": "الإقامة {{from}} ← {{to}}",
         "sales": "المبيعات: {{name}}",
         "paymentStatus": "الدفع: {{status}}",
-        "openReservation": "فتح الحجز"
+        "openReservation": "فتح الحجز",
+        "collect": "تحصيل",
+        "collectTitle": "تحصيل المتبقي من {{name}}",
+        "collectConfirm": "تحصيل {{amount}}",
+        "collecting": "جارٍ الحفظ…",
+        "collected": "تم تسجيل الدفعة",
+        "collectFailed": "تعذر حفظ التحصيل",
+        "tooMuch": "أكثر من المبلغ المتبقي ({{amount}})",
+        "paymentDate": "تاريخ الدفع",
+        "reference": "المرجع (اختياري)",
+        "cancel": "إلغاء",
+        "sendToFinance": "إرسال {{amount}} إلى موظف المالية",
+        "sentToFinance": "تم الإرسال إلى موظف المالية في تحصيل الحجوزات",
+        "alreadyWithFinance": "موجودة بالفعل لدى موظف المالية",
+        "withFinance": "لدى موظف المالية · {{amount}}"
       },
       "insurance": {
         "description": "تأمين الضيوف محتفظ به في الحساب {{code}} عند الوصول ويُسترد عند المغادرة. احتفظ بمبلغ الضرر لإبقاء جزء من المبلغ كإيراد ({{damageCode}}).",
