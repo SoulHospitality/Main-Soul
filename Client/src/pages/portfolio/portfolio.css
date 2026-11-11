@@ -1,32 +1,24 @@
-/* Soul Hospitality portfolio page: obsidian and sand rhythm, gold and sage accents. */
+/* Soul Hospitality portfolio page, in the brand system: navy, vista blue, platinum and ivory,
+   set in the brand typeface (Neue Montreal / General Sans). */
 .pf {
-  --pf-ink: #0d1117;
-  --pf-ink-2: #141a22;
-  --pf-sand: #f7f4ef;
-  --pf-sand-2: #ece6dc;
-  --pf-gold: #c5a880;
-  --pf-gold-deep: #a88a60;
-  --pf-sage: #7a9a95;
-  --pf-stone: #a3a3a3;
-  --pf-cream: #f4efe6;
-  background: var(--pf-ink);
-  color: var(--pf-cream);
-  font-family: 'Inter', system-ui, sans-serif;
+  --pf-ink: #0c2440;
+  --pf-navy: #163d68;
+  --pf-navy-dark: #0f2c4d;
+  --pf-vista: #83a0e1;
+  --pf-muted: #52677e;
+  --pf-platinum: #dfe1e2;
+  --pf-ivory: #f3f3f1;
+  --pf-paper: #f8f8f7;
+  --pf-line: rgba(22, 61, 104, 0.12);
+  background: var(--pf-paper);
+  color: var(--pf-navy);
+  font-family: var(--font-brand);
   overflow-x: clip;
 }
-.pf-serif {
-  font-family: 'Cormorant Garamond', 'Playfair Display', Georgia, serif;
-  font-weight: 400;
-  letter-spacing: -0.01em;
-}
-.pf-eyebrow {
-  font-size: 11px;
-  letter-spacing: 0.32em;
-  text-transform: uppercase;
-}
+.pf-grad { background: linear-gradient(160deg, #0c2440 0%, #0f2c4d 45%, #163d68 100%); }
 .pf-shell {
   width: 100%;
-  max-width: 1240px;
+  max-width: 1360px;
   margin: 0 auto;
   padding-left: 20px;
   padding-right: 20px;
@@ -43,18 +35,18 @@
   transition-delay: var(--pf-delay, 0ms);
 }
 .pf-reveal.is-in { opacity: 1; transform: none; }
-.pf-zoom img {
+.pf-zoom .pf-img {
   transform: scale(1.05);
   transition: transform 1.6s cubic-bezier(0.22, 1, 0.36, 1);
 }
-.pf-zoom.is-in img { transform: scale(1); }
+.pf-zoom.is-in .pf-img { transform: scale(1); }
+.pf-zoom.is-in:hover .pf-img { transform: scale(1.035); }
 
 /* Mist behind the hero lines */
 .pf-mist {
   position: absolute;
   border-radius: 9999px;
-  filter: blur(80px);
-  opacity: 0.35;
+  filter: blur(90px);
   will-change: transform;
   animation: pfDrift 26s ease-in-out infinite alternate;
 }
@@ -62,19 +54,17 @@
   from { transform: translate3d(-4%, 0, 0) scale(1); }
   to { transform: translate3d(6%, -5%, 0) scale(1.12); }
 }
-
-/* Scroll pill */
 @keyframes pfNudge {
   0%, 100% { transform: translateY(0); opacity: 0.5; }
   50% { transform: translateY(6px); opacity: 1; }
 }
 .pf-nudge { animation: pfNudge 2.2s ease-in-out infinite; }
 
-/* Pillar cards */
+/* Pillar cards: glass on navy with a vista glow that follows the pointer */
 .pf-card {
   position: relative;
   isolation: isolate;
-  background: linear-gradient(160deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.015));
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02));
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   transition: border-color 0.5s ease, transform 0.5s ease, box-shadow 0.5s ease;
@@ -85,23 +75,23 @@
   inset: -1px;
   z-index: -1;
   border-radius: inherit;
-  background: radial-gradient(420px circle at var(--mx, 50%) var(--my, 0%), rgba(197, 168, 128, 0.18), transparent 60%);
+  background: radial-gradient(420px circle at var(--mx, 50%) var(--my, 0%), rgba(131, 160, 225, 0.22), transparent 60%);
   opacity: 0;
   transition: opacity 0.5s ease;
 }
-.pf-card:hover { border-color: rgba(197, 168, 128, 0.35); transform: translateY(-4px); box-shadow: 0 30px 60px -30px rgba(197, 168, 128, 0.35); }
+.pf-card:hover { border-color: rgba(131, 160, 225, 0.45); transform: translateY(-4px); box-shadow: 0 30px 60px -30px rgba(131, 160, 225, 0.45); }
 .pf-card:hover::before { opacity: 1; }
 
 /* Partner marquee */
 @keyframes pfMarquee { to { transform: translateX(-50%); } }
-.pf-marquee { animation: pfMarquee 38s linear infinite; }
+.pf-marquee { animation: pfMarquee 40s linear infinite; }
 .pf-marquee-wrap:hover .pf-marquee { animation-play-state: paused; }
 .pf-fade-x {
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
-  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pf-reveal, .pf-zoom img { transition: none; opacity: 1; transform: none; }
+  .pf-reveal, .pf-zoom .pf-img { transition: none; opacity: 1; transform: none; }
   .pf-mist, .pf-nudge, .pf-marquee { animation: none; }
 }

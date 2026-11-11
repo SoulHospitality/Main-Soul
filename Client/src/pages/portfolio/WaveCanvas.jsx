@@ -67,9 +67,10 @@ export default function WaveCanvas({ className = '' }) {
           if (x === -step) ctx.moveTo(x, y);
           else ctx.lineTo(x, y);
         }
-        const gold = i % 3 === 0;
-        ctx.strokeStyle = gold ? `rgba(197,168,128,${0.1 + p * 0.16})` : `rgba(122,154,149,${0.08 + p * 0.14})`;
-        ctx.lineWidth = gold ? 1.2 : 1;
+        // Brand vista blue, with every third line in platinum.
+        const vista = i % 3 !== 0;
+        ctx.strokeStyle = vista ? `rgba(131,160,225,${0.12 + p * 0.2})` : `rgba(223,225,226,${0.08 + p * 0.14})`;
+        ctx.lineWidth = vista ? 1 : 1.2;
         ctx.stroke();
       }
 
@@ -79,7 +80,7 @@ export default function WaveCanvas({ className = '' }) {
         if (m.x > 1.02) m.x = -0.02;
         if (m.y < -0.02) m.y = 1.02;
         ctx.beginPath();
-        ctx.fillStyle = `rgba(247,244,239,${m.a})`;
+        ctx.fillStyle = `rgba(223,225,226,${m.a})`;
         ctx.arc(m.x * w, m.y * h, m.r, 0, Math.PI * 2);
         ctx.fill();
       }
