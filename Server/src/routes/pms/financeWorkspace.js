@@ -2,7 +2,7 @@ const express = require('express');
 const { query } = require('../../config/db');
 const { requireRoles } = require('../../middleware/auth');
 const { reservationBill } = require('../../lib/reservationBill');
-const { refreshBooksReset, booksResetAt } = require('../../lib/finance/booksReset');
+const { refreshBooksReset, booksResetAt, afterReset } = require('../../lib/finance/booksReset');
 const { refreshCustomAccounts } = require('../../lib/finance/customAccounts');
 const { buildJournal } = require('../../lib/finance/ledgerEngine');
 
@@ -40,6 +40,7 @@ const BILL_COLUMNS = `r.id, r.guest_name, r.guest_phone, r.status::text AS statu
 /** Everything waiting on finance, as one list sorted by money. */
 router.get('/financial-system/today', requireRoles(...FINANCE), async (req, res, next) => {
   try {
+    await refreshBooksReset();
     const today = todayCairo();
     const week = addDays(today, 7);
     const items = [];
@@ -47,7 +48,7 @@ router.get('/financial-system/today', requireRoles(...FINANCE), async (req, res,
     const [collection] = await safe(
       `SELECT COUNT(*)::int AS n, COALESCE(SUM(amount), 0)::float AS amount,
               COUNT(*) FILTER (WHERE created_at < now() - interval '3 days')::int AS old
-       FROM payments WHERE finance_review_status = 'pending'`
+       FROM payments WHERE finance_review_status = 'pending'${afterReset('created_at')}`
     );
     if (collection?.n) {
       items.push({ id: 'collection', tool: 'collection', count: collection.n, amount: round2(collection.amount), old: collection.old, severity: collection.old ? 'high' : 'normal' });
@@ -58,7 +59,7 @@ router.get('/financial-system/today', requireRoles(...FINANCE), async (req, res,
               COUNT(*) FILTER (WHERE manager_approved_at IS NULL)::int AS manager,
               COUNT(*) FILTER (WHERE manager_approved_at IS NOT NULL AND admin_approved_at IS NULL)::int AS ceo,
               COUNT(*) FILTER (WHERE manager_approved_at IS NOT NULL AND admin_approved_at IS NOT NULL)::int AS payout
-       FROM reservation_cancel_requests WHERE status = 'pending'`
+       FROM reservation_cancel_requests WHERE status = 'pending'${afterReset('requested_at')}`
     );
     if (refunds[0]?.n) {
       const r = refunds[0];
@@ -85,7 +86,7 @@ router.get('/financial-system/today', requireRoles(...FINANCE), async (req, res,
        FROM reservations
        WHERE status::text <> 'cancelled' AND COALESCE(insurance, 0) > 0.009
          AND check_out <= $1::date AND check_out >= '2026-08-24'
-         AND (insurance_refund_status IS NULL OR insurance_refund_status = 'pending')`,
+         AND (insurance_refund_status IS NULL OR insurance_refund_status = 'pending')${afterReset('created_at')}`,
       [today]
     );
     if (insurance[0]?.n) {
@@ -97,7 +98,7 @@ router.get('/financial-system/today', requireRoles(...FINANCE), async (req, res,
       `SELECT ${BILL_COLUMNS}
        FROM reservations r LEFT JOIN units u ON u.id = r.unit_id
        WHERE r.status::text <> 'cancelled' AND r.check_out <= $1::date AND r.check_out >= $2::date
-         AND COALESCE(r.is_owner_reservation, 0) = 0`,
+         AND COALESCE(r.is_owner_reservation, 0) = 0${afterReset('r.created_at')}`,
       [today, addDays(today, -60)]
     );
     let owing = 0;
@@ -120,7 +121,7 @@ router.get('/financial-system/today', requireRoles(...FINANCE), async (req, res,
 
     const payouts = await safe(
       `SELECT COUNT(*)::int AS n, COALESCE(SUM(amount), 0)::float AS amount
-       FROM owner_payout_requests WHERE status IN ('requested', 'approved')`
+       FROM owner_payout_requests WHERE status IN ('requested', 'approved')${afterReset('created_at')}`
     );
     if (payouts[0]?.n) items.push({ id: 'owner_payouts', tool: 'owners', count: payouts[0].n, amount: round2(payouts[0].amount), severity: 'normal' });
 
@@ -144,7 +145,7 @@ async function healthChecks() {
     `SELECT r.id, r.guest_name, to_char(r.check_in, 'YYYY-MM-DD') AS check_in,
             COALESCE(r.down_payment, 0)::float AS amount, COALESCE(r.amount_paid, 0)::float AS paid
      FROM reservations r
-     WHERE r.down_payment > 0 AND r.status::text <> 'cancelled' AND r.booking_id IS NULL
+     WHERE r.down_payment > 0 AND r.status::text <> 'cancelled' AND r.booking_id IS NULL${afterReset('r.created_at')}
        AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.reservation_id = r.id
                        AND (p.is_down_payment OR p.notes = 'Down payment (manual reservation)'))
        AND EXISTS (SELECT 1 FROM payments p WHERE p.reservation_id = r.id
@@ -180,7 +181,7 @@ async function healthChecks() {
   const placeholders = await safe(
     `SELECT p.id, p.reservation_id, r.guest_name, COALESCE(p.amount, 0)::float AS amount
      FROM payments p LEFT JOIN reservations r ON r.id = p.reservation_id
-     WHERE p.status = 'pending' AND p.notes LIKE 'Awaiting collection (manual reservation)%'`
+     WHERE p.status = 'pending' AND p.notes LIKE 'Awaiting collection (manual reservation)%'${afterReset('p.created_at')}`
   );
   add({ id: 'placeholders', severity: 'medium', count: placeholders.length, amount: placeholders.reduce((s, r) => s + r.amount, 0), rows: placeholders, tool: 'collection' });
 
@@ -188,21 +189,21 @@ async function healthChecks() {
     `SELECT p.id, p.booking_id AS ref, COALESCE(p.amount, 0)::float AS amount, to_char(p.created_at, 'YYYY-MM-DD') AS check_in
      FROM payments p
      WHERE p.reservation_id IS NULL AND p.booking_id IS NOT NULL AND p.status = 'successful'
-       AND p.created_at < now() - interval '2 days'`
+       AND p.created_at < now() - interval '2 days'${afterReset('p.created_at')}`
   );
   add({ id: 'card_without_stay', severity: 'high', count: cardOrphans.length, amount: cardOrphans.reduce((s, r) => s + r.amount, 0), rows: cardOrphans, tool: 'search' });
 
   const stale = await safe(
     `SELECT p.id, p.reservation_id, r.guest_name, COALESCE(p.amount, 0)::float AS amount, to_char(p.created_at, 'YYYY-MM-DD') AS check_in
      FROM payments p LEFT JOIN reservations r ON r.id = p.reservation_id
-     WHERE p.finance_review_status = 'pending' AND p.created_at < now() - interval '3 days'
+     WHERE p.finance_review_status = 'pending' AND p.created_at < now() - interval '3 days'${afterReset('p.created_at')}
      ORDER BY p.created_at`
   );
   add({ id: 'collection_waiting', severity: 'medium', count: stale.length, amount: stale.reduce((s, r) => s + r.amount, 0), rows: stale, tool: 'collection' });
 
   const overpaid = await safe(
     `SELECT ${BILL_COLUMNS} FROM reservations r LEFT JOIN units u ON u.id = r.unit_id
-     WHERE r.status::text <> 'cancelled' AND COALESCE(r.amount_paid, 0) > 0 AND r.check_in >= $1::date`,
+     WHERE r.status::text <> 'cancelled' AND COALESCE(r.amount_paid, 0) > 0 AND r.check_in >= $1::date${afterReset('r.created_at')}`,
     [addDays(today, -120)]
   );
   const over = [];

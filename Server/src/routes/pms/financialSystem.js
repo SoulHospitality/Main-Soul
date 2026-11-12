@@ -1956,6 +1956,7 @@ const INSURANCE_REFUND_TRACKING_START = '2026-08-24';
 /** Insurance collected at check-in (204000); due for refund on checkout. */
 router.get('/financial-system/insurance-refunds', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
+    await refreshBooksReset();
     const today = new Date().toISOString().slice(0, 10);
     const filter = String(req.query.filter || 'due').toLowerCase();
     const { rows } = await query(
@@ -1976,7 +1977,7 @@ router.get('/financial-system/insurance-refunds', requireRoles('admin', 'finance
        JOIN units u ON u.id = r.unit_id
        LEFT JOIN staff_users su ON su.id = r.insurance_refunded_by
        WHERE COALESCE(r.insurance, 0) > 0.009
-         AND LOWER(COALESCE(r.status::text, '')) <> 'cancelled'
+         AND LOWER(COALESCE(r.status::text, '')) <> 'cancelled'${afterReset('r.created_at')}
        ORDER BY r.check_out ASC, r.id ASC`
     );
 
@@ -2094,6 +2095,7 @@ function mapCheckinAuditRow(r) {
 
 router.get('/financial-system/checkin-audit', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
+    await refreshBooksReset();
     const { from, to } = parseCheckinAuditRange(req.query);
     const { rows } = await query(
       `SELECT r.id,
@@ -2143,7 +2145,7 @@ router.get('/financial-system/checkin-audit', requireRoles('admin', 'finance', '
        ) pagg ON TRUE
        WHERE r.check_in::date >= $1::date
          AND r.check_in::date <= $2::date
-         AND LOWER(COALESCE(r.status::text, '')) <> 'cancelled'
+         AND LOWER(COALESCE(r.status::text, '')) <> 'cancelled'${afterReset('r.created_at')}
          AND (
            COALESCE(r.ops_money_collected, 0) = 1
            OR COALESCE(r.ops_handed_over, 0) = 1
