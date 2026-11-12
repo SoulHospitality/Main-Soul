@@ -4,6 +4,79 @@ const { syncReservationPaymentStatus } = require('../syncReservationPayment');
 const { assertPeriodOpen } = require('./periodLock');
 const { resolveCancelSettlement, round2 } = require('./cancelSettlement');
 
+/** ADIB / CIB for a bank treasury account or one of its sub-accounts, else null (cash). */
+function bankForTreasury(code) {
+  const { getAccount } = require('./chartOfAccounts');
+  const acct = getAccount(code);
+  const root = acct?.parent_code || code;
+  if (root === '101000') return 'adib';
+  if (root === '102000') return 'cib';
+  return null;
+}
+
+/** The CEO's cancellation: both approvals and the payout happen at once, recorded like finance's. */
+async function settleByCeo(client, { reservationId, user, body, reason, settlement, collected }) {
+  const { isTreasuryCode } = require('./chartOfAccounts');
+  const { refreshCustomAccounts } = require('./customAccounts');
+  await refreshCustomAccounts();
+  const refund = round2(settlement.refund);
+  const treasury = String(body.treasury_account_code || '').trim() || null;
+  if (refund > 0.009) {
+    if (!treasury) {
+      const err = new Error('Choose the treasury the refund is paid from');
+      err.status = 400;
+      throw err;
+    }
+    if (!isTreasuryCode(treasury)) {
+      const err = new Error('Choose a bank or cash treasury account');
+      err.status = 400;
+      throw err;
+    }
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  let paymentId = null;
+  if (refund > 0.009) {
+    await assertPeriodOpen(today);
+    const bank = bankForTreasury(treasury);
+    const { rows: pay } = await client.query(
+      `INSERT INTO payments (
+         reservation_id, amount, payment_date, payment_method, bank_account, treasury_account_code,
+         status, is_approved, approved_by, approved_at, paid_at, notes, created_by, kind
+       ) VALUES ($1, $2, $3::date, $4, $5, $6, 'successful', 1, $7, now(), now(), $8, $7, 'refund')
+       RETURNING id`,
+      [
+        reservationId,
+        -refund,
+        today,
+        bank ? 'bank_transfer' : 'cash',
+        bank,
+        treasury,
+        user.id,
+        `Refund on cancellation by the CEO${reason ? `: ${reason}` : ''}`,
+      ]
+    );
+    paymentId = pay[0].id;
+  }
+  await client.query(
+    `INSERT INTO reservation_cancel_requests
+       (reservation_id, reason, requested_choice, requested_refund, collected, requested_by,
+        manager_approved_by, manager_approved_at, admin_approved_by, admin_approved_at,
+        status, refund_amount, treasury_account_code, refund_date, payment_id, decided_by, decided_at, decision_note)
+     VALUES ($1, $2, $3, $4, $5, $6, $6, now(), $6, now(), 'approved', $4, $7, $8::date, $9, $6, now(), 'Done by the CEO')`,
+    [
+      reservationId,
+      reason || null,
+      settlement.choice,
+      refund,
+      round2(collected),
+      user.id,
+      refund > 0.009 ? treasury : null,
+      refund > 0.009 ? today : null,
+      paymentId,
+    ]
+  );
+}
+
 async function applyCancellation({ reservationId, user, body = {} }) {
   const client = await pool.connect();
   try {
@@ -42,9 +115,14 @@ async function applyCancellation({ reservationId, user, body = {} }) {
     });
     const reason = String(body.reason || '').trim();
 
-    // Money already collected is never refunded here: finance approves the refund, its amount and treasury.
-    const needsFinance = collected > 0.009;
-    if (needsFinance) {
+    // Money already collected: staff send the refund to finance for approval. The CEO never waits —
+    // the refund is approved and paid out from the chosen treasury right away.
+    const byCeo = user?.role === 'admin';
+    const hasMoney = collected > 0.009;
+    const needsFinance = hasMoney && !byCeo;
+    if (hasMoney && byCeo) {
+      await settleByCeo(client, { reservationId, user, body, reason, settlement, collected });
+    } else if (needsFinance) {
       await client.query(
         `INSERT INTO reservation_cancel_requests
            (reservation_id, reason, requested_choice, requested_refund, collected, requested_by)
@@ -60,7 +138,9 @@ async function applyCancellation({ reservationId, user, body = {} }) {
         : `full refund ${settlement.refund}`;
     const noteLine = needsFinance
       ? `Cancellation: ${requested} requested, waiting for finance approval`
-      : 'Cancellation: nothing collected';
+      : hasMoney
+        ? `Cancellation by the CEO: ${requested}, done`
+        : 'Cancellation: nothing collected';
     const { rows } = await client.query(
       `UPDATE reservations SET
          status = 'cancelled',

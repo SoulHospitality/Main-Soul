@@ -72,6 +72,7 @@ export const EMPTY_MANUAL_RESERVATION_FORM = {
   bank_account: '',
   currency: 'EGP',
   exchange_rate: '',
+  apply_service: false,
 };
 
 /** Currency / InstaPay account checks shared by every manual-create screen. */
@@ -209,7 +210,9 @@ export default function ManualReservationForm({
   const brokerTotal = brokerPerNight * nights;
   const utilitiesPerNight = form.is_owner_reservation ? 0 : Number(form.utilities_cost_override) || 0;
   const utilitiesAmount = utilitiesPerNight * nights;
-  const fullBill = Math.round((total + housekeeping + beachAccessFees + insurance) * 100) / 100;
+  // Optional 15% service on the accommodation (the checkbox); off unless ticked.
+  const service = form.apply_service && !form.is_owner_reservation ? Math.round(total * 0.15 * 100) / 100 : 0;
+  const fullBill = Math.round((total + housekeeping + beachAccessFees + insurance + service) * 100) / 100;
   const commissionFinancials = selectedUnit
     ? calcReservationFinancials(selectedUnit, {
         ...form,
@@ -747,6 +750,23 @@ export default function ManualReservationForm({
             </div>
           </div>
 
+          {!form.is_owner_reservation && (
+            <label className="flex cursor-pointer items-start gap-3 rounded-[10px] border border-[#e6ebf2] bg-white px-3 py-2.5">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 accent-[#1e5fbf]"
+                checked={!!form.apply_service}
+                onChange={(event) => setForm((cur) => ({ ...cur, apply_service: event.target.checked }))}
+              />
+              <span className="text-sm">
+                <span className="font-semibold text-[#0f1c2e]">Add 15% service</span>
+                <span className="block text-[12px] text-[#5b6b80]">
+                  {form.apply_service && total > 0 ? `${fmt(service)} added to the bill` : 'Off: no service charge on this stay'}
+                </span>
+              </span>
+            </label>
+          )}
+
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div>
               <Label>Broker name</Label>
@@ -925,6 +945,12 @@ export default function ManualReservationForm({
                   {!beachIsFlat && childrenCount > 0 ? ' (incl. extra guests)' : ''}
                 </span>
                 <strong className="text-[#0f1c2e]">{fmt(beachAccessFees)}</strong>
+              </div>
+            )}
+            {service > 0 && (
+              <div className="flex justify-between py-1">
+                <span className="text-[#5b6b80]">Service (15%)</span>
+                <strong className="text-[#0f1c2e]">{fmt(service)}</strong>
               </div>
             )}
             {insurance > 0 && (

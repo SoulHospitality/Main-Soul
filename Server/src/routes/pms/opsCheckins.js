@@ -14,6 +14,7 @@ const {
 } = require('../../config/cloudinary');
 const { recordOpsPettyCash, pettyLocationForUnit } = require('../../lib/opsPettyCash');
 const { normalizeBankAccount } = require('../../lib/reservationCurrency');
+const { isWebsiteOriginReservation } = require('../../lib/reservationScope');
 
 const router = express.Router();
 
@@ -188,6 +189,8 @@ async function applyCollectBillEdits(reservationId, bill, row) {
   const pricePerNight =
     nights > 0 ? roundMoney(accommodation / nights) : roundMoney(row.price_per_night);
 
+  // The service line is stored on its own (billed on top), so the stay total leaves it out.
+  const servicePct = accommodation > 0 ? Math.round((service / accommodation) * 10000) / 100 : 0;
   await query(
     `UPDATE reservations SET
        price_per_night = $2,
@@ -196,9 +199,11 @@ async function applyCollectBillEdits(reservationId, bill, row) {
        insurance = $5,
        utilities_amount = $6,
        total_amount = $7,
+       service_fees = $8,
+       service_fee_percent = $9,
        updated_at = now()
      WHERE id = $1`,
-    [reservationId, pricePerNight, housekeeping, beach, insurance, utilities, finalTotal]
+    [reservationId, pricePerNight, housekeeping, beach, insurance, utilities, roundMoney(finalTotal - service), service, servicePct]
   );
 
   return fetchCheckinRow(reservationId);
@@ -244,12 +249,18 @@ function paymentBreakdown(row) {
     }
   }
 
+  // Service: what the reservation says (manual stays: only when the 15% box was ticked).
+  // Older website stays with no stored choice keep the 15% that is already inside their total.
   let serviceFees = 0;
-  let serviceFeePercent = 15;
-  try {
+  let serviceFeePercent = 0;
+  if (row.service_fee_percent != null) {
+    serviceFees = roundMoney(row.service_fees);
+    serviceFeePercent = Number(row.service_fee_percent) || 0;
+  } else if (isWebsiteOriginReservation(row)) {
+    serviceFeePercent = 15;
     const subtotal = accommodation > 0 ? accommodation : Number(row.total_amount) || 0;
     serviceFees = Math.round(Number(subtotal || 0) * (serviceFeePercent / 100));
-  } catch {}
+  }
 
   const parts = {
     accommodation_amount: accommodation,
@@ -685,6 +696,35 @@ router.post(
       if (!bill) return res.status(400).json({ error: 'The custom bill is required' });
       const invalid = validateCustomBill(bill, row);
       if (invalid) return res.status(400).json({ error: invalid });
+
+      // The CEO never waits for an approval: the custom bill applies at once.
+      if (req.user.role === 'admin') {
+        await applyCollectBillEdits(reservationId, bill, row);
+        try {
+          await query(
+            `INSERT INTO ops_custom_bill_requests (reservation_id, requested_by, bill, comment, status, reviewed_by, reviewed_at, review_note)
+             VALUES ($1, $2, $3::jsonb, $4, 'approved', $2, now(), 'Applied by the CEO')`,
+            [reservationId, req.user.id, JSON.stringify(bill), comment.slice(0, 2000)]
+          );
+          await query(
+            `UPDATE ops_custom_bill_requests SET status = 'rejected', reviewed_at = now(), review_note = 'Replaced by the CEO''s bill'
+             WHERE reservation_id = $1 AND status = 'pending'`,
+            [reservationId]
+          );
+        } catch (err) {
+          if (err.code !== '42P01') throw err;
+        }
+        await logAudit({
+          userId: req.user.id,
+          action: 'OPS_EDIT_CHECKIN_BILL',
+          entityType: 'reservation',
+          entityId: reservationId,
+          details: { comment, bill, by_admin: true },
+        });
+        const fresh = await fetchCheckinRow(reservationId);
+        const mapped = (await withCustomBillRequests([mapCheckin(fresh)]))[0];
+        return res.status(201).json(mapped);
+      }
 
       const { rows: managers } = await query(`SELECT manager_id FROM staff_users WHERE id = $1`, [req.user.id]);
       const managerId = managers[0]?.manager_id || null;

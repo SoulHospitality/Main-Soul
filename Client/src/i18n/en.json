@@ -844,7 +844,11 @@
         "guestTotalCollectedOutstanding": "Guest total / collected / outstanding",
         "posting": "Posting",
         "monthlyAutoDeduction": "Monthly automatic deduction",
-        "notes": "Notes"
+        "notes": "Notes",
+        "fromStay": "This entry comes from {{guest}}’s stay.",
+        "openTimeline": "Open money timeline",
+        "history": "Change history",
+        "noHistory": "No changes recorded for this record."
       },
       "recurring": {
         "description": "Each month these accrue to vendor payable, then pay from the ADIB bank account. Campus utilities pull 14/114 input VAT. Set 0 to skip a month. Owner money is computed from stays — it is not typed here.",
@@ -1035,7 +1039,8 @@
         "sendToFinance": "Send {{amount}} to finance agent",
         "sentToFinance": "Sent to the finance agent in Reservation collection",
         "alreadyWithFinance": "Already with the finance agent",
-        "withFinance": "With finance agent · {{amount}}"
+        "withFinance": "With finance agent · {{amount}}",
+        "empty": "Nobody owes money in this period."
       },
       "insurance": {
         "description": "Guest insurance is held on account {{code}} at check-in. Record a custom payout on checkout — refund any amount and retain the rest as damage revenue ({{damageCode}}).",
@@ -1557,7 +1562,9 @@
           "paymob_card": "Card (Paymob)",
           "online": "Online"
         },
-        "allMethods": "All methods"
+        "allMethods": "All methods",
+        "bulkConfirm": "Confirm as recorded",
+        "bulkDone": "{{count}} payments confirmed"
       },
       "cheque": {
         "paidBy": "Paid by",
@@ -1646,6 +1653,267 @@
       "alerts": {
         "cashReview": "{{count}} reservation payment(s) waiting to be checked",
         "overdue": "{{count}} overdue payment(s)"
+      },
+      "presetThisQuarter": "This quarter",
+      "table": {
+        "search": "Search this list…",
+        "all": "All",
+        "rows": "{{count}} rows",
+        "export": "Excel",
+        "exportFailed": "Could not export this table",
+        "selected": "{{count}} selected",
+        "clear": "Clear selection",
+        "selectAll": "Select all",
+        "selectRow": "Select row",
+        "empty": "Nothing here",
+        "total": "Total",
+        "moneyIn": "Debits",
+        "moneyOut": "Credits",
+        "date": "Date",
+        "description": "Description",
+        "details": "Details",
+        "debit": "Debit",
+        "credit": "Credit",
+        "amount": "Amount",
+        "phone": "Phone"
+      },
+      "timeline": {
+        "title": "Money timeline",
+        "openReservation": "Reservation",
+        "failed": "Could not load this stay’s money.",
+        "closePanel": "Close",
+        "accommodation": "Accommodation ({{nights}} nights)",
+        "housekeeping": "Housekeeping",
+        "beach": "Beach access",
+        "insurance": "Insurance (refundable)",
+        "service": "Service",
+        "fullBill": "Full bill",
+        "ownerCollected": "Collected by the owner",
+        "paid": "Paid",
+        "toCollect": "Still to collect",
+        "settled": "Fully paid",
+        "money": "Payments and refunds",
+        "downPayment": "Down payment",
+        "refund": "Refund",
+        "awaitingApproval": "Awaiting approval",
+        "financeCheck": "Finance to check",
+        "financeChecked": "Checked by finance",
+        "by": "by {{name}}",
+        "checkedBy": "checked by {{name}}",
+        "noPayments": "No payments recorded yet.",
+        "opsCollected": "Collected at the door {{when}} by {{name}}",
+        "cancelRequest": "Cancellation",
+        "cancelLine": "refund {{refund}} · {{status}}",
+        "writeOff": "Write-off",
+        "customBill": "Custom bill",
+        "entries": "Book entries",
+        "history": "Change history",
+        "system": "System",
+        "actions": {
+          "CREATE_RESERVATION": "Reservation created",
+          "UPDATE_RESERVATION": "Reservation edited",
+          "CANCEL_RESERVATION": "Reservation cancelled",
+          "RECORD_PAYMENT": "Payment recorded",
+          "APPROVE_PAYMENT": "Payment approved",
+          "FINANCE_REVIEW_PAYMENT": "Checked by finance",
+          "SEND_PAYMENT_TO_FINANCE_REVIEW": "Sent to the finance agent",
+          "OPS_COLLECT_CHECKIN": "Collected at the door",
+          "OPS_EDIT_CHECKIN_BILL": "Door bill changed",
+          "OPS_APPROVE_CUSTOM_BILL": "Custom bill approved",
+          "OPS_REJECT_CUSTOM_BILL": "Custom bill rejected",
+          "APPROVE_CANCEL_REFUND": "Refund paid",
+          "APPROVE_REFUND_MANAGER": "Refund approved by the manager",
+          "APPROVE_REFUND_CEO": "Refund approved by the CEO"
+        }
+      },
+      "search": {
+        "placeholder": "Search guest, phone, #reservation, amount, reference…",
+        "searching": "Searching…",
+        "none": "Nothing found for “{{q}}”",
+        "owes": "owes {{amount}}",
+        "groups": {
+          "reservations": "Reservations",
+          "payments": "Payments",
+          "bills": "Vendor bills",
+          "calendar": "Payments calendar",
+          "expenses": "Expenses",
+          "journals": "Journal entries"
+        }
+      },
+      "today": {
+        "period": "{{from}} to {{to}}",
+        "comparedWith": "compared with {{from}} to {{to}}",
+        "noChange": "Same as the period before",
+        "vsBefore": "vs the period before",
+        "collectedSub": "Money that reached the treasuries",
+        "revenueSub": "Stays and other income in this period",
+        "attention": "Needs attention",
+        "attentionHint": "Everything waiting on finance, most urgent and largest first.",
+        "healthIssues": "{{count}} data issues",
+        "healthClear": "Data health: all clear",
+        "urgent": "Urgent",
+        "items_count": "{{count}} items",
+        "allClear": "Nothing is waiting on finance right now.",
+        "items": {
+          "collection": {
+            "title": "Down payments to check",
+            "detail": "{{count}} waiting in Reservation collection, {{old}} for more than 3 days"
+          },
+          "refunds": {
+            "title": "Refund requests",
+            "detail": "{{manager}} waiting for the manager, {{ceo}} for the CEO, {{payout}} ready to pay out"
+          },
+          "calendar_overdue": {
+            "title": "Overdue calendar payments",
+            "detail": "{{count}} past their due date and not marked paid"
+          },
+          "calendar_soon": {
+            "title": "Payments due this week",
+            "detail": "{{count}} due in the next 7 days"
+          },
+          "insurance": {
+            "title": "Insurance to refund",
+            "detail": "{{count}} guests checked out and their insurance is still held"
+          },
+          "left_owing": {
+            "title": "Guests who left owing money",
+            "detail": "{{count}} stays checked out in the last 60 days with a balance"
+          },
+          "vendor_bills": {
+            "title": "Vendor bills due",
+            "detail": "{{count}} bills overdue or due within 7 days"
+          },
+          "owner_payouts": {
+            "title": "Owner payout requests",
+            "detail": "{{count}} requests waiting to be reviewed or paid"
+          }
+        },
+        "item_one": "1 item"
+      },
+      "health": {
+        "intro": "Live checks for money recorded in the wrong place or not at all. Each one says what it means and what to do. Open a check to see the stays behind it.",
+        "trustTied": "Owner trust matches what is owed to each owner",
+        "trustNotTied": "Owner trust does not match the owners’ balances",
+        "trustDetail": "Books {{control}} · owners {{owners}}",
+        "open": "Open",
+        "ok": "No problems found",
+        "colName": "Guest / item",
+        "paidNow": "system shows paid {{amount}}",
+        "goTo": "Open the page to fix it",
+        "checks": {
+          "down_payment_dropped": {
+            "title": "Down payments that dropped out of “paid”",
+            "what": "These stays had a down payment kept only on the reservation; once another payment was recorded, the down payment stopped counting.",
+            "fix": "Record each down payment as a payment so the stay shows the right balance."
+          },
+          "pre_reset_payments": {
+            "title": "Payments for stays booked before the books restart",
+            "what": "The Financial System ignores stays created before the restart, so these payments have no stay behind them in the books.",
+            "fix": "Add opening balances for these stays, or bring them into the books."
+          },
+          "vendor_paid_not_booked": {
+            "title": "Paid vendor bills not in the books",
+            "what": "Marking a vendor bill paid does not create a book entry yet, so the cost and the bank payment are missing.",
+            "fix": "Record the payment from the Payments calendar until vendor bills post automatically."
+          },
+          "write_offs_not_applied": {
+            "title": "Approved write-offs not applied",
+            "what": "The write-off was approved but the guest still shows the balance and no bad-debt cost was booked.",
+            "fix": "Book the write-off as a manual journal (bad debt against guest receivable)."
+          },
+          "placeholders": {
+            "title": "“Awaiting collection” placeholders",
+            "what": "Pending payments created automatically for manual stays. They are not money received but some screens count them.",
+            "fix": "Cancel them once the stay is collected."
+          },
+          "card_without_stay": {
+            "title": "Card payments with no stay",
+            "what": "A guest paid by card more than 2 days ago and no reservation was created from the booking.",
+            "fix": "Open the website booking requests and accept or refund the booking."
+          },
+          "collection_waiting": {
+            "title": "Down payments waiting more than 3 days",
+            "what": "These payments have been in Reservation collection for more than 3 days.",
+            "fix": "Check the amount and method and confirm them."
+          },
+          "overpaid": {
+            "title": "Stays paid more than their bill",
+            "what": "More money is recorded as paid than the full bill. Usually a duplicate payment or a missing fee line.",
+            "fix": "Open the stay, then cancel the duplicate payment or add the missing line."
+          },
+          "bank_not_reconciled": {
+            "title": "Banks not reconciled in the last 35 days",
+            "what": "No bank statement balance was entered recently, so the bank figures are not confirmed against the statement.",
+            "fix": "Enter the latest statement balance in Bank & cards."
+          },
+          "closed_month_edits": {
+            "title": "Changes to stays in closed months",
+            "what": "These stays were edited or paid after their month was closed, which changes closed figures.",
+            "fix": "Review each change; reopen the month or post a correction."
+          }
+        }
+      },
+      "nav": {
+        "label": "Financial System pages",
+        "breadcrumbs": "Breadcrumbs",
+        "periodHint": "This page follows the period on the right.",
+        "groups": {
+          "today": "Overview",
+          "moneyIn": "Money in",
+          "moneyOut": "Money out",
+          "owners": "Owners",
+          "books": "Books",
+          "reports": "Reports"
+        },
+        "pages": {
+          "today": "Today",
+          "health": "Data health",
+          "outstanding": "Outstanding",
+          "collection": "Reservation collection",
+          "checkin-audit": "Door collections",
+          "insurance": "Insurance deposits",
+          "refunds": "Refunds & cancellations",
+          "calendar": "Payments calendar",
+          "vendors": "Vendors & bills",
+          "petty": "Petty cash",
+          "owners": "Owners",
+          "accounts": "Chart of accounts",
+          "manual": "Journal & manual entries",
+          "reconcile": "Bank & cards",
+          "close": "Close month",
+          "statements": "Financial statements",
+          "tax": "Tax desk",
+          "forecast": "Cash forecast"
+        },
+        "tabs": {
+          "whoOwes": "Who owes",
+          "followUp": "Follow-up & write-offs",
+          "statements": "Statements & payouts",
+          "trust": "Owner trust",
+          "pnl": "P&L and balance sheet",
+          "cashflow": "Cash flow",
+          "segments": "By project",
+          "calendar": "Calendar",
+          "fixed": "Fixed monthly charges",
+          "bank": "Bank reconciliation",
+          "card": "Card settlements"
+        }
+      },
+      "closeSteps": {
+        "title": "Before you close the month",
+        "ready": "Ready to close",
+        "notReady": "{{count}} steps left",
+        "left": "{{count}} left",
+        "fix": "Open",
+        "hint": "These checks update on their own. Finish them, then lock the month below.",
+        "steps": {
+          "bank": "Reconcile ADIB and CIB with the bank statements",
+          "collection": "Check every down payment in Reservation collection",
+          "refunds": "Settle refund requests",
+          "calendar": "Pay or reschedule overdue calendar payments",
+          "outstanding": "Follow up guests who left owing money",
+          "health": "Clear the data health issues"
+        }
       }
     }
   }

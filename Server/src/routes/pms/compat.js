@@ -1980,6 +1980,8 @@ router.put(
 
     const clearHold =
       b.is_hold === false || b.is_hold === 0 || b.is_hold === '0' || b.is_hold === 'false';
+    const { rows: downRows } = await query(`SELECT down_payment FROM reservations WHERE id = $1`, [req.params.id]);
+    const downPaymentBefore = downRows[0]?.down_payment ?? null;
 
     const utilitiesOverrideGiven = b.utilities_cost_override !== undefined;
     const utilitiesOverride =
@@ -2097,6 +2099,12 @@ router.put(
     if (rows[0]) {
       const money = await applyReservationCurrency(query, req.params.id, cur, b);
       if (money) Object.assign(rows[0], money);
+      // Service checkbox (15%) and the down payment's payment for finance.
+      const { applyServiceCharge, serviceChoice, syncDownPayment } = require('../../lib/reservationExtras');
+      const service = await applyServiceCharge(rows[0].id, serviceChoice(b));
+      if (service) Object.assign(rows[0], service);
+      const synced = await syncDownPayment(rows[0].id, req.user, { previous: downPaymentBefore });
+      if (synced) Object.assign(rows[0], synced);
     }
     try {
       const { resyncReservationBlocks } = require('../../lib/reservationBlocks');

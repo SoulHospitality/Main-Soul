@@ -134,6 +134,7 @@ router.use(require('./acquisitionPerformance'));
 router.use(require('./auditLog'));
 router.use(require('./siteHealth'));
 router.use(require('./financialSystem'));
+router.use(require('./financeWorkspace'));
 router.use(require('./pettyCashAccounts'));
 router.use(housekeepingOps);
 router.use(require('./opsCheckins'));
@@ -2197,6 +2198,17 @@ router.post(
       console.warn('[reservations] ops auto-assign failed', err.message);
     }
 
+    // Optional 15% service (the checkbox), then the down payment as a payment finance checks.
+    let serviceFees = 0;
+    {
+      const { applyServiceCharge, serviceChoice, syncDownPayment } = require('../../lib/reservationExtras');
+      const service = await applyServiceCharge(reservation.id, serviceChoice(b) ?? false);
+      serviceFees = Number(service?.service_fees) || 0;
+      if (service) Object.assign(reservation, service);
+      const synced = await syncDownPayment(reservation.id, req.user, { force: true });
+      if (synced) Object.assign(reservation, synced);
+    }
+
     if (
       reservation &&
       !isHold &&
@@ -2204,11 +2216,11 @@ router.post(
       paymentMethod &&
       ['cash', 'instapay'].includes(paymentMethod)
     ) {
-      let amountToCollect = totalAmount - amountPaid;
+      let amountToCollect = totalAmount + serviceFees - amountPaid;
       if (ownerCollectedType === 'full') {
         amountToCollect = housekeepingFees + (parseFloat(b.insurance) || 0) - amountPaid;
       } else if (ownerCollectedType === 'partial') {
-        amountToCollect = totalAmount - ownerCollectedAmount - amountPaid;
+        amountToCollect = totalAmount + serviceFees - ownerCollectedAmount - amountPaid;
       }
       amountToCollect = Math.max(0, amountToCollect);
       if (amountToCollect > 0.009) {
@@ -2264,6 +2276,15 @@ router.post(
 
 function truthyFlag(v) {
   return v === true || v === 1 || v === '1' || v === 'true' || v === 'on';
+}
+
+/** After an edit: recalculate the service charge and keep the down payment's payment in step. */
+async function applyReservationExtrasAfterEdit(req, row, before, body) {
+  const { applyServiceCharge, serviceChoice, syncDownPayment } = require('../../lib/reservationExtras');
+  const service = await applyServiceCharge(row.id, serviceChoice(body));
+  if (service) Object.assign(row, service);
+  const synced = await syncDownPayment(row.id, req.user, { previous: before?.down_payment });
+  if (synced) Object.assign(row, synced);
 }
 
 router.patch(
@@ -2420,6 +2441,7 @@ router.patch(
     if (rows[0]) {
       const money = await applyReservationCurrency(query, req.params.id, cur, b);
       if (money) Object.assign(rows[0], money);
+      await applyReservationExtrasAfterEdit(req, rows[0], beforeRows[0], b);
     }
     try {
       const { resyncReservationBlocks } = require('../../lib/reservationBlocks');

@@ -259,7 +259,8 @@ export function CheckinsTodaySection({ embedded = false }) {
     mutationFn: ({ id, bill, comment }) =>
       api.post(`/ops/checkins-today/${id}/custom-bill`, { bill, comment }),
     onSuccess: () => {
-      toast.success('Sent to the line manager');
+      // The CEO's custom bill applies straight away; everyone else's waits for the line manager.
+      toast.success(user?.role === 'admin' ? 'Custom bill applied. You can collect it now.' : 'Sent to the line manager');
       setCollectingId(null);
       invalidateCheckins();
     },

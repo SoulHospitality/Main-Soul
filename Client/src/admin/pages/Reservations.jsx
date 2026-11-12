@@ -24,6 +24,7 @@ import BookingCalendar from '../components/ui/BookingCalendar';
 import { currency, formatDate, formatDateTime, nightsText, BOOKING_SOURCES, PAYMENT_METHODS, PAYMENT_METHOD_LABELS, MANUAL_PAYMENT_METHODS, RESERVATION_CURRENCIES, BANK_ACCOUNT_LABELS, reservationMoney, toReservationCurrency, unitDisplay, unitSelectLabel } from '../utils/formatters';
 import { calcReservationFinancials, commissionModeLabel, appliedPctLabel } from '../utils/commission';
 import { reservationBill } from '../utils/reservationBill';
+import { getAccount, setCustomAccounts, treasuryCodes } from '../../lib/finance/chartOfAccounts';
 import { housekeepingFeeForUnit } from '../../utils/housekeeping';
 import { isoDateOnly } from '../../utils/stayNights';
 import { canonicalSalesName, namesAreAliases, reservationSalesDisplay } from '../utils/salesNameMatch';
@@ -54,6 +55,7 @@ export const EMPTY_FORM = {
   bank_account: '',
   currency: 'EGP',
   exchange_rate: '',
+  apply_service: false,
 };
 const EMPTY_PMT = { amount: '', payment_date: new Date().toISOString().split('T')[0], payment_method: 'cash', bank_account: '', reference_number: '', notes: '' };
 
@@ -127,12 +129,15 @@ function reservationToEditFormEgp(r) {
     broker_name: r.broker_name || '',
     broker_phone: r.broker_phone || '',
     broker_amount_per_night: toStr(r.broker_amount_per_night),
+    apply_service: Number(r.service_fee_percent) > 0,
+    // Website stays carry their own pricing: the service box is not shown for them.
+    service_locked: Boolean(r.booking_id) || ['website', 'web'].includes(String(r.booking_source || '').toLowerCase()),
   };
 }
 
 /** Edit payload: blank money fields mean 0; utilities are only sent once entered. */
 export function reservationEditPayload(form) {
-  const { sales_person_name: _salesName, booked_exchange_rate: _bookedRate, ...rest } = form;
+  const { sales_person_name: _salesName, booked_exchange_rate: _bookedRate, service_locked: serviceLocked, ...rest } = form;
   const num = (v) => (v === '' || v == null ? 0 : Number(v) || 0);
   const int = (v) => Math.max(0, parseInt(v, 10) || 0);
   const payload = {
@@ -147,6 +152,8 @@ export function reservationEditPayload(form) {
     broker_amount_per_night: num(form.broker_amount_per_night),
     owner_collected_amount: num(form.owner_collected_amount),
   };
+  if (serviceLocked) delete payload.apply_service;
+  else payload.apply_service = Boolean(form.apply_service);
   const perNight = form.utilities_cost_override ?? '';
   if (perNight === '') {
     delete payload.utilities_cost_override;
@@ -230,14 +237,16 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
   const ownerCollectedAmt = parseFloat(form.owner_collected_amount) || 0;
 
   
+  // Optional 15% service on the accommodation (manual stays only).
+  const service = form.apply_service && !form.service_locked && !form.is_owner_reservation ? Math.round(total * 0.15 * 100) / 100 : 0;
   let amountToPay;
   if (form.owner_collected_type === 'full') {
     
     amountToPay = hkFees + ins - downPmt;
   } else if (form.owner_collected_type === 'partial') {
-    amountToPay = total - ownerCollectedAmt - downPmt;
+    amountToPay = total + service - ownerCollectedAmt - downPmt;
   } else {
-    amountToPay = total - downPmt;
+    amountToPay = total + service - downPmt;
   }
 
   return (
@@ -447,6 +456,22 @@ export function ReservationForm({ form, setForm, units, users, isNew, transferPr
             <input type="number" min="0" step="0.01" className="input" value={form.insurance}
               onChange={e => setForm(f => ({ ...f, insurance: e.target.value }))} placeholder="0.00" />
           </div>
+          {!form.service_locked && !form.is_owner_reservation ? (
+            <div>
+              <label className="label">Service</label>
+              <label className="input flex cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-blue-600"
+                  checked={!!form.apply_service}
+                  onChange={e => setForm(f => ({ ...f, apply_service: e.target.checked }))}
+                />
+                <span className="text-sm">
+                  Add 15% service{service > 0 ? ` (${cur} ${service.toLocaleString('en-EG', { minimumFractionDigits: 2 })})` : ''}
+                </span>
+              </label>
+            </div>
+          ) : null}
           <div>
             <label className="label">We Still Need to Collect ({cur})</label>
             <div className={`input font-semibold ${amountToPay > 0 ? 'text-red-600 bg-red-50' : 'text-green-600 bg-green-50'}`}>
@@ -1275,6 +1300,18 @@ export default function Reservations() {
   const [cancelReason,   setCancelReason]   = useState('');
   const [cancelType,     setCancelType]     = useState('non_refundable');
   const [refundAmount,   setRefundAmount]   = useState('');
+  const [refundTreasury, setRefundTreasury] = useState('');
+  // The CEO pays the refund out at once, from a treasury chosen here (sub-accounts included).
+  const { data: treasuryOptions = [] } = useQuery({
+    queryKey: ['cancel-refund-treasuries'],
+    enabled: isAdmin && cancelReqOpen,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data } = await api.get('/financial-system/custom-accounts').catch(() => ({ data: [] }));
+      setCustomAccounts(data || []);
+      return treasuryCodes().map((code) => ({ value: code, label: `${code} · ${getAccount(code)?.name || code}` }));
+    },
+  });
   const paymentIdempotencyKey = useRef('');
   
   const [approveCancelReview, setApproveCancelReview] = useState(null); 
@@ -1346,16 +1383,17 @@ export default function Reservations() {
 
   
   const cancelRequestMutation = useMutation({
-    mutationFn: ({ id, reason, type, refundAmount: amount }) =>
+    mutationFn: ({ id, reason, type, refundAmount: amount, treasury }) =>
       api.post(`/reservations/${id}/cancel-request`, {
         reason,
         cancel_type: type,
         refund_amount: type === 'refundable' && amount !== '' ? amount : undefined,
+        treasury_account_code: treasury || undefined,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['reservations'] });
-      toast.success('Reservation cancelled. Any refund now waits for finance approval.');
-      setCancelReqOpen(false); setCancelReqId(null); setCancelReason(''); setCancelType('non_refundable'); setRefundAmount('');
+      toast.success(isAdmin ? 'Reservation cancelled and refund done.' : 'Reservation cancelled. Any refund now waits for finance approval.');
+      setCancelReqOpen(false); setCancelReqId(null); setCancelReason(''); setCancelType('non_refundable'); setRefundAmount(''); setRefundTreasury('');
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Error submitting request'),
   });
@@ -1603,7 +1641,7 @@ export default function Reservations() {
   const openRefundDone = (id) => { setRefundDoneId(id); setRefundFile(null); setRefundDoneOpen(true); };
   const handleCancelReq = () => {
     if (!cancelReason.trim()) { toast.error('Reason is required'); return; }
-    cancelRequestMutation.mutate({ id: cancelReqId, reason: cancelReason, type: cancelType, refundAmount });
+    cancelRequestMutation.mutate({ id: cancelReqId, reason: cancelReason, type: cancelType, refundAmount, treasury: isAdmin ? refundTreasury : '' });
   };
   const handleRefundDone = () => refundDoneMutation.mutate({ id: refundDoneId, file: refundFile });
   const handlePmtSave = () => {
@@ -2393,13 +2431,13 @@ export default function Reservations() {
       <Modal
         open={cancelReqOpen}
         onClose={() => setCancelReqOpen(false)}
-        title="Request Cancellation"
+        title={isAdmin ? 'Cancel reservation' : 'Request Cancellation'}
         size="sm"
         footer={<>
           <button onClick={() => setCancelReqOpen(false)} className="btn-secondary">Close</button>
           <button onClick={handleCancelReq} disabled={cancelRequestMutation.isPending}
             className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50">
-            {cancelRequestMutation.isPending ? 'Submitting…' : 'Submit Request'}
+            {cancelRequestMutation.isPending ? 'Submitting…' : isAdmin ? 'Cancel now' : 'Submit Request'}
           </button>
         </>}
       >
@@ -2442,6 +2480,16 @@ export default function Reservations() {
                   onChange={(e) => setRefundAmount(e.target.value)}
                   placeholder="Partial refund"
                 />
+                {isAdmin ? (
+                  <span className="mt-3 block">
+                    <span className="text-soul-muted">Paid from (needed when money was collected)</span>
+                    <select className="input mt-1" value={refundTreasury} onChange={(e) => setRefundTreasury(e.target.value)}>
+                      <option value="">Choose the treasury…</option>
+                      {treasuryOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                    <span className="mt-1 block text-xs text-soul-muted">As the CEO, the refund is paid now. No approval needed.</span>
+                  </span>
+                ) : null}
               </label>
             ) : (
               <p className="mt-3 text-sm text-soul-muted">The money already collected stays in the books as a forfeited deposit.</p>

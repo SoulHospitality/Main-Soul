@@ -11,7 +11,9 @@ export function reservationBill(r) {
   const hkFees = parseFloat(r?.housekeeping_fees) || 0;
   const beachFees = parseFloat(r?.beach_access_fees) || 0;
   const ins = parseFloat(r?.insurance) || 0;
-  const lineSum = round2(accommodation + hkFees + beachFees + ins);
+  // Optional service charge on manual stays, billed on top like housekeeping (website stays have it inside the total).
+  const service = parseFloat(r?.service_fees) || 0;
+  const lineSum = round2(accommodation + hkFees + beachFees + ins + service);
   const total =
     accommodation > 0 && Math.abs(storedTotal - accommodation) <= 0.5
       ? lineSum
@@ -34,11 +36,12 @@ export function reservationBill(r) {
     hkFees,
     beachFees,
     ins,
+    service,
     total,
     ownerCollected,
     downPayment,
     paid,
     toCollect,
-    remainingAccommodation: Math.max(0, round2(toCollect - hkFees - beachFees - ins)),
+    remainingAccommodation: Math.max(0, round2(toCollect - hkFees - beachFees - ins - service)),
   };
 }

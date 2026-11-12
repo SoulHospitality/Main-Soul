@@ -220,10 +220,13 @@ function allocateStayCredits(r, fin, split) {
   addCredit(lines, '403000', serviceFee, 'Guest service fee / markup');
   rem = 0;
 
+  // The optional 15% service on a manual stay is its own line, billed on top of the stay total.
+  const billedService = round2(parseFloat(r.service_fees) || 0);
   const extraAr = round2(
     addCredit(lines, '402000', unbilledCleaning, 'Cleaning billed in addition to stay total') +
       addCredit(lines, '204000', unbilledInsurance, 'Insurance billed in addition to stay total') +
-      addCredit(lines, '409000', unbilledBeach, 'Beach access billed in addition to stay total')
+      addCredit(lines, '409000', unbilledBeach, 'Beach access billed in addition to stay total') +
+      addCredit(lines, '403000', billedService, 'Service charge billed in addition to stay total')
   );
 
   const vat = split.vat_on_commission || 0;
@@ -248,7 +251,7 @@ function allocateStayCredits(r, fin, split) {
     stayInvoice,
     ar,
     vat,
-    serviceFee,
+    serviceFee: round2(serviceFee + billedService),
     owner: dueOwner,
     commission,
   };
