@@ -33,7 +33,7 @@ async function safe(sql, params = []) {
 
 const BILL_COLUMNS = `r.id, r.guest_name, r.guest_phone, r.status::text AS status, r.nights, r.price_per_night, r.total_amount,
   r.housekeeping_fees, r.beach_access_fees, r.insurance, r.service_fees, r.owner_collected_amount, r.owner_collected_type,
-  r.down_payment, r.amount_paid, r.currency,
+  r.down_payment, r.amount_paid, r.currency, COALESCE(r.written_off_amount, 0) AS written_off_amount,
   to_char(r.check_in, 'YYYY-MM-DD') AS check_in, to_char(r.check_out, 'YYYY-MM-DD') AS check_out,
   COALESCE(u.unit_number, u.title, 'Unit') AS unit_name`;
 
@@ -154,29 +154,58 @@ async function healthChecks() {
   );
   add({ id: 'down_payment_dropped', severity: 'high', count: dropped.length, amount: dropped.reduce((s, r) => s + r.amount, 0), rows: dropped, tool: 'outstanding' });
 
+  // Stays booked and started before the restart that received money after it: the books treat that money
+  // as a correction to opening equity, because the receivable was never opened. Worth agreeing with finance.
   if (reset) {
     const preReset = await safe(
       `SELECT r.id, r.guest_name, to_char(r.check_in, 'YYYY-MM-DD') AS check_in, SUM(p.amount)::float AS amount
        FROM payments p JOIN reservations r ON r.id = p.reservation_id
        WHERE p.created_at >= $1::timestamptz AND r.created_at < $1::timestamptz
+         AND r.check_in < ($1::timestamptz AT TIME ZONE 'Africa/Cairo')::date
          AND p.status = 'successful' AND COALESCE(p.is_approved, 0) = 1
        GROUP BY r.id ORDER BY r.check_in DESC`,
       [reset]
     );
-    add({ id: 'pre_reset_payments', severity: 'high', count: preReset.length, amount: preReset.reduce((s, r) => s + r.amount, 0), rows: preReset, tool: 'accounts' });
+    add({ id: 'pre_reset_payments', severity: 'medium', count: preReset.length, amount: preReset.reduce((s, r) => s + r.amount, 0), rows: preReset, tool: 'accounts' });
   }
 
+  // Paid bills without the account they left from were booked against ADIB.
   const invoices = await safe(
     `SELECT vi.id, COALESCE(v.name, 'Vendor') AS guest_name, vi.invoice_number AS ref, COALESCE(vi.net_payable, 0)::float AS amount
-     FROM vendor_invoices vi LEFT JOIN vendors v ON v.id = vi.vendor_id WHERE vi.status = 'paid' ORDER BY vi.paid_at DESC`
+     FROM vendor_invoices vi LEFT JOIN vendors v ON v.id = vi.vendor_id
+     WHERE vi.status = 'paid' AND vi.paid_from_account IS NULL ORDER BY vi.paid_at DESC`
   );
-  add({ id: 'vendor_paid_not_booked', severity: 'high', count: invoices.length, amount: invoices.reduce((s, r) => s + r.amount, 0), rows: invoices, tool: 'vendors' });
+  add({ id: 'vendor_paid_not_booked', severity: 'medium', count: invoices.length, amount: invoices.reduce((s, r) => s + r.amount, 0), rows: invoices, tool: 'vendors' });
 
+  // Write-offs still waiting for approval keep the money on Outstanding.
   const writeOffs = await safe(
     `SELECT w.id, r.guest_name, w.reservation_id, COALESCE(w.amount, 0)::float AS amount
-     FROM ar_write_offs w LEFT JOIN reservations r ON r.id = w.reservation_id WHERE w.status = 'approved'`
+     FROM ar_write_offs w LEFT JOIN reservations r ON r.id = w.reservation_id WHERE w.status = 'pending'`
   );
-  add({ id: 'write_offs_not_applied', severity: 'high', count: writeOffs.length, amount: writeOffs.reduce((s, r) => s + r.amount, 0), rows: writeOffs, tool: 'outstanding' });
+  add({ id: 'write_offs_not_applied', severity: 'medium', count: writeOffs.length, amount: writeOffs.reduce((s, r) => s + r.amount, 0), rows: writeOffs, tool: 'outstanding' });
+
+  // Books must balance: total debits equal total credits, and assets equal liabilities plus equity.
+  try {
+    const { buildFinancialPortal } = require('../../lib/finance/ledgerEngine');
+    const from = reset ? reset.slice(0, 10) : undefined;
+    const built = await buildFinancialPortal(from, today);
+    const unbalanced = (built.journal || []).filter((e) => !e.balanced)
+      .map((e) => ({ id: e.id, guest_name: e.description, check_in: e.date, amount: round2(Math.abs((e.debit || 0) - (e.credit || 0))) }));
+    add({ id: 'unbalanced_entries', severity: 'high', count: unbalanced.length, amount: unbalanced.reduce((s, r) => s + r.amount, 0), rows: unbalanced, tool: 'accounts' });
+    const negatives = [];
+    for (const g of built.groups || []) {
+      for (const a of g.accounts || []) {
+        const bal = Number(a.balance) || 0;
+        // Receivable, deposits, owner trust and treasuries should never sit on the wrong side.
+        if (['101000', '102000', '103000', '104000', '105000', '203000', '202000', '204000'].includes(String(a.code)) && bal < -1) {
+          negatives.push({ id: a.code, guest_name: `${a.code} ${a.name}`, check_in: today, amount: round2(Math.abs(bal)) });
+        }
+      }
+    }
+    add({ id: 'wrong_side_balances', severity: 'high', count: negatives.length, amount: negatives.reduce((s, r) => s + r.amount, 0), rows: negatives, tool: 'accounts' });
+  } catch (e) {
+    console.warn('[finance] balance checks skipped', e.message);
+  }
 
   const placeholders = await safe(
     `SELECT p.id, p.reservation_id, r.guest_name, COALESCE(p.amount, 0)::float AS amount
@@ -235,6 +264,29 @@ async function healthChecks() {
 
   return checks;
 }
+
+/** Report builder: any Financial System report as rows the client saves as PDF, Excel or CSV. */
+router.get('/financial-system/report-builder', requireRoles(...FINANCE), async (req, res, next) => {
+  try {
+    const { buildReport, DATASETS, GROUPS } = require('../../lib/finance/reportBuilder');
+    if (req.query.list) return res.json({ datasets: DATASETS, groups: GROUPS });
+    const today = todayCairo();
+    const iso = (v, fallback) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : fallback);
+    const to = iso(req.query.to_date, today);
+    const from = iso(req.query.from_date, `${to.slice(0, 7)}-01`);
+    if (from > to) return res.status(400).json({ error: 'The start date is after the end date' });
+    const report = await buildReport({
+      dataset: String(req.query.dataset || ''),
+      from,
+      to,
+      group: String(req.query.group || 'unit'),
+      account: String(req.query.account || '').trim() || null,
+    });
+    res.json(report);
+  } catch (e) {
+    next(e);
+  }
+});
 
 router.get('/financial-system/health', requireRoles(...FINANCE), async (_req, res, next) => {
   try {

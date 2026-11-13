@@ -18,7 +18,26 @@ const {
 const { refreshCustomAccounts } = require('./customAccounts');
 const { refreshBooksReset, booksResetAt, afterReset } = require('./booksReset');
 const { bookingSplit, withholdingTax, extractInputVat } = require('./taxEngine');
-const { reservationPeriodSql } = require('./periodBasis');
+const { reservationPeriodSql, currentPeriodBasis, STAY } = require('./periodBasis');
+
+/** Cairo calendar day of the books restart ('' when the books were never restarted). */
+function resetDay() {
+  const reset = booksResetAt();
+  if (!reset) return '';
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit' })
+    .format(new Date(reset));
+}
+
+/**
+ * Which reservations the books read after a restart. On the stay basis a stay booked before the restart
+ * but staying after it still belongs to the new books: its revenue is earned after the restart.
+ */
+function reservationResetFilter(alias) {
+  const reset = booksResetAt();
+  if (!reset) return '';
+  if (currentPeriodBasis() !== STAY) return afterReset(`${alias}.created_at`);
+  return ` AND (${alias}.created_at >= '${reset}'::timestamptz OR ${alias}.check_in >= '${resetDay()}'::date)`;
+}
 
 function isoDate(value) {
   if (value == null || value === '') return '';
@@ -98,6 +117,11 @@ function paymentCollected(p) {
   if (['failed', 'cancelled'].includes(status)) return false;
   if (status === 'pending' && Number(p.is_approved) !== 1) return false;
   return (parseFloat(p.amount) || 0) !== 0;
+}
+
+/** Business date of a payment: the date it was paid, not the moment it was typed in. */
+function paymentBusinessDate(p) {
+  return isoDate(p?.payment_date) || isoDate(p?.created_at) || isoDate(p?.paid_at);
 }
 
 function isCancelledStay(r) {
@@ -432,12 +456,16 @@ function collectionEntry(p, reservation) {
       currency: reservation?.currency,
     });
   const checkIn = isoDate(reservation?.check_in);
-  const payDate = isoDate(p.created_at) || isoDate(p.payment_date || p.paid_at);
+  const payDate = paymentBusinessDate(p);
   const cancelled = isCancelledStay(reservation);
   const unearned = !cancelled && checkIn && payDate && payDate < checkIn;
   const refund = amt < 0;
   const abs = round2(Math.abs(amt));
-  const creditAccount = unearned || (cancelled && payDate && checkIn && payDate < checkIn) ? '203000' : '105000';
+  // A stay the new books never opened (booked and started before a restart): its balance was outside the
+  // opening figures, so collecting or refunding it corrects opening equity.
+  const creditAccount = reservation?.legacy_outside
+    ? '302000'
+    : unearned || (cancelled && payDate && checkIn && payDate < checkIn) ? '203000' : '105000';
 
   if (refund) {
     return makeEntry({
@@ -491,9 +519,9 @@ function collectionEntry(p, reservation) {
   });
 }
 
-function depositReclassEntry(r, prepaid) {
+function depositReclassEntry(r, prepaid, asOf) {
   const amt = round2(prepaid);
-  if (!(amt > 0.009) || !shouldRecognizeStay(r)) return null;
+  if (!(amt > 0.009) || !shouldRecognizeStay(r, asOf)) return null;
   return makeEntry({
     id: `DEP-${r.id}`,
     date: r.check_in,
@@ -567,18 +595,21 @@ function expenseEntries(e) {
   if (!(amt > 0.009)) return [];
   const acct = EXPENSE_CATEGORY_TO_ACCOUNT[e.category] || '605000';
   const companyPaid = String(e.paid_by || 'company') !== 'owner';
-  const inputVat = companyPaid && INPUT_VAT_CATEGORIES.includes(e.category) ? extractInputVat(amt) : null;
+  const taxed = String(e.tax_mode || 'auto') !== 'none';
+  const inputVat = companyPaid && taxed && INPUT_VAT_CATEGORIES.includes(e.category) ? extractInputVat(amt) : null;
   const expenseNet = inputVat ? inputVat.net : amt;
   const vatAmt = inputVat ? inputVat.vat : 0;
   const skipWht = WHT_SKIP_CATEGORIES.includes(e.category);
-  const wht = companyPaid && !skipWht
+  const wht = companyPaid && taxed && !skipWht
     ? withholdingTax(expenseNet, { ratePct: e.category === 'professional' ? 1 : 3 })
     : { wht_amount: 0 };
-  const payTreasury = '101000';
+  const payTreasury = String(e.paid_from_account || '').trim() || '101000';
   const vendorNet = round2(amt - (wht.wht_amount || 0));
-  const periodDate = isoDate(e.created_at) || isoDate(e.expense_date);
+  const periodDate = isoDate(e.expense_date) || isoDate(e.created_at);
 
   if (!companyPaid) {
+    // Charged to the owner; when the company paid it from a drawer or bank, that account is credited.
+    const ownerPaidFrom = String(e.paid_from_account || '').trim();
     return [
       makeEntry({
         id: `EXP-${e.id}`,
@@ -587,7 +618,9 @@ function expenseEntries(e) {
         description: e.description || 'Owner-charged expense',
         lines: [
           journalLine('202000', amt, 0, 'Charge against owner trust'),
-          journalLine('201000', 0, amt, 'Vendor payable (owner bill)'),
+          ownerPaidFrom
+            ? journalLine(ownerPaidFrom, 0, amt, `Paid from ${accountLabel(ownerPaidFrom)}`)
+            : journalLine('201000', 0, amt, 'Vendor payable (owner bill)'),
         ],
         meta: { expense_id: e.id, category: e.category, paid_by: e.paid_by, unit_id: e.unit_id },
       }),
@@ -601,7 +634,7 @@ function expenseEntries(e) {
   ];
   const payLines = [
     journalLine('201000', amt, 0, 'Settle vendor bill'),
-    journalLine(payTreasury, 0, vendorNet, 'Paid from bank (ADIB)'),
+    journalLine(payTreasury, 0, vendorNet, `Paid from ${accountLabel(payTreasury)}`),
     ...(wht.wht_amount > 0.009 ? [journalLine('206000', 0, wht.wht_amount, 'WHT withheld')] : []),
   ];
 
@@ -623,7 +656,7 @@ function expenseEntries(e) {
       meta: {
         expense_id: e.id,
         category: e.category,
-        from_account: '101000',
+        from_account: payTreasury,
         to_account: '201000',
         wht: wht.wht_amount || 0,
       },
@@ -713,6 +746,211 @@ function closeMonthEntry(yearMonth, monthJournal) {
   });
 }
 
+/** Nights of a stay per calendar month, e.g. { '2026-11': 2, '2026-12': 3 }. */
+function nightsByMonth(checkIn, checkOut) {
+  const out = {};
+  const start = isoDate(checkIn);
+  const end = isoDate(checkOut);
+  if (!start || !end || end <= start) return out;
+  const d = new Date(`${start}T00:00:00Z`);
+  const last = new Date(`${end}T00:00:00Z`);
+  let guard = 0;
+  while (d < last && guard < 400) {
+    const ym = d.toISOString().slice(0, 7);
+    out[ym] = (out[ym] || 0) + 1;
+    d.setUTCDate(d.getUTCDate() + 1);
+    guard += 1;
+  }
+  return out;
+}
+
+const DEFERRABLE_REVENUE = ['401000', '403000', '404000'];
+
+/**
+ * Revenue is earned night by night (IFRS 15, over time). A stay that crosses a month end
+ * moves the share of nights in later months to deferred revenue at check-in, then releases
+ * it on the 1st of each later month. The owner share expense follows the same nights.
+ */
+function stayRecognitionEntries(r, asOf) {
+  if (currentPeriodBasis() !== STAY || isCancelledStay(r)) return [];
+  const checkIn = isoDate(r.check_in);
+  if (!checkIn || reservationBookedDate(r) !== checkIn || !shouldRecognizeStay(r, asOf)) return [];
+  const byMonth = nightsByMonth(r.check_in, r.check_out);
+  const months = Object.keys(byMonth).sort();
+  if (months.length < 2) return [];
+  const totalNights = months.reduce((s, m) => s + byMonth[m], 0);
+  const { fin, split } = reservationFinancials(r);
+  const posted = allocateStayCredits(r, fin, split);
+  const revenue = {};
+  let ownerShare = 0;
+  for (const line of posted.lines) {
+    if (DEFERRABLE_REVENUE.includes(line.account)) revenue[line.account] = round2((revenue[line.account] || 0) + (line.credit || 0));
+    if (line.account === '506000') ownerShare = round2(ownerShare + (line.debit || 0));
+  }
+  const later = months.slice(1);
+  const laterNights = later.reduce((s, m) => s + byMonth[m], 0);
+  const portion = (amount, nights) => round2((amount * nights) / totalNights);
+  const guest = r.guest_name || 'Guest';
+  const unit = r.unit_name || 'Unit';
+  const meta = { reservation_id: r.id, guest_name: r.guest_name, unit_name: r.unit_name, nights: totalNights };
+
+  const deferLines = [];
+  let deferredRevenue = 0;
+  for (const [acct, amt] of Object.entries(revenue)) {
+    const part = portion(amt, laterNights);
+    if (part > 0.009) {
+      deferLines.push(journalLine(acct, part, 0, `Nights after ${checkIn.slice(0, 7)} not yet earned`));
+      deferredRevenue = round2(deferredRevenue + part);
+    }
+  }
+  if (deferredRevenue > 0.009) deferLines.push(journalLine('210000', 0, deferredRevenue, 'Deferred stay revenue'));
+  const deferredOwner = portion(ownerShare, laterNights);
+  if (deferredOwner > 0.009) {
+    deferLines.push(journalLine('111000', deferredOwner, 0, 'Owner share of nights not yet stayed'));
+    deferLines.push(journalLine('506000', 0, deferredOwner, 'Owner share follows the nights'));
+  }
+  if (!deferLines.length) return [];
+  const entries = [
+    makeEntry({
+      id: `DEF-${r.id}`,
+      date: checkIn,
+      type: 'revenue_deferral',
+      description: `Defer later nights — ${guest} · ${unit}`,
+      lines: deferLines,
+      meta: { ...meta, deferred_nights: laterNights, from_account: '210000', to_account: '401000' },
+    }),
+  ];
+
+  // Release month by month; the last month takes the rounding remainder.
+  const left = { ...revenue };
+  for (const acct of Object.keys(left)) left[acct] = portion(revenue[acct], laterNights);
+  let ownerLeft = deferredOwner;
+  later.forEach((month, idx) => {
+    const isLast = idx === later.length - 1;
+    const lines = [];
+    let total = 0;
+    for (const acct of Object.keys(left)) {
+      const part = isLast ? left[acct] : Math.min(left[acct], portion(revenue[acct], byMonth[month]));
+      if (part > 0.009) {
+        lines.push(journalLine(acct, 0, part, `${byMonth[month]} night(s) earned in ${month}`));
+        left[acct] = round2(left[acct] - part);
+        total = round2(total + part);
+      }
+    }
+    if (total > 0.009) lines.unshift(journalLine('210000', total, 0, 'Release deferred stay revenue'));
+    const ownerPart = isLast ? ownerLeft : Math.min(ownerLeft, portion(ownerShare, byMonth[month]));
+    if (ownerPart > 0.009) {
+      lines.push(journalLine('506000', ownerPart, 0, `Owner share of ${byMonth[month]} night(s)`));
+      lines.push(journalLine('111000', 0, ownerPart, 'Release deferred owner share'));
+      ownerLeft = round2(ownerLeft - ownerPart);
+    }
+    if (lines.length) {
+      entries.push(
+        makeEntry({
+          id: `REV-${r.id}-${month}`,
+          date: `${month}-01`,
+          type: 'revenue_recognition',
+          description: `Earn ${byMonth[month]} night(s) — ${guest} · ${unit}`,
+          lines,
+          meta: { ...meta, month, nights_in_month: byMonth[month], from_account: '210000', to_account: '401000' },
+        })
+      );
+    }
+  });
+  return entries;
+}
+
+/** Approved vendor bill: cost and payable on the invoice date; payment from the chosen treasury. */
+function vendorBillEntries(vi) {
+  const amt = round2(parseFloat(vi.amount) || 0);
+  if (!(amt > 0.009)) return [];
+  const wht = round2(parseFloat(vi.wht_amount) || 0);
+  const net = round2(parseFloat(vi.net_payable) || amt - wht);
+  const expenseAcct = String(vi.expense_account || '').trim() || EXPENSE_CATEGORY_TO_ACCOUNT[vi.category] || '605000';
+  const vendor = vi.vendor_name || 'Vendor';
+  const ref = vi.invoice_number ? ` #${vi.invoice_number}` : '';
+  const meta = { vendor_invoice_id: vi.id, vendor_id: vi.vendor_id, vendor_name: vendor, invoice_number: vi.invoice_number, unit_id: vi.unit_id };
+  const entries = [];
+  if (!vi.expense_id) {
+    entries.push(
+      makeEntry({
+        id: `VI-${vi.id}-ACC`,
+        date: isoDate(vi.invoice_date) || isoDate(vi.approved_at),
+        type: 'vendor_bill',
+        description: `Vendor bill${ref} — ${vendor}`,
+        lines: [
+          journalLine(expenseAcct, amt, 0, vi.description || vi.category || 'Vendor bill'),
+          journalLine('201000', 0, amt, 'Vendor payable'),
+        ],
+        meta: { ...meta, from_account: '201000', to_account: expenseAcct },
+      })
+    );
+  }
+  if (String(vi.status) === 'paid') {
+    const treasury =
+      String(vi.paid_from_account || '').trim() ||
+      treasuryAccountForMethod(vi.payment_method || 'bank_transfer', { bankAccount: 'adib' });
+    entries.push(
+      makeEntry({
+        id: `VI-${vi.id}-PAY`,
+        date: isoDate(vi.paid_at) || isoDate(vi.updated_at),
+        type: 'vendor_payment',
+        description: `Pay vendor bill${ref} — ${vendor}`,
+        lines: [
+          journalLine('201000', amt, 0, 'Settle vendor payable'),
+          journalLine(treasury, 0, net, `Paid from ${accountLabel(treasury)}`),
+          ...(wht > 0.009 ? [journalLine('206000', 0, wht, 'WHT withheld')] : []),
+        ],
+        meta: { ...meta, from_account: treasury, to_account: '201000', wht, reference_number: vi.payment_reference || null },
+      })
+    );
+  }
+  return entries;
+}
+
+/** Approved write-off: the uncollectable part of a guest bill becomes bad-debt expense. */
+function writeOffEntry(w) {
+  const amt = round2(parseFloat(w.amount) || 0);
+  if (!(amt > 0.009) || w.legacy_outside) return null;
+  return makeEntry({
+    id: `WO-${w.id}`,
+    date: isoDate(w.approved_at) || isoDate(w.created_at),
+    type: 'write_off',
+    description: `Write-off — ${w.guest_name || 'Guest'}${w.reason ? ` (${w.reason})` : ''}`,
+    lines: [
+      journalLine('620000', amt, 0, 'Bad debt written off'),
+      journalLine('105000', 0, amt, 'Remove uncollectable receivable'),
+    ],
+    meta: { write_off_id: w.id, reservation_id: w.reservation_id, guest_name: w.guest_name, from_account: '105000', to_account: '620000' },
+  });
+}
+
+/** Expected credit loss (IFRS 9): the allowance is moved to each month's aging estimate. */
+function provisionEntries(provisions) {
+  const entries = [];
+  let previous = 0;
+  for (const p of [...(provisions || [])].sort((a, b) => String(a.period_month).localeCompare(String(b.period_month)))) {
+    const target = round2(parseFloat(p.total_provision) || 0);
+    const change = round2(target - previous);
+    previous = target;
+    if (Math.abs(change) < 0.01) continue;
+    const up = change > 0;
+    entries.push(
+      makeEntry({
+        id: `ECL-${p.period_month}`,
+        date: lastDayOfMonth(p.period_month),
+        type: 'credit_loss_provision',
+        description: `Expected credit loss ${p.period_month} (allowance ${target.toLocaleString('en-US')})`,
+        lines: up
+          ? [journalLine('620000', change, 0, 'Increase allowance for doubtful accounts'), journalLine('105900', 0, change, 'Allowance for doubtful accounts')]
+          : [journalLine('105900', -change, 0, 'Release allowance for doubtful accounts'), journalLine('620000', 0, -change, 'Lower expected credit loss')],
+        meta: { period_month: p.period_month, allowance: target, from_account: '105900', to_account: '620000' },
+      })
+    );
+  }
+  return entries;
+}
+
 function prepaidAmount(r, payments) {
   const checkIn = isoDate(r.check_in);
   let fromRows = 0;
@@ -720,7 +958,7 @@ function prepaidAmount(r, payments) {
     if (String(p.reservation_id) !== String(r.id) || !paymentCollected(p)) continue;
     const amt = parseFloat(p.amount) || 0;
     if (amt <= 0) continue;
-    const payDate = isoDate(p.created_at) || isoDate(p.payment_date || p.paid_at);
+    const payDate = paymentBusinessDate(p);
     if (checkIn && payDate && payDate < checkIn) fromRows += amt;
   }
   const claimed = round2(parseFloat(r.amount_paid) || 0);
@@ -770,8 +1008,11 @@ async function loadPortalData(from, to) {
     )`;
   }
 
+  const reset = booksResetAt();
+  const preResetSql = reset ? `(r.created_at < '${reset}'::timestamptz)` : 'false';
   const { rows: reservations } = await query(
     `SELECT r.*,
+            ${preResetSql} AS pre_reset,
             to_char(${period}, 'YYYY-MM-DD') AS period_date,
             to_char(r.created_at, 'YYYY-MM-DD') AS created_at,
             to_char(r.check_in, 'YYYY-MM-DD') AS check_in,
@@ -786,10 +1027,42 @@ async function loadPortalData(from, to) {
      FROM reservations r
      JOIN units u ON u.id = r.unit_id
      LEFT JOIN staff_users sp ON sp.id = r.sales_person_id
-     WHERE ${resSql}${afterReset('r.created_at')}
+     WHERE ${resSql}${reservationResetFilter('r')}
      ORDER BY r.created_at DESC`,
     resParams
   );
+
+  // Stays that started before the period and run into it: their later nights are earned in the period.
+  let spanning = [];
+  if (from && currentPeriodBasis() === STAY) {
+    try {
+      const { rows } = await query(
+        `SELECT r.*,
+                ${preResetSql} AS pre_reset,
+                to_char(r.check_in, 'YYYY-MM-DD') AS period_date,
+                to_char(r.created_at, 'YYYY-MM-DD') AS created_at,
+                to_char(r.check_in, 'YYYY-MM-DD') AS check_in,
+                to_char(r.check_out, 'YYYY-MM-DD') AS check_out,
+                COALESCE(u.unit_number, u.title, 'Unit') AS unit_name,
+                COALESCE(u.project, u.compound) AS project,
+                u.commission_mode, u.company_commission_pct,
+                u.company_commission_owner_pct, u.commission_tenant_pct,
+                COALESCE(u.utilities_cost, 0) AS utilities_cost,
+                COALESCE(sp.full_name, '—') AS sales_person_name,
+                COALESCE(sp.sales_commission_pct, 0) AS agent_commission_pct
+         FROM reservations r
+         JOIN units u ON u.id = r.unit_id
+         LEFT JOIN staff_users sp ON sp.id = r.sales_person_id
+         WHERE r.check_in < $1::date AND r.check_out > $1::date
+           AND LOWER(COALESCE(r.status::text, '')) <> 'cancelled'${reservationResetFilter('r')}`,
+        [from]
+      );
+      const loaded = new Set(reservations.map((r) => String(r.id)));
+      spanning = rows.filter((r) => !loaded.has(String(r.id)));
+    } catch (_) {
+      spanning = [];
+    }
+  }
 
   const totPeriod = reservationPeriodSql();
   const totParams = [from];
@@ -811,10 +1084,10 @@ async function loadPortalData(from, to) {
   };
 
   const payParams = [from];
-  let paySql = `p.created_at::date >= $1::date${afterReset('p.created_at')}`;
+  let paySql = `COALESCE(p.payment_date, p.created_at::date) >= $1::date${afterReset('p.created_at')}`;
   if (to) {
     payParams.push(to);
-    paySql += ` AND p.created_at::date <= $${payParams.length}::date`;
+    paySql += ` AND COALESCE(p.payment_date, p.created_at::date) <= $${payParams.length}::date`;
   }
   const { rows: payments } = await query(
     `SELECT p.*
@@ -842,11 +1115,45 @@ async function loadPortalData(from, to) {
     }
   }
 
+  // Stays booked before a restart: what they had paid by then is already inside the opening treasury balances.
+  if (reset) {
+    const postReset = {};
+    for (const p of stayPayments) {
+      if (String(p.kind || '') === 'forfeit' || !paymentCollected(p)) continue;
+      postReset[p.reservation_id] = round2((postReset[p.reservation_id] || 0) + (parseFloat(p.amount) || 0));
+    }
+    for (const r of reservations) {
+      if (!r.pre_reset) continue;
+      r.opening_paid = round2(Math.max(0, (parseFloat(r.amount_paid) || 0) - (postReset[r.id] || 0)));
+    }
+  }
+
+  // Payments after a restart for stays the new books never opened (booked and started before it).
+  let legacyStays = [];
+  if (reset) {
+    const known = new Set(reservations.map((r) => String(r.id)));
+    const missing = [...new Set(payments.map((p) => p.reservation_id).filter((id) => id && !known.has(String(id))))];
+    if (missing.length) {
+      try {
+        const { rows } = await query(
+          `SELECT r.id, r.guest_name, r.payment_method, r.bank_account, r.currency, r.exchange_rate, r.status,
+                  to_char(r.check_in, 'YYYY-MM-DD') AS check_in, COALESCE(u.unit_number, u.title, 'Unit') AS unit_name
+           FROM reservations r LEFT JOIN units u ON u.id = r.unit_id
+           WHERE r.id = ANY($1) AND r.created_at < $2::timestamptz`,
+          [missing, reset]
+        );
+        legacyStays = rows.map((r) => ({ ...r, legacy_outside: true }));
+      } catch (_) {
+        legacyStays = [];
+      }
+    }
+  }
+
   const expParams = [from];
-  let expSql = `created_at::date >= $1::date${afterReset('created_at')}`;
+  let expSql = `COALESCE(expense_date, created_at::date) >= $1::date${afterReset('created_at')}`;
   if (to) {
     expParams.push(to);
-    expSql += ` AND created_at::date <= $${expParams.length}::date`;
+    expSql += ` AND COALESCE(expense_date, created_at::date) <= $${expParams.length}::date`;
   }
   const { rows: expenses } = await query(
     `SELECT * FROM expenses WHERE ${expSql} ORDER BY created_at DESC`,
@@ -873,10 +1180,10 @@ async function loadPortalData(from, to) {
   let petty = [];
   try {
     const pcParams = [from];
-    let pcSql = `created_at::date >= $1::date AND COALESCE(status, 'open') <> 'moved'${afterReset('created_at')}`;
+    let pcSql = `COALESCE(entry_date, created_at::date) >= $1::date AND COALESCE(status, 'open') <> 'moved'${afterReset('created_at')}`;
     if (to) {
       pcParams.push(to);
-      pcSql += ` AND created_at::date <= $${pcParams.length}::date`;
+      pcSql += ` AND COALESCE(entry_date, created_at::date) <= $${pcParams.length}::date`;
     }
     const { rows } = await query(`SELECT * FROM petty_cash WHERE ${pcSql} ORDER BY created_at DESC`, pcParams);
     petty = rows;
@@ -895,10 +1202,10 @@ async function loadPortalData(from, to) {
   let manuals = [];
   try {
     const mParams = [from];
-    let mSql = `m.created_at::date >= $1::date`;
+    let mSql = `COALESCE(m.entry_date, m.created_at::date) >= $1::date`;
     if (to) {
       mParams.push(to);
-      mSql += ` AND m.created_at::date <= $${mParams.length}::date`;
+      mSql += ` AND COALESCE(m.entry_date, m.created_at::date) <= $${mParams.length}::date`;
     }
     const { rows } = await query(
       `SELECT m.*, COALESCE(u.unit_number, u.title) AS unit_name, su.full_name AS created_by_name
@@ -927,6 +1234,78 @@ async function loadPortalData(from, to) {
     payouts = rows;
   } catch (_) {
     payouts = [];
+  }
+
+  const sinceDate = from || '1900-01-01';
+  let vendorBills = [];
+  try {
+    const { rows } = await query(
+      `SELECT vi.*, v.name AS vendor_name
+       FROM vendor_invoices vi LEFT JOIN vendors v ON v.id = vi.vendor_id
+       WHERE vi.status IN ('approved', 'paid')${afterReset('vi.created_at')}
+         AND (vi.invoice_date >= $1::date OR vi.paid_at::date >= $1::date)`,
+      [sinceDate]
+    );
+    vendorBills = rows;
+  } catch (_) {
+    vendorBills = [];
+  }
+
+  let writeOffs = [];
+  try {
+    // A stay booked and started before a restart never had its receivable opened: writing it off only
+    // clears Outstanding, there is nothing in the books to remove.
+    const outsideSql = reset
+      ? `(r.created_at < '${reset}'::timestamptz AND r.check_in < '${resetDay()}'::date)`
+      : 'false';
+    const { rows } = await query(
+      `SELECT w.*, r.guest_name, ${outsideSql} AS legacy_outside
+       FROM ar_write_offs w LEFT JOIN reservations r ON r.id = w.reservation_id
+       WHERE w.status = 'approved'${afterReset('w.created_at')}
+         AND COALESCE(w.approved_at, w.created_at)::date >= $1::date`,
+      [sinceDate]
+    );
+    writeOffs = rows;
+  } catch (_) {
+    writeOffs = [];
+  }
+
+  let provisions = [];
+  try {
+    const resetMonth = resetDay().slice(0, 7);
+    const { rows } = await query(
+      `SELECT period_month, total_provision FROM ar_bad_debt_provisions
+       WHERE ($1::text = '' OR period_month >= $1::text) ORDER BY period_month`,
+      [resetMonth]
+    );
+    provisions = rows;
+  } catch (_) {
+    provisions = [];
+  }
+
+  // Closed months read their frozen journal; later changes arrive as dated corrections.
+  let posted = [];
+  let frozenMonths = [];
+  if (currentPeriodBasis() === STAY) {
+    try {
+      const params = [sinceDate];
+      let where = `entry_date >= $1::date`;
+      if (to) {
+        params.push(to);
+        where += ` AND entry_date <= $2::date`;
+      }
+      const { rows } = await query(
+        `SELECT year_month, kind, entry_id, to_char(entry_date, 'YYYY-MM-DD') AS entry_date, entry
+         FROM financial_posted_entries WHERE ${where} ORDER BY id`,
+        params
+      );
+      posted = rows;
+      const { rows: months } = await query(`SELECT DISTINCT year_month FROM financial_posted_entries WHERE kind = 'frozen'`);
+      frozenMonths = months.map((m) => m.year_month);
+    } catch (_) {
+      posted = [];
+      frozenMonths = [];
+    }
   }
 
   let recurring = [];
@@ -1021,13 +1400,25 @@ async function loadPortalData(from, to) {
     snapshots,
     reconciled,
     reservationTotals,
+    spanning,
+    legacyStays,
+    vendorBills,
+    writeOffs,
+    provisions,
+    posted,
+    frozenMonths,
+    resetDay: resetDay(),
   };
 }
 
-function buildJournal(data, from, to, { includeCloses = true } = {}) {
+function buildJournal(data, from, to, { includeCloses = true, useFrozen = true } = {}) {
   const journal = [];
-  const asOf = to || todayIso();
+  // A stay is earned once it happens (accrual, IFRS 15): stays that have not checked in yet stay out of
+  // revenue even when the period runs past today; their deposits remain a liability until then.
+  const asOf = to && to < todayIso() ? to : todayIso();
   const byResId = Object.fromEntries((data.reservations || []).map((r) => [String(r.id), r]));
+  const legacyById = Object.fromEntries((data.legacyStays || []).map((r) => [String(r.id), r]));
+  const openDay = data.resetDay || '';
   const mdrPct = data.settings?.gateway_mdr_pct ?? 1.5;
 
   for (const r of data.reservations || []) {
@@ -1036,6 +1427,13 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
     journal.push(bookingEntry(r, asOf));
     const agent = agentAccrualEntry(r, asOf);
     if (agent) journal.push(agent);
+  }
+
+  // Nights earned month by month for stays that cross a month end.
+  for (const r of [...(data.reservations || []), ...(data.spanning || [])]) {
+    for (const e of stayRecognitionEntries(r, asOf)) {
+      if (e.date <= asOf && inRange(e.date, from, to)) journal.push(e);
+    }
   }
 
   const paidByRes = {};
@@ -1050,7 +1448,7 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
     if (!paymentCollected(p) || signed <= 0) continue;
     const res = byResId[String(p.reservation_id)];
     if (!res) continue;
-    const payDate = isoDate(p.created_at) || isoDate(p.payment_date || p.paid_at);
+    const payDate = paymentBusinessDate(p);
     const checkIn = isoDate(res.check_in);
     if (p.reservation_id) {
       paidByRes[p.reservation_id] = round2((paidByRes[p.reservation_id] || 0) + (parseFloat(p.amount) || 0));
@@ -1062,7 +1460,7 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
   for (const p of data.payments || []) {
     if (String(p.kind || '') === 'forfeit') continue;
     if (!paymentCollected(p)) continue;
-    const res = byResId[String(p.reservation_id)] || {
+    const res = byResId[String(p.reservation_id)] || legacyById[String(p.reservation_id)] || {
       guest_name: 'Guest',
       payment_method: p.payment_method,
       check_in: p.payment_date,
@@ -1078,7 +1476,7 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
   for (const r of data.reservations || []) {
     const recorded = paidByRes[r.id] || 0;
     const claimed = round2(parseFloat(r.amount_paid) || 0);
-    const missing = round2(claimed - recorded);
+    const missing = round2(claimed - recorded - (parseFloat(r.opening_paid) || 0));
     if (missing > 0.009) {
       const payDate = isoDate(r.check_in) && claimed > 0 && isoDate(r.check_in) > todayIso()
         ? todayIso()
@@ -1107,6 +1505,31 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
     }
   }
 
+  // Restart openings: money a stay paid before the restart sits in the opening treasuries,
+  // so the guest deposit it created is opened against opening equity.
+  for (const r of data.reservations || []) {
+    const opening = round2(parseFloat(r.opening_paid) || 0);
+    if (!r.pre_reset || !(opening > 0.009) || !openDay) continue;
+    const cancelDate = isoDate(r.updated_at || r.cancelled_at);
+    if (isCancelledStay(r) && cancelDate && cancelDate < openDay) {
+      r.opening_paid = 0;
+      continue;
+    }
+    prepaidByRes[r.id] = round2((prepaidByRes[r.id] || 0) + opening);
+    const entry = makeEntry({
+      id: `OPEN-DEP-${r.id}`,
+      date: openDay,
+      type: 'opening_balance',
+      description: `Opening deposit — ${r.guest_name || 'Guest'} · ${r.unit_name || 'Unit'}`,
+      lines: [
+        journalLine('302000', opening, 0, 'Paid before the books restart (already in opening treasuries)'),
+        journalLine('203000', 0, opening, 'Guest advance deposit carried into the new books'),
+      ],
+      meta: { reservation_id: r.id, guest_name: r.guest_name, opening: true, from_account: '302000', to_account: '203000' },
+    });
+    if (inRange(entry.date, from, to)) journal.push(entry);
+  }
+
   for (const r of data.reservations || []) {
     const prepaidGross = prepaidByRes[r.id] != null
       ? prepaidByRes[r.id]
@@ -1116,13 +1539,26 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
       const cxl = cancelForfeitEntry(r, prepaid);
       if (cxl && inRange(cxl.date, from, to)) journal.push(cxl);
     } else {
-      const reclass = depositReclassEntry(r, prepaid);
+      const reclass = depositReclassEntry(r, prepaid, asOf);
       if (reclass && inRange(reclass.date, from, to)) journal.push(reclass);
     }
   }
 
   for (const e of data.expenses || []) {
     journal.push(...expenseEntries(e));
+  }
+
+  for (const vi of data.vendorBills || []) {
+    for (const e of vendorBillEntries(vi)) if (inRange(e.date, from, to)) journal.push(e);
+  }
+
+  for (const w of data.writeOffs || []) {
+    const e = writeOffEntry(w);
+    if (e && inRange(e.date, from, to)) journal.push(e);
+  }
+
+  for (const e of provisionEntries(data.provisions)) {
+    if (inRange(e.date, from, to)) journal.push(e);
   }
 
   for (const hk of data.hkOrders || []) {
@@ -1163,7 +1599,7 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
             ? journalLine('103000', 0, amt, 'Funded from Cash EGP')
             : journalLine('409000', 0, amt, pc.description || 'Petty cash in'),
         ];
-    const pcDate = isoDate(pc.created_at) || isoDate(pc.entry_date);
+    const pcDate = isoDate(pc.entry_date) || isoDate(pc.created_at);
     if (!inRange(pcDate, from, to)) continue;
     journal.push(
       makeEntry({
@@ -1222,7 +1658,7 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
     journal.push(
       makeEntry({
         id: `MAN-${row.id}`,
-        date: isoDate(row.created_at) || row.entry_date,
+        date: isoDate(row.entry_date) || isoDate(row.created_at),
         type,
         description: row.description || row.notes || 'Manual journal',
         lines,
@@ -1249,6 +1685,7 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
     const amt = round2(parseFloat(p.amount) || 0);
     const date = isoDate(p.reviewed_at || p.updated_at || p.created_at);
     if (!inRange(date, from, to)) continue;
+    const payoutTreasury = String(p.paid_from_account || '').trim() || '101000';
     journal.push(
       makeEntry({
         id: `PO-${p.id}`,
@@ -1257,14 +1694,14 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
         description: `Owner payout — ${p.owner_name || 'Owner'}`,
         lines: [
           journalLine('202000', amt, 0, 'Release owner trust'),
-          journalLine('101000', 0, amt, 'Paid from bank (ADIB)'),
+          journalLine(payoutTreasury, 0, amt, `Paid from ${accountLabel(payoutTreasury)}`),
         ],
         meta: {
           payout_id: p.id,
           owner_id: p.owner_id,
           owner_name: p.owner_name,
           from_account: '202000',
-          to_account: '101000',
+          to_account: payoutTreasury,
         },
       })
     );
@@ -1298,6 +1735,24 @@ function buildJournal(data, from, to, { includeCloses = true } = {}) {
   for (const month of monthsInRange(from, to)) {
     for (const rec of data.recurring || []) {
       journal.push(...recurringEntries(rec, month, from, to).filter((e) => !resetDay || e.date >= resetDay));
+    }
+  }
+
+  // Posted corrections are facts; closed months show exactly what was frozen when they closed.
+  if (useFrozen && (data.posted || []).length) {
+    const frozen = new Set(data.frozenMonths || []);
+    const monthOf = (d) => String(d || '').slice(0, 7);
+    const kept = journal.filter((e) => !frozen.has(monthOf(e.date)));
+    journal.length = 0;
+    journal.push(...kept);
+    for (const row of data.posted) {
+      const rowMonth = monthOf(row.entry_date);
+      if (row.kind === 'frozen' && frozen.has(rowMonth)) journal.push(row.entry);
+      else if (row.kind === 'adjustment' && !frozen.has(rowMonth)) journal.push(row.entry);
+    }
+  } else if (!useFrozen) {
+    for (const row of data.posted || []) {
+      if (row.kind === 'adjustment') journal.push(row.entry);
     }
   }
 
@@ -2105,7 +2560,16 @@ function vatReturn(journal) {
   };
 }
 
+async function syncClosedMonths() {
+  try {
+    await require('./periodFreeze').syncPriorPeriodAdjustments();
+  } catch (e) {
+    console.warn('[finance] closed-month sync skipped', e.message);
+  }
+}
+
 async function buildFinancialPortal(from, to) {
+  await syncClosedMonths();
   const data = await loadPortalData(from, to);
   const journal = buildJournal(data, from, to);
   const portal = buildPortal(journal, data.reservations, data.recurring, {
@@ -2131,6 +2595,7 @@ async function buildFinancialPortal(from, to) {
 async function buildYtdStatements(to, fromDate) {
   const from = fromDate || FINANCIAL_EPOCH;
   const asOf = to || todayIso();
+  await syncClosedMonths();
   const data = await loadPortalData(from, asOf);
   const journal = buildJournal(data, from, asOf);
   const statements = buildStatements(journal, data.reservations, from, asOf, data.reservationTotals);

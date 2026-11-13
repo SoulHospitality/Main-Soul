@@ -1807,19 +1807,19 @@
             "fix": "Record each down payment as a payment so the stay shows the right balance."
           },
           "pre_reset_payments": {
-            "title": "Payments for stays booked before the books restart",
-            "what": "The Financial System ignores stays created before the restart, so these payments have no stay behind them in the books.",
-            "fix": "Add opening balances for these stays, or bring them into the books."
+            "title": "Money received for stays from before the restart",
+            "what": "These stays were booked and started before the books restart, so the new books never opened what the guest owed. The money received is booked as a correction to opening equity.",
+            "fix": "Confirm with finance that these balances were really owed at the restart."
           },
           "vendor_paid_not_booked": {
-            "title": "Paid vendor bills not in the books",
-            "what": "Marking a vendor bill paid does not create a book entry yet, so the cost and the bank payment are missing.",
-            "fix": "Record the payment from the Payments calendar until vendor bills post automatically."
+            "title": "Paid vendor bills without a “paid from” account",
+            "what": "These bills were paid before the books asked which account paid them, so the payment is booked against ADIB.",
+            "fix": "If one was paid from CIB or cash, record a manual journal moving it to that account."
           },
           "write_offs_not_applied": {
-            "title": "Approved write-offs not applied",
-            "what": "The write-off was approved but the guest still shows the balance and no bad-debt cost was booked.",
-            "fix": "Book the write-off as a manual journal (bad debt against guest receivable)."
+            "title": "Write-offs waiting for approval",
+            "what": "Until a write-off is approved, the amount stays on Outstanding and in the guest receivable.",
+            "fix": "Approve or reject it on Outstanding › Follow-up & write-offs."
           },
           "placeholders": {
             "title": "“Awaiting collection” placeholders",
@@ -1850,6 +1850,16 @@
             "title": "Changes to stays in closed months",
             "what": "These stays were edited or paid after their month was closed, which changes closed figures.",
             "fix": "Review each change; reopen the month or post a correction."
+          },
+          "unbalanced_entries": {
+            "title": "Journal entries that do not balance",
+            "what": "Every entry must have equal debits and credits. These do not, so the statements will not tie.",
+            "fix": "Open the entry and correct the record behind it."
+          },
+          "wrong_side_balances": {
+            "title": "Accounts on the wrong side",
+            "what": "A bank, cash, receivable, deposit, insurance or owner account has a negative balance, which usually means money was recorded against the wrong account or an opening balance is missing.",
+            "fix": "Open the account, find the entry that pushed it negative and correct it, or add the missing opening balance."
           }
         }
       },
@@ -1883,7 +1893,8 @@
           "close": "Close month",
           "statements": "Financial statements",
           "tax": "Tax desk",
-          "forecast": "Cash forecast"
+          "forecast": "Cash forecast",
+          "builder": "Report builder"
         },
         "tabs": {
           "whoOwes": "Who owes",
@@ -1913,6 +1924,63 @@
           "calendar": "Pay or reschedule overdue calendar payments",
           "outstanding": "Follow up guests who left owing money",
           "health": "Clear the data health issues"
+        }
+      },
+      "payFrom": {
+        "confirm": "Record payment",
+        "account": "Paid from",
+        "hint": "The bank or cash account the money left. The books take it out of this account.",
+        "date": "Payment date",
+        "reference": "Transfer or cheque reference (optional)",
+        "payoutTitle": "Pay the owner",
+        "billTitle": "Pay vendor bill",
+        "runTitle": "Confirm payment run"
+      },
+      "builder": {
+        "choose": "Choose a report",
+        "groupBy": "Group by",
+        "account": "Account",
+        "allAccounts": "All accounts",
+        "print": "Print",
+        "empty": "Nothing in this period",
+        "previewCut": "Showing the first {{shown}} of {{total}} rows. The saved report has all of them.",
+        "longPrinted": "The report is long, so it opened for printing. Choose “Save as PDF” there.",
+        "saved": "Report saved",
+        "ds": {
+          "income_statement": "Income statement",
+          "balance_sheet": "Balance sheet",
+          "trial_balance": "Trial balance",
+          "general_ledger": "General ledger",
+          "cash_book": "Cash & bank book",
+          "revenue_by": "Revenue analysis",
+          "payments_received": "Money received",
+          "receivables_aging": "Receivables aging",
+          "owner_trust": "Owner balances",
+          "vendor_payables": "Vendor payables",
+          "expenses_by_account": "Expenses by month",
+          "tax_summary": "Tax summary"
+        },
+        "hint": {
+          "income_statement": "Revenue, costs and profit, with the previous period beside it",
+          "balance_sheet": "Assets, liabilities and equity on the end date",
+          "trial_balance": "Every account's debits and credits; they must agree",
+          "general_ledger": "Every journal line, for one account or all",
+          "cash_book": "Opening, money in and out, and closing for each bank and cash account",
+          "revenue_by": "Stays, nights, invoices and commission by unit, project, owner…",
+          "payments_received": "Each payment and refund, and the total per treasury",
+          "receivables_aging": "Who owes money and for how long",
+          "owner_trust": "What each owner earned, was charged and was paid",
+          "vendor_payables": "Open vendor bills and what is overdue",
+          "expenses_by_account": "Each expense account month by month",
+          "tax_summary": "Output and input VAT, net VAT due and WHT by month"
+        },
+        "groups": {
+          "unit": "Unit",
+          "project": "Project",
+          "channel": "Channel (website or manual)",
+          "owner": "Owner",
+          "month": "Month",
+          "sales_person": "Sales person"
         }
       }
     }

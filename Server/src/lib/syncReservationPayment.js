@@ -14,25 +14,27 @@ async function syncReservationPaymentStatus(reservationId) {
   if (!reservationId) return null;
 
   const { rows: resRows } = await query(
-    `SELECT id, total_amount, status, down_payment FROM reservations WHERE id = $1`,
+    `SELECT id, total_amount, status, down_payment, booking_id FROM reservations WHERE id = $1`,
     [reservationId]
   );
   const reservation = resRows[0];
   if (!reservation) return null;
 
   const { rows: payRows } = await query(
-    `SELECT COALESCE(SUM(amount) FILTER (WHERE COALESCE(kind, 'collection') <> 'forfeit'), 0)::float AS paid,
-            COUNT(*)::int AS n
+    `SELECT COALESCE(SUM(amount) FILTER (WHERE status = 'successful' AND COALESCE(is_approved, 0) = 1
+                                          AND COALESCE(kind, 'collection') <> 'forfeit'), 0)::float AS paid,
+            COUNT(*) FILTER (WHERE status = 'successful' AND COALESCE(is_approved, 0) = 1)::int AS n,
+            BOOL_OR(COALESCE(is_down_payment, false) OR notes = 'Down payment (manual reservation)') AS has_down_row
      FROM payments
-     WHERE reservation_id = $1
-       AND status = 'successful'
-       AND COALESCE(is_approved, 0) = 1`,
+     WHERE reservation_id = $1`,
     [reservationId]
   );
   const fromPayments = Number(payRows[0]?.paid) || 0;
   const paymentCount = Number(payRows[0]?.n) || 0;
   const down = Number(reservation.down_payment) || 0;
-  const amountPaid = amountPaidFromRows(fromPayments, paymentCount, down);
+  // A manual stay's down payment counts until it exists as its own payment row (then the row counts).
+  const downOutsideRows = !reservation.booking_id && !payRows[0]?.has_down_row ? down : 0;
+  const amountPaid = amountPaidFromRows(fromPayments, paymentCount, down, downOutsideRows);
   const paymentStatus = paymentStatusFrom(reservation.total_amount, amountPaid);
 
   let nextStatus = reservation.status;
@@ -57,11 +59,12 @@ async function syncReservationPaymentStatus(reservationId) {
   return rows[0] || null;
 }
 
-function amountPaidFromRows(fromPayments, paymentCount, down) {
+function amountPaidFromRows(fromPayments, paymentCount, down, downOutsideRows = 0) {
   const paid = Number(fromPayments) || 0;
   const count = Number(paymentCount) || 0;
   const deposit = Number(down) || 0;
-  return count > 0 ? Math.max(0, paid) : (paid > 0 ? paid : deposit);
+  if (count > 0) return Math.max(0, paid + (Number(downOutsideRows) || 0));
+  return paid > 0 ? paid : deposit;
 }
 
 module.exports = {

@@ -58,7 +58,7 @@ import { PettyCashSection } from '../PettyCash';
 import { RefundApprovalSteps, refundReady } from '../../components/RefundApprovals';
 import { FinLocaleProvider, useFinLocale } from '../../context/FinLocaleContext';
 import { SmartTable } from './DataTable';
-import { rangeParams } from './shared';
+import { rangeParams, PayFromModal } from './shared';
 
 export function VendorsTool({ rangeParams: params }) {
   const { t } = useFinLocale();
@@ -131,9 +131,16 @@ export function VendorsTool({ rangeParams: params }) {
     onSuccess: () => { toast.success(t('pms.fin.vendors.rejectedToast')); qc.invalidateQueries({ queryKey: ['financial-system-vendor-invoices'] }); qc.invalidateQueries({ queryKey: ['financial-system-vendors'] }); },
     onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
+  const [payTarget, setPayTarget] = useState(null);
   const payInv = useMutation({
-    mutationFn: (id) => api.post(`/financial-system/vendor-invoices/${id}/pay`, { payment_method: 'bank_transfer' }),
-    onSuccess: () => { toast.success(t('pms.fin.vendors.markedPaid')); qc.invalidateQueries({ queryKey: ['financial-system-vendor-invoices'] }); qc.invalidateQueries({ queryKey: ['financial-system-vendors'] }); },
+    mutationFn: ({ id, body }) => api.post(`/financial-system/vendor-invoices/${id}/pay`, body),
+    onSuccess: () => {
+      toast.success(t('pms.fin.vendors.markedPaid'));
+      setPayTarget(null);
+      qc.invalidateQueries({ queryKey: ['financial-system-vendor-invoices'] });
+      qc.invalidateQueries({ queryKey: ['financial-system-vendors'] });
+      qc.invalidateQueries({ queryKey: ['financial-system-portal'] });
+    },
     onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
 
@@ -159,10 +166,13 @@ export function VendorsTool({ rangeParams: params }) {
     },
     onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
+  const [runTarget, setRunTarget] = useState(null);
   const confirmRun = useMutation({
-    mutationFn: (id) => api.post(`/financial-system/payment-runs/${id}/confirm`),
+    mutationFn: ({ id, body }) => api.post(`/financial-system/payment-runs/${id}/confirm`, body),
     onSuccess: () => {
       toast.success(t('pms.fin.vendors.runConfirmed'));
+      setRunTarget(null);
+      qc.invalidateQueries({ queryKey: ['financial-system-portal'] });
       qc.invalidateQueries({ queryKey: ['financial-system-payment-runs'] });
       qc.invalidateQueries({ queryKey: ['financial-system-vendor-invoices'] });
       qc.invalidateQueries({ queryKey: ['financial-system-vendors'] });
@@ -364,7 +374,7 @@ export function VendorsTool({ rangeParams: params }) {
                           </>
                         )}
                         {inv.status === 'approved' && (
-                          <button type="button" className="text-xs text-soul-blue" onClick={() => payInv.mutate(inv.id)}>{t('pms.fin.vendors.pay')}</button>
+                          <button type="button" className="text-xs text-soul-blue" onClick={() => setPayTarget(inv)}>{t('pms.fin.vendors.pay')}</button>
                         )}
                       </td>
                     </tr>
@@ -566,7 +576,7 @@ export function VendorsTool({ rangeParams: params }) {
                       </td>
                       <td className="text-right">
                         {r.status === 'draft' && (
-                          <button type="button" className="btn-secondary text-xs py-1 px-2" onClick={() => confirmRun.mutate(r.id)} disabled={confirmRun.isPending}>
+                          <button type="button" className="btn-secondary text-xs py-1 px-2" onClick={() => setRunTarget(r)} disabled={confirmRun.isPending}>
                             <CheckCircle2 className="w-3 h-3 inline mr-1" /> {t('pms.fin.confirm')}
                           </button>
                         )}
@@ -579,6 +589,24 @@ export function VendorsTool({ rangeParams: params }) {
           )}
         </div>
       )}
+      <PayFromModal
+        open={Boolean(payTarget)}
+        onClose={() => setPayTarget(null)}
+        title={t('pms.fin.payFrom.billTitle')}
+        amountLabel={payTarget ? `${payTarget.vendor_name || ''} ${payTarget.invoice_number ? `#${payTarget.invoice_number}` : ''} · ${currency(payTarget.net_payable)}` : ''}
+        withReference
+        pending={payInv.isPending}
+        onConfirm={(body) => payInv.mutate({ id: payTarget.id, body: { ...body, payment_method: 'bank_transfer' } })}
+      />
+      <PayFromModal
+        open={Boolean(runTarget)}
+        onClose={() => setRunTarget(null)}
+        title={t('pms.fin.payFrom.runTitle')}
+        amountLabel={runTarget ? currency(runTarget.total_net) : ''}
+        withDate={false}
+        pending={confirmRun.isPending}
+        onConfirm={({ treasury_code }) => confirmRun.mutate({ id: runTarget.id, body: { treasury_code } })}
+      />
     </div>
   );
 }

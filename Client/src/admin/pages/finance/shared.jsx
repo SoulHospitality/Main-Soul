@@ -464,6 +464,73 @@ export function useTreasuryOptions() {
   }, [customAccounts]);
 }
 
+/**
+ * Asks which bank or cash account money left from, and when. Every payment the books record
+ * (vendor bills, payment runs, owner payouts) names its treasury so ADIB, CIB and cash tie to statements.
+ */
+export function PayFromModal({ open, onClose, title, amountLabel, pending, onConfirm, withDate = true, withReference = false }) {
+  const { t } = useFinLocale();
+  const options = useTreasuryOptions();
+  const [treasury, setTreasury] = useState('101000');
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [reference, setReference] = useState('');
+  useEffect(() => {
+    if (open) {
+      setTreasury('101000');
+      setDate(new Date().toISOString().slice(0, 10));
+      setReference('');
+    }
+  }, [open]);
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={title}
+      size="sm"
+      footer={
+        <>
+          <button type="button" className="btn-secondary" onClick={onClose}>{t('pms.fin.cancel')}</button>
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={pending || !treasury}
+            onClick={() => onConfirm({ treasury_code: treasury, paid_date: withDate ? date : undefined, payment_reference: reference || undefined })}
+          >
+            {pending ? t('pms.fin.owners.saving') : t('pms.fin.payFrom.confirm')}
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-4 text-sm">
+        {amountLabel ? <p className="text-gray-600">{amountLabel}</p> : null}
+        <div>
+          <label className="label">{t('pms.fin.payFrom.account')}</label>
+          <SearchableSelect
+            className="w-full"
+            value={treasury}
+            onChange={setTreasury}
+            placeholder={t('pms.fin.paymentCalendar.chooseTreasury')}
+            options={options}
+          />
+          <p className="mt-1 text-xs text-gray-500">{t('pms.fin.payFrom.hint')}</p>
+        </div>
+        {withDate ? (
+          <div>
+            <label className="label">{t('pms.fin.payFrom.date')}</label>
+            <input type="date" className="input w-full" value={date} onChange={(e) => setDate(e.target.value)} />
+          </div>
+        ) : null}
+        {withReference ? (
+          <div>
+            <label className="label">{t('pms.fin.payFrom.reference')}</label>
+            <input className="input w-full" value={reference} onChange={(e) => setReference(e.target.value)} />
+          </div>
+        ) : null}
+      </div>
+    </Modal>
+  );
+}
+
 /** Transfer or cheque for a bank treasury; a cheque needs its number and a photo. */
 export function ChequeFields({ value, onChange }) {
   const { t } = useFinLocale();

@@ -782,15 +782,19 @@ router.post('/financial-system/payouts/:id/settle', requireRoles('admin', 'finan
     if (rows[0].status === 'rejected') {
       return res.status(400).json({ error: 'Cannot settle a rejected payout request' });
     }
+    const treasury = String(req.body?.treasury_code || '').trim() || '101000';
+    if (!isTreasuryCode(treasury)) return res.status(400).json({ error: 'Choose a bank or cash treasury account' });
+    await assertPeriodOpen(new Date().toISOString().slice(0, 10), 'Today');
 
     await query(
       `UPDATE owner_payout_requests SET
          status = 'paid',
          reviewed_by = $2,
          reviewed_at = NOW(),
-         updated_at = NOW()
+         updated_at = NOW(),
+         paid_from_account = $3
        WHERE id = $1`,
-      [id, req.user.id]
+      [id, req.user.id, treasury]
     );
     if (rows[0].settlement_id) {
       await query(
@@ -881,12 +885,14 @@ router.post('/financial-system/owners/:ownerId/settle', requireRoles('admin', 'f
       if (e.code !== '42P01') throw e;
     }
 
+    const treasury = String(req.body.treasury_code || '').trim() || '101000';
+    if (!isTreasuryCode(treasury)) return res.status(400).json({ error: 'Choose a bank or cash treasury account' });
     const { rows: payoutRows } = await query(
       `INSERT INTO owner_payout_requests (
-         owner_id, settlement_id, amount, status, two_fa_verified, reviewed_by, reviewed_at
-       ) VALUES ($1,$2,$3,'paid',1,$4,now())
+         owner_id, settlement_id, amount, status, two_fa_verified, reviewed_by, reviewed_at, paid_from_account
+       ) VALUES ($1,$2,$3,'paid',1,$4,now(),$5)
        RETURNING *`,
-      [ownerId, settlementId, amount, req.user.id]
+      [ownerId, settlementId, amount, req.user.id, treasury]
     );
 
     res.status(201).json({
@@ -1797,14 +1803,19 @@ router.post('/financial-system/periods/:yearMonth/close', requireRoles('admin', 
       [yearMonth, pnl, req.user.id, req.body.notes || null]
     );
     if (!rows[0]) return res.status(409).json({ error: `${yearMonth} is already closed` });
+    const { freezeMonth } = require('../../lib/finance/periodFreeze');
+    const frozenEntries = await freezeMonth(yearMonth).catch((err) => {
+      console.warn('[finance] freeze failed', err.message);
+      return 0;
+    });
     await logAudit({
       userId: req.user.id,
       action: 'CLOSE_PERIOD',
       entityType: 'financial_period',
       entityId: yearMonth,
-      details: { before: null, after: { year_month: yearMonth, pnl_amount: pnl } },
+      details: { before: null, after: { year_month: yearMonth, pnl_amount: pnl, frozen_entries: frozenEntries } },
     });
-    res.status(201).json({ close: rows[0], pnl, entry: close });
+    res.status(201).json({ close: rows[0], pnl, entry: close, frozen_entries: frozenEntries });
   } catch (e) {
     next(e);
   }
@@ -1828,6 +1839,7 @@ router.delete('/financial-system/periods/:yearMonth/close', requireRoles('admin'
       [req.params.yearMonth]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Period is not closed' });
+    await require('../../lib/finance/periodFreeze').unfreezeMonth(rows[0].year_month).catch(() => {});
     await logAudit({
       userId: req.user.id,
       action: 'REOPEN_PERIOD',
@@ -3375,15 +3387,22 @@ router.post('/financial-system/vendor-invoices', requireRoles('admin', 'finance'
 
 router.post('/financial-system/vendor-invoices/:id/approve', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
+    // Approving books the cost and the payable on the invoice date.
+    const { rows: existing } = await query(`SELECT invoice_date FROM vendor_invoices WHERE id = $1`, [req.params.id]);
+    if (existing[0]) await assertPeriodOpen(existing[0].invoice_date instanceof Date ? existing[0].invoice_date.toISOString() : existing[0].invoice_date, 'The invoice date');
+    const expenseAccount = String(req.body?.expense_account || '').trim() || null;
+    if (expenseAccount && !getAccount(expenseAccount)) return res.status(400).json({ error: 'Unknown expense account' });
     const { rows } = await query(
-      `UPDATE vendor_invoices SET status = 'approved', approved_by = $2, approved_at = NOW(), updated_at = NOW()
+      `UPDATE vendor_invoices SET status = 'approved', approved_by = $2, approved_at = NOW(), updated_at = NOW(),
+              expense_account = COALESCE($3, expense_account)
        WHERE id = $1 AND status = 'pending'
        RETURNING *`,
-      [req.params.id, req.user.id]
+      [req.params.id, req.user.id, expenseAccount]
     );
     if (!rows[0]) return res.status(400).json({ error: 'Invoice not found or not pending' });
     res.json(rows[0]);
   } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
     next(e);
   }
 });
@@ -3410,15 +3429,26 @@ router.post('/financial-system/vendor-invoices/:id/pay', requireRoles('admin', '
     if (!existing[0]) return res.status(404).json({ error: 'Invoice not found' });
     if (existing[0].status === 'paid') return res.json(existing[0]);
     if (existing[0].status !== 'approved') return res.status(400).json({ error: 'Invoice must be approved before paying' });
-    await assertPeriodOpen(existing[0].invoice_date);
+    // The payment leaves the treasury chosen here, on the payment date.
+    const treasury = String(req.body.treasury_code || req.body.paid_from_account || '').trim();
+    if (!isTreasuryCode(treasury)) return res.status(400).json({ error: 'Choose the bank or cash account the bill was paid from' });
+    const paidDate = String(req.body.paid_date || '').slice(0, 10) || new Date().toISOString().slice(0, 10);
+    await assertPeriodOpen(paidDate, 'The payment date');
     const { rows } = await query(
       `UPDATE vendor_invoices SET
-         status = 'paid', paid_at = NOW(), paid_by = $2,
-         payment_method = $3, payment_reference = $4, updated_at = NOW()
+         status = 'paid', paid_at = $5::date + (NOW() - date_trunc('day', NOW())), paid_by = $2,
+         payment_method = $3, payment_reference = $4, paid_from_account = $6, updated_at = NOW()
        WHERE id = $1
        RETURNING *`,
-      [req.params.id, req.user.id, payment_method || null, payment_reference || null]
+      [req.params.id, req.user.id, payment_method || null, payment_reference || null, paidDate, treasury]
     );
+    await logAudit({
+      userId: req.user.id,
+      action: 'PAY_VENDOR_INVOICE',
+      entityType: 'vendor_invoice',
+      entityId: req.params.id,
+      details: { before: { status: 'approved' }, after: { status: 'paid', paid_from_account: treasury, paid_date: paidDate } },
+    });
     res.json(rows[0]);
   } catch (e) {
     if (e.status) return res.status(e.status).json({ error: e.message });
@@ -3545,6 +3575,8 @@ router.post('/financial-system/payment-runs/:id/confirm', requireRoles('admin', 
     if (runRows[0].status !== 'draft') return res.status(400).json({ error: 'Run must be in draft status' });
 
     await assertPeriodOpen(runRows[0].run_date);
+    const treasury = String(req.body?.treasury_code || '').trim() || '101000';
+    if (!isTreasuryCode(treasury)) return res.status(400).json({ error: 'Choose a bank or cash treasury account' });
 
     const { rows: items } = await query(
       `SELECT invoice_id FROM payment_run_items WHERE run_id = $1`,
@@ -3553,9 +3585,10 @@ router.post('/financial-system/payment-runs/:id/confirm', requireRoles('admin', 
     const invoiceIds = items.map((i) => i.invoice_id);
     if (invoiceIds.length) {
       await query(
-        `UPDATE vendor_invoices SET status = 'paid', paid_at = NOW(), paid_by = $2, updated_at = NOW()
+        `UPDATE vendor_invoices SET status = 'paid', paid_at = NOW(), paid_by = $2, updated_at = NOW(),
+                paid_from_account = $3
          WHERE id = ANY($1::int[]) AND status = 'approved'`,
-        [invoiceIds, req.user.id]
+        [invoiceIds, req.user.id, treasury]
       );
     }
 
@@ -3737,6 +3770,8 @@ router.post('/financial-system/ar-write-offs', requireRoles('admin', 'finance', 
 
 router.post('/financial-system/ar-write-offs/:id/approve', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
+    const today = new Date().toISOString().slice(0, 10);
+    await assertPeriodOpen(today, 'Today');
     const { rows } = await query(
       `UPDATE ar_write_offs SET status = 'approved', approved_by = $2, approved_at = NOW()
        WHERE id = $1 AND status = 'pending'
@@ -3744,6 +3779,18 @@ router.post('/financial-system/ar-write-offs/:id/approve', requireRoles('admin',
       [req.params.id, req.user.id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Write-off not found or not pending' });
+    // The written-off part leaves Outstanding and the receivable; the books post it as bad-debt expense.
+    await query(
+      `UPDATE reservations SET written_off_amount = COALESCE(written_off_amount, 0) + $2, updated_at = now() WHERE id = $1`,
+      [rows[0].reservation_id, rows[0].amount]
+    );
+    await logAudit({
+      userId: req.user.id,
+      action: 'APPROVE_WRITE_OFF',
+      entityType: 'reservation',
+      entityId: String(rows[0].reservation_id),
+      details: { before: null, after: { write_off_id: rows[0].id, amount: rows[0].amount, reason: rows[0].reason } },
+    });
     res.json(rows[0]);
   } catch (e) {
     next(e);

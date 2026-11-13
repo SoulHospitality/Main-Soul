@@ -21,11 +21,14 @@ export function reservationBill(r) {
   const ownerCollected = parseFloat(r?.owner_collected_amount) || 0;
   const downPayment = parseFloat(r?.down_payment) || 0;
   const paid = Math.max(downPayment, parseFloat(r?.amount_paid) || 0);
+  // Approved write-offs: the part finance decided will not be collected.
+  const writtenOff = parseFloat(r?.written_off_amount) || 0;
 
   let toCollect;
   if (r?.owner_collected_type === 'full') toCollect = hkFees + ins - paid;
   else if (r?.owner_collected_type === 'partial') toCollect = total - ownerCollected - paid;
   else toCollect = total - paid;
+  toCollect -= writtenOff;
   toCollect = String(r?.status || '').toLowerCase() === 'cancelled' ? 0 : Math.max(0, round2(toCollect));
 
   return {
@@ -40,6 +43,7 @@ export function reservationBill(r) {
     total,
     ownerCollected,
     downPayment,
+    writtenOff,
     paid,
     toCollect,
     remainingAccommodation: Math.max(0, round2(toCollect - hkFees - beachFees - ins - service)),

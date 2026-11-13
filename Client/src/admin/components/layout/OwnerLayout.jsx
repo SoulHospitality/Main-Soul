@@ -2,6 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../api/axios';
+import PageReport from '../PageReport';
 import {
   Building,
   LogOut,
@@ -82,6 +83,7 @@ export default function OwnerLayout({ children }) {
         </nav>
 
         <div className="flex items-center gap-4">
+          <PageReport tone="dark" />
           <div className="hidden sm:block text-right">
             <div className="text-white text-sm font-medium leading-tight">{user?.full_name}</div>
             <div className="text-blue-200 text-xs">Owner</div>

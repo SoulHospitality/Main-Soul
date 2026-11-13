@@ -16,7 +16,9 @@ const CHART_OF_ACCOUNTS = [
   { code: '105000', name: 'Guest Accounts Receivable', group: 'assets', type: 'asset' },
   { code: '106000', name: 'Payment Gateway Clearing (Paymob / Stripe / Fawry)', group: 'assets', type: 'asset' },
   { code: '107000', name: 'VAT Receivable (Input VAT 14%)', group: 'assets', type: 'asset' },
+  { code: '105900', name: 'Allowance for Doubtful Accounts (reduces guest receivable)', group: 'assets', type: 'asset' },
   { code: '110000', name: 'Accrued Owner Recoverables (Utilities & Maintenance)', group: 'assets', type: 'asset' },
+  { code: '111000', name: 'Deferred Owner Share (nights not yet stayed)', group: 'assets', type: 'asset' },
   { code: '201000', name: 'Vendor Accounts Payable', group: 'liabilities', type: 'liability' },
   { code: '202000', name: 'Owner Accounts Payable (Funds Held in Trust)', group: 'liabilities', type: 'liability' },
   { code: '203000', name: 'Guest Advance Deposits (Unearned Revenue)', group: 'liabilities', type: 'liability' },
@@ -25,6 +27,7 @@ const CHART_OF_ACCOUNTS = [
   { code: '206000', name: 'Withholding Tax Payable (WHT - Egyptian Tax Authority)', group: 'liabilities', type: 'liability' },
   { code: '208000', name: 'Broker Accounts Payable', group: 'liabilities', type: 'liability' },
   { code: '209000', name: 'Sales Agent Commission Payable', group: 'liabilities', type: 'liability' },
+  { code: '210000', name: 'Deferred Stay Revenue (nights not yet stayed)', group: 'liabilities', type: 'liability' },
 
   { code: '302000', name: 'Retained Earnings', group: 'equity', type: 'equity' },
   { code: '303000', name: 'Current Year Profit / Loss', group: 'equity', type: 'equity' },
@@ -55,6 +58,7 @@ const CHART_OF_ACCOUNTS = [
   { code: '617000', name: 'Uniform', group: 'expenses', type: 'expense' },
   { code: '618000', name: 'Stock', group: 'expenses', type: 'expense' },
   { code: '619000', name: 'Developer', group: 'expenses', type: 'expense', developer: true },
+  { code: '620000', name: 'Bad Debt Expense (write-offs & expected credit loss)', group: 'expenses', type: 'expense' },
 ];
 
 const GROUP_TYPE = {

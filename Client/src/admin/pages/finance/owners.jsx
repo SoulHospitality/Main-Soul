@@ -58,7 +58,7 @@ import { PettyCashSection } from '../PettyCash';
 import { RefundApprovalSteps, refundReady } from '../../components/RefundApprovals';
 import { FinLocaleProvider, useFinLocale } from '../../context/FinLocaleContext';
 import { SmartTable } from './DataTable';
-import { rangeParams } from './shared';
+import { rangeParams, PayFromModal, useTreasuryOptions } from './shared';
 
 export function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
   const { t } = useFinLocale();
@@ -76,10 +76,14 @@ export function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
     queryKey: ['financial-system-owners', fromDate, toDate, params.basis, unitId],
     queryFn: () => api.get('/financial-system/owner-statements', { params: q }).then((r) => r.data),
   });
+  const [settleTarget, setSettleTarget] = useState(null);
+  const [settleTreasury, setSettleTreasury] = useState('101000');
+  const treasuryOptions = useTreasuryOptions();
   const settle = useMutation({
-    mutationFn: (id) => api.post(`/financial-system/payouts/${id}/settle`),
+    mutationFn: ({ id, treasury_code }) => api.post(`/financial-system/payouts/${id}/settle`, { treasury_code }),
     onSuccess: () => {
       toast.success(t('pms.fin.owners.markSettled'));
+      setSettleTarget(null);
       qc.invalidateQueries({ queryKey: ['financial-system-owners'] });
       qc.invalidateQueries({ queryKey: ['financial-system-portal'] });
       qc.invalidateQueries({ queryKey: ['financial-system-trust'] });
@@ -87,10 +91,10 @@ export function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
     onError: (e) => toast.error(e.response?.data?.error || t('pms.fin.failed')),
   });
   const settleOwnerMutation = useMutation({
-    mutationFn: ({ ownerId, amount, notes }) =>
+    mutationFn: ({ ownerId, amount, notes, treasury_code }) =>
       api.post(
         `/financial-system/owners/${ownerId}/settle`,
-        { amount, notes },
+        { amount, notes, treasury_code },
         { params }
       ),
     onSuccess: (res) => {
@@ -275,7 +279,7 @@ export function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
                         <button
                           type="button"
                           className="btn-secondary text-xs py-1 px-2"
-                          onClick={() => settle.mutate(p.id)}
+                          onClick={() => setSettleTarget(p)}
                         >
                           {t('pms.fin.owners.markSettled')}
                         </button>
@@ -285,7 +289,7 @@ export function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
                       <button
                         type="button"
                         className="btn-secondary text-xs py-1 px-2"
-                        onClick={() => settle.mutate(p.id)}
+                        onClick={() => setSettleTarget(p)}
                       >
                         <CheckCircle2 className="w-3 h-3 inline mr-1" />
                         {t('pms.fin.owners.markSettled')}
@@ -321,6 +325,7 @@ export function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
                   ownerId: settleOwner.owner_id,
                   amount: parseFloat(settleAmount),
                   notes: settleNotes || undefined,
+                  treasury_code: settleTreasury,
                 })
               }
             >
@@ -354,9 +359,28 @@ export function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
                 placeholder={t('pms.fin.owners.notesPlaceholder')}
               />
             </div>
+            <div>
+              <label className="label">{t('pms.fin.payFrom.account')}</label>
+              <SearchableSelect
+                className="w-full"
+                value={settleTreasury}
+                onChange={setSettleTreasury}
+                placeholder={t('pms.fin.paymentCalendar.chooseTreasury')}
+                options={treasuryOptions}
+              />
+            </div>
           </div>
         )}
       </Modal>
+      <PayFromModal
+        open={Boolean(settleTarget)}
+        onClose={() => setSettleTarget(null)}
+        title={t('pms.fin.payFrom.payoutTitle')}
+        amountLabel={settleTarget ? `${settleTarget.owner_name || t('pms.fin.owners.ownerFallback')} · ${currency(settleTarget.amount)}` : ''}
+        withDate={false}
+        pending={settle.isPending}
+        onConfirm={({ treasury_code }) => settle.mutate({ id: settleTarget.id, treasury_code })}
+      />
     </div>
   );
 }

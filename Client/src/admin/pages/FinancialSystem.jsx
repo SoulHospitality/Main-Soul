@@ -10,6 +10,7 @@ import {
   CalendarDays,
   ChevronRight,
   ClipboardList,
+  FileBarChart,
   FileSpreadsheet,
   Globe,
   HeartPulse,
@@ -48,6 +49,7 @@ import { CancelRequestsTool } from './finance/refunds';
 import { CheckinAuditTool } from './finance/checkinAudit';
 import { InsuranceRefundsTool } from './finance/insurance';
 import { VendorsTool } from './finance/vendors';
+import { ReportBuilderPage } from './finance/reportBuilder';
 import {
   AccountsPage,
   CalendarPage,
@@ -106,6 +108,7 @@ const NAV = [
     id: 'reports',
     items: [
       { id: 'statements', icon: FileSpreadsheet, period: true },
+      { id: 'builder', icon: FileBarChart, period: true },
       { id: 'tax', icon: Scale, period: true },
       { id: 'forecast', icon: TrendingUp, period: true },
     ],
@@ -321,6 +324,7 @@ function FinancialSystemInner() {
   else if (page === 'statements') body = <StatementsPage params={params} />;
   else if (page === 'tax') body = <TaxTab rangeParams={params} />;
   else if (page === 'forecast') body = <CashForecastTool rangeParams={params} />;
+  else if (page === 'builder') body = <ReportBuilderPage params={params} />;
   else body = <LoadingSpinner />;
 
   return (

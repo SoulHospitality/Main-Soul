@@ -8,6 +8,7 @@ import { soundEnabled, setSoundEnabled, playChime } from '../../utils/chime';
 import { formatDateTime } from '../../utils/formatters';
 import { ROLE_LABELS, PMS_LABELS } from '../../utils/permissions';
 import { getRoleTheme } from '../../utils/roleTheme';
+import PageReport from '../PageReport';
 
 export default function Header({ onToggleSidebar, sidebarWidth = 256 }) {
   const { user } = useAuth();
@@ -110,6 +111,7 @@ export default function Header({ onToggleSidebar, sidebarWidth = 256 }) {
       </div>
 
       <div className="flex items-center gap-2" ref={notifsRef}>
+        <PageReport />
         <div className="relative">
           <button
             type="button"

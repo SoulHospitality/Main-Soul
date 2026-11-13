@@ -2209,39 +2209,8 @@ router.post(
       if (synced) Object.assign(reservation, synced);
     }
 
-    if (
-      reservation &&
-      !isHold &&
-      !isOwnerBlock &&
-      paymentMethod &&
-      ['cash', 'instapay'].includes(paymentMethod)
-    ) {
-      let amountToCollect = totalAmount + serviceFees - amountPaid;
-      if (ownerCollectedType === 'full') {
-        amountToCollect = housekeepingFees + (parseFloat(b.insurance) || 0) - amountPaid;
-      } else if (ownerCollectedType === 'partial') {
-        amountToCollect = totalAmount + serviceFees - ownerCollectedAmount - amountPaid;
-      }
-      amountToCollect = Math.max(0, amountToCollect);
-      if (amountToCollect > 0.009) {
-        await query(
-          `INSERT INTO payments (
-             reservation_id, amount, payment_date, payment_method,
-             notes, created_by, status, is_approved, bank_account
-           ) VALUES ($1,$2,CURRENT_DATE,$3,$4,$5,'pending',0,$6)`,
-          [
-            reservation.id,
-            amountToCollect,
-            paymentMethod,
-            paymentMethod === 'other'
-              ? `Awaiting collection (manual reservation) — Other: ${paymentMethodNote}`
-              : 'Awaiting collection (manual reservation)',
-            req.user.id,
-            bankAccount,
-          ]
-        );
-      }
-    }
+    // No "awaiting collection" placeholder payment: a payment row means money received.
+    // What is still due is worked out from the bill on Outstanding and at the door.
 
     try {
       const { syncBlocksForReservation } = require('../../lib/reservationBlocks');
@@ -3589,39 +3558,44 @@ router.get('/dashboard/stats', async (req, res, next) => {
     if (role === 'admin') {
       
       const booksOpen = today >= FINANCIAL_EPOCH;
-      const [monthRevenue, monthPaid, pendingPayments] = await Promise.all([
+      // One definition with the Financial System: this month's stays by check-in (full bill, this month only),
+      // money actually received (successful, approved), and what guests still owe from the full bill.
+      const { reservationBill } = require('../../lib/reservationBill');
+      const monthEnd = shiftMonth(monthStart, 1);
+      const [monthStays, monthPaid, openStays] = await Promise.all([
         booksOpen
           ? query(
-              `SELECT COALESCE(SUM(total_amount), 0)::float AS total
-               FROM reservations
-               WHERE status <> 'cancelled' AND check_in >= $1::date`,
-              [monthStart]
+              `SELECT r.* FROM reservations r
+               WHERE r.status::text <> 'cancelled' AND r.check_in >= $1::date AND r.check_in < $2::date`,
+              [monthStart, monthEnd]
             )
-          : Promise.resolve({ rows: [{ total: 0 }] }),
+          : Promise.resolve({ rows: [] }),
         booksOpen
           ? query(
               `SELECT COALESCE(SUM(p.amount), 0)::float AS total
                FROM payments p
                LEFT JOIN reservations r ON r.id = p.reservation_id
-               WHERE p.payment_date >= $1::date
-                 AND p.status IN ('successful', 'pending')
+               WHERE COALESCE(p.payment_date, p.created_at::date) >= $1::date
+                 AND COALESCE(p.payment_date, p.created_at::date) < $2::date
+                 AND p.status = 'successful' AND COALESCE(p.is_approved, 0) = 1
+                 AND COALESCE(p.kind, 'collection') <> 'forfeit'
                  AND (p.reservation_id IS NULL OR r.status IS DISTINCT FROM 'cancelled')`,
-              [monthStart]
+              [monthStart, monthEnd]
             )
           : Promise.resolve({ rows: [{ total: 0 }] }),
         query(
-          `SELECT COALESCE(SUM(GREATEST(total_amount - COALESCE(amount_paid, 0), 0)), 0)::float AS total
-           FROM reservations
-           WHERE payment_status <> 'paid' AND status <> 'cancelled'
-             AND check_in >= $1::date`,
+          `SELECT r.* FROM reservations r
+           WHERE r.status::text <> 'cancelled' AND r.check_in >= $1::date
+             AND COALESCE(r.payment_status, '') <> 'paid'`,
           [FINANCIAL_EPOCH]
         ),
       ]);
+      const billTotal = (rows, key) => rows.reduce((s, r) => s + (Number(reservationBill(r)[key]) || 0), 0);
 
       finance = {
-        monthRevenue: Number(monthRevenue.rows[0].total) || 0,
+        monthRevenue: Math.round(billTotal(monthStays.rows, 'total') * 100) / 100,
         monthPaid: Number(monthPaid.rows[0].total) || 0,
-        pendingPayments: Number(pendingPayments.rows[0].total) || 0,
+        pendingPayments: Math.round(billTotal(openStays.rows, 'toCollect') * 100) / 100,
         payoutsDue: kpis.payouts_due,
       };
 
@@ -3860,10 +3834,13 @@ router.post(
 
     
     if (entryType === 'out' && paidBy === 'owner' && ownerId && unitId) {
+      // The cash left this petty drawer: the books credit the drawer, with no automatic VAT / WHT.
       const exp = await client.query(
         `INSERT INTO expenses (
-           unit_id, description, amount, paid_by, expense_date, notes, created_by, category, owner_id
-         ) VALUES ($1,$2,$3,'owner',COALESCE($4::date, CURRENT_DATE),$5,$6,'other',$7)
+           unit_id, description, amount, paid_by, expense_date, notes, created_by, category, owner_id,
+           paid_from_account, tax_mode
+         ) VALUES ($1,$2,$3,'owner',COALESCE($4::date, CURRENT_DATE),$5,$6,'other',$7,
+           COALESCE((SELECT account_code FROM petty_cash_accounts WHERE location_key = $8), '108000'), 'none')
          RETURNING id`,
         [
           unitId,
@@ -3873,6 +3850,7 @@ router.post(
           b.notes || 'From petty cash',
           req.user.id,
           ownerId,
+          location,
         ]
       );
       linkedExpenseId = exp.rows[0].id;
@@ -4035,8 +4013,10 @@ router.post('/petty-cash/:id/move', requireRoles('admin'), async (req, res, next
 
     const exp = await client.query(
       `INSERT INTO expenses (
-         unit_id, description, amount, paid_by, expense_date, notes, created_by, category, owner_id
-       ) VALUES ($1,$2,$3,$4,COALESCE($5::date, CURRENT_DATE),$6,$7,'other',$8)
+         unit_id, description, amount, paid_by, expense_date, notes, created_by, category, owner_id,
+         paid_from_account, tax_mode
+       ) VALUES ($1,$2,$3,$4,COALESCE($5::date, CURRENT_DATE),$6,$7,'other',$8,
+         COALESCE((SELECT account_code FROM petty_cash_accounts WHERE location_key = $9), '108000'), 'none')
        RETURNING *`,
       [
         pc.unit_id,
@@ -4047,6 +4027,7 @@ router.post('/petty-cash/:id/move', requireRoles('admin'), async (req, res, next
         pc.notes || 'From petty cash',
         req.user.id,
         paidBy === 'owner' ? pc.owner_id : null,
+        pc.location,
       ]
     );
 
