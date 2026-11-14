@@ -55,5 +55,9 @@ export function notificationHref(n) {
     return '/admin/website-bookings/history';
   }
   if (n.entity_type === 'kpi_target') return '/admin/kpi';
+  // Owner payouts: the owner lands on their Payouts page, finance on the owners' withdrawal queue.
+  if (n.entity_type === 'owner_payout_request') {
+    return n.type === 'owner_payout_requested' ? '/admin/financial-system?tool=owners' : '/admin/owner/payouts';
+  }
   return '/admin/reservations';
 }

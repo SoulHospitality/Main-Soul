@@ -19,7 +19,7 @@ const NAV = [
   { to: '/admin/owner/reservations', label: 'Reservations', icon: CalendarDays },
   { to: '/admin/owner/blocks', label: 'Block dates', icon: CalendarDays },
   { to: '/admin/owner/statement', label: 'Statement', icon: FileBarChart2 },
-  { to: '/admin/owner/payouts', label: 'Payouts', icon: Wallet },
+  { to: '/admin/owner/payouts', label: 'Payouts', icon: Wallet, badge: 'payouts' },
   { to: '/admin/owner/inspections', label: 'Inspections', icon: ClipboardCheck, badge: 'inspections' },
   { to: '/admin/owner/comments', label: 'Comments', icon: MessageSquareText, badge: 'comments' },
 ];
@@ -39,7 +39,15 @@ export default function OwnerLayout({ children }) {
     enabled: user?.role === 'owner',
     refetchInterval: 60000,
   });
-  const badges = { inspections: inspections?.unread || 0, comments: comments?.unread || 0 };
+  // Payout updates from finance (approved, sent, not approved) show as a badge until the owner opens Payouts.
+  const { data: notes } = useQuery({
+    queryKey: ['owner-payout-notifications'],
+    queryFn: async () => (await api.get('/notifications', { params: { limit: 30 } })).data,
+    enabled: user?.role === 'owner',
+    refetchInterval: 60000,
+  });
+  const payoutUpdates = (notes?.notifications || []).filter((n) => n.entity_type === 'owner_payout_request' && !Number(n.is_read)).length;
+  const badges = { inspections: inspections?.unread || 0, comments: comments?.unread || 0, payouts: payoutUpdates };
 
   const handleLogout = () => {
     logout();

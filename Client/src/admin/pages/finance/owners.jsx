@@ -59,6 +59,7 @@ import { RefundApprovalSteps, refundReady } from '../../components/RefundApprova
 import { FinLocaleProvider, useFinLocale } from '../../context/FinLocaleContext';
 import { SmartTable } from './DataTable';
 import { rangeParams, PayFromModal, useTreasuryOptions } from './shared';
+import OwnerPayoutQueue from './ownerPayouts';
 
 export function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
   const { t } = useFinLocale();
@@ -235,76 +236,7 @@ export function OwnerStatementsTab({ fromDate, toDate, rangeParams: params }) {
           </table></SmartTable>
         </div>
       </div>
-      <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
-        <div className="px-6 py-4 border-b font-semibold">{t('pms.fin.owners.withdrawalRequests')}</div>
-        <SmartTable name="owners-3"><table className="table text-sm">
-          <thead>
-            <tr>
-              <th>{t('pms.fin.owners.owner')}</th>
-              <th className="text-right">{t('pms.fin.amount')}</th>
-              <th>{t('pms.fin.owners.status')}</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {payouts.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="text-center text-sm text-gray-400 py-6">
-                  {t('pms.fin.owners.noWithdrawals')}
-                </td>
-              </tr>
-            ) : (
-              payouts.map((p) => (
-                <tr key={p.id}>
-                  <td>{p.owner_name}</td>
-                  <td className="text-right tabular-nums">{currency(p.amount)}</td>
-                  <td className="capitalize">{p.status}</td>
-                  <td className="text-right space-x-2">
-                    {p.status === 'requested' && (
-                      <>
-                        <button
-                          type="button"
-                          className="text-xs text-emerald-700"
-                          onClick={() => reviewPayout.mutate({ id: p.id, status: 'approved' })}
-                        >
-                          {t('pms.fin.approve')}
-                        </button>
-                        <button
-                          type="button"
-                          className="text-xs text-red-600"
-                          onClick={() => reviewPayout.mutate({ id: p.id, status: 'rejected' })}
-                        >
-                          {t('pms.fin.reject')}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-secondary text-xs py-1 px-2"
-                          onClick={() => setSettleTarget(p)}
-                        >
-                          {t('pms.fin.owners.markSettled')}
-                        </button>
-                      </>
-                    )}
-                    {p.status === 'approved' && (
-                      <button
-                        type="button"
-                        className="btn-secondary text-xs py-1 px-2"
-                        onClick={() => setSettleTarget(p)}
-                      >
-                        <CheckCircle2 className="w-3 h-3 inline mr-1" />
-                        {t('pms.fin.owners.markSettled')}
-                      </button>
-                    )}
-                    {p.status === 'paid' && (
-                      <span className="text-xs text-emerald-600 font-medium">{t('pms.fin.owners.paid')}</span>
-                    )}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table></SmartTable>
-      </div>
+      <OwnerPayoutQueue payouts={payouts} />
 
       <Modal
         open={Boolean(settleOwner)}

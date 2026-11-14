@@ -1683,7 +1683,7 @@ function buildJournal(data, from, to, { includeCloses = true, useFrozen = true }
   for (const p of data.payouts || []) {
     if (String(p.status) !== 'paid') continue;
     const amt = round2(parseFloat(p.amount) || 0);
-    const date = isoDate(p.reviewed_at || p.updated_at || p.created_at);
+    const date = isoDate(p.paid_at || p.reviewed_at || p.updated_at || p.created_at);
     if (!inRange(date, from, to)) continue;
     const payoutTreasury = String(p.paid_from_account || '').trim() || '101000';
     journal.push(
@@ -2625,6 +2625,7 @@ async function isPeriodClosed(date) {
 }
 
 module.exports = {
+  reservationResetFilter,
   buildFinancialPortal,
   buildYtdStatements,
   buildStatements,

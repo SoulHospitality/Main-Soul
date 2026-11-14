@@ -5,6 +5,19 @@ const { calcReservationFinancials, calcStatementFinancials, ownerPortalFinancial
 const { FINANCIAL_EPOCH, clampFromDate } = require('../../lib/financialEpoch');
 const { logAudit } = require('../../lib/audit');
 const { STAFF_EDITOR_ROLES } = require('../../lib/staffEditorRoles');
+const {
+  ownerWallet,
+  getPayoutDetails,
+  savePayoutDetails,
+  describePayoutDetails,
+  notifyOwner,
+  notifyFinance,
+  markOwnerPayoutPaid,
+} = require('../../lib/ownerWallet');
+
+const ownerOf = (req, source = req.query) =>
+  req.user.role === 'owner' ? req.user.id : Number(source?.owner_id) || req.user.id;
+
 
 const router = express.Router();
 
@@ -169,6 +182,9 @@ router.get('/owner/dashboard', requireRoles('owner', 'admin'), async (req, res, 
     const unitIds = await ownerUnitIds(ownerId);
     if (!unitIds.length) {
       return res.json({
+        wallet: await ownerWallet(ownerId),
+        upcoming: [],
+        trend: [],
         units: [],
         occupancy_pct: 0,
         adr: 0,
@@ -251,7 +267,78 @@ router.get('/owner/dashboard', requireRoles('owner', 'admin'), async (req, res, 
     const ownerExpensesTotal = expenseRows.reduce((s, e) => s + Number(e.amount || 0), 0);
     const netAfterExpenses = round2(ownerNet - ownerExpensesTotal);
 
+    // Money (same numbers the finance team sees), the next stays (no guest details) and the last 6 months.
+    const wallet = await ownerWallet(ownerId);
+    const today = wallet.as_of;
+    const { rows: upcomingRows } = await query(
+      `SELECT r.id, to_char(r.check_in, 'YYYY-MM-DD') AS check_in, to_char(r.check_out, 'YYYY-MM-DD') AS check_out,
+              r.nights, r.status::text AS status, r.is_owner_reservation, r.price_per_night, r.total_amount,
+              r.utilities_amount, r.utilities_custom, r.broker_total, r.broker_amount_per_night, r.housekeeping_fees,
+              r.insurance, r.beach_access_fees,
+              u.commission_mode, u.company_commission_pct, u.company_commission_owner_pct, u.commission_tenant_pct,
+              COALESCE(u.utilities_cost, 0) AS utilities_cost, COALESCE(u.unit_number, u.title) AS unit_name
+       FROM reservations r JOIN units u ON u.id = r.unit_id
+       WHERE r.unit_id = ANY($1::uuid[]) AND r.status::text <> 'cancelled' AND r.check_out > $2::date
+       ORDER BY r.check_in LIMIT 8`,
+      [unitIds, today]
+    );
+    const upcoming = upcomingRows.map((r) => ({
+      id: r.id,
+      unit_name: r.unit_name,
+      check_in: r.check_in,
+      check_out: r.check_out,
+      nights: Number(r.nights) || 0,
+      owner_stay: Boolean(r.is_owner_reservation),
+      in_house: r.check_in <= today,
+      owner_share: round2(Number(calcReservationFinancials(r, r).ownerNet) || 0),
+    }));
+    const sixMonthsAgo = `${new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 6, 1)).toISOString().slice(0, 7)}-01`;
+    const { rows: trendRows } = await query(
+      `SELECT to_char(r.check_out, 'YYYY-MM') AS month, r.nights, r.price_per_night, r.total_amount, r.utilities_amount,
+              r.utilities_custom, r.broker_total, r.broker_amount_per_night, r.housekeeping_fees, r.insurance,
+              r.beach_access_fees, r.is_owner_reservation, r.status,
+              u.commission_mode, u.company_commission_pct, u.company_commission_owner_pct, u.commission_tenant_pct,
+              COALESCE(u.utilities_cost, 0) AS utilities_cost
+       FROM reservations r JOIN units u ON u.id = r.unit_id
+       WHERE r.unit_id = ANY($1::uuid[]) AND r.status::text <> 'cancelled'
+         AND r.check_out >= $2::date AND r.check_out <= $3::date`,
+      [unitIds, sixMonthsAgo, today]
+    );
+    const trendMap = {};
+    for (const r of trendRows) {
+      if (!trendMap[r.month]) trendMap[r.month] = { month: r.month, owner_share: 0, nights: 0 };
+      trendMap[r.month].owner_share += Number(calcReservationFinancials(r, r).ownerNet) || 0;
+      trendMap[r.month].nights += Number(r.nights) || 0;
+    }
+    const trend = [];
+    for (let i = 5; i >= 0; i -= 1) {
+      const d = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1 - i, 1));
+      const key = d.toISOString().slice(0, 7);
+      trend.push({ month: key, owner_share: round2(trendMap[key]?.owner_share || 0), nights: trendMap[key]?.nights || 0 });
+    }
+
+    // Occupancy this calendar month: booked nights (past and upcoming) out of every night of the month.
+    const monthStart = `${today.slice(0, 7)}-01`;
+    const monthEndDate = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)), 1));
+    const nextMonth = monthEndDate.toISOString().slice(0, 10);
+    const daysInMonth = Math.round((monthEndDate - new Date(`${monthStart}T00:00:00Z`)) / 86400000);
+    const { rows: occRows } = await query(
+      `SELECT COALESCE(SUM(GREATEST(0, LEAST(r.check_out, $3::date) - GREATEST(r.check_in, $2::date))), 0)::int AS nights
+       FROM reservations r
+       WHERE r.unit_id = ANY($1::uuid[]) AND r.status::text <> 'cancelled'
+         AND r.check_in < $3::date AND r.check_out > $2::date`,
+      [unitIds, monthStart, nextMonth]
+    );
+    const monthNights = Number(occRows[0]?.nights) || 0;
+    const monthAvailable = unitRows.length * daysInMonth;
+
     res.json({
+      wallet,
+      upcoming,
+      trend,
+      month_nights: monthNights,
+      month_available_nights: monthAvailable,
+      month_occupancy_pct: monthAvailable ? Math.round((monthNights / monthAvailable) * 1000) / 10 : 0,
       units: unitRows,
       occupancy_pct: Math.round(occupancy * 1000) / 10,
       adr: round2(adr),
@@ -261,8 +348,8 @@ router.get('/owner/dashboard', requireRoles('owner', 'admin'), async (req, res, 
       owner_expenses: round2(ownerExpensesTotal),
       net_after_expenses: netAfterExpenses,
       expenses: expenseRows,
-      paid: round2(paidSum),
-      pending: round2(pendingSum || netAfterExpenses),
+      paid: wallet.paid_out,
+      pending: wallet.available,
       next_payout_date: ready?.period_end || null,
       settlements,
     });
@@ -457,12 +544,35 @@ router.get('/owner/units', requireRoles('owner', 'admin', 'owners_relations'), a
   }
 });
 
+/** The owner's money: available now, upcoming earnings, where they get paid, and every request. */
+router.get('/owner/wallet', requireRoles('owner', 'admin'), async (req, res, next) => {
+  try {
+    const ownerId = ownerOf(req);
+    const [wallet, details, requests] = await Promise.all([
+      ownerWallet(ownerId),
+      getPayoutDetails(ownerId),
+      query(`SELECT * FROM owner_payout_requests WHERE owner_id = $1 ORDER BY created_at DESC LIMIT 50`, [ownerId]).then((r) => r.rows),
+    ]);
+    res.json({ wallet, payout_details: details, requests });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.put('/owner/payout-details', requireRoles('owner', 'admin'), async (req, res, next) => {
+  try {
+    res.json(await savePayoutDetails(ownerOf(req, req.body), req.body));
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
+    next(e);
+  }
+});
+
 router.get('/owner/payout-requests', requireRoles('owner', 'admin'), async (req, res, next) => {
   try {
-    const ownerId = req.user.role === 'owner' ? req.user.id : Number(req.query.owner_id) || req.user.id;
     const { rows } = await query(
       `SELECT * FROM owner_payout_requests WHERE owner_id = $1 ORDER BY created_at DESC`,
-      [ownerId]
+      [ownerOf(req)]
     );
     res.json(rows);
   } catch (e) {
@@ -470,50 +580,62 @@ router.get('/owner/payout-requests', requireRoles('owner', 'admin'), async (req,
   }
 });
 
+/** Ask for a payout: up to the available balance, paid to the saved account. */
 router.post('/owner/payout-requests', requireRoles('owner', 'admin'), async (req, res, next) => {
   try {
-    const ownerId = req.user.role === 'owner' ? req.user.id : Number(req.body.owner_id) || req.user.id;
-    const amount = Number(req.body.amount);
-    if (!(amount > 0)) return res.status(400).json({ error: 'amount must be > 0' });
-
-    const settlementId = req.body.settlement_id || null;
-    if (settlementId) {
-      const { rows: s } = await query(
-        `SELECT * FROM owner_settlements WHERE id = $1 AND owner_id = $2`,
-        [settlementId, ownerId]
-      );
-      if (!s[0]) return res.status(400).json({ error: 'Settlement not found' });
-      if (s[0].status === 'disputed' || s[0].status === 'open') {
-        return res.status(400).json({ error: 'Cannot request payout against unsettled or disputed funds' });
-      }
-      if (amount > Number(s[0].net_amount)) {
-        return res.status(400).json({ error: 'Amount exceeds settlement net' });
-      }
-    } else {
-      
-      const { rows: ready } = await query(
-        `SELECT id FROM owner_settlements WHERE owner_id = $1 AND status = 'ready' LIMIT 1`,
-        [ownerId]
-      );
-      if (!ready[0]) {
-        return res.status(400).json({ error: 'No ready settlement available for payout' });
-      }
+    const ownerId = ownerOf(req, req.body);
+    const amount = Math.round(Number(req.body.amount) * 100) / 100;
+    if (!(amount > 0)) return res.status(400).json({ error: 'Enter the amount you want to receive' });
+    const details = req.body.payout_details ? await savePayoutDetails(ownerId, req.body.payout_details) : await getPayoutDetails(ownerId);
+    if (!details) return res.status(400).json({ error: 'Add where you want to be paid first' });
+    const wallet = await ownerWallet(ownerId);
+    if (amount > wallet.available + 0.009) {
+      return res.status(400).json({
+        error: `You can request up to EGP ${wallet.available.toLocaleString('en-US')} now${wallet.in_progress > 0 ? ` (EGP ${wallet.in_progress.toLocaleString('en-US')} is already in progress)` : ''}.`,
+      });
     }
-
+    const snapshot = { ...details, summary: describePayoutDetails(details) };
+    delete snapshot.owner_id;
+    delete snapshot.updated_at;
     const { rows } = await query(
-      `INSERT INTO owner_payout_requests (owner_id, settlement_id, amount, status, two_fa_verified)
-       VALUES ($1, $2, $3, 'requested', COALESCE($4, 0))
+      `INSERT INTO owner_payout_requests (owner_id, amount, status, two_fa_verified, payout_method, payout_details, owner_note)
+       VALUES ($1, $2, 'requested', 1, $3, $4::jsonb, $5)
        RETURNING *`,
-      [ownerId, settlementId, amount, req.body.two_fa_verified ? 1 : 0]
+      [ownerId, amount, details.method, JSON.stringify(snapshot), String(req.body.note || '').trim().slice(0, 400) || null]
     );
     await logAudit({
       userId: req.user.id,
       action: 'REQUEST_OWNER_PAYOUT',
       entityType: 'owner_payout_request',
       entityId: rows[0].id,
-      details: { amount, settlement_id: settlementId },
+      details: { amount, method: details.method, available_before: wallet.available },
+    });
+    const { rows: who } = await query(`SELECT full_name FROM staff_users WHERE id = $1`, [ownerId]);
+    await notifyFinance({
+      type: 'owner_payout_requested',
+      title: 'Owner payout request',
+      message: `${who[0]?.full_name || 'An owner'} asked for EGP ${amount.toLocaleString('en-US')} · ${snapshot.summary}`,
+      id: rows[0].id,
     });
     res.status(201).json(rows[0]);
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
+    next(e);
+  }
+});
+
+/** The owner can withdraw a request until finance has paid it. */
+router.post('/owner/payout-requests/:id/cancel', requireRoles('owner', 'admin'), async (req, res, next) => {
+  try {
+    const { rows } = await query(
+      `UPDATE owner_payout_requests SET status = 'cancelled', updated_at = now()
+       WHERE id = $1 AND owner_id = $2 AND status IN ('requested', 'approved')
+       RETURNING *`,
+      [req.params.id, ownerOf(req, req.body)]
+    );
+    if (!rows[0]) return res.status(400).json({ error: 'Only a request that is not paid yet can be cancelled' });
+    await logAudit({ userId: req.user.id, action: 'CANCEL_OWNER_PAYOUT', entityType: 'owner_payout_request', entityId: rows[0].id, details: { amount: Number(rows[0].amount) } });
+    res.json(rows[0]);
   } catch (e) {
     next(e);
   }
@@ -715,6 +837,26 @@ router.post('/owner/payout-requests/:id/review', requireRoles('admin', 'finance'
     if (existing[0].status === 'paid') {
       return res.status(400).json({ error: 'Already paid' });
     }
+    if (existing[0].status === 'cancelled') {
+      return res.status(400).json({ error: 'The owner cancelled this request' });
+    }
+    if (status === 'rejected' && !String(req.body.rejection_reason || '').trim()) {
+      return res.status(400).json({ error: 'Tell the owner why the request is rejected' });
+    }
+    if (status === 'paid') {
+      try {
+        const paid = await markOwnerPayoutPaid({
+          id: req.params.id,
+          treasury: req.body.treasury_code,
+          reference: req.body.payment_reference,
+          userId: req.user.id,
+        });
+        return res.json(paid);
+      } catch (err) {
+        if (err.status) return res.status(err.status).json({ error: err.message });
+        throw err;
+      }
+    }
 
     if (['approved', 'paid'].includes(status) && existing[0].settlement_id) {
       const { rows: s } = await query(`SELECT * FROM owner_settlements WHERE id = $1`, [
@@ -730,8 +872,8 @@ router.post('/owner/payout-requests/:id/review', requireRoles('admin', 'finance'
 
     const { rows } = await query(
       `UPDATE owner_payout_requests SET
-         status = $1,
-         rejection_reason = CASE WHEN $1 = 'rejected' THEN $2 ELSE rejection_reason END,
+         status = $1::text,
+         rejection_reason = CASE WHEN $1::text = 'rejected' THEN $2 ELSE rejection_reason END,
          reviewed_by = $3,
          reviewed_at = now(),
          updated_at = now()
@@ -752,8 +894,11 @@ router.post('/owner/payout-requests/:id/review', requireRoles('admin', 'finance'
       action: 'REVIEW_OWNER_PAYOUT',
       entityType: 'owner_payout_request',
       entityId: rows[0].id,
-      details: { status },
+      details: { status, reason: rows[0].rejection_reason || null },
     });
+    await notifyOwner(rows[0].owner_id, status === 'approved'
+      ? { type: 'owner_payout_approved', title: 'Payout approved', message: `Your request for EGP ${Number(rows[0].amount).toLocaleString('en-US')} is approved and will be sent soon.`, id: rows[0].id }
+      : { type: 'owner_payout_rejected', title: 'Payout request not approved', message: `Your request for EGP ${Number(rows[0].amount).toLocaleString('en-US')} was not approved: ${rows[0].rejection_reason}`, id: rows[0].id });
     res.json(rows[0]);
   } catch (e) {
     next(e);

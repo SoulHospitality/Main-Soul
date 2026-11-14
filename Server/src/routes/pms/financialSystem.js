@@ -751,13 +751,26 @@ router.get('/financial-system/owner-statements', requireRoles('admin', 'finance'
     let payouts = [];
     try {
       const { rows } = await query(
-        `SELECT p.*, su.full_name AS owner_name
+        `SELECT p.*, su.full_name AS owner_name, su.username AS owner_phone,
+                ru.full_name AS reviewed_by_name, pu.full_name AS paid_by_name
          FROM owner_payout_requests p
          LEFT JOIN staff_users su ON su.id = p.owner_id
+         LEFT JOIN staff_users ru ON ru.id = p.reviewed_by
+         LEFT JOIN staff_users pu ON pu.id = p.paid_by
          WHERE TRUE${afterReset('p.created_at')}
-         ORDER BY p.created_at DESC LIMIT 200`
+         ORDER BY CASE WHEN p.status IN ('requested', 'approved') THEN 0 ELSE 1 END, p.created_at DESC LIMIT 200`
       );
-      payouts = rows;
+      // Open requests carry the owner's balance, so finance can see at a glance that the money is there.
+      const { ownerWallet, describePayoutDetails } = require('../../lib/ownerWallet');
+      const wallets = {};
+      for (const ownerId of [...new Set(rows.filter((p) => ['requested', 'approved'].includes(p.status)).map((p) => p.owner_id))]) {
+        wallets[ownerId] = await ownerWallet(ownerId).catch(() => null);
+      }
+      payouts = rows.map((p) => ({
+        ...p,
+        details_summary: p.payout_details?.summary || describePayoutDetails(p.payout_details),
+        owner_wallet: wallets[p.owner_id] || null,
+      }));
     } catch (_) {}
 
     res.json({
@@ -775,36 +788,16 @@ router.get('/financial-system/owner-statements', requireRoles('admin', 'finance'
 
 router.post('/financial-system/payouts/:id/settle', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
-    const id = req.params.id;
-    const { rows } = await query(`SELECT * FROM owner_payout_requests WHERE id = $1`, [id]);
-    if (!rows[0]) return res.status(404).json({ error: 'Payout not found' });
-    if (rows[0].status === 'paid') return res.json({ ok: true, payout: rows[0] });
-    if (rows[0].status === 'rejected') {
-      return res.status(400).json({ error: 'Cannot settle a rejected payout request' });
-    }
-    const treasury = String(req.body?.treasury_code || '').trim() || '101000';
-    if (!isTreasuryCode(treasury)) return res.status(400).json({ error: 'Choose a bank or cash treasury account' });
-    await assertPeriodOpen(new Date().toISOString().slice(0, 10), 'Today');
-
-    await query(
-      `UPDATE owner_payout_requests SET
-         status = 'paid',
-         reviewed_by = $2,
-         reviewed_at = NOW(),
-         updated_at = NOW(),
-         paid_from_account = $3
-       WHERE id = $1`,
-      [id, req.user.id, treasury]
-    );
-    if (rows[0].settlement_id) {
-      await query(
-        `UPDATE owner_settlements SET status = 'paid', updated_at = now() WHERE id = $1`,
-        [rows[0].settlement_id]
-      );
-    }
-    const { rows: updated } = await query(`SELECT * FROM owner_payout_requests WHERE id = $1`, [id]);
-    res.json({ ok: true, payout: updated[0] });
+    const { markOwnerPayoutPaid } = require('../../lib/ownerWallet');
+    const payout = await markOwnerPayoutPaid({
+      id: req.params.id,
+      treasury: req.body?.treasury_code,
+      reference: req.body?.payment_reference,
+      userId: req.user.id,
+    });
+    res.json({ ok: true, payout });
   } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
     next(e);
   }
 });
@@ -889,10 +882,13 @@ router.post('/financial-system/owners/:ownerId/settle', requireRoles('admin', 'f
     if (!isTreasuryCode(treasury)) return res.status(400).json({ error: 'Choose a bank or cash treasury account' });
     const { rows: payoutRows } = await query(
       `INSERT INTO owner_payout_requests (
-         owner_id, settlement_id, amount, status, two_fa_verified, reviewed_by, reviewed_at, paid_from_account
-       ) VALUES ($1,$2,$3,'paid',1,$4,now(),$5)
+         owner_id, settlement_id, amount, status, two_fa_verified, reviewed_by, reviewed_at, paid_from_account,
+         paid_at, paid_by, payment_reference, payout_method, payout_details
+       ) VALUES ($1,$2,$3,'paid',1,$4,now(),$5,now(),$4,$6,
+         (SELECT method FROM owner_payout_details WHERE owner_id = $1),
+         (SELECT to_jsonb(d) - 'owner_id' - 'updated_at' FROM owner_payout_details d WHERE d.owner_id = $1))
        RETURNING *`,
-      [ownerId, settlementId, amount, req.user.id, treasury]
+      [ownerId, settlementId, amount, req.user.id, treasury, String(req.body.payment_reference || '').trim().slice(0, 120) || null]
     );
 
     res.status(201).json({

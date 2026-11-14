@@ -37,7 +37,7 @@ const OwnerDashboard = lazy(() => import('./pages/OwnerDashboard'));
 const OwnerReservations = lazy(() => import('./pages/OwnerReservations'));
 const OwnerStatement = lazy(() => import('./pages/OwnerStatement'));
 const OwnerPayoutsPage = lazy(() =>
-  import('./pages/OwnerPortalPages').then((m) => ({ default: m.OwnerPayoutsPage }))
+  import('./pages/owner/OwnerPayouts')
 );
 const AcquisitionPipeline = lazy(() => import('./pages/AcquisitionPipeline'));
 const AuditLog = lazy(() => import('./pages/AuditLog'));

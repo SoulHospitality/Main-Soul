@@ -1964,6 +1964,32 @@
           "month": "Month",
           "sales_person": "Sales person"
         }
+      },
+      "ownerPayouts": {
+        "paidToast": "Payout recorded and the owner notified",
+        "copied": "Account details copied",
+        "copy": "Copy account details",
+        "openSummary": "{{count}} open · {{amount}} to pay",
+        "noneOpen": "No open requests",
+        "filter": {
+          "open": "Open",
+          "all": "All"
+        },
+        "status": {
+          "requested": "Requested",
+          "approved": "Approved",
+          "paid": "Paid",
+          "rejected": "Rejected",
+          "cancelled": "Cancelled by owner"
+        },
+        "paidOn": "paid {{date}}",
+        "ref": "ref",
+        "noDetails": "No payout account on this request: contact the owner before paying",
+        "covered": "Owner balance {{balance}} covers the open requests",
+        "notCovered": "Owner balance {{balance}} does not cover the open requests: check before paying",
+        "pay": "Pay",
+        "rejectTitle": "Reject payout request",
+        "reasonLabel": "Reason (the owner sees this)"
       }
     }
   }
