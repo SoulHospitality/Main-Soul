@@ -4,9 +4,9 @@ const A = '/admin';
 
 /** Admin path of each page in the access catalog (used to land custom-access users on a page they have). */
 const PAGE_PATHS = {
-  dashboard: 'dashboard', clock_in: 'clock', kpi: 'kpi', audit_log: 'audit', site_performance: 'website-performance',
+  dashboard: 'dashboard', clock_in: 'clock', kpi: 'kpi', audit_log: 'audit',
   website: 'website', inbox: 'inbox', leads: 'leads', inbox_analytics: 'inbox-analytics', inbox_settings: 'inbox-settings',
-  units: 'units', units_long_term: 'units-long-term', projects: 'projects', acquisition: 'acquisition',
+  units: 'units', projects: 'projects', acquisition: 'acquisition',
   owner_statement: 'owner-statement', owner_blocks: 'owner/blocks', owners: 'users', owner_comments: 'owner-comments',
   damage_reports: 'damage-reports', reservations: 'reservations', website_bookings: 'website-bookings',
   schedule: 'schedule', calendar_sync: 'calendar-sync', performance: 'performance', operations: 'operations',
@@ -69,7 +69,7 @@ function roleLandingPage(role) {
     case 'marketing_pr':
       return `${A}/reservations`;
     case 'web_developer':
-      return `${A}/website-performance`;
+      return `${A}/website`;
     case 'owner':
       return `${A}/owner`;
     default:

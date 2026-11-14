@@ -42,7 +42,6 @@ export const PAGE_GROUPS = [
       { key: 'dashboard', label: 'Dashboard', levels: R },
       { key: 'kpi', label: 'KPI', levels: RW },
       { key: 'audit_log', label: 'Audit Log', levels: R, scopes: ['team', 'all'] },
-      { key: 'site_performance', label: 'Website Performance', levels: R },
       { key: 'website', label: 'Website', levels: RW },
     ],
   },
@@ -60,8 +59,7 @@ export const PAGE_GROUPS = [
     id: 'inventory',
     label: 'Inventory',
     pages: [
-      { key: 'units', label: 'Units (Short Term)', levels: RW },
-      { key: 'units_long_term', label: 'Units (Long Term)', levels: RW },
+      { key: 'units', label: 'Units', levels: RW },
       { key: 'projects', label: 'Destinations', levels: RW },
       { key: 'acquisition', label: 'Owner leads', levels: RW },
       { key: 'owner_statement', label: 'Owner Statement', levels: R },

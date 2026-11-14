@@ -197,7 +197,7 @@ router.get('/catalog', async (_req, res, next) => {
     try {
       const { rows: counts } = await query(
         `SELECT lower(trim(COALESCE(NULLIF(project, ''), compound))) AS name, COUNT(*)::int AS n
-         FROM units WHERE status = 'published' GROUP BY 1`
+         FROM units WHERE status = 'published' AND COALESCE(listing_type, 'rent') <> 'long_term' GROUP BY 1`
       );
       const byName = new Map(counts.map((c) => [c.name, c.n]));
       payload.data.items = payload.data.items.map((item) => ({

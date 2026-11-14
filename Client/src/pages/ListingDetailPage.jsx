@@ -4,7 +4,6 @@ import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
 import ListingCard from '../components/ListingCard';
 import ListingBookingCard from '../components/listing/ListingBookingCard';
-import ListingLongTermCard from '../components/listing/ListingLongTermCard';
 import AddReviewForm from '../components/reviews/AddReviewForm';
 import UnitReviewsDisplay from '../components/reviews/UnitReviewsDisplay';
 import { useAuth } from '../context/AuthContext';
@@ -19,7 +18,6 @@ import { LayoutGrid, X } from 'lucide-react';
 const localISO = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-const isLongTermUnit = (unit) => String(unit?.listing_type || 'rent').toLowerCase() === 'long_term';
 
 function parseFacilities(unit) {
   if (Array.isArray(unit?.facilities) && unit.facilities.length) return unit.facilities;
@@ -149,14 +147,12 @@ export default function ListingDetailPage() {
       })
       .catch(() => {});
 
-    if (!isLongTermUnit(unit)) {
-      api
-        .get(`/units/${slug}/pricing`, { params: { from, to } })
-        .then((r) => {
-          if (!cancelled) setPrices(r.data.prices || {});
-        })
-        .catch(() => {});
-    }
+    api
+      .get(`/units/${slug}/pricing`, { params: { from, to } })
+      .then((r) => {
+        if (!cancelled) setPrices(r.data.prices || {});
+      })
+      .catch(() => {});
 
     return () => {
       cancelled = true;
@@ -166,13 +162,11 @@ export default function ListingDetailPage() {
   useEffect(() => {
     if (!unit) return undefined;
     let cancelled = false;
-    const listingType = isLongTermUnit(unit) ? 'long_term' : 'rent';
     api
       .get('/units', {
         params: {
           status: 'published',
           compound: unit.compound || undefined,
-          listing_type: listingType,
           limit: 6,
         },
       })
@@ -189,7 +183,6 @@ export default function ListingDetailPage() {
 
   useEffect(() => {
     if (!unit?.id && !unit?.slug) return undefined;
-    if (isLongTermUnit(unit)) return undefined;
     let cancelled = false;
     setReviewsLoading(true);
     setReviewsError('');
@@ -285,9 +278,6 @@ export default function ListingDetailPage() {
             <Link to="/search" className="g-btn g-btn-primary">
               {t('listing.browseStays')}
             </Link>
-            <Link to="/long-term" className="g-btn g-btn-ghost">
-              {t('listing.browseLongTerm')}
-            </Link>
           </div>
         </main>
         <Footer />
@@ -305,15 +295,12 @@ export default function ListingDetailPage() {
     );
   }
 
-  const isLongTerm = isLongTermUnit(unit);
-  const browsePath = isLongTerm ? '/long-term' : '/search';
-  const sizeM2 = Number(unit.size_m2 || unit.unit_area || 0);
+  const browsePath = '/search';
 
   const detailRows = [
     { label: t('listing.specGuests'), value: String(unit.guests || '—') },
     { label: t('listing.specBedrooms'), value: String(unit.beds ?? '—') },
     { label: t('listing.specBaths'), value: String(unit.baths ?? '—') },
-    ...(isLongTerm && sizeM2 > 0 ? [{ label: t('listing.specArea'), value: `${sizeM2} m²` }] : []),
     { label: t('listing.specCheckIn'), value: t('listing.specCheckInValue') },
     { label: t('listing.specCheckOut'), value: t('listing.specCheckOutValue') },
     ...(unit.property_type ? [{ label: t('listing.specPropertyType'), value: unit.property_type }] : []),
@@ -348,7 +335,7 @@ export default function ListingDetailPage() {
                 <p className="soul-fade-up mb-4 flex items-center gap-3 text-soul-muted">
                   <span className="g-dot" />
                   <span className="g-index">
-                    {isLongTerm ? t('listing.longTermIn', { place: locationParts[0] }) : locationParts[0]}
+                    {locationParts[0]}
                   </span>
                 </p>
               )}
@@ -361,7 +348,7 @@ export default function ListingDetailPage() {
                 <strong className="font-semibold text-soul-blue">{locationParts[0] || t('listing.egypt')}</strong>
                 {locationParts.length > 1 ? `, ${locationParts.slice(1).join(', ')}` : ''}
               </span>
-              {!isLongTerm && Number(unit.review_count || 0) > 0 ? (
+              {Number(unit.review_count || 0) > 0 ? (
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-soul-line bg-white px-3 py-1.5">
                   <span className="font-num font-semibold text-soul-blue">★ {Number(unit.average_rating || 0).toFixed(1)}</span>
                   <span>· {t('listing.reviewCount', { count: unit.review_count })}</span>
@@ -442,12 +429,8 @@ export default function ListingDetailPage() {
                 { href: '#about', label: t('listing.description') },
                 { href: '#details', label: t('listing.details') },
                 { href: '#features', label: t('listing.amenitiesHeading') },
-                ...(!isLongTerm
-                  ? [
-                      { href: '#reviews', label: t('listing.reviews') },
-                      { href: '#rules', label: t('listing.houseRules') },
-                    ]
-                  : []),
+                { href: '#reviews', label: t('listing.reviews') },
+                { href: '#rules', label: t('listing.houseRules') },
               ].map((tab) => (
                 <a
                   key={tab.href}
@@ -556,7 +539,6 @@ export default function ListingDetailPage() {
                 })()}
               </section>
 
-              {!isLongTerm && (
               <section id="reviews" className="mb-14 scroll-mt-[150px]">
                 <SectionTitle n="04">{t('listing.reviews')}</SectionTitle>
                 <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
@@ -589,9 +571,7 @@ export default function ListingDetailPage() {
                   />
                 </div>
               </section>
-              )}
 
-              {!isLongTerm && (
                 <section id="rules" className="mb-14 grid scroll-mt-[150px] gap-12 sm:grid-cols-2">
                   <div>
                     <SectionTitle n="05">{t('listing.houseRules')}</SectionTitle>
@@ -621,19 +601,9 @@ export default function ListingDetailPage() {
                     </ul>
                   </div>
                 </section>
-              )}
             </div>
 
             <aside>
-              {isLongTerm ? (
-                <ListingLongTermCard
-                  unit={unit}
-                  blockedDates={blocked}
-                  checkoutDates={checkoutDates}
-                  initialCheckin={params.get('checkin') || undefined}
-                  initialCheckout={params.get('checkout') || undefined}
-                />
-              ) : (
                 <ListingBookingCard
                   unit={unit}
                   blockedDates={blocked}
@@ -643,7 +613,6 @@ export default function ListingDetailPage() {
                   initialCheckout={params.get('checkout') || undefined}
                   initialGuests={params.get('guests') ? parseInt(params.get('guests'), 10) : undefined}
                 />
-              )}
             </aside>
           </div>
         </div>
@@ -653,7 +622,7 @@ export default function ListingDetailPage() {
             <div className="g-shell">
               <SectionHead
                 eyebrow={unit.compound || locationParts[0]}
-                lead={isLongTerm ? t('listing.similarLongTerm') : t('listing.similarRent')}
+                lead={t('listing.similarRent')}
                 titleClassName="text-[clamp(36px,4.4vw,64px)]"
                 action={
                   <Link to={browsePath} className="g-btn g-btn-ghost">

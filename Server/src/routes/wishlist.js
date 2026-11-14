@@ -10,7 +10,7 @@ router.get('/', authGuest, async (req, res, next) => {
       `SELECT w.*, u.slug, u.title, u.cover_url, u.compound, u.beds, u.baths, u.guests
        FROM wishlist_items w
        LEFT JOIN units u ON u.wp_post_id = w.listing_wp_id
-       WHERE w.user_id = $1
+       WHERE w.user_id = $1 AND COALESCE(u.listing_type, 'rent') <> 'long_term'
        ORDER BY w.added_at DESC`,
       [req.guest.id]
     );

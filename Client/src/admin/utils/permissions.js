@@ -185,7 +185,7 @@ const MARKETING_PR_PAGE_ACCESS = new Set([
   ...STAFF_HR_TABS,
 ]);
 
-const WEB_DEVELOPER_PAGE_ACCESS = new Set(['site_performance', 'website', ...STAFF_HR_TABS]);
+const WEB_DEVELOPER_PAGE_ACCESS = new Set(['website', ...STAFF_HR_TABS]);
 
 const RESERVATIONS_PERMISSIONS = [
   'dashboard:read',
@@ -554,8 +554,6 @@ export function canAccess(user, page) {
   const allowed = PAGE_ACCESS[user.role];
   if (allowed === true) return true;
   if (page === 'owner_statement' && STAFF_EDITOR_ROLES.has(user.role)) return true;
-  // Long-term units share access with the short-term units page.
-  if (page === 'units_long_term') page = 'units';
   if (allowed instanceof Set) return allowed.has(page);
   return false;
 }
@@ -590,7 +588,7 @@ export function canManageUnits(user) {
 }
 
 export function canManageLongTermUnits(user) {
-  if (customPageAccess(user)) return customWrite(user, 'units_long_term');
+  if (customPageAccess(user)) return customWrite(user, 'units');
   return isStaffEditor(user);
 }
 

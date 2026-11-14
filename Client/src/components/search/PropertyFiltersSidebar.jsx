@@ -34,10 +34,8 @@ export default function PropertyFiltersSidebar({
   onClear,
   variant = 'sidebar',
   onClose,
-  mode = 'rent',
 }) {
   const { t } = useLocale();
-  const isLongTerm = mode === 'long_term';
   const { destinations, projectsByDestination } = useProjectCatalog();
   const [destination, setDestination] = useState('');
   const [checkin, setCheckin] = useState('');
@@ -110,7 +108,7 @@ export default function PropertyFiltersSidebar({
       ...base,
       checkin: cin || undefined,
       checkout: cout || undefined,
-      ...(isLongTerm ? {} : { guests: g }),
+      guests: g,
     };
   }
 
@@ -196,8 +194,7 @@ export default function PropertyFiltersSidebar({
         />
       </div>
 
-      {!isLongTerm && (
-        <>
+      <>
           <Field label={t('home.searchGuests')} icon={Users}>
             <div className="flex items-center justify-between gap-3 rounded-2xl border border-soul-line bg-white px-3 py-2.5">
               <button
@@ -219,8 +216,7 @@ export default function PropertyFiltersSidebar({
               </button>
             </div>
           </Field>
-        </>
-      )}
+      </>
 
       <Field label={t('search.bedrooms')} icon={BedDouble}>
         <div className="flex flex-wrap gap-1.5">
@@ -263,12 +259,12 @@ export default function PropertyFiltersSidebar({
         </div>
       </Field>
 
-      <Field label={isLongTerm ? t('search.priceRangeMonth') : t('search.priceRangeNight')} icon={Wallet}>
+      <Field label={t('search.priceRangeNight')} icon={Wallet}>
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
           <input
             type="number"
             min={0}
-            step={isLongTerm ? 5000 : 500}
+            step={500}
             className={inputCls}
             value={priceMin || ''}
             placeholder={t('search.min')}
@@ -279,7 +275,7 @@ export default function PropertyFiltersSidebar({
           <input
             type="number"
             min={0}
-            step={isLongTerm ? 5000 : 500}
+            step={500}
             className={inputCls}
             value={priceMax || ''}
             placeholder={t('search.max')}
@@ -376,14 +372,13 @@ function Field({ label, icon: Icon, children }) {
   );
 }
 
-export function MobileSearchPill({ values, onOpen, filterCount = 0, mode = 'rent' }) {
+export function MobileSearchPill({ values, onOpen, filterCount = 0 }) {
   const { t, localeTag } = useLocale();
-  const isLongTerm = mode === 'long_term';
   const place = values.where || t('search.anywhere');
   const guests = Number(values.guests) || 1;
   const dateStr = useMemo(() => {
     if (!values.checkin || !values.checkout) {
-      return isLongTerm ? t('search.longTerm') : t('search.anyDates');
+      return t('search.anyDates');
     }
     try {
       const da = new Date(`${values.checkin}T00:00:00`);
@@ -394,7 +389,7 @@ export function MobileSearchPill({ values, onOpen, filterCount = 0, mode = 'rent
     } catch {
       return t('search.anyDates');
     }
-  }, [values.checkin, values.checkout, isLongTerm, localeTag, t]);
+  }, [values.checkin, values.checkout, localeTag, t]);
 
   return (
     <button
@@ -407,7 +402,7 @@ export function MobileSearchPill({ values, onOpen, filterCount = 0, mode = 'rent
       </span>
       <div className="min-w-0 flex-1">
         <div className="truncate text-[14px] font-bold text-soul-blue">
-          {isLongTerm ? place : `${place} · ${t('home.guestsLower', { count: guests })}`}
+          {`${place} · ${t('home.guestsLower', { count: guests })}`}
         </div>
         <div className="truncate text-[12px] text-soul-muted">{dateStr}</div>
       </div>

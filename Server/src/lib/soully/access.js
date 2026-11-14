@@ -74,13 +74,12 @@ const PAGE_ACCESS = {
     'owner_comments', 'damage_reports', ...STAFF_HR,
   ]),
   marketing_pr: new Set(['reservations', 'units', 'schedule', 'website', ...STAFF_HR]),
-  web_developer: new Set(['site_performance', 'website', ...STAFF_HR]),
+  web_developer: new Set(['website', ...STAFF_HR]),
 };
 
 const GUIDE = [
   { page: 'dashboard', path: '/admin/dashboard', label: 'Dashboard', hint: 'The home counts for this role.' },
-  { page: 'units', path: '/admin/units', label: 'Units', hint: 'Search and edit short-term chalets and apartments. Long-term units are a separate page.' },
-  { page: 'units_long_term', path: '/admin/units-long-term', label: 'Long-term units', hint: 'Same inventory, monthly stays.' },
+  { page: 'units', path: '/admin/units', label: 'Units', hint: 'Search and edit chalets and apartments.' },
   { page: 'projects', path: '/admin/projects', label: 'Destinations', hint: 'Compounds and projects the units belong to.' },
   { page: 'reservations', path: '/admin/reservations', label: 'Reservations', hint: 'Create, edit, and collect on stays. Agents see their own book. Managers see their team.' },
   { page: 'schedule', path: '/admin/schedule', label: 'Schedule', hint: 'The calendar. Drag a stay only if your role is allowed to write the grid.' },
@@ -101,7 +100,6 @@ const GUIDE = [
   { page: 'owner_statement', path: '/admin/owner-statement', label: 'Owner statement', hint: 'Export a unit statement. Amounts are already available in chat.' },
   { page: 'acquisition', path: '/admin/acquisition', label: 'Owner leads', hint: 'Units the acquisition team is trying to sign.' },
   { page: 'website', path: '/admin/website', label: 'Website', hint: 'Public site content and popups.' },
-  { page: 'site_performance', path: '/admin/website-performance', label: 'Website performance', hint: 'How the public site is behaving.' },
   { page: 'profile', path: '/admin/profile', label: 'Profile', hint: 'Your name, code, and password live here.' },
 ];
 
@@ -111,7 +109,6 @@ function soullyCan(user, page) {
   let key = page;
   if (key === 'profile' || key === 'change-password') return true;
   if (key === 'holiday_requests' || key === 'loans' || key === 'wfh') key = 'requests';
-  if (key === 'units_long_term') key = 'units';
   if (key === 'owner_statement' && STAFF_EDITOR.has(user.role)) return true;
   const allowed = PAGE_ACCESS[user.role];
   if (!allowed) return false;

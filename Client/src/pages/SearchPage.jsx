@@ -25,7 +25,7 @@ const SORT_KEYS = {
   newest: 'search.sortNewest',
 };
 
-function buildApiParams(sp, { limit, offset, listingType }) {
+function buildApiParams(sp, { limit, offset }) {
   const destination = sp.get('destination') || sp.get('area') || '';
   const compound = sp.get('compound') || sp.get('project') || '';
   const types = sp.get('types') || '';
@@ -38,9 +38,8 @@ function buildApiParams(sp, { limit, offset, listingType }) {
     destination: destination || undefined,
     compound: compound || undefined,
     beds: sp.get('beds') || undefined,
-    guests: listingType === 'long_term' ? undefined : sp.get('guests') || undefined,
+    guests: sp.get('guests') || undefined,
     types: types || undefined,
-    listing_type: listingType,
     checkin: checkin && checkout ? checkin : undefined,
     checkout: checkin && checkout ? checkout : undefined,
     sort: sort || undefined,
@@ -49,10 +48,8 @@ function buildApiParams(sp, { limit, offset, listingType }) {
   };
 }
 
-export default function SearchPage({ listingType = 'rent' }) {
+export default function SearchPage() {
   const { t } = useLocale();
-  const isLongTerm = listingType === 'long_term';
-  const basePath = isLongTerm ? '/long-term' : '/search';
   const [params, setParams] = useSearchParams();
   const { destinations, projectsByDestination } = useProjectCatalog();
   const [items, setItems] = useState([]);
@@ -124,7 +121,7 @@ export default function SearchPage({ listingType = 'rent' }) {
     setLoading(true);
     api
       .get('/units', {
-        params: buildApiParams(params, { limit: PAGE_SIZE, offset: 0, listingType }),
+        params: buildApiParams(params, { limit: PAGE_SIZE, offset: 0 }),
       })
       .then((r) => {
         if (cancelled) return;
@@ -143,7 +140,7 @@ export default function SearchPage({ listingType = 'rent' }) {
     return () => {
       cancelled = true;
     };
-  }, [params, listingType]);
+  }, [params]);
 
   const displayed = useMemo(() => {
     let list = [...items];
@@ -198,7 +195,7 @@ export default function SearchPage({ listingType = 'rent' }) {
   const filterCount = [
     params.get('compound') || params.get('destination') || params.get('area') || params.get('where'),
     params.get('checkin'),
-    !isLongTerm && params.get('guests') && Number(params.get('guests')) > 1 ? params.get('guests') : null,
+    params.get('guests') && Number(params.get('guests')) > 1 ? params.get('guests') : null,
     params.get('beds'),
     params.get('types'),
     params.get('priceMin') || params.get('priceMax'),
@@ -274,7 +271,6 @@ export default function SearchPage({ listingType = 'rent' }) {
         params: buildApiParams(params, {
           limit: PAGE_SIZE,
           offset: items.length,
-          listingType,
         }),
       });
       setItems((prev) => [...prev, ...(r.data.items || [])]);
@@ -288,12 +284,8 @@ export default function SearchPage({ listingType = 'rent' }) {
   const activeCompound = params.get('compound') || '';
 
   const pageTitle = filterValues.where
-    ? isLongTerm
-      ? t('search.longTermIn', { where: filterValues.where })
-      : t('search.staysIn', { where: filterValues.where })
-    : isLongTerm
-      ? t('search.longTermAll')
-      : t('search.allStays');
+    ? t('search.staysIn', { where: filterValues.where })
+    : t('search.allStays');
 
   return (
     <div className="min-h-screen bg-soul-paper">
@@ -304,7 +296,7 @@ export default function SearchPage({ listingType = 'rent' }) {
           <span className="g-dot" />
           <span className="g-index">Soul</span>
           <span className="h-px w-6 bg-soul-blue/25" />
-          <span className="g-index">{isLongTerm ? t('nav.longTerm') : t('nav.stays')}</span>
+          <span className="g-index">{t('nav.stays')}</span>
         </div>
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0">
@@ -361,7 +353,6 @@ export default function SearchPage({ listingType = 'rent' }) {
         <MobileSearchPill
           values={filterValues}
           filterCount={filterCount}
-          mode={listingType}
           onOpen={() => setSheetOpen(true)}
         />
       </div>
@@ -371,7 +362,6 @@ export default function SearchPage({ listingType = 'rent' }) {
           values={filterValues}
           onApply={applyFilters}
           onClear={clearFilters}
-          mode={listingType}
         />
 
         <main className="min-w-0 pb-24 lg:pb-8">
@@ -402,15 +392,13 @@ export default function SearchPage({ listingType = 'rent' }) {
             <div className="mx-auto max-w-lg py-20 text-center">
               <span className="g-index text-soul-muted">(0)</span>
               <h3 className="g-display mt-4 text-[clamp(36px,4vw,56px)] text-soul-blue">
-                {isLongTerm ? t('search.emptyLongTerm') : t('search.emptyHomes')}
+                {t('search.emptyHomes')}
               </h3>
               <p className="mb-8 mt-4 leading-relaxed text-soul-muted">
-                {isLongTerm
-                  ? t('search.emptyHintLongTerm')
-                  : t('search.emptyHintRent')}
+                {t('search.emptyHintRent')}
                 {total > 0 ? ` ${t('search.liveOverall', { count: total, noun: nounPlural })}` : ''}
               </p>
-              <Link to={basePath} className="g-btn g-btn-primary">
+              <Link to="/search" className="g-btn g-btn-primary">
                 {t('search.resetFilters')}
               </Link>
             </div>
@@ -468,7 +456,6 @@ export default function SearchPage({ listingType = 'rent' }) {
           onApply={applyFilters}
           onClear={clearFilters}
           onClose={() => setSheetOpen(false)}
-          mode={listingType}
         />
       )}
 

@@ -135,7 +135,6 @@ function createApp() {
   );
   app.use('/api/fx', require('./routes/fx'));
   app.use('/api/reviews', require('./routes/reviews').router);
-  app.use('/api/site-telemetry', require('./routes/siteTelemetry'));
 
   app.get('/api/cron/refresh-ical-blocks', async (req, res, next) => {
     try {

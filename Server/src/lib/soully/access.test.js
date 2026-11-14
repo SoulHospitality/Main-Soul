@@ -14,13 +14,12 @@ test('only the admin can open Soully', () => {
 test('web developer cannot read finance, reservations, or other staff', () => {
   const user = { role: 'web_developer', is_active: true };
   assert.equal(soullyEnabled(user), false);
-  assert.equal(soullyCan(user, 'site_performance'), true);
   assert.equal(soullyCan(user, 'financial_system'), false);
   assert.equal(soullyCan(user, 'reservations'), false);
   assert.equal(soullyCan(user, 'users'), false);
   assert.equal(soullyCan(user, 'payslip'), true);
   const pages = allowedGuide(user).map((item) => item.page);
-  assert.ok(pages.includes('site_performance'));
+  assert.ok(pages.includes('website'));
   assert.equal(pages.includes('financial_system'), false);
 });
 

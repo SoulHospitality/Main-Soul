@@ -132,7 +132,6 @@ router.use(require('./kpi'));
 router.use(require('./resalePerformance'));
 router.use(require('./acquisitionPerformance'));
 router.use(require('./auditLog'));
-router.use(require('./siteHealth'));
 router.use(require('./financialSystem'));
 router.use(require('./financeWorkspace'));
 router.use(require('./pettyCashAccounts'));

@@ -40,7 +40,7 @@ const PERMS = {
     'tasks',
   ],
   marketing_pr: ['tasks', 'reservations', 'schedule', 'units_readonly'],
-  web_developer: ['tasks', 'site_performance'],
+  web_developer: ['tasks'],
   hr: ['tasks', 'reservations'],
   hr_supervisor: ['tasks', 'reservations'],
   resale: ['tasks'],

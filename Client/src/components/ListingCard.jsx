@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Bath, BedDouble, ChevronLeft, ChevronRight, Heart, Maximize2, Users } from 'lucide-react';
+import { Bath, BedDouble, ChevronLeft, ChevronRight, Heart, Users } from 'lucide-react';
 import { useCurrency } from '../context/CurrencyContext';
 import { useLocale } from '../context/LocaleContext';
 import { getListingWpId, useWishlist } from '../hooks/useWishlist';
@@ -12,7 +12,6 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
   const { t } = useLocale();
   const { has, toggle, remove } = useWishlist();
   const removeFromWishlist = onRemove || remove;
-  const isLongTerm = String(listing.listing_type || 'rent').toLowerCase() === 'long_term';
   const photos = (() => {
     const list = [];
     if (listing.cover_url) list.push(listing.cover_url);
@@ -27,7 +26,6 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
   const wished = has(wpId);
   const amount = getDisplayPriceEgp(listing);
   const priceCore = amount != null ? formatPrice(amount, { perNight: false }) : null;
-  const sizeM2 = Number(listing.size_m2 || listing.unit_area || 0);
   const reviewCount = Number(listing.review_count || listing.reviewCount || 0);
   const rating = Number(listing.average_rating || listing.averageRating || listing.rating || 0);
 
@@ -37,7 +35,7 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
   const params = new URLSearchParams();
   if (carryDates?.checkin) params.set('checkin', carryDates.checkin);
   if (carryDates?.checkout) params.set('checkout', carryDates.checkout);
-  if (!isLongTerm && carryDates?.guests) params.set('guests', carryDates.guests);
+  if (carryDates?.guests) params.set('guests', carryDates.guests);
   const qs = params.toString();
   const href = `/listings/${listing.slug}${qs ? `?${qs}` : ''}`;
 
@@ -57,7 +55,6 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
     (listing.beds ?? 0) > 0 ? { icon: BedDouble, value: listing.beds } : null,
     (listing.baths ?? 0) > 0 ? { icon: Bath, value: listing.baths } : null,
     (listing.guests ?? 0) > 0 ? { icon: Users, value: listing.guests } : null,
-    isLongTerm && sizeM2 > 0 ? { icon: Maximize2, value: `${sizeM2} m²` } : null,
   ].filter(Boolean);
 
   return (
@@ -83,11 +80,7 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-soul-ink/45 via-transparent to-soul-ink/10 opacity-70 transition-opacity duration-500 group-hover:opacity-100" />
 
         <div className="absolute start-3 top-3 flex items-center gap-1.5">
-          {isLongTerm ? (
-            <span className="rounded-full border border-white/30 bg-white/20 px-3 py-1.5 text-white backdrop-blur-md">
-              <span className="g-index">{t('listing.longTermBadge')}</span>
-            </span>
-          ) : reviewCount > 0 ? (
+          {reviewCount > 0 ? (
             <span className="rounded-full bg-white/95 px-2.5 py-1.5 font-num text-[12px] font-semibold text-soul-blue shadow-sm">
               ★ {rating.toFixed(1)}
             </span>
@@ -143,11 +136,9 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
       <div className="px-1 pt-4">
         <div className="flex items-center justify-between gap-3">
           <span className="g-index truncate text-soul-muted">{location}</span>
-          {!isLongTerm ? (
-            <span className="shrink-0 text-[12px] text-soul-muted">
-              {reviewCount > 0 ? t('listing.reviewCount', { count: reviewCount }) : t('listing.noReviewsYet')}
-            </span>
-          ) : null}
+          <span className="shrink-0 text-[12px] text-soul-muted">
+            {reviewCount > 0 ? t('listing.reviewCount', { count: reviewCount }) : t('listing.noReviewsYet')}
+          </span>
         </div>
 
         <h3 className="mt-1.5 truncate font-display text-[23px] font-medium leading-tight text-soul-blue transition-colors">
@@ -170,12 +161,12 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
               <>
                 <span className="font-num text-[17px] font-semibold leading-none text-soul-blue">{priceCore}</span>
                 <span className="ms-1 text-[12px] text-soul-muted">
-                  {isLongTerm ? t('listing.perMonthShort') : t('listing.perNightShort')}
+                  {t('listing.perNightShort')}
                 </span>
               </>
             ) : (
               <span className="text-[13px] text-soul-muted">
-                {isLongTerm ? t('listing.inquireForPrice') : t('listing.viewPricing')}
+                {t('listing.viewPricing')}
               </span>
             )}
           </div>

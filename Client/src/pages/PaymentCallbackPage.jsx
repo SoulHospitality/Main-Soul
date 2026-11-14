@@ -1,10 +1,8 @@
-import { useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
 import BookingRequestSuccess from '../components/booking/BookingRequestSuccess';
 import { useLocale } from '../context/LocaleContext';
-import { reportEvent } from '../utils/siteTelemetry';
 
 export default function PaymentCallbackPage() {
   const { t } = useLocale();
@@ -13,9 +11,6 @@ export default function PaymentCallbackPage() {
   const bookingId = params.get('booking_id');
   const ok = status === 'success';
 
-  useEffect(() => {
-    reportEvent({ event: ok ? 'payment_success' : 'payment_fail' });
-  }, [ok]);
 
   if (ok) {
     return (

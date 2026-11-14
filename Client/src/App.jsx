@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from 'react';
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { CurrencyProvider } from './context/CurrencyContext';
@@ -7,8 +7,6 @@ import RouteFallback from './components/RouteFallback';
 import WhatsAppFAB from './components/layout/WhatsAppFAB';
 import WebsiteEntryPopup from './components/WebsiteEntryPopup';
 import OfferPopup from './components/OfferPopup';
-import SiteTelemetryBridge from './components/SiteTelemetryBridge';
-import { reportError } from './utils/siteTelemetry';
 
 const HomePage = lazy(() => import('./pages/HomePage'));
 const SearchPage = lazy(() => import('./pages/SearchPage'));
@@ -48,9 +46,6 @@ function SiteOnly({ children }) {
 }
 
 function GuestNotFound() {
-  useEffect(() => {
-    reportError({ type: 'not_found', message: 'Page not found', path: window.location.pathname });
-  }, []);
   return <Navigate to="/" replace />;
 }
 
@@ -60,13 +55,11 @@ export default function App() {
       <BrowserRouter>
         <LocaleProvider>
           <CurrencyProvider>
-            <SiteTelemetryBridge />
             <Suspense fallback={<RouteFallback />}>
               <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/home" element={<Navigate to="/" replace />} />
                 <Route path="/search" element={<SearchPage listingType="rent" />} />
-                <Route path="/long-term" element={<Navigate to="/search" replace />} />
                 <Route path="/for-sale" element={<Navigate to="/search" replace />} />
                 <Route path="/listings/:slug" element={<ListingDetailPage />} />
                 <Route path="/receipt/:token" element={<ReceiptPage />} />

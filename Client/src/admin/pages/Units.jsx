@@ -853,7 +853,7 @@ export default function Units({ listingType = 'rent' }) {
       )}
       <div className="flex items-center justify-between">
         <div className="page-header mb-0">
-          <h1 className="page-title">{isLongTerm ? 'Units (Long Term)' : 'Units (Short Term)'}</h1>
+          <h1 className="page-title">Units</h1>
           <p className="page-subtitle">
             {units.length} unit{units.length !== 1 ? 's' : ''}
             {isLongTerm ? ' for long-term rent · inquiry only on the website' : ' for short-term rent'}

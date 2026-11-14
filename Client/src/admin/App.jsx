@@ -10,7 +10,6 @@ import { defaultAdminPage, ADMIN_LOGIN, ADMIN_CHANGE_PASSWORD } from './utils/ad
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Units = lazy(() => import('./pages/Units'));
-const UnitsLongTerm = lazy(() => import('./pages/UnitsLongTerm'));
 const Reservations = lazy(() => import('./pages/Reservations'));
 const ReservationsChecklist = lazy(() => import('./pages/ReservationsChecklist'));
 const WebsiteBookings = lazy(() => import('./pages/WebsiteBookings'));
@@ -53,7 +52,6 @@ const Performance = lazy(() => import('./pages/Performance'));
 const Kpi = lazy(() => import('./pages/Kpi'));
 const ClockIn = lazy(() => import('./pages/ClockIn'));
 const ChatbotTest = lazy(() => import('./pages/ChatbotTest'));
-const SitePerformance = lazy(() => import('./pages/SitePerformance'));
 const WebsiteControl = lazy(() => import('./pages/WebsiteControl'));
 const PettyCash = lazy(() => import('./pages/PettyCash'));
 
@@ -145,8 +143,6 @@ function AppRoutes() {
       />
       <Route path="dashboard" element={<ProtectedRoute page="dashboard"><Dashboard /></ProtectedRoute>} />
       <Route path="units" element={<ProtectedRoute page="units"><Units /></ProtectedRoute>} />
-      <Route path="units-long-term" element={<ProtectedRoute page="units_long_term"><UnitsLongTerm /></ProtectedRoute>} />
-      <Route path="units-for-sale" element={<Navigate to="/admin/units-long-term" replace />} />
       <Route path="projects" element={<ProtectedRoute page="projects"><Projects /></ProtectedRoute>} />
       <Route path="reservations" element={<ProtectedRoute page="reservations"><Reservations /></ProtectedRoute>} />
       <Route path="reservations/checklist" element={<ProtectedRoute page="reservations"><ReservationsChecklist /></ProtectedRoute>} />
@@ -160,10 +156,6 @@ function AppRoutes() {
       <Route path="kpi" element={<ProtectedRoute page="kpi"><Kpi /></ProtectedRoute>} />
       <Route path="clock" element={<ProtectedRoute page="clock_in"><ClockIn /></ProtectedRoute>} />
       <Route path="chatbot" element={<ProtectedRoute page="chatbot_test"><ChatbotTest /></ProtectedRoute>} />
-      <Route path="website-performance" element={<ProtectedRoute page="site_performance"><SitePerformance /></ProtectedRoute>} />
-      <Route path="guest-errors" element={<Navigate to="/admin/website-performance" replace />} />
-      <Route path="site-performance" element={<Navigate to="/admin/website-performance" replace />} />
-      <Route path="booking-health" element={<Navigate to="/admin/website-performance" replace />} />
       <Route path="tasks" element={<Navigate to="/admin" replace />} />
 
       
