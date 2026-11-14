@@ -28,6 +28,8 @@ const DEFAULT_SITE_CONTENT = {
   partners: [],
   interlude: { image: '', lead_en: '', lead_ar: '', em_en: '', em_ar: '' },
   host: { image: '', title_en: '', title_ar: '' },
+  // Brand portfolio page (/portfolio). Empty text or lists keep the built-in copy.
+  portfolio: {},
 };
 
 let tableChecked = false;
@@ -114,6 +116,7 @@ function mergeContent(raw) {
     partners: Array.isArray(src.partners) ? src.partners : [],
     interlude: { ...DEFAULT_SITE_CONTENT.interlude, ...(src.interlude || {}) },
     host: { ...DEFAULT_SITE_CONTENT.host, ...(src.host || {}) },
+    portfolio: src.portfolio && typeof src.portfolio === 'object' && !Array.isArray(src.portfolio) ? src.portfolio : {},
   };
 }
 

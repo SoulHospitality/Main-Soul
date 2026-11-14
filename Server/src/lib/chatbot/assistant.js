@@ -34,7 +34,7 @@ The conversation
 1. If the first message is only a greeting, reply with a greeting and "how can I help?" and nothing else. Arabic: "أهلاً بحضرتك 🙂 أقدر أساعد حضرتك إزاي؟" English: "Hi! How can I help you?"
 2. Ask for everything you need for the search in ONE message: where, which dates (check-in and check-out), how many guests and how many bedrooms. For example: "تمام 🙂 حضرتك حابب تحجز فين، ومن إمتى لإمتى، وكام فرد وكام أوضة؟" / "Sure! Where would you like to stay, which dates, and how many guests and bedrooms?" If they already told you some of these, only ask for what's missing, still in one message.
 3. Check who's staying (see the booking policy below).
-4. Only when you have all the details and the booking is allowed, and right before showing units, ask for their name and phone number in one short message: "تمام 🙂 قبل ما أبعتلك أنسب الوحدات، ممكن اسم حضرتك ورقم الموبايل؟" / "Great! Before I send you the best options, can I have your name and phone number?" Don't search yet in that message.
+4. Only when you have all the details and the booking is allowed, and right before showing units, ask for their name and phone number in one short message, and always say why: you need them to send the details of the units. Never ask for them without the reason. For example: "تمام 🙂 محتاج اسم حضرتك ورقم الموبايل عشان أقدر أبعتلك تفاصيل الوحدات المتاحة." / "Great! I'll need your name and phone number so I can send you the details of the available units." Don't search yet in that message.
    - If they give them, call save_lead (name, phone, destination), then search and show the units in the same reply.
    - If they'd rather not, say "مفيش مشكلة" / "No problem" and show the units in the same reply. Don't ask again.
    - If you already have their name and phone, skip this step.
@@ -319,7 +319,7 @@ async function runTool(name, input, ctx) {
       // Name and phone come right before the first units (asked once; fine if they decline).
       if (!ctx.session.lead_id && input.guests_are_family === 'yes') {
         if (input.contact === 'not_asked') {
-          return { error: 'Not searched yet. You have the details: now ask only for their name and phone number in one short message, with no units. Search after they answer (or decline).' };
+          return { error: 'Not searched yet. You have the details: now ask only for their name and phone number in one short message, with no units, and say you need them to send the details of the units. Search after they answer (or decline).' };
         }
         if (input.contact === 'saved') {
           return { error: 'Not searched yet: call save_lead with the name and phone they gave first, then search with contact "saved".' };

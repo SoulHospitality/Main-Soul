@@ -100,12 +100,12 @@ describe('HR daily-rate deductions and leave rules', () => {
     assert.doesNotThrow(() => assertAnnualNotice('2026-08-20', afterShift, 5));
   });
 
-  it('caps paid excuses at two per month and two hours each', () => {
+  it('allows two paid excuses per month of any length', () => {
     assert.equal(PAID_EXCUSE_MAX_PER_MONTH, 2);
-    assert.equal(PAID_EXCUSE_MAX_HOURS, 2);
+    assert.equal(PAID_EXCUSE_MAX_HOURS, null);
     assert.equal(EARLY_LEAVE_MAX_PER_YEAR, 2);
     assert.equal(assertExcuseWindow('paid_excuse', '15:00', '17:00').hours, 2);
-    assert.throws(() => assertExcuseWindow('paid_excuse', '15:00', '17:30'), /2 hours/);
+    assert.equal(assertExcuseWindow('paid_excuse', '13:00', '19:00').hours, 6);
     assert.equal(assertExcuseWindow('unpaid_excuse', '12:00', '17:00').hours, 5);
     const unpaid = computeUnpaidExcuseDeduction(3000, 5);
     assert.equal(unpaid.amount, Math.round((hourlyRate(3000) * 5 + Number.EPSILON) * 100) / 100);

@@ -27,7 +27,9 @@ const {
   isScheduledDayOff,
   DEFAULT_ATTENDANCE_CHECKOUT,
   SHIFT_START_MINUTES,
+  SHIFT_END_MINUTES,
 } = require('../../lib/hrRules');
+const { closeEndedShifts } = require('../../lib/clockAutoOut');
 const { attendanceHelpers } = require('./hr');
 
 const router = express.Router();
@@ -192,6 +194,8 @@ function handle(fn) {
 }
 
 router.get('/clock/status', handle(async (req, res) => {
+  // A forgotten clock-out closes at the shift end even if the background job hasn't run yet.
+  if (req.user.role !== 'admin') await closeEndedShifts({ staffId: req.user.id }).catch(() => 0);
   res.json(await statusPayload(req, await loadMe(req.user.id)));
 }));
 
@@ -323,6 +327,9 @@ router.post('/clock/punch', handle(async (req, res) => {
   if (location.accuracy != null && location.accuracy > MAX_ACCURACY_M) {
     throw new HttpError(400, `Your location isn’t precise enough (about ${Math.round(location.accuracy)} m). Turn on precise location and try again.`);
   }
+  if (action === 'in' && cairoParts().minutes >= SHIFT_END_MINUTES) {
+    throw new HttpError(403, `Your shift ended at ${DEFAULT_ATTENDANCE_CHECKOUT}. You can clock in again tomorrow (early is fine).`);
+  }
   const site = await activeSite();
   const distance = distanceMeters(site, location);
   if (action === 'in' && distance > site.radius_m) {
@@ -442,6 +449,7 @@ router.get('/clock/team', requireRoles(...HR_CLOCK_ROLES), handle(async (_req, r
           first_in: list.find((e) => e.kind === 'in')?.at || null,
           last_out: [...list].reverse().find((e) => e.kind === 'out')?.at || null,
           auto_outs: list.filter((e) => e.source === 'left_area').length,
+          shift_end_outs: list.filter((e) => e.source === 'shift_end').length,
           device: device.get(s.id) || null,
         };
       }),
@@ -522,6 +530,7 @@ router.get('/clock/history', requireRoles(...HR_CLOCK_ROLES), handle(async (req,
       forgot_out: open && d.date !== today,
       minutes_in: minutesIn,
       auto_outs: d.events.filter((e) => e.source === 'left_area').length,
+      shift_end_outs: d.events.filter((e) => e.source === 'shift_end').length,
     };
   });
   res.json({ from, to, today, staff: staff.rows, rows });

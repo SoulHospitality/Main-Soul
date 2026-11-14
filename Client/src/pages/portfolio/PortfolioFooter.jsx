@@ -1,13 +1,17 @@
 import { brand, whatsappHref } from '../../theme/brand';
-
-const SECTIONS = [
-  ['The Soul Standard', '#soul-standard'],
-  ['Destinations', '#destinations'],
-  ['Partners', '#partners'],
-  ['For owners', '#owners'],
-];
+import { usePortfolioContent } from './portfolioContent';
 
 export default function PortfolioFooter() {
+  const pf = usePortfolioContent();
+  // Links follow the sections that are switched on, named as they are on the page.
+  const SECTIONS = [
+    ['standard', pf.standard.eyebrow, '#soul-standard'],
+    ['destinations', pf.destinations.title, '#destinations'],
+    ['partners', pf.partners.eyebrow, '#partners'],
+    ['owners', pf.owners.eyebrow, '#owners'],
+  ]
+    .filter(([key]) => pf.sections[key])
+    .map(([, label, href]) => [label, href]);
   return (
     <footer className="pf-grad pt-20 text-white/75">
       <div className="pf-shell">
@@ -15,10 +19,11 @@ export default function PortfolioFooter() {
           <div>
             <img src="/soul-brand/soul-logo.png" alt={brand.name} className="h-12 w-auto brightness-0 invert" />
             <p className="g-display mt-8 max-w-sm text-[clamp(24px,2.4vw,34px)] text-white">
-              More than a stay.
-              <span className="block font-light text-white/70">A hospitality experience.</span>
+              {pf.footer.tagline}
+              <span className="block font-light text-white/70">{pf.footer.tagline_light}</span>
             </p>
           </div>
+          {SECTIONS.length ? (
           <nav aria-label="Sections">
             <p className="g-index flex items-center gap-3 text-[var(--pf-vista)]">
               <span className="g-dot" /> Explore
@@ -31,6 +36,7 @@ export default function PortfolioFooter() {
               ))}
             </ul>
           </nav>
+          ) : <div />}
           <div>
             <p className="g-index flex items-center gap-3 text-[var(--pf-vista)]">
               <span className="g-dot" /> Contact

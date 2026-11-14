@@ -40,7 +40,6 @@ export const NAV_SECTIONS = [
     label: 'Overview',
     items: [
       { path: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard, page: 'dashboard' },
-      { path: '/admin/clock', label: 'Clock in', adminLabel: 'Clock-ins', icon: Fingerprint, page: 'clock_in' },
       { path: '/admin/kpi', label: 'KPI', icon: Target, page: 'kpi' },
       { path: '/admin/audit', label: 'Audit Log', icon: ClipboardList, page: 'audit_log' },
       { path: '/admin/website', label: 'Website', icon: Globe, page: 'website' },
@@ -106,6 +105,7 @@ export const NAV_SECTIONS = [
     id: 'hr',
     label: 'HR',
     items: [
+      { path: '/admin/clock', label: 'Clock in', adminLabel: 'Clock-ins', icon: Fingerprint, page: 'clock_in' },
       { path: '/admin/users', label: 'User Management', icon: Users, page: 'users' },
       { path: '/admin/attendance', label: 'Attendance', icon: Clock, page: 'attendance' },
       { path: '/admin/requests', label: 'Requests', icon: Inbox, page: 'requests', badge: 'requests_pending', agentLabel: 'My requests' },

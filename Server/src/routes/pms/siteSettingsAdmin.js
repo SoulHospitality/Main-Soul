@@ -22,6 +22,53 @@ const cleanUrl = (v) => {
   return /^(https?:\/\/|\/)/i.test(s) ? s : '';
 };
 
+const PORTFOLIO_SECTIONS = ['standard', 'destinations', 'partners', 'owners'];
+const PORTFOLIO_HEADINGS = ['hero', 'standard', 'destinations', 'partners', 'owners'];
+const LOGO_SIZES = ['s', 'm', 'l', 'xl'];
+
+/** Portfolio page: headings per section, cards, logos and owner points. Unknown keys are dropped. */
+function sanitizePortfolio(raw) {
+  const src = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+  const list = (v, max) => (Array.isArray(v) ? v.slice(0, max) : []);
+  const heading = (h) => ({
+    eyebrow: cleanText(h.eyebrow, 60),
+    title: cleanText(h.title, 80),
+    title_light: cleanText(h.title_light, 80),
+    intro: cleanText(h.intro, 400),
+  });
+  const out = {
+    sections: Object.fromEntries(PORTFOLIO_SECTIONS.map((k) => [k, obj(src.sections)[k] !== false])),
+  };
+  for (const key of PORTFOLIO_HEADINGS) out[key] = heading(obj(src[key]));
+  out.standard.pillars = list(obj(src.standard).pillars, 6)
+    .map((p) => ({ title: cleanText(p?.title, 60), body: cleanText(p?.body, 300) }))
+    .filter((p) => p.title || p.body);
+  out.destinations.cards = list(obj(src.destinations).cards, 12)
+    .map((c) => ({
+      name: cleanText(c?.name, 60),
+      location: cleanText(c?.location, 60),
+      image: cleanUrl(c?.image),
+      match: cleanText(c?.match, 160),
+    }))
+    .filter((c) => c.name && c.image);
+  out.partners.logos = list(obj(src.partners).logos, 20)
+    .map((l) => ({ name: cleanText(l?.name, 60), logo: cleanUrl(l?.logo), size: LOGO_SIZES.includes(l?.size) ? l.size : 'm' }))
+    .filter((l) => l.logo);
+  const owners = obj(src.owners);
+  Object.assign(out.owners, {
+    image: cleanUrl(owners.image),
+    quote: cleanText(owners.quote, 160),
+    button: cleanText(owners.button, 40),
+    points: list(owners.points, 6)
+      .map((p) => ({ title: cleanText(p?.title, 60), body: cleanText(p?.body, 300) }))
+      .filter((p) => p.title || p.body),
+  });
+  const footer = obj(src.footer);
+  out.footer = { tagline: cleanText(footer.tagline, 80), tagline_light: cleanText(footer.tagline_light, 80) };
+  return out;
+}
+
 function sanitizeContent(body) {
   const merged = mergeContent(body);
   return {
@@ -65,6 +112,7 @@ function sanitizeContent(body) {
       title_en: cleanText(merged.host.title_en, 120),
       title_ar: cleanText(merged.host.title_ar, 120),
     },
+    portfolio: sanitizePortfolio(merged.portfolio),
   };
 }
 

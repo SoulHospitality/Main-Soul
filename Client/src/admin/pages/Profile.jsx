@@ -233,7 +233,7 @@ export default function Profile() {
             Holidays, excuses, and work-from-home can be requested anytime, for any date (past, today, or future). Casual and annual leave have no salary deduction when approved.
             Unpaid leave deducts 1× daily rate; no show is 2× daily rate.
             Unpaid leave: unlimited (1× daily rate per approved day). Daily rate = base salary ÷ 30.
-            Excuses: 2 per month (26th–25th), up to 2 hours each (manager or HR approval, no deduction).
+            Excuses: 2 per month (26th–25th), any length (manager or HR approval, no deduction). Leaving before the shift ends without an approved excuse that day is deducted.
             Unpaid excuses: unlimited, manager or HR approval, deducted hours × hourly rate (daily rate ÷ 24).
           </p>
           {leaveSnap && !leaveSnap.can_request_holidays ? (
@@ -335,7 +335,7 @@ export default function Profile() {
                         {isMissionLeaveType(leaveForm.leave_type)
                           ? 'Paid mission time. Does not affect attendance. Needs manager or HR approval.'
                           : leaveForm.leave_type === 'paid_excuse'
-                            ? 'Excuse: up to 2 hours, 2 per month (26th–25th). Needs manager or HR approval.'
+                            ? 'Excuse: any length, 2 per month (26th–25th). Needs manager or HR approval.'
                             : 'Unpaid excuse: hours × (daily rate ÷ 24). Needs manager or HR approval.'}
                       </p>
                     </div>

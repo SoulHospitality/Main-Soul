@@ -186,6 +186,7 @@ export default function ClockHistory() {
                         <div className="flex flex-wrap justify-end gap-1">
                           {r.sessions.length > 1 ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">{r.sessions.length} clock-ins</span> : null}
                           {r.auto_outs ? <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] text-amber-800">Left area {r.auto_outs}×</span> : null}
+                          {r.shift_end_outs ? <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] text-sky-800">Closed at shift end</span> : null}
                           {r.forgot_out ? (
                             <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[11px] text-rose-700">
                               <AlertTriangle className="h-3 w-3" /> No clock-out
@@ -206,6 +207,7 @@ export default function ClockHistory() {
                                 <LogOut className="h-3.5 w-3.5 text-rose-600" />
                                 <span className="tabular-nums">{s.out ? timeOf(s.out) : r.still_in ? 'still in' : 'no clock-out'}</span>
                                 {s.out_source === 'left_area' ? <span className="text-amber-700">(automatic: left the area)</span> : null}
+                                {s.out_source === 'shift_end' ? <span className="text-sky-700">(automatic: shift ended)</span> : null}
                               </li>
                             ))}
                           </ol>

@@ -4,6 +4,7 @@ import Sidebar from './Sidebar';
 import Header from './Header';
 import MobileDock from './MobileDock';
 import Soully from '../soully/Soully';
+import ClockAreaGuard from '../ClockAreaGuard';
 import { useAuth } from '../../context/AuthContext';
 import { roleThemeVars } from '../../utils/roleTheme';
 
@@ -95,6 +96,7 @@ export default function Layout({ children }) {
 
       {isMobile ? <MobileDock onOpenMenu={() => setMobileOpen(true)} /> : null}
       {user?.role === 'admin' ? <Soully /> : null}
+      <ClockAreaGuard />
     </div>
   );
 }

@@ -14,6 +14,7 @@ const { startDataRetentionJob } = require('./jobs/dataRetention');
 const { startReservationSettlementJob } = require('./jobs/reservationSettlement');
 const { startMonthlySalaryExpenseJob } = require('./jobs/monthlySalaryExpenses');
 const { startIcalAutoSyncJob } = require('./jobs/icalAutoSync');
+const { startClockShiftEndJob } = require('./lib/clockAutoOut');
 const { startInboxSlaLoop } = require('./lib/inbox/sla');
 const { syncAllUnitListingStatusesOnBoot } = require('./lib/bootUnitStatusSync');
 
@@ -78,6 +79,7 @@ async function main() {
   const server = http.createServer(app);
   initSocket(server);
   startBookingHoldExpiryJob();
+  if (process.env.DATABASE_URL) startClockShiftEndJob();
   startPmsReminderJobs();
   startHousekeepingTaskJob();
   startDataRetentionJob();

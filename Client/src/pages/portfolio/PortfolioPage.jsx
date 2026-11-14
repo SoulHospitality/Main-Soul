@@ -5,10 +5,12 @@ import DestinationsGrid from './DestinationsGrid';
 import PartnersTicker from './PartnersTicker';
 import OwnersCta from './OwnersCta';
 import PortfolioFooter from './PortfolioFooter';
+import { usePortfolioContent } from './portfolioContent';
 import './portfolio.css';
 
 /** Soul Hospitality brand portfolio: /portfolio (shared by link only). */
 export default function PortfolioPage() {
+  const { sections } = usePortfolioContent();
   useEffect(() => {
     const prevTitle = document.title;
     document.title = 'Portfolio · Soul Hospitality';
@@ -30,10 +32,10 @@ export default function PortfolioPage() {
       </a>
       <main id="top">
         <PortfolioHero />
-        <SoulStandard />
-        <DestinationsGrid />
-        <PartnersTicker />
-        <OwnersCta />
+        {sections.standard && <SoulStandard />}
+        {sections.destinations && <DestinationsGrid />}
+        {sections.partners && <PartnersTicker />}
+        {sections.owners && <OwnersCta />}
       </main>
       <PortfolioFooter />
     </div>

@@ -6,6 +6,8 @@ import api from '../api/axios';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import WebsitePopupSection from '../components/WebsitePopupSection';
+import PortfolioEditor from '../components/PortfolioEditor';
+import { SITE_CONTENT_KEY } from '../../hooks/useSiteContent';
 import { PROJECT_CATALOG_KEY } from '../../hooks/useProjectCatalog';
 
 const TABS = [
@@ -13,6 +15,7 @@ const TABS = [
   { id: 'partners', label: 'Partners' },
   { id: 'order', label: 'Property order' },
   { id: 'popup', label: 'Entry popup' },
+  { id: 'portfolio', label: 'Portfolio page' },
 ];
 
 const SECTION_LABELS = {
@@ -32,6 +35,7 @@ const EMPTY_CONTENT = {
   partners: [],
   interlude: { image: '', lead_en: '', lead_ar: '', em_en: '', em_ar: '' },
   host: { image: '', title_en: '', title_ar: '' },
+  portfolio: {},
 };
 
 function move(list, index, dir) {
@@ -212,6 +216,7 @@ function useContentEditor() {
     onSuccess: (saved) => {
       toast.success('Website updated');
       qc.setQueryData(['site-settings-content'], saved);
+      qc.invalidateQueries({ queryKey: SITE_CONTENT_KEY });
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Save failed'),
   });
@@ -541,7 +546,7 @@ export default function WebsiteControl() {
     <div className="space-y-6">
       <div className="page-header mb-0">
         <h1 className="page-title">Website</h1>
-        <p className="page-subtitle">Control what guests see on the website — photos, text, sections, partners and property order.</p>
+        <p className="page-subtitle">Control what guests see on the website and the portfolio page — photos, text, sections, partners and property order.</p>
       </div>
       <div className="flex flex-wrap gap-2">
         {TABS.map((t) => (
@@ -563,6 +568,15 @@ export default function WebsiteControl() {
         <LoadingSpinner />
       ) : tab === 'partners' ? (
         <PartnersTab editor={editor} />
+      ) : tab === 'portfolio' ? (
+        <PortfolioEditor
+          draft={editor.draft}
+          setDraft={editor.setDraft}
+          ImageField={ImageField}
+          SaveBar={SaveBar}
+          onSave={() => editor.save.mutate(editor.draft)}
+          saving={editor.save.isPending}
+        />
       ) : (
         <HomepageTab editor={editor} />
       )}

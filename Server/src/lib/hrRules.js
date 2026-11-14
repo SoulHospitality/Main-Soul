@@ -7,7 +7,8 @@ const GRACE_END_MINUTES = 11 * 60 + 15;
 const LATE_QUARTER_END = 11 * 60 + 30;
 const LATE_HALF_END = 12 * 60;
 const PAID_EXCUSE_MAX_PER_MONTH = 2;
-const PAID_EXCUSE_MAX_HOURS = 2;
+/** Excuses have no length limit: 2 per payroll month, whenever and however long the person leaves. */
+const PAID_EXCUSE_MAX_HOURS = null;
 /** @deprecated use PAID_EXCUSE_MAX_PER_MONTH */
 const EARLY_LEAVE_MAX_PER_YEAR = PAID_EXCUSE_MAX_PER_MONTH;
 const ANNUAL_EXTENDED_NOTICE_DAYS = 7;
@@ -235,6 +236,24 @@ function computeUnpaidExcuseDeduction(baseSalary, hours) {
   };
 }
 
+/**
+ * Leaving before the shift ends without an approved excuse that day: hours missed × hourly rate
+ * (the same formula as an unpaid excuse).
+ */
+function computeEarlyLeaveDeduction(baseSalary, checkOut) {
+  const out = parseHhMm(checkOut);
+  const missed = out == null ? 0 : Math.max(0, SHIFT_END_MINUTES - out);
+  const hours = roundMoney(missed / 60);
+  const rate = hourlyRate(baseSalary);
+  return {
+    hours,
+    hourly_rate: rate,
+    daily_rate: dailyRate(baseSalary),
+    amount: roundMoney(rate * hours),
+    label: `Left early at ${formatExcuseTime(checkOut) || checkOut} · ${hours}h × hourly rate`,
+  };
+}
+
 function leaveDayDeductionAmount(leaveType, baseSalary, hours = 0) {
   const t = String(leaveType || '').toLowerCase();
   if (t === 'unpaid') {
@@ -273,7 +292,7 @@ function excuseHoursFromTimes(startTime, endTime) {
 function assertExcuseWindow(leaveType, startTime, endTime) {
   const hours = excuseHoursFromTimes(startTime, endTime);
   const type = normalizeExcuseLeaveType(leaveType);
-  if (type === 'paid_excuse' && hours > PAID_EXCUSE_MAX_HOURS + 1e-9) {
+  if (type === 'paid_excuse' && PAID_EXCUSE_MAX_HOURS != null && hours > PAID_EXCUSE_MAX_HOURS + 1e-9) {
     const err = new Error(`An excuse can be at most ${PAID_EXCUSE_MAX_HOURS} hours`);
     err.status = 400;
     throw err;
@@ -1276,6 +1295,7 @@ module.exports = {
   roundMoney,
   dailyRate,
   hourlyRate,
+  computeEarlyLeaveDeduction,
   isExcuseLeaveType,
   isMissionLeaveType,
   leaveDoesNotAffectAttendance,

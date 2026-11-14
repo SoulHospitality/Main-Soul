@@ -183,6 +183,7 @@ function TeamPanel() {
                   {s.first_in ? ` · in ${timeOf(s.first_in)}` : ' · not in yet'}
                   {s.last_out && !s.clocked_in ? ` · out ${timeOf(s.last_out)}` : ''}
                   {s.auto_outs ? ` · left the area ${s.auto_outs}×` : ''}
+                  {s.shift_end_outs ? ' · forgot to clock out (closed at shift end)' : ''}
                 </p>
               </div>
               {s.device ? (
@@ -419,7 +420,13 @@ function PhoneClock() {
                 {e.kind === 'in' ? <LogIn className="h-4 w-4 text-emerald-600" /> : <LogOut className="h-4 w-4 text-rose-600" />}
                 <span className="tabular-nums text-soul-blue">{timeOf(e.at)}</span>
                 <span className="text-soul-muted">
-                  {e.kind === 'in' ? 'Clocked in' : e.source === 'left_area' ? `Clocked out automatically (left the area, ${e.distance_m} m)` : 'Clocked out'}
+                  {e.kind === 'in'
+                    ? 'Clocked in'
+                    : e.source === 'left_area'
+                      ? `Clocked out automatically (left the area, ${e.distance_m} m)`
+                      : e.source === 'shift_end'
+                        ? 'Clocked out automatically (shift ended)'
+                        : 'Clocked out'}
                 </span>
               </li>
             ))}
@@ -428,8 +435,8 @@ function PhoneClock() {
       ) : null}
 
       <p className="text-center text-[11px] text-soul-muted">
-        Keep this page open during your shift. If you leave the {site.radius_m} m office area while it’s open, you’re clocked out
-        automatically and need to clock in again when you’re back.
+        You can clock in before your shift starts. You’re clocked out automatically when your shift ends ({data.shift.end}) if you
+        forget, and as soon as you leave the {site.radius_m} m office area while this page or the PMS is open on your phone.
       </p>
     </div>
   );

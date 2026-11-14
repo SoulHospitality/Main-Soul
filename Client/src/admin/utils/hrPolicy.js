@@ -2,7 +2,7 @@ export const PAYROLL_CYCLE_START_DAY = 26;
 export const DAYS_IN_MONTH = 30;
 export const HOURS_IN_DAY = 24;
 export const PAID_EXCUSE_MAX_PER_MONTH = 2;
-export const PAID_EXCUSE_MAX_HOURS = 2;
+export const PAID_EXCUSE_MAX_HOURS = null;
 /** @deprecated */
 export const EARLY_LEAVE_MAX_PER_YEAR = PAID_EXCUSE_MAX_PER_MONTH;
 
@@ -99,8 +99,8 @@ export function isTimedLeaveType(leaveType) {
 
 export function requestableLeaveTypes(canRequestHolidays) {
   const unpaid = { value: 'unpaid', label: 'Unpaid leave (manager then HR)' };
-  // One excuse type: up to 2 per payroll month (26th–25th), up to 2 hours each.
-  const excuse = { value: 'paid_excuse', label: 'Excuse (2 per month, up to 2h · manager then HR)' };
+  // One excuse type: 2 per payroll month (26th–25th), any length.
+  const excuse = { value: 'paid_excuse', label: 'Excuse (2 per month, any time · manager then HR)' };
   const mission = { value: 'mission', label: 'Mission (paid time · manager then HR)' };
   if (canRequestHolidays) {
     return [
@@ -142,4 +142,5 @@ export const DEDUCTION_TYPE_LABELS = {
   bonus: 'Bonus',
   loan: 'Loan',
   wfh: 'Work from home',
+  early_leave: 'Left early',
 };
