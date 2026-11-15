@@ -26,6 +26,7 @@ import { brand } from '../theme/brand';
 import { useLocale } from '../context/LocaleContext';
 import { useProjectCatalog } from '../hooks/useProjectCatalog';
 import { useSiteContent } from '../hooks/useSiteContent';
+import { sharpImageUrl, upscaleFallback } from '../utils/imageUrl';
 
 const STAT_COLS = { 1: 'grid-cols-1', 2: 'grid-cols-2', 3: 'grid-cols-3' };
 const INTRO_KEY = 'soul-intro-seen';
@@ -413,12 +414,14 @@ function Interlude() {
     <section ref={ref} className="g-grain relative isolate flex min-h-[86svh] items-center overflow-hidden bg-soul-ink text-white">
       <img
         ref={imgRef}
-        src={content.interlude?.image || '/soul-v2/interlude.jpg'}
+        src={sharpImageUrl(content.interlude?.image, { width: 2560, upscale: true }) || '/soul-v2/interlude.jpg'}
         alt=""
         loading="lazy"
         className="absolute inset-0 -z-10 h-full w-full scale-125 object-cover will-change-transform"
         onError={(e) => {
-          e.currentTarget.src = '/soul-brand/coast-hero-3.jpg';
+          const fallback = upscaleFallback(content.interlude?.image, 2560);
+          if (content.interlude?.image && !e.currentTarget.dataset.fellBack) fallback(e);
+          else e.currentTarget.src = '/soul-brand/coast-hero-3.jpg';
         }}
       />
       <div className="absolute inset-0 -z-10 bg-soul-ink/45" />

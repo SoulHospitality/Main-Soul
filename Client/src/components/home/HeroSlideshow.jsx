@@ -1,4 +1,7 @@
 import { useEffect } from 'react';
+import { sharpImageSrcSet, sharpImageUrl, upscaleFallback } from '../../utils/imageUrl';
+
+const HERO_WIDTHS = [1280, 1920, 2560];
 
 export const SLIDE_MS = 7000;
 
@@ -27,7 +30,10 @@ export default function HeroSlideshow({ slides, index, onChange }) {
           {/* Re-keyed on activation so the slow zoom restarts each time the slide comes back. */}
           <img
             key={i === index ? `on-${index}` : 'off'}
-            src={slide.src}
+            src={sharpImageUrl(slide.src, { width: 2560, upscale: true })}
+            srcSet={sharpImageSrcSet(slide.src, HERO_WIDTHS, { upscale: true })}
+            sizes="100vw"
+            onError={upscaleFallback(slide.src, 2560)}
             alt=""
             className={`h-full w-full object-cover ${i === index ? 'g-kenburns' : ''}`}
             loading={i === 0 ? 'eager' : 'lazy'}

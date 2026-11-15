@@ -4,6 +4,7 @@ import { ArrowUpRight } from 'lucide-react';
 import { useProjectCatalog } from '../../hooks/useProjectCatalog';
 import { useLocale } from '../../context/LocaleContext';
 import { Reveal, SectionHead } from '../ui/Editorial';
+import { sharpImageUrl, upscaleFallback } from '../../utils/imageUrl';
 
 const PROJECT_PHRASE_KEYS = [
   'home.projectPhrase0',
@@ -75,7 +76,14 @@ export default function CompoundGrid({ index, showHead = true, limit = 0 }) {
         {visible.map((c, i) => (
           <Link key={c.id} to={hrefFor(c)} className="group relative w-[78%] shrink-0 overflow-hidden rounded-[26px]">
             <div className="relative aspect-[4/5]">
-              <img src={c.image} alt={c.name} loading="lazy" decoding="async" className="absolute inset-0 h-full w-full object-cover" />
+              <img
+                src={sharpImageUrl(c.image, { width: 900, upscale: true })}
+                onError={upscaleFallback(c.image, 900)}
+                alt={c.name}
+                loading="lazy"
+                decoding="async"
+                className="absolute inset-0 h-full w-full object-cover"
+              />
               <div className="absolute inset-0 bg-gradient-to-t from-soul-ink/80 via-soul-ink/10 to-transparent" />
               <div className="absolute inset-x-5 top-5 flex items-center justify-between text-white/80">
                 <span className="g-index">{String(i + 1).padStart(2, '0')}</span>
@@ -97,7 +105,8 @@ export default function CompoundGrid({ index, showHead = true, limit = 0 }) {
             {visible.map((c, i) => (
               <img
                 key={c.id}
-                src={c.image}
+                src={sharpImageUrl(c.image, { width: 1400, upscale: true })}
+                onError={upscaleFallback(c.image, 1400)}
                 alt={i === active ? c.name : ''}
                 loading="lazy"
                 decoding="async"

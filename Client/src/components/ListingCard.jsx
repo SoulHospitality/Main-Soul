@@ -4,7 +4,7 @@ import { Bath, BedDouble, ChevronLeft, ChevronRight, Heart, Users } from 'lucide
 import { useCurrency } from '../context/CurrencyContext';
 import { useLocale } from '../context/LocaleContext';
 import { getListingWpId, useWishlist } from '../hooks/useWishlist';
-import { optimizeImageUrl } from '../utils/imageUrl';
+import { sharpImageSrcSet, sharpImageUrl } from '../utils/imageUrl';
 import { getDisplayPriceEgp } from '../utils/displayPrice';
 
 export default function ListingCard({ listing, carryDates, wishlistMode = false, onRemove, priority = false }) {
@@ -18,8 +18,12 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
     for (const url of listing.photo_urls || []) {
       if (url && !list.includes(url)) list.push(url);
     }
-    return list.slice(0, 6).map((url) => optimizeImageUrl(url, { width: 720 }));
+    return list.slice(0, 6);
   })();
+  // Each card downloads the size it shows (sharp on high-resolution screens), in AVIF / WebP at top quality.
+  const CARD_WIDTHS = [480, 720, 1080, 1440];
+  const photoSrc = (url) => sharpImageUrl(url, { width: 1080, quality: 'auto:good' });
+  const photoSrcSet = (url) => sharpImageSrcSet(url, CARD_WIDTHS, { quality: 'auto:good' });
 
   const [index, setIndex] = useState(0);
   const wpId = getListingWpId(listing);
@@ -62,7 +66,8 @@ export default function ListingCard({ listing, carryDates, wishlistMode = false,
       <div className="g-zoom relative aspect-[4/3.4] overflow-hidden rounded-[24px] bg-soul-sand">
         {photos.length ? (
           <img
-            src={photos[index]}
+            src={photoSrc(photos[index])}
+            srcSet={photoSrcSet(photos[index])}
             alt={listing.title}
             width={720}
             height={612}

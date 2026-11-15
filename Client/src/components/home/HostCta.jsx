@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { useLocale } from '../../context/LocaleContext';
 import { ArrowDot, Reveal, RevealLines } from '../ui/Editorial';
 import { useSiteContent } from '../../hooks/useSiteContent';
+import { sharpImageUrl, upscaleFallback } from '../../utils/imageUrl';
 
 export default function HostCta() {
   const { t } = useLocale();
@@ -14,12 +15,14 @@ export default function HostCta() {
       <div className="g-shell grid items-center gap-12 lg:grid-cols-[1.05fr_1fr] lg:gap-20">
         <Reveal variant="mask" className="relative aspect-[5/6] overflow-hidden rounded-[32px] sm:aspect-[4/3] lg:aspect-[5/6]">
           <img
-            src={content.host?.image || '/soul-v2/interlude.jpg'}
+            src={sharpImageUrl(content.host?.image, { width: 1600, upscale: true }) || '/soul-v2/interlude.jpg'}
             alt={t('home.hostImageAlt')}
             loading="lazy"
             className="absolute inset-0 h-full w-full object-cover"
             onError={(e) => {
-              e.currentTarget.src = '/soul-brand/coast-hero-2.jpg';
+              const fallback = upscaleFallback(content.host?.image, 1600);
+              if (content.host?.image && !e.currentTarget.dataset.fellBack) fallback(e);
+              else e.currentTarget.src = '/soul-brand/coast-hero-2.jpg';
             }}
           />
           <div className="absolute inset-0 bg-gradient-to-t from-soul-ink/50 via-transparent to-transparent" />

@@ -1,5 +1,6 @@
 import { useLocale } from '../../context/LocaleContext';
 import { Marquee, Reveal } from '../ui/Editorial';
+import { sharpLogoUrl } from '../../utils/imageUrl';
 
 const DEFAULT_PARTNERS = [
   {
@@ -27,7 +28,10 @@ const DEFAULT_PARTNERS = [
 function PartnerLogo({ partner, className = '' }) {
   return (
     <img
-      src={partner.src}
+      src={sharpLogoUrl(partner.src)}
+      onError={(e) => {
+        if (e.currentTarget.src !== partner.src) e.currentTarget.src = partner.src;
+      }}
       alt={partner.label}
       className={`max-h-full max-w-full object-contain opacity-55 grayscale transition duration-500 hover:opacity-100 hover:grayscale-0 ${className}`}
       loading="lazy"
