@@ -51,9 +51,24 @@ async function generateUniqueStaffCode(role) {
   throw new Error('Unable to generate a unique staff ID');
 }
 
-function normalizeStaffCode(value) {
-  const code = String(value || '').trim();
-  return code || null;
+/** Staff ID format: SH- and at least 4 digits (SH-0090). */
+const STAFF_CODE_PATTERN = /^SH-\d{4,}$/;
+
+/**
+ * Puts a Staff ID into the one format: "90", "sh90", "SH 0090" or "SH-90" all become SH-0090.
+ * Owners are not staff: their code is kept as typed. A staff code with no number is refused.
+ */
+function normalizeStaffCode(value, { owner = false } = {}) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  if (owner) return raw;
+  const digits = raw.replace(/\D/g, '');
+  if (!digits || /^[0]+$/.test(digits) || digits.length > 9) {
+    const err = new Error('Staff ID must be SH- followed by a number, for example SH-0090');
+    err.status = 400;
+    throw err;
+  }
+  return `SH-${String(Number(digits)).padStart(4, '0')}`;
 }
 
 async function assertStaffCodeAvailable(code, exceptId = null) {
@@ -121,6 +136,7 @@ module.exports = {
   ROLE_PREFIX,
   generateUniqueStaffCode,
   normalizeStaffCode,
+  STAFF_CODE_PATTERN,
   assertStaffCodeAvailable,
   isPasswordPolicyExempt,
   passwordPolicyOk,

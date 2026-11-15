@@ -634,16 +634,35 @@ function normalizePersonId(value) {
     .trim();
 }
 
+/** Ways one ID can be written: as typed, and by its number ("90", "SH90" and "SH-0090" share "#90"). */
+function personIdKeys(value) {
+  const c = normalizePersonId(value).toLowerCase();
+  if (!c) return [];
+  const digits = c.replace(/\D/g, '');
+  return digits && Number(digits) > 0 ? [c, `#${Number(digits)}`] : [c];
+}
+
+/** A staff member answers to their Staff ID and to the ID they had before the format change. */
+function staffIdKeys(s) {
+  return [...personIdKeys(s?.staff_code), ...personIdKeys(s?.legacy_staff_code)];
+}
+
 function matchAttendanceStaff(row, staffList) {
   const list = staffList || [];
   const code = normalizePersonId(row?.staff_code).toLowerCase();
   // Door Person ID is the Staff ID (staff_code), not the internal user id.
-  // Prefer staff_code so "'90" maps to Aml (staff_code 90), not user id 90.
+  // Prefer staff_code so "'90" maps to Aml (SH-0090), not user id 90. Exact spelling first, then by number.
   if (code) {
-    const byCode = list.filter(
-      (s) => normalizePersonId(s.staff_code).toLowerCase() === code
-    );
-    if (byCode.length === 1) return byCode[0];
+    const exact = list.filter((s) => staffIdKeys(s).includes(code));
+    if (exact.length === 1) return exact[0];
+    const rowKeys = personIdKeys(code).filter((k) => k.startsWith('#'));
+    if (rowKeys.length) {
+      // The door machine still holds the old IDs until it is reprogrammed, so an old number wins over a new one.
+      const byOld = list.filter((s) => personIdKeys(s?.legacy_staff_code).some((k) => rowKeys.includes(k)));
+      if (byOld.length === 1) return byOld[0];
+      const byNew = list.filter((s) => personIdKeys(s?.staff_code).some((k) => rowKeys.includes(k)));
+      if (byNew.length === 1) return byNew[0];
+    }
   }
   if (code && /^\d+$/.test(code)) {
     const byId = list.filter((s) => String(s.id) === code);
@@ -1355,6 +1374,8 @@ module.exports = {
   isDoorPunchLog,
   normalizePersonId,
   matchAttendanceStaff,
+  staffIdKeys,
+  personIdKeys,
   excelTimeToHhMm,
   toIsoDate,
   assertOriginalRecordsAttendanceTemplate,

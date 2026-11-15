@@ -64,6 +64,15 @@ router.post('/login', async (req, res, next) => {
 
     const phoneVariants = ownerPhoneLoginVariants(identity);
     const canonicalPhone = normalizeOwnerPhone(identity);
+    // Staff IDs sign in in any spelling ("sh90", "SH-0090") and by the ID they had before the format change.
+    let staffCodeForm = null;
+    if (/^\s*(sh)?[\s-]*\d{1,9}\s*$/i.test(identity) && /[a-z]/i.test(identity)) {
+      try {
+        staffCodeForm = require('../lib/staffIdentity').normalizeStaffCode(identity);
+      } catch (_) {
+        staffCodeForm = null;
+      }
+    }
 
     const { rows } = await query(
       `SELECT * FROM staff_users
@@ -72,11 +81,14 @@ router.post('/login', async (req, res, next) => {
            lower(username) = lower($1)
            OR lower(COALESCE(email, '')) = lower($1)
            OR lower(COALESCE(staff_code, '')) = lower($1)
+           OR ($4::text IS NOT NULL AND staff_code = $4)
+           OR (role <> 'owner' AND lower(COALESCE(legacy_staff_code, '')) = lower($1))
            OR ($2::text IS NOT NULL AND username = $2)
            OR ($3::text[] IS NOT NULL AND cardinality($3::text[]) > 0 AND username = ANY($3::text[]))
          )
+       ORDER BY (lower(username) = lower($1) OR lower(COALESCE(email, '')) = lower($1)) DESC
        LIMIT 1`,
-      [identity, canonicalPhone, phoneVariants.length ? phoneVariants : null]
+      [identity, canonicalPhone, phoneVariants.length ? phoneVariants : null, staffCodeForm]
     );
     const user = rows[0];
     if (!user || !(await bcrypt.compare(password, user.password_hash))) {

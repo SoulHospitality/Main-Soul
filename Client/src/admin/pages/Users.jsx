@@ -388,8 +388,18 @@ function StaffForm({
             className="input font-mono"
             value={form.staff_code}
             onChange={(e) => setForm((f) => ({ ...f, staff_code: e.target.value }))}
-            placeholder="e.g. SH12"
+            onBlur={(e) => {
+              // One format for every Staff ID: SH- and 4 digits ("90" or "sh90" → SH-0090).
+              const digits = String(e.target.value || '').replace(/\D/g, '');
+              if (form.role !== 'owner' && digits && Number(digits) > 0) {
+                setForm((f) => ({ ...f, staff_code: `SH-${String(Number(digits)).padStart(4, '0')}` }));
+              }
+            }}
+            placeholder="SH-0090"
           />
+          {form.role !== 'owner' ? (
+            <p className="mt-1 text-xs text-gray-500">Format SH-0000. Use the same number as the person’s ID on the door fingerprint machine.</p>
+          ) : null}
         </div>
         <div>
           <label className="label">Email *</label>

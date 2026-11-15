@@ -3109,7 +3109,7 @@ router.post(
       }
 
       const { rows: staffRows } = await query(
-        `SELECT id, staff_code, full_name, base_salary, role,
+        `SELECT id, staff_code, legacy_staff_code, full_name, base_salary, role,
                 COALESCE(office_attendance_exempt, false) AS office_attendance_exempt,
                 COALESCE(days_off, '{}') AS days_off
          FROM staff_users WHERE role NOT IN ('owner', 'admin')`
@@ -3157,8 +3157,12 @@ router.post(
       }
       const findStaff = (row) => {
         const code = normalizePersonId(row.staff_code);
-        // Door Person ID = Staff ID (staff_code). Prefer that over internal user id.
+        // Door Person ID = Staff ID (staff_code). Prefer that over internal user id; "90" finds SH-0090.
         if (code && staffByCode.has(code.toLowerCase())) return staffByCode.get(code.toLowerCase());
+        if (code) {
+          const byId = matchAttendanceStaff(row, staffRows);
+          if (byId && normalizePersonId(row.staff_code)) return byId;
+        }
         if (code && /^\d+$/.test(code) && staffById.has(code)) return staffById.get(code);
         return matchAttendanceStaff(row, staffRows);
       };

@@ -518,7 +518,12 @@ router.post('/users', requireRoles(...USER_ACCOUNT_ROLES), async (req, res, next
       return res.status(400).json({ error: 'Choose which petty cash this operations manager can see' });
     }
 
-    const staff_code = normalizeStaffCode(b.staff_code);
+    let staff_code;
+    try {
+      staff_code = normalizeStaffCode(b.staff_code, { owner: isOwner });
+    } catch (err) {
+      return res.status(err.status || 400).json({ error: err.message });
+    }
     if (!isOwner && !staff_code) {
       return res.status(400).json({ error: 'Staff ID is required' });
     }
@@ -714,7 +719,11 @@ router.patch('/users/:id', requireRoles(...USER_ACCOUNT_ROLES), async (req, res,
 
     let staffCode = existing.staff_code || null;
     if (b.staff_code !== undefined) {
-      staffCode = normalizeStaffCode(b.staff_code);
+      try {
+        staffCode = normalizeStaffCode(b.staff_code, { owner: nextRole === 'owner' });
+      } catch (err) {
+        return res.status(err.status || 400).json({ error: err.message });
+      }
       if (nextRole !== 'owner' && !staffCode) {
         return res.status(400).json({ error: 'Staff ID is required' });
       }
