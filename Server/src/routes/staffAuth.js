@@ -65,14 +65,7 @@ router.post('/login', async (req, res, next) => {
     const phoneVariants = ownerPhoneLoginVariants(identity);
     const canonicalPhone = normalizeOwnerPhone(identity);
     // Staff IDs sign in in any spelling ("sh90", "SH-0090") and by the ID they had before the format change.
-    let staffCodeForm = null;
-    if (/^\s*(sh)?[\s-]*\d{1,9}\s*$/i.test(identity) && /[a-z]/i.test(identity)) {
-      try {
-        staffCodeForm = require('../lib/staffIdentity').normalizeStaffCode(identity);
-      } catch (_) {
-        staffCodeForm = null;
-      }
-    }
+    const staffCodeForm = require('../lib/staffIdentity').canonicalStaffCode(identity);
 
     const { rows } = await query(
       `SELECT * FROM staff_users

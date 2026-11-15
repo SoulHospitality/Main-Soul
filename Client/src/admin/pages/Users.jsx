@@ -383,23 +383,20 @@ function StaffForm({
           />
         </div>
         <div>
-          <label className="label">Staff ID *</label>
-          <input
-            className="input font-mono"
-            value={form.staff_code}
-            onChange={(e) => setForm((f) => ({ ...f, staff_code: e.target.value }))}
-            onBlur={(e) => {
-              // One format for every Staff ID: SH- and 4 digits ("90" or "sh90" → SH-0090).
-              const digits = String(e.target.value || '').replace(/\D/g, '');
-              if (form.role !== 'owner' && digits && Number(digits) > 0) {
-                setForm((f) => ({ ...f, staff_code: `SH-${String(Number(digits)).padStart(4, '0')}` }));
-              }
-            }}
-            placeholder="SH-0090"
-          />
-          {form.role !== 'owner' ? (
-            <p className="mt-1 text-xs text-gray-500">Format SH-0000. Use the same number as the person’s ID on the door fingerprint machine.</p>
-          ) : null}
+          <label className="label">Staff ID</label>
+          {/* Staff IDs are generated from the role (e.g. RS-4827); CEOs have none. */}
+          <div className="input flex items-center bg-gray-50 font-mono text-gray-700">
+            {form.role === 'admin'
+              ? 'No Staff ID for CEOs'
+              : isEdit && form.staff_code
+                ? form.staff_code
+                : 'Generated when saved'}
+          </div>
+          <p className="mt-1 text-xs text-gray-500">
+            {form.role === 'admin'
+              ? 'CEOs do not have a Staff ID.'
+              : 'Role prefix + a random 4-digit number, e.g. RS-4827. Changing the role keeps the number and changes the prefix. Use the 4 digits on the door fingerprint machine.'}
+          </p>
         </div>
         <div>
           <label className="label">Email *</label>
@@ -1299,10 +1296,6 @@ export default function Users() {
     const ceo = staffForm.role === 'admin';
     if (!staffForm.full_name?.trim() || !staffForm.email?.trim() || (!ceo && staffForm.base_salary === '')) {
       toast.error(ceo ? 'Name and email are required' : 'Name, email, and base salary are required');
-      return;
-    }
-    if (!String(staffForm.staff_code || '').trim()) {
-      toast.error('Staff ID is required');
       return;
     }
     if (!ceo && (!Array.isArray(staffForm.days_off) || staffForm.days_off.length < 1)) {

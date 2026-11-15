@@ -18,6 +18,10 @@ const {
   generateTempPassword,
   normalizeStaffCode,
   assertStaffCodeAvailable,
+  generateUniqueStaffCode,
+  hasStaffId,
+  staffCodeDigits,
+  ROLE_PREFIX,
   passwordPolicyOk,
   passwordPolicyMessage,
 } = require('../../lib/staffIdentity');
@@ -518,15 +522,8 @@ router.post('/users', requireRoles(...USER_ACCOUNT_ROLES), async (req, res, next
       return res.status(400).json({ error: 'Choose which petty cash this operations manager can see' });
     }
 
-    let staff_code;
-    try {
-      staff_code = normalizeStaffCode(b.staff_code, { owner: isOwner });
-    } catch (err) {
-      return res.status(err.status || 400).json({ error: err.message });
-    }
-    if (!isOwner && !staff_code) {
-      return res.status(400).json({ error: 'Staff ID is required' });
-    }
+    // Staff IDs are generated from the role (RS-4827); CEOs have none; owners keep a typed code if given.
+    const staff_code = isOwner ? normalizeStaffCode(b.staff_code) : await generateUniqueStaffCode(role);
     const daysOff = normalizeDaysOff(b.days_off);
     // CEOs aren't on attendance, so they have no days off to set.
     if (!isOwner && role !== 'admin' && !daysOff.length) {
@@ -717,17 +714,19 @@ router.patch('/users/:id', requireRoles(...USER_ACCOUNT_ROLES), async (req, res,
       }
     }
 
+    // Staff IDs follow the role: a new role gets its prefix with the same 4 digits; CEOs have none.
     let staffCode = existing.staff_code || null;
-    if (b.staff_code !== undefined) {
-      try {
-        staffCode = normalizeStaffCode(b.staff_code, { owner: nextRole === 'owner' });
-      } catch (err) {
-        return res.status(err.status || 400).json({ error: err.message });
+    if (nextRole === 'owner') {
+      if (b.staff_code !== undefined) {
+        staffCode = normalizeStaffCode(b.staff_code);
+        await assertStaffCodeAvailable(staffCode, existing.id);
       }
-      if (nextRole !== 'owner' && !staffCode) {
-        return res.status(400).json({ error: 'Staff ID is required' });
-      }
-      await assertStaffCodeAvailable(staffCode, existing.id);
+    } else if (!hasStaffId(nextRole)) {
+      staffCode = null;
+    } else {
+      const digits = staffCodeDigits(existing.staff_code);
+      const samePrefix = digits && String(existing.staff_code).toUpperCase().startsWith(`${ROLE_PREFIX[nextRole]}-`);
+      if (!samePrefix) staffCode = await generateUniqueStaffCode(nextRole, { keepDigits: digits, exceptId: existing.id });
     }
 
     const managerPayloadProvided = b.manager_id !== undefined || b.manager_ids !== undefined;

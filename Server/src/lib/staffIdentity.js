@@ -3,29 +3,44 @@ const { query } = require('../config/db');
 
 const MAX_ATTEMPTS = 100;
 
+/**
+ * Staff ID = role prefix + "-" + a random 4-digit number, e.g. RS-4827. The number is unique across every
+ * prefix, so the door fingerprint machine can use the 4 digits alone. CEOs (admin) and owners have none.
+ */
 const ROLE_PREFIX = {
-  admin: 'A',
-  reservations: 'R',
-  reservations_web: 'W',
-  reservations_manual: 'M',
-  reservations_manager: 'G',
-  unit_acquisition_agent: 'C',
-  unit_acquisition_manager: 'Q',
-  operations: 'P',
-  operations_supervisor: 'V',
-  housekeeping: 'K',
-  housekeeping_supervisor: 'L',
-  resale: 'S',
-  resale_manager: 'J',
-  finance: 'F',
+  reservations: 'RS',
+  reservations_web: 'RS',
+  reservations_manual: 'RS',
+  reservations_manager: 'RM',
+  unit_acquisition_agent: 'UA',
+  unit_acquisition_manager: 'AM',
+  operations: 'OP',
+  operations_supervisor: 'OM',
+  housekeeping: 'HK',
+  housekeeping_supervisor: 'HS',
+  resale: 'RA',
+  resale_manager: 'SM',
+  finance: 'FN',
   finance_manager: 'FM',
-  hr: 'H',
-  hr_supervisor: 'U',
-  owners_relations: 'N',
-  owner: 'O',
-  marketing_pr: 'B',
-  web_developer: 'D',
+  hr: 'HR',
+  hr_supervisor: 'HM',
+  owners_relations: 'OE',
+  marketing_pr: 'MA',
+  web_developer: 'WD',
 };
+
+const STAFF_CODE_RE = /^([A-Z]{1,2})-(\d{4})$/;
+
+/** Roles without a Staff ID (CEO, owner) have no prefix. */
+function hasStaffId(role) {
+  return Boolean(ROLE_PREFIX[role]);
+}
+
+/** The 4 digits of a Staff ID in the current format ("RS-4827" gives "4827"), else null. */
+function staffCodeDigits(code) {
+  const m = String(code || '').toUpperCase().match(STAFF_CODE_RE);
+  return m ? m[2] : null;
+}
 
 function randomDigitString(length) {
   return Array.from({ length }, () => String(Math.floor(Math.random() * 10))).join('');
@@ -39,36 +54,46 @@ function isValidPattern(digits) {
   return true;
 }
 
-async function generateUniqueStaffCode(role) {
-  const prefix = ROLE_PREFIX[role] || 'X';
+/**
+ * A new Staff ID for a role: its prefix + random 4 digits (1000-9999, no digit three times in a row) that no
+ * other staff member has under any prefix. `keepDigits` reuses a person's number when only their role changes.
+ * Returns null for roles without a Staff ID (CEO, owner).
+ */
+async function generateUniqueStaffCode(role, { keepDigits = null, exceptId = null } = {}) {
+  const prefix = ROLE_PREFIX[role];
+  if (!prefix) return null;
+  const taken = async (digits) => {
+    const params = [digits];
+    // Also never reuse someone's old door-machine number, so a door punch cannot point at two people.
+    let sql = `SELECT 1 FROM staff_users
+               WHERE ((staff_code ~ '^[A-Z]{1,2}-[0-9]{4}$' AND right(staff_code, 4) = $1)
+                  OR NULLIF(regexp_replace(COALESCE(legacy_staff_code, ''), '\\D', '', 'g'), '')::bigint = $1::bigint)`;
+    if (exceptId) {
+      params.push(exceptId);
+      sql += ` AND id <> $2`;
+    }
+    const { rows } = await query(`${sql} LIMIT 1`, params);
+    return Boolean(rows[0]);
+  };
+  if (keepDigits && /^\d{4}$/.test(keepDigits) && !(await taken(keepDigits))) return `${prefix}-${keepDigits}`;
   for (let attempts = 0; attempts < MAX_ATTEMPTS; attempts += 1) {
-    const digits = randomDigitString(4);
+    const digits = String(crypto.randomInt(1000, 10000));
     if (!isValidPattern(digits)) continue;
-    const code = `${prefix}${digits}`;
-    const { rows } = await query(`SELECT id FROM staff_users WHERE staff_code = $1`, [code]);
-    if (!rows[0]) return code;
+    if (!(await taken(digits))) return `${prefix}-${digits}`;
   }
   throw new Error('Unable to generate a unique staff ID');
 }
 
-/** Staff ID format: SH- and at least 4 digits (SH-0090). */
-const STAFF_CODE_PATTERN = /^SH-\d{4,}$/;
-
-/**
- * Puts a Staff ID into the one format: "90", "sh90", "SH 0090" or "SH-90" all become SH-0090.
- * Owners are not staff: their code is kept as typed. A staff code with no number is refused.
- */
-function normalizeStaffCode(value, { owner = false } = {}) {
+/** Owners keep a code as typed; staff IDs are generated, never typed. */
+function normalizeStaffCode(value) {
   const raw = String(value || '').trim();
-  if (!raw) return null;
-  if (owner) return raw;
-  const digits = raw.replace(/\D/g, '');
-  if (!digits || /^[0]+$/.test(digits) || digits.length > 9) {
-    const err = new Error('Staff ID must be SH- followed by a number, for example SH-0090');
-    err.status = 400;
-    throw err;
-  }
-  return `SH-${String(Number(digits)).padStart(4, '0')}`;
+  return raw || null;
+}
+
+/** A typed Staff ID in any spelling ("rs4827", "RS 4827") gives "RS-4827"; null when it isn't one. */
+function canonicalStaffCode(value) {
+  const m = String(value || '').trim().toUpperCase().match(/^([A-Z]{1,2})[\s-]*(\d{4})$/);
+  return m ? `${m[1]}-${m[2]}` : null;
 }
 
 async function assertStaffCodeAvailable(code, exceptId = null) {
@@ -136,7 +161,9 @@ module.exports = {
   ROLE_PREFIX,
   generateUniqueStaffCode,
   normalizeStaffCode,
-  STAFF_CODE_PATTERN,
+  canonicalStaffCode,
+  hasStaffId,
+  staffCodeDigits,
   assertStaffCodeAvailable,
   isPasswordPolicyExempt,
   passwordPolicyOk,
