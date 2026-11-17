@@ -555,7 +555,7 @@ function UnitForm({ form, setForm, listingType = 'rent' }) {
           <div>
             <label className="label">Ops status</label>
             <SearchableSelect value={form.ops_status} onChange={v => setForm(f => ({ ...f, ops_status: v }))}
-              options={[{ value: 'available', label: 'Available' }, { value: 'occupied', label: 'Occupied' }, { value: 'maintenance', label: 'Maintenance' }]}
+              options={[{ value: 'available', label: 'Available' }, { value: 'occupied', label: 'Occupied' }, { value: 'needs_cleaning', label: 'Needs cleaning' }, { value: 'maintenance', label: 'Maintenance' }]}
             />
           </div>
           <div>
@@ -901,6 +901,7 @@ export default function Units({ listingType = 'rent' }) {
             { value: '', label: 'All ops status' },
             { value: 'available', label: 'Ops: Available' },
             { value: 'occupied', label: 'Ops: Occupied' },
+            { value: 'needs_cleaning', label: 'Ops: Needs cleaning' },
             { value: 'maintenance', label: 'Ops: Maintenance' },
           ]}
         />

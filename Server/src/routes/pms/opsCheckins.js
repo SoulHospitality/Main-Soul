@@ -1144,6 +1144,8 @@ router.post(
          WHERE id = $1`,
         [reservationId, req.user.id, comment || null]
       );
+      // The guest has the keys: the unit is occupied until checkout.
+      await require('../../lib/stayLifecycle').markUnitOccupied(row.unit_id).catch(() => {});
 
       try {
         const { markReservationFullyCollected } = require('../../lib/settleReservationMoney');
@@ -1601,6 +1603,11 @@ router.get('/housekeeping/today-cleans', requireRoles(...HK_READ_ROLES), async (
            SELECT 1 FROM housekeeping_tasks t
            WHERE t.reservation_id = r.id
              AND COALESCE(t.source, 'pre_arrival') = 'pre_arrival'
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM housekeeping_tasks t
+           WHERE t.unit_id = r.unit_id AND t.source = 'checkout'
+             AND COALESCE(t.clean_date, t.due_at::date) BETWEEN r.check_in::date - 3 AND r.check_in::date
          )`,
       [from, to]
     );
@@ -1629,7 +1636,7 @@ router.get('/housekeeping/today-cleans', requireRoles(...HK_READ_ROLES), async (
                 r.check_in AS res_in, r.check_out AS res_out, r.status AS res_status
          FROM housekeeping_tasks t
          LEFT JOIN reservations r ON r.id = t.reservation_id
-         WHERE COALESCE(t.source, 'pre_arrival') IN ('pre_arrival', 'manual')
+         WHERE COALESCE(t.source, 'pre_arrival') IN ('pre_arrival', 'manual', 'checkout')
            AND t.status IS DISTINCT FROM 'cancelled'
            AND (t.reservation_id IS NULL OR r.status IS DISTINCT FROM 'cancelled')
        )
@@ -2280,6 +2287,39 @@ router.get('/ops/checkouts-today', requireRoles(...OPS_ROLES), async (req, res, 
   }
 });
 
+/**
+ * The guest has left: close the stay, mark the unit as needing cleaning and create the turnover clean.
+ * Stays with an insurance deposit close when the deposit is settled; this is for the rest.
+ */
+router.post('/ops/checkouts-today/:reservationId/complete', requireRoles(...OPS_ROLES), async (req, res, next) => {
+  try {
+    const reservationId = Number(req.params.reservationId);
+    if (!reservationId) return res.status(400).json({ error: 'Invalid reservation id' });
+    const row = await fetchCheckoutRow(reservationId);
+    if (!row) return res.status(404).json({ error: 'Reservation not found' });
+    if (String(row.status).toLowerCase() === 'cancelled') return res.status(409).json({ error: 'Reservation is cancelled' });
+    const denied = assertCheckoutCanAct(req, row);
+    if (denied) return res.status(403).json({ error: denied });
+    const held = Math.round((Number(row.insurance) || 0) * 100) / 100;
+    const settled = ['refunded', 'partial', 'forfeited'].includes(String(row.insurance_refund_status || '').toLowerCase());
+    if (held > 0.009 && !settled) {
+      return res.status(400).json({ error: 'Settle the insurance deposit first (refund or deduct damage)' });
+    }
+    const { completeCheckout } = require('../../lib/stayLifecycle');
+    await completeCheckout(reservationId, { actorId: req.user.id });
+    await logAudit({
+      userId: req.user.id,
+      action: 'OPS_CHECKOUT_COMPLETE',
+      entityType: 'reservation',
+      entityId: reservationId,
+      details: { guest_name: row.guest_name },
+    });
+    res.json(mapCheckout(await fetchCheckoutRow(reservationId)));
+  } catch (e) {
+    next(e);
+  }
+});
+
 /** The Operations Manager picks who handles the checkout (can differ from check-in). */
 router.post(
   '/ops/checkouts-today/:reservationId/assign',
@@ -2527,6 +2567,10 @@ router.post(
           photos: photoUrls.length,
           share_with_owner: shareWithOwner,
         },
+      });
+      // Insurance settled = the guest has left: close the stay and queue the turnover clean.
+      await require('../../lib/stayLifecycle').completeCheckout(reservationId, { actorId: req.user.id }).catch((err) => {
+        console.warn('[ops checkout] lifecycle failed', err.message);
       });
 
       res.json(mapCheckout(await fetchCheckoutRow(reservationId)));

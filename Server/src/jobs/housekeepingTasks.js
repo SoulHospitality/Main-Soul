@@ -32,6 +32,12 @@ async function ensurePreArrivalTasks() {
          SELECT 1 FROM housekeeping_tasks t
          WHERE t.reservation_id = r.id
            AND COALESCE(t.source, 'pre_arrival') = 'pre_arrival'
+       )
+       -- A turnover clean after the previous guest (within 3 days of this arrival) already prepares the unit.
+       AND NOT EXISTS (
+         SELECT 1 FROM housekeeping_tasks t
+         WHERE t.unit_id = r.unit_id AND t.source = 'checkout'
+           AND COALESCE(t.clean_date, t.due_at::date) BETWEEN r.check_in::date - 3 AND r.check_in::date
        )`
   );
 
@@ -63,6 +69,9 @@ function startHousekeepingTaskJob() {
   const interval = Number(process.env.HOUSEKEEPING_TASK_SWEEP_INTERVAL_MS || 15 * 60 * 1000);
   const run = async () => {
     try {
+      // Stays left open after their checkout day are closed first, so their turnover clean exists.
+      const closed = await require('../lib/stayLifecycle').closePastCheckouts();
+      if (closed) console.log(`[housekeeping] closed ${closed} past checkouts`);
       const n = await ensurePreArrivalTasks();
       if (n) console.log(`[housekeeping] created ${n} pre-arrival tasks`);
     } catch (err) {

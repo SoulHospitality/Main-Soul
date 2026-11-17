@@ -387,7 +387,7 @@ router.put(
 
 
 router.put(
-  '/:id',
+  '/:id([0-9a-fA-F-]{36})',
   authStaff,
   requireRoles(...PROJECT_EDITOR_ROLES),
   setCloudinaryFolder(FOLDER_PROJECTS),
@@ -713,7 +713,7 @@ router.put('/reorder', authStaff, requireRoles(...PROJECT_EDITOR_ROLES), async (
   }
 });
 
-router.delete('/:id', authStaff, requireRoles(...PROJECT_EDITOR_ROLES), async (req, res, next) => {
+router.delete('/:id([0-9a-fA-F-]{36})', authStaff, requireRoles(...PROJECT_EDITOR_ROLES), async (req, res, next) => {
   try {
     const { rows } = await query(
       `DELETE FROM location_projects WHERE id = $1 RETURNING image_url`,

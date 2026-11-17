@@ -148,6 +148,56 @@ async function notifyWebsiteBookingRejected(booking, actor, reason) {
   });
 }
 
+const OPS_LEAD_ROLES = ['operations_supervisor'];
+
+function cairoDay(offset = 0) {
+  const d = new Date(Date.now() + offset * 86400000);
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+}
+
+const ymd = (v) => (v instanceof Date ? v.toISOString().slice(0, 10) : String(v || '').slice(0, 10));
+
+/**
+ * Operations plan arrivals, cleans and checkouts a day ahead. A booking created, moved or cancelled for today
+ * or tomorrow reaches the ops and housekeeping leads (and the assigned agent) at once.
+ * kind: 'created' | 'changed' | 'cancelled'.
+ */
+async function notifyOpsShortNotice(kind, after, before = null, actor = null) {
+  try {
+    const today = cairoDay(0);
+    const tomorrow = cairoDay(1);
+    const soon = (d) => d && d >= today && d <= tomorrow;
+    const now = after || before;
+    if (!now?.id) return [];
+    const dates = [ymd(now.check_in), ymd(now.check_out), ymd(before?.check_in), ymd(before?.check_out)];
+    if (!dates.some(soon)) return [];
+    if (kind === 'changed') {
+      const moved = ymd(before?.check_in) !== ymd(after?.check_in) || ymd(before?.check_out) !== ymd(after?.check_out)
+        || String(before?.unit_id || '') !== String(after?.unit_id || '');
+      if (!moved) return [];
+    }
+    const guest = now.guest_name || 'Guest';
+    const span = `${ymd(now.check_in)} → ${ymd(now.check_out)}`;
+    const title = kind === 'created' ? 'Short-notice booking' : kind === 'cancelled' ? 'Short-notice cancellation' : 'Short-notice change';
+    const message = kind === 'changed'
+      ? `${guest}: ${ymd(before?.check_in)} → ${ymd(before?.check_out)} is now ${span}`
+      : `${guest}: ${span}`;
+    return notifyStaff({
+      roles: OPS_LEAD_ROLES,
+      userIds: [now.ops_assigned_to, now.ops_checkout_assigned_to].filter(Boolean),
+      excludeUserIds: [actor?.id],
+      type: `ops_short_notice_${kind}`,
+      title,
+      message,
+      entity_type: 'reservation',
+      entity_id: now.id,
+    });
+  } catch (err) {
+    console.warn('[ops notify] short notice failed', err.message);
+    return [];
+  }
+}
+
 async function notifyManualReservationCreated(reservation, actor) {
   if (!reservation?.id) return [];
   if (reservation.is_owner_reservation && !(Number(reservation.total_amount) > 0)) {
@@ -206,6 +256,7 @@ module.exports = {
   notifyWebsiteBookingAccepted,
   notifyWebsiteBookingRejected,
   notifyManualReservationCreated,
+  notifyOpsShortNotice,
   notifyCancelRequest,
   notifyPaymentRecorded,
   WEB_TEAM_ROLES,

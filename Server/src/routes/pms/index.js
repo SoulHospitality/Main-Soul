@@ -1011,7 +1011,7 @@ router.get('/units', async (req, res, next) => {
         params.push(status);
       }
     }
-    if (ops_status && ['available', 'occupied', 'maintenance'].includes(String(ops_status))) {
+    if (ops_status && ['available', 'occupied', 'needs_cleaning', 'maintenance'].includes(String(ops_status))) {
       where.push(`ops_status = $${i++}`);
       params.push(String(ops_status));
     }
@@ -2239,6 +2239,7 @@ router.post(
     try {
       const { notifyManualReservationCreated } = require('../../services/pmsNotifications');
       await notifyManualReservationCreated(reservation, req.user);
+      await require('../../services/pmsNotifications').notifyOpsShortNotice('created', reservation, null, req.user);
     } catch (_) {}
     res.status(201).json(reservation);
   } catch (e) {
@@ -2421,6 +2422,7 @@ router.patch(
     } catch (err) {
       console.warn('[reservations] block resync failed', err.message);
     }
+    if (rows[0]) await require('../../services/pmsNotifications').notifyOpsShortNotice('changed', rows[0], existing, req.user);
     await logAudit({
       userId: req.user.id,
       action: 'UPDATE_RESERVATION',
@@ -3161,22 +3163,22 @@ router.get('/expenses', requireRoles('finance', 'finance_manager'), async (req, 
     const from = clampFromDate(req.query.from_date);
     const to = req.query.to_date || null;
     const params = [from];
-    let where = `COALESCE(expense_date, created_at::date) >= $1::date`;
+    let where = `COALESCE(e.expense_date, e.created_at::date) >= $1::date`;
     if (to) {
       params.push(to);
-      where += ` AND COALESCE(expense_date, created_at::date) <= $${params.length}::date`;
+      where += ` AND COALESCE(e.expense_date, e.created_at::date) <= $${params.length}::date`;
     }
     if (req.query.unit_id) {
       params.push(req.query.unit_id);
-      where += ` AND unit_id = $${params.length}`;
+      where += ` AND e.unit_id = $${params.length}`;
     }
     if (req.query.paid_by) {
       params.push(req.query.paid_by);
-      where += ` AND paid_by = $${params.length}`;
+      where += ` AND e.paid_by = $${params.length}`;
     }
     if (req.query.category) {
       params.push(normalizeExpenseCategory(req.query.category));
-      where += ` AND COALESCE(category, 'other') = $${params.length}`;
+      where += ` AND COALESCE(e.category, 'other') = $${params.length}`;
     }
     const { rows } = await query(
       `SELECT e.*,
@@ -3363,7 +3365,7 @@ router.get('/dashboard/stats', async (req, res, next) => {
          FROM reservations r
          JOIN units u ON u.id = r.unit_id
          WHERE r.check_out = $1::date
-           AND r.status IN ('confirmed', 'checked_in')
+           AND r.status IN ('confirmed', 'checked_in', 'checked_out')
            AND ($2::int IS NULL OR r.sales_person_id = $2 OR r.created_by = $2)
          ORDER BY COALESCE(u.project, u.compound), u.title`,
         [today, agentId]
@@ -3484,7 +3486,12 @@ router.get('/dashboard/stats', async (req, res, next) => {
                OR NOT EXISTS (
                  SELECT 1 FROM housekeeping_tasks t
                  WHERE t.unit_id = u.id
-                   AND (t.reservation_id = r.id OR t.due_at::date = r.check_in)
+                   AND (
+                     t.reservation_id = r.id
+                     OR t.due_at::date = r.check_in
+                     -- A turnover clean after the previous guest, done in the 3 days before arrival, counts.
+                     OR (t.source = 'checkout' AND COALESCE(t.clean_date, t.due_at::date) BETWEEN r.check_in - 3 AND r.check_in)
+                   )
                    AND t.status = 'ready'
                )
              )

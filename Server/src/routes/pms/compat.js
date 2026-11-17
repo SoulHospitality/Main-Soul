@@ -2112,6 +2112,7 @@ router.put(
     } catch (err) {
       console.warn('[reservations] block resync failed', err.message);
     }
+    if (rows[0]) await require('../../services/pmsNotifications').notifyOpsShortNotice('changed', rows[0], existing, req.user);
     res.json(rows[0]);
   } catch (e) {
     next(e);

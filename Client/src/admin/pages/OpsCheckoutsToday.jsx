@@ -115,6 +115,16 @@ export function CheckoutsTodaySection({ embedded = false }) {
     onError: (e) => toast.error(e.response?.data?.error || 'Could not assign'),
   });
 
+  // Guest gone (no deposit to settle): close the stay; the unit needs cleaning and a turnover clean is created.
+  const completeMutation = useMutation({
+    mutationFn: (id) => api.post(`/ops/checkouts-today/${id}/complete`),
+    onSuccess: () => {
+      toast.success('Checked out. Cleaning task created.');
+      refetch();
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Could not check out'),
+  });
+
   function openRefund(row) {
     const held = Math.round((Number(row.insurance) || 0) * 100) / 100;
     setRefundingId(row.id);
@@ -337,6 +347,18 @@ export function CheckoutsTodaySection({ embedded = false }) {
                           ) : (
                             <span className="text-xs text-gray-500">No insurance held</span>
                           )}
+                          {r.status === 'checked_out' ? (
+                            <div className="text-xs font-semibold text-emerald-700">Checked out · cleaning queued</div>
+                          ) : insurance <= 0.009 ? (
+                            <button
+                              type="button"
+                              className="btn-secondary !py-1 text-xs"
+                              disabled={completeMutation.isPending}
+                              onClick={() => completeMutation.mutate(r.id)}
+                            >
+                              Mark checked out
+                            </button>
+                          ) : null}
                           {(r.insurance_adjust_photo_urls || []).length ? (
                             <div className="flex flex-wrap gap-1">
                               {r.insurance_adjust_photo_urls.map((url) => (

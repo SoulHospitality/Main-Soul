@@ -275,6 +275,8 @@ export function TodayCleansSection({ embedded = false }) {
                     <div className="text-[11px] text-gray-500">Clean {formatOpsDay(r.clean_date)}</div>
                     {r.source === 'manual' ? (
                       <div className="text-[10px] uppercase text-violet-700">Manual</div>
+                    ) : r.source === 'checkout' ? (
+                      <div className="text-[10px] uppercase text-sky-700">After checkout</div>
                     ) : null}
                   </div>
                 </div>

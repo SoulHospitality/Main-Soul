@@ -225,6 +225,7 @@ async function applyCancellation({ reservationId, user, body = {} }) {
     });
 
     const { rows: fresh } = await query(`SELECT * FROM reservations WHERE id = $1`, [reservationId]);
+    await require('../../services/pmsNotifications').notifyOpsShortNotice('cancelled', fresh[0] || updated, null, user);
     return fresh[0] || updated;
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch (_) { /* already finished */ }
