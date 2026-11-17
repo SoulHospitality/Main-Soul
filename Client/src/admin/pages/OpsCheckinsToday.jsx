@@ -203,10 +203,10 @@ function CollectPaymentMethods({
   );
 }
 
-export function CheckinsTodaySection({ embedded = false }) {
+export function CheckinsTodaySection({ embedded = false, initialRange = 'today' }) {
   const { user } = useAuth();
   const qc = useQueryClient();
-  const [range, setRange] = useState('today');
+  const [range, setRange] = useState(initialRange);
   const [proofDrafts, setProofDrafts] = useState({});
   const [cancelRow, setCancelRow] = useState(null);
   const [stayRow, setStayRow] = useState(null);
@@ -244,6 +244,7 @@ export function CheckinsTodaySection({ embedded = false }) {
 
   const invalidateCheckins = () => {
     qc.invalidateQueries({ queryKey: ['ops-checkins-today'] });
+    qc.invalidateQueries({ queryKey: ['ops-unit-board'] });
   };
 
   const { data: agents = [] } = useQuery({

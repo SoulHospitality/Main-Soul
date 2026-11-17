@@ -2643,4 +2643,94 @@ router.post(
   }
 );
 
+/**
+ * Live unit board: one row per unit with where it stands on a day (default today, Cairo):
+ * in house, departing, arriving (ready or not), needs cleaning, being cleaned, maintenance or vacant.
+ */
+function unitBoardState(row, day) {
+  const ymd = (v) => (v instanceof Date ? v.toISOString().slice(0, 10) : String(v || '').slice(0, 10));
+  const cleanOpen = row.hk_task_id && !isHkCleaned(row.hk_status);
+  const cleaning = String(row.hk_status) === 'in_progress';
+  if (row.ops_status === 'maintenance') return 'maintenance';
+  const departing = row.cur_id && ymd(row.cur_out) === day;
+  if (row.cur_id && !departing) return 'occupied';
+  if (row.arr_id && Number(row.arr_handed) === 1) return 'occupied';
+  // Same-day turnover: the guest leaves and a new one arrives — the tightest job of the day.
+  if (departing && row.cur_status !== 'checked_out') return row.arr_id ? 'turnover' : 'departing';
+  if (row.arr_id) return cleanOpen || row.ops_status === 'needs_cleaning' ? 'arriving_not_ready' : 'arriving_ready';
+  if (cleaning) return 'cleaning';
+  if (cleanOpen || row.ops_status === 'needs_cleaning' || departing) return 'needs_cleaning';
+  return 'vacant';
+}
+
+router.get('/ops/unit-board', requireRoles(...OPS_ROLES), async (req, res, next) => {
+  try {
+    const raw = String(req.query.date || '');
+    const day = /^\d{4}-\d{2}-\d{2}$/.test(raw)
+      ? raw
+      : req.query.range === 'tomorrow'
+        ? addDaysYmd(cairoTodayYmd(), 1)
+        : cairoTodayYmd();
+    const { rows } = await query(
+      `SELECT u.id AS unit_id, u.unit_number, COALESCE(u.unit_number, u.title, 'Unit') AS unit_title,
+              COALESCE(u.project, u.compound) AS project, u.ops_status, u.status AS listing_status,
+              cur.id AS cur_id, cur.guest_name AS cur_guest, cur.check_in AS cur_in, cur.check_out AS cur_out,
+              cur.status AS cur_status,
+              arr.id AS arr_id, arr.guest_name AS arr_guest, arr.ops_handed_over AS arr_handed,
+              nxt.check_in AS next_in, nxt.guest_name AS next_guest,
+              hk.id AS hk_task_id, hk.status AS hk_status, hk.source AS hk_source, hk_agent.full_name AS hk_assignee
+       FROM units u
+       LEFT JOIN LATERAL (
+         SELECT r.id, r.guest_name, r.check_in, r.check_out, r.status FROM reservations r
+         WHERE r.unit_id = u.id AND r.status IS DISTINCT FROM 'cancelled'
+           AND (r.status IS DISTINCT FROM 'checked_out' OR r.check_out::date = $1::date)
+           AND r.check_in::date < $1::date AND r.check_out::date >= $1::date
+         ORDER BY r.check_in DESC LIMIT 1
+       ) cur ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT r.id, r.guest_name, r.ops_handed_over FROM reservations r
+         WHERE r.unit_id = u.id AND r.status IS DISTINCT FROM 'cancelled' AND r.check_in::date = $1::date
+         LIMIT 1
+       ) arr ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT r.check_in, r.guest_name FROM reservations r
+         WHERE r.unit_id = u.id AND r.status IS DISTINCT FROM 'cancelled' AND r.check_in::date > $1::date
+         ORDER BY r.check_in ASC LIMIT 1
+       ) nxt ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT t.id, t.status, t.source, t.assigned_to FROM housekeeping_tasks t
+         WHERE t.unit_id = u.id AND t.status IS DISTINCT FROM 'cancelled'
+           AND COALESCE(t.clean_date, t.due_at::date) BETWEEN $1::date - 1 AND $1::date
+         ORDER BY (t.status = 'ready') ASC, COALESCE(t.clean_date, t.due_at::date) DESC LIMIT 1
+       ) hk ON TRUE
+       LEFT JOIN staff_users hk_agent ON hk_agent.id = hk.assigned_to
+       ORDER BY COALESCE(u.project, u.compound) ASC NULLS LAST, u.unit_number ASC NULLS LAST`,
+      [day]
+    );
+    const items = rows
+      .filter((r) => r.listing_status === 'published' || r.cur_id || r.arr_id || r.next_in || r.hk_task_id)
+      .map((r) => ({
+        unit_id: r.unit_id,
+        unit_number: r.unit_number,
+        unit_title: r.unit_title,
+        project: r.project,
+        ops_status: r.ops_status,
+        state: unitBoardState(r, day),
+        guest_name: r.arr_guest || r.cur_guest || null,
+        departing_guest: r.cur_id && r.arr_id ? r.cur_guest : null,
+        reservation_id: r.arr_id || r.cur_id || null,
+        check_out: r.cur_out || null,
+        next_check_in: r.next_in || null,
+        next_guest: r.next_guest || null,
+        clean_status: r.hk_status || null,
+        clean_source: r.hk_source || null,
+        cleaner_name: r.hk_assignee || null,
+      }));
+    const counts = items.reduce((acc, r) => ({ ...acc, [r.state]: (acc[r.state] || 0) + 1 }), {});
+    res.json({ date: day, counts, items });
+  } catch (e) {
+    next(e);
+  }
+});
+
 module.exports = router;

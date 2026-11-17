@@ -114,12 +114,12 @@ function AddCleanModal({ open, onClose, agents }) {
   );
 }
 
-export function TodayCleansSection({ embedded = false }) {
+export function TodayCleansSection({ embedded = false, initialRange = 'today' }) {
   const { user } = useAuth();
   const qc = useQueryClient();
   const canAssign = user?.role === 'admin' || user?.role === 'operations_supervisor';
   const isAgent = user?.role === 'operations';
-  const [range, setRange] = useState('today');
+  const [range, setRange] = useState(initialRange);
   const [adding, setAdding] = useState(false);
   const [pendingAssign, setPendingAssign] = useState(null);
 
@@ -147,6 +147,7 @@ export function TodayCleansSection({ embedded = false }) {
     qc.invalidateQueries({ queryKey: ['hk-today-cleans'] });
     qc.invalidateQueries({ queryKey: ['ops-checkins-today'] });
     qc.invalidateQueries({ queryKey: ['housekeeping-tasks'] });
+    qc.invalidateQueries({ queryKey: ['ops-unit-board'] });
   };
 
   const startMutation = useMutation({

@@ -22,11 +22,11 @@ const SHARE_LABELS = {
   rejected: 'Not shared with owner',
 };
 
-export function CheckoutsTodaySection({ embedded = false }) {
+export function CheckoutsTodaySection({ embedded = false, initialRange = 'today' }) {
   const qc = useQueryClient();
   const { user } = useAuth();
   const canAssign = user?.role === 'admin' || user?.role === 'operations_supervisor';
-  const [range, setRange] = useState('today');
+  const [range, setRange] = useState(initialRange);
   const [refundingId, setRefundingId] = useState(null);
   const [editingInsuranceId, setEditingInsuranceId] = useState(null);
   const [insuranceDrafts, setInsuranceDrafts] = useState({});
@@ -67,7 +67,10 @@ export function CheckoutsTodaySection({ embedded = false }) {
     enabled: canAssign,
   });
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['ops-checkouts-today'] });
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['ops-checkouts-today'] });
+    qc.invalidateQueries({ queryKey: ['ops-unit-board'] });
+  };
 
   const refundMutation = useMutation({
     mutationFn: ({ id, payment_method, bank_account, refunded_amount, notes, photos, share_with_owner }) => {

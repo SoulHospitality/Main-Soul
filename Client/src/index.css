@@ -1198,3 +1198,7 @@ td.sched-drag-hit > div {
     bottom: calc(4.6rem + 7.5rem + env(safe-area-inset-bottom, 0px));
   }
 }
+
+/* Horizontal pill rows that scroll on phones without a visible bar. */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
