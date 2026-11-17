@@ -8,7 +8,6 @@ const PAGE_LINKS = [
   ['Financial system', '/admin/financial-system'],
   ['Owner statement', '/admin/owner-statement'],
   ['Reservations', '/admin/reservations'],
-  ['Performance', '/admin/performance'],
   ['Attendance', '/admin/attendance'],
   ['Payrolls', '/admin/payroll'],
   ['User management', '/admin/users'],

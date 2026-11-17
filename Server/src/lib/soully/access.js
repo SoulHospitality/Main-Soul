@@ -33,7 +33,7 @@ const PAGE_ACCESS = {
     'inbox', 'leads', ...STAFF_HR,
   ]),
   reservations_manager: new Set([
-    'reservations', 'schedule', 'calendar_sync', 'performance',
+    'reservations', 'schedule', 'calendar_sync',
     'audit_log', 'units', 'projects', 'inbox', 'leads',
     'inbox_analytics', 'inbox_settings', ...STAFF_HR,
   ]),

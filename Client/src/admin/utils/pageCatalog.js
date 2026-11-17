@@ -77,7 +77,6 @@ export const PAGE_GROUPS = [
       { key: 'website_bookings', label: 'Website Requests', levels: RW, scopes: ['role', 'own', 'team', 'all'] },
       { key: 'schedule', label: 'Schedule', levels: RW },
       { key: 'calendar_sync', label: 'Calendar Sync', levels: RW },
-      { key: 'performance', label: 'Performance', levels: RW },
     ],
   },
   {

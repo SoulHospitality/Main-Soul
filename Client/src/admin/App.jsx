@@ -48,7 +48,6 @@ const OwnerComments = lazy(() => import('./pages/OwnerComments'));
 const OpsDamageReports = lazy(() => import('./pages/OpsDamageReports'));
 const PromoCodes = lazy(() => import('./pages/PromoCodes'));
 const Reports = lazy(() => import('./pages/Reports'));
-const Performance = lazy(() => import('./pages/Performance'));
 const Kpi = lazy(() => import('./pages/Kpi'));
 const ClockIn = lazy(() => import('./pages/ClockIn'));
 const ChatbotTest = lazy(() => import('./pages/ChatbotTest'));
@@ -152,7 +151,6 @@ function AppRoutes() {
       <Route path="schedule" element={<ProtectedRoute page="schedule"><Schedule /></ProtectedRoute>} />
       <Route path="calendar-sync" element={<ProtectedRoute page="calendar_sync"><CalendarSync /></ProtectedRoute>} />
       <Route path="ota-inbox" element={<Navigate to="/admin/calendar-sync" replace />} />
-      <Route path="performance" element={<ProtectedRoute page="performance"><Performance /></ProtectedRoute>} />
       <Route path="kpi" element={<ProtectedRoute page="kpi"><Kpi /></ProtectedRoute>} />
       <Route path="clock" element={<ProtectedRoute page="clock_in"><ClockIn /></ProtectedRoute>} />
       <Route path="chatbot" element={<ProtectedRoute page="chatbot_test"><ChatbotTest /></ProtectedRoute>} />

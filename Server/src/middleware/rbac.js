@@ -21,7 +21,6 @@ const PERMS = {
   reservations_manager: [
     'reservations',
     'schedule',
-    'performance',
     'audit_log',
     'units',
     'projects',

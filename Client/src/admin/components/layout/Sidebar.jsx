@@ -23,7 +23,6 @@ import {
   ShieldCheck,
   Receipt,
   FileBarChart2,
-  Trophy,
   MessageSquareText,
   PhoneCall,
   ShieldAlert,
@@ -80,7 +79,6 @@ export const NAV_SECTIONS = [
       { path: '/admin/website-bookings', label: 'Website Requests', icon: Globe, page: 'website_bookings', badge: 'website_pending' },
       { path: '/admin/schedule', label: 'Schedule', icon: CalendarRange, page: 'schedule' },
       { path: '/admin/calendar-sync', label: 'Calendar Sync', icon: Link2, page: 'calendar_sync' },
-      { path: '/admin/performance', label: 'Performance', icon: Trophy, page: 'performance' },
     ],
   },
   {

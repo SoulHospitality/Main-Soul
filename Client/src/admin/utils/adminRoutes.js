@@ -9,7 +9,7 @@ const PAGE_PATHS = {
   units: 'units', projects: 'projects', acquisition: 'acquisition',
   owner_statement: 'owner-statement', owner_blocks: 'owner/blocks', owners: 'users', owner_comments: 'owner-comments',
   damage_reports: 'damage-reports', reservations: 'reservations', website_bookings: 'website-bookings',
-  schedule: 'schedule', calendar_sync: 'calendar-sync', performance: 'performance', operations: 'operations',
+  schedule: 'schedule', calendar_sync: 'calendar-sync', operations: 'operations',
   ops_checkins: 'operations', ops_comments: 'operations', hk_today: 'operations', unit_inspections: 'operations',
   ops_team: 'operations', housekeeping: 'housekeeping', petty_cash: 'petty-cash', financial_system: 'financial-system',
   reports: 'reports', commissions: 'commissions', promo_codes: 'promo-codes', users: 'users', attendance: 'attendance',
