@@ -377,6 +377,14 @@ export default function PaymentPage() {
                 >
                   {submitting ? t('payment.processing') : t('payment.confirm')}
                 </button>
+                <p className="mt-3 text-xs leading-relaxed text-soul-muted">
+                  {t('legal.agreeBefore')}{' '}
+                  <Link to="/terms" target="_blank" className="underline hover:text-soul-blue">{t('legal.terms')}</Link>
+                  {', '}
+                  <Link to="/privacy" target="_blank" className="underline hover:text-soul-blue">{t('legal.privacy')}</Link>
+                  {` ${t('legal.and')} `}
+                  <Link to="/refund-policy" target="_blank" className="underline hover:text-soul-blue">{t('legal.refund')}</Link>.
+                </p>
               </div>
               )}
             </div>

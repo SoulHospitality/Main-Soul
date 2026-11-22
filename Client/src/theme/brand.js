@@ -12,7 +12,7 @@ export const brand = {
   whatsapp: import.meta.env.VITE_WHATSAPP_NUMBER || '+201500009344',
   phoneDisplay: '01500009344',
   email: 'info@soulhospitality.co',
-  address: 'New Cairo - Sadat Axis',
+  address: 'New Cairo - Sadat Axis, Cairo, Egypt',
   mapsUrl: 'https://maps.app.goo.gl/faiBKHKQtouzMC6q7',
   social: {
     facebook: 'https://www.facebook.com/shaheenzhospitality/',

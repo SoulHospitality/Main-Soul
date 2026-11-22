@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowUpRight, Globe, Heart, User, X } from 'lucide-react';
 import { brand, whatsappHref, listingWhatsAppMessage } from '../../theme/brand';
-import { useCurrency } from '../../context/CurrencyContext';
+import { SHOW_USD, useCurrency } from '../../context/CurrencyContext';
 import { useAuth } from '../../context/AuthContext';
 import { useLocale } from '../../context/LocaleContext';
 import { useCairoTime } from '../ui/Editorial';
@@ -137,7 +137,7 @@ export default function Header({ overHero = false }) {
               <span>{locale === 'en' ? 'ع' : 'EN'}</span>
             </button>
 
-            <select
+            {SHOW_USD ? <select
               aria-label={t('common.currency')}
               value={currency}
               onChange={(e) => setCurrency(e.target.value)}
@@ -147,7 +147,7 @@ export default function Header({ overHero = false }) {
             >
               <option value="EGP" className="text-soul-blue">EGP</option>
               <option value="USD" className="text-soul-blue">USD</option>
-            </select>
+            </select> : null}
 
             <Link
               to="/wishlist"
@@ -325,15 +325,17 @@ function FullMenu({ onClose, pathname, user, currency, setCurrency }) {
               <button type="button" onClick={toggleLocale} className="g-btn g-btn-glass !px-3.5 !py-2.5 !text-xs">
                 <Globe size={14} /> {locale === 'en' ? t('nav.switchToAr') : t('nav.switchToEn')}
               </button>
-              <select
-                aria-label={t('common.currency')}
-                value={currency}
-                onChange={(e) => setCurrency(e.target.value)}
-                className="g-index h-[38px] cursor-pointer rounded-full border border-white/30 bg-white/10 px-3 text-white outline-none"
-              >
-                <option value="EGP" className="text-soul-blue">EGP</option>
-                <option value="USD" className="text-soul-blue">USD</option>
-              </select>
+              {SHOW_USD ? (
+                <select
+                  aria-label={t('common.currency')}
+                  value={currency}
+                  onChange={(e) => setCurrency(e.target.value)}
+                  className="g-index h-[38px] cursor-pointer rounded-full border border-white/30 bg-white/10 px-3 text-white outline-none"
+                >
+                  <option value="EGP" className="text-soul-blue">EGP</option>
+                  <option value="USD" className="text-soul-blue">USD</option>
+                </select>
+              ) : null}
             </div>
           </div>
           <div className="flex flex-col gap-2 text-sm">

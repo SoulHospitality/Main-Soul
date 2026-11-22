@@ -649,11 +649,212 @@
     "body": "Bookings can be completed online via Paymob or confirmed with our team after an inquiry. Pricing is nightly and sourced from live daily rates."
   },
   "legal": {
-    "terms": "Terms",
-    "privacy": "Privacy",
-    "refund": "Refund policy",
-    "fallback": "Legal",
-    "placeholder": "Legal copy for {{title}}. Replace with final counsel-approved text before production launch."
+    "terms": "Terms & Conditions",
+    "privacy": "Privacy Policy",
+    "refund": "Refund & Cancellation",
+    "fallback": "Policies",
+    "placeholder": "Legal copy for {{title}}. Replace with final counsel-approved text before production launch.",
+    "delivery": "Booking & Delivery",
+    "updated": "Last updated: {{date}}",
+    "questions": "Questions about this policy? Email {{email}}, call or WhatsApp {{phone}}, or visit us at {{address}}.",
+    "agreeBefore": "By confirming you agree to our",
+    "and": "and",
+    "pages": {
+      "privacy": {
+        "intro": "Soul Hospitality (\"Soul\", \"we\", \"us\") rents furnished holiday homes in Egypt through soulhospitality.co. This policy explains what personal information we collect when you browse, book or stay with us, why we need it, and how we protect it.",
+        "sections": [
+          {
+            "h": "Information we collect",
+            "p": [
+              "Contact details: your name, mobile number and email address when you create an account, book, message us on WhatsApp or chat with our website assistant.",
+              "Identity documents: a national ID or passport for every guest. Gated compounds require these to issue entry permits, and Egyptian regulations require us to register guests.",
+              "Booking details: dates, unit, number of guests, special requests and your booking history with us.",
+              "Payment information: card payments are processed by our licensed payment provider, Paymob. We never see or store your full card number or CVV. For InstaPay, bank transfer or cash we keep the payment reference and amount.",
+              "Technical data: your browser type, device and pages visited, plus small items saved in your browser (such as language, wishlist and sign-in) so the website works correctly."
+            ]
+          },
+          {
+            "h": "How we use your information",
+            "p": [
+              "To confirm and manage your reservation, issue compound entry permits, hand over the unit and provide support during your stay.",
+              "To take payments, issue receipts, process refunds and settle the security deposit.",
+              "To contact you about your booking by phone, WhatsApp, SMS or email.",
+              "To keep accounting records and meet our legal and tax obligations.",
+              "With your consent only, to send you offers. You can opt out at any time."
+            ]
+          },
+          {
+            "h": "Who we share it with",
+            "p": [
+              "Compound management and security: guest names and ID copies, only to issue entry permits.",
+              "Payment providers and banks: Paymob and our banks, to process payments and refunds.",
+              "Property owners: only the stay dates and booking value needed for their statements. Owners do not receive your ID or contact details.",
+              "Authorities: when the law requires it.",
+              "We do not sell or rent your personal information to anyone."
+            ]
+          },
+          {
+            "h": "How long we keep it",
+            "p": [
+              "Booking and payment records are kept for as long as Egyptian accounting and tax law requires. ID copies are kept only as long as needed for the stay and any related legal obligation, then deleted. You can ask us to close your account at any time."
+            ]
+          },
+          {
+            "h": "How we protect it",
+            "p": [
+              "The website uses encrypted connections (HTTPS). Access to guest data inside our system is limited by staff role, and every change is logged. Card data is handled only by Paymob under PCI-DSS standards."
+            ]
+          },
+          {
+            "h": "Your rights",
+            "p": [
+              "You can ask to see, correct or delete the personal information we hold about you, or withdraw consent for marketing, by contacting us using the details below. We reply within 14 days."
+            ]
+          },
+          {
+            "h": "Changes to this policy",
+            "p": [
+              "We may update this policy. The date at the top shows the latest version, and significant changes will be announced on the website."
+            ]
+          }
+        ]
+      },
+      "refund-policy": {
+        "intro": "This policy explains how to cancel or change a booking with Soul Hospitality and how refunds are paid. All amounts are in Egyptian Pounds (EGP).",
+        "sections": [
+          {
+            "h": "Booking requests we cannot confirm",
+            "p": [
+              "Every booking is reviewed by our team. If we cannot confirm your request (for example the unit is no longer available), you receive a 100% refund of everything you paid."
+            ]
+          },
+          {
+            "h": "Cancellation by the guest",
+            "p": [
+              "14 days or more before check-in: full refund of the amount paid.",
+              "7 to 13 days before check-in: 50% refund of the amount paid.",
+              "Less than 7 days before check-in, or no-show: no refund.",
+              "Leaving early: nights not used are not refunded.",
+              "The number of days is counted from the time we receive your cancellation request to the check-in date (check-in is from 3:00 PM)."
+            ]
+          },
+          {
+            "h": "Changing your dates",
+            "p": [
+              "You can ask to move your booking free of charge up to 7 days before check-in, subject to availability. If the new dates cost more you pay the difference. If they cost less, the difference is refunded under the rules above."
+            ]
+          },
+          {
+            "h": "Cancellation by Soul Hospitality",
+            "p": [
+              "If we have to cancel, for example because the unit becomes unavailable, we offer you a similar or better unit or a 100% refund, whichever you choose."
+            ]
+          },
+          {
+            "h": "Security deposit",
+            "p": [
+              "A refundable security deposit may be collected at check-in. After the unit is inspected at checkout (by 11:00 AM), the deposit is returned in full, or less the documented cost of any damage or missing items. Photos of any damage are shared with you."
+            ]
+          },
+          {
+            "h": "How to cancel",
+            "p": [
+              "Send your booking number to us on WhatsApp or by email (details below). We confirm the cancellation and the refund amount in writing within 24 hours."
+            ]
+          },
+          {
+            "h": "How refunds are paid",
+            "p": [
+              "Refunds go back through the method you paid with. Card payments made through Paymob are refunded to the same card. Your bank usually shows the money within 7 to 14 business days. InstaPay and bank transfers are refunded to your account, and cash payments are refunded by InstaPay, bank transfer or in cash. We start every approved refund within 5 business days."
+            ]
+          }
+        ]
+      },
+      "terms": {
+        "intro": "These terms apply when you use soulhospitality.co or book a stay with Soul Hospitality, New Cairo, Cairo, Egypt. By booking you agree to them.",
+        "sections": [
+          {
+            "h": "Our service",
+            "p": [
+              "Soul Hospitality manages and rents fully furnished holiday homes and chalets in Egypt's coastal compounds for short stays. Each listing shows the unit, its capacity, its facilities and its nightly price in Egyptian Pounds (EGP)."
+            ]
+          },
+          {
+            "h": "Prices and payment",
+            "p": [
+              "All prices are in EGP. Before you pay, checkout shows the full breakdown: nightly rate × nights, cleaning, compound access fees where they apply, service fees and taxes (15%), and any promo discount. The final total is the amount you pay.",
+              "You can pay by card through Paymob, by InstaPay, by bank transfer or in cash. InstaPay and cash bookings need a 50% deposit before we can confirm them, and the balance is due by check-in."
+            ]
+          },
+          {
+            "h": "Booking confirmation",
+            "p": [
+              "A booking is confirmed when our team accepts it and you receive a confirmation by email or WhatsApp. See the Booking & Delivery policy for timings."
+            ]
+          },
+          {
+            "h": "Guests and house rules",
+            "p": [
+              "Every guest needs a valid national ID or passport. Only registered guests may stay, and visitors are not allowed. No parties, events or pets, and quiet hours are 12:00 AM to 8:00 AM. Compound rules on family and couple bookings apply. Check-in is from 3:00 PM and checkout is by 11:00 AM.",
+              "If guests break these rules, we may end the stay without a refund."
+            ]
+          },
+          {
+            "h": "Damage and liability",
+            "p": [
+              "Guests are responsible for damage they cause during the stay. The cost is deducted from the security deposit, or charged if it is more than the deposit. We are not responsible for loss of personal belongings or for service interruptions outside our control, such as compound-wide water or power cuts, but we will do our best to help."
+            ]
+          },
+          {
+            "h": "Cancellations and refunds",
+            "p": [
+              "Cancellations and refunds follow our Refund & Cancellation Policy."
+            ]
+          },
+          {
+            "h": "Governing law",
+            "p": [
+              "These terms are governed by the laws of the Arab Republic of Egypt, and the courts of Cairo have jurisdiction."
+            ]
+          }
+        ]
+      },
+      "delivery": {
+        "intro": "Soul Hospitality sells accommodation services, not physical goods, so nothing is shipped. This page explains how and when your booking is \"delivered\".",
+        "sections": [
+          {
+            "h": "No shipping",
+            "p": [
+              "We do not ship products. There are no shipping fees, couriers or delivery addresses."
+            ]
+          },
+          {
+            "h": "Booking confirmation",
+            "p": [
+              "After you submit a booking and pay online, our team reviews it and sends your confirmation by email and WhatsApp within 24 hours, usually much sooner. Your electronic receipt is available in your account and through a secure receipt link."
+            ]
+          },
+          {
+            "h": "Before you arrive",
+            "p": [
+              "Once you send the IDs of all guests, we arrange the compound entry permits. Before your arrival date we send the unit location, gate instructions and the contact of the agent who will meet you."
+            ]
+          },
+          {
+            "h": "Service delivery",
+            "p": [
+              "The service is delivered at the property on your check-in date, from 3:00 PM. Our agent meets you, hands over the keys and shows you the unit. The unit is professionally cleaned before every arrival. The stay ends at checkout by 11:00 AM on your departure date."
+            ]
+          },
+          {
+            "h": "If something goes wrong",
+            "p": [
+              "If we cannot deliver the stay as booked, we offer a similar or better unit or a full refund, as described in our Refund & Cancellation Policy."
+            ]
+          }
+        ]
+      }
+    }
   },
   "compoundsPage": {
     "title": "Destinations & Projects",

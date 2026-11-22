@@ -137,6 +137,7 @@ export default function Footer() {
             <Link to="/terms" className="g-index g-link hover:text-white">{t('legal.terms')}</Link>
             <Link to="/privacy" className="g-index g-link hover:text-white">{t('legal.privacy')}</Link>
             <Link to="/refund-policy" className="g-index g-link hover:text-white">{t('legal.refund')}</Link>
+            <Link to="/delivery-policy" className="g-index g-link hover:text-white">{t('legal.delivery')}</Link>
             <span className="g-index">
               {t('nav.localTime')} · {time}
             </span>

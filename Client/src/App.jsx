@@ -85,6 +85,9 @@ export default function App() {
                 <Route path="/terms" element={<Legal kind="terms" />} />
                 <Route path="/privacy" element={<Legal kind="privacy" />} />
                 <Route path="/refund-policy" element={<Legal kind="refund-policy" />} />
+                <Route path="/cancellation-policy" element={<Navigate to="/refund-policy" replace />} />
+                <Route path="/delivery-policy" element={<Legal kind="delivery" />} />
+                <Route path="/shipping-policy" element={<Navigate to="/delivery-policy" replace />} />
                 <Route path="/sales/*" element={<SalesRoutes />} />
                 <Route path="/admin/*" element={<AdminApp />} />
                 <Route path="*" element={<GuestNotFound />} />

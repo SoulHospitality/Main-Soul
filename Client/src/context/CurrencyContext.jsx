@@ -4,6 +4,9 @@ import { useLocale } from './LocaleContext';
 
 const CurrencyContext = createContext(null);
 
+// Paymob requires every guest-facing price in EGP, so the USD switch is off. Set to true to bring it back.
+export const SHOW_USD = false;
+
 const FALLBACK_EGP_PER_USD = Number(import.meta.env.VITE_EGP_USD_RATE || 50);
 
 function roundUsd(egpAmount, egpPerUsd) {
@@ -15,7 +18,7 @@ function roundUsd(egpAmount, egpPerUsd) {
 
 export function CurrencyProvider({ children }) {
   const { t, localeTag } = useLocale();
-  const [currency, setCurrency] = useState(() => localStorage.getItem('soul_currency') || 'EGP');
+  const [currency, setCurrency] = useState(() => (SHOW_USD ? localStorage.getItem('soul_currency') || 'EGP' : 'EGP'));
   const [egpUsdRate, setEgpUsdRate] = useState(FALLBACK_EGP_PER_USD);
   const [rateSource, setRateSource] = useState('fallback');
 
