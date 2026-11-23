@@ -89,6 +89,9 @@ async function sendToCustomer(conversationId, { text, attachment, template, send
   try {
     if (customer.is_simulated) {
       externalId = `sim-out-${messageId}`;
+    } else if (conv.channel_kind === 'website') {
+      // The website chat reads agent replies from the inbox; nothing goes through Meta.
+      externalId = `web-out-${messageId}`;
     } else if (!channel?.active) {
       throw new Error('This channel is disabled');
     } else if (conv.channel_kind === 'whatsapp') {
@@ -112,6 +115,10 @@ async function sendToCustomer(conversationId, { text, attachment, template, send
   });
   broadcast('message', { conversation_id: conversationId });
   broadcast('conversation', { id: conversationId });
+  // A person answered in the Live Inbox: the chatbot pauses in this conversation (its own sends are 'ai').
+  if (!error && senderType === 'agent') {
+    require('../chatbot/live').onHumanReply(conversationId).catch((err) => console.warn('[inbox] chatbot pause failed:', err.message));
+  }
   if (error) throw new HttpError(502, `Not delivered: ${error}`, 'send_failed');
   return q.get('SELECT * FROM inbox_messages WHERE id = ?', messageId);
 }

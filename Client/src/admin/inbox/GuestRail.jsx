@@ -62,6 +62,20 @@ export default function GuestRail({
         ) : null}
       </div>
 
+      {history?.profile?.visits ? (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
+          <div className="font-bold">Returning guest</div>
+          <div className="mt-1 grid grid-cols-2 gap-1">
+            <span>Stays: <b>{history.profile.visits}</b></span>
+            <span>Spent: <b>EGP {Number(history.profile.total_spent || 0).toLocaleString('en-US')}</b></span>
+          </div>
+          {history.profile.favourite_unit ? (
+            <div className="mt-1">Usual unit: <b>{history.profile.favourite_unit.unit_number || history.profile.favourite_unit.title}</b> ({history.profile.favourite_unit.stays}×)</div>
+          ) : null}
+          {history.profile.usual_gap_days ? <div className="mt-1">Comes back about every {history.profile.usual_gap_days} days</div> : null}
+        </div>
+      ) : null}
+
       {stays.length > 0 ? (
         <div>
           <Label>Stays on this number</Label>

@@ -132,8 +132,18 @@ async function afterInbound({ conversationId, isNew, newIdentity, identityId, cu
   broadcast('message', { conversation_id: conversationId });
   broadcast('conversation', { id: conversationId, new: isNew });
 
-  // No automatic reply after hours: the chat waits for the team, who answer with saved replies.
-  if (!isQuietHours() && isBusinessTime()) {
+  // The chatbot answers Instagram / Messenger when it is switched on (day and night); otherwise the
+  // chat is routed to the team during working hours.
+  let botAnswers = false;
+  if (!simulated && (channel.kind === 'instagram' || channel.kind === 'messenger')) {
+    const live = require('../chatbot/live');
+    botAnswers = await live.willAnswer(conversationId).catch((err) => {
+      console.warn('[inbox] chatbot check failed:', err.message);
+      return false;
+    });
+    if (botAnswers) live.onCustomerMessage(conversationId);
+  }
+  if (!botAnswers && !isQuietHours() && isBusinessTime()) {
     await autoAssign(conversationId);
   }
 
@@ -208,6 +218,12 @@ async function ingestEcho({ channel, recipientId, message }) {
     conv.id, message.text || '', Date.now() - 60000,
   );
   if (pending) return;
+  // The chatbot's own message coming back as an echo (Instagram echoes may lack our app id).
+  const botEcho = await q.get(
+    "SELECT 1 AS x FROM inbox_messages WHERE conversation_id = ? AND direction = 'out' AND sender_type = 'ai' AND body = ? AND created_at > ?",
+    conv.id, message.text || '', Date.now() - 120000,
+  );
+  if (botEcho) return;
   const ts = Math.min(message.timestamp || Date.now(), Date.now());
   await tx(async () => {
     await lockKey(`${channel.id}:${recipientId}`);
@@ -223,6 +239,8 @@ async function ingestEcho({ channel, recipientId, message }) {
   });
   broadcast('message', { conversation_id: conv.id });
   broadcast('conversation', { id: conv.id });
+  // A person answered from Meta Business Suite or the app: the bot steps back in this conversation.
+  require('../chatbot/live').onHumanReply(conv.id).catch((err) => console.warn('[inbox] chatbot pause failed:', err.message));
 }
 
 async function ingestDeliveryStatus({ channelKind, externalId, status, error }) {

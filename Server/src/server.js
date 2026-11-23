@@ -13,7 +13,9 @@ const { startHousekeepingTaskJob } = require('./jobs/housekeepingTasks');
 const { startDataRetentionJob } = require('./jobs/dataRetention');
 const { startReservationSettlementJob } = require('./jobs/reservationSettlement');
 const { startMonthlySalaryExpenseJob } = require('./jobs/monthlySalaryExpenses');
-const { startIcalAutoSyncJob } = require('./jobs/icalAutoSync');
+const { startChannelSyncJob } = require('./jobs/channelSync');
+const { startGuestCareJobs } = require('./jobs/guestCare');
+const { startDataCleanerJob } = require('./jobs/dataCleaner');
 const { startClockShiftEndJob } = require('./lib/clockAutoOut');
 const { startInboxSlaLoop } = require('./lib/inbox/sla');
 const { syncAllUnitListingStatusesOnBoot } = require('./lib/bootUnitStatusSync');
@@ -85,8 +87,10 @@ async function main() {
   startDataRetentionJob();
   startReservationSettlementJob();
   startMonthlySalaryExpenseJob();
-  if (process.env.DATABASE_URL) startIcalAutoSyncJob();
+  if (process.env.DATABASE_URL) startChannelSyncJob();
   if (process.env.DATABASE_URL) startInboxSlaLoop();
+  if (process.env.DATABASE_URL) startGuestCareJobs();
+  if (process.env.DATABASE_URL) startDataCleanerJob();
 
   const port = Number(process.env.PORT || 5000);
   server.listen(port, () => {

@@ -53,7 +53,8 @@ function reassignReasonError(previousId, nextId, reason) {
 
 async function notifyGuestOfAgent(row, staffId) {
   try {
-    const { rows } = await query(`SELECT id, full_name, phone FROM staff_users WHERE id = $1`, [staffId]);
+    // Staff records have no phone number; the message falls back to the company line.
+    const { rows } = await query(`SELECT id, full_name, NULL::text AS phone FROM staff_users WHERE id = $1`, [staffId]);
     if (!rows[0]) return;
     const { sendCheckinAgentWhatsApp } = require('../../services/guestWhatsApp');
     await sendCheckinAgentWhatsApp(row, rows[0]);

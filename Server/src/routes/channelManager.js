@@ -8,7 +8,6 @@ const {
   upsertApiConnection,
   updateApiConnection,
   upsertUnitMapping,
-  updateIcalFeedMapping,
   listSyncLogs,
   listThreads,
   getThread,
@@ -16,12 +15,6 @@ const {
   unreadCount,
   channelRevenueSummary,
 } = require('../lib/channelManager');
-const {
-  normalizeOtaPlatform,
-  assertValidIcalUrl,
-  calendarExportUrl,
-  OTA_PLATFORM_LABELS,
-} = require('../lib/otaPlatforms');
 
 const router = express.Router();
 const ROLES = ['admin', 'reservations', 'reservations_web', 'reservations_manual', 'reservations_manager'];
@@ -52,51 +45,28 @@ router.get('/channel-stats', async (req, res, next) => {
   }
 });
 
+/** Units with their channel mappings, connections, providers and revenue by channel. */
 router.get('/overview', async (_req, res, next) => {
   try {
-    const { calendarExportUrl: exportUrl } = require('../lib/otaPlatforms');
     const { rows: units } = await query(
       `SELECT id, wp_post_id, slug, title, unit_number, status
        FROM units
        WHERE status = 'published'
        ORDER BY title NULLS LAST, unit_number NULLS LAST`
     );
-    const { rows: feeds } = await query(
-      `SELECT id, unit_id, wp_post_id, platform, label, ical_url, enabled,
-              external_listing_id, sync_status, last_sync_at, last_sync_error, updated_at
-       FROM unit_ota_feeds
-       ORDER BY platform`
-    );
-    const feedsByUnit = new Map();
-    for (const feed of feeds) {
-      if (!feedsByUnit.has(feed.unit_id)) feedsByUnit.set(feed.unit_id, []);
-      const status =
-        !feed.enabled
-          ? 'disconnected'
-          : feed.sync_status === 'syncing'
-            ? 'syncing'
-            : feed.last_sync_error
-              ? 'failed'
-              : feed.last_sync_at
-                ? 'connected'
-                : feed.sync_status || 'disconnected';
-      feedsByUnit.get(feed.unit_id).push({
-        ...feed,
-        connection_type: 'ical',
-        status,
-        provider_label: `${OTA_PLATFORM_LABELS[feed.platform] || feed.platform} (iCal)`,
-      });
-    }
     const [connections, revenue] = await Promise.all([
       listConnections(),
       channelRevenueSummary({}).catch(() => ({ channels: [], totals: {} })),
     ]);
+    const mappingsByUnit = new Map();
+    for (const c of connections.api || []) {
+      for (const m of c.mappings || []) {
+        if (!mappingsByUnit.has(m.unit_id)) mappingsByUnit.set(m.unit_id, []);
+        mappingsByUnit.get(m.unit_id).push({ ...m, connection_id: c.id, provider_label: c.provider_label });
+      }
+    }
     res.json({
-      units: units.map((unit) => ({
-        ...unit,
-        export_url: unit.slug ? exportUrl(unit.slug) : null,
-        feeds: feedsByUnit.get(unit.id) || [],
-      })),
+      units: units.map((unit) => ({ ...unit, mappings: mappingsByUnit.get(unit.id) || [] })),
       connections,
       providers: listProviders(),
       revenue,
@@ -108,9 +78,8 @@ router.get('/overview', async (_req, res, next) => {
 
 router.post('/sync', async (req, res, next) => {
   try {
-    const { unit_id: unitId = null, feed_id: feedId = null, connection_id: connectionId = null } =
-      req.body || {};
-    const result = await runChannelSync({ unitId, feedId, connectionId });
+    const { connection_id: connectionId = null } = req.body || {};
+    const result = await runChannelSync({ connectionId });
     res.json(result);
   } catch (e) {
     next(e);
@@ -121,7 +90,6 @@ router.get('/sync-logs', async (req, res, next) => {
   try {
     const logs = await listSyncLogs({
       limit: req.query.limit,
-      feedId: req.query.feed_id || null,
       connectionId: req.query.connection_id || null,
       unitId: req.query.unit_id || null,
     });
@@ -261,147 +229,6 @@ router.post('/messages/threads/:id/reply', async (req, res, next) => {
     res.status(201).json({ message });
   } catch (e) {
     if (/required|not found|does not support/i.test(e.message)) {
-      return res.status(400).json({ error: e.message });
-    }
-    next(e);
-  }
-});
-
-router.patch('/feeds/:feedId', async (req, res, next) => {
-  try {
-    const {
-      external_listing_id: externalListingId,
-      label,
-      enabled,
-      ical_url: icalUrl,
-    } = req.body || {};
-
-    if (icalUrl !== undefined) {
-      const platformRow = await query(`SELECT platform, unit_id FROM unit_ota_feeds WHERE id = $1`, [
-        req.params.feedId,
-      ]);
-      if (!platformRow.rows[0]) return res.status(404).json({ error: 'Feed not found' });
-      if (icalUrl === null || icalUrl === '') {
-        await query(`DELETE FROM unit_ota_feeds WHERE id = $1`, [req.params.feedId]);
-        return res.json({ ok: true, cleared: true });
-      }
-      const url = assertValidIcalUrl(icalUrl);
-      const { rows } = await query(
-        `UPDATE unit_ota_feeds
-         SET ical_url = $2,
-             enabled = COALESCE($3, enabled),
-             label = COALESCE($4, label),
-             external_listing_id = COALESCE($5, external_listing_id),
-             updated_at = now()
-         WHERE id = $1
-         RETURNING *`,
-        [req.params.feedId, url, enabled, label ?? null, externalListingId ?? null]
-      );
-      return res.json({ feed: rows[0] });
-    }
-
-    if (enabled !== undefined) {
-      const { rows } = await query(
-        `UPDATE unit_ota_feeds
-         SET enabled = $2,
-             sync_status = CASE WHEN $2 THEN sync_status ELSE 'disconnected' END,
-             label = COALESCE($3, label),
-             external_listing_id = COALESCE($4, external_listing_id),
-             updated_at = now()
-         WHERE id = $1
-         RETURNING *`,
-        [req.params.feedId, Boolean(enabled), label ?? null, externalListingId ?? null]
-      );
-      if (!rows[0]) return res.status(404).json({ error: 'Feed not found' });
-      return res.json({ feed: rows[0] });
-    }
-
-    const feed = await updateIcalFeedMapping(req.params.feedId, {
-      externalListingId: externalListingId ?? null,
-      label: label ?? null,
-    });
-    if (!feed) return res.status(404).json({ error: 'Feed not found' });
-    res.json({ feed });
-  } catch (e) {
-    if (e.message?.includes('calendar URL') || e.message?.includes('https')) {
-      return res.status(400).json({ error: e.message });
-    }
-    next(e);
-  }
-});
-
-/** Convenience: create/update an iCal feed with explicit unit ↔ external listing mapping. */
-router.put('/ical/:unitId/:platform', async (req, res, next) => {
-  try {
-    const platform = normalizeOtaPlatform(req.params.platform);
-    if (!platform) return res.status(400).json({ error: 'Invalid platform' });
-
-    const { rows: u } = await query(
-      `SELECT id, wp_post_id, slug, title FROM units WHERE id = $1`,
-      [req.params.unitId]
-    );
-    if (!u[0]?.wp_post_id) return res.status(404).json({ error: 'Unit not found' });
-
-    const {
-      ical_url: icalUrl,
-      label,
-      enabled,
-      external_listing_id: externalListingId,
-    } = req.body || {};
-
-    if (icalUrl === null || icalUrl === '') {
-      await query(`DELETE FROM unit_ota_feeds WHERE unit_id = $1 AND platform = $2`, [
-        u[0].id,
-        platform,
-      ]);
-      return res.json({ ok: true, cleared: true, platform });
-    }
-
-    const url = assertValidIcalUrl(icalUrl);
-    const { rows } = await query(
-      `INSERT INTO unit_ota_feeds
-         (unit_id, wp_post_id, platform, label, ical_url, enabled, external_listing_id, sync_status, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,'disconnected',now())
-       ON CONFLICT (unit_id, platform) DO UPDATE SET
-         ical_url = EXCLUDED.ical_url,
-         label = EXCLUDED.label,
-         enabled = EXCLUDED.enabled,
-         external_listing_id = EXCLUDED.external_listing_id,
-         updated_at = now()
-       RETURNING *`,
-      [
-        u[0].id,
-        u[0].wp_post_id,
-        platform,
-        label || null,
-        url,
-        enabled !== false,
-        externalListingId || null,
-      ]
-    );
-
-    await query(
-      `INSERT INTO listing_ical (wordpress_post_id, listing_slug, ical_url, notes, updated_at)
-       VALUES ($1,$2,$3,$4,now())
-       ON CONFLICT (wordpress_post_id) DO UPDATE SET
-         ical_url = EXCLUDED.ical_url,
-         listing_slug = EXCLUDED.listing_slug,
-         notes = EXCLUDED.notes,
-         updated_at = now()`,
-      [u[0].wp_post_id, u[0].slug, url, label || null]
-    );
-    await query(`UPDATE units SET ical_url = $1, updated_at = now() WHERE id = $2`, [url, u[0].id]);
-
-    const sync = await runChannelSync({ feedId: rows[0].id });
-    res.json({
-      feed: rows[0],
-      sync,
-      export_url: u[0].slug ? calendarExportUrl(u[0].slug) : null,
-      connection_type: 'ical',
-      note: 'iCal syncs availability blocks only — not rates, restrictions, or full reservation payloads.',
-    });
-  } catch (e) {
-    if (e.message?.includes('calendar URL') || e.message?.includes('https')) {
       return res.status(400).json({ error: e.message });
     }
     next(e);

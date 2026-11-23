@@ -6,7 +6,6 @@ const PERMS = {
     'schedule',
     'units',
     'projects',
-    'calendar_sync',
     'website_bookings',
     'tasks',
   ],
@@ -15,7 +14,6 @@ const PERMS = {
     'schedule',
     'units',
     'projects',
-    'calendar_sync',
     'tasks',
   ],
   reservations_manager: [
@@ -24,7 +22,6 @@ const PERMS = {
     'audit_log',
     'units',
     'projects',
-    'calendar_sync',
     'tasks',
   ],
   unit_acquisition_agent: ['units', 'reservations', 'schedule', 'tasks'],

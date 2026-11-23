@@ -35,13 +35,6 @@ function appendStayAvailabilityFilters(
   where.push(`COALESCE(u.min_nights, ${DEFAULT_MIN_STAY_NIGHTS}) <= $${nightsIdx}`);
 
   where.push(`NOT EXISTS (
-    SELECT 1 FROM unit_ical_blocks b
-    JOIN unit_ota_feeds f ON f.id = b.feed_id
-    WHERE b.wp_post_id = u.wp_post_id
-      AND b.date >= $${ci}::date AND b.date < $${co}::date
-  )`);
-
-  where.push(`NOT EXISTS (
     SELECT 1 FROM unit_blocked_dates b
     WHERE b.wp_post_id = u.wp_post_id
       AND b.date >= $${ci}::date AND b.date < $${co}::date

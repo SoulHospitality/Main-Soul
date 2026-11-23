@@ -87,9 +87,6 @@ async function availableUnits({ checkIn, checkOut, project = null, destination =
     ) p ON true
     WHERE ${where.join(' AND ')}
       AND NOT EXISTS (
-        SELECT 1 FROM unit_ical_blocks b JOIN unit_ota_feeds f ON f.id = b.feed_id
-        WHERE b.wp_post_id = u.wp_post_id AND b.date >= $1::date AND b.date < $2::date)
-      AND NOT EXISTS (
         SELECT 1 FROM unit_blocked_dates b
         WHERE b.wp_post_id = u.wp_post_id AND b.date >= $1::date AND b.date < $2::date
           AND COALESCE(b.source, 'manual') NOT IN ('reservation', 'reservation_import', 'booking'))

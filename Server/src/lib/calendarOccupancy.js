@@ -1,5 +1,4 @@
 const { query } = require('../config/db');
-const { isIcalOccupancySource } = require('./otaPlatforms');
 
 /** Guest listing calendars must load at least this far; keep in sync with Client/src/constants/availability.js */
 const GUEST_AVAILABILITY_MONTHS = 12;
@@ -8,15 +7,13 @@ const IMPLICIT_STAY_SOURCES = ['reservation', 'reservation_import', 'booking'];
 const EXPLICIT_HOLD_SOURCES = [
   'manual',
   'owner',
-  'ical',
   'csv_import',
   'soul_availability_xlsx',
 ];
-/** Schedule/owner blocks stay closed on a checkout morning. iCal leftovers and unpriced nights do not. */
+/** Schedule/owner blocks stay closed on a checkout morning. Unpriced nights do not. */
 const SCHEDULE_HOLD_SOURCES = new Set(['manual', 'owner', 'csv_import', 'soul_availability_xlsx']);
 
 const REQUIRED_OCCUPANCY_TABLES = [
-  'unit_ical_blocks',
   'unit_blocked_dates',
   'reservations',
   'bookings',
@@ -25,14 +22,8 @@ const REQUIRED_OCCUPANCY_TABLES = [
 function occupancySql({ wpScoped }) {
   const blockFilter = wpScoped ? 'AND b.wp_post_id = $3' : '';
   const unitFilter = wpScoped ? 'AND u.wp_post_id = $3' : '';
+  // Stays booked on other channels arrive as reservations (from the channel manager), so they are counted below.
   return `
-    SELECT u.id AS unit_id, b.wp_post_id, b.date::text AS date,
-           ('ical:' || COALESCE(b.platform, f.platform, 'other')) AS source
-    FROM unit_ical_blocks b
-    JOIN unit_ota_feeds f ON f.id = b.feed_id
-    JOIN units u ON u.wp_post_id = b.wp_post_id
-    WHERE b.date >= $1 AND b.date < $2 ${blockFilter}
-    UNION ALL
     SELECT u.id AS unit_id, b.wp_post_id, b.date::text AS date, COALESCE(b.source,'manual') AS source
     FROM unit_blocked_dates b
     JOIN units u ON u.wp_post_id = b.wp_post_id
@@ -93,8 +84,7 @@ function mergeOccupancyByDate(rows, from, to) {
 /**
  * Checkout morning is open for the next arrival unless that night is already
  * occupied by another stay, or closed by an explicit Schedule/owner hold.
- * Leftover unpriced nights and iCal DTEND-inclusive days must not block turnover —
- * those are why some units allowed same-day check-in and others did not.
+ * Leftover unpriced nights must not block turnover.
  */
 function applyCheckoutTurnover(byDate, checkoutDates) {
   const occupiedNights = new Set(
@@ -145,7 +135,6 @@ module.exports = {
   EXPLICIT_HOLD_SOURCES,
   SCHEDULE_HOLD_SOURCES,
   REQUIRED_OCCUPANCY_TABLES,
-  isIcalOccupancySource,
   occupancySql,
   stayCheckoutSql,
   mergeOccupancyByDate,

@@ -1,45 +1,39 @@
-const { IcalChannelProvider } = require('./providers/IcalProvider');
+/**
+ * Channel providers. To connect a channel manager (e.g. Rentals United, Hostaway, Channex), add a
+ * provider class next to the others (see providers/README.md) and register it in `registerDefaults`.
+ */
 const { BookingApiProvider } = require('./providers/BookingApiProvider');
 const { AirbnbApiProvider } = require('./providers/AirbnbApiProvider');
-const { OTA_PLATFORM_LABELS } = require('../otaPlatforms');
 
 const providers = new Map();
 
+function registerProvider(provider) {
+  providers.set(provider.key, provider);
+}
+
 function registerDefaults() {
-  const list = [new IcalChannelProvider(), new BookingApiProvider(), new AirbnbApiProvider()];
-  for (const p of list) providers.set(p.key, p);
+  for (const p of [new BookingApiProvider(), new AirbnbApiProvider()]) registerProvider(p);
 }
 
 registerDefaults();
 
 function getProvider(key) {
-  const k = String(key || '').trim().toLowerCase();
-  if (k.startsWith('ical')) return providers.get('ical');
-  return providers.get(k) || null;
+  return providers.get(String(key || '').trim().toLowerCase()) || null;
 }
 
 function listProviders() {
   return [...providers.values()].map((p) => p.describe());
 }
 
-function providerKeyForIcalPlatform(platform) {
-  return `ical:${platform || 'other'}`;
-}
-
 function labelForProviderKey(key) {
   const k = String(key || '');
-  if (k.startsWith('ical:')) {
-    const platform = k.slice(5);
-    return `${OTA_PLATFORM_LABELS[platform] || platform} (iCal)`;
-  }
-  const p = getProvider(k);
-  return p?.label || k;
+  return getProvider(k)?.label || k;
 }
 
 module.exports = {
   getProvider,
   listProviders,
+  registerProvider,
   registerDefaults,
-  providerKeyForIcalPlatform,
   labelForProviderKey,
 };

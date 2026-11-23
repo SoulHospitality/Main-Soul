@@ -2,7 +2,6 @@ const { query } = require('../../config/db');
 
 async function writeSyncLog({
   connectionId = null,
-  feedId = null,
   unitId = null,
   providerKey,
   direction,
@@ -14,12 +13,11 @@ async function writeSyncLog({
   try {
     const { rows } = await query(
       `INSERT INTO channel_sync_logs
-         (connection_id, feed_id, unit_id, provider_key, direction, operation, status, message, details)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)
+         (connection_id, unit_id, provider_key, direction, operation, status, message, details)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)
        RETURNING *`,
       [
         connectionId,
-        feedId,
         unitId,
         providerKey,
         direction,
@@ -37,13 +35,9 @@ async function writeSyncLog({
   }
 }
 
-async function listSyncLogs({ limit = 50, feedId = null, connectionId = null, unitId = null } = {}) {
+async function listSyncLogs({ limit = 50, connectionId = null, unitId = null } = {}) {
   const params = [];
   const clauses = [];
-  if (feedId) {
-    params.push(feedId);
-    clauses.push(`feed_id = $${params.length}`);
-  }
   if (connectionId) {
     params.push(connectionId);
     clauses.push(`connection_id = $${params.length}`);

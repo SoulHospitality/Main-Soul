@@ -4,7 +4,6 @@ import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../api/axios';
 import { occupancyFromRanges } from '../../../utils/stayNights';
-import { otaBlockLook } from '../../utils/otaCalendar';
 
 
 const isoStr = (d) => {
@@ -86,7 +85,6 @@ function MonthGrid({ year, month, checkIn, checkOut, hovering, blockedSet, check
             !rangeHasConflict(checkIn, ds);
           
           const isNightBlocked = blockedSet.has(ds);
-          const otaLook = otaBlockLook(sourceByDate?.[ds]);
           const isCoOnly = checkoutOnlySet.has(ds) && !isNightBlocked;
           let isDisabled = isPast && !allowPastDates;
           if (!isDisabled) {
@@ -124,12 +122,9 @@ function MonthGrid({ year, month, checkIn, checkOut, hovering, blockedSet, check
           }
 
           
-          const showOta = otaLook && isNightBlocked && !isCheckIn && !isCheckOut && !(choosingCheckout && validCheckout);
           let circleClass = 'relative z-10 w-9 h-9 flex items-center justify-center rounded-full text-sm font-medium transition-colors ';
           if (isCheckIn || isCheckOut || isHoverEnd) {
             circleClass += 'bg-gray-900 text-white ';
-          } else if (showOta) {
-            circleClass += `flex-col gap-px font-black cursor-not-allowed ${otaLook.ringClass} `;
           } else if (isDisabled) {
             circleClass += 'text-gray-300 cursor-not-allowed line-through ';
           } else if (isCoOnly || (choosingCheckout && validCheckout && isNightBlocked)) {
@@ -139,7 +134,7 @@ function MonthGrid({ year, month, checkIn, checkOut, hovering, blockedSet, check
           }
 
           
-          if (isToday && !isCheckIn && !isCheckOut && !showOta) circleClass += 'ring-1 ring-gray-400 ';
+          if (isToday && !isCheckIn && !isCheckOut) circleClass += 'ring-1 ring-gray-400 ';
 
           return (
             <div
@@ -148,7 +143,6 @@ function MonthGrid({ year, month, checkIn, checkOut, hovering, blockedSet, check
               onClick={() => !isDisabled && onDayClick(ds)}
               onMouseEnter={() => !isDisabled && onDayHover(ds)}
               title={
-                isDisabled && otaLook ? otaLook.label :
                 isDisabled && isNightBlocked ? 'Unavailable — already booked' :
                 isCoOnly  ? '✓ Checkout day — free for the next check-in' :
                 choosingCheckout && validCheckout && isNightBlocked
@@ -166,16 +160,7 @@ function MonthGrid({ year, month, checkIn, checkOut, hovering, blockedSet, check
               )}
 
               
-              <div className={circleClass} style={showOta ? { backgroundImage: otaLook.hatch } : undefined}>
-                {showOta ? (
-                  <>
-                    <span className={`rounded px-0.5 text-[8px] leading-none tracking-widest ${otaLook.badgeClass}`}>{otaLook.badge}</span>
-                    <span className="text-[8px] font-bold leading-none text-slate-700">{date.getDate()}</span>
-                  </>
-                ) : (
-                  date.getDate()
-                )}
-              </div>
+              <div className={circleClass}>{date.getDate()}</div>
             </div>
           );
         })}

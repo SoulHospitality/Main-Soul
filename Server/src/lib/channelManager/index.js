@@ -1,16 +1,13 @@
-const { listProviders, getProvider, providerKeyForIcalPlatform, labelForProviderKey } = require('./registry');
+const { listProviders, getProvider, registerProvider, labelForProviderKey } = require('./registry');
 const {
   listConnections,
   runChannelSync,
-  syncIcalFeed,
-  syncAllIcal,
   upsertApiConnection,
   updateApiConnection,
   upsertUnitMapping,
-  updateIcalFeedMapping,
   listSyncLogs,
 } = require('./syncEngine');
-const { CAPABILITIES, ICAL_CAPABILITIES, FULL_API_CAPABILITIES } = require('./capabilities');
+const { CAPABILITIES, FULL_API_CAPABILITIES } = require('./capabilities');
 const {
   listThreads,
   getThread,
@@ -22,20 +19,16 @@ const { channelRevenueSummary } = require('./channelRevenue');
 
 module.exports = {
   CAPABILITIES,
-  ICAL_CAPABILITIES,
   FULL_API_CAPABILITIES,
   listProviders,
   getProvider,
-  providerKeyForIcalPlatform,
+  registerProvider,
   labelForProviderKey,
   listConnections,
   runChannelSync,
-  syncIcalFeed,
-  syncAllIcal,
   upsertApiConnection,
   updateApiConnection,
   upsertUnitMapping,
-  updateIcalFeedMapping,
   listSyncLogs,
   listThreads,
   getThread,

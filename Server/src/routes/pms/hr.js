@@ -50,6 +50,7 @@ const {
   splitSalaryAdjustments,
   hasOfficeAttendance,
   isScheduledDayOff,
+  workingDatesInRange,
   isFieldOperationsRole,
   canRequestWfh,
   canRequestStaffBenefits,
@@ -392,7 +393,8 @@ async function loadStaffForHr(staffUserId) {
             COALESCE(leave_annual_days, 0)::int AS leave_annual_days,
             COALESCE(leave_unpaid_days, 0)::int AS leave_unpaid_days,
             COALESCE(holiday_access, 'auto') AS holiday_access,
-            COALESCE(office_attendance_exempt, false) AS office_attendance_exempt
+            COALESCE(office_attendance_exempt, false) AS office_attendance_exempt,
+            COALESCE(days_off, '{}') AS days_off
      FROM staff_users WHERE id = $1`,
     [staffUserId]
   );
@@ -422,7 +424,7 @@ async function paidExcuseUsedInMonth(staffUserId, yearMonth, db = null) {
   const { from, to } = payrollCycleBounds(y, m);
   const q = db ? (sql, params) => db.query(sql, params) : query;
   const { rows } = await q(
-    `SELECT COUNT(*)::int AS cnt
+    `SELECT COUNT(DISTINCT start_date)::int AS cnt
      FROM staff_leave_requests
      WHERE staff_user_id = $1
        AND leave_type IN ('paid_excuse', 'early_leave')
@@ -434,6 +436,35 @@ async function paidExcuseUsedInMonth(staffUserId, yearMonth, db = null) {
   return Number(rows[0]?.cnt) || 0;
 }
 
+/** Excuses allowed in a pay cycle: the standard 2, plus any extra HR granted for that cycle. */
+async function excuseAllowance(staffUserId, cycleKey, db = null) {
+  const q = db ? (sql, params) => db.query(sql, params) : query;
+  try {
+    const { rows } = await q(
+      `SELECT COALESCE(SUM(extra), 0)::int AS extra FROM staff_excuse_grants WHERE staff_user_id = $1 AND cycle_key = $2`,
+      [staffUserId, cycleKey]
+    );
+    return PAID_EXCUSE_MAX_PER_MONTH + (Number(rows[0]?.extra) || 0);
+  } catch (err) {
+    if (/staff_excuse_grants/.test(String(err.message))) return PAID_EXCUSE_MAX_PER_MONTH;
+    throw err;
+  }
+}
+
+/** Extra excuses granted per person for one pay cycle (for lists of staff). */
+async function excuseGrantsByStaff(cycleKey) {
+  try {
+    const { rows } = await query(
+      `SELECT staff_user_id, SUM(extra)::int AS extra FROM staff_excuse_grants WHERE cycle_key = $1 GROUP BY staff_user_id`,
+      [cycleKey]
+    );
+    return new Map(rows.map((r) => [Number(r.staff_user_id), Number(r.extra) || 0]));
+  } catch (err) {
+    if (/staff_excuse_grants/.test(String(err.message))) return new Map();
+    throw err;
+  }
+}
+
 async function leaveSnapshot(staffUserId) {
   const staff = await loadStaffForHr(staffUserId);
   const cairo = cairoParts();
@@ -442,6 +473,7 @@ async function leaveSnapshot(staffUserId) {
   const pendingCasual = await pendingLeaveDays(staffUserId, 'casual');
   const pendingAnnual = await pendingLeaveDays(staffUserId, 'annual');
   const paidExcuseUsed = await paidExcuseUsedInMonth(staffUserId, yearMonth);
+  const excuseMax = await excuseAllowance(staffUserId, yearMonth);
   const unpaidUnlimited = isUnpaidLeaveUnlimited();
   const rateDaily = dailyRate(staff.base_salary);
   const rateHourly = hourlyRate(staff.base_salary);
@@ -461,13 +493,13 @@ async function leaveSnapshot(staffUserId) {
       : Math.max(0, (Number(staff.leave_unpaid_days) || 0) - (await pendingLeaveDays(staffUserId, 'unpaid'))),
     unpaid_unlimited: unpaidUnlimited,
     paid_excuse_used: paidExcuseUsed,
-    paid_excuse_remaining: Math.max(0, PAID_EXCUSE_MAX_PER_MONTH - paidExcuseUsed),
-    paid_excuse_max: PAID_EXCUSE_MAX_PER_MONTH,
+    paid_excuse_remaining: Math.max(0, excuseMax - paidExcuseUsed),
+    paid_excuse_max: excuseMax,
     paid_excuse_max_hours: PAID_EXCUSE_MAX_HOURS,
     // Back-compat for older clients
     early_leave_used: paidExcuseUsed,
-    early_leave_remaining: Math.max(0, PAID_EXCUSE_MAX_PER_MONTH - paidExcuseUsed),
-    early_leave_max: PAID_EXCUSE_MAX_PER_MONTH,
+    early_leave_remaining: Math.max(0, excuseMax - paidExcuseUsed),
+    early_leave_max: excuseMax,
     year,
     month: yearMonth,
     holiday_access: staff.holiday_access || 'auto',
@@ -899,6 +931,21 @@ async function removeSingleDayLeavesForDate(db, staff, date) {
   }
 }
 
+/** 'YYYY-MM-DD' from a date column, whether the driver returns a string or a Date. */
+function isoDay(value) {
+  if (value instanceof Date) {
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+  }
+  return String(value || '').slice(0, 10);
+}
+
+/** A staff member's weekly days off (e.g. ["fri"]). */
+async function staffDaysOff(db, staffId) {
+  const q = db ? (sql, params) => db.query(sql, params) : query;
+  const { rows } = await q(`SELECT COALESCE(days_off, '{}') AS days_off FROM staff_users WHERE id = $1`, [staffId]);
+  return rows[0]?.days_off || [];
+}
+
 async function reverseLeaveTypeEffects(db, row, baseSalary) {
   const q = db ? (sql, params) => db.query(sql, params) : query;
   let fromType = normalizeAttendanceHolidayType(row.leave_type);
@@ -944,7 +991,7 @@ async function applyLeaveTypeEffects(db, { staffId, leaveType, days, startDate, 
   }
   if (leaveType === 'unpaid') {
     const unpaid = computeUnpaidLeaveDeduction(baseSalary);
-    for (const date of enumerateDateRange(startDate, endDate)) {
+    for (const date of workingDatesInRange(await staffDaysOff(db, staffId), startDate, endDate)) {
       await insertDeduction(db, [
         staffId,
         unpaid.amount,
@@ -1146,6 +1193,10 @@ async function setAttendanceWfhDay({ staff, date, actorId }) {
   }
 }
 
+/**
+ * An excuse already on file for this day (a timed request or one marked from attendance). Marking the
+ * day as an excuse again must reuse it: a second record would use up a second excuse for one day.
+ */
 async function existingFullDayPaidExcuse(staffId, date) {
   const { rows } = await query(
     `SELECT id, leave_type, start_date::text AS start_date, end_date::text AS end_date
@@ -1153,7 +1204,7 @@ async function existingFullDayPaidExcuse(staffId, date) {
      WHERE staff_user_id = $1 AND status = 'approved'
        AND leave_type IN ('paid_excuse', 'early_leave')
        AND start_date = $2::date AND end_date = $2::date
-       AND start_time IS NULL AND end_time IS NULL
+     ORDER BY (start_time IS NULL) DESC, id
      LIMIT 1`,
     [staffId, date]
   );
@@ -1179,8 +1230,9 @@ async function markAttendanceExcuse({ staff, date, checkIn, actorId }) {
     throw err;
   }
 
-  const used = await paidExcuseUsedInMonth(staff.id, payrollCycleKey(payrollCycleForDate(date)));
-  if (used >= PAID_EXCUSE_MAX_PER_MONTH) {
+  const excuseCycle = payrollCycleKey(payrollCycleForDate(date));
+  const used = await paidExcuseUsedInMonth(staff.id, excuseCycle);
+  if (used >= (await excuseAllowance(staff.id, excuseCycle))) {
     if (covering.length) {
       const client = await pool.connect();
       try {
@@ -1832,7 +1884,7 @@ router.get('/hr/my-schedule', async (req, res, next) => {
   try {
     if (req.user.role === 'owner') return res.status(403).json({ error: 'Forbidden' });
     const today = cairoParts().date;
-    const month = /^d{4}-d{2}$/.test(String(req.query.month || '')) ? String(req.query.month) : today.slice(0, 7);
+    const month = /^\d{4}-\d{2}$/.test(String(req.query.month || '')) ? String(req.query.month) : today.slice(0, 7);
     const [y, m] = month.split('-').map(Number);
     const from = `${month}-01`;
     const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
@@ -1958,8 +2010,8 @@ router.post('/hr/leave-requests', async (req, res, next) => {
     const isExcuse = isExcuseLeaveType(leaveType);
     const isMission = leaveType === 'mission';
     const isTimed = isExcuse || isMission;
-    const days = isTimed ? 1 : inclusiveDays(start, end);
-    if (!start || !end || !Number.isFinite(days) || days < 1) {
+    const calendarDays = isTimed ? 1 : inclusiveDays(start, end);
+    if (!start || !end || !Number.isFinite(calendarDays) || calendarDays < 1) {
       return res.status(400).json({ error: 'Valid start and end dates are required' });
     }
     if (isTimed && start !== end) {
@@ -1995,6 +2047,35 @@ router.post('/hr/leave-requests', async (req, res, next) => {
       });
     }
 
+    // Only working days count: the person's weekly days off inside the range are not leave days.
+    const days = isTimed ? 1 : workingDatesInRange(targetStaff.days_off, start, end).length;
+    if (!isTimed && days < 1) {
+      return res.status(400).json({ error: 'Those dates are all scheduled days off, so no leave is needed' });
+    }
+
+    // The same day can't be requested twice (a double tap, or a second request for dates already off).
+    const { rows: overlapping } = await query(
+      `SELECT leave_type, start_date::text AS start_date, end_date::text AS end_date, status,
+              (start_time IS NOT NULL AND end_time IS NOT NULL) AS timed
+       FROM staff_leave_requests
+       WHERE staff_user_id = $1 AND status IN ('pending', 'approved')
+         AND start_date <= $3::date AND end_date >= $2::date`,
+      [staffUserId, start, end]
+    );
+    // One leave per day: a holiday can't share a day with any other request.
+    const clash = overlapping.find((o) => {
+      const oFullDay = !o.timed;
+      if (!isTimed) return true; // a holiday on a day that already has a holiday, excuse or mission
+      if (oFullDay) return true; // an excuse or mission on a day already off
+      // A second excuse (or a second mission) the same day.
+      return isExcuse ? isExcuseLeaveType(normalizeExcuseLeaveType(o.leave_type)) : o.leave_type === 'mission';
+    });
+    if (clash) {
+      return res.status(409).json({
+        error: `There is already a ${clash.status} ${String(clash.leave_type).replace('_', ' ')} request for ${clash.start_date === clash.end_date ? clash.start_date : `${clash.start_date} to ${clash.end_date}`}`,
+      });
+    }
+
     const snap = await leaveSnapshot(staffUserId);
     if (leaveType === 'casual' && days > snap.casual_available) {
       return res.status(400).json({
@@ -2008,7 +2089,7 @@ router.post('/hr/leave-requests', async (req, res, next) => {
     }
     if (leaveType === 'paid_excuse' && snap.paid_excuse_remaining < 1) {
       return res.status(400).json({
-        error: `You’ve used all ${PAID_EXCUSE_MAX_PER_MONTH} excuses for this month (the 26th to the 25th)`,
+        error: `You’ve used all ${snap.paid_excuse_max} excuses for this month (the 26th to the 25th)`,
       });
     }
 
@@ -2076,6 +2157,32 @@ router.post('/hr/leave-requests/:id/review', async (req, res, next) => {
       actor: req.user,
       body: req.body,
       onApprove: async (client, row, staff) => {
+        const fullDay = !(row.start_time && row.end_time) && !leaveDoesNotAffectAttendance(row.leave_type);
+        if (fullDay) {
+          // One leave per day: refuse if another approved holiday already covers any of these days.
+          const { rows: taken } = await client.query(
+            `SELECT start_date::text AS start_date, end_date::text AS end_date, leave_type FROM staff_leave_requests
+             WHERE staff_user_id = $1 AND status = 'approved' AND id <> $2
+               AND start_date <= $4::date AND end_date >= $3::date
+               AND NOT (start_time IS NOT NULL AND end_time IS NOT NULL)
+             LIMIT 1`,
+            [row.staff_user_id, row.id, row.start_date, row.end_date]
+          );
+          if (taken[0]) {
+            const err = new Error(
+              `These dates already have an approved ${taken[0].leave_type} holiday (${taken[0].start_date} to ${taken[0].end_date}). Reject this duplicate instead.`
+            );
+            err.status = 409;
+            throw err;
+          }
+          // Only working days are charged (requests made before this fix stored calendar days).
+          const daysOff = await staffDaysOff(client, row.staff_user_id);
+          const working = workingDatesInRange(daysOff, isoDay(row.start_date), isoDay(row.end_date)).length;
+          if (working >= 1 && working !== Number(row.days)) {
+            await client.query(`UPDATE staff_leave_requests SET days = $2 WHERE id = $1`, [row.id, working]);
+            row.days = working;
+          }
+        }
         if (row.leave_type === 'casual' || row.leave_type === 'annual') {
           const col = row.leave_type === 'casual' ? 'leave_casual_days' : 'leave_annual_days';
           const { rows: staffRows } = await client.query(
@@ -2097,7 +2204,7 @@ router.post('/hr/leave-requests/:id/review', async (req, res, next) => {
         }
         if (row.leave_type === 'unpaid') {
           const unpaid = computeUnpaidLeaveDeduction(staff.base_salary);
-          for (const date of enumerateDateRange(row.start_date, row.end_date)) {
+          for (const date of workingDatesInRange(await staffDaysOff(client, row.staff_user_id), isoDay(row.start_date), isoDay(row.end_date))) {
             await insertDeduction(client, [
               row.staff_user_id,
               unpaid.amount,
@@ -2133,20 +2240,22 @@ router.post('/hr/leave-requests/:id/review', async (req, res, next) => {
         if (row.leave_type === 'paid_excuse' || row.leave_type === 'early_leave') {
           const cycle = payrollCycleForDate(row.start_date);
           const { rows: usedRows } = await client.query(
-            `SELECT COUNT(*)::int AS cnt
+            `SELECT COUNT(DISTINCT start_date)::int AS cnt
              FROM staff_leave_requests
              WHERE staff_user_id = $1
                AND leave_type IN ('paid_excuse', 'early_leave')
                AND status IN ('pending', 'approved')
                AND start_date >= $2::date
                AND start_date < $3::date
-               AND id <> $4`,
-            [row.staff_user_id, cycle.from, cycle.to, row.id]
+               AND id <> $4
+               AND start_date <> $5::date`,
+            [row.staff_user_id, cycle.from, cycle.to, row.id, isoDay(row.start_date)]
           );
           const used = Number(usedRows[0]?.cnt) || 0;
-          if (used + 1 > PAID_EXCUSE_MAX_PER_MONTH) {
+          const allowed = await excuseAllowance(row.staff_user_id, payrollCycleKey(cycle), client);
+          if (used + 1 > allowed) {
             const err = new Error(
-              `Excuse limit reached (maximum ${PAID_EXCUSE_MAX_PER_MONTH} per month, 26th–25th)`
+              `Excuse limit reached (maximum ${allowed} this month, 26th–25th)`
             );
             err.status = 400;
             throw err;
@@ -2285,7 +2394,7 @@ router.patch('/hr/leave-requests/:id/type', requireRoles(...HR_ROLES), async (re
       // Add unpaid deductions for the range.
       if (nextType === 'unpaid') {
         const unpaid = computeUnpaidLeaveDeduction(row.base_salary);
-        for (const date of enumerateDateRange(row.start_date, row.end_date)) {
+        for (const date of workingDatesInRange(await staffDaysOff(client, row.staff_user_id), isoDay(row.start_date), isoDay(row.end_date))) {
           await insertDeduction(client, [
             row.staff_user_id,
             unpaid.amount,
@@ -2585,7 +2694,7 @@ async function holidayAccessRows(staffId = null) {
       [ids, yearStart]
     ),
     query(
-      `SELECT staff_user_id, COUNT(*)::int AS n
+      `SELECT staff_user_id, COUNT(DISTINCT start_date)::int AS n
        FROM staff_leave_requests
        WHERE leave_type IN ('paid_excuse', 'early_leave') AND status IN ('pending', 'approved')
          AND start_date >= $2::date AND start_date < $3::date AND staff_user_id = ANY($1::int[])
@@ -2605,6 +2714,7 @@ async function holidayAccessRows(staffId = null) {
   const pendingBy = new Map(pending.rows.map((r) => [key(r), r]));
   const takenBy = new Map(taken.rows.map((r) => [key(r), Number(r.days) || 0]));
   const excusesBy = new Map(excuses.rows.map((r) => [r.staff_user_id, Number(r.n) || 0]));
+  const grantsBy = await excuseGrantsByStaff(payrollCycleKey(cycle));
   const nextBy = new Map(upcoming.rows.map((r) => [r.staff_user_id, r]));
   const unlimited = isUnpaidLeaveUnlimited();
   const now = new Date();
@@ -2639,7 +2749,10 @@ async function holidayAccessRows(staffId = null) {
           },
           sick: { taken_this_year: takenBy.get(`${r.id}|sick`) || 0 },
         },
-        excuses: { used, max: PAID_EXCUSE_MAX_PER_MONTH, remaining: Math.max(0, PAID_EXCUSE_MAX_PER_MONTH - used) },
+        excuses: (() => {
+          const max = PAID_EXCUSE_MAX_PER_MONTH + (grantsBy.get(Number(r.id)) || 0);
+          return { used, max, remaining: Math.max(0, max - used) };
+        })(),
         pending_requests: pendingRequests,
         next_leave: nextBy.get(r.id) || null,
       };
@@ -2845,7 +2958,7 @@ router.get('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
       [from, to]
     );
     const { rows: excuseRows } = await query(
-      `SELECT staff_user_id, COUNT(*)::int AS used
+      `SELECT staff_user_id, COUNT(DISTINCT start_date)::int AS used
        FROM staff_leave_requests
        WHERE status IN ('pending', 'approved')
          AND leave_type IN ('paid_excuse', 'early_leave')
@@ -2855,6 +2968,7 @@ router.get('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
       [from, to]
     );
     const excuseUsedByStaff = new Map(excuseRows.map((row) => [row.staff_user_id, Number(row.used) || 0]));
+    const excuseGrants = await excuseGrantsByStaff(`${year}-${String(month).padStart(2, '0')}`);
 
     const cells = {};
     for (const row of deductionRows) {
@@ -2945,7 +3059,7 @@ router.get('/hr/attendance', requireRoles(...HR_ROLES), async (req, res, next) =
         ...s,
         daily_rate: dailyRate(s.base_salary),
         paid_excuse_used: excuseUsedByStaff.get(s.id) || 0,
-        paid_excuse_max: PAID_EXCUSE_MAX_PER_MONTH,
+        paid_excuse_max: PAID_EXCUSE_MAX_PER_MONTH + (excuseGrants.get(Number(s.id)) || 0),
       })),
       cells,
     });
@@ -3123,18 +3237,39 @@ router.post(
 
       const { rows: leaveRows } = await query(
         `SELECT staff_user_id, leave_type,
-                start_date::text AS start_date, end_date::text AS end_date
+                start_date::text AS start_date, end_date::text AS end_date,
+                start_time::text AS start_time, end_time::text AS end_time
          FROM staff_leave_requests
          WHERE status = 'approved' AND start_date <= $2::date AND end_date >= $1::date`,
         [minDate, maxDate]
       );
+      // Full-day leave, and full-day excuses / missions, mean the person is not expected at the office.
+      // Timed excuses / missions only cover part of the day (see coveredLateArrival below).
       const leavesByStaff = new Map();
+      const timedExcusesByStaff = new Map();
       for (const l of leaveRows) {
-        if (leaveDoesNotAffectAttendance(l.leave_type)) continue;
+        const timed = Boolean(l.start_time && l.end_time);
+        if (leaveDoesNotAffectAttendance(l.leave_type) && timed) {
+          const list = timedExcusesByStaff.get(l.staff_user_id) || [];
+          list.push(l);
+          timedExcusesByStaff.set(l.staff_user_id, list);
+          continue;
+        }
         const list = leavesByStaff.get(l.staff_user_id) || [];
         list.push(l);
         leavesByStaff.set(l.staff_user_id, list);
       }
+      // An approved excuse or mission that starts at the beginning of the shift covers a late arrival
+      // up to its end time — the same rule as the phone clock-in.
+      const [shiftH, shiftM] = SHIFT_START.split(':').map(Number);
+      const graceMinutes = shiftH * 60 + shiftM + 15;
+      const shiftStartGrace = `${String(Math.floor(graceMinutes / 60)).padStart(2, '0')}:${String(graceMinutes % 60).padStart(2, '0')}`;
+      const coveredLateArrival = (staffId, date, arrival) =>
+        (timedExcusesByStaff.get(staffId) || []).some(
+          (l) => l.start_date <= date && l.end_date >= date
+            && String(l.start_time).slice(0, 5) <= shiftStartGrace
+            && String(l.end_time).slice(0, 5) >= String(arrival).slice(0, 5)
+        );
 
       const { rows: wfhRows } = await query(
         `SELECT staff_user_id, work_date::text AS work_date
@@ -3204,9 +3339,12 @@ router.post(
 
         try {
           const absent = row.absent || !row.arrival_time;
-          const computed = absent
+          let computed = absent
             ? null
             : computeLatenessDeduction(staff.base_salary, row.arrival_time);
+          if (computed && computed.factor > 0 && coveredLateArrival(staff.id, row.date, row.arrival_time)) {
+            computed = { ...computed, factor: 0, amount: 0 };
+          }
           const write = buildAttendanceWrite({
             staff,
             date: row.date,

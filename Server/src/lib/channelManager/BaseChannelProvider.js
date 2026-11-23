@@ -3,7 +3,7 @@ class BaseChannelProvider {
    * @param {{
    *   key: string,
    *   label: string,
-   *   connectionType: 'ical' | 'api',
+   *   connectionType: 'api',
    *   capabilities: string[],
    *   configured?: boolean,
    * }} def

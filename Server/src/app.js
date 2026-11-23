@@ -14,7 +14,6 @@ const wishlistRoutes = require('./routes/wishlist');
 const promoRoutes = require('./routes/promoCodes');
 const recruitmentRoutes = require('./routes/recruitment');
 const salesRoutes = require('./routes/sales');
-const icalRoutes = require('./routes/ical');
 const channelManagerRoutes = require('./routes/channelManager');
 const pmsRoutes = require('./routes/pms');
 const { runChannelSync } = require('./lib/channelManager');
@@ -79,7 +78,8 @@ function createApp() {
       standardHeaders: true,
       legacyHeaders: false,
       // The live inbox refetches on every customer message; it is staff-authenticated.
-      skip: (req) => req.path.startsWith('/pms/inbox/'),
+      // The website chat polls while open; its writes have their own limits.
+      skip: (req) => req.path.startsWith('/pms/inbox/') || (req.method === 'GET' && req.path.startsWith('/chat/sessions/')),
     })
   );
 
@@ -108,6 +108,8 @@ function createApp() {
   app.use('/api/staff/auth', staffAuthRoutes);
   app.use('/api/units', unitsRoutes);
   app.use('/api/projects', require('./routes/projects'));
+  app.use('/api/chat', require('./routes/publicChat'));
+  app.use('/api/reviews', require('./routes/guestReviews'));
   app.use('/api/bookings', bookingsRoutes);
   app.use('/api/payments', paymentsRoutes);
   app.use('/api/inquiries', inquiriesRoutes);
@@ -120,7 +122,6 @@ function createApp() {
   app.use('/api/site-content', require('./routes/siteContent'));
   app.use('/api/recruitment', recruitmentRoutes);
   app.use('/api/sales', salesRoutes);
-  app.use('/api/calendar', icalRoutes);
   app.use('/api/pms/channel-manager', channelManagerRoutes);
   app.use('/api/pms', pmsRoutes);
   app.use(
@@ -136,7 +137,7 @@ function createApp() {
   app.use('/api/fx', require('./routes/fx'));
   app.use('/api/reviews', require('./routes/reviews').router);
 
-  app.get('/api/cron/refresh-ical-blocks', async (req, res, next) => {
+  app.get('/api/cron/channel-sync', async (req, res, next) => {
     try {
       if (!requireCronSecret(req, res)) return;
       const result = await runChannelSync();

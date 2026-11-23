@@ -274,8 +274,9 @@ router.get('/conversations/:id', wrap(async (req, res) => {
 router.get('/conversations/:id/guest', wrap(async (req, res) => {
   const conv = await loadConversation(int(req.params.id), req.inbox);
   const customer = await q.get('SELECT phone FROM inbox_customers WHERE id = ?', conv.customer_id);
-  if (!customer?.phone) return res.json({ phone: null, reservations: [], bookings: [] });
-  res.json({ phone: customer.phone, ...(await guestHistory(customer.phone)) });
+  if (!customer?.phone) return res.json({ phone: null, reservations: [], bookings: [], profile: null });
+  const profile = await require('../../../lib/chatbot/guests').guestProfile(customer.phone).catch(() => null);
+  res.json({ phone: customer.phone, ...(await guestHistory(customer.phone)), profile });
 }));
 
 /** Replying to a closed chat brings it back as "waiting on guest" so it isn't lost in Closed. */
@@ -607,6 +608,42 @@ router.post('/conversations/:id/ai/summary', wrap(async (req, res) => {
   requireAi();
   const conv = await loadConversation(int(req.params.id), req.inbox);
   res.json({ summary: await summarize(conv.id) });
+}));
+
+// ── Chatbot in this conversation ──
+
+router.get('/conversations/:id/bot', wrap(async (req, res) => {
+  const conv = await loadConversation(int(req.params.id), req.inbox);
+  res.json(await require('../../../lib/chatbot/live').botState(conv.id));
+}));
+
+/** Let the bot answer again (clears a pause or a hand-off), or keep it quiet here for a while. */
+router.post('/conversations/:id/bot', wrap(async (req, res) => {
+  const conv = await loadConversation(int(req.params.id), req.inbox);
+  const live = require('../../../lib/chatbot/live');
+  const action = String(req.body?.action || '');
+  let state;
+  if (action === 'resume') state = await live.resume(conv.id);
+  else if (action === 'pause') state = await live.pauseFor(conv.id, Math.min(Math.max(int(req.body?.minutes) || 1440, 1), 60 * 24 * 30));
+  else throw badRequest('action must be resume or pause');
+  await audit({ conversationId: conv.id, userId: req.inbox.id, type: `chatbot_${action}`, data: {} });
+  res.json(state);
+}));
+
+/** Blocklist: a blocked customer gets no replies from the bot on any channel. Supervisors and up. */
+router.post('/conversations/:id/block', wrap(async (req, res) => {
+  if (!can(req.inbox, 'conv.assign')) throw forbidden('Only supervisors and managers can block customers');
+  const conv = await loadConversation(int(req.params.id), req.inbox);
+  const customer = await q.get('SELECT id, phone FROM inbox_customers WHERE id = ?', conv.customer_id);
+  const guests = require('../../../lib/chatbot/guests');
+  if (req.body?.blocked === false) {
+    await guests.unblock({ customerId: customer.id, phone: customer.phone, userId: req.user?.id || null });
+  } else {
+    await guests.block({ customerId: customer.id, phone: customer.phone, reason: String(req.body?.reason || 'Blocked from the Live Inbox'), userId: req.user?.id || null });
+  }
+  await audit({ conversationId: conv.id, userId: req.inbox.id, type: req.body?.blocked === false ? 'customer_unblocked' : 'customer_blocked', data: {} });
+  broadcast('conversation', { id: conv.id });
+  res.json(await require('../../../lib/chatbot/live').botState(conv.id));
 }));
 
 router.post('/conversations/:id/ai/classify', wrap(async (req, res) => {

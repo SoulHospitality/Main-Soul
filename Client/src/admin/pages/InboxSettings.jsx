@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { inboxApi, errorMessage } from '../inbox/api';
 import { useInbox } from '../inbox/InboxContext';
+import ChatbotSettings from '../inbox/ChatbotSettings';
 
 export default function InboxSettingsPage() {
   const { me, can } = useInbox();
@@ -82,7 +83,7 @@ export default function InboxSettingsPage() {
     toast.success('Copied to clipboard!');
   };
 
-  const emptyChannel = { kind: 'messenger', name: '', external_id: '', page_id: '', access_token: '' };
+  const emptyChannel = { kind: 'messenger', name: '', external_id: '', page_id: '', waba_id: '', access_token: '' };
   const [channelForm, setChannelForm] = useState(emptyChannel);
   const [connecting, setConnecting] = useState(false);
   const [channelBusy, setChannelBusy] = useState(null);
@@ -94,6 +95,11 @@ export default function InboxSettingsPage() {
     const token = channelForm.access_token.trim();
     const pageId = channelForm.page_id.trim();
     const externalId = kind === 'messenger' ? pageId : channelForm.external_id.trim();
+    const wabaId = channelForm.waba_id.trim();
+    if (kind === 'whatsapp' && (!name || !externalId || !wabaId || !token)) {
+      toast.error('Name, Phone number ID, WhatsApp Business Account ID, and token are required');
+      return;
+    }
     if (!name || !externalId || !token) {
       toast.error(kind === 'instagram' ? 'Name, Instagram ID, Page ID, and token are required' : 'Name, Page ID, and token are required');
       return;
@@ -109,6 +115,7 @@ export default function InboxSettingsPage() {
         name,
         external_id: externalId,
         page_id: kind === 'instagram' ? pageId : undefined,
+        waba_id: kind === 'whatsapp' ? wabaId : undefined,
         access_token: token,
       });
       let detail = 'Channel saved';
@@ -210,6 +217,7 @@ export default function InboxSettingsPage() {
       <div className="flex items-center gap-1 overflow-x-auto border-b border-slate-200 text-xs font-bold">
         {[
           { id: 'settings', label: 'SLA & Business Hours', short: 'Hours', icon: Clock, perm: 'settings.manage' },
+          { id: 'chatbot', label: 'Chatbot & Guest Care', short: 'Chatbot', icon: Bot, perm: 'settings.manage' },
           { id: 'channels', label: 'Meta Channels & Webhooks', short: 'Channels', icon: Link2, perm: 'channels.manage' },
           { id: 'team', label: 'Agent Rotation & Limits', short: 'Team', icon: Users, perm: 'users.manage' },
           { id: 'replies', label: 'Quick Replies & Templates', short: 'Replies', icon: MessageSquare, perm: 'templates.manage' },
@@ -351,6 +359,10 @@ export default function InboxSettingsPage() {
         </form>
       )}
 
+      {activeTab === 'chatbot' && formSettings && (
+        <ChatbotSettings form={formSettings} setForm={setFormSettings} onSave={handleSaveSettings} saving={savingSettings} />
+      )}
+
       {/* Tab 2: Meta Channels & Webhooks */}
       {activeTab === 'channels' && (
         <div className="space-y-6 max-w-4xl text-xs">
@@ -392,12 +404,14 @@ export default function InboxSettingsPage() {
           </div>
 
           <form onSubmit={connectChannel} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-            <h2 className="text-sm font-bold text-slate-900">Connect Messenger or Instagram</h2>
+            <h2 className="text-sm font-bold text-slate-900">Connect Messenger, Instagram or WhatsApp</h2>
             <p className="text-slate-500">
-              Instagram uses the same Facebook Page and Page access token as Messenger. Find the linked account, then connect it. In the Meta app, the Instagram webhook must use the same callback URL as Messenger, subscribed to messages.
+              {channelForm.kind === 'whatsapp'
+                ? 'From Meta → WhatsApp → API Setup, copy the Phone number ID and the WhatsApp Business Account ID, and use a permanent System User token with whatsapp_business_messaging and whatsapp_business_management. The WhatsApp webhook must use the same callback URL, subscribed to messages.'
+                : 'Instagram uses the same Facebook Page and Page access token as Messenger. Find the linked account, then connect it. In the Meta app, the Instagram webhook must use the same callback URL as Messenger, subscribed to messages.'}
             </p>
-            <div className="grid grid-cols-2 gap-2">
-              {['messenger', 'instagram'].map((kind) => (
+            <div className="grid grid-cols-3 gap-2">
+              {['messenger', 'instagram', 'whatsapp'].map((kind) => (
                 <button
                   key={kind}
                   type="button"
@@ -414,10 +428,23 @@ export default function InboxSettingsPage() {
               <span className="font-semibold text-slate-700">Name</span>
               <input className="input" value={channelForm.name} onChange={(e) => setChannelForm((f) => ({ ...f, name: e.target.value }))} placeholder="Soul Hospitality" />
             </label>
-            <label className="block space-y-1">
-              <span className="font-semibold text-slate-700">Facebook Page ID</span>
-              <input className="input" value={channelForm.page_id} onChange={(e) => setChannelForm((f) => ({ ...f, page_id: e.target.value }))} placeholder="Page ID" />
-            </label>
+            {channelForm.kind === 'whatsapp' ? (
+              <>
+                <label className="block space-y-1">
+                  <span className="font-semibold text-slate-700">Phone number ID</span>
+                  <input className="input" value={channelForm.external_id} onChange={(e) => setChannelForm((f) => ({ ...f, external_id: e.target.value }))} placeholder="e.g. 1234567890123456 (not the phone number)" />
+                </label>
+                <label className="block space-y-1">
+                  <span className="font-semibold text-slate-700">WhatsApp Business Account ID</span>
+                  <input className="input" value={channelForm.waba_id} onChange={(e) => setChannelForm((f) => ({ ...f, waba_id: e.target.value }))} placeholder="WABA ID" />
+                </label>
+              </>
+            ) : (
+              <label className="block space-y-1">
+                <span className="font-semibold text-slate-700">Facebook Page ID</span>
+                <input className="input" value={channelForm.page_id} onChange={(e) => setChannelForm((f) => ({ ...f, page_id: e.target.value }))} placeholder="Page ID" />
+              </label>
+            )}
             {channelForm.kind === 'instagram' ? (
               <div className="space-y-2">
                 <button type="button" className="btn-secondary" disabled={connecting} onClick={findInstagram}>
@@ -430,7 +457,7 @@ export default function InboxSettingsPage() {
               </div>
             ) : null}
             <label className="block space-y-1">
-              <span className="font-semibold text-slate-700">Page access token</span>
+              <span className="font-semibold text-slate-700">{channelForm.kind === 'whatsapp' ? 'System User access token' : 'Page access token'}</span>
               <input className="input" type="password" value={channelForm.access_token} onChange={(e) => setChannelForm((f) => ({ ...f, access_token: e.target.value }))} placeholder="Never shown again after saving" autoComplete="off" />
             </label>
             <button type="submit" className="btn-primary" disabled={connecting}>
@@ -443,7 +470,7 @@ export default function InboxSettingsPage() {
             <h2 className="text-sm font-bold text-slate-900">Connected Channels</h2>
             {(channelsData?.items || []).length === 0 ? (
               <div className="p-8 text-center text-slate-400 border border-dashed border-slate-200 rounded-xl">
-                No channels yet. Connect Messenger or Instagram above.
+                No channels yet. Connect Messenger, Instagram or WhatsApp above.
               </div>
             ) : (
               <div className="space-y-2">

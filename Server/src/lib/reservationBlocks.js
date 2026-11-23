@@ -17,7 +17,7 @@ async function upsertReservationBlocks(wpPostId, checkIn, checkOut) {
        VALUES ($1, $2::date, 'reservation', now())
        ON CONFLICT (wp_post_id, date) DO UPDATE
          SET source = CASE
-               WHEN unit_blocked_dates.source IN ('manual', 'owner', 'ical')
+               WHEN unit_blocked_dates.source IN ('manual', 'owner')
                  THEN unit_blocked_dates.source
                ELSE 'reservation'
              END,

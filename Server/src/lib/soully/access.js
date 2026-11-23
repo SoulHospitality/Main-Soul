@@ -21,19 +21,19 @@ const STAFF_EDITOR = new Set([
 
 const PAGE_ACCESS = {
   reservations: new Set([
-    'reservations', 'schedule', 'calendar_sync', 'website_bookings',
+    'reservations', 'schedule', 'website_bookings',
     'units', 'projects', 'inbox', 'leads', ...STAFF_HR,
   ]),
   reservations_web: new Set([
-    'reservations', 'schedule', 'calendar_sync', 'website_bookings',
+    'reservations', 'schedule', 'website_bookings',
     'units', 'projects', 'inbox', 'leads', ...STAFF_HR,
   ]),
   reservations_manual: new Set([
-    'reservations', 'schedule', 'calendar_sync', 'units', 'projects',
+    'reservations', 'schedule', 'units', 'projects',
     'inbox', 'leads', ...STAFF_HR,
   ]),
   reservations_manager: new Set([
-    'reservations', 'schedule', 'calendar_sync',
+    'reservations', 'schedule',
     'audit_log', 'units', 'projects', 'inbox', 'leads',
     'inbox_analytics', 'inbox_settings', ...STAFF_HR,
   ]),
@@ -84,7 +84,6 @@ const GUIDE = [
   { page: 'reservations', path: '/admin/reservations', label: 'Reservations', hint: 'Create, edit, and collect on stays. Agents see their own book. Managers see their team.' },
   { page: 'schedule', path: '/admin/schedule', label: 'Schedule', hint: 'The calendar. Drag a stay only if your role is allowed to write the grid.' },
   { page: 'website_bookings', path: '/admin/website-bookings', label: 'Website requests', hint: 'Pending site bookings waiting to be assigned or accepted.' },
-  { page: 'calendar_sync', path: '/admin/calendar-sync', label: 'Calendar sync', hint: 'OTA and iCal connections for a unit.' },
   { page: 'inbox', path: '/admin/inbox', label: 'Live inbox', hint: 'Guest chats. Reply from the thread; the list hides once a chat is open on a phone.' },
   { page: 'leads', path: '/admin/leads', label: 'Leads', hint: 'Pipeline of people who have not booked yet.' },
   { page: 'operations', path: '/admin/operations', label: 'Operations', hint: 'Check-in and check-out work for the ops team.' },

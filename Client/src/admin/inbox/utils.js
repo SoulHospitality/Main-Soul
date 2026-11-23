@@ -2,6 +2,7 @@ export const CHANNELS = {
   whatsapp: { label: 'WhatsApp', dot: 'bg-emerald-500', soft: 'bg-emerald-50 text-emerald-700' },
   messenger: { label: 'Messenger', dot: 'bg-blue-500', soft: 'bg-blue-50 text-blue-700' },
   instagram: { label: 'Instagram', dot: 'bg-pink-500', soft: 'bg-pink-50 text-pink-700' },
+  website: { label: 'Website chat', dot: 'bg-soul-blue', soft: 'bg-sky-50 text-sky-800' },
 };
 
 export const CONVERSATION_TYPES = {

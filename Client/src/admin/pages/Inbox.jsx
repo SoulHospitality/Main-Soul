@@ -12,6 +12,7 @@ import GuestRail from '../inbox/GuestRail';
 import ConversationList, { QUEUES, STATES, hasAlarm } from '../inbox/ConversationList';
 import Thread from '../inbox/Thread';
 import Composer from '../inbox/Composer';
+import BotBar from '../inbox/BotBar';
 import { CloseButton, CloseDialog, SnoozeButton, snoozeOptions } from '../inbox/ChatActions';
 
 const SHORTCUTS = [
@@ -622,6 +623,7 @@ export default function InboxPage() {
                   👀 {othersOn(conv.id).map((id) => userName(id)).join(', ')} {othersOn(conv.id).length === 1 ? 'has' : 'have'} this chat open too. Check before you reply.
                 </div>
               ) : null}
+              <BotBar conversationId={conv.id} refreshKey={detail.dataUpdatedAt} />
               {conv.status === 'snoozed' && conv.snooze_until ? (
                 <div className="border-b border-indigo-200 bg-indigo-50 px-4 py-1.5 text-xs text-indigo-900">
                   Snoozed until {new Date(Number(conv.snooze_until)).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Cairo' })}. It comes back on its own, or when the guest writes.

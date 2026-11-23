@@ -13,7 +13,6 @@ import {
   BadgeDollarSign, Users, UserCircle,
   LogOut, Building, CalendarRange,
   Briefcase, Globe, Tag, KeyRound,
-  Link2,
   Landmark,
   Wallet,
   MinusCircle,
@@ -78,7 +77,6 @@ export const NAV_SECTIONS = [
       { path: '/admin/reservations', label: 'Reservations', icon: CalendarDays, page: 'reservations', agentLabel: 'My Reservations', managerLabel: 'Team Reservations' },
       { path: '/admin/website-bookings', label: 'Website Requests', icon: Globe, page: 'website_bookings', badge: 'website_pending' },
       { path: '/admin/schedule', label: 'Schedule', icon: CalendarRange, page: 'schedule' },
-      { path: '/admin/calendar-sync', label: 'Calendar Sync', icon: Link2, page: 'calendar_sync' },
     ],
   },
   {

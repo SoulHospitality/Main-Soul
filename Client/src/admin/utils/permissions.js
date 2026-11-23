@@ -59,7 +59,6 @@ const RESERVATIONS_PAGE_ACCESS = new Set([
 const RESERVATIONS_MANUAL_PAGE_ACCESS = new Set([
   'reservations',
   'schedule',
-  'calendar_sync',
   'units',
   'projects',
   'inbox',
@@ -69,7 +68,6 @@ const RESERVATIONS_MANUAL_PAGE_ACCESS = new Set([
 const RESERVATIONS_WEB_PAGE_ACCESS = new Set([
   'reservations',
   'schedule',
-  'calendar_sync',
   'website_bookings',
   'units',
   'projects',
@@ -103,7 +101,6 @@ const FINANCE_MANAGER_PAGE_ACCESS = new Set([
 const RESERVATIONS_MANAGER_PAGE_ACCESS = new Set([
   'reservations',
   'schedule',
-  'calendar_sync',
   'audit_log',
   'units',
   'projects',
@@ -206,7 +203,6 @@ const RESERVATIONS_MANUAL_PERMISSIONS = [
   'units:write',
   'projects:read',
   'projects:write',
-  'calendar_sync:write',
   'reservations:read',
   'reservations:write',
   'reservations:confirm',
@@ -221,7 +217,6 @@ const RESERVATIONS_WEB_PERMISSIONS = [
   ...RESERVATIONS_PERMISSIONS,
   'projects:read',
   'projects:write',
-  'calendar_sync:write',
 ];
 
 const HR_PERMISSIONS = [
@@ -279,7 +274,6 @@ const PERMISSIONS = {
     'reservations:confirm',
     'reservations:delete',
     'schedule:read',
-    'calendar_sync:write',
     'audit_log:read',
     'projects:read',
     'projects:write',

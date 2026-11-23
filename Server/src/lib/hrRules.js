@@ -882,6 +882,14 @@ function isScheduledDayOff(daysOff, isoDate) {
   return normalizeDaysOff(daysOff).includes(key);
 }
 
+/**
+ * The dates in [start, end] a person actually works: their weekly days off are not leave days,
+ * so a Thursday–Sunday holiday for someone off on Fridays costs 3 days, not 4.
+ */
+function workingDatesInRange(daysOff, start, end) {
+  return enumerateDateRange(start, end).filter((date) => !isScheduledDayOff(daysOff, date));
+}
+
 function fillMissingOfficeAbsences(dailyRows, staffList) {
   const workDates = new Set();
   const present = new Set();
@@ -1370,6 +1378,7 @@ module.exports = {
   normalizeDaysOff,
   weekdayKey,
   isScheduledDayOff,
+  workingDatesInRange,
   fillMissingOfficeAbsences,
   isDoorPunchLog,
   normalizePersonId,

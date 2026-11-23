@@ -1,4 +1,4 @@
-/** Declared capabilities a Channel Provider may support. iCal supports a subset. */
+/** Declared capabilities a Channel Provider (a channel manager or an OTA API) may support. */
 const CAPABILITIES = {
   AVAILABILITY_PULL: 'availability_pull',
   AVAILABILITY_PUSH: 'availability_push',
@@ -14,12 +14,6 @@ const CAPABILITIES = {
   MESSAGES_PULL: 'messages_pull',
   MESSAGES_SEND: 'messages_send',
 };
-
-const ICAL_CAPABILITIES = [
-  CAPABILITIES.AVAILABILITY_PULL,
-  CAPABILITIES.AVAILABILITY_PUSH,
-  CAPABILITIES.UNIT_MAPPING,
-];
 
 const FULL_API_CAPABILITIES = [
   CAPABILITIES.AVAILABILITY_PULL,
@@ -39,6 +33,5 @@ const FULL_API_CAPABILITIES = [
 
 module.exports = {
   CAPABILITIES,
-  ICAL_CAPABILITIES,
   FULL_API_CAPABILITIES,
 };

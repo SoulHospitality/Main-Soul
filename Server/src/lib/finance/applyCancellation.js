@@ -226,6 +226,8 @@ async function applyCancellation({ reservationId, user, body = {} }) {
 
     const { rows: fresh } = await query(`SELECT * FROM reservations WHERE id = $1`, [reservationId]);
     await require('../../services/pmsNotifications').notifyOpsShortNotice('cancelled', fresh[0] || updated, null, user);
+    // Too many cancelled stays: the guest is blocked from the chatbot right away (not only at night).
+    require('../../jobs/guestCare').runAutoBlock().catch((err) => console.warn('[cancel] auto-block check failed:', err.message));
     return fresh[0] || updated;
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch (_) { /* already finished */ }

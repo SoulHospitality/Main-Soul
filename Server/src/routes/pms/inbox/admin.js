@@ -1,7 +1,7 @@
 const express = require('express');
 const { config } = require('../../../lib/inbox/config');
 const { q, tx, audit } = require('../../../lib/inbox/db');
-const { HttpError, badRequest, forbidden, int, notFound, wrap } = require('../../../lib/inbox/http');
+const { HttpError, badRequest, forbidden, int, normalizePhone, notFound, wrap } = require('../../../lib/inbox/http');
 const { OVERRIDE_ROLES, can } = require('../../../lib/inbox/permissions');
 const { encrypt, decrypt } = require('../../../lib/inbox/security');
 const { DEFAULTS, getSettings, updateSettings } = require('../../../lib/inbox/settings');
@@ -85,7 +85,43 @@ router.get('/settings', requirePerm('settings.manage'), wrap(async (req, res) =>
 }));
 
 const NUMBER_KEYS = ['sla_target_min', 'sla_warning_min', 'reassign_window_min', 'max_auto_reassign', 'escalate_supervisor_min',
-  'escalate_manager_min', 'comment_sla_min', 'follow_up_escalate_min', 'presence_timeout_min', 'rotation_after_hours'];
+  'escalate_manager_min', 'comment_sla_min', 'follow_up_escalate_min', 'presence_timeout_min', 'rotation_after_hours',
+  'chatbot_pause_instagram_min', 'chatbot_pause_messenger_min', 'auto_block_cancellations', 'guest_reengage_default_days'];
+
+// ── Chatbot blocklist and guest care ──
+
+router.get('/blocklist', requirePerm('settings.manage'), wrap(async (_req, res) => {
+  res.json({ items: await require('../../../lib/chatbot/guests').listBlocked() });
+}));
+
+router.post('/blocklist', requirePerm('settings.manage'), wrap(async (req, res) => {
+  const phone = normalizePhone(req.body?.phone);
+  if (!phone) throw badRequest('Enter a valid phone number');
+  const row = await require('../../../lib/chatbot/guests').block({ phone, reason: String(req.body?.reason || ''), userId: req.user?.id || null });
+  await audit({ userId: req.inbox.id, type: 'customer_blocked', data: { phone } });
+  res.status(201).json(row);
+}));
+
+router.delete('/blocklist/:id', requirePerm('settings.manage'), wrap(async (req, res) => {
+  const result = await require('../../../lib/chatbot/guests').unblock({ id: Number(req.params.id), userId: req.user?.id || null });
+  await audit({ userId: req.inbox.id, type: 'customer_unblocked', data: { id: Number(req.params.id) } });
+  res.json(result);
+}));
+
+/** Ratings and automatic guest messages, for the Chatbot & guest care settings. */
+router.get('/guest-care', requirePerm('settings.manage'), wrap(async (_req, res) => {
+  const { query } = require('../../../config/db');
+  const [{ rows: summary }, { rows: recent }, { rows: outreach }] = await Promise.all([
+    query(`SELECT COUNT(*)::int AS requested, COUNT(rating)::int AS rated, ROUND(AVG(rating)::numeric, 2)::float AS average,
+                  COUNT(*) FILTER (WHERE rating = 5)::int AS fives, COUNT(*) FILTER (WHERE google_offered)::int AS google_offered
+           FROM guest_reviews WHERE requested_at > now() - interval '90 days'`),
+    query(`SELECT g.rating, g.comment, g.rated_at, r.guest_name, u.title AS unit_title, u.unit_number
+           FROM guest_reviews g JOIN reservations r ON r.id = g.reservation_id JOIN units u ON u.id = r.unit_id
+           WHERE g.rating IS NOT NULL ORDER BY g.rated_at DESC LIMIT 20`),
+    query(`SELECT kind, status, COUNT(*)::int AS n FROM guest_outreach WHERE created_at > now() - interval '30 days' GROUP BY 1, 2`),
+  ]);
+  res.json({ reviews: summary[0], recent, outreach });
+}));
 
 router.put('/settings', requirePerm('settings.manage'), wrap(async (req, res) => {
   const patch = {};
@@ -101,6 +137,9 @@ router.put('/settings', requirePerm('settings.manage'), wrap(async (req, res) =>
       if (!Array.isArray(v)) throw badRequest(`${k} must be a list`);
       patch[k] = v.map((x) => String(x).trim().slice(0, 100)).filter(Boolean).slice(0, 100);
     } else patch[k] = String(v).slice(0, 8000);
+  }
+  if (patch.google_review_url && !/^https:\/\/\S+$/i.test(patch.google_review_url.trim())) {
+    throw badRequest('The Google Reviews link must start with https://');
   }
   for (const k of ['business_start', 'business_end']) {
     if (k in patch && !/^([01]\d|2[0-3]):[0-5]\d$|^24:00$/.test(patch[k])) throw badRequest(`${k} must be HH:MM`);

@@ -5,6 +5,7 @@ import { CurrencyProvider } from './context/CurrencyContext';
 import { LocaleProvider } from './context/LocaleContext';
 import RouteFallback from './components/RouteFallback';
 import WhatsAppFAB from './components/layout/WhatsAppFAB';
+import ChatWidget from './components/layout/ChatWidget';
 import WebsiteEntryPopup from './components/WebsiteEntryPopup';
 import OfferPopup from './components/OfferPopup';
 
@@ -22,6 +23,7 @@ const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'));
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'));
 const StaffPasswordHelpPage = lazy(() => import('./pages/StaffPasswordHelpPage'));
 const AccountPage = lazy(() => import('./pages/AccountPage'));
+const RatePage = lazy(() => import('./pages/RatePage'));
 const WishlistPage = lazy(() =>
   import('./pages/AccountPage').then((m) => ({ default: m.WishlistPage }))
 );
@@ -73,6 +75,7 @@ export default function App() {
                 <Route path="/reset-password" element={<ResetPasswordPage />} />
                 <Route path="/staff-password-help" element={<StaffPasswordHelpPage />} />
                 <Route path="/account" element={<AccountPage />} />
+                <Route path="/rate/:token" element={<RatePage />} />
                 <Route path="/wishlist" element={<WishlistPage />} />
                 <Route path="/careers" element={<CareersPage />} />
                 <Route path="/about" element={<AboutPage />} />
@@ -95,6 +98,7 @@ export default function App() {
             </Suspense>
             <SiteOnly>
               <WhatsAppFAB />
+              <ChatWidget />
               <WebsiteEntryPopup />
               <OfferPopup />
             </SiteOnly>

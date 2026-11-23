@@ -29,11 +29,6 @@ function addMinutes(t, delta) {
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }
 
-function daysInclusive(from, to) {
-  if (!from || !to) return 0;
-  return Math.round((new Date(`${to}T12:00:00Z`) - new Date(`${from}T12:00:00Z`)) / 86400000) + 1;
-}
-
 export default function NewRequestWizard({ user, leaveSnap, initial = {}, onClose }) {
   const qc = useQueryClient();
   const today = cairoToday();
@@ -65,6 +60,16 @@ export default function NewRequestWizard({ user, leaveSnap, initial = {}, onClos
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
   const [month, setMonth] = useState((initial.date || today).slice(0, 7));
   const schedule = useMySchedule(user, month, form.category !== 'loan');
+  // Leave counts working days only: the person's weekly days off in the range are free (same rule as the server).
+  const daysOffKeys = schedule.data?.days_off || [];
+  const workingDays = (from, to) => {
+    const keys = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+    let n = 0;
+    for (let d = new Date(`${from}T12:00:00Z`); d <= new Date(`${to}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + 1)) {
+      if (!daysOffKeys.includes(keys[d.getUTCDay()])) n += 1;
+    }
+    return n;
+  };
 
   const isRange = form.category === 'holiday';
   const isTimed = form.category === 'excuse' || form.category === 'mission';
@@ -88,12 +93,12 @@ export default function NewRequestWizard({ user, leaveSnap, initial = {}, onClos
     if (!form.from || form.category === 'loan') return out;
     const chosen = days.filter((d) => d.date >= form.from && d.date <= (form.to || form.from));
     const off = chosen.filter((d) => d.day_off);
-    if (off.length && isRange) out.push(`Includes your day off (${off.map((d) => dayLabel(d.date)).join(', ')}); it still counts in the number of days.`);
+    if (off.length && isRange) out.push(`Your day off (${off.map((d) => dayLabel(d.date)).join(', ')}) isn’t counted.`);
     if (off.length && !isRange) out.push('That’s your day off.');
     const clash = chosen.flatMap((d) => d.items.map((it) => ({ ...it, date: d.date })));
     if (clash.length) out.push(`You already have ${clash.map((c) => `${CATEGORY[c.category]?.label.toLowerCase()} (${c.status}) on ${dayLabel(c.date)}`).join(', ')}.`);
     if (form.category === 'holiday') {
-      const n = daysInclusive(form.from, form.to || form.from);
+      const n = workingDays(form.from, form.to || form.from);
       if (form.leave_type === 'casual' && n > (leaveSnap?.casual_available ?? Infinity)) out.push(`You have ${leaveSnap.casual_available} casual day(s) left.`);
       if (form.leave_type === 'annual' && n > (leaveSnap?.annual_available ?? Infinity)) out.push(`You have ${leaveSnap.annual_available} annual day(s) left.`);
     }
@@ -156,7 +161,7 @@ export default function NewRequestWizard({ user, leaveSnap, initial = {}, onClos
     if (form.category === 'loan') return `EGP ${Number(form.amount || 0).toLocaleString('en-EG')}`;
     if (!form.from) return '—';
     if (isTimed) return `${dayLabel(form.from)} · ${form.start_time}–${form.end_time}${hours ? ` (${hours}h)` : ''}`;
-    if (isRange && form.to && form.to !== form.from) return `${dayLabel(form.from)} – ${dayLabel(form.to)} · ${daysInclusive(form.from, form.to)} days`;
+    if (isRange && form.to && form.to !== form.from) return `${dayLabel(form.from)} – ${dayLabel(form.to)} · ${workingDays(form.from, form.to)} day${workingDays(form.from, form.to) === 1 ? '' : 's'}`;
     return `${dayLabel(form.from)}${isRange ? ' · 1 day' : ''}`;
   })();
   const typeText =

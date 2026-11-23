@@ -1044,7 +1044,7 @@ router.get('/units', async (req, res, next) => {
               commission_tenant_pct, utilities_cost, internal_code, unit_number, price_fallback,
               cleaning_fee_egp, service_fee_percent, security_deposit_egp,
               access_fee_per_adult_egp, access_fee_per_teen_egp, access_card_count_included,
-              min_nights, ical_url, notes, listing_type, has_nanny_room, price_monthly_egp,
+              min_nights, notes, listing_type, has_nanny_room, price_monthly_egp,
               disable_automatic_reservations, created_at
        FROM units
        WHERE ${where.join(' AND ')}
@@ -1663,8 +1663,6 @@ router.delete('/units/:id', requireRoles('admin', ...UNIT_ACQUISITION_ROLES), as
       if (wp != null) {
         await client.query(`DELETE FROM unit_daily_prices WHERE wp_post_id = $1`, [wp]);
         await client.query(`DELETE FROM unit_blocked_dates WHERE wp_post_id = $1`, [wp]);
-        await client.query(`DELETE FROM unit_ical_blocks WHERE wp_post_id = $1`, [wp]);
-        await client.query(`DELETE FROM listing_ical WHERE wordpress_post_id = $1`, [wp]);
       }
 
       const { rows } = await client.query(`DELETE FROM units WHERE id = $1 RETURNING id`, [unitId]);

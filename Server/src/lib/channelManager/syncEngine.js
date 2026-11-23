@@ -1,61 +1,9 @@
 const { query } = require('../../config/db');
 const { CAPABILITIES } = require('./capabilities');
-const { getProvider, providerKeyForIcalPlatform, listProviders } = require('./registry');
+const { getProvider, listProviders } = require('./registry');
 const { writeSyncLog, listSyncLogs } = require('./syncLogs');
 const { GUEST_AVAILABILITY_MONTHS } = require('../calendarOccupancy');
-const { calendarExportUrl, OTA_PLATFORM_LABELS, normalizeOtaPlatform } = require('../otaPlatforms');
-
-function deriveFeedStatus(feed) {
-  if (!feed?.enabled) return 'disconnected';
-  if (feed.sync_status === 'syncing') return 'syncing';
-  if (feed.last_sync_error) return 'failed';
-  if (feed.last_sync_at) return 'connected';
-  return feed.sync_status || 'disconnected';
-}
-
-async function setFeedSyncStatus(feedId, status, { error = null, touchSuccess = false } = {}) {
-  await query(
-    `UPDATE unit_ota_feeds
-     SET sync_status = $2,
-         last_sync_error = CASE WHEN $3::boolean THEN NULL ELSE COALESCE($4, last_sync_error) END,
-         last_sync_at = CASE WHEN $5::boolean THEN now() ELSE last_sync_at END,
-         updated_at = now()
-     WHERE id = $1`,
-    [feedId, status, touchSuccess, error, touchSuccess]
-  );
-}
-
-async function listIcalConnections() {
-  const { rows } = await query(
-    `SELECT f.id, f.unit_id, f.wp_post_id, f.platform, f.label, f.ical_url, f.enabled,
-            f.external_listing_id, f.sync_status, f.last_sync_at, f.last_sync_error, f.updated_at,
-            u.slug AS unit_slug, u.title AS unit_title, u.unit_number
-     FROM unit_ota_feeds f
-     JOIN units u ON u.id = f.unit_id
-     ORDER BY u.title NULLS LAST, f.platform`
-  );
-  return rows.map((feed) => ({
-    id: feed.id,
-    kind: 'ical_feed',
-    connection_type: 'ical',
-    provider_key: providerKeyForIcalPlatform(feed.platform),
-    provider_label: `${OTA_PLATFORM_LABELS[feed.platform] || feed.platform} (iCal)`,
-    display_name: feed.label || OTA_PLATFORM_LABELS[feed.platform] || feed.platform,
-    enabled: feed.enabled,
-    sync_enabled: feed.enabled,
-    status: deriveFeedStatus(feed),
-    last_sync_at: feed.last_sync_at,
-    last_sync_error: feed.last_sync_error,
-    unit_id: feed.unit_id,
-    unit_slug: feed.unit_slug,
-    unit_title: feed.unit_title,
-    unit_number: feed.unit_number,
-    external_listing_id: feed.external_listing_id || null,
-    ical_url: feed.ical_url,
-    export_url: feed.unit_slug ? calendarExportUrl(feed.unit_slug) : null,
-    capabilities: getProvider('ical')?.capabilities || [],
-  }));
-}
+const { normalizeOtaPlatform } = require('../otaPlatforms');
 
 async function listApiConnections() {
   try {
@@ -112,89 +60,8 @@ async function listApiConnections() {
 }
 
 async function listConnections() {
-  const [ical, api] = await Promise.all([listIcalConnections(), listApiConnections()]);
-  return { ical, api, providers: listProviders() };
-}
-
-async function syncIcalFeed(feedId) {
-  const provider = getProvider('ical');
-  const { rows } = await query(
-    `SELECT f.*, u.slug AS unit_slug FROM unit_ota_feeds f
-     JOIN units u ON u.id = f.unit_id WHERE f.id = $1`,
-    [feedId]
-  );
-  const feed = rows[0];
-  if (!feed) throw new Error('Feed not found');
-
-  const providerKey = providerKeyForIcalPlatform(feed.platform);
-  await setFeedSyncStatus(feed.id, 'syncing');
-  await writeSyncLog({
-    feedId: feed.id,
-    unitId: feed.unit_id,
-    providerKey,
-    direction: 'inbound',
-    operation: 'availability_pull',
-    status: 'partial',
-    message: 'Sync started',
-  });
-
-  try {
-    await provider.authenticate({ ical_url: feed.ical_url });
-    const result = await provider.pullAvailability({
-      id: feed.id,
-      feed_id: feed.id,
-      unit_id: feed.unit_id,
-      unit_slug: feed.unit_slug,
-      ical_url: feed.ical_url,
-    });
-    await setFeedSyncStatus(feed.id, 'connected', { touchSuccess: true });
-    await writeSyncLog({
-      feedId: feed.id,
-      unitId: feed.unit_id,
-      providerKey,
-      direction: 'inbound',
-      operation: 'availability_pull',
-      status: 'success',
-      message: `Imported ${result.datesWritten || 0} busy night(s)`,
-      details: result,
-    });
-    return { ok: true, result, status: 'connected' };
-  } catch (err) {
-    await setFeedSyncStatus(feed.id, 'failed', { error: err.message });
-    await writeSyncLog({
-      feedId: feed.id,
-      unitId: feed.unit_id,
-      providerKey,
-      direction: 'inbound',
-      operation: 'availability_pull',
-      status: 'error',
-      message: err.message,
-    });
-    return { ok: false, error: err.message, status: 'failed' };
-  }
-}
-
-async function syncAllIcal({ unitId = null } = {}) {
-  const params = [];
-  let filter = '';
-  if (unitId) {
-    params.push(unitId);
-    filter = `AND unit_id = $1`;
-  }
-  const { rows: feeds } = await query(
-    `SELECT id FROM unit_ota_feeds WHERE enabled = true ${filter}`,
-    params
-  );
-  const results = [];
-  for (const feed of feeds) {
-    results.push({ feed_id: feed.id, ...(await syncIcalFeed(feed.id)) });
-  }
-  return {
-    feeds: feeds.length,
-    errors: results.filter((r) => !r.ok).length,
-    results,
-    monthsAhead: GUEST_AVAILABILITY_MONTHS,
-  };
+  const api = await listApiConnections();
+  return { api, providers: listProviders() };
 }
 
 async function syncApiConnection(connectionId) {
@@ -310,25 +177,26 @@ async function syncApiConnection(connectionId) {
 }
 
 /**
- * Central Channel Manager sync entrypoint.
- * Prefer this over calling refreshIcalBlocks directly from routes/cron.
+ * Central Channel Manager sync entrypoint: one connection, or every enabled one.
+ * A channel manager pushes availability and rates out and pulls bookings in (as reservations).
  */
-async function runChannelSync({ unitId = null, feedId = null, connectionId = null } = {}) {
-  if (feedId) return syncIcalFeed(feedId);
+async function runChannelSync({ connectionId = null } = {}) {
   if (connectionId) return syncApiConnection(connectionId);
-  const ical = await syncAllIcal({ unitId });
   const { rows: apiRows } = await query(
     `SELECT id FROM channel_connections WHERE enabled = true AND sync_enabled = true AND connection_type = 'api'`
-  );
+  ).catch((err) => {
+    if (/channel_connections/i.test(err.message)) return { rows: [] };
+    throw err;
+  });
   const apiResults = [];
   for (const row of apiRows) {
     apiResults.push({ connection_id: row.id, ...(await syncApiConnection(row.id)) });
   }
   return {
-    ...ical,
     api_connections: apiRows.length,
     api_errors: apiResults.filter((r) => !r.ok).length,
     api_results: apiResults,
+    monthsAhead: GUEST_AVAILABILITY_MONTHS,
   };
 }
 
@@ -431,32 +299,14 @@ async function upsertUnitMapping({
   return rows[0];
 }
 
-async function updateIcalFeedMapping(feedId, { externalListingId = null, label = null } = {}) {
-  const { rows } = await query(
-    `UPDATE unit_ota_feeds
-     SET external_listing_id = COALESCE($2, external_listing_id),
-         label = COALESCE($3, label),
-         updated_at = now()
-     WHERE id = $1
-     RETURNING *`,
-    [feedId, externalListingId, label]
-  );
-  return rows[0] || null;
-}
-
 module.exports = {
   listConnections,
-  listIcalConnections,
   listApiConnections,
   runChannelSync,
-  syncIcalFeed,
-  syncAllIcal,
   syncApiConnection,
   upsertApiConnection,
   updateApiConnection,
   upsertUnitMapping,
-  updateIcalFeedMapping,
   listSyncLogs,
-  deriveFeedStatus,
   normalizeOtaPlatform,
 };

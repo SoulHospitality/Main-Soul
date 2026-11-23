@@ -5,7 +5,6 @@ const path = require('node:path');
 const {
   GUEST_AVAILABILITY_MONTHS,
   REQUIRED_OCCUPANCY_TABLES,
-  isIcalOccupancySource,
   occupancySql,
   mergeOccupancyByDate,
   applyCheckoutTurnover,
@@ -14,15 +13,12 @@ const {
 } = require('./calendarOccupancy');
 
 describe('calendar occupancy (Schedule ↔ guest)', () => {
-  it('keeps iCal cache + reservations + bookings + explicit blocks in one query', () => {
+  it('keeps reservations + bookings + explicit blocks in one query (no calendar feeds)', () => {
     const sql = occupancySql({ wpScoped: true });
     for (const table of REQUIRED_OCCUPANCY_TABLES) {
       assert.match(sql, new RegExp(table));
     }
-    assert.doesNotMatch(sql, /listing_ical/);
-    assert.match(sql, /unit_ical_blocks/);
-    assert.match(sql, /unit_ota_feeds/);
-    assert.match(sql, /ical:/);
+    assert.doesNotMatch(sql, /ical/i);
   });
 
   it('never drops Schedule/owner holds on a checkout day', () => {
@@ -33,18 +29,10 @@ describe('calendar occupancy (Schedule ↔ guest)', () => {
     }
   });
 
-  it('opens checkout morning when only unpriced or iCal leftover covers that day', () => {
-    for (const source of ['unpriced', 'ical', 'ical:airbnb', 'ical:booking']) {
-      const byDate = new Map([['2026-09-10', source]]);
-      applyCheckoutTurnover(byDate, ['2026-09-10']);
-      assert.equal(byDate.has('2026-09-10'), false, source);
-    }
-  });
-
-  it('treats per-platform OTA sources as explicit holds', () => {
-    assert.equal(isIcalOccupancySource('ical:airbnb'), true);
-    assert.equal(isIcalOccupancySource('ical'), true);
-    assert.equal(isIcalOccupancySource('manual'), false);
+  it('opens checkout morning when only an unpriced night covers that day', () => {
+    const byDate = new Map([['2026-09-10', 'unpriced']]);
+    applyCheckoutTurnover(byDate, ['2026-09-10']);
+    assert.equal(byDate.has('2026-09-10'), false);
   });
 
   it('keeps a checkout day closed when the next stay occupies that night', () => {
@@ -57,7 +45,7 @@ describe('calendar occupancy (Schedule ↔ guest)', () => {
     const byDate = mergeOccupancyByDate(
       [
         { date: '2026-09-01', source: 'manual' },
-        { date: '2026-09-02', source: 'ical:airbnb' },
+        { date: '2026-09-02', source: 'unpriced' },
       ],
       '2026-09-01',
       '2026-09-30'
@@ -71,7 +59,7 @@ describe('calendar occupancy (Schedule ↔ guest)', () => {
     const scheduleDates = ['2026-09-01', '2026-09-02', '2026-09-03'];
     const guest = [
       { date: '2026-09-01', source: 'manual' },
-      { date: '2026-09-02', source: 'ical:airbnb' },
+      { date: '2026-09-02', source: 'owner' },
       { date: '2026-09-03', source: 'reservation' },
       { date: '2026-09-04', source: 'unpriced' },
     ];

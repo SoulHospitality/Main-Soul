@@ -45,10 +45,6 @@ async function buildAvailabilityPayload(connection, { monthsAhead = GUEST_AVAILA
          SELECT 1 FROM reservations r
          WHERE r.unit_id = $4 AND r.status <> 'cancelled'
            AND s.d::date >= r.check_in AND s.d::date < r.check_out
-       )
-       OR EXISTS (
-         SELECT 1 FROM unit_ical_blocks ib
-         WHERE ib.wp_post_id = $1 AND ib.date = s.d::date
        )`,
       [map.wp_post_id, from, to, map.unit_id]
     );

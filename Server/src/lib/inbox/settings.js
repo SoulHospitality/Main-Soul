@@ -36,6 +36,24 @@ const DEFAULTS = {
   knowledge_base:
     'Soul Hospitality manages furnished holiday homes on behalf of owners in Egypt.\nPrices, availability and booking confirmations are ONLY given by the reservations team.\nA deposit is required to confirm a booking.',
 
+  // Chatbot: answers customers on its own, per channel (off until switched on).
+  chatbot_instagram: false,
+  chatbot_messenger: false,
+  chatbot_website: false,
+  // A person replied in a conversation: the bot stays quiet there for this long (minutes).
+  chatbot_pause_instagram_min: 60,
+  chatbot_pause_messenger_min: 10,
+  // Customers with this many cancelled stays are blocked automatically (0 turns it off).
+  auto_block_cancellations: 5,
+
+  // Guest care (emails; WhatsApp joins when it is activated).
+  guest_prearrival_enabled: false,
+  guest_review_enabled: false,
+  google_review_url: '',
+  guest_reengage_enabled: false,
+  // Guests with one past stay are invited back after this many days; regulars after their usual gap.
+  guest_reengage_default_days: 180,
+
   // Extra projects on top of the PMS destinations (e.g. "Other").
   extra_projects: ['Other'],
   lead_sources: [
