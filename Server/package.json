@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "test": "node --test src/lib/kpi.test.js src/lib/audit.test.js src/lib/pageAccess.test.js src/lib/hrPayrollRules.test.js src/lib/calendarOccupancy.test.js src/lib/hrRules.test.js src/lib/staffUserCleanup.test.js src/lib/salesNameMatch.test.js src/lib/staffAuthSessions.test.js src/lib/soully/access.test.js src/services/partnerWebhooks.test.js"
+    "test": "node --test src/lib/kpi.test.js src/lib/audit.test.js src/lib/pageAccess.test.js src/lib/hrPayrollRules.test.js src/lib/calendarOccupancy.test.js src/lib/hrRules.test.js src/lib/staffUserCleanup.test.js src/lib/salesNameMatch.test.js src/lib/staffAuthSessions.test.js src/lib/soully/access.test.js src/services/partnerWebhooks.test.js src/lib/accounting/money.test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.5.0",
@@ -17,6 +17,7 @@
     "cloudinary": "^2.5.1",
     "cors": "^2.8.5",
     "csv-parse": "^7.0.1",
+    "decimal.js": "10.6.0",
     "dotenv": "^16.4.7",
     "exceljs": "^4.4.0",
     "express": "^4.21.2",
