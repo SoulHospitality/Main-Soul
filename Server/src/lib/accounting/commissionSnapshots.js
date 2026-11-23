@@ -5,7 +5,8 @@
 const { pool, query } = require('../../config/db');
 const m = require('./money');
 
-const PCT_FIELDS = ['company_commission_pct', 'company_commission_owner_pct', 'commission_tenant_pct'];
+/** Who may correct saved rates until the segregation-of-duties decision (D-14) sets finance roles. */
+const CORRECTION_ROLES = ['admin'];
 
 /** Confirmed stays whose original rates are unknown or need re-checking (no personal data). */
 async function listForReview({ limit = 200 } = {}) {
@@ -24,19 +25,34 @@ function validPct(v) {
 
 /**
  * Authorised correction: sets the rates a reservation should use, with a reason and who did it.
- * `rates`: { company_commission_pct, company_commission_owner_pct?, commission_tenant_pct?, sales_commission_pct? }
- * Never called automatically; the caller enforces who may correct (admin / finance manager).
+ * `rates`: { company_pct, tenant_deduction_pct?, sales_pct? } (the applied rates).
+ * Never called automatically. The actor (and approver, if given) must be active admins; the database
+ * trigger writes the before/after log row (migration 175), so the change cannot go unrecorded.
  */
 async function correctSnapshot({ reservationId, rates, reason, actorId, approvedBy = null }) {
   if (!reason || String(reason).trim().length < 10) {
     throw Object.assign(new Error('Give a reason of at least 10 characters for the correction'), { status: 400 });
   }
-  if (!rates || rates.company_commission_pct == null) {
+  if (!rates || rates.company_pct == null) {
     throw Object.assign(new Error('The company commission % is required'), { status: 400 });
+  }
+  if (approvedBy != null && Number(approvedBy) === Number(actorId)) {
+    throw Object.assign(new Error('The approver must be a different person from the one making the correction'), { status: 400 });
   }
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    const people = await client.query(
+      `SELECT id, role FROM staff_users WHERE id = ANY($1::int[]) AND COALESCE(is_active::text, '1') NOT IN ('0', 'false', 'f')`,
+      [[actorId, approvedBy].filter((x) => x != null).map(Number)]
+    );
+    const byId = new Map(people.rows.map((p) => [Number(p.id), p.role]));
+    if (!CORRECTION_ROLES.includes(byId.get(Number(actorId)))) {
+      throw Object.assign(new Error('Only an active admin can correct commission rates'), { status: 403 });
+    }
+    if (approvedBy != null && !CORRECTION_ROLES.includes(byId.get(Number(approvedBy)))) {
+      throw Object.assign(new Error('The approver must be an active admin'), { status: 403 });
+    }
     const { rows } = await client.query(
       `SELECT id, unit_id, sales_person_id, commission_snapshot FROM reservations WHERE id = $1 FOR UPDATE`,
       [reservationId]
@@ -44,28 +60,30 @@ async function correctSnapshot({ reservationId, rates, reason, actorId, approved
     const r = rows[0];
     if (!r) throw Object.assign(new Error('Reservation not found'), { status: 404 });
     const prev = r.commission_snapshot || null;
-    const unit = { ...(prev?.unit || { id: r.unit_id }) };
-    for (const f of PCT_FIELDS) if (rates[f] != null) unit[f] = validPct(rates[f]);
-    const salesperson = rates.sales_commission_pct != null || prev?.salesperson
-      ? { ...(prev?.salesperson || { id: r.sales_person_id }), ...(rates.sales_commission_pct != null ? { sales_commission_pct: validPct(rates.sales_commission_pct) } : {}) }
-      : null;
+    const prevApplied = prev?.applied || {};
+    const applied = {
+      company_pct: validPct(rates.company_pct),
+      company_pct_source: 'correction',
+      tenant_deduction_pct: rates.tenant_deduction_pct != null ? validPct(rates.tenant_deduction_pct) : String(prevApplied.tenant_deduction_pct ?? 0),
+      sales_pct: rates.sales_pct != null ? validPct(rates.sales_pct) : prevApplied.sales_pct ?? null,
+    };
     const corrected = {
-      ...(prev || { version: 1, basis: null }),
+      ...(prev || { version: 2, basis: null, unit: { id: r.unit_id }, salesperson: r.sales_person_id ? { id: r.sales_person_id } : null }),
+      version: 2,
       captured_on: 'correction',
       effective_date: new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' }),
-      unit,
-      salesperson,
+      applied,
     };
-    await client.query(`SELECT set_config('app.commission_correction', 'on', true)`);
+    // The database trigger writes the correction log from these settings, so a change cannot go unrecorded.
     await client.query(
-      `UPDATE reservations SET commission_snapshot = $2, commission_snapshot_at = now(), commission_snapshot_status = 'corrected' WHERE id = $1`,
-      [reservationId, JSON.stringify(corrected)]
+      `SELECT set_config('app.commission_correction', 'on', true),
+              set_config('app.commission_correction_reason', $1, true),
+              set_config('app.commission_correction_actor', $2, true),
+              set_config('app.commission_correction_approver', $3, true)`,
+      [String(reason).trim(), String(actorId), approvedBy != null ? String(approvedBy) : '']
     );
-    await client.query(
-      `INSERT INTO reservation_commission_corrections (reservation_id, previous, corrected, reason, corrected_by, approved_by)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [reservationId, prev ? JSON.stringify(prev) : null, JSON.stringify(corrected), String(reason).trim(), actorId, approvedBy]
-    );
+    await client.query(`UPDATE reservations SET commission_snapshot = $2 WHERE id = $1`, [reservationId, JSON.stringify(corrected)]);
+    await client.query(`SELECT set_config('app.commission_correction', 'off', true)`);
     await client.query('COMMIT');
     return corrected;
   } catch (err) {

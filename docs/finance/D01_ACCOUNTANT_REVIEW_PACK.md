@@ -2,7 +2,11 @@
 
 **For:** Soul Hospitality's external accountant
 **Decision needed:** For each type of unit contract, does Soul Hospitality report the full stay price as its revenue (gross), or only its own commission and fees (net)?
-**What we need back:** A written decision for each contract type. It should name the applicable Egyptian Accounting Standard(s) and state the date it takes effect.
+**What we need back:** Two written decisions for each contract type, each with the date it takes effect:
+1. **Revenue presentation (principal or agent)** under EAS 48 *Revenue from Contracts with Customers*, naming the paragraphs relied on.
+2. **VAT base** under the Egyptian VAT law and its executive regulations, approved separately and explicitly.
+
+These are separate determinations, and one does not decide the other (see section 2).
 
 This pack does not recommend an answer. Until the written decision arrives, three things stay blocked:
 - migrating historical figures into the new ledger;
@@ -17,7 +21,20 @@ VAT of 14% is charged only on Soul's commission and the cleaning fee. It is not 
 
 The result is a mix: revenue is reported as if Soul were selling the stay itself, while VAT is charged as if Soul were only an agent earning a fee. The accountant should check that whichever treatment is approved is consistent with the VAT position, or tell us that a difference is intended.
 
-## 2. Questions about the contracts
+**Commission is not counted twice.** The owner's part (404000) and Soul's commission (401000) are two separate slices of the same stay price, and together they equal it exactly. In the example below, 8,000 + 2,000 = 10,000. What gross reporting does is show the owner's part twice: once as revenue and once as an expense (506000). That gross-up is the intended effect of gross reporting, and profit is not overstated. We checked the system's stay entry against this: the commission is credited only once, to 401000.
+
+## 2. Two separate decisions
+
+| | Decision 1: revenue presentation | Decision 2: VAT base |
+|---|---|---|
+| Question | Is Soul the principal (it controls the stay before the guest gets it) or the agent (it arranges the stay for the owner)? | On what amount must Soul charge and pay VAT for each contract type? |
+| Governing rules | EAS 48 *Revenue from Contracts with Customers*: the principal-versus-agent guidance | Egyptian VAT law, its executive regulations and any Tax Authority guidance on accommodation and agency services |
+| What it changes | How revenue and the owner's share are *presented*: gross, or net | The *amount of tax* charged to guests and paid to the Tax Authority |
+| Effect on profit | None, if the VAT base stays the same | Can change cash, the guest price and margin |
+
+The two answers need not point the same way. For example, a stay could be reported net for accounting purposes while VAT is still due on a base the tax rules define differently. Please approve each one explicitly; the system will not infer one from the other.
+
+## 3. Questions about the contracts
 
 Please answer these for each contract type. Where useful, attach a sample signed contract for each type.
 
@@ -43,11 +60,11 @@ Please answer these for each contract type. Where useful, attach a sample signed
 
 **Tax**
 
-13. What is the VAT base for each contract type: the full stay price, or only Soul's commission and fees? (This is decision D-11, which depends on D-01.)
+13. What is the VAT base for each contract type: the full stay price, or only Soul's commission and fees? (This is decision D-11. It is decided under the VAT rules, separately from D-01.)
 14. Do withholding-tax duties on payments to owners change with the treatment?
 15. Are any units owned by Soul or by related parties? These may be treated differently. (See decision D-09.)
 
-## 3. Worked example: the same stay under each treatment
+## 4. Worked example: the same stay under each treatment
 
 **The stay:** 5 nights at EGP 2,000 a night, so EGP 10,000.
 - Soul's commission is 20%: EGP 2,000.
@@ -107,7 +124,7 @@ Revenue is **10,500** and profit is **2,500**. However, the guest is charged 1,1
 
 For example, units that Soul rents in its own name (master leases) could follow A or C, while managed owner units follow B. Each unit's contract type would decide which entry it gets.
 
-## 4. What changes and what does not
+## 5. What changes and what does not
 
 | Item | A (today) | B (net) | C (gross, full VAT) |
 |---|---|---|---|
@@ -122,20 +139,37 @@ For example, units that Soul rents in its own name (master leases) could follow 
 
 Refunds, discounts and forfeited deposits follow the same split. Under B, a refund of the owner's part reduces what is owed to the owner and does not touch revenue. Under A and C, it reverses revenue and the owner-share expense.
 
-## 5. How the system will apply the decision
+## 6. How the system will apply the decision
 
-- **One setting, not new code.** The decision is stored as a dated, versioned policy in the new ledger's `ledger_policies` table. For example: `revenue_presentation` = `gross` | `net`, set per contract type and, if needed, per unit, with an `effective_from` date. The posting rules read this policy. Changing it does not require changing the accounting engine.
+- **Settings, not new code.** Both decisions are stored as dated, versioned policy in the new ledger's `ledger_policies` table, as two separate settings:
+  - `revenue_presentation` = `gross` | `net`;
+  - `vat_base` = `fee_only` | `full_stay`.
+
+  Each is set per contract type and, if needed, per unit, with an `effective_from` date. The posting rules read these settings. Changing them does not require changing the accounting engine, and neither setting has a default that is used without approval.
 - **Written approval is required.** A policy cannot be marked *approved* unless it records who approved it, when, and a reference to the written approval. Posting stays switched off until an approved policy exists.
 - **History stays traceable.** Every entry records which policy version produced it. If the treatment changes later, only entries dated after the new effective date use the new treatment, and earlier periods are not silently rewritten. If past periods need restating, that is done as dated adjusting entries that the accountant approves separately.
 - **Reports can be compared.** The current reports keep running on today's calculation until the switch is approved, so old and new figures can be put side by side.
 
-## 6. Response template
+## 7. Response template
 
-| Contract type | Treatment (gross / net) | VAT base | Standard and paragraph relied on | Effective from | Notes |
-|---|---|---|---|---|---|
-| Managed owner unit | | | | | |
-| Master-leased / fixed-rent unit | | | | | |
-| Soul-owned unit | | | | | |
-| Other (please describe) | | | | | |
+**Decision 1: revenue presentation (EAS 48)**
+
+| Contract type | Principal (gross) / agent (net) | EAS 48 paragraphs relied on | Effective from | Notes |
+|---|---|---|---|---|
+| Managed owner unit | | | | |
+| Master-leased / fixed-rent unit | | | | |
+| Soul-owned unit | | | | |
+| Other (please describe) | | | | |
+
+**Decision 2: VAT base (approved separately)**
+
+| Contract type | VAT base (Soul's fees only / full stay / other) | VAT provisions relied on | Effective from | Notes |
+|---|---|---|---|---|
+| Managed owner unit | | | | |
+| Master-leased / fixed-rent unit | | | | |
+| Soul-owned unit | | | | |
+| Other (please describe) | | | | |
 
 Name of the person approving: ________ Date: ________ Reference or signature: ________
+
+*Until both tables are returned signed, the system keeps historical migration, ledger posting and the report switch blocked.*

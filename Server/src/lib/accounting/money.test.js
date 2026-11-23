@@ -75,19 +75,50 @@ describe('money: VAT', () => {
 });
 
 describe('money: commissions from a snapshot', () => {
-  const snap = { company_commission_pct: '20', sales_commission_pct: '10' };
+  const snap = (company, tenant = 0, sales = null) => ({ version: 2, applied: { company_pct: company, tenant_deduction_pct: tenant, sales_pct: sales } });
   it('company 20% / owner 80% / agent 10% of company', () => {
-    const r = splitFromSnapshot('12500', snap);
+    const r = splitFromSnapshot('12500', snap(20, 0, 10));
     assert.deepEqual([s(r.company), s(r.owner), s(r.agent)], ['2500.00', '10000.00', '250.00']);
     assert.equal(s(r.company.plus(r.owner)), '12500.00');
   });
-  it('odd amounts: company + owner still equal the base exactly', () => {
-    const r = splitFromSnapshot('3333.33', { company_commission_pct: '17.5' });
-    assert.equal(s(r.company.plus(r.owner)), '3333.33');
+  it('odd amounts: tenant + company + owner still equal owner gross exactly', () => {
+    const r = splitFromSnapshot('3333.33', snap('17.5', 10));
+    assert.equal(s(r.tenant.plus(r.company).plus(r.owner)), '3333.33');
     assert.equal(s(r.agent), '0.00');
   });
-  it('no snapshot → refused (never falls back to today’s rate)', () => {
+  it('reads the snapshot exactly as the database stores it (jsonb text)', () => {
+    const r = splitFromSnapshot('1000', JSON.stringify(snap(15)));
+    assert.equal(s(r.company), '150.00');
+  });
+  it('no snapshot, or an old-shape one → refused (never falls back to today’s rate)', () => {
     assert.throws(() => splitFromSnapshot('1000', null), (e) => e.code === 'NO_SNAPSHOT');
+    assert.throws(() => splitFromSnapshot('1000', { company_commission_pct: '20' }), (e) => e.code === 'NO_SNAPSHOT');
+  });
+  it('matches lib/commission.js calcReservationFinancials across modes and rates', () => {
+    const { calcReservationFinancials } = require('../commission');
+    let seed = 7;
+    const rnd = (n) => ((seed = (seed * 48271) % 2147483647) % n);
+    let compared = 0;
+    let drift = 0;
+    for (let i = 0; i < 2000; i++) {
+      const mode = ['A', 'B', 'C'][rnd(3)];
+      const isOwner = rnd(4) === 0;
+      const unit = { commission_mode: mode, company_commission_pct: [0, 15, 20, 22.5, 25][rnd(5)], company_commission_owner_pct: [0, 10, 12.5][rnd(3)], commission_tenant_pct: [0, 5, 10][rnd(3)] };
+      const res = { status: 'confirmed', nights: 1 + rnd(9), price_per_night: 500 + rnd(9000) + rnd(100) / 100, is_owner_reservation: isOwner ? 1 : 0, utilities_amount: rnd(3) ? 0 : rnd(800), broker_total: rnd(4) ? 0 : rnd(1500) };
+      const fin = calcReservationFinancials(unit, res);
+      // The snapshot the trigger would save (same rules as migration 175).
+      const applied = mode === 'C' && isOwner ? unit.company_commission_owner_pct : unit.company_commission_pct > 0 ? unit.company_commission_pct : 20;
+      const tenant = (mode === 'B' || mode === 'C') && unit.commission_tenant_pct > 0 && !isOwner ? unit.commission_tenant_pct : 0;
+      const r = splitFromSnapshot(String(fin.ownerGross), snap(applied, tenant));
+      // The reference rounds with binary floats; allow only its known 0.01 half-piaster drift, and count it.
+      const diffs = [[r.tenant, fin.tenantDeduction], [r.company, fin.companyCommission], [r.owner, fin.ownerNet]]
+        .map(([a, b]) => Math.abs(Number(s(a)) - b));
+      diffs.forEach((d, k) => assert.ok(d < 0.0101, `#${i} part ${k} differs by ${d}`));
+      if (diffs.some((d) => d > 0.0001)) drift++;
+      compared++;
+    }
+    assert.equal(compared, 2000);
+    assert.ok(drift < 2000 * 0.05, `rounding drift in ${drift} of 2000 cases`);
   });
 });
 

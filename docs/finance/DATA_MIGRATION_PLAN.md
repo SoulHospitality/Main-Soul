@@ -28,7 +28,8 @@ Results are recorded below once received. **Go/no-go:**
 
 ## Step 1: Additive schema (built in Phase 2, empty, posting off)
 - **Migration 175:** commission snapshots (D-12).
-  - New and newly confirmed reservations capture the company, owner and salesperson rates, the calculation basis and the effective date.
+  - New and newly confirmed reservations capture the rates the engine actually applies (company %, including the 20% default and the owner-booked rate; tenant deduction %; salesperson %), the raw unit and salesperson values, the calculation basis and the effective date.
+  - Snapshots can only be written by the trigger or by a correction that the trigger logs.
   - Historical confirmed reservations are **not backfilled**. They appear in the `reservation_commission_review` view as `needs_review`.
   - Corrections are possible only through an explicit, logged correction (`reservation_commission_corrections`).
 - **Migration 176:** the ledger core: `ledger_accounts` (seeded from the current chart), `ledger_policies`, `ledger_periods`, `ledger_entries`, `ledger_lines` (`numeric(19,4)`) and `ledger_events`.

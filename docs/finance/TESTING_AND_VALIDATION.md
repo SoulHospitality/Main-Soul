@@ -1,7 +1,7 @@
 # Testing and Validation
 
 ## Automated (in `npm test`)
-`Server/src/lib/accounting/money.test.js` has 19 tests covering:
+`Server/src/lib/accounting/money.test.js` has 21 tests. Among them is a parity test showing the snapshot commission split matches `lib/commission.js calcReservationFinancials` across 2,000 random reservations in modes A, B and C, with owner-booked and guest stays. The tests cover:
 - decimal arithmetic, and rejection of non-numbers;
 - half-up rounding at the currency's decimals;
 - largest-remainder allocation that always sums exactly;
@@ -12,7 +12,7 @@
 - reconciliation buckets (matched, amount break, timing break, ledger only, subledger only).
 
 ## Database tests (PGlite: every migration applied to an in-memory Postgres)
-`ledger-test.js` (29 checks) covers:
+`ledger-test.js` (42 checks) covers the following. Migration 175 validation: applied-rate rules, idempotent retries, rate changes after confirmation, the review flags, protection against hand-written snapshots, admin-only corrections with a separate approver, the trigger-written log, and append-only logs. The checks are:
 - migrations 175 and 176 applying cleanly over the full migration chain;
 - the chart seeded with the same codes as `chartOfAccounts.js`;
 - posting refused while `ledger_posting = 'off'`;
