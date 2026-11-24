@@ -97,29 +97,60 @@ CREATE TABLE IF NOT EXISTS public.ledger_policies (
   vat_approved_by  integer,
   vat_approved_at  timestamptz,
   vat_approval_ref text,
+  created_by     integer,   -- the person who recorded the policy; neither approver may be the same person
   created_at     timestamptz NOT NULL DEFAULT now(),
   CHECK (status <> 'approved' OR (
     approved_by IS NOT NULL AND approved_at IS NOT NULL AND approval_ref IS NOT NULL
     AND vat_approved_by IS NOT NULL AND vat_approved_at IS NOT NULL AND vat_approval_ref IS NOT NULL
     AND settings ? 'revenue_presentation' AND settings ? 'vat_base'))
 );
+-- One approved policy per effective date, so "the policy in force on a date" is never ambiguous.
+CREATE UNIQUE INDEX IF NOT EXISTS ledger_policies_one_approved_per_date
+  ON public.ledger_policies (effective_from) WHERE status = 'approved';
 
--- An approved policy is a permanent record: it can only be retired, never edited or deleted.
+-- An active admin (until D-14 sets finance roles). NOTE: every staff id given to the database (approver,
+-- app.actor_id, closed_by …) is a CLAIM made by the connecting application. The database checks that the
+-- named person is an active admin; it cannot prove the session is that person (see POSTING_CONTROLS_AUDIT).
+CREATE OR REPLACE FUNCTION public.ledger_is_active_admin(staff_id integer) RETURNS boolean LANGUAGE sql STABLE AS $$
+  SELECT EXISTS (SELECT 1 FROM public.staff_users WHERE id = staff_id AND role = 'admin'
+                 AND COALESCE(is_active::text, '1') NOT IN ('0', 'false', 'f'))
+$$;
+
+-- Policies: approval needs two active-admin approvers (D-01 and VAT), each different from the person who
+-- recorded the policy. An approved policy is a permanent record: it can only be retired, never edited or
+-- deleted.
 CREATE OR REPLACE FUNCTION public.ledger_policies_guard() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF TG_OP = 'DELETE' THEN
     IF OLD.status = 'draft' THEN RETURN OLD; END IF;
     RAISE EXCEPTION 'Accounting policy % has been approved and cannot be deleted', OLD.version;
   END IF;
-  IF OLD.status = 'draft' THEN RETURN NEW; END IF;
-  IF OLD.status = 'approved' AND NEW.status = 'retired'
-     AND (to_jsonb(NEW) - 'status') = (to_jsonb(OLD) - 'status') THEN
-    RETURN NEW;
+  IF TG_OP = 'UPDATE' AND OLD.status <> 'draft' THEN
+    IF OLD.status = 'approved' AND NEW.status = 'retired'
+       AND (to_jsonb(NEW) - 'status') = (to_jsonb(OLD) - 'status') THEN
+      RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'Accounting policy % is % and cannot be changed; create a new version', OLD.version, OLD.status;
   END IF;
-  RAISE EXCEPTION 'Accounting policy % is % and cannot be changed; create a new version', OLD.version, OLD.status;
+  -- INSERT, or a draft being edited / approved.
+  IF NEW.status = 'retired' AND (TG_OP = 'INSERT' OR OLD.status <> 'approved') THEN
+    RAISE EXCEPTION 'Only an approved policy can be retired';
+  END IF;
+  IF NEW.status = 'approved' THEN
+    IF NEW.created_by IS NULL OR NOT EXISTS (SELECT 1 FROM public.staff_users WHERE id = NEW.created_by) THEN
+      RAISE EXCEPTION 'Policy %: created_by must name the staff member who recorded it', NEW.version;
+    END IF;
+    IF NOT public.ledger_is_active_admin(NEW.approved_by) OR NOT public.ledger_is_active_admin(NEW.vat_approved_by) THEN
+      RAISE EXCEPTION 'Policy %: both approvers (D-01 and VAT) must be active admins', NEW.version;
+    END IF;
+    IF NEW.approved_by = NEW.created_by OR NEW.vat_approved_by = NEW.created_by THEN
+      RAISE EXCEPTION 'Policy %: an approver cannot be the person who recorded the policy', NEW.version;
+    END IF;
+  END IF;
+  RETURN NEW;
 END $$;
 DROP TRIGGER IF EXISTS ledger_policies_guard ON public.ledger_policies;
-CREATE TRIGGER ledger_policies_guard BEFORE UPDATE OR DELETE ON public.ledger_policies
+CREATE TRIGGER ledger_policies_guard BEFORE INSERT OR UPDATE OR DELETE ON public.ledger_policies
   FOR EACH ROW EXECUTE FUNCTION public.ledger_policies_guard();
 
 CREATE TABLE IF NOT EXISTS public.ledger_periods (
@@ -151,12 +182,20 @@ CREATE TABLE IF NOT EXISTS public.ledger_entries (
   reversed_by_id   bigint REFERENCES public.ledger_entries(id),
   idempotency_key  text NOT NULL UNIQUE,
   policy_version   text REFERENCES public.ledger_policies(version),
+  replaces_id      bigint REFERENCES public.ledger_entries(id),  -- replacement entry: points at the entry it corrects
+  payload_hash     text,                                         -- fingerprint of the posted content (idempotency check)
   created_by       integer,
   approved_by      integer,
   created_txid     bigint NOT NULL DEFAULT txid_current(),  -- set by the insert guard; lines must join in the same transaction
-  created_at       timestamptz NOT NULL DEFAULT now()
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  CHECK (period = to_char(transaction_date, 'YYYY-MM')),
+  CHECK (origin NOT IN ('manual', 'adjustment', 'reversal') OR created_by IS NOT NULL),
+  CHECK ((origin = 'reversal') = (reverses_id IS NOT NULL))
 );
 CREATE INDEX IF NOT EXISTS ledger_entries_source_idx ON public.ledger_entries (source_type, source_id);
+-- An entry can be reversed once and replaced once, whatever path writes the rows.
+CREATE UNIQUE INDEX IF NOT EXISTS ledger_entries_one_reversal ON public.ledger_entries (reverses_id) WHERE reverses_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS ledger_entries_one_replacement ON public.ledger_entries (replaces_id) WHERE replaces_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS ledger_entries_period_idx ON public.ledger_entries (period);
 
 CREATE TABLE IF NOT EXISTS public.ledger_lines (
@@ -210,7 +249,9 @@ BEGIN
     RAISE EXCEPTION 'Posted ledger entries cannot be deleted (entry %). Post a reversal instead.', OLD.number;
   END IF;
   IF OLD.status = 'posted' AND NEW.status = 'reversed' AND OLD.reversed_by_id IS NULL AND NEW.reversed_by_id IS NOT NULL
-     AND (to_jsonb(NEW) - 'status' - 'reversed_by_id') = (to_jsonb(OLD) - 'status' - 'reversed_by_id') THEN
+     AND (to_jsonb(NEW) - 'status' - 'reversed_by_id') = (to_jsonb(OLD) - 'status' - 'reversed_by_id')
+     AND EXISTS (SELECT 1 FROM public.ledger_entries r
+                 WHERE r.id = NEW.reversed_by_id AND r.origin = 'reversal' AND r.reverses_id = OLD.id) THEN
     RETURN NEW;
   END IF;
   RAISE EXCEPTION 'Posted ledger entries are immutable (entry %). Post a reversal and a replacement.', OLD.number;
@@ -250,19 +291,57 @@ CREATE CONSTRAINT TRIGGER ledger_entry_balance_check AFTER INSERT ON public.ledg
 --  * every entry names an approved policy (both D-01 and VAT approvals) in force on its date;
 --  * lines can only be added in the transaction that created their entry, so a posted entry can
 --    never gain lines later (and the balance check above covers every line it will ever have).
+--  * the policy is the one IN FORCE on the entry date (the latest approved policy effective on or before
+--    it); a reversal instead keeps the policy of the entry it reverses, even if that policy has since
+--    been retired, so corrections stay possible after a policy change.
+
+-- The policy in force on a date: the latest approved policy effective on or before it.
+CREATE OR REPLACE FUNCTION public.ledger_policy_in_force(on_date date) RETURNS text LANGUAGE sql STABLE AS $$
+  SELECT version FROM public.ledger_policies
+  WHERE status = 'approved' AND effective_from <= on_date
+  ORDER BY effective_from DESC LIMIT 1
+$$;
+
 CREATE OR REPLACE FUNCTION public.ledger_entries_insert_guard() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE sw text;
+DECLARE sw text; pstatus text; orig record; orig_policy_status text;
 BEGIN
   SELECT value_text INTO sw FROM public.financial_settings WHERE key = 'ledger_posting';
   IF COALESCE(sw, 'off') <> 'on' THEN
     RAISE EXCEPTION 'Ledger posting is switched off: no entry can be written (needs D-01 and VAT approval and sign-off)';
   END IF;
-  IF NEW.policy_version IS NULL OR NOT EXISTS (
-       SELECT 1 FROM public.ledger_policies p
-       WHERE p.version = NEW.policy_version AND p.status = 'approved' AND p.effective_from <= NEW.transaction_date) THEN
-    RAISE EXCEPTION 'Ledger entry % needs an approved accounting policy in force on %', NEW.number, NEW.transaction_date;
+  IF NEW.origin = 'reversal' THEN
+    SELECT * INTO orig FROM public.ledger_entries WHERE id = NEW.reverses_id;
+    SELECT status INTO orig_policy_status FROM public.ledger_policies WHERE version = orig.policy_version;
+    IF NEW.policy_version IS DISTINCT FROM orig.policy_version OR orig_policy_status NOT IN ('approved', 'retired') THEN
+      RAISE EXCEPTION 'Reversal % must keep the policy of the entry it reverses (%)', NEW.number, orig.policy_version;
+    END IF;
+  ELSIF NEW.policy_version IS NULL OR NEW.policy_version IS DISTINCT FROM public.ledger_policy_in_force(NEW.transaction_date) THEN
+    RAISE EXCEPTION 'Ledger entry % needs the approved accounting policy in force on % (%), not %',
+      NEW.number, NEW.transaction_date, COALESCE(public.ledger_policy_in_force(NEW.transaction_date), 'none'), COALESCE(NEW.policy_version, 'none');
+  END IF;
+  -- Closed periods: only an adjustment approved by a different active admin.
+  SELECT status INTO pstatus FROM public.ledger_periods WHERE period = NEW.period;
+  IF pstatus = 'closed' AND NOT (NEW.origin = 'adjustment' AND NEW.approved_by IS NOT NULL
+       AND NEW.approved_by IS DISTINCT FROM NEW.created_by AND public.ledger_is_active_admin(NEW.approved_by)) THEN
+    RAISE EXCEPTION 'Period % is closed: only an adjustment approved by a different active admin can be posted', NEW.period;
+  END IF;
+  -- Reversals: of an existing posted, non-reversal entry, dated on or after it.
+  IF NEW.origin = 'reversal' THEN
+    SELECT * INTO orig FROM public.ledger_entries WHERE id = NEW.reverses_id;
+    IF orig.id IS NULL OR orig.status <> 'posted' OR orig.origin = 'reversal' THEN
+      RAISE EXCEPTION 'Entry % can only reverse a posted entry that is not itself a reversal', NEW.number;
+    END IF;
+    IF NEW.transaction_date < orig.transaction_date THEN
+      RAISE EXCEPTION 'A reversal cannot be dated before the entry it reverses (%)', orig.transaction_date;
+    END IF;
+  END IF;
+  IF NEW.replaces_id IS NOT NULL AND NOT EXISTS (
+       SELECT 1 FROM public.ledger_entries WHERE id = NEW.replaces_id AND status = 'reversed') THEN
+    RAISE EXCEPTION 'A replacement must point at an entry that has been reversed';
   END IF;
   NEW.created_txid := txid_current();
+  NEW.status := 'posted';
+  NEW.reversed_by_id := NULL;
   RETURN NEW;
 END $$;
 DROP TRIGGER IF EXISTS ledger_entries_insert_guard ON public.ledger_entries;
@@ -280,7 +359,172 @@ DROP TRIGGER IF EXISTS ledger_lines_insert_guard ON public.ledger_lines;
 CREATE TRIGGER ledger_lines_insert_guard BEFORE INSERT ON public.ledger_lines
   FOR EACH ROW EXECUTE FUNCTION public.ledger_lines_insert_guard();
 
--- Posting switch: 'off' until D-01 is approved and the parallel run is signed off.
+-- Periods: closing and reopening are attributed; reopening needs an admin and a reason; closed periods
+-- cannot be deleted.
+CREATE OR REPLACE FUNCTION public.ledger_periods_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    IF OLD.status <> 'open' THEN RAISE EXCEPTION 'Period % is % and cannot be deleted', OLD.period, OLD.status; END IF;
+    RETURN OLD;
+  END IF;
+  IF NEW.status = 'closed' AND (TG_OP = 'INSERT' OR OLD.status <> 'closed') THEN
+    IF NEW.closed_by IS NULL OR NOT public.ledger_is_active_admin(NEW.closed_by) THEN
+      RAISE EXCEPTION 'Closing period % needs closed_by: an active admin', NEW.period;
+    END IF;
+    NEW.closed_at := now();
+  END IF;
+  IF TG_OP = 'UPDATE' AND OLD.status = 'closed' AND NEW.status <> 'closed' THEN
+    IF NEW.reopened_by IS NULL OR NOT public.ledger_is_active_admin(NEW.reopened_by)
+       OR length(btrim(COALESCE(NEW.reopen_reason, ''))) < 10 THEN
+      RAISE EXCEPTION 'Reopening period % needs reopened_by (an active admin) and a reason of at least 10 characters', NEW.period;
+    END IF;
+    NEW.reopened_at := now();
+  END IF;
+  IF TG_OP = 'UPDATE' AND OLD.status = 'closed' AND NEW.status = 'closed'
+     AND (to_jsonb(NEW) - 'status') IS DISTINCT FROM (to_jsonb(OLD) - 'status') THEN
+    RAISE EXCEPTION 'A closed period record cannot be edited; reopen it first';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS ledger_periods_guard ON public.ledger_periods;
+CREATE TRIGGER ledger_periods_guard BEFORE INSERT OR UPDATE OR DELETE ON public.ledger_periods
+  FOR EACH ROW EXECUTE FUNCTION public.ledger_periods_guard();
+
+-- Reversal lines must mirror the original exactly (checked at commit, with the balance check).
+CREATE OR REPLACE FUNCTION public.ledger_reversal_mirror_check() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.origin <> 'reversal' THEN RETURN NULL; END IF;
+  IF EXISTS (
+       (SELECT account_code, base_debit, base_credit, currency, debit, credit FROM public.ledger_lines WHERE entry_id = NEW.id
+        EXCEPT ALL
+        SELECT account_code, base_credit, base_debit, currency, credit, debit FROM public.ledger_lines WHERE entry_id = NEW.reverses_id)
+       UNION ALL
+       (SELECT account_code, base_credit, base_debit, currency, credit, debit FROM public.ledger_lines WHERE entry_id = NEW.reverses_id
+        EXCEPT ALL
+        SELECT account_code, base_debit, base_credit, currency, debit, credit FROM public.ledger_lines WHERE entry_id = NEW.id)) THEN
+    RAISE EXCEPTION 'Reversal % does not mirror the lines of the entry it reverses', NEW.number;
+  END IF;
+  RETURN NULL;
+END $$;
+DROP TRIGGER IF EXISTS ledger_reversal_mirror_check ON public.ledger_entries;
+CREATE CONSTRAINT TRIGGER ledger_reversal_mirror_check AFTER INSERT ON public.ledger_entries
+  DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.ledger_reversal_mirror_check();
+
+-- Posting switch: 'off' until D-01 is approved and the parallel run is signed off. Every change is logged
+-- (append-only); turning it on needs an approved policy and a named active admin.
+CREATE TABLE IF NOT EXISTS public.ledger_control_log (
+  id         bigserial PRIMARY KEY,
+  control    text NOT NULL,
+  old_value  text,
+  new_value  text,
+  actor_id   integer,
+  reason     text,
+  changed_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE OR REPLACE FUNCTION public.ledger_control_log_append_only() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'The ledger control log is a permanent record and cannot be changed or deleted';
+END $$;
+DROP TRIGGER IF EXISTS ledger_control_log_append_only ON public.ledger_control_log;
+CREATE TRIGGER ledger_control_log_append_only BEFORE UPDATE OR DELETE ON public.ledger_control_log
+  FOR EACH ROW EXECUTE FUNCTION public.ledger_control_log_append_only();
+
+CREATE OR REPLACE FUNCTION public.ledger_posting_switch_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE actor integer; reason text;
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    IF OLD.key = 'ledger_posting' THEN RAISE EXCEPTION 'The ledger posting switch cannot be deleted'; END IF;
+    RETURN OLD;
+  END IF;
+  -- The switch row keeps its key: renaming it away, or renaming another row into it, is refused (this
+  -- closes the rename-and-decoy route that skipped the checks and the log).
+  IF TG_OP = 'UPDATE' AND OLD.key IS DISTINCT FROM NEW.key AND 'ledger_posting' IN (OLD.key, NEW.key) THEN
+    RAISE EXCEPTION 'The ledger posting switch row cannot be renamed, and no row can be renamed into it';
+  END IF;
+  IF NEW.key <> 'ledger_posting' THEN RETURN NEW; END IF;
+  IF TG_OP = 'UPDATE' AND NEW.value_text IS NOT DISTINCT FROM OLD.value_text THEN RETURN NEW; END IF;
+  IF NEW.value_text NOT IN ('on', 'off') THEN
+    RAISE EXCEPTION 'The ledger posting switch must be on or off';
+  END IF;
+  actor := NULLIF(current_setting('app.actor_id', true), '')::integer;
+  reason := btrim(COALESCE(current_setting('app.control_reason', true), ''));
+  IF NEW.value_text = 'on' THEN
+    IF NOT EXISTS (SELECT 1 FROM public.ledger_policies WHERE status = 'approved') THEN
+      RAISE EXCEPTION 'Ledger posting cannot be switched on before an accounting policy (D-01 and VAT base) is approved';
+    END IF;
+    IF actor IS NULL OR NOT public.ledger_is_active_admin(actor) OR length(reason) < 10 THEN
+      RAISE EXCEPTION 'Switching ledger posting on needs app.actor_id (an active admin) and app.control_reason (10+ characters)';
+    END IF;
+  END IF;
+  INSERT INTO public.ledger_control_log (control, old_value, new_value, actor_id, reason)
+  VALUES ('ledger_posting', CASE WHEN TG_OP = 'UPDATE' THEN OLD.value_text END, NEW.value_text, actor, NULLIF(reason, ''));
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS financial_settings_ledger_posting_guard ON public.financial_settings;
+CREATE TRIGGER financial_settings_ledger_posting_guard BEFORE INSERT OR UPDATE OR DELETE ON public.financial_settings
+  FOR EACH ROW EXECUTE FUNCTION public.ledger_posting_switch_guard();
+
+-- TRUNCATE skips row-level triggers, so every permanent table gets a statement-level guard too
+-- (including financial_settings, which holds the posting switch). TRUNCATE … CASCADE fires it on each
+-- table it reaches. Removing the ledger is only possible by dropping it (rollback_176.sql).
+CREATE OR REPLACE FUNCTION public.ledger_no_truncate() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION '% is a permanent finance record and cannot be truncated', TG_TABLE_NAME;
+END $$;
+DO $$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['ledger_accounts', 'ledger_policies', 'ledger_periods', 'ledger_entries', 'ledger_lines',
+                           'ledger_events', 'ledger_control_log', 'financial_settings'] LOOP
+    EXECUTE format('DROP TRIGGER IF EXISTS %I ON public.%I', t || '_no_truncate', t);
+    EXECUTE format('CREATE TRIGGER %I BEFORE TRUNCATE ON public.%I FOR EACH STATEMENT EXECUTE FUNCTION public.ledger_no_truncate()',
+                   t || '_no_truncate', t);
+  END LOOP;
+END $$;
+
+-- Chart of accounts: once an account has posted lines, its code, type, normal balance and currency are
+-- fixed (changing them would reclassify history). Name, description and active flag may change.
+CREATE OR REPLACE FUNCTION public.ledger_accounts_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.ledger_lines WHERE account_code = OLD.code) THEN
+    IF TG_OP = 'DELETE' THEN
+      RAISE EXCEPTION 'Account % has posted lines and cannot be deleted; deactivate it instead', OLD.code;
+    END IF;
+    IF NEW.code IS DISTINCT FROM OLD.code OR NEW.account_type IS DISTINCT FROM OLD.account_type
+       OR NEW.normal_balance IS DISTINCT FROM OLD.normal_balance OR NEW.currency IS DISTINCT FROM OLD.currency THEN
+      RAISE EXCEPTION 'Account % has posted lines: its code, type, normal balance and currency cannot change', OLD.code;
+    END IF;
+  END IF;
+  RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+END $$;
+DROP TRIGGER IF EXISTS ledger_accounts_guard ON public.ledger_accounts;
+CREATE TRIGGER ledger_accounts_guard BEFORE UPDATE OR DELETE ON public.ledger_accounts
+  FOR EACH ROW EXECUTE FUNCTION public.ledger_accounts_guard();
+
+-- Custom accounts created or edited in the Financial System after this migration are kept in the ledger
+-- chart (a removed custom account is only deactivated). The accounts guard above still applies.
+CREATE OR REPLACE FUNCTION public.ledger_sync_custom_account() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    UPDATE public.ledger_accounts SET active = false, updated_at = now() WHERE code = OLD.code;
+    RETURN OLD;
+  END IF;
+  INSERT INTO public.ledger_accounts (code, name, account_type, normal_balance, parent_code)
+  VALUES (NEW.code, NEW.name,
+          CASE NEW.account_group WHEN 'assets' THEN 'asset' WHEN 'liabilities' THEN 'liability' WHEN 'equity' THEN 'equity'
+                                 WHEN 'revenue' THEN 'revenue' ELSE 'expense' END,
+          CASE WHEN NEW.account_group IN ('assets', 'expenses') THEN 'debit' ELSE 'credit' END,
+          CASE WHEN EXISTS (SELECT 1 FROM public.ledger_accounts p WHERE p.code = NEW.parent_code) THEN NEW.parent_code END)
+  ON CONFLICT (code) DO UPDATE
+    SET name = EXCLUDED.name, account_type = EXCLUDED.account_type, normal_balance = EXCLUDED.normal_balance,
+        parent_code = EXCLUDED.parent_code, active = true, updated_at = now()
+    WHERE NOT public.ledger_accounts.is_system;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS financial_custom_accounts_ledger_sync ON public.financial_custom_accounts;
+CREATE TRIGGER financial_custom_accounts_ledger_sync AFTER INSERT OR UPDATE OR DELETE ON public.financial_custom_accounts
+  FOR EACH ROW EXECUTE FUNCTION public.ledger_sync_custom_account();
+
 INSERT INTO public.financial_settings (key, value_text)
 VALUES ('ledger_posting', 'off')
 ON CONFLICT (key) DO NOTHING;

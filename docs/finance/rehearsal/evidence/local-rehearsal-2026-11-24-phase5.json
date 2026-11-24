@@ -1,0 +1,560 @@
+{
+  "started": "2026-11-24T14:58:35.924Z",
+  "engine": "PGlite",
+  "steps": [
+    {
+      "name": "seeded a pre-deployment database (migration 174 state): 3 units (modes A/B/C), 8 stays incl. USD, owner-booked, pending, cancelled; payments incl. refund; expenses; cash_ledger; a frozen month",
+      "ok": true
+    },
+    {
+      "name": "baseline: data fingerprint and the books the app shows (existing engine) recorded",
+      "ok": true,
+      "detail": {
+        "fpBefore": {
+          "migrations >= 170": "170_stay_lifecycle.sql, 171_chatbot_live.sql, 172_data_cleaner.sql, 173_remove_calendar_sync.sql, 174_leave_corrections.sql",
+          "reservations": "8 rows / 6202d5abf1bbd35fdb8fb43e3c6fa19f",
+          "payments": "5 rows / 2f50ee70cf55417f753e8d1a90821f00",
+          "expenses": "2 rows / a041daebfb48c8bfaa2a2b818266f97d",
+          "cash_ledger": "2 rows / 222e10e03d5fad71a381177c10a945b8",
+          "financial_posted_entries (closed months)": "1 rows / 698c80f669a7ae9cb5e5633d8a9406e3",
+          "financial_custom_accounts": "3 rows / 0ad921f779fe7d60aeedc204cf2586f6",
+          "unit commission rates": "3 units / 3096e8a05f5e5c9c168729689db6220d",
+          "salesperson rates": "3 staff / b90f39b304209858db38e840405fa5e1",
+          "settings": "2 rows / a1b95ea22d91a77f43bfbf8709ac7ae7"
+        },
+        "booksBefore": {
+          "entries": 8,
+          "tb": "8402b5283daeac4c0c813bdc9c207095e16b99e1beb96a08c592019f95dd0dde",
+          "journal": "e1f596f47a0c2c961fe0b9be0c5b4946f769f4155dfcf66cd91acf27b786f1bc"
+        }
+      }
+    },
+    {
+      "name": "175 failing part-way (after adding columns) leaves nothing behind: no columns, not recorded as applied",
+      "ok": true,
+      "detail": {
+        "err": "175_commission_snapshots.sql: REHEARSAL: injected failure part-way through 175",
+        "cols": 0
+      }
+    },
+    {
+      "name": "175 applies (one transaction, recorded)",
+      "ok": true
+    },
+    {
+      "name": "176 failing at its last statement leaves nothing behind: no ledger tables, not recorded, 175 unaffected",
+      "ok": true,
+      "detail": {
+        "err": "176_ledger_core.sql: REHEARSAL: injected failure at the end of 176"
+      }
+    },
+    {
+      "name": "after the failure, a normal start applies 176 cleanly",
+      "ok": true
+    },
+    {
+      "name": "a second app start skips both (already recorded)",
+      "ok": true
+    },
+    {
+      "name": "running both files again by hand is harmless (idempotent: IF NOT EXISTS / ON CONFLICT)",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "r2 structure checks: 14/14 passed",
+      "ok": true,
+      "detail": []
+    },
+    {
+      "name": "existing data unchanged by the migrations (fingerprints identical)",
+      "ok": true,
+      "detail": {
+        "fpBefore": {
+          "migrations >= 170": "170_stay_lifecycle.sql, 171_chatbot_live.sql, 172_data_cleaner.sql, 173_remove_calendar_sync.sql, 174_leave_corrections.sql",
+          "reservations": "8 rows / 6202d5abf1bbd35fdb8fb43e3c6fa19f",
+          "payments": "5 rows / 2f50ee70cf55417f753e8d1a90821f00",
+          "expenses": "2 rows / a041daebfb48c8bfaa2a2b818266f97d",
+          "cash_ledger": "2 rows / 222e10e03d5fad71a381177c10a945b8",
+          "financial_posted_entries (closed months)": "1 rows / 698c80f669a7ae9cb5e5633d8a9406e3",
+          "financial_custom_accounts": "3 rows / 0ad921f779fe7d60aeedc204cf2586f6",
+          "unit commission rates": "3 units / 3096e8a05f5e5c9c168729689db6220d",
+          "salesperson rates": "3 staff / b90f39b304209858db38e840405fa5e1",
+          "settings": "2 rows / a1b95ea22d91a77f43bfbf8709ac7ae7"
+        },
+        "fpAfter": {
+          "migrations >= 170": "170_stay_lifecycle.sql, 171_chatbot_live.sql, 172_data_cleaner.sql, 173_remove_calendar_sync.sql, 174_leave_corrections.sql, 175_commission_snapshots.sql, 176_ledger_core.sql",
+          "reservations": "8 rows / 6202d5abf1bbd35fdb8fb43e3c6fa19f",
+          "payments": "5 rows / 2f50ee70cf55417f753e8d1a90821f00",
+          "expenses": "2 rows / a041daebfb48c8bfaa2a2b818266f97d",
+          "cash_ledger": "2 rows / 222e10e03d5fad71a381177c10a945b8",
+          "financial_posted_entries (closed months)": "1 rows / 698c80f669a7ae9cb5e5633d8a9406e3",
+          "financial_custom_accounts": "3 rows / 0ad921f779fe7d60aeedc204cf2586f6",
+          "unit commission rates": "3 units / 3096e8a05f5e5c9c168729689db6220d",
+          "salesperson rates": "3 staff / b90f39b304209858db38e840405fa5e1",
+          "settings": "2 rows / a1b95ea22d91a77f43bfbf8709ac7ae7"
+        }
+      }
+    },
+    {
+      "name": "the books the app shows are identical after the migrations (trial balance and every journal line)",
+      "ok": true,
+      "detail": {
+        "booksBefore": {
+          "entries": 8,
+          "tb": "8402b5283daeac4c0c813bdc9c207095e16b99e1beb96a08c592019f95dd0dde",
+          "journal": "e1f596f47a0c2c961fe0b9be0c5b4946f769f4155dfcf66cd91acf27b786f1bc"
+        },
+        "booksAfter": {
+          "entries": 8,
+          "tb": "8402b5283daeac4c0c813bdc9c207095e16b99e1beb96a08c592019f95dd0dde",
+          "journal": "e1f596f47a0c2c961fe0b9be0c5b4946f769f4155dfcf66cd91acf27b786f1bc"
+        }
+      }
+    },
+    {
+      "name": "historical confirmed / checked-in / checked-out stays: no snapshot, all on the review list (6 of 8 seeded)",
+      "ok": true,
+      "detail": {
+        "review": 6
+      }
+    },
+    {
+      "name": "ordinary edits and status changes on existing stays still save; a pre-deployment pending stay confirmed now is captured and flagged for review",
+      "ok": true,
+      "detail": {
+        "st": "needs_review",
+        "why": "created before rate snapshots began: confirm it was not confirmed earlier at another rate"
+      }
+    },
+    {
+      "name": "a new booking created as confirmed (website/channel path) saves and is captured",
+      "ok": true,
+      "detail": {
+        "id": 9,
+        "st": "captured"
+      }
+    },
+    {
+      "name": "the existing engine still builds balanced books with the new columns and rows present",
+      "ok": true,
+      "detail": {
+        "entries": 8,
+        "imbalance": 0
+      }
+    },
+    {
+      "name": "r3 behaviour checks: 40/40 passed",
+      "ok": true,
+      "detail": []
+    },
+    {
+      "name": "r3 refuses to run without the restored-copy declaration",
+      "ok": true,
+      "detail": "Refusing to run: r3 writes test data and is only for a restored copy of production."
+    },
+    {
+      "name": "rollback_176 refuses while the ledger holds entries (3) unless confirmed",
+      "ok": true,
+      "detail": "Refusing: the ledger holds 3 entries. Set app.confirm_rollback_176 to confirm."
+    },
+    {
+      "name": "rollback_176 with confirmation removes the ledger (despite immutability triggers) and its migration record",
+      "ok": true
+    },
+    {
+      "name": "rollback_175_soft stops capture, keeps saved snapshots, and reservations keep saving",
+      "ok": true,
+      "detail": {
+        "trig": 0,
+        "keptSnaps": 7
+      }
+    },
+    {
+      "name": "rollback_175_full refuses without confirmation",
+      "ok": true,
+      "detail": "Refusing: set app.confirm_rollback_175 to confirm that snapshots and corrections will be deleted"
+    },
+    {
+      "name": "rollback_175_full removes columns, log, view, trigger and migration record",
+      "ok": true,
+      "detail": {
+        "colsAfter": 0
+      }
+    },
+    {
+      "name": "after both rollbacks the schema is back to 174 and the app builds its books",
+      "ok": "10 rows / 94c777b22a90235a2f960956996a2381",
+      "detail": {
+        "fpRolled": {
+          "migrations >= 170": "170_stay_lifecycle.sql, 171_chatbot_live.sql, 172_data_cleaner.sql, 173_remove_calendar_sync.sql, 174_leave_corrections.sql",
+          "reservations": "10 rows / 94c777b22a90235a2f960956996a2381",
+          "payments": "5 rows / 2f50ee70cf55417f753e8d1a90821f00",
+          "expenses": "2 rows / a041daebfb48c8bfaa2a2b818266f97d",
+          "cash_ledger": "2 rows / 222e10e03d5fad71a381177c10a945b8",
+          "financial_posted_entries (closed months)": "1 rows / 698c80f669a7ae9cb5e5633d8a9406e3",
+          "financial_custom_accounts": "3 rows / 0ad921f779fe7d60aeedc204cf2586f6",
+          "unit commission rates": "3 units / 3096e8a05f5e5c9c168729689db6220d",
+          "salesperson rates": "3 staff / b90f39b304209858db38e840405fa5e1",
+          "settings": "2 rows / a1b95ea22d91a77f43bfbf8709ac7ae7"
+        },
+        "booksRolled": {
+          "entries": 8,
+          "tb": "8402b5283daeac4c0c813bdc9c207095e16b99e1beb96a08c592019f95dd0dde",
+          "journal": "e1f596f47a0c2c961fe0b9be0c5b4946f769f4155dfcf66cd91acf27b786f1bc"
+        }
+      }
+    },
+    {
+      "name": "after rollback, 175 and 176 re-apply cleanly",
+      "ok": true
+    },
+    {
+      "name": "r2 after re-apply: 14/14 passed",
+      "ok": true,
+      "detail": []
+    },
+    {
+      "name": "rollback_176 with an empty ledger needs no confirmation and leaves existing data identical",
+      "ok": true
+    }
+  ],
+  "baseline": {
+    "fingerprint": {
+      "migrations >= 170": "170_stay_lifecycle.sql, 171_chatbot_live.sql, 172_data_cleaner.sql, 173_remove_calendar_sync.sql, 174_leave_corrections.sql",
+      "reservations": "8 rows / 6202d5abf1bbd35fdb8fb43e3c6fa19f",
+      "payments": "5 rows / 2f50ee70cf55417f753e8d1a90821f00",
+      "expenses": "2 rows / a041daebfb48c8bfaa2a2b818266f97d",
+      "cash_ledger": "2 rows / 222e10e03d5fad71a381177c10a945b8",
+      "financial_posted_entries (closed months)": "1 rows / 698c80f669a7ae9cb5e5633d8a9406e3",
+      "financial_custom_accounts": "3 rows / 0ad921f779fe7d60aeedc204cf2586f6",
+      "unit commission rates": "3 units / 3096e8a05f5e5c9c168729689db6220d",
+      "salesperson rates": "3 staff / b90f39b304209858db38e840405fa5e1",
+      "settings": "2 rows / a1b95ea22d91a77f43bfbf8709ac7ae7"
+    },
+    "books": {
+      "entries": 8,
+      "tb": "8402b5283daeac4c0c813bdc9c207095e16b99e1beb96a08c592019f95dd0dde",
+      "journal": "e1f596f47a0c2c961fe0b9be0c5b4946f769f4155dfcf66cd91acf27b786f1bc"
+    }
+  },
+  "r2": [
+    {
+      "check_name": "175 recorded as applied",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check_name": "176 recorded as applied",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check_name": "reservation snapshot columns exist",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check_name": "snapshot trigger enabled",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check_name": "correction log is append-only (trigger present)",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check_name": "no existing reservation was given a snapshot by the migration",
+      "passed": true,
+      "detail": "0 snapshots in total"
+    },
+    {
+      "check_name": "historical confirmed stays listed for review",
+      "passed": true,
+      "detail": "6 stays on the review list"
+    },
+    {
+      "check_name": "ledger tables exist",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check_name": "chart seeded: 47 system accounts",
+      "passed": true,
+      "detail": "47"
+    },
+    {
+      "check_name": "every custom account copied into the ledger chart",
+      "passed": true,
+      "detail": "3 custom accounts"
+    },
+    {
+      "check_name": "ledger is empty",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check_name": "no approved accounting policy exists",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check_name": "posting switch is off",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check_name": "database posting guards present",
+      "passed": true,
+      "detail": null
+    }
+  ],
+  "r3": [
+    {
+      "n": 1,
+      "check_name": "pending reservation has no snapshot",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "n": 2,
+      "check_name": "confirmation captures applied company 20% (unit rate) and sales 10%",
+      "passed": true,
+      "detail": "{\"sales_pct\": 10, \"company_pct\": 20, \"company_pct_source\": \"unit company %\", \"tenant_deduction_pct\": 0}"
+    },
+    {
+      "n": 3,
+      "check_name": "retried confirmations and rate changes leave the saved snapshot byte-identical",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "n": 4,
+      "check_name": "a reservation confirmed after the change uses the new rates (25% / 15%)",
+      "passed": true,
+      "detail": "{\"sales_pct\": 15, \"company_pct\": 25, \"company_pct_source\": \"unit company %\", \"tenant_deduction_pct\": 0}"
+    },
+    {
+      "n": 5,
+      "check_name": "unit with no company % records the 20% default; no salesperson records no sales %",
+      "passed": true,
+      "detail": "{\"sales_pct\": null, \"company_pct\": 20, \"company_pct_source\": \"default 20% (unit has no company %)\", \"tenant_deduction_pct\": 0}"
+    },
+    {
+      "n": 6,
+      "check_name": "mode C owner-booked: owner % (12), no tenant deduction",
+      "passed": true,
+      "detail": "{\"sales_pct\": 15, \"company_pct\": 12, \"company_pct_source\": \"unit owner-booked %\", \"tenant_deduction_pct\": 0}"
+    },
+    {
+      "n": 7,
+      "check_name": "mode C guest stay: company % (22) and tenant deduction (10)",
+      "passed": true,
+      "detail": "{\"sales_pct\": 15, \"company_pct\": 22, \"company_pct_source\": \"unit company %\", \"tenant_deduction_pct\": 10}"
+    },
+    {
+      "n": 8,
+      "check_name": "an insert cannot bring its own snapshot",
+      "passed": true,
+      "detail": "Commission snapshot of reservation 15 can only change through an authorised correction"
+    },
+    {
+      "n": 9,
+      "check_name": "a saved snapshot cannot be overwritten",
+      "passed": true,
+      "detail": "Commission snapshot of reservation 10 can only change through an authorised correction"
+    },
+    {
+      "n": 10,
+      "check_name": "a real historical stay cannot be given an invented snapshot",
+      "passed": true,
+      "detail": "Commission snapshot of reservation 1 can only change through an authorised correction"
+    },
+    {
+      "n": 11,
+      "check_name": "status and time columns cannot be edited directly (kept as they were)",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "n": 12,
+      "check_name": "salesperson change, owner-flag change and re-confirmation after cancellation are flagged",
+      "passed": true,
+      "detail": "salesperson changed after confirmation | re-confirmed after cancellation: original rates kept | owner-booking flag changed after confirmation"
+    },
+    {
+      "n": 13,
+      "check_name": "a correction without who and why is refused",
+      "passed": true,
+      "detail": "A commission correction needs the person making it and a reason of at least 10 characters"
+    },
+    {
+      "n": 14,
+      "check_name": "a non-admin cannot correct",
+      "passed": true,
+      "detail": "Only an active admin can correct commission rates"
+    },
+    {
+      "n": 15,
+      "check_name": "nobody approves their own correction",
+      "passed": true,
+      "detail": "The approver of a commission correction must be a different active admin"
+    },
+    {
+      "n": 16,
+      "check_name": "authorised correction is saved and logged with before/after, who, approver and reason",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "n": 17,
+      "check_name": "the correction log cannot be edited",
+      "passed": true,
+      "detail": "Commission corrections are a permanent record and cannot be changed or deleted"
+    },
+    {
+      "n": 18,
+      "check_name": "the correction log cannot be deleted",
+      "passed": true,
+      "detail": "Commission corrections are a permanent record and cannot be changed or deleted"
+    },
+    {
+      "n": 19,
+      "check_name": "no entry can be written while posting is off",
+      "passed": true,
+      "detail": "Ledger posting is switched off: no entry can be written (needs D-01 and VAT approval and sign-off)"
+    },
+    {
+      "n": 20,
+      "check_name": "a policy cannot be approved without the separate VAT approval",
+      "passed": true,
+      "detail": "new row for relation \"ledger_policies\" violates check constraint \"ledger_policies_check\""
+    },
+    {
+      "n": 21,
+      "check_name": "an approved policy cannot be edited",
+      "passed": true,
+      "detail": "Accounting policy REHEARSAL-TEST is approved and cannot be changed; create a new version"
+    },
+    {
+      "n": 22,
+      "check_name": "posting cannot be switched on without a named admin and reason",
+      "passed": true,
+      "detail": "Switching ledger posting on needs app.actor_id (an active admin) and app.control_reason (10+ characters)"
+    },
+    {
+      "n": 23,
+      "check_name": "an entry without a policy is refused",
+      "passed": true,
+      "detail": "Ledger entry RH-1 needs an approved accounting policy in force on 2027-03-01"
+    },
+    {
+      "n": 24,
+      "check_name": "an entry under a draft policy is refused",
+      "passed": true,
+      "detail": "Ledger entry RH-2 needs an approved accounting policy in force on 2027-03-01"
+    },
+    {
+      "n": 25,
+      "check_name": "an unbalanced entry is refused",
+      "passed": true,
+      "detail": "Ledger entry RH-3 is unbalanced: debits 10.0000 <> credits 9.9900"
+    },
+    {
+      "n": 26,
+      "check_name": "balanced test entries post",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "n": 27,
+      "check_name": "the same idempotency key cannot post twice (duplicate event / retry)",
+      "passed": true,
+      "detail": "duplicate key value violates unique constraint \"ledger_entries_idempotency_key_key\""
+    },
+    {
+      "n": 28,
+      "check_name": "a posted entry cannot gain lines later",
+      "passed": true,
+      "detail": "Lines can only be added while their entry is being posted; post a new entry instead"
+    },
+    {
+      "n": 29,
+      "check_name": "posted lines cannot be edited",
+      "passed": true,
+      "detail": "Ledger lines are immutable."
+    },
+    {
+      "n": 30,
+      "check_name": "posted entries cannot be edited",
+      "passed": true,
+      "detail": "Posted ledger entries are immutable (entry RH-4). Post a reversal and a replacement."
+    },
+    {
+      "n": 31,
+      "check_name": "posted entries cannot be deleted",
+      "passed": true,
+      "detail": "Posted ledger entries cannot be deleted (entry RH-4). Post a reversal instead."
+    },
+    {
+      "n": 32,
+      "check_name": "an entry can only be marked reversed by its own reversal",
+      "passed": true,
+      "detail": "Posted ledger entries are immutable (entry RH-4). Post a reversal and a replacement."
+    },
+    {
+      "n": 33,
+      "check_name": "a reversal that does not mirror the original is refused",
+      "passed": true,
+      "detail": "Reversal RH-4X does not mirror the lines of the entry it reverses"
+    },
+    {
+      "n": 34,
+      "check_name": "a mirrored reversal posts and marks the original reversed once",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "n": 35,
+      "check_name": "an entry cannot be reversed twice",
+      "passed": true,
+      "detail": "Posted ledger entries are immutable (entry RH-4). Post a reversal and a replacement."
+    },
+    {
+      "n": 36,
+      "check_name": "every switch change is in the permanent control log with who and why",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "n": 37,
+      "check_name": "the control log cannot be deleted",
+      "passed": true,
+      "detail": "The ledger control log is a permanent record and cannot be changed or deleted"
+    },
+    {
+      "n": 38,
+      "check_name": "the posting switch cannot be deleted",
+      "passed": true,
+      "detail": "The ledger posting switch cannot be deleted"
+    },
+    {
+      "n": 39,
+      "check_name": "after switching off again, nothing posts",
+      "passed": true,
+      "detail": "Ledger posting is switched off: no entry can be written (needs D-01 and VAT approval and sign-off)"
+    },
+    {
+      "n": 40,
+      "check_name": "posting switch is back off",
+      "passed": true,
+      "detail": null
+    }
+  ],
+  "finished": "2026-11-24T14:58:43.670Z",
+  "summary": {
+    "steps": 26,
+    "failed": 0
+  }
+}

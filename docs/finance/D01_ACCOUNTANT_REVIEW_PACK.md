@@ -64,6 +64,13 @@ Please answer these for each contract type. Where useful, attach a sample signed
 14. Do withholding-tax duties on payments to owners change with the treatment?
 15. Are any units owned by Soul or by related parties? These may be treated differently. (See decision D-09.)
 
+**Found while validating the current books (Phase 5; how the system behaves today, not a recommendation)**
+
+16. **Is the quoted stay price VAT-inclusive or VAT-exclusive?** Today VAT is added *on top* of the quoted total, so a guest who pays exactly the quoted price leaves the VAT open on their receivable.
+17. **Do tenant markups and service fees (account 403000) carry output VAT?** Today they don't.
+18. **Is a refund a return of an overpayment, or a price reduction?** Today a refund puts the amount back on the guest's receivable without reducing revenue or VAT. A price reduction or partial cancellation would need a credit note that reverses revenue (and VAT).
+19. **Do supplier bills always include 14% input VAT?** Today every utility bill is assumed to.
+
 ## 4. Worked example: the same stay under each treatment
 
 **The stay:** 5 nights at EGP 2,000 a night, so EGP 10,000.

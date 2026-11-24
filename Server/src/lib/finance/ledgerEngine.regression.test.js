@@ -87,3 +87,37 @@ describe('DEF-PL-01 (review H4): P&L over a range containing closed and open mon
     assert.equal(withClose.balance_sheet.totals.assets, 1250);
   });
 });
+
+describe('review L4: month close is independent of the contra flag', () => {
+  it('a contra P&L account is zeroed by the close and its effect follows its raw debits and credits', () => {
+    const { CHART_OF_ACCOUNTS } = require('./chartOfAccounts');
+    const rev = CHART_OF_ACCOUNTS.find((a) => a.code === '409000');
+    const saved = rev.contra;
+    rev.contra = true; // simulate a contra-revenue account (none exist today)
+    try {
+      const month = [
+        entry('S', '2026-12-05', 'x', [line('105000', 1000, 0), line('402000', 0, 1000)]),
+        entry('D', '2026-12-06', 'x', [line('409000', 150, 0), line('105000', 0, 150)]), // contra-revenue debit (discount)
+      ];
+      const close = e.closeMonthEntry('2026-12', month);
+      assert.ok(balanced(close));
+      const after = e.balancesFromJournal([...month, close]).filter((a) => ['402000', '409000'].includes(a.code));
+      assert.ok(after.every((a) => Math.abs(a.debit - a.credit) < 0.005));
+      assert.equal(close.lines.find((l) => l.account === '302000').credit, 850);
+    } finally {
+      rev.contra = saved;
+    }
+  });
+});
+
+describe('review L5: entries posted directly to 303000 are not lost', () => {
+  it('balance sheet keeps a manual 303000 posting on top of the open P&L and still balances', () => {
+    const j = [
+      entry('B', '2026-11-05', 'booking', [line('103000', 500, 0), line('401000', 0, 500)]),
+      entry('M', '2026-11-06', 'manual_journal', [line('103000', 70, 0), line('303000', 0, 70)]),
+    ];
+    const st = e.buildStatements(j, [], '2026-11-01', '2026-11-30');
+    assert.equal(Object.fromEntries(st.balance_sheet.equity.map((a) => [a.code, a.balance]))['303000'], 570);
+    assert.equal(st.balance_sheet.totals.assets, st.balance_sheet.totals.liabilities_and_equity);
+  });
+});

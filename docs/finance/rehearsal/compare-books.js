@@ -1,16 +1,26 @@
 /**
- * Rehearsal: fingerprint of the books the app shows (trial balance from the existing engine), so the
- * output before and after migrations 175/176 can be compared. READ-ONLY: the engine only runs SELECTs.
+ * Rehearsal: fingerprint of the books the app shows (trial balance, every journal line, and each month's
+ * closing entry) from a chosen version of the existing engine. READ-ONLY: the engine only runs SELECTs.
  *
  *   REHEARSAL_DATABASE_URL=postgres://…restored-copy… node docs/finance/rehearsal/compare-books.js 2026-10-01 2026-11-30
  *
+ * Which code to use (separates the two sources of change, see rehearsal/README.md §4):
+ *   REHEARSAL_SERVER_DIR=/path/to/a/checkout/of/main/Server   → the code production runs today
+ *   (unset)                                                     → this repository's Server (the new code)
+ * Run it with the SAME code before and after the migrations to see the migrations' effect (must be none),
+ * and with old vs new code on the SAME database to see the engine fixes' effect (expected differences).
+ *
  * Refuses to run without REHEARSAL_DATABASE_URL, so it never falls back to the production URL in .env.
- * Prints per-account totals (numbers only, no names of people) and one hash of the whole trial balance.
+ * Output: per-account totals and closing-entry lines (account codes and amounts only, no personal data).
  */
 const path = require('path');
 
+function serverDir() {
+  return process.env.REHEARSAL_SERVER_DIR || path.join(__dirname, '../../../Server');
+}
+
 async function fingerprint(from, to) {
-  const engine = require(path.join(__dirname, '../../../Server/src/lib/finance/ledgerEngine.js'));
+  const engine = require(path.join(serverDir(), 'src/lib/finance/ledgerEngine.js'));
   const data = await engine.loadPortalData(from, to);
   const journal = engine.buildJournal(data, from, to);
   const rows = engine.balancesFromJournal(journal)
@@ -20,7 +30,17 @@ async function fingerprint(from, to) {
   const sha = (v) => crypto.createHash('sha256').update(JSON.stringify(v)).digest('hex');
   // Every entry's id, date and lines (hashed only: entries carry guest details that are never printed).
   const journalHash = sha(journal.map((e) => [e.id, e.date, (e.lines || []).map((l) => [l.account, l.debit || 0, l.credit || 0])]));
-  return { from, to, entries: journal.length, accounts: rows.length, trialBalanceHash: sha(rows), journalHash, rows };
+  // Closing entries month by month (regenerated live by the engine, never stored), so old and new code
+  // can be compared line by line for every closed month.
+  const closes = journal
+    .filter((e) => e.type === 'period_close')
+    .map((e) => ({
+      id: e.id,
+      balanced: Math.abs((e.debit || 0) - (e.credit || 0)) < 0.005,
+      lines: (e.lines || []).map((l) => [l.account, Number(l.debit || 0).toFixed(2), Number(l.credit || 0).toFixed(2)]),
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+  return { server: serverDir(), from, to, entries: journal.length, accounts: rows.length, trialBalanceHash: sha(rows), journalHash, closes, rows };
 }
 
 if (require.main === module) {

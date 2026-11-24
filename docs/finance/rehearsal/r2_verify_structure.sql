@@ -21,8 +21,8 @@ WITH c(check_name, passed, detail) AS (
     (SELECT COUNT(*) FROM public.reservations WHERE status IN ('confirmed', 'checked_in', 'checked_out') AND commission_snapshot IS NULL),
     (SELECT COUNT(*) || ' stays on the review list' FROM public.reservation_commission_review)
   UNION ALL SELECT 'ledger tables exist',
-    (SELECT COUNT(*) = 6 FROM information_schema.tables WHERE table_schema = 'public'
-       AND table_name IN ('ledger_accounts', 'ledger_policies', 'ledger_periods', 'ledger_entries', 'ledger_lines', 'ledger_events')), NULL
+    (SELECT COUNT(*) = 7 FROM information_schema.tables WHERE table_schema = 'public'
+       AND table_name IN ('ledger_accounts', 'ledger_policies', 'ledger_periods', 'ledger_entries', 'ledger_lines', 'ledger_events', 'ledger_control_log')), NULL
   UNION ALL SELECT 'chart seeded: 47 system accounts',
     (SELECT COUNT(*) = 47 FROM public.ledger_accounts WHERE is_system), (SELECT COUNT(*)::text FROM public.ledger_accounts WHERE is_system)
   UNION ALL SELECT 'every custom account copied into the ledger chart',
@@ -32,9 +32,13 @@ WITH c(check_name, passed, detail) AS (
   UNION ALL SELECT 'no approved accounting policy exists', NOT EXISTS (SELECT 1 FROM public.ledger_policies WHERE status = 'approved'), NULL
   UNION ALL SELECT 'posting switch is off',
     (SELECT value_text FROM public.financial_settings WHERE key = 'ledger_posting') = 'off', NULL
-  UNION ALL SELECT 'database posting guards present',
-    (SELECT COUNT(*) = 6 FROM pg_trigger WHERE tgname IN ('ledger_entries_insert_guard', 'ledger_lines_insert_guard',
-       'ledger_entries_guard', 'ledger_lines_guard', 'ledger_entry_balance_check', 'ledger_policies_guard')), NULL
+  UNION ALL SELECT 'uniqueness: one reversal / one replacement / one approved policy per date',
+    (SELECT COUNT(*) = 3 FROM pg_indexes WHERE schemaname = 'public'
+       AND indexname IN ('ledger_entries_one_reversal', 'ledger_entries_one_replacement', 'ledger_policies_one_approved_per_date')), NULL
+  UNION ALL SELECT 'database posting guards present (detail lists any missing)',
+    (SELECT COUNT(DISTINCT tgname) = 21 FROM pg_trigger WHERE tgname IN ('ledger_entries_insert_guard', 'ledger_lines_insert_guard', 'ledger_entries_guard', 'ledger_lines_guard', 'ledger_entry_balance_check', 'ledger_policies_guard', 'ledger_periods_guard', 'ledger_reversal_mirror_check', 'ledger_control_log_append_only', 'financial_settings_ledger_posting_guard', 'ledger_accounts_guard', 'financial_custom_accounts_ledger_sync', 'ledger_accounts_no_truncate', 'ledger_policies_no_truncate', 'ledger_periods_no_truncate', 'ledger_entries_no_truncate', 'ledger_lines_no_truncate', 'ledger_events_no_truncate', 'ledger_control_log_no_truncate', 'financial_settings_no_truncate', 'reservation_commission_corrections_no_truncate')),
+    (SELECT string_agg(g, ', ') FROM unnest(ARRAY['ledger_entries_insert_guard', 'ledger_lines_insert_guard', 'ledger_entries_guard', 'ledger_lines_guard', 'ledger_entry_balance_check', 'ledger_policies_guard', 'ledger_periods_guard', 'ledger_reversal_mirror_check', 'ledger_control_log_append_only', 'financial_settings_ledger_posting_guard', 'ledger_accounts_guard', 'financial_custom_accounts_ledger_sync', 'ledger_accounts_no_truncate', 'ledger_policies_no_truncate', 'ledger_periods_no_truncate', 'ledger_entries_no_truncate', 'ledger_lines_no_truncate', 'ledger_events_no_truncate', 'ledger_control_log_no_truncate', 'financial_settings_no_truncate', 'reservation_commission_corrections_no_truncate']) g
+       WHERE NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = g))
 )
 SELECT check_name, passed, detail FROM c;
 

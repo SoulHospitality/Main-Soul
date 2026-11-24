@@ -176,8 +176,8 @@ SELECT pg_temp.must_fail('the correction log cannot be deleted',
 CREATE FUNCTION pg_temp.entry(num text, pol text, d numeric, c numeric) RETURNS void LANGUAGE plpgsql AS $f$
 DECLARE eid bigint;
 BEGIN
-  INSERT INTO public.ledger_entries (number, transaction_date, period, description, source_module, source_type, source_id, origin, idempotency_key, policy_version)
-  VALUES (num, DATE '2027-03-01', '2027-03', 'REHEARSAL', 'rehearsal', 'test', num, 'manual', 'rehearsal:' || num, pol)
+  INSERT INTO public.ledger_entries (number, transaction_date, period, description, source_module, source_type, source_id, origin, idempotency_key, policy_version, created_by)
+  VALUES (num, DATE '2027-03-01', '2027-03', 'REHEARSAL', 'rehearsal', 'test', num, 'manual', 'rehearsal:' || num, pol, pg_temp.v('a1')::integer)
   RETURNING id INTO eid;
   INSERT INTO public.ledger_lines (entry_id, line_no, account_code, debit, base_debit) VALUES (eid, 1, '103000', d, d);
   INSERT INTO public.ledger_lines (entry_id, line_no, account_code, credit, base_credit) VALUES (eid, 2, '105000', c, c);
@@ -185,16 +185,26 @@ END $f$;
 SELECT pg_temp.must_fail('no entry can be written while posting is off', $s$SELECT pg_temp.entry('RH-0', NULL, 10, 10)$s$, 'switched off');
 SELECT pg_temp.must_fail('a policy cannot be approved without the separate VAT approval',
   $s$INSERT INTO public.ledger_policies (version, effective_from, settings, status, approved_by, approved_at, approval_ref)
-     VALUES ('REHEARSAL-NOVAT', '2027-01-01', '{"revenue_presentation":"gross","vat_base":"fee_only"}', 'approved', 1, now(), 'x')$s$, 'check');
+     VALUES ('REHEARSAL-NOVAT', '2027-01-01', '{"revenue_presentation":"gross","vat_base":"fee_only"}', 'approved', 1, now(), 'x')$s$, 'check|approv|created_by');
 INSERT INTO public.ledger_policies (version, effective_from, settings, status)
 VALUES ('REHEARSAL-DRAFT', '2027-01-01', '{"revenue_presentation":"gross","vat_base":"fee_only"}', 'draft');
-INSERT INTO public.ledger_policies (version, effective_from, settings, status, approved_by, approved_at, approval_ref, vat_approved_by, vat_approved_at, vat_approval_ref)
+SELECT pg_temp.must_fail('a policy cannot be approved by the person who recorded it',
+  format($s$INSERT INTO public.ledger_policies (version, effective_from, settings, status, approved_by, approved_at, approval_ref, vat_approved_by, vat_approved_at, vat_approval_ref, created_by)
+     VALUES ('REHEARSAL-SELF', '2027-01-01', '{"revenue_presentation":"gross","vat_base":"fee_only"}', 'approved', %s, now(), 'x', %s, now(), 'x', %s)$s$, pg_temp.v('a1'), pg_temp.v('a2'), pg_temp.v('a1')), 'recorded');
+INSERT INTO public.ledger_policies (version, effective_from, settings, status, approved_by, approved_at, approval_ref, vat_approved_by, vat_approved_at, vat_approval_ref, created_by)
 VALUES ('REHEARSAL-TEST', '2027-01-01', '{"revenue_presentation":"gross","vat_base":"fee_only"}', 'approved',
-        pg_temp.v('a1')::integer, now(), 'REHEARSAL ONLY - NOT AN APPROVAL', pg_temp.v('a1')::integer, now(), 'REHEARSAL ONLY - NOT AN APPROVAL');
+        pg_temp.v('a1')::integer, now(), 'REHEARSAL ONLY - NOT AN APPROVAL', pg_temp.v('a2')::integer, now(), 'REHEARSAL ONLY - NOT AN APPROVAL', pg_temp.v('sp')::integer);
 SELECT pg_temp.must_fail('an approved policy cannot be edited',
   $s$UPDATE public.ledger_policies SET settings = '{"revenue_presentation":"net","vat_base":"fee_only"}' WHERE version = 'REHEARSAL-TEST'$s$, 'cannot be changed');
 
-UPDATE public.financial_settings SET value_text = 'on' WHERE key = 'ledger_posting';  -- restored copy only
+SELECT pg_temp.must_fail('posting cannot be switched on without a named admin and reason',
+  $s$UPDATE public.financial_settings SET value_text = 'on' WHERE key = 'ledger_posting'$s$, 'actor_id');
+CREATE FUNCTION pg_temp.switch(val text) RETURNS void LANGUAGE plpgsql AS $f$
+BEGIN
+  PERFORM set_config('app.actor_id', pg_temp.v('a1'), true), set_config('app.control_reason', 'REHEARSAL on a restored copy', true);
+  UPDATE public.financial_settings SET value_text = val WHERE key = 'ledger_posting';
+END $f$;
+SELECT pg_temp.switch('on');  -- restored copy only
 SELECT pg_temp.must_fail('an entry without a policy is refused', $s$SELECT pg_temp.entry('RH-1', NULL, 10, 10)$s$, 'approved accounting policy');
 SELECT pg_temp.must_fail('an entry under a draft policy is refused', $s$SELECT pg_temp.entry('RH-2', 'REHEARSAL-DRAFT', 10, 10)$s$, 'approved accounting policy');
 SELECT pg_temp.must_fail('an unbalanced entry is refused', $s$SELECT pg_temp.entry('RH-3', 'REHEARSAL-TEST', 10, 9.99)$s$, 'unbalanced');
@@ -203,7 +213,7 @@ SELECT pg_temp.entry('RH-5', 'REHEARSAL-TEST', 250, 250);
 SELECT pg_temp.ok('balanced test entries post', (SELECT COUNT(*) = 2 FROM public.ledger_entries WHERE number IN ('RH-4', 'RH-5')));
 SELECT pg_temp.must_fail('the same idempotency key cannot post twice (duplicate event / retry)',
   $s$INSERT INTO public.ledger_entries (number, transaction_date, period, description, source_module, source_type, source_id, origin, idempotency_key, policy_version)
-     VALUES ('RH-4b', DATE '2027-03-01', '2027-03', 'REHEARSAL', 'rehearsal', 'test', 'RH-4', 'manual', 'rehearsal:RH-4', 'REHEARSAL-TEST')$s$, 'duplicate|unique');
+     VALUES ('RH-4b', DATE '2027-03-01', '2027-03', 'REHEARSAL', 'rehearsal', 'test', 'RH-4', 'system', 'rehearsal:RH-4', 'REHEARSAL-TEST')$s$, 'duplicate|unique');
 SELECT pg_temp.must_fail('a posted entry cannot gain lines later',
   $s$INSERT INTO public.ledger_lines (entry_id, line_no, account_code, debit, base_debit) SELECT id, 9, '103000', 5, 5 FROM public.ledger_entries WHERE number = 'RH-4'$s$, 'only be added while');
 SELECT pg_temp.must_fail('posted lines cannot be edited',
@@ -211,14 +221,35 @@ SELECT pg_temp.must_fail('posted lines cannot be edited',
 SELECT pg_temp.must_fail('posted entries cannot be edited',
   $s$UPDATE public.ledger_entries SET description = 'changed' WHERE number = 'RH-4'$s$, 'immutable');
 SELECT pg_temp.must_fail('posted entries cannot be deleted', $s$DELETE FROM public.ledger_entries WHERE number = 'RH-4'$s$, 'cannot be deleted');
-UPDATE public.ledger_entries SET status = 'reversed', reversed_by_id = (SELECT id FROM public.ledger_entries WHERE number = 'RH-5')
-WHERE number = 'RH-4';
-SELECT pg_temp.ok('marking an entry reversed is allowed once',
+SELECT pg_temp.must_fail('an entry can only be marked reversed by its own reversal',
+  $s$UPDATE public.ledger_entries SET status = 'reversed', reversed_by_id = (SELECT id FROM public.ledger_entries WHERE number = 'RH-5') WHERE number = 'RH-4'$s$, 'immutable');
+CREATE FUNCTION pg_temp.reversal(num text, mirror boolean) RETURNS void LANGUAGE plpgsql AS $f$
+DECLARE orig bigint; rid bigint;
+BEGIN
+  SELECT id INTO orig FROM public.ledger_entries WHERE number = 'RH-4';
+  INSERT INTO public.ledger_entries (number, transaction_date, period, description, source_module, source_type, source_id, origin, reverses_id, idempotency_key, policy_version, created_by)
+  VALUES (num, DATE '2027-03-02', '2027-03', 'REHEARSAL reversal', 'rehearsal', 'test', 'RH-4', 'reversal', orig, 'rehearsal:' || num, 'REHEARSAL-TEST', pg_temp.v('a1')::integer) RETURNING id INTO rid;
+  IF mirror THEN
+    INSERT INTO public.ledger_lines (entry_id, line_no, account_code, debit, credit, base_debit, base_credit)
+    SELECT rid, line_no, account_code, credit, debit, base_credit, base_debit FROM public.ledger_lines WHERE entry_id = orig;
+    UPDATE public.ledger_entries SET status = 'reversed', reversed_by_id = rid WHERE id = orig;
+  ELSE
+    INSERT INTO public.ledger_lines (entry_id, line_no, account_code, debit, base_debit) VALUES (rid, 1, '105000', 90, 90);
+    INSERT INTO public.ledger_lines (entry_id, line_no, account_code, credit, base_credit) VALUES (rid, 2, '103000', 90, 90);
+  END IF;
+END $f$;
+SELECT pg_temp.must_fail('a reversal that does not mirror the original is refused', $s$SELECT pg_temp.reversal('RH-4X', false)$s$, 'mirror');
+SELECT pg_temp.reversal('RH-4R', true);
+SELECT pg_temp.ok('a mirrored reversal posts and marks the original reversed once',
   (SELECT status = 'reversed' FROM public.ledger_entries WHERE number = 'RH-4'));
 SELECT pg_temp.must_fail('an entry cannot be reversed twice',
   $s$UPDATE public.ledger_entries SET reversed_by_id = id WHERE number = 'RH-4'$s$, 'immutable');
 
-UPDATE public.financial_settings SET value_text = 'off' WHERE key = 'ledger_posting';
+SELECT pg_temp.switch('off');
+SELECT pg_temp.ok('every switch change is in the permanent control log with who and why',
+  (SELECT COUNT(*) >= 2 FROM public.ledger_control_log WHERE reason = 'REHEARSAL on a restored copy' AND actor_id = pg_temp.v('a1')::integer));
+SELECT pg_temp.must_fail('the control log cannot be deleted', $s$DELETE FROM public.ledger_control_log$s$, 'permanent');
+SELECT pg_temp.must_fail('the posting switch cannot be deleted', $s$DELETE FROM public.financial_settings WHERE key = 'ledger_posting'$s$, 'cannot be deleted');
 SELECT pg_temp.must_fail('after switching off again, nothing posts', $s$SELECT pg_temp.entry('RH-6', 'REHEARSAL-TEST', 10, 10)$s$, 'switched off');
 SELECT pg_temp.ok('posting switch is back off', (SELECT value_text FROM public.financial_settings WHERE key = 'ledger_posting') = 'off');
 

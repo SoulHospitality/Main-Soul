@@ -48,6 +48,11 @@ DROP TRIGGER IF EXISTS reservation_commission_corrections_append_only ON public.
 CREATE TRIGGER reservation_commission_corrections_append_only
   BEFORE UPDATE OR DELETE ON public.reservation_commission_corrections
   FOR EACH ROW EXECUTE FUNCTION public.reservation_commission_corrections_append_only();
+-- TRUNCATE skips row triggers: guard it at statement level (also reached by TRUNCATE reservations CASCADE).
+DROP TRIGGER IF EXISTS reservation_commission_corrections_no_truncate ON public.reservation_commission_corrections;
+CREATE TRIGGER reservation_commission_corrections_no_truncate
+  BEFORE TRUNCATE ON public.reservation_commission_corrections
+  FOR EACH STATEMENT EXECUTE FUNCTION public.reservation_commission_corrections_append_only();
 
 CREATE OR REPLACE FUNCTION public.reservation_commission_snapshot()
 RETURNS trigger LANGUAGE plpgsql AS $$

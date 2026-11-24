@@ -722,18 +722,17 @@ function closeMonthEntry(yearMonth, monthJournal) {
   let revenue = 0;
   let expense = 0;
   for (const acct of CHART_OF_ACCOUNTS) {
+    if (acct.type !== 'revenue' && acct.type !== 'expense') continue;
     const raw = map[acct.code] || { debit: 0, credit: 0 };
-    const bal = round2(signedBalance(acct.type, raw.debit, raw.credit, acct.contra));
-    // A balance on the unusual side (revenue in debit after a credit note, an expense in credit after an
-    // allowance release) closes on the other side. makeEntry drops non-positive lines, so writing it as
-    // a negative amount used to lose the line and leave the close entry unbalanced.
-    if (acct.type === 'revenue' && Math.abs(bal) > 0.009) {
-      lines.push(bal > 0 ? journalLine(acct.code, bal, 0, `Close ${acct.name}`) : journalLine(acct.code, 0, -bal, `Close ${acct.name}`));
-      revenue += bal;
-    } else if (acct.type === 'expense' && Math.abs(bal) > 0.009) {
-      lines.push(bal > 0 ? journalLine(acct.code, 0, bal, `Close ${acct.name}`) : journalLine(acct.code, -bal, 0, `Close ${acct.name}`));
-      expense += bal;
-    }
+    // Close each P&L account by reversing its raw net (debit − credit), whatever side it sits on and
+    // whether or not it is a contra account. Every account is zeroed, the entry always balances, and the
+    // profit moved to retained earnings is Σ(credit − debit). (A balance on the unusual side used to be
+    // written as a negative amount that makeEntry dropped, leaving the close entry unbalanced.)
+    const net = round2((raw.debit || 0) - (raw.credit || 0));
+    if (Math.abs(net) <= 0.009) continue;
+    lines.push(net > 0 ? journalLine(acct.code, 0, net, `Close ${acct.name}`) : journalLine(acct.code, -net, 0, `Close ${acct.name}`));
+    if (acct.type === 'revenue') revenue -= net; // credit − debit
+    else expense += net; // debit − credit
   }
   const pnl = round2(revenue - expense);
   if (pnl >= 0) lines.push(journalLine('302000', 0, pnl, 'Transfer profit to retained earnings'));
@@ -2053,7 +2052,8 @@ function balanceSheet(bals, pnlNet) {
   const assets = bals.filter((a) => a.group === 'assets');
   const liabilities = bals.filter((a) => a.group === 'liabilities');
   const equity = bals.filter((a) => a.group === 'equity').map((a) => {
-    if (a.code === '303000') return { ...a, balance: round2(pnlNet) };
+    // Current-year earnings = open P&L, plus anything posted to 303000 directly (never overwritten).
+    if (a.code === '303000') return { ...a, balance: round2((a.balance || 0) + pnlNet) };
     return a;
   });
   const assetTotal = round2(assets.reduce((s, a) => s + a.balance, 0));

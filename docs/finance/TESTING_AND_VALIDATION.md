@@ -1,44 +1,56 @@
 # Testing and Validation
 
-## Automated (in `npm test`)
-`Server/src/lib/accounting/money.test.js` has 21 tests. Among them is a parity test showing the snapshot commission split matches `lib/commission.js calcReservationFinancials` across 2,000 random reservations in modes A, B and C, with owner-booked and guest stays. The tests cover:
-- decimal arithmetic, and rejection of non-numbers;
-- half-up rounding at the currency's decimals;
-- largest-remainder allocation that always sums exactly;
-- inclusive and exclusive VAT;
-- commission splits from a snapshot (company, agent, owner remainder) and the error when no snapshot exists;
-- refunds and FX conversion;
-- the debit = credit assertion;
-- reconciliation buckets (matched, amount break, timing break, ledger only, subledger only).
+**Updated:** Phase 5B, 2026-11-24. Every result below is on **synthetic data**, in disposable local databases. Nothing has been run against production or a restored copy.
 
-## Database tests (PGlite: every migration applied to an in-memory Postgres)
-`ledger-test.js` (52 checks; copied to `docs/finance/rehearsal/local/`) covers the following. Database-level posting controls: the switch, approved policies only, separate D-01 and VAT approvals, approved policies being permanent, and no lines added to a posted entry later. Migration 175 validation: applied-rate rules, idempotent retries, rate changes after confirmation, the review flags, protection against hand-written snapshots, admin-only corrections with a separate approver, the trigger-written log, and append-only logs. The checks are:
-- migrations 175 and 176 applying cleanly over the full migration chain;
-- the chart seeded with the same codes as `chartOfAccounts.js`;
-- posting refused while `ledger_posting = 'off'`;
-- balanced posting and exact-balance rejection;
-- the one-side-per-line rule, negative amounts, unknown or inactive accounts, and currency restrictions;
-- USD lines without a rate being rejected;
-- idempotent re-posting;
-- the database blocking UPDATE and DELETE on entries and lines;
-- reversal posting a mirror entry and marking the original only once;
-- closed-period rejection;
-- the deferred balance trigger catching an unbalanced direct insert;
-- the trial balance;
-- commission snapshots captured at confirmation, with a historical confirmed row left for review;
-- an overwrite blocked outside a correction, and a logged correction being allowed.
+## Automated: `npm test`
+| File | Tests | Covers |
+|---|---|---|
+| `src/lib/accounting/money.test.js` | 21 | Decimal arithmetic, rounding, allocation, VAT, commission split, refunds and FX, balance, reconciliation, a 2,000-case parity check against `calcReservationFinancials` |
+| `src/lib/finance/ledgerEngine.regression.test.js` | 13 | DEF-CLOSE-01, DEF-BS-01, DEF-PL-01 (P&L with closed and open months), L4 (contra-independent close), L5 (303000 postings kept) |
+| `src/lib/accounting/engineAdapter.test.js` | 7 | Exact copy and keys, USD effective rate, missing dollar figure refused, two-sided lines split, negatives moved, two-sided USD refused, unit dimension |
+| `src/lib/finance/applyCancellation.test.js`, `cancelSettlement.test.js`, `paymentInput.test.js` | 14 | Existing finance tests (wired in by `3caa574`) |
+| Other suites | 88 | Unchanged |
 
-`livechecks-test.js` runs the six live-check scripts on a migrated test database. It confirms they parse, that check 6 detects a seeded 0.01 imbalance, and that a write inside the read-only transaction is refused.
+**The one failure:** `hrRules.test.js:362`.
+- **Cause:** commit `ad8515f` made operations staff subject to office attendance, and the test was not updated.
+- **Status:** an HR decision; the HR code is unchanged.
 
-These harness scripts live outside the repository for now. Moving them into `Server/test/` with PGlite as a dev dependency is proposed for approval.
+**Coverage** (unit tests only, `--experimental-test-coverage`): `commissionCalc` and `money` 100%, `engineAdapter` about 96%. `ledgerEngine.js` is low (about 22% at the last measurement). `posting.js` is covered only by the database suites, whose coverage is not measured.
+
+## Database suites (PGlite: an in-process Postgres with all 176 migrations; single connection)
+Location: `docs/finance/rehearsal/local/`.
+
+| Suite | Result | Covers |
+|---|---|---|
+| `ledger-test.js` | **119 / 119** | All posting and database controls, including every Phase 5B finding: H1, H2, M1, M2, M3, M6, M7, L1, L6, L7, L8 |
+| `engine-validation.js` | **43 / 43** | Engine economics, statements, stored-ledger parity |
+| `security-test.js` | **20 / 20** | Roles, page grants, the switch not reachable through the API, injection, owner isolation |
+| `rehearsal.js` | **26 / 26 steps** (r2 15/15, r3 41/41) | Apply, partial failure, rollback, re-apply. Evidence goes to the OS temp folder, outside the repo |
+| `livechecks-test.js` | all pass | Live checks 0–6 |
+
+PGlite has a single connection, so concurrency there is **only simulated** (for example, a client that hides a row to force the race branch).
+
+## Genuine multi-session test (real PostgreSQL 17.5)
+`docs/finance/rehearsal/local/concurrency-test.js` starts a local **embedded PostgreSQL 17.5 server** (`embedded-postgres`, installed outside the project). It applies all 176 migrations the way the app does, and runs **separate concurrent connections**. Result: **7 / 7**. Evidence: `rehearsal/evidence/real-postgres-concurrency-2026-11-24.json`.
+- 20 concurrent posts with the same key and content: one entry.
+- 20 concurrent posts with the same key and different amounts: one entry, 19 conflicts.
+- 10 concurrent reversals: one reversal.
+- Two raw sessions inserting reversals: the second is refused by the unique index.
+- A non-owner role is refused TRUNCATE, `DISABLE TRIGGER`, `DROP TRIGGER`, `session_replication_role` and UPDATE.
+- The owner role can disable triggers.
+
+This is **not** Supabase and **not** the restored copy. The restored-copy rehearsal repeats it (runbook §4b).
 
 ## Before any data-changing step
-1. Run the live checks and review the results (`live-checks/README.md`).
-2. Do a dry-run migration on a restored copy of production, then reconcile it (`DATA_MIGRATION_PLAN.md` Step 3) with zero unexplained breaks.
-3. Get the accountant's sign-off on the reconciliation summary.
-4. Run in parallel for one month.
+1. Live checks 0–6.
+2. The restored-copy rehearsal, including the old-vs-new-code engine comparison, the concurrency and role checks, and rollbacks.
+3. The restricted posting role, and a session-bound identity design (H3).
+4. A dry-run import reconciled to zero unexplained breaks, then the accountant's sign-off and a one-month parallel run.
 
 ## Not yet covered
-- Event → posting rules for each financial event. These are blocked by D-01.
-- Load and performance testing of `trialBalance` on a year of entries.
-- Permission (segregation of duties) tests. These are blocked by D-14.
+- Fixtures for insurance, vendor invoices, recurring charges, petty cash, housekeeping orders and holdbacks.
+- An automated Paymob webhook test.
+- Coverage of the database suites.
+- Load testing.
+- Segregation-of-duties tests beyond admin-only approvals (D-14).
+- Contra P&L accounts in the P&L totals (`pnlFromBalances` follows the contra sign convention; none exist today).

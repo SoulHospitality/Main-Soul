@@ -4,13 +4,20 @@
 **Where:** a **restored copy** of production. Use a new Supabase project restored from a backup or PITR, or a `pg_dump`/`pg_restore` into a scratch database. **Never production.** Every script that writes data refuses to run unless the session declares it is on a copy.
 **Result:** fill in the rehearsal results table in `../DEPLOYMENT_READINESS.md` §4, and keep the outputs privately. Do not commit outputs from production data.
 
-A local rehearsal of every step below has already passed on an in-process Postgres (PGlite) with seeded data: **26 of 26 steps, 34 of 34 behaviour checks.** The evidence is in `evidence/local-rehearsal-2026-11-24.json` and the runner in `local/`. This runbook repeats it on real data.
+A local rehearsal of every step below has already passed on an in-process Postgres (PGlite) with seeded data: **26 of 26 steps, 41 of 41 behaviour checks.** The evidence is in `evidence/local-rehearsal-2026-11-24-phase5b.json` and the runner in `local/`. A genuine multi-session test has also passed on a local **real PostgreSQL 17.5** server: `local/concurrency-test.js`, evidence in `evidence/real-postgres-concurrency-2026-11-24.json`. This runbook repeats the steps on real data.
+
+**Two separate sources of change.** The branch carries two kinds of change, and this runbook keeps them apart:
+- **The migrations (175/176)** must not change any existing data or any figure the app shows. They are checked with the **old code**: identical before and after.
+- **The engine fixes (DEF-PL-01, DEF-BS-01, DEF-CLOSE-01, L4, L5)** intentionally change the displayed P&L, balance sheet and closing entries wherever a month has been closed. They are checked by running **old code vs new code on the same database**. Differences are expected, and each one must be explained.
 
 ## 0. Prepare
 ```bash
 export REHEARSAL_DATABASE_URL='postgres://…restored copy…'   # never the production URL
-git fetch origin && git checkout feature/finance-ledger      # code under test (b9d56fe + rehearsal fixes)
+git fetch origin && git checkout feature/finance-ledger      # code under test
 cd Server && npm ci
+# The code production runs today, for the "old code" runs (read-only export, no checkout needed):
+mkdir -p /tmp/main-code && git archive origin/main Server | tar -x -C /tmp/main-code && (cd /tmp/main-code/Server && npm ci)
+export OLD_SERVER=/tmp/main-code/Server
 ```
 Confirm the copy is **not** production: different project ref or host, and app traffic does not use it.
 
@@ -18,8 +25,15 @@ Confirm the copy is **not** production: different project ref or host, and app t
 ```bash
 psql "$REHEARSAL_DATABASE_URL" -f ../docs/finance/live-checks/00_deployment_state.sql    # expect 174, nothing applied
 psql "$REHEARSAL_DATABASE_URL" -f ../docs/finance/rehearsal/r1_fingerprint.sql > r1_before.txt
-node ../docs/finance/rehearsal/compare-books.js 2026-10-01 2026-12-31 > books_before.json
+REHEARSAL_SERVER_DIR=$OLD_SERVER node ../docs/finance/rehearsal/compare-books.js 2026-10-01 2026-12-31 > books_old_before.json
+node ../docs/finance/rehearsal/compare-books.js 2026-10-01 2026-12-31 > books_new_before.json
 ```
+`books_old_before.json` against `books_new_before.json` is the **engine-fix effect** on real data, measured before any migration. Compare:
+- `closes` month by month: every new closing entry must balance; list each month whose lines differ, and the accounts concerned;
+- the trial balance rows;
+- the P&L and balance sheet in the Financial System, old build vs new build.
+
+Record every difference in `DEPLOYMENT_READINESS.md` §4b with its cause. An unexplained difference is a blocker.
 
 ## 2. Recovery from a failed migration
 ```bash
@@ -36,14 +50,23 @@ Expect `[db] Applied migration 175_commission_snapshots.sql` and `… 176_ledger
 
 **Integrations:** before starting, point integration settings in the copy's environment at test values or leave them unset, so the copy sends no emails, WhatsApp messages or Paymob calls. Use a local `.env` copy that has no production keys.
 
-## 4. Verify structure and that nothing existing changed
+## 4. Verify structure, and that the migrations changed nothing existing
 ```bash
 psql "$REHEARSAL_DATABASE_URL" -f ../docs/finance/rehearsal/r2_verify_structure.sql   # every row passed = t
 psql "$REHEARSAL_DATABASE_URL" -f ../docs/finance/rehearsal/r1_fingerprint.sql > r1_after.txt
 diff r1_before.txt r1_after.txt                     # only the "migrations >= 170" line may differ
-node ../docs/finance/rehearsal/compare-books.js 2026-10-01 2026-12-31 > books_after.json
-diff books_before.json books_after.json             # must be identical
+# Migrations effect: SAME (old) code before and after the migrations → must be identical.
+REHEARSAL_SERVER_DIR=$OLD_SERVER node ../docs/finance/rehearsal/compare-books.js 2026-10-01 2026-12-31 > books_old_after.json
+diff books_old_before.json books_old_after.json     # must be identical
+# New code after the migrations must equal new code before them (the migrations add nothing to the books).
+node ../docs/finance/rehearsal/compare-books.js 2026-10-01 2026-12-31 > books_new_after.json
+diff books_new_before.json books_new_after.json     # must be identical
 ```
+Do **not** compare old code with new code here: those differences are the engine fixes, handled in §1.
+
+## 4b. Concurrency and role checks on the copy
+- **Two sessions, same idempotency key:** run `local/concurrency-test.js` against the copy's server, or reproduce its §1–§4 by hand in two `psql` sessions. Exactly one entry must result.
+- **Ordinary application role:** create a non-owner, non-superuser role with table privileges only, as in `concurrency-test.js` §5. Check that TRUNCATE, `DISABLE TRIGGER`, `session_replication_role` and UPDATE of a posted entry are refused. This is the role the restricted-posting-role blocker requires.
 
 ## 5. Existing application compatibility (manual, on the copy's app at port 5055)
 Each of these must work exactly as on production. Note anything that does not:
@@ -51,7 +74,7 @@ Each of these must work exactly as on production. Note anything that does not:
 - Create a reservation as **pending**, edit it, then **confirm** it. In SQL, check that `commission_snapshot_status = 'captured'`.
 - Create a reservation directly as confirmed, through the website checkout flow if possible.
 - Cancel a reservation. Check in and check out a stay.
-- Record a payment and an expense. Open the Financial System: trial balance, P&L and owner statements for 2026-10 → today. **The figures must match `books_before.json`**, except for the test transactions you just added.
+- Record a payment and an expense. Open the Financial System: trial balance, P&L and owner statements for 2026-10 → today. **The figures must match `books_new_before.json`** (the app here runs the new code), except for the test transactions you just added.
 - Close and reopen nothing; period freezing is out of scope.
 
 ## 6. Behaviour checks (writes test rows on the copy)
@@ -59,7 +82,7 @@ Each of these must work exactly as on production. Note anything that does not:
 psql "$REHEARSAL_DATABASE_URL" -v ON_ERROR_STOP=1 \
   -c "SET app.rehearsal_copy = 'restored-copy-not-production'" -f ../docs/finance/rehearsal/r3_behaviour.sql > r3.txt
 ```
-psql gives `-c` and `-f` the same session, so the setting applies. The last two result sets must show **every** check passed (34 of 34) and 0 failed. These cover:
+psql gives `-c` and `-f` the same session, so the setting applies. The last two result sets must show **every** check passed (41 of 41) and 0 failed. These cover:
 - capture with the applied rates;
 - retries and duplicates;
 - rate changes after confirmation;

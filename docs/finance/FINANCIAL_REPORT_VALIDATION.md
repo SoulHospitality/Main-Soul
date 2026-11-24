@@ -45,6 +45,12 @@ These are from the synthetic engine-validation suite: uncommitted, run locally.
 | VAT | Output = sum of stay VAT = 205000; input = 107000 | ✅ (treatment ⚠ D-11) |
 | Unit profitability | No dedicated report; revenue per unit rebuilt from the journal | ✅ (reconstruction only) |
 
+## Further report fixes (Phase 5B, uncommitted)
+- **L4:** the month close is now based on each account's raw net, so a contra P&L account (none exist today) is also zeroed and closes on the correct side.
+- **L5:** anything posted directly to 303000 is kept: 303000 = posted balance + open P&L, in both `buildStatements` and `reportBuilder.balanceSheetReport`.
+
+Both have regression tests in `ledgerEngine.regression.test.js`.
+
 ## Effect on production once deployed
 These engine fixes change what the Financial System **displays**, wherever a month has been closed. The migrations do not change the reports.
 
@@ -63,5 +69,4 @@ To see the effect: on the restored copy, run `rehearsal/compare-books.js` with t
 ## Not yet covered
 - Fixtures for insurance, vendor invoices, recurring charges, petty cash, housekeeping orders and holdbacks.
 - Line-by-line comparison of exports (`financialExport.js`); the exports use the same `buildStatements` output.
-- Contra P&L accounts in the close: none exist today. Under review in the ledger work as L4.
-- Manual entries posted directly to 303000: the balance sheet overwrites 303000. Under review as L5.
+- Real data: every check above is on synthetic fixtures.

@@ -1,5 +1,6 @@
 // Local deployment rehearsal of migrations 175/176 on PGlite (Postgres 16/17 in-process), using the
-// repository's rehearsal scripts. Evidence is written to rehearsal-evidence.json.
+// repository's rehearsal scripts. Evidence is written OUTSIDE the repository: to $REHEARSAL_EVIDENCE_DIR,
+// or the OS temp folder. Copy it into docs/finance/rehearsal/evidence/ deliberately if it should be kept.
 const fs = require('fs');
 const path = require('path');
 const { boot, applyMigration } = require('./harness');
@@ -128,7 +129,7 @@ const step = (name, ok, detail) => {
   const entries = (await query(`SELECT COUNT(*)::int AS n FROM ledger_entries`)).rows[0].n;
   err = null;
   try { await db.exec(read('rollback_176.sql')); } catch (e) { err = e.message; await db.exec('ROLLBACK').catch(() => {}); }
-  step(`rollback_176 refuses while the ledger holds entries (${entries}) unless confirmed`, /Refusing/.test(err || '') && (await tables('ledger\\_%')) === 6, err);
+  step(`rollback_176 refuses while the ledger holds entries (${entries}) unless confirmed`, /Refusing/.test(err || '') && (await tables('ledger\\_%')) === 7, err);
   await db.exec("SET app.confirm_rollback_176 = 'drop-ledger-with-entries';\n" + read('rollback_176.sql'));
   await db.exec('RESET app.confirm_rollback_176');
   step('rollback_176 with confirmation removes the ledger (despite immutability triggers) and its migration record',
@@ -162,7 +163,10 @@ const step = (name, ok, detail) => {
 
   evidence.finished = new Date().toISOString();
   evidence.summary = { steps: evidence.steps.length, failed };
-  fs.writeFileSync(path.join(__dirname, 'rehearsal-evidence.json'), JSON.stringify(evidence, null, 2));
+  const outDir = process.env.REHEARSAL_EVIDENCE_DIR || require('os').tmpdir();
+  const outFile = path.join(outDir, 'rehearsal-evidence-' + evidence.started.replace(/[:.]/g, '-') + '.json');
+  fs.writeFileSync(outFile, JSON.stringify(evidence, null, 2));
+  console.log('evidence written to ' + outFile);
   console.log(failed ? `\n${failed} FAILED` : `\nALL ${evidence.steps.length} REHEARSAL STEPS PASSED`);
   process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error('CRASH', e.stack); process.exit(1); });
