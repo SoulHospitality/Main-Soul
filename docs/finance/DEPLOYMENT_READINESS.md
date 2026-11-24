@@ -7,11 +7,11 @@ This document replaces `DEPLOYMENT_READINESS_CHECKLIST.md`. Approval to commit o
 
 | Item | Evidence | Status |
 |---|---|---|
-| Both commits on the remote | `origin/feature/finance-ledger` = `b9d56fe` → `6955687` → `ff782cd` (the `main` base); local HEAD equals the remote | ✅ Verified 2026-11-24 |
+| Commits on the remote | `origin/feature/finance-ledger` = `9e74bb4` (readiness) → `b9d56fe` → `6955687` → `ff782cd` (the `main` base); local HEAD equals the remote | ✅ Verified 2026-11-24 |
 | No unrelated changes | `git diff --name-only origin/main...origin/feature/finance-ledger`: 31 files, all under `docs/finance/`, `Server/src/lib/accounting/`, migrations 175/176, `HANDOFF.md`, and `Server/package.json`/`package-lock.json` (decimal.js only) | ✅ |
 | Pushed commits untouched | No amend, rebase or force-push | ✅ |
 | `main` unchanged | `origin/main` = `ff782cd`; 175 and 176 are not in `main`'s migrations folder; no merge | ✅ |
-| Working tree | At the start of this phase it was clean apart from the untracked `docs/security/` report. This phase adds uncommitted changes, listed in `HANDOFF.md`. | ⚠ Uncommitted work awaiting approval |
+| Working tree | All finance work is committed (`9e74bb4`). The only untracked item is `docs/security/`, which is kept out of the finance branch on purpose. | ✅ |
 | Production runs the existing implementation | **Indirect evidence only:** production deploys from `main`, which has neither migration. `/api/health` does not report a version. **Direct proof needs live check 0** (`live-checks/00_deployment_state.sql`), which must show last migration `174_…` and no ledger objects. | ☐ Waiting for check 0 |
 
 ## 2. Production database checks (read-only)
@@ -29,7 +29,7 @@ These are run by an authorised DBA under the SELECT-only `finance_checks` role (
 
 Run by: ________ · Date: ________ · Analysed by: ________
 
-## 3. Changes made during this readiness phase (uncommitted)
+## 3. Changes made during this readiness phase (committed in `9e74bb4`)
 Rehearsal design turned up three control gaps. All are fixed in the not-yet-deployed migrations, and all are tested.
 
 1. **The posting switch was enforced only in application code.** A direct database insert could write ledger entries while posting was "off". The database now refuses any entry unless `ledger_posting = 'on'` **and** the entry names an **approved** policy in force on its date.
@@ -153,16 +153,27 @@ None of these is introduced or made worse by migrations 175 or 176. They are tra
 9. **Record:** time, who, the backup id and the verification outputs, kept privately; then update this document and `HANDOFF.md`.
 
 ## 10. Go/no-go
-**NO-GO.**
+**NO-GO.** This holds until the owner gives explicit written approval to deploy. Committing and pushing (approved 2026-11-24) is **not** approval to merge, deploy, enable posting, import historical data, switch reports, or change production.
+
+**Evidence levels used in this report:**
+- **Verified:** observed on the real system or the real repository.
+- **Local-only:** passed on the in-process PGlite rehearsal with seeded data, not on production data.
+- **Assumption:** inferred, not yet observed.
+
+So far: the branch and `main` state are *verified*; the rehearsal results in §4a are *local-only*; "production runs the existing implementation" is an *assumption* until check 0 is returned.
 
 | Gate | State |
 |---|---|
-| Branch verified, `main` untouched | ✅ |
-| Readiness fixes (§3) committed and pushed | ☐ awaiting approval |
+| Branch verified, `main` untouched | ✅ Verified |
+| Readiness fixes (§3) committed and pushed | ✅ `9e74bb4` |
 | Live checks 0–6 run and reviewed | ☐ |
 | Restored-copy rehearsal passed | ☐ |
 | Backup and restore confirmed; pre-deployment backup taken | ☐ |
 | Owner's explicit approval to deploy | ☐ |
-| (Posting and import only) D-01 + VAT approvals, commission methodology | ☐ not needed for deploying 175/176 |
+| (Posting and import only) 1. Written EAS 48 principal-versus-agent decision | ☐ not needed for deploying 175/176 |
+| (Posting and import only) 2. Separate written VAT-base decision | ☐ not needed for deploying 175/176 |
+| (Posting and import only) 3. Approved historical commission-rate reconstruction methodology | ☐ not needed for deploying 175/176 |
+
+No historical import and no ledger posting before all three accounting gates are approved.
 
 The decision becomes GO only when every deployment gate above is ✅ and the owner approves in writing.
