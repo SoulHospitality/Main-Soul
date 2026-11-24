@@ -116,6 +116,110 @@ CREATE OR REPLACE FUNCTION public.ledger_is_active_admin(staff_id integer) RETUR
                  AND COALESCE(is_active::text, '1') NOT IN ('0', 'false', 'f'))
 $$;
 
+-- ── Verified identity (review finding H3) ─────────────────────────────────────────────────────────────
+-- Who is acting is never taken from a caller-supplied id. The application signs a short-lived claim
+--   v1.<key_id>.<actor_id>.<txid>.<expiry_epoch>.act.<hex HMAC-SHA256 of "v1|key_id|actor|txid|expiry|act">
+-- with a key it holds outside the database, bound to the CURRENT transaction (txid) and set as
+-- app.identity_claim. ledger_verified_actor() checks it against the key stored in ledger_identity_keys.
+-- Protection depends on the deployment (docs/finance/db-security/README.md): the application must connect
+-- as a restricted role that cannot read ledger_identity_keys or change these functions. Until then, anyone
+-- with owner-level database access can read the key, so identity is only as strong as that access.
+CREATE TABLE IF NOT EXISTS public.ledger_identity_keys (
+  key_id     text PRIMARY KEY CHECK (key_id ~ '^[A-Za-z0-9_-]{1,40}$'),
+  secret     bytea NOT NULL CHECK (length(secret) >= 32),
+  active     boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+REVOKE ALL ON public.ledger_identity_keys FROM PUBLIC;
+CREATE OR REPLACE FUNCTION public.ledger_identity_keys_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' AND NEW.secret IS NOT DISTINCT FROM OLD.secret AND NEW.key_id = OLD.key_id THEN RETURN NEW; END IF;
+  RAISE EXCEPTION 'Identity keys cannot be changed or deleted; add a new key and deactivate the old one';
+END $$;
+DROP TRIGGER IF EXISTS ledger_identity_keys_guard ON public.ledger_identity_keys;
+CREATE TRIGGER ledger_identity_keys_guard BEFORE UPDATE OR DELETE ON public.ledger_identity_keys
+  FOR EACH ROW EXECUTE FUNCTION public.ledger_identity_keys_guard();
+
+-- HMAC-SHA256 (RFC 2104) on the built-in sha256(), so no extension is needed.
+CREATE OR REPLACE FUNCTION public.ledger_hmac_sha256(k bytea, msg bytea) RETURNS bytea LANGUAGE plpgsql IMMUTABLE STRICT AS $$
+DECLARE kk bytea := k; ipad bytea; opad bytea; i int;
+BEGIN
+  IF length(kk) > 64 THEN kk := sha256(kk); END IF;
+  kk := kk || decode(repeat('00', 64 - length(kk)), 'hex');
+  ipad := kk; opad := kk;
+  FOR i IN 0..63 LOOP
+    ipad := set_byte(ipad, i, get_byte(kk, i) # 54);   -- 0x36
+    opad := set_byte(opad, i, get_byte(kk, i) # 92);   -- 0x5c
+  END LOOP;
+  RETURN sha256(opad || sha256(ipad || msg));
+END $$;
+
+-- The staff id proven by the signed claim of this transaction, or NULL.
+CREATE OR REPLACE FUNCTION public.ledger_verified_actor() RETURNS integer
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public, pg_temp AS $$
+DECLARE claim text := current_setting('app.identity_claim', true); p text[]; k bytea;
+BEGIN
+  IF claim IS NULL OR claim = '' THEN RETURN NULL; END IF;
+  p := string_to_array(claim, '.');
+  IF array_length(p, 1) <> 7 OR p[1] <> 'v1' OR p[6] <> 'act' OR p[3] !~ '^[0-9]{1,9}$' THEN RETURN NULL; END IF;
+  IF p[4] <> txid_current()::text THEN RETURN NULL; END IF;                       -- bound to this transaction
+  IF p[5] !~ '^[0-9]{1,12}$' OR p[5]::bigint < extract(epoch FROM clock_timestamp())::bigint THEN RETURN NULL; END IF;
+  SELECT secret INTO k FROM public.ledger_identity_keys WHERE key_id = p[2] AND active;
+  IF k IS NULL THEN RETURN NULL; END IF;
+  IF encode(public.ledger_hmac_sha256(k, convert_to(array_to_string(p[1:6], '|'), 'UTF8')), 'hex') <> lower(p[7]) THEN
+    RETURN NULL;
+  END IF;
+  RETURN p[3]::integer;
+EXCEPTION WHEN others THEN
+  RETURN NULL;
+END $$;
+
+-- Refuse unless `claimed` is the verified actor of this transaction.
+CREATE OR REPLACE FUNCTION public.ledger_require_actor(claimed integer, what text) RETURNS void LANGUAGE plpgsql AS $$
+DECLARE v integer := public.ledger_verified_actor();
+BEGIN
+  IF v IS NULL THEN
+    RAISE EXCEPTION '%: no verified identity in this transaction (signed app.identity_claim required)', what;
+  END IF;
+  IF claimed IS DISTINCT FROM v THEN
+    RAISE EXCEPTION '%: the named person (%) is not the verified actor of this transaction', what, COALESCE(claimed::text, 'none');
+  END IF;
+END $$;
+
+-- Approvals are recorded by the approver, in their own verified transaction, before the action they
+-- approve. Append-only.
+CREATE TABLE IF NOT EXISTS public.ledger_approvals (
+  id            bigserial PRIMARY KEY,
+  purpose       text NOT NULL CHECK (purpose IN ('policy_d01', 'policy_vat', 'closed_period_adjustment', 'commission_correction')),
+  subject       text NOT NULL,
+  approver_id   integer NOT NULL,
+  approved_at   timestamptz NOT NULL DEFAULT now(),
+  approved_txid bigint NOT NULL DEFAULT txid_current(),
+  UNIQUE (purpose, subject, approver_id)
+);
+CREATE OR REPLACE FUNCTION public.ledger_approvals_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP <> 'INSERT' THEN RAISE EXCEPTION 'Approvals are a permanent record and cannot be changed or deleted'; END IF;
+  PERFORM public.ledger_require_actor(NEW.approver_id, 'Recording an approval');
+  IF NOT public.ledger_is_active_admin(NEW.approver_id) THEN
+    RAISE EXCEPTION 'Only an active admin can record an approval';
+  END IF;
+  NEW.approved_at := now();
+  NEW.approved_txid := txid_current();
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS ledger_approvals_guard ON public.ledger_approvals;
+CREATE TRIGGER ledger_approvals_guard BEFORE INSERT OR UPDATE OR DELETE ON public.ledger_approvals
+  FOR EACH ROW EXECUTE FUNCTION public.ledger_approvals_guard();
+
+-- An approval by `approver` for (purpose, subject), recorded in an EARLIER transaction than this one.
+CREATE OR REPLACE FUNCTION public.ledger_has_approval(p_purpose text, p_subject text, approver integer) RETURNS boolean
+LANGUAGE sql STABLE AS $$
+  SELECT EXISTS (SELECT 1 FROM public.ledger_approvals
+                 WHERE purpose = p_purpose AND subject = p_subject AND approver_id = approver
+                   AND approved_txid <> txid_current())
+$$;
+
 -- Policies: approval needs two active-admin approvers (D-01 and VAT), each different from the person who
 -- recorded the policy. An approved policy is a permanent record: it can only be retired, never edited or
 -- deleted.
@@ -128,6 +232,9 @@ BEGIN
   IF TG_OP = 'UPDATE' AND OLD.status <> 'draft' THEN
     IF OLD.status = 'approved' AND NEW.status = 'retired'
        AND (to_jsonb(NEW) - 'status') = (to_jsonb(OLD) - 'status') THEN
+      IF NOT public.ledger_is_active_admin(public.ledger_verified_actor()) THEN
+        RAISE EXCEPTION 'Retiring policy % needs a verified active admin', OLD.version;
+      END IF;
       RETURN NEW;
     END IF;
     RAISE EXCEPTION 'Accounting policy % is % and cannot be changed; create a new version', OLD.version, OLD.status;
@@ -145,6 +252,15 @@ BEGIN
     END IF;
     IF NEW.approved_by = NEW.created_by OR NEW.vat_approved_by = NEW.created_by THEN
       RAISE EXCEPTION 'Policy %: an approver cannot be the person who recorded the policy', NEW.version;
+    END IF;
+    -- Verified identity: the recorder is the verified actor of this transaction, and each approver recorded
+    -- their own approval earlier, in their own verified transaction.
+    PERFORM public.ledger_require_actor(NEW.created_by, format('Recording policy %s', NEW.version));
+    IF NOT public.ledger_has_approval('policy_d01', NEW.version, NEW.approved_by) THEN
+      RAISE EXCEPTION 'Policy %: approver % has not recorded the D-01 approval', NEW.version, NEW.approved_by;
+    END IF;
+    IF NOT public.ledger_has_approval('policy_vat', NEW.version, NEW.vat_approved_by) THEN
+      RAISE EXCEPTION 'Policy %: approver % has not recorded the VAT-base approval', NEW.version, NEW.vat_approved_by;
     END IF;
   END IF;
   RETURN NEW;
@@ -319,11 +435,18 @@ BEGIN
     RAISE EXCEPTION 'Ledger entry % needs the approved accounting policy in force on % (%), not %',
       NEW.number, NEW.transaction_date, COALESCE(public.ledger_policy_in_force(NEW.transaction_date), 'none'), COALESCE(NEW.policy_version, 'none');
   END IF;
-  -- Closed periods: only an adjustment approved by a different active admin.
+  -- Verified identity: whoever is named as creator must be the verified actor of this transaction
+  -- (always for manual, adjustment and reversal entries, which require a creator).
+  IF NEW.created_by IS NOT NULL THEN
+    PERFORM public.ledger_require_actor(NEW.created_by, format('Posting entry %s', NEW.number));
+  END IF;
+  -- Closed periods: only an adjustment approved by a different active admin, who recorded that approval
+  -- (purpose closed_period_adjustment, subject = the entry's idempotency key) in their own transaction.
   SELECT status INTO pstatus FROM public.ledger_periods WHERE period = NEW.period;
   IF pstatus = 'closed' AND NOT (NEW.origin = 'adjustment' AND NEW.approved_by IS NOT NULL
-       AND NEW.approved_by IS DISTINCT FROM NEW.created_by AND public.ledger_is_active_admin(NEW.approved_by)) THEN
-    RAISE EXCEPTION 'Period % is closed: only an adjustment approved by a different active admin can be posted', NEW.period;
+       AND NEW.approved_by IS DISTINCT FROM NEW.created_by AND public.ledger_is_active_admin(NEW.approved_by)
+       AND public.ledger_has_approval('closed_period_adjustment', NEW.idempotency_key, NEW.approved_by)) THEN
+    RAISE EXCEPTION 'Period % is closed: only an adjustment approved (and recorded) by a different active admin can be posted', NEW.period;
   END IF;
   -- Reversals: of an existing posted, non-reversal entry, dated on or after it.
   IF NEW.origin = 'reversal' THEN
@@ -371,6 +494,7 @@ BEGIN
     IF NEW.closed_by IS NULL OR NOT public.ledger_is_active_admin(NEW.closed_by) THEN
       RAISE EXCEPTION 'Closing period % needs closed_by: an active admin', NEW.period;
     END IF;
+    PERFORM public.ledger_require_actor(NEW.closed_by, format('Closing period %s', NEW.period));
     NEW.closed_at := now();
   END IF;
   IF TG_OP = 'UPDATE' AND OLD.status = 'closed' AND NEW.status <> 'closed' THEN
@@ -378,6 +502,7 @@ BEGIN
        OR length(btrim(COALESCE(NEW.reopen_reason, ''))) < 10 THEN
       RAISE EXCEPTION 'Reopening period % needs reopened_by (an active admin) and a reason of at least 10 characters', NEW.period;
     END IF;
+    PERFORM public.ledger_require_actor(NEW.reopened_by, format('Reopening period %s', NEW.period));
     NEW.reopened_at := now();
   END IF;
   IF TG_OP = 'UPDATE' AND OLD.status = 'closed' AND NEW.status = 'closed'
@@ -423,13 +548,17 @@ CREATE TABLE IF NOT EXISTS public.ledger_control_log (
 );
 CREATE OR REPLACE FUNCTION public.ledger_control_log_append_only() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  RAISE EXCEPTION 'The ledger control log is a permanent record and cannot be changed or deleted';
+  -- Rows are written only by the switch guard (a trigger, so depth ≥ 2); a direct INSERT is refused.
+  IF TG_OP = 'INSERT' AND pg_trigger_depth() >= 2 THEN RETURN NEW; END IF;
+  RAISE EXCEPTION 'The ledger control log is a permanent record written only by the posting-switch guard';
 END $$;
 DROP TRIGGER IF EXISTS ledger_control_log_append_only ON public.ledger_control_log;
-CREATE TRIGGER ledger_control_log_append_only BEFORE UPDATE OR DELETE ON public.ledger_control_log
+CREATE TRIGGER ledger_control_log_append_only BEFORE INSERT OR UPDATE OR DELETE ON public.ledger_control_log
   FOR EACH ROW EXECUTE FUNCTION public.ledger_control_log_append_only();
 
-CREATE OR REPLACE FUNCTION public.ledger_posting_switch_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+-- SECURITY DEFINER: the restricted application role needs no privilege on the control log.
+CREATE OR REPLACE FUNCTION public.ledger_posting_switch_guard() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE actor integer; reason text;
 BEGIN
   IF TG_OP = 'DELETE' THEN
@@ -446,14 +575,15 @@ BEGIN
   IF NEW.value_text NOT IN ('on', 'off') THEN
     RAISE EXCEPTION 'The ledger posting switch must be on or off';
   END IF;
-  actor := NULLIF(current_setting('app.actor_id', true), '')::integer;
+  -- The actor is the VERIFIED identity of this transaction (signed app.identity_claim), never a claimed id.
+  actor := public.ledger_verified_actor();
   reason := btrim(COALESCE(current_setting('app.control_reason', true), ''));
   IF NEW.value_text = 'on' THEN
     IF NOT EXISTS (SELECT 1 FROM public.ledger_policies WHERE status = 'approved') THEN
       RAISE EXCEPTION 'Ledger posting cannot be switched on before an accounting policy (D-01 and VAT base) is approved';
     END IF;
     IF actor IS NULL OR NOT public.ledger_is_active_admin(actor) OR length(reason) < 10 THEN
-      RAISE EXCEPTION 'Switching ledger posting on needs app.actor_id (an active admin) and app.control_reason (10+ characters)';
+      RAISE EXCEPTION 'Switching ledger posting on needs a verified active admin (signed app.identity_claim) and app.control_reason (10+ characters)';
     END IF;
   END IF;
   INSERT INTO public.ledger_control_log (control, old_value, new_value, actor_id, reason)
@@ -475,7 +605,8 @@ DO $$
 DECLARE t text;
 BEGIN
   FOREACH t IN ARRAY ARRAY['ledger_accounts', 'ledger_policies', 'ledger_periods', 'ledger_entries', 'ledger_lines',
-                           'ledger_events', 'ledger_control_log', 'financial_settings'] LOOP
+                           'ledger_events', 'ledger_control_log', 'financial_settings',
+                           'ledger_identity_keys', 'ledger_approvals'] LOOP
     EXECUTE format('DROP TRIGGER IF EXISTS %I ON public.%I', t || '_no_truncate', t);
     EXECUTE format('CREATE TRIGGER %I BEFORE TRUNCATE ON public.%I FOR EACH STATEMENT EXECUTE FUNCTION public.ledger_no_truncate()',
                    t || '_no_truncate', t);
@@ -503,7 +634,9 @@ CREATE TRIGGER ledger_accounts_guard BEFORE UPDATE OR DELETE ON public.ledger_ac
 
 -- Custom accounts created or edited in the Financial System after this migration are kept in the ledger
 -- chart (a removed custom account is only deactivated). The accounts guard above still applies.
-CREATE OR REPLACE FUNCTION public.ledger_sync_custom_account() RETURNS trigger LANGUAGE plpgsql AS $$
+-- SECURITY DEFINER: the restricted application role keeps read-only access to the ledger chart.
+CREATE OR REPLACE FUNCTION public.ledger_sync_custom_account() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 BEGIN
   IF TG_OP = 'DELETE' THEN
     UPDATE public.ledger_accounts SET active = false, updated_at = now() WHERE code = OLD.code;
@@ -528,3 +661,18 @@ CREATE TRIGGER financial_custom_accounts_ledger_sync AFTER INSERT OR UPDATE OR D
 INSERT INTO public.financial_settings (key, value_text)
 VALUES ('ledger_posting', 'off')
 ON CONFLICT (key) DO NOTHING;
+
+-- Supabase API lockdown (same rule as migration 095): row-level security on, no access for PUBLIC, anon or
+-- authenticated. The restricted application role gets explicit policies from docs/finance/db-security/
+-- ledger_roles.sql; ledger_identity_keys gets none, so only its owner (and SECURITY DEFINER checks) read it.
+DO $$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['ledger_accounts', 'ledger_policies', 'ledger_periods', 'ledger_entries', 'ledger_lines',
+                           'ledger_events', 'ledger_control_log', 'ledger_identity_keys', 'ledger_approvals'] LOOP
+    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
+    EXECUTE format('REVOKE ALL ON TABLE public.%I FROM PUBLIC', t);
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN EXECUTE format('REVOKE ALL ON TABLE public.%I FROM anon', t); END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN EXECUTE format('REVOKE ALL ON TABLE public.%I FROM authenticated', t); END IF;
+  END LOOP;
+END $$;

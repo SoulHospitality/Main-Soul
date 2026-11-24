@@ -1,0 +1,102 @@
+{
+  "engine": "PostgreSQL (embedded, local)",
+  "evidence": [
+    {
+      "name": "all 176 migrations apply on real PostgreSQL as the owner",
+      "ok": true
+    },
+    {
+      "name": "soul_app exists: not superuser, no CREATEROLE, no BYPASSRLS",
+      "ok": true,
+      "detail": {
+        "rolsuper": false,
+        "rolcreaterole": false,
+        "rolbypassrls": false
+      }
+    },
+    {
+      "name": "normal PMS writes work as soul_app: unit, reservation, confirmation (snapshot captured by the SECURITY DEFINER trigger), payment",
+      "ok": true
+    },
+    {
+      "name": "soul_app is refused: reading keys, TRUNCATE, DISABLE/DROP TRIGGER, session_replication_role, SET ROLE, creating or replacing functions, editing keys, forging log rows",
+      "ok": true,
+      "detail": {
+        "readKeys": "refused (permission denied for table ledger_identity_keys)",
+        "truncate": "refused (permission denied for table ledger_entries)",
+        "disable": "refused (must be owner of table ledger_entries)",
+        "drop": "refused (must be owner of relation ledger_entries)",
+        "replica": "refused (permission denied to set parameter \"session_replication_role\")",
+        "setRole": "refused (permission denied to set role \"postgres\")",
+        "createFn": "refused (permission denied for schema public)",
+        "replaceFn": "refused (permission denied for schema public)",
+        "updKeys": "refused (permission denied for table ledger_identity_keys)",
+        "logInsert": "refused (permission denied for table ledger_control_log)",
+        "corrInsert": "refused (permission denied for table reservation_commission_corrections)"
+      }
+    },
+    {
+      "name": "soul_app cannot switch posting on with a forged signature or a claimed id (and cannot read the key to sign one)",
+      "ok": true,
+      "detail": {
+        "forged": "refused (Ledger posting cannot be switched on before an accounting policy (D-01 and VAT base) is ap)",
+        "claimedId": "refused (Ledger posting cannot be switched on before an accounting policy (D-01 and VAT base) is ap)"
+      }
+    },
+    {
+      "name": "soul_app cannot record an approval in someone's name without the signing key",
+      "ok": true,
+      "detail": "refused (Recording an approval: no verified identity in this transaction (signed app.identity_claim)"
+    },
+    {
+      "name": "a policy is approved through verified approvals and a verified recorder, as soul_app",
+      "ok": true
+    },
+    {
+      "name": "a verified admin switches posting on through the service; the log records the verified actor",
+      "ok": true,
+      "detail": {
+        "actor_id": 900,
+        "new_value": "on"
+      }
+    },
+    {
+      "name": "20 concurrent posts of one key: one entry, 19 duplicates",
+      "ok": true,
+      "detail": {
+        "n1": 1,
+        "ok": 20
+      }
+    },
+    {
+      "name": "20 concurrent posts of one key with different amounts: one entry, 19 conflicts",
+      "ok": true,
+      "detail": {
+        "n2": 1
+      }
+    },
+    {
+      "name": "10 concurrent reversals (signed actor): exactly one",
+      "ok": true,
+      "detail": {
+        "n3": 1,
+        "errors": [
+          "ALREADY_REVERSED"
+        ]
+      }
+    },
+    {
+      "name": "a manual entry posts with its creator verified (signed by the app key)",
+      "ok": true
+    },
+    {
+      "name": "soul_app cannot post in someone's name, edit or delete entries",
+      "ok": true,
+      "detail": {
+        "notCreator": "refused (Posting entry JE-RP-X: no verified identity in this transaction (signed app.identity_claim)",
+        "editEntry": "refused (permission denied for table ledger_entries)",
+        "delEntry": "refused (permission denied for table ledger_entries)"
+      }
+    }
+  ]
+}

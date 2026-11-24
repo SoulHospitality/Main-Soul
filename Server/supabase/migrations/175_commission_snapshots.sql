@@ -42,11 +42,14 @@ CREATE INDEX IF NOT EXISTS reservation_commission_corrections_res_idx ON public.
 CREATE OR REPLACE FUNCTION public.reservation_commission_corrections_append_only()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  RAISE EXCEPTION 'Commission corrections are a permanent record and cannot be changed or deleted';
+  -- Rows are written only by the snapshot trigger on reservations (trigger depth ≥ 2); a direct INSERT
+  -- (which could fake a correction record) is refused, as are UPDATE, DELETE and TRUNCATE.
+  IF TG_OP = 'INSERT' AND pg_trigger_depth() >= 2 THEN RETURN NEW; END IF;
+  RAISE EXCEPTION 'Commission corrections are a permanent record written only by the correction process';
 END $$;
 DROP TRIGGER IF EXISTS reservation_commission_corrections_append_only ON public.reservation_commission_corrections;
 CREATE TRIGGER reservation_commission_corrections_append_only
-  BEFORE UPDATE OR DELETE ON public.reservation_commission_corrections
+  BEFORE INSERT OR UPDATE OR DELETE ON public.reservation_commission_corrections
   FOR EACH ROW EXECUTE FUNCTION public.reservation_commission_corrections_append_only();
 -- TRUNCATE skips row triggers: guard it at statement level (also reached by TRUNCATE reservations CASCADE).
 DROP TRIGGER IF EXISTS reservation_commission_corrections_no_truncate ON public.reservation_commission_corrections;
@@ -54,8 +57,9 @@ CREATE TRIGGER reservation_commission_corrections_no_truncate
   BEFORE TRUNCATE ON public.reservation_commission_corrections
   FOR EACH STATEMENT EXECUTE FUNCTION public.reservation_commission_corrections_append_only();
 
+-- SECURITY DEFINER: the restricted application role needs no privilege on the correction log.
 CREATE OR REPLACE FUNCTION public.reservation_commission_snapshot()
-RETURNS trigger LANGUAGE plpgsql AS $$
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE
   confirmed_states text[] := ARRAY['confirmed', 'checked_in', 'checked_out'];
   correcting boolean := COALESCE(current_setting('app.commission_correction', true), '') = 'on';
@@ -92,8 +96,16 @@ BEGIN
   -- 2. Authorised correction: the change is logged here, so it cannot happen without a record.
   IF correcting AND NEW.commission_snapshot IS DISTINCT FROM old_snap THEN
     reason := btrim(COALESCE(current_setting('app.commission_correction_reason', true), ''));
-    actor := NULLIF(current_setting('app.commission_correction_actor', true), '')::integer;
     approver := NULLIF(current_setting('app.commission_correction_approver', true), '')::integer;
+    -- The corrector is the VERIFIED identity of this transaction (migration 176's signed-claim check), never
+    -- a caller-supplied id. Without the identity functions, corrections are refused.
+    IF to_regprocedure('public.ledger_verified_actor()') IS NULL THEN
+      RAISE EXCEPTION 'Commission corrections need verified identity (migration 176) to be installed';
+    END IF;
+    EXECUTE 'SELECT public.ledger_verified_actor()' INTO actor;
+    IF NULLIF(current_setting('app.commission_correction_actor', true), '')::integer IS DISTINCT FROM actor THEN
+      RAISE EXCEPTION 'A commission correction must be made by the verified actor of this transaction (signed app.identity_claim)';
+    END IF;
     IF length(reason) < 10 OR actor IS NULL THEN
       RAISE EXCEPTION 'A commission correction needs the person making it and a reason of at least 10 characters';
     END IF;
@@ -109,6 +121,15 @@ BEGIN
          SELECT 1 FROM public.staff_users WHERE id = approver AND role = 'admin'
            AND COALESCE(is_active::text, '1') NOT IN ('0', 'false', 'f'))) THEN
       RAISE EXCEPTION 'The approver of a commission correction must be a different active admin';
+    END IF;
+    IF approver IS NOT NULL THEN
+      DECLARE approved boolean;
+      BEGIN
+        EXECUTE 'SELECT public.ledger_has_approval($1, $2, $3)' INTO approved USING 'commission_correction', NEW.id::text, approver;
+        IF NOT approved THEN
+          RAISE EXCEPTION 'Approver % has not recorded an approval for this correction (purpose commission_correction, reservation %)', approver, NEW.id;
+        END IF;
+      END;
     END IF;
     INSERT INTO public.reservation_commission_corrections (reservation_id, previous, corrected, reason, corrected_by, approved_by)
     VALUES (NEW.id, old_snap, NEW.commission_snapshot, reason, actor, approver);
@@ -209,3 +230,12 @@ SELECT r.id AS reservation_id, r.status, r.check_in, r.check_out, r.unit_id, r.s
 FROM public.reservations r
 WHERE r.status IN ('confirmed', 'checked_in', 'checked_out')
   AND (r.commission_snapshot IS NULL OR r.commission_snapshot_status = 'needs_review');
+
+-- Supabase API lockdown (same rule as migration 095) for the new correction log.
+ALTER TABLE public.reservation_commission_corrections ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.reservation_commission_corrections FROM PUBLIC;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN EXECUTE 'REVOKE ALL ON TABLE public.reservation_commission_corrections FROM anon'; END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN EXECUTE 'REVOKE ALL ON TABLE public.reservation_commission_corrections FROM authenticated'; END IF;
+END $$;

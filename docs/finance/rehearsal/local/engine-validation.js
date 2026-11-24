@@ -1,7 +1,7 @@
 // Accounting engine, report and stored-ledger parity validation on synthetic fixtures (PGlite).
 // Expected figures are computed independently with lib/accounting/money.js (Decimal), never with floats.
 const path = require('path');
-const { boot } = require('./harness');
+const { boot, provisionIdentity, claimSql } = require('./harness');
 const { seedFixtures } = require('./engine-fixtures');
 
 const S = process.argv[2];
@@ -13,6 +13,8 @@ const ok = (cond, name, detail) => {
 
 (async () => {
   const { query, db } = await boot(S);
+  await provisionIdentity(query);
+  const identity = require(path.join(S, 'src/lib/accounting/identity.js'));
   const fx = await seedFixtures(query);
   await query("UPDATE financial_settings SET value_text = '2026-09-01T00:00:00Z' WHERE key = 'books_reset_at'");
   const m = require(path.join(S, 'src/lib/accounting/money.js'));
@@ -168,9 +170,11 @@ const ok = (cond, name, detail) => {
   // ── 8. Stored-ledger parity: post the whole engine journal and compare the trial balance ──
   const posting = require(path.join(S, 'src/lib/accounting/posting.js'));
   await query(`INSERT INTO staff_users (id, username, password_hash, full_name, role, is_active) VALUES (995,'ev_admin','x','EV Admin','admin',1),(996,'ev_admin2','x','EV Admin 2','admin',1),(997,'ev_rec','x','EV Recorder','reservations',1)`);
-  await query(`INSERT INTO ledger_policies (version, effective_from, settings, status, approved_by, approved_at, approval_ref, vat_approved_by, vat_approved_at, vat_approval_ref, created_by)
-    VALUES ('VALIDATION-ONLY', '2026-01-01', '{"revenue_presentation":"gross","vat_base":"fee_only"}', 'approved', 995, now(), 'SYNTHETIC TEST - NOT AN APPROVAL', 996, now(), 'SYNTHETIC TEST - NOT AN APPROVAL', 997)`);
-  await db.exec(`BEGIN; SELECT set_config('app.actor_id','995',true), set_config('app.control_reason','synthetic parity validation',true); UPDATE financial_settings SET value_text='on' WHERE key='ledger_posting'; COMMIT;`);
+  await identity.recordApproval({ purpose: 'policy_d01', subject: 'VALIDATION-ONLY', approverId: 995 });
+  await identity.recordApproval({ purpose: 'policy_vat', subject: 'VALIDATION-ONLY', approverId: 996 });
+  await db.exec(`BEGIN; ${claimSql(997)}; INSERT INTO ledger_policies (version, effective_from, settings, status, approved_by, approved_at, approval_ref, vat_approved_by, vat_approved_at, vat_approval_ref, created_by)
+    VALUES ('VALIDATION-ONLY', '2026-01-01', '{"revenue_presentation":"gross","vat_base":"fee_only"}', 'approved', 995, now(), 'SYNTHETIC TEST - NOT AN APPROVAL', 996, now(), 'SYNTHETIC TEST - NOT AN APPROVAL', 997); COMMIT;`);
+  await db.exec(`BEGIN; ${claimSql(995)}; SELECT set_config('app.control_reason','synthetic parity validation',true); UPDATE financial_settings SET value_text='on' WHERE key='ledger_posting'; COMMIT;`);
   const notes = [];
   for (const x of journal) {
     const { entry, notes: n } = toLedgerEntry(x, { policyVersion: 'VALIDATION-ONLY' });

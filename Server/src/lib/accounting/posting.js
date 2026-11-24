@@ -13,6 +13,7 @@
  */
 const { pool } = require('../../config/db');
 const m = require('./money');
+const { attestActor } = require('./identity');
 
 class PostingError extends Error {
   constructor(message, code, status = 400) {
@@ -218,6 +219,8 @@ async function postEntry(entry, options = {}) {
       }
     }
 
+    // Verified identity: the named actor signs a claim for this transaction (the database checks it).
+    if (entry.actorId != null) await attestActor(db, entry.actorId);
     const number = await nextNumber(db, date);
     // ON CONFLICT: a concurrent retry with the same key that committed first wins; this one returns it.
     const { rows: inserted } = await db.query(
@@ -332,6 +335,7 @@ async function replaceEntry(entryId, replacement, { reason, actorId, date = null
 async function closePeriod(period, { actorId }, { client = null } = {}) {
   if (!/^\d{4}-\d{2}$/.test(String(period))) throw new PostingError('Period must be YYYY-MM', 'BAD_PERIOD');
   return withClient(client, async (db) => {
+    await attestActor(db, actorId);
     const { rows } = await db.query(
       `INSERT INTO ledger_periods (period, status, closed_by) VALUES ($1, 'closed', $2)
        ON CONFLICT (period) DO UPDATE SET status = 'closed', closed_by = $2
@@ -346,6 +350,7 @@ async function closePeriod(period, { actorId }, { client = null } = {}) {
 async function reopenPeriod(period, { actorId, reason }, { client = null } = {}) {
   if (!reason || String(reason).trim().length < 10) throw new PostingError('Give a reason of at least 10 characters to reopen a period', 'NO_REASON');
   return withClient(client, async (db) => {
+    await attestActor(db, actorId);
     const { rows } = await db.query(
       `UPDATE ledger_periods SET status = 'open', reopened_by = $2, reopen_reason = $3 WHERE period = $1 AND status = 'closed' RETURNING *`,
       [period, actorId || null, String(reason).trim()]
@@ -368,4 +373,18 @@ async function trialBalance({ from = null, to = null } = {}, { client = null } =
   return rows.map((r) => ({ account: r.account_code, debit: m.toFixed(r.debit), credit: m.toFixed(r.credit), balance: m.toFixed(m.sub(r.debit, r.credit)) }));
 }
 
-module.exports = { postEntry, reverseEntry, replaceEntry, closePeriod, reopenPeriod, trialBalance, PostingError, prepareLines, payloadHash };
+/**
+ * Switch posting on or off. Turning it on needs an approved policy and a VERIFIED active admin (signed
+ * identity claim) with a reason; every change is written to the append-only ledger_control_log.
+ */
+async function setPostingSwitch(value, { actorId, reason }, { client = null } = {}) {
+  if (!['on', 'off'].includes(value)) throw new PostingError('The posting switch is on or off', 'BAD_SWITCH');
+  return withClient(client, async (db) => {
+    await attestActor(db, actorId);
+    await db.query(`SELECT set_config('app.control_reason', $1, true)`, [String(reason || '')]);
+    const { rows } = await db.query(`UPDATE financial_settings SET value_text = $1 WHERE key = 'ledger_posting' RETURNING value_text`, [value]);
+    return rows[0]?.value_text;
+  });
+}
+
+module.exports = { postEntry, reverseEntry, replaceEntry, closePeriod, reopenPeriod, setPostingSwitch, trialBalance, PostingError, prepareLines, payloadHash };

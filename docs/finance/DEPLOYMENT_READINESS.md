@@ -47,7 +47,7 @@ The pre-commit review's findings, and what Phase 5B did about each:
 |---|---|---|
 | H1: TRUNCATE bypassed append-only guards | Statement-level `BEFORE TRUNCATE` guards on every ledger table, `financial_settings` and the commission correction log (also reached via CASCADE) | ledger-test "H1" (11 checks); real-Postgres non-owner role test |
 | H2: switch rename-and-decoy | Renaming the switch row, or renaming a row into it, is refused | ledger-test "H2" (2) |
-| **H3: actor identity spoofing** | **Unresolved blocker.** See §3c | — |
+| **H3: actor identity spoofing** | Signed, transaction-bound identity verified in the database; approvals by the approver; restricted role script (§3c, §3d). Needs setup on each database | ledger-test H3 block; real-PostgreSQL test (13) |
 | M1: multiple reversals or replacements | Unique indexes `ledger_entries_one_reversal` and `ledger_entries_one_replacement` | ledger-test "M1" (4); real-Postgres two-session test |
 | M2: retired policy blocked reversals | A reversal keeps its original's policy (approved or retired); new entries need the policy in force | ledger-test "M2" (2) |
 | M3: superseded policy usable | Entries must carry `ledger_policy_in_force(date)`; one approved policy per effective date | ledger-test "M3" (4) |
@@ -64,14 +64,12 @@ The pre-commit review's findings, and what Phase 5B did about each:
 | L9: evidence written into the repo | `rehearsal.js` writes to `$REHEARSAL_EVIDENCE_DIR` or the OS temp folder | — |
 | L10: concurrency only simulated | A **genuine multi-session test on a real PostgreSQL 17.5 server** (§4c) | `local/concurrency-test.js` |
 
-**3c. H3: actor identity (unresolved blocker).** Every staff id given to the database is a **claim by the connecting application**: `app.actor_id`, approvers, `closed_by`, and the corrector of a commission snapshot. The database checks that the named person is an active admin. It **cannot** prove that the session is that person, because the app connects with one shared role for all users. A genuine session-bound identity needs two things that don't exist yet:
-1. a restricted application role that cannot read or alter the identity mechanism;
-2. identity claims the database can verify. For example, an HMAC-signed `(actor, transaction id, expiry)` checked by a `SECURITY DEFINER` function owned by a separate role, with the key kept from the application role.
+**3c. H3: verified identity (implemented; needs deployment setup).** Ledger actions that name a person are accepted only with a signed claim bound to the current transaction, verified in the database (`ledger_verified_actor`). Approvals are recorded by the approver in their own verified transaction. See `db-security/README.md`.
+- **Verified locally:** on PGlite (`ledger-test.js`) and on a real PostgreSQL 17.5 server as the restricted role (`real-postgres-test.js`).
+- **Still required:** setup on each database (restricted role, identity key, `DATABASE_URL` switched to `soul_app`). Until then the owner connection can read the key.
+- **Remaining trust boundary:** the application's signing key, which only signs for the JWT-authenticated user.
 
-Until then, these fields are **attribution, not authentication**. The application must only pass the id of the JWT-authenticated user (`req.user.id`), and the docs must not describe the checks as proof of identity.
-
-**3d. Restricted posting role (blocker).** The real-Postgres test shows an ordinary non-owner role is refused TRUNCATE, `DISABLE TRIGGER`, `DROP TRIGGER`, `session_replication_role` and edits of posted entries. The **owner** role, which the app uses today, can still disable triggers. A dedicated role setup is required before posting is ever enabled, and it is the prerequisite for H3.
-
+**3d. Restricted posting role (implemented as a DBA script; not yet applied anywhere real).** `db-security/ledger_roles.sql` creates `soul_app` and its grants and policies. `config/db.js` runs migrations on `MIGRATION_DATABASE_URL`. The real-PostgreSQL test shows `soul_app` is refused every bypass (TRUNCATE, `DISABLE`/`DROP TRIGGER`, `session_replication_role`, `SET ROLE`, function replacement, key access) while the app's normal writes work.
 ## 4. Migration rehearsal
 
 ### 4a. Local rehearsal (done; local-only)
@@ -81,10 +79,10 @@ PGlite, real migration chain, seeded data, the repository's rehearsal scripts. E
 |---|---|
 | Partial-failure recovery (175 part-way, 176 at the end) | ✅ |
 | Apply, re-start skip, idempotent re-run | ✅ |
-| Structure (r2) | ✅ 15 of 15 |
+| Structure (r2) | ✅ 16 of 16 |
 | Existing data unchanged; books (same code) identical | ✅ |
 | App behaviour on the migrated DB | ✅ |
-| Behaviour (r3) | ✅ 41 of 41 |
+| Behaviour (r3) | ✅ 45 of 45 |
 | Rollback with and without entries; re-apply | ✅ |
 | **Total** | **26 of 26 steps** |
 
@@ -99,7 +97,7 @@ Follow `rehearsal/README.md` §0–9.
 | r2 structure | All passed | ☐ |
 | Migrations effect: r1 and books, **same code** before and after | Identical (old and new code each) | ☐ |
 | Manual smoke test | Every item works; figures match `books_new_before.json` | ☐ |
-| r3 behaviour | 41 of 41 | ☐ |
+| r3 behaviour | 45 of 45 | ☐ |
 | Concurrency and non-owner role checks (§4b of the runbook) | As written | ☐ |
 | Rollbacks | As written | ☐ |
 
@@ -170,7 +168,7 @@ See `docs/security/NPM_AUDIT_REMEDIATION.md`. None of these items blocks 175/176
 | Live checks 0–6 | ☐ |
 | Restored-copy rehearsal, including the engine-fix comparison | ☐ |
 | Backup and restore validated | ☐ |
-| Restricted posting role (§3d) | ☐ |
-| H3 session-bound identity (§3c): required before posting, not before deploying 175/176 | ☐ unresolved |
+| Restricted role `soul_app` and identity key set up on the restored copy, then production (§3c, §3d) | ☐ (implemented and verified locally) |
+| H3 verified identity active on the target database (needs the row above): required before posting | ☐ |
 | Owner's explicit approval to deploy | ☐ |
 | (Posting and import) the three accounting approvals (§6) | ☐ |

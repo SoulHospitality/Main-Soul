@@ -19,7 +19,7 @@ END $$;
 DROP TRIGGER IF EXISTS financial_settings_ledger_posting_guard ON public.financial_settings;
 DROP TRIGGER IF EXISTS financial_settings_no_truncate ON public.financial_settings;
 DROP TRIGGER IF EXISTS financial_custom_accounts_ledger_sync ON public.financial_custom_accounts;
-DROP TABLE IF EXISTS public.ledger_events, public.ledger_lines, public.ledger_entries, public.ledger_control_log,
+DROP TABLE IF EXISTS public.ledger_events, public.ledger_lines, public.ledger_entries, public.ledger_control_log, public.ledger_approvals, public.ledger_identity_keys,
                      public.ledger_periods, public.ledger_policies, public.ledger_accounts CASCADE;
 DROP SEQUENCE IF EXISTS public.ledger_entry_number_seq;
 DROP FUNCTION IF EXISTS public.ledger_entries_guard(), public.ledger_lines_guard(), public.ledger_entry_balance_check(),
@@ -27,7 +27,9 @@ DROP FUNCTION IF EXISTS public.ledger_entries_guard(), public.ledger_lines_guard
                         public.ledger_periods_guard(), public.ledger_reversal_mirror_check(), public.ledger_control_log_append_only(),
                         public.ledger_posting_switch_guard(), public.ledger_is_active_admin(integer),
                         public.ledger_policy_in_force(date), public.ledger_no_truncate(), public.ledger_accounts_guard(),
-                        public.ledger_sync_custom_account();
+                        public.ledger_sync_custom_account(), public.ledger_identity_keys_guard(), public.ledger_hmac_sha256(bytea, bytea),
+                        public.ledger_verified_actor(), public.ledger_require_actor(integer, text), public.ledger_approvals_guard(),
+                        public.ledger_has_approval(text, text, integer);
 DELETE FROM public.financial_settings WHERE key = 'ledger_posting';
 DELETE FROM public._schema_migrations WHERE id = '176_ledger_core.sql';
 SELECT 'migration 176 removed' AS result;

@@ -4,7 +4,9 @@
 **Where:** a **restored copy** of production. Use a new Supabase project restored from a backup or PITR, or a `pg_dump`/`pg_restore` into a scratch database. **Never production.** Every script that writes data refuses to run unless the session declares it is on a copy.
 **Result:** fill in the rehearsal results table in `../DEPLOYMENT_READINESS.md` §4, and keep the outputs privately. Do not commit outputs from production data.
 
-A local rehearsal of every step below has already passed on an in-process Postgres (PGlite) with seeded data: **26 of 26 steps, 41 of 41 behaviour checks.** The evidence is in `evidence/local-rehearsal-2026-11-24-phase5b.json` and the runner in `local/`. A genuine multi-session test has also passed on a local **real PostgreSQL 17.5** server: `local/concurrency-test.js`, evidence in `evidence/real-postgres-concurrency-2026-11-24.json`. This runbook repeats the steps on real data.
+A local rehearsal of every step below has already passed on an in-process Postgres (PGlite) with seeded data: **26 of 26 steps, 45 of 45 behaviour checks** (including verified identity). The runner is in `local/`. A genuine test on a local **real PostgreSQL 17.5** server has also passed, **13/13**: restricted role, verified identity, bypass attempts, multi-session concurrency. It is `local/real-postgres-test.js`, with evidence in `evidence/real-postgres-roles-identity-2026-11-24.json`.
+
+**Identity on the copy:** r3 needs no application key. It provisions a disposable rehearsal key itself, signs its claims in SQL (as the owner), and deactivates the key at the end. This runbook repeats the steps on real data.
 
 **Two separate sources of change.** The branch carries two kinds of change, and this runbook keeps them apart:
 - **The migrations (175/176)** must not change any existing data or any figure the app shows. They are checked with the **old code**: identical before and after.
@@ -64,9 +66,12 @@ diff books_new_before.json books_new_after.json     # must be identical
 ```
 Do **not** compare old code with new code here: those differences are the engine fixes, handled in §1.
 
-## 4b. Concurrency and role checks on the copy
-- **Two sessions, same idempotency key:** run `local/concurrency-test.js` against the copy's server, or reproduce its §1–§4 by hand in two `psql` sessions. Exactly one entry must result.
-- **Ordinary application role:** create a non-owner, non-superuser role with table privileges only, as in `concurrency-test.js` §5. Check that TRUNCATE, `DISABLE TRIGGER`, `session_replication_role` and UPDATE of a posted entry are refused. This is the role the restricted-posting-role blocker requires.
+## 4b. Restricted role, verified identity and concurrency on the copy
+1. **Create the restricted role and an identity key** on the copy, following `../db-security/README.md` steps 2–3. Use a rehearsal-only password and key, never production ones.
+2. **Restart the copy's app** with `DATABASE_URL` = `soul_app` on the copy and `MIGRATION_DATABASE_URL` = the owner URL. Set `LEDGER_IDENTITY_KEY_ID` / `LEDGER_IDENTITY_KEY` to the rehearsal key. Repeat the §5 smoke test: every page and write must work as `soul_app`.
+3. **Check as `soul_app`:** reading `ledger_identity_keys`, TRUNCATE, `DISABLE TRIGGER`, `DROP TRIGGER`, `SET session_replication_role`, `SET ROLE` the owner, `CREATE OR REPLACE FUNCTION`, and UPDATE or DELETE of a posted entry must all be refused. The list matches `local/real-postgres-test.js`, which passed 13/13 against a local PostgreSQL 17.5.
+4. **Concurrency:** in two `psql` sessions as `soul_app`, try to post the same idempotency key at the same time, and to insert two reversals of one entry. Exactly one may succeed in each case.
+5. **Supabase specifics to note:** connection pooler mode (use transaction mode or a direct connection; the identity claim is transaction-local), and any default privileges set by `supabase_admin`. Re-run `ledger_roles.sql` if a grant is missing.
 
 ## 5. Existing application compatibility (manual, on the copy's app at port 5055)
 Each of these must work exactly as on production. Note anything that does not:
@@ -82,7 +87,7 @@ Each of these must work exactly as on production. Note anything that does not:
 psql "$REHEARSAL_DATABASE_URL" -v ON_ERROR_STOP=1 \
   -c "SET app.rehearsal_copy = 'restored-copy-not-production'" -f ../docs/finance/rehearsal/r3_behaviour.sql > r3.txt
 ```
-psql gives `-c` and `-f` the same session, so the setting applies. The last two result sets must show **every** check passed (41 of 41) and 0 failed. These cover:
+psql gives `-c` and `-f` the same session, so the setting applies. The last two result sets must show **every** check passed (45 of 45) and 0 failed. These cover:
 - capture with the applied rates;
 - retries and duplicates;
 - rate changes after confirmation;

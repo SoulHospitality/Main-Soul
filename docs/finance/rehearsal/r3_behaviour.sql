@@ -13,6 +13,31 @@ END $$;
 CREATE TEMP TABLE rehearsal_results (n serial, check_name text, passed boolean, detail text);
 CREATE TEMP TABLE rh (k text PRIMARY KEY, v text);
 
+-- Verified identity (176): a disposable rehearsal key (random, from the server's CSPRNG) and helpers that sign
+-- a claim for the current transaction. Possible here only because the rehearsal runs as the owner and can
+-- read ledger_identity_keys; the restricted application role cannot.
+INSERT INTO rh VALUES ('key', 'rehearsal_' || to_char(clock_timestamp(), 'YYYYMMDDHH24MISS'));
+INSERT INTO public.ledger_identity_keys (key_id, secret)
+SELECT v, decode(replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', ''), 'hex') FROM rh WHERE k = 'key';
+CREATE FUNCTION pg_temp.act(actor integer) RETURNS void LANGUAGE plpgsql AS $f$
+DECLARE kid text; sec bytea; ex bigint := extract(epoch FROM clock_timestamp())::bigint + 300; msg text;
+BEGIN
+  SELECT v INTO kid FROM rh WHERE k = 'key';
+  SELECT secret INTO sec FROM public.ledger_identity_keys WHERE key_id = kid;
+  msg := 'v1|' || kid || '|' || actor || '|' || txid_current() || '|' || ex || '|act';
+  PERFORM set_config('app.identity_claim', replace(msg, '|', '.') || '.' || encode(public.ledger_hmac_sha256(sec, convert_to(msg, 'UTF8')), 'hex'), true);
+END $f$;
+CREATE FUNCTION pg_temp.as_actor(actor integer, stmt text) RETURNS void LANGUAGE plpgsql AS $f$
+BEGIN
+  PERFORM pg_temp.act(actor);
+  EXECUTE stmt;
+END $f$;
+CREATE FUNCTION pg_temp.approve(purpose text, subject text, approver integer) RETURNS void LANGUAGE plpgsql AS $f$
+BEGIN
+  PERFORM pg_temp.act(approver);
+  INSERT INTO public.ledger_approvals (purpose, subject, approver_id) VALUES (purpose, subject, approver);
+END $f$;
+
 CREATE FUNCTION pg_temp.ok(name text, cond boolean, detail text DEFAULT NULL) RETURNS void LANGUAGE sql AS
   $f$ INSERT INTO rehearsal_results (check_name, passed, detail) VALUES (name, COALESCE(cond, false), detail) $f$;
 CREATE FUNCTION pg_temp.v(key text) RETURNS text LANGUAGE sql AS $f$ SELECT v FROM rh WHERE k = key $f$;
@@ -145,6 +170,7 @@ SELECT pg_temp.ok('salesperson change, owner-flag change and re-confirmation aft
 -- ── 175: corrections ──
 CREATE FUNCTION pg_temp.correct(res text, actor text, approver text, reason text) RETURNS void LANGUAGE plpgsql AS $f$
 BEGIN
+  IF actor IS NOT NULL THEN PERFORM pg_temp.act(actor::integer); END IF;
   PERFORM set_config('app.commission_correction', 'on', true),
           set_config('app.commission_correction_actor', COALESCE(actor, ''), true),
           set_config('app.commission_correction_approver', COALESCE(approver, ''), true),
@@ -160,6 +186,9 @@ SELECT pg_temp.must_fail('a non-admin cannot correct',
   format($s$SELECT pg_temp.correct(%L, %L, NULL, 'Contract signed at 18 percent')$s$, pg_temp.v('r1'), pg_temp.v('sp')), 'admin');
 SELECT pg_temp.must_fail('nobody approves their own correction',
   format($s$SELECT pg_temp.correct(%L, %L, %L, 'Contract signed at 18 percent')$s$, pg_temp.v('r1'), pg_temp.v('a1'), pg_temp.v('a1')), 'different');
+SELECT pg_temp.must_fail('a correction whose approver has not recorded an approval is refused',
+  format($s$SELECT pg_temp.correct(%L, %L, %L, 'Contract signed at 18 percent')$s$, pg_temp.v('r1'), pg_temp.v('a1'), pg_temp.v('a2')), 'not recorded');
+SELECT pg_temp.approve('commission_correction', pg_temp.v('r1'), pg_temp.v('a2')::integer);
 SELECT pg_temp.correct(pg_temp.v('r1'), pg_temp.v('a1'), pg_temp.v('a2'), 'REHEARSAL: contract signed at 18 percent');
 SELECT pg_temp.ok('authorised correction is saved and logged with before/after, who, approver and reason',
   (SELECT commission_snapshot_status = 'corrected' AND commission_snapshot->'applied'->>'company_pct' = '18'
@@ -176,6 +205,7 @@ SELECT pg_temp.must_fail('the correction log cannot be deleted',
 CREATE FUNCTION pg_temp.entry(num text, pol text, d numeric, c numeric) RETURNS void LANGUAGE plpgsql AS $f$
 DECLARE eid bigint;
 BEGIN
+  PERFORM pg_temp.act(pg_temp.v('a1')::integer);
   INSERT INTO public.ledger_entries (number, transaction_date, period, description, source_module, source_type, source_id, origin, idempotency_key, policy_version, created_by)
   VALUES (num, DATE '2027-03-01', '2027-03', 'REHEARSAL', 'rehearsal', 'test', num, 'manual', 'rehearsal:' || num, pol, pg_temp.v('a1')::integer)
   RETURNING id INTO eid;
@@ -191,17 +221,26 @@ VALUES ('REHEARSAL-DRAFT', '2027-01-01', '{"revenue_presentation":"gross","vat_b
 SELECT pg_temp.must_fail('a policy cannot be approved by the person who recorded it',
   format($s$INSERT INTO public.ledger_policies (version, effective_from, settings, status, approved_by, approved_at, approval_ref, vat_approved_by, vat_approved_at, vat_approval_ref, created_by)
      VALUES ('REHEARSAL-SELF', '2027-01-01', '{"revenue_presentation":"gross","vat_base":"fee_only"}', 'approved', %s, now(), 'x', %s, now(), 'x', %s)$s$, pg_temp.v('a1'), pg_temp.v('a2'), pg_temp.v('a1')), 'recorded');
-INSERT INTO public.ledger_policies (version, effective_from, settings, status, approved_by, approved_at, approval_ref, vat_approved_by, vat_approved_at, vat_approval_ref, created_by)
-VALUES ('REHEARSAL-TEST', '2027-01-01', '{"revenue_presentation":"gross","vat_base":"fee_only"}', 'approved',
-        pg_temp.v('a1')::integer, now(), 'REHEARSAL ONLY - NOT AN APPROVAL', pg_temp.v('a2')::integer, now(), 'REHEARSAL ONLY - NOT AN APPROVAL', pg_temp.v('sp')::integer);
+SELECT pg_temp.must_fail('a policy cannot be approved before its approvers record their approvals',
+  format($s$SELECT pg_temp.as_actor(%s, $q$INSERT INTO public.ledger_policies (version, effective_from, settings, status, approved_by, approved_at, approval_ref, vat_approved_by, vat_approved_at, vat_approval_ref, created_by)
+     VALUES ('REHEARSAL-TEST', '2027-01-01', '{"revenue_presentation":"gross","vat_base":"fee_only"}', 'approved', %s, now(), 'x', %s, now(), 'x', %s)$q$)$s$,
+     pg_temp.v('sp'), pg_temp.v('a1'), pg_temp.v('a2'), pg_temp.v('sp')), 'not recorded');
+SELECT pg_temp.approve('policy_d01', 'REHEARSAL-TEST', pg_temp.v('a1')::integer);
+SELECT pg_temp.approve('policy_vat', 'REHEARSAL-TEST', pg_temp.v('a2')::integer);
+SELECT pg_temp.as_actor(pg_temp.v('sp')::integer, format($q$INSERT INTO public.ledger_policies (version, effective_from, settings, status, approved_by, approved_at, approval_ref, vat_approved_by, vat_approved_at, vat_approval_ref, created_by)
+  VALUES ('REHEARSAL-TEST', '2027-01-01', '{"revenue_presentation":"gross","vat_base":"fee_only"}', 'approved', %s, now(), 'REHEARSAL ONLY - NOT AN APPROVAL', %s, now(), 'REHEARSAL ONLY - NOT AN APPROVAL', %s)$q$,
+  pg_temp.v('a1'), pg_temp.v('a2'), pg_temp.v('sp')));
 SELECT pg_temp.must_fail('an approved policy cannot be edited',
   $s$UPDATE public.ledger_policies SET settings = '{"revenue_presentation":"net","vat_base":"fee_only"}' WHERE version = 'REHEARSAL-TEST'$s$, 'cannot be changed');
 
 SELECT pg_temp.must_fail('posting cannot be switched on without a named admin and reason',
-  $s$UPDATE public.financial_settings SET value_text = 'on' WHERE key = 'ledger_posting'$s$, 'actor_id');
+  $s$UPDATE public.financial_settings SET value_text = 'on' WHERE key = 'ledger_posting'$s$, 'verified');
+SELECT pg_temp.must_fail('a caller-supplied app.actor_id cannot switch posting on',
+  format($s$SELECT set_config('app.actor_id', %L, true), set_config('app.control_reason', 'claimed id only', true); UPDATE public.financial_settings SET value_text = 'on' WHERE key = 'ledger_posting'$s$, pg_temp.v('a1')), 'verified');
 CREATE FUNCTION pg_temp.switch(val text) RETURNS void LANGUAGE plpgsql AS $f$
 BEGIN
-  PERFORM set_config('app.actor_id', pg_temp.v('a1'), true), set_config('app.control_reason', 'REHEARSAL on a restored copy', true);
+  PERFORM pg_temp.act(pg_temp.v('a1')::integer);
+  PERFORM set_config('app.control_reason', 'REHEARSAL on a restored copy', true);
   UPDATE public.financial_settings SET value_text = val WHERE key = 'ledger_posting';
 END $f$;
 SELECT pg_temp.switch('on');  -- restored copy only
@@ -226,6 +265,7 @@ SELECT pg_temp.must_fail('an entry can only be marked reversed by its own revers
 CREATE FUNCTION pg_temp.reversal(num text, mirror boolean) RETURNS void LANGUAGE plpgsql AS $f$
 DECLARE orig bigint; rid bigint;
 BEGIN
+  PERFORM pg_temp.act(pg_temp.v('a1')::integer);
   SELECT id INTO orig FROM public.ledger_entries WHERE number = 'RH-4';
   INSERT INTO public.ledger_entries (number, transaction_date, period, description, source_module, source_type, source_id, origin, reverses_id, idempotency_key, policy_version, created_by)
   VALUES (num, DATE '2027-03-02', '2027-03', 'REHEARSAL reversal', 'rehearsal', 'test', 'RH-4', 'reversal', orig, 'rehearsal:' || num, 'REHEARSAL-TEST', pg_temp.v('a1')::integer) RETURNING id INTO rid;
@@ -253,5 +293,7 @@ SELECT pg_temp.must_fail('the posting switch cannot be deleted', $s$DELETE FROM 
 SELECT pg_temp.must_fail('after switching off again, nothing posts', $s$SELECT pg_temp.entry('RH-6', 'REHEARSAL-TEST', 10, 10)$s$, 'switched off');
 SELECT pg_temp.ok('posting switch is back off', (SELECT value_text FROM public.financial_settings WHERE key = 'ledger_posting') = 'off');
 
+UPDATE public.ledger_identity_keys SET active = false WHERE key_id = pg_temp.v('key');
+SELECT pg_temp.ok('the rehearsal identity key is deactivated', NOT (SELECT active FROM public.ledger_identity_keys WHERE key_id = pg_temp.v('key')));
 SELECT n, check_name, passed, detail FROM rehearsal_results ORDER BY n;
 SELECT COUNT(*) AS checks, COUNT(*) FILTER (WHERE passed) AS passed, COUNT(*) FILTER (WHERE NOT passed) AS failed FROM rehearsal_results;

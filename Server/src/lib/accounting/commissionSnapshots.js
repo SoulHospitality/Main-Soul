@@ -4,6 +4,7 @@
  */
 const { pool, query } = require('../../config/db');
 const m = require('./money');
+const { attestActor } = require('./identity');
 
 /** Who may correct saved rates until the segregation-of-duties decision (D-14) sets finance roles. */
 const CORRECTION_ROLES = ['admin'];
@@ -74,6 +75,10 @@ async function correctSnapshot({ reservationId, rates, reason, actorId, approved
       effective_date: new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' }),
       applied,
     };
+    // Verified identity: the corrector signs a claim for this transaction; the database refuses the
+    // correction unless the claimed corrector is that verified actor. An approver must have recorded their
+    // approval beforehand (identity.recordApproval, purpose commission_correction, subject reservation id).
+    await attestActor(client, actorId);
     // The database trigger writes the correction log from these settings, so a change cannot go unrecorded.
     await client.query(
       `SELECT set_config('app.commission_correction', 'on', true),

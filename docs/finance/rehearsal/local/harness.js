@@ -82,4 +82,31 @@ async function boot(S, { until = null } = {}) {
   return { db, pool, stub, query: queued };
 }
 
-module.exports = { boot, applyMigration };
+/**
+ * Verified identity for tests (migration 176, review H3): a fresh random key, set in the environment for
+ * lib/accounting/identity.js AND stored in ledger_identity_keys. Never a real key.
+ */
+async function provisionIdentity(query, keyId = 'test-key') {
+  const hex = require('crypto').randomBytes(32).toString('hex');
+  process.env.LEDGER_IDENTITY_KEY_ID = keyId;
+  process.env.LEDGER_IDENTITY_KEY = hex;
+  await query(`INSERT INTO ledger_identity_keys (key_id, secret) VALUES ($1, decode($2, 'hex'))`, [keyId, hex]);
+  return { keyId, hex };
+}
+
+/**
+ * SQL that sets a valid signed claim for `actorId` in the CURRENT transaction, computed in the database
+ * from the stored key. Only possible because tests run as superuser and can read ledger_identity_keys;
+ * the restricted application role cannot (docs/finance/db-security).
+ */
+function claimSql(actorId, keyId = 'test-key') {
+  const a = Number(actorId);
+  return `SELECT set_config('app.identity_claim',
+      'v1.' || k.key_id || '.${a}.' || txid_current() || '.' || e.exp || '.act.' ||
+      encode(ledger_hmac_sha256(k.secret, convert_to('v1|' || k.key_id || '|${a}|' || txid_current() || '|' || e.exp || '|act', 'UTF8')), 'hex'),
+      true)
+    FROM ledger_identity_keys k, (SELECT extract(epoch FROM clock_timestamp())::bigint + 300 AS exp) e
+    WHERE k.key_id = '${keyId}'`;
+}
+
+module.exports = { boot, applyMigration, provisionIdentity, claimSql };

@@ -129,7 +129,7 @@ const step = (name, ok, detail) => {
   const entries = (await query(`SELECT COUNT(*)::int AS n FROM ledger_entries`)).rows[0].n;
   err = null;
   try { await db.exec(read('rollback_176.sql')); } catch (e) { err = e.message; await db.exec('ROLLBACK').catch(() => {}); }
-  step(`rollback_176 refuses while the ledger holds entries (${entries}) unless confirmed`, /Refusing/.test(err || '') && (await tables('ledger\\_%')) === 7, err);
+  step(`rollback_176 refuses while the ledger holds entries (${entries}) unless confirmed`, /Refusing/.test(err || '') && (await tables('ledger\\_%')) === 9, err);
   await db.exec("SET app.confirm_rollback_176 = 'drop-ledger-with-entries';\n" + read('rollback_176.sql'));
   await db.exec('RESET app.confirm_rollback_176');
   step('rollback_176 with confirmation removes the ledger (despite immutability triggers) and its migration record',

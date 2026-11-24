@@ -1,6 +1,6 @@
 // Ledger core (migration 176) + commission snapshots (migration 175) + posting service, on PGlite.
 const path = require('path');
-const { boot } = require('./harness');
+const { boot, provisionIdentity, claimSql } = require('./harness');
 const S = process.argv[2];
 let failed = 0;
 const ok = (c, l, x = '') => { console.log(`${c ? 'PASS' : 'FAIL'} ${l}${x ? ' — ' + x : ''}`); if (!c) failed += 1; };
@@ -8,6 +8,19 @@ const rejects = async (fn, re) => { try { await fn(); return false; } catch (e) 
 
 (async () => {
   const { query, db } = await boot(S);
+  await provisionIdentity(query);
+  const identity = require(path.join(S, 'src/lib/accounting/identity.js'));
+  // Run SQL as a verified actor (signed claim in the same transaction); roll back on failure.
+  const asActor = async (actor, sql) => {
+    try { await db.exec(`BEGIN; ${claimSql(actor)}; ${sql}; COMMIT;`); } catch (e) { await db.exec('ROLLBACK').catch(() => {}); throw e; }
+  };
+  // An approved policy: both approvers record their approvals in their own transactions, then the recorder inserts it.
+  const approvePolicy = async (v, eff, appr, vat, rec, settings = '{"revenue_presentation":"gross","vat_base":"fee_only"}') => {
+    await identity.recordApproval({ purpose: 'policy_d01', subject: v, approverId: appr }).catch(() => {});
+    await identity.recordApproval({ purpose: 'policy_vat', subject: v, approverId: vat }).catch(() => {});
+    await asActor(rec, `INSERT INTO ledger_policies (version, effective_from, settings, status, approved_by, approved_at, approval_ref, vat_approved_by, vat_approved_at, vat_approval_ref, created_by)
+      VALUES ('${v}', '${eff}', '${settings}', 'approved', ${appr}, now(), 'TEST ONLY', ${vat}, now(), 'TEST ONLY', ${rec == null ? 'NULL' : rec})`);
+  };
   const posting = require(path.join(S, 'src/lib/accounting/posting.js'));
   const snaps = require(path.join(S, 'src/lib/accounting/commissionSnapshots.js'));
   const egp = (a, d, c) => ({ account: a, debit: d, credit: c });
@@ -21,7 +34,7 @@ const rejects = async (fn, re) => { try { await fn(); return false; } catch (e) 
   const rawEntry = (num, pol) => `INSERT INTO ledger_entries (number, transaction_date, period, description, source_module, source_type, source_id, origin, idempotency_key, policy_version, created_by)
         VALUES ('${num}', '2026-11-11', '2026-11', 'bypass', 'test', 'x', '1', 'manual', 'bypass:${num}', ${pol ? `'${pol}'` : 'NULL'}, 990)`;
   await query(`INSERT INTO staff_users (id, username, password_hash, full_name, role, is_active) VALUES (990,'lt_admin','x','LT Admin','admin',1),(991,'lt_res','x','LT Res','reservations',1),(992,'lt_admin2','x','LT Admin 2','admin',1)`);
-  const switchOn = (actor = 990, reason = 'test database switch-on') => db.exec(`BEGIN; SELECT set_config('app.actor_id', '${actor}', true), set_config('app.control_reason', '${reason}', true); UPDATE financial_settings SET value_text = 'on' WHERE key = 'ledger_posting'; COMMIT;`);
+  const switchOn = (actor = 990, reason = 'test database switch-on') => db.exec(`BEGIN; ${claimSql(actor)}; SELECT set_config('app.control_reason', '${reason}', true); UPDATE financial_settings SET value_text = 'on' WHERE key = 'ledger_posting'; COMMIT;`);
   ok(await rejects(() => switchOn()), 'posting cannot be switched on before any policy is approved');
   await db.exec('ROLLBACK').catch(() => {});
   ok(await rejects(() => posting.postEntry(base), /POSTING_OFF|switched off/), 'nothing posts while the switch is off (D-01 not approved)');
@@ -32,11 +45,11 @@ const rejects = async (fn, re) => { try { await fn(); return false; } catch (e) 
   ok(await rejects(() => query(`INSERT INTO ledger_policies (version, effective_from, settings, status, approved_by, approved_at, approval_ref) VALUES ('P-NOVAT', '2026-01-01', '{"revenue_presentation":"gross","vat_base":"fee_only"}', 'approved', 1, now(), 'letter-1')`), /check|approv|created_by/i), 'a policy cannot be approved without the separate VAT approval');
   ok(await rejects(() => query(`INSERT INTO ledger_policies (version, effective_from, settings, status, approved_by, approved_at, approval_ref, vat_approved_by, vat_approved_at, vat_approval_ref) VALUES ('P-NOBASE', '2026-01-01', '{"revenue_presentation":"gross"}', 'approved', 1, now(), 'l', 1, now(), 'v')`), /check|approv|created_by/i), 'a policy cannot be approved without a VAT base setting');
   await query(`INSERT INTO ledger_policies (version, effective_from, settings, status) VALUES ('P-DRAFT', '2026-01-01', '{"revenue_presentation":"net","vat_base":"fee_only"}', 'draft')`);
-  await query(`INSERT INTO ledger_policies (version, effective_from, settings, status, approved_by, approved_at, approval_ref, vat_approved_by, vat_approved_at, vat_approval_ref, created_by) VALUES ('P-TEST', '2026-01-01', '{"revenue_presentation":"gross","vat_base":"fee_only"}', 'approved', 990, now(), 'TEST ONLY', 992, now(), 'TEST ONLY', 991)`);
+  await approvePolicy('P-TEST', '2026-01-01', 990, 992, 991);
   ok(await rejects(() => query(`UPDATE ledger_policies SET settings = '{"revenue_presentation":"net","vat_base":"fee_only"}' WHERE version = 'P-TEST'`), /cannot be changed/), 'an approved policy cannot be edited');
   ok(await rejects(() => query(`DELETE FROM ledger_policies WHERE version = 'P-TEST'`), /cannot be deleted/), 'an approved policy cannot be deleted');
 
-  ok(await rejects(() => query(`UPDATE financial_settings SET value_text = 'on' WHERE key = 'ledger_posting'`), /actor_id/), 'switching posting on without a named admin and reason is refused');
+  ok(await rejects(() => query(`UPDATE financial_settings SET value_text = 'on' WHERE key = 'ledger_posting'`), /verified/), 'switching posting on without a named admin and reason is refused');
   ok(await rejects(() => switchOn(991)), 'a non-admin cannot switch posting on');
   await db.exec('ROLLBACK').catch(() => {});
   await switchOn(); // test database only
@@ -54,7 +67,7 @@ const rejects = async (fn, re) => { try { await fn(); return false; } catch (e) 
 
   // The database itself refuses an unbalanced entry even if the service is bypassed.
   const dbUnbalanced = await rejects(async () => {
-    await db.exec(`BEGIN;
+    await db.exec(`BEGIN; ${claimSql(990)};
       ${rawEntry('JE-TEST-1', 'P-TEST')};
       INSERT INTO ledger_lines (entry_id, line_no, account_code, debit, base_debit) SELECT id, 1, '103000', 50, 50 FROM ledger_entries WHERE number = 'JE-TEST-1';
       INSERT INTO ledger_lines (entry_id, line_no, account_code, credit, base_credit) SELECT id, 2, '105000', 40, 40 FROM ledger_entries WHERE number = 'JE-TEST-1';
@@ -77,7 +90,7 @@ const rejects = async (fn, re) => { try { await fn(); return false; } catch (e) 
   ok(await rejects(() => posting.reverseEntry(first.entry.id, { reason: 'again please', actorId: 1 }), /ALREADY_REVERSED/), 'an entry can only be reversed once');
 
   ok(await rejects(() => query(`INSERT INTO ledger_periods (period, status) VALUES ('2026-10', 'closed')`), /closed_by/), 'closing a period needs an admin named as closer');
-  await query(`INSERT INTO ledger_periods (period, status, closed_by) VALUES ('2026-10', 'closed', 990)`);
+  await asActor(990, `INSERT INTO ledger_periods (period, status, closed_by) VALUES ('2026-10', 'closed', 990)`);
   ok(await rejects(() => posting.postEntry({ ...base, transactionDate: '2026-10-15', idempotencyKey: 'late:1' }), /PERIOD_CLOSED/), 'posting into a closed period refused');
 
   // Currency: USD cash line needs its rate; base amount computed exactly.
@@ -174,6 +187,7 @@ const rejects = async (fn, re) => { try { await fn(); return false; } catch (e) 
   ok(await rejects(() => snaps.correctSnapshot({ reservationId: 702, rates: { company_pct: 18 }, reason: 'short', actorId: 901 })), 'a correction needs a real reason');
   ok(await rejects(() => snaps.correctSnapshot({ reservationId: 702, rates: { company_pct: 18 }, reason: 'Contract signed at 18 percent', actorId: 903 }), /admin/), 'a non-admin cannot correct rates');
   ok(await rejects(() => snaps.correctSnapshot({ reservationId: 702, rates: { company_pct: 18 }, reason: 'Contract signed at 18 percent', actorId: 901, approvedBy: 901 }), /different person/), 'nobody approves their own correction');
+  await identity.recordApproval({ purpose: 'commission_correction', subject: '702', approverId: 902 });
   const fixed = await snaps.correctSnapshot({ reservationId: 702, rates: { company_pct: '18', sales_pct: '8' }, reason: 'Contract signed at 18%, unit record was wrong', actorId: 901, approvedBy: 902 });
   const log = (await query('SELECT previous, corrected, corrected_by, approved_by, reason FROM reservation_commission_corrections WHERE reservation_id = 702')).rows;
   s = await snap(702);
@@ -209,7 +223,7 @@ const rejects = async (fn, re) => { try { await fn(); return false; } catch (e) 
   ok(await rejects(() => posting.reverseEntry(rv.id, { reason: 'undo the undo', actorId: 990, date: '2026-11-22' }), /REVERSAL_OF_REVERSAL/), 'a reversal cannot itself be reversed');
   const p2 = await posting.postEntry({ ...nov, idempotencyKey: 'h:3', lines: [egp('103000', '80', 0), egp('105000', 0, '80')] });
   ok(await rejects(() => posting.reverseEntry(p2.entry.id, { reason: 'backdated try', actorId: 990, date: '2026-11-19' }), /BAD_DATE/), 'a reversal cannot be dated before the entry');
-  ok(await rejects(() => db.exec(`BEGIN;
+  ok(await rejects(() => db.exec(`BEGIN; ${claimSql(990)};
      INSERT INTO ledger_entries (number, transaction_date, period, description, source_module, source_type, source_id, origin, reverses_id, idempotency_key, policy_version, created_by)
        VALUES ('JE-RAW-R1', '2026-11-25', '2026-11', 'fake reversal', 't', 'x', '1', 'reversal', ${p2.entry.id}, 'raw:r1', 'P-TEST', 990);
      INSERT INTO ledger_lines (entry_id, line_no, account_code, debit, base_debit) SELECT id, 1, '105000', 70, 70 FROM ledger_entries WHERE number = 'JE-RAW-R1';
@@ -238,6 +252,7 @@ const rejects = async (fn, re) => { try { await fn(); return false; } catch (e) 
   const adj = { ...base, transactionDate: '2026-10-20', policyVersion: 'P-TEST', origin: 'adjustment', allowClosedPeriod: true, actorId: 990 };
   ok(await rejects(() => posting.postEntry({ ...adj, idempotencyKey: 'a:1', approvedBy: 990, lines: [egp('103000', '10', 0), egp('105000', 0, '10')] }), /PERIOD_CLOSED/), 'an adjustment into a closed period cannot be self-approved');
   ok(await rejects(() => posting.postEntry({ ...adj, idempotencyKey: 'a:2', approvedBy: 991, lines: [egp('103000', '10', 0), egp('105000', 0, '10')] }), /closed/i), 'the DATABASE refuses a closed-period adjustment approved by a non-admin');
+  await identity.recordApproval({ purpose: 'closed_period_adjustment', subject: 'a:3', approverId: 992 });
   const okAdj = await posting.postEntry({ ...adj, idempotencyKey: 'a:3', approvedBy: 992, lines: [egp('103000', '10', 0), egp('105000', 0, '10')] });
   ok(okAdj.entry.approved_by === 992, 'an adjustment approved by a different admin posts into the closed period');
   ok(await rejects(() => query(`UPDATE ledger_periods SET status = 'open' WHERE period = '2026-10'`), /reason/), 'reopening needs an admin and a reason');
@@ -274,8 +289,7 @@ const rejects = async (fn, re) => { try { await fn(); return false; } catch (e) 
   await query(`DELETE FROM financial_settings WHERE key = 'decoy_switch'`);
 
   // M7: policy approvers must be active admins, neither the recorder.
-  const pol = (v, eff, appr, vat, rec) => query(`INSERT INTO ledger_policies (version, effective_from, settings, status, approved_by, approved_at, approval_ref, vat_approved_by, vat_approved_at, vat_approval_ref, created_by)
-    VALUES ($1, $2, '{"revenue_presentation":"gross","vat_base":"fee_only"}', 'approved', $3, now(), 'ref', $4, now(), 'ref', $5)`, [v, eff, appr, vat, rec]);
+  const pol = (v, eff, appr, vat, rec) => approvePolicy(v, eff, appr, vat, rec);
   ok(await rejects(() => pol('P-M7a', '2027-05-01', 991, 992, 990), /active admins/), 'M7: a non-admin cannot be a policy approver');
   ok(await rejects(() => pol('P-M7b', '2027-05-01', 990, 992, 990), /recorded/), 'M7: the recorder cannot approve their own policy');
   ok(await rejects(() => pol('P-M7c', '2027-05-01', 990, 992, null), /created_by/), 'M7: an approved policy must name who recorded it');
@@ -293,7 +307,7 @@ const rejects = async (fn, re) => { try { await fn(); return false; } catch (e) 
 
   // M2: entries stay reversible after their policy is retired; the reversal keeps the original policy.
   const novEntry = await posting.postEntry({ ...base, transactionDate: '2026-11-25', idempotencyKey: 'm2:1', lines: [egp('103000', '33', 0), egp('105000', 0, '33')] });
-  await query(`UPDATE ledger_policies SET status = 'retired' WHERE version = 'P-TEST'`);
+  await asActor(990, `UPDATE ledger_policies SET status = 'retired' WHERE version = 'P-TEST'`);
   const m2rev = await posting.reverseEntry(novEntry.entry.id, { reason: 'Posted to the wrong guest', actorId: 990, date: '2026-12-02' });
   ok(m2rev.policy_version === 'P-TEST' && m2rev.origin === 'reversal', 'M2: an entry under a retired policy can still be reversed (reversal keeps P-TEST)');
   ok(await rejects(() => posting.postEntry({ ...base, transactionDate: '2026-11-26', policyVersion: undefined, idempotencyKey: 'm2:2', lines: [egp('103000', '5', 0), egp('105000', 0, '5')] }), /NO_POLICY/), 'M2: a retired policy cannot be used for new entries');
@@ -304,11 +318,11 @@ const rejects = async (fn, re) => { try { await fn(); return false; } catch (e) 
       VALUES ('${n}', '2026-12-12', '2026-12', 'r', 't', 't', '1', 'reversal', ${target}, 'raw:${n}', 'P-DEC', 990);
     INSERT INTO ledger_lines (entry_id, line_no, account_code, debit, credit, base_debit, base_credit)
       SELECT (SELECT id FROM ledger_entries WHERE number = '${n}'), line_no, account_code, credit, debit, base_credit, base_debit FROM ledger_lines WHERE entry_id = ${target};`;
-  ok(await rejects(() => db.exec(`BEGIN; ${rawRev('M1-R1')} ${rawRev('M1-R2')} COMMIT;`), /duplicate|unique/), 'M1: two reversals of one entry in a single transaction are refused');
+  ok(await rejects(() => db.exec(`BEGIN; ${claimSql(990)}; ${rawRev('M1-R1')} ${rawRev('M1-R2')} COMMIT;`), /duplicate|unique/), 'M1: two reversals of one entry in a single transaction are refused');
   await db.exec('ROLLBACK').catch(() => {});
   ok(Number((await query(`SELECT COUNT(*)::int n FROM ledger_entries WHERE reverses_id = $1`, [target])).rows[0].n) === 0, 'M1: nothing from the refused transaction remains');
   const rp = await posting.replaceEntry(target, { ...dec, idempotencyKey: 'm1:rep', lines: [egp('103000', '21', 0), egp('105000', 0, '21')] }, { reason: 'Amount corrected', actorId: 990, date: '2026-12-12' });
-  ok(await rejects(() => query(`INSERT INTO ledger_entries (number, transaction_date, period, description, source_module, source_type, source_id, origin, replaces_id, idempotency_key, policy_version, created_by)
+  ok(await rejects(() => asActor(990, `INSERT INTO ledger_entries (number, transaction_date, period, description, source_module, source_type, source_id, origin, replaces_id, idempotency_key, policy_version, created_by)
      VALUES ('JE-M1-REP2', '2026-12-13', '2026-12', 'x', 't', 'x', '1', 'manual', ${target}, 'raw:rep2', 'P-DEC', 990)`), /duplicate|unique/), 'M1: a second replacement of the same entry is refused');
   ok(Number(rp.replacement.replaces_id) === Number(target), 'M1: the first replacement is linked');
 
@@ -339,13 +353,87 @@ const rejects = async (fn, re) => { try { await fn(); return false; } catch (e) 
   ok(await rejects(() => posting.postEntry(l1, { client: invisible }), /IDEMPOTENCY_RACE/), 'L6: a race whose winner is invisible reports IDEMPOTENCY_RACE instead of crashing');
 
   // L7: a USD reversal copies the original EGP amounts exactly.
-  await query(`UPDATE ledger_policies SET status = 'retired' WHERE version = 'P-DEC'`).catch(() => {});
+  await asActor(990, `UPDATE ledger_policies SET status = 'retired' WHERE version = 'P-DEC'`).catch(() => {});
   await pol('P-L7', '2027-02-01', 990, 992, 991);
   const usdRate = m5.div('61234.57', '1264.71').toString();
   const usdE = await posting.postEntry({ ...base, transactionDate: '2027-02-05', policyVersion: undefined, idempotencyKey: 'l7:1', lines: [{ account: '104000', debit: '1264.71', currency: 'USD', fxRate: usdRate }, egp('105000', 0, '61234.57')] });
   const usdR = await posting.reverseEntry(usdE.entry.id, { reason: 'FX round trip', actorId: 990, date: '2027-02-06' });
   const pair = (await query(`SELECT entry_id, base_debit, base_credit FROM ledger_lines WHERE account_code = '104000' AND entry_id IN ($1, $2) ORDER BY entry_id`, [usdE.entry.id, usdR.id])).rows;
   ok(pair.length === 2 && m5.eq(pair[0].base_debit, pair[1].base_credit) && m5.eq(pair[0].base_debit, '61234.57'), 'L7: the USD reversal mirrors the original EGP amount exactly', pair);
+
+  // ── H3: verified identity ──
+  const crypto = require('crypto');
+  // HMAC in the database equals Node's (RFC 4231 test case 2: key "Jefe").
+  const rfc = (await query(`SELECT encode(ledger_hmac_sha256(convert_to('Jefe', 'UTF8'), convert_to('what do ya want for nothing?', 'UTF8')), 'hex') AS h`)).rows[0].h;
+  ok(rfc === '5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843' && rfc === crypto.createHmac('sha256', 'Jefe').update('what do ya want for nothing?').digest('hex'),
+    'H3: database HMAC-SHA256 matches RFC 4231 and Node crypto');
+  const longKey = (await query(`SELECT encode(ledger_hmac_sha256(decode(repeat('aa', 131), 'hex'), convert_to('Test Using Larger Than Block-Size Key - Hash Key First', 'UTF8')), 'hex') AS h`)).rows[0].h;
+  ok(longKey === '60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54', 'H3: database HMAC handles keys longer than the block size (RFC 4231 case 6)');
+
+  const tryExec = async (sql) => { try { await db.exec(sql); return 'ALLOWED'; } catch (e) { await db.exec('ROLLBACK').catch(() => {}); return e.message; } };
+  await query(`UPDATE financial_settings SET value_text = 'off' WHERE key = 'ledger_posting'`);
+  // Legacy caller-supplied id is ignored.
+  let r = await tryExec(`BEGIN; SELECT set_config('app.actor_id', '990', true), set_config('app.control_reason', 'claimed admin only', true); UPDATE financial_settings SET value_text = 'on' WHERE key = 'ledger_posting'; COMMIT;`);
+  ok(/verified/.test(r), 'H3: a caller-supplied app.actor_id no longer switches posting on', r);
+  // Forged signature.
+  r = await tryExec(`BEGIN; SELECT set_config('app.identity_claim', 'v1.test-key.990.' || txid_current() || '.9999999999.act.' || repeat('ab', 32), true), set_config('app.control_reason', 'forged signature try', true); UPDATE financial_settings SET value_text = 'on' WHERE key = 'ledger_posting'; COMMIT;`);
+  ok(/verified/.test(r), 'H3: a claim with a forged signature is refused', r);
+  // A valid claim from another transaction (replay).
+  const c1 = await require(path.join(S, 'src/config/db.js')).pool.connect();
+  await c1.query('BEGIN');
+  const stolen = await identity.attestActor(c1, 990);
+  await c1.query('COMMIT'); c1.release();
+  r = await tryExec(`BEGIN; SELECT set_config('app.identity_claim', '${stolen}', true), set_config('app.control_reason', 'replayed claim try', true); UPDATE financial_settings SET value_text = 'on' WHERE key = 'ledger_posting'; COMMIT;`);
+  ok(/verified/.test(r), 'H3: a valid claim replayed in another transaction is refused', r);
+  // Expired claim, correctly signed.
+  const c2 = await require(path.join(S, 'src/config/db.js')).pool.connect();
+  await c2.query('BEGIN');
+  const tx = (await c2.query(`SELECT txid_current()::text AS t, extract(epoch FROM clock_timestamp())::bigint AS n`)).rows[0];
+  const expired = identity.signClaim({ keyId: 'test-key', secret: Buffer.from(process.env.LEDGER_IDENTITY_KEY, 'hex'), actorId: 990, txid: tx.t, expiry: Number(tx.n) - 5 });
+  await c2.query(`SELECT set_config('app.identity_claim', $1, true)`, [expired]);
+  const vExp = (await c2.query(`SELECT ledger_verified_actor() AS v`)).rows[0].v;
+  const fresh = identity.signClaim({ keyId: 'test-key', secret: Buffer.from(process.env.LEDGER_IDENTITY_KEY, 'hex'), actorId: 990, txid: tx.t, expiry: Number(tx.n) + 60 });
+  await c2.query(`SELECT set_config('app.identity_claim', $1, true)`, [fresh]);
+  const vFresh = (await c2.query(`SELECT ledger_verified_actor() AS v`)).rows[0].v;
+  await c2.query('ROLLBACK'); c2.release();
+  ok(vExp === null && vFresh === 990, 'H3: an expired claim is refused; a fresh one signed by the app key verifies (Node signer = database verifier)', { vExp, vFresh });
+  // The verified path still works.
+  await posting.setPostingSwitch('on', { actorId: 990, reason: 'verified admin switch-on test' });
+  ok((await query(`SELECT value_text FROM financial_settings WHERE key = 'ledger_posting'`)).rows[0].value_text === 'on', 'H3: a verified active admin can switch posting on (setPostingSwitch)');
+  await posting.setPostingSwitch('off', { actorId: 991, reason: 'anyone may switch posting off' });
+  ok(await rejects(() => posting.setPostingSwitch('on', { actorId: 991, reason: 'non-admin verified try' })), 'H3: a verified non-admin cannot switch posting on');
+  await posting.setPostingSwitch('on', { actorId: 990, reason: 'verified admin switch-on again' });
+
+  // Entries: the named creator must be the verified actor.
+  ok(await rejects(() => query(`INSERT INTO ledger_entries (number, transaction_date, period, description, source_module, source_type, source_id, origin, idempotency_key, policy_version, created_by)
+     VALUES ('JE-H3-1', '2027-02-10', '2027-02', 'x', 't', 'x', '1', 'manual', 'h3:1', 'P-L7', 990)`), /verified/), 'H3: a manual entry naming a creator without a verified identity is refused');
+  r = await tryExec(`BEGIN; ${claimSql(991)}; INSERT INTO ledger_entries (number, transaction_date, period, description, source_module, source_type, source_id, origin, idempotency_key, policy_version, created_by)
+     VALUES ('JE-H3-2', '2027-02-10', '2027-02', 'x', 't', 'x', '1', 'manual', 'h3:2', 'P-L7', 990); COMMIT;`);
+  ok(/not the verified actor/.test(r), 'H3: naming someone else as creator than the verified actor is refused', r);
+  const viaService = await posting.postEntry({ ...base, transactionDate: '2027-02-11', policyVersion: undefined, origin: 'manual', actorId: 990, idempotencyKey: 'h3:svc', lines: [egp('103000', '4', 0), egp('105000', 0, '4')] });
+  ok(viaService.entry.created_by === 990, 'H3: the posting service signs the actor and the manual entry posts');
+  const savedKey = process.env.LEDGER_IDENTITY_KEY;
+  delete process.env.LEDGER_IDENTITY_KEY;
+  ok(await rejects(() => posting.postEntry({ ...base, transactionDate: '2027-02-11', policyVersion: undefined, origin: 'manual', actorId: 990, idempotencyKey: 'h3:nokey', lines: [egp('103000', '4', 0), egp('105000', 0, '4')] }), /not configured/), 'H3: without the signing key the service refuses to act for a person');
+  process.env.LEDGER_IDENTITY_KEY = savedKey;
+
+  // Approvals: recorded only by the verified approver, not in the action's own transaction.
+  r = await tryExec(`BEGIN; ${claimSql(990)}; INSERT INTO ledger_approvals (purpose, subject, approver_id) VALUES ('policy_d01', 'P-FAKE', 992); COMMIT;`);
+  ok(/not the verified actor/.test(r), 'H3: nobody can record an approval in another person\'s name', r);
+  ok(await rejects(() => identity.recordApproval({ purpose: 'policy_d01', subject: 'P-X', approverId: 991 }), /active admin/), 'H3: a non-admin cannot record an approval');
+  await identity.recordApproval({ purpose: 'policy_vat', subject: 'P-SAME', approverId: 992 });
+  r = await tryExec(`BEGIN; ${claimSql(990)}; INSERT INTO ledger_approvals (purpose, subject, approver_id) VALUES ('policy_d01', 'P-SAME', 990);
+    INSERT INTO ledger_policies (version, effective_from, settings, status, approved_by, approved_at, approval_ref, vat_approved_by, vat_approved_at, vat_approval_ref, created_by)
+    VALUES ('P-SAME', '2027-06-01', '{"revenue_presentation":"gross","vat_base":"fee_only"}', 'approved', 990, now(), 'r', 992, now(), 'r', 990); COMMIT;`);
+  ok(/recorded/.test(r), 'H3: an approver cannot also be the recorder, even with their own verified approval', r);
+  ok(await rejects(() => query(`UPDATE ledger_approvals SET approver_id = 990`), /permanent/), 'H3: approvals cannot be edited');
+
+  // Logs accept rows only from their guarded triggers.
+  ok(await rejects(() => query(`INSERT INTO ledger_control_log (control, new_value, actor_id, reason) VALUES ('ledger_posting', 'on', 990, 'forged log line')`), /written only/), 'H3: a forged control-log row is refused');
+  ok(await rejects(() => query(`INSERT INTO reservation_commission_corrections (reservation_id, corrected, reason, corrected_by) VALUES (702, '{}', 'forged correction row', 901)`), /written only/), 'H3: a forged commission-correction row is refused');
+  // Keys cannot be changed or truncated; only deactivated.
+  ok(await rejects(() => query(`UPDATE ledger_identity_keys SET secret = decode(repeat('00', 32), 'hex')`), /cannot be changed/), 'H3: an identity key cannot be overwritten');
+  ok(await rejects(() => query(`TRUNCATE ledger_identity_keys`), /cannot be truncated/), 'H3: identity keys cannot be truncated');
   console.log(failed ? `\n${failed} FAILED` : '\nALL PASSED');
   process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error('CRASH', e.stack); process.exit(1); });
