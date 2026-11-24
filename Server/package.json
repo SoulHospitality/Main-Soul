@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "test": "node --test src/lib/kpi.test.js src/lib/audit.test.js src/lib/pageAccess.test.js src/lib/hrPayrollRules.test.js src/lib/calendarOccupancy.test.js src/lib/hrRules.test.js src/lib/staffUserCleanup.test.js src/lib/salesNameMatch.test.js src/lib/staffAuthSessions.test.js src/lib/soully/access.test.js src/services/partnerWebhooks.test.js src/lib/accounting/money.test.js"
+    "test": "node --test src/lib/kpi.test.js src/lib/audit.test.js src/lib/pageAccess.test.js src/lib/hrPayrollRules.test.js src/lib/calendarOccupancy.test.js src/lib/hrRules.test.js src/lib/staffUserCleanup.test.js src/lib/salesNameMatch.test.js src/lib/staffAuthSessions.test.js src/lib/soully/access.test.js src/services/partnerWebhooks.test.js src/lib/accounting/money.test.js src/lib/finance/applyCancellation.test.js src/lib/finance/cancelSettlement.test.js src/lib/finance/paymentInput.test.js src/lib/finance/ledgerEngine.regression.test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.5.0",

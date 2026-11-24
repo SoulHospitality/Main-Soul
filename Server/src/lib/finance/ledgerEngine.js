@@ -724,11 +724,14 @@ function closeMonthEntry(yearMonth, monthJournal) {
   for (const acct of CHART_OF_ACCOUNTS) {
     const raw = map[acct.code] || { debit: 0, credit: 0 };
     const bal = round2(signedBalance(acct.type, raw.debit, raw.credit, acct.contra));
+    // A balance on the unusual side (revenue in debit after a credit note, an expense in credit after an
+    // allowance release) closes on the other side. makeEntry drops non-positive lines, so writing it as
+    // a negative amount used to lose the line and leave the close entry unbalanced.
     if (acct.type === 'revenue' && Math.abs(bal) > 0.009) {
-      lines.push(journalLine(acct.code, bal, 0, `Close ${acct.name}`));
+      lines.push(bal > 0 ? journalLine(acct.code, bal, 0, `Close ${acct.name}`) : journalLine(acct.code, 0, -bal, `Close ${acct.name}`));
       revenue += bal;
     } else if (acct.type === 'expense' && Math.abs(bal) > 0.009) {
-      lines.push(journalLine(acct.code, 0, bal, `Close ${acct.name}`));
+      lines.push(bal > 0 ? journalLine(acct.code, 0, bal, `Close ${acct.name}`) : journalLine(acct.code, -bal, 0, `Close ${acct.name}`));
       expense += bal;
     }
   }
@@ -2519,19 +2522,21 @@ function buildPortal(journal, reservations, recurring, extras = {}) {
 }
 
 function buildStatements(journal, reservations, from, to, reservationTotals) {
+  const isPnl = (a) => a.type === 'revenue' || a.type === 'expense';
   const bals = balancesFromJournal(journal);
-  const pnl = pnlFromBalances(bals.filter((a) => a.type === 'revenue' || a.type === 'expense'));
-  const receipts = computeGrossReceipts(
-    journal.filter((e) => e.type !== 'period_close'),
-    reservations,
-    from,
-    to,
-    reservationTotals
-  );
-  const closedPnl = journal.filter((e) => e.type === 'period_close');
-  const livePnl = closedPnl.length ? 0 : pnl.totals.net;
+  // The P&L statement shows the period's activity, closed months included: closing entries only move
+  // profit into retained earnings, they are not income or expense. (Previously the P&L was built from
+  // post-close balances, so any closed month inside the range dropped out of the statement.)
+  const operatingJournal = journal.filter((e) => e.type !== 'period_close');
+  const pnl = pnlFromBalances(balancesFromJournal(operatingJournal).filter(isPnl));
+  const receipts = computeGrossReceipts(operatingJournal, reservations, from, to, reservationTotals);
   const tb = trialBalance(bals);
-  const bs = balanceSheet(bals, livePnl === 0 && closedPnl.length ? 0 : pnl.totals.net);
+  // Current-year earnings on the balance sheet = the P&L still open after the closes. Closed months were
+  // already moved to retained earnings (302000) by their period_close entries, which also zero their
+  // revenue and expense balances in `bals`. (Previously this was forced to 0 whenever any month was
+  // closed, so the balance sheet stopped balancing by the profit of every month after the last close.)
+  const openPnl = pnlFromBalances(bals.filter(isPnl));
+  const bs = balanceSheet(bals, openPnl.totals.net);
   return {
     trial_balance: tb,
     profit_and_loss: {
