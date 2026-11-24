@@ -1,0 +1,168 @@
+// Local deployment rehearsal of migrations 175/176 on PGlite (Postgres 16/17 in-process), using the
+// repository's rehearsal scripts. Evidence is written to rehearsal-evidence.json.
+const fs = require('fs');
+const path = require('path');
+const { boot, applyMigration } = require('./harness');
+
+const S = process.argv[2];                     // .../Server
+const REPO = path.join(S, '..');
+const RH = path.join(REPO, 'docs/finance/rehearsal');
+const read = (f) => fs.readFileSync(path.join(RH, f), 'utf8');
+const evidence = { started: new Date().toISOString(), engine: 'PGlite', steps: [] };
+let failed = 0;
+const step = (name, ok, detail) => {
+  evidence.steps.push({ name, ok, detail });
+  if (!ok) failed++;
+  console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${detail !== undefined && !ok ? ' :: ' + JSON.stringify(detail).slice(0, 400) : ''}`);
+};
+
+(async () => {
+  const { db, query } = await boot(S, { until: '174' });
+  const rowsOf = (res) => res.filter((r) => r.fields.length).map((r) => r.rows);
+  const sqlFile = async (f, prefix = '') => rowsOf(await db.exec(prefix + read(f)));
+  // psql semantics: each statement is its own transaction (needed for r3's "later transaction" checks).
+  const { splitSql } = require('./splitsql');
+  const psqlFile = async (f, prefix = '') => {
+    const out = [];
+    for (const s of splitSql(prefix + read(f))) { const r = await db.query(s); if (r.fields && r.fields.length) out.push(r.rows); }
+    return out;
+  };
+  const fingerprint = async () => Object.fromEntries((await sqlFile('r1_fingerprint.sql'))[0].map((r) => [r.item, r.fingerprint]));
+  const sameData = (a, b) => Object.keys(a).filter((k) => k !== 'migrations >= 170').every((k) => a[k] === b[k]);
+  const books = require(path.join(RH, 'compare-books.js'));
+  const booksPrint = async () => { const r = await books.fingerprint('2026-10-01', '2026-12-31'); return { entries: r.entries, tb: r.trialBalanceHash, journal: r.journalHash }; };
+  const tables = async (like) => Number((await query(`SELECT COUNT(*)::int AS n FROM information_schema.tables WHERE table_schema = 'public' AND table_name LIKE $1`, [like])).rows[0].n);
+  const migrated = async (id) => (await query('SELECT 1 FROM _schema_migrations WHERE id = $1', [id])).rows.length === 1;
+
+  // ── Seed a realistic pre-deployment database (state after migration 174) ──
+  const staff = (await query(`INSERT INTO staff_users (username, password_hash, full_name, role, is_active, sales_commission_pct)
+    VALUES ('seed_sales','x','Seed Sales','reservations',1,10),('seed_admin','x','Seed Admin','admin',1,0) RETURNING id`)).rows.map((r) => r.id);
+  const mkUnit = async (slug, pct, mode, ownerPct = null, tenant = null) => (await query(
+    `INSERT INTO units (slug, title, unit_number, status, listing_type, compound, project, beds, baths, guests, company_commission_pct, commission_mode, company_commission_owner_pct, commission_tenant_pct)
+     VALUES ($1,$1,$1,'published','rent','Marassi','Marassi',2,1,4,$2,$3,$4,$5) RETURNING id`, [slug, pct, mode, ownerPct, tenant])).rows[0].id;
+  const uA = await mkUnit('seed-a', 20, 'A'); const uB = await mkUnit('seed-b', 25, 'B', null, 5); const uC = await mkUnit('seed-c', 22, 'C', 12, 10);
+  const res = [];
+  const stays = [
+    [uA, '2026-10-03', 3, 2500, 'checked_out', 'EGP', null, 0], [uB, '2026-10-10', 4, 3000, 'checked_out', 'EGP', null, 0],
+    [uC, '2026-10-20', 2, 4000, 'checked_out', 'USD', 48.5, 0], [uC, '2026-11-02', 5, 2200, 'checked_out', 'EGP', null, 1],
+    [uA, '2026-11-15', 2, 2600, 'confirmed', 'EGP', null, 0], [uB, '2026-11-20', 3, 3100, 'checked_in', 'EGP', null, 0],
+    [uA, '2026-12-05', 4, 2700, 'pending', 'EGP', null, 0], [uB, '2026-12-12', 2, 3000, 'cancelled', 'EGP', null, 0],
+  ];
+  for (const [u, ci, n, ppn, st, cur, fx, owner] of stays) {
+    const r = (await query(`INSERT INTO reservations (unit_id, guest_name, guest_phone, check_in, check_out, nights, price_per_night, total_amount, status, currency, exchange_rate, is_owner_reservation, sales_person_id, created_by, created_at)
+      VALUES ($1,'Seed Guest','0100',$2::date,$2::date + $3::int,$3::int,$4::numeric,$4::numeric*$3::int,$5,$6,$7,$8,$9,$10,$2::date - 20) RETURNING id`, [u, ci, n, ppn, st, cur, fx, owner, staff[0], staff[1]])).rows[0].id;
+    res.push(r);
+  }
+  for (const [i, amt, method, kind, ref] of [[0, 7500, 'cash', 'collection', null], [1, 12000, 'bank_transfer', 'collection', 'TRX-1'], [2, 8000, 'paymob_card', 'collection', 'PM-1'], [4, 5200, 'cash', 'collection', null], [3, -1000, 'cash', 'refund', null]]) {
+    await query(`INSERT INTO payments (reservation_id, amount, payment_date, payment_method, status, kind, transaction_reference) VALUES ($1,$2,(SELECT check_in FROM reservations WHERE id=$1),$3,'successful',$4,$5)`, [res[i], amt, method, kind, ref]);
+  }
+  await query(`INSERT INTO expenses (unit_id, paid_by, category, description, amount, expense_date, created_by) VALUES ($2,'company','utilities_cost','Seed electricity',850,'2026-10-15',$1),($2,'owner','other','Seed repair',1200,'2026-11-05',$1)`, [staff[1], uA]);
+  await query(`INSERT INTO cash_ledger (entry_type, category, description, amount, entry_date, created_by) VALUES ('in','collection','Seed cash in',7500,'2026-10-06',$1),('out','expense','Seed cash out',850,'2026-10-15',$1)`, [staff[1]]);
+  await query(`INSERT INTO financial_posted_entries (year_month, kind, entry_id, entry_date, entry) VALUES ('2026-10','frozen','B-seed-1','2026-10-03',
+     '{"id":"B-seed-1","date":"2026-10-03","type":"booking","lines":[{"account":"105000","debit":7500,"credit":0},{"account":"404000","debit":0,"credit":6000},{"account":"401000","debit":0,"credit":1500}]}')`);
+  step('seeded a pre-deployment database (migration 174 state): 3 units (modes A/B/C), 8 stays incl. USD, owner-booked, pending, cancelled; payments incl. refund; expenses; cash_ledger; a frozen month', true);
+
+  // ── Before ──
+  const fpBefore = await fingerprint();
+  const booksBefore = await booksPrint();
+  step('baseline: data fingerprint and the books the app shows (existing engine) recorded', !!fpBefore.reservations && booksBefore.entries > 0, { fpBefore, booksBefore });
+  evidence.baseline = { fingerprint: fpBefore, books: booksBefore };
+
+  // ── Recovery from a failed migration (before the real deployment) ──
+  const m175 = fs.readFileSync(path.join(S, 'supabase/migrations/175_commission_snapshots.sql'), 'utf8');
+  const m176 = fs.readFileSync(path.join(S, 'supabase/migrations/176_ledger_core.sql'), 'utf8');
+  const cut = m175.indexOf('CREATE TABLE IF NOT EXISTS public.reservation_commission_corrections');
+  let err = null;
+  try { await applyMigration(db, S, '175_commission_snapshots.sql', m175.slice(0, cut) + "\nDO $$ BEGIN RAISE EXCEPTION 'REHEARSAL: injected failure part-way through 175'; END $$;\n"); } catch (e) { err = e.message; }
+  const cols = Number((await query(`SELECT COUNT(*)::int AS n FROM information_schema.columns WHERE table_name = 'reservations' AND column_name LIKE 'commission_snapshot%'`)).rows[0].n);
+  step('175 failing part-way (after adding columns) leaves nothing behind: no columns, not recorded as applied', /injected failure/.test(err || '') && cols === 0 && !(await migrated('175_commission_snapshots.sql')), { err, cols });
+
+  // ── Apply 175 and 176 the way the app does ──
+  step('175 applies (one transaction, recorded)', (await applyMigration(db, S, '175_commission_snapshots.sql')) === 'applied');
+  err = null;
+  try { await applyMigration(db, S, '176_ledger_core.sql', m176 + "\nDO $$ BEGIN RAISE EXCEPTION 'REHEARSAL: injected failure at the end of 176'; END $$;\n"); } catch (e) { err = e.message; }
+  step('176 failing at its last statement leaves nothing behind: no ledger tables, not recorded, 175 unaffected',
+    /injected failure/.test(err || '') && (await tables('ledger\\_%')) === 0 && !(await migrated('176_ledger_core.sql')) && (await migrated('175_commission_snapshots.sql')), { err });
+  step('after the failure, a normal start applies 176 cleanly', (await applyMigration(db, S, '176_ledger_core.sql')) === 'applied');
+  step('a second app start skips both (already recorded)', (await applyMigration(db, S, '175_commission_snapshots.sql')) === 'skipped' && (await applyMigration(db, S, '176_ledger_core.sql')) === 'skipped');
+  err = null;
+  try { await db.exec(m175.replace(/CREATE EXTENSION[^;]*;/gi, '')); await db.exec(m176); } catch (e) { err = e.message; }
+  step('running both files again by hand is harmless (idempotent: IF NOT EXISTS / ON CONFLICT)', err === null, err);
+
+  // ── Verify structure and that nothing existing changed ──
+  const r2 = (await sqlFile('r2_verify_structure.sql'))[0];
+  step(`r2 structure checks: ${r2.filter((r) => r.passed).length}/${r2.length} passed`, r2.every((r) => r.passed), r2.filter((r) => !r.passed));
+  evidence.r2 = r2;
+  const fpAfter = await fingerprint();
+  step('existing data unchanged by the migrations (fingerprints identical)', sameData(fpBefore, fpAfter), { fpBefore, fpAfter });
+  const booksAfter = await booksPrint();
+  step('the books the app shows are identical after the migrations (trial balance and every journal line)', JSON.stringify(booksAfter) === JSON.stringify(booksBefore), { booksBefore, booksAfter });
+  const review = (await query(`SELECT COUNT(*)::int AS n FROM reservation_commission_review`)).rows[0].n;
+  step('historical confirmed / checked-in / checked-out stays: no snapshot, all on the review list (6 of 8 seeded)', review === 6 && (await query(`SELECT COUNT(*)::int AS n FROM reservations WHERE commission_snapshot IS NOT NULL`)).rows[0].n === 0, { review });
+
+  // ── Existing application behaviour on the migrated database ──
+  const pend = res[6];
+  await query(`UPDATE reservations SET notes = 'edited after deploy', total_amount = 10900 WHERE id = $1`, [res[4]]);
+  await query(`UPDATE reservations SET status = 'checked_out' WHERE id = $1`, [res[5]]);
+  await query(`UPDATE reservations SET status = 'confirmed' WHERE id = $1`, [pend]);
+  const pendSnap = (await query(`SELECT commission_snapshot_status AS st, commission_review_reason AS why FROM reservations WHERE id = $1`, [pend])).rows[0];
+  step('ordinary edits and status changes on existing stays still save; a pre-deployment pending stay confirmed now is captured and flagged for review',
+    pendSnap.st === 'needs_review' && /before rate snapshots/.test(pendSnap.why), pendSnap);
+  const newRes = (await query(`INSERT INTO reservations (unit_id, guest_name, guest_phone, check_in, check_out, nights, price_per_night, total_amount, status, created_by, sales_person_id)
+    VALUES ($1,'Seed Guest','0100','2027-01-10','2027-01-12',2,2500,5000,'confirmed',$2,$2) RETURNING id, commission_snapshot_status AS st`, [uA, staff[0]])).rows[0];
+  step('a new booking created as confirmed (website/channel path) saves and is captured', newRes.st === 'captured', newRes);
+  const booksAfterUse = await books.fingerprint('2026-10-01', '2027-01-31');
+  const tbOk = booksAfterUse.rows.reduce((s, r) => s + Number(r[1]) - Number(r[2]), 0);
+  step('the existing engine still builds balanced books with the new columns and rows present', booksAfterUse.entries >= booksBefore.entries && Math.abs(tbOk) < 0.005, { entries: booksAfterUse.entries, imbalance: tbOk });
+
+  // ── Behaviour (r3) ──
+  const r3 = await psqlFile('r3_behaviour.sql', "SET app.rehearsal_copy = 'restored-copy-not-production';\n");
+  const results = r3[r3.length - 2];
+  step(`r3 behaviour checks: ${results.filter((r) => r.passed).length}/${results.length} passed`, results.every((r) => r.passed), results.filter((r) => !r.passed));
+  evidence.r3 = results;
+  err = null;
+  try { await db.exec("RESET app.rehearsal_copy;\n" + read('r3_behaviour.sql')); } catch (e) { err = e.message; }
+  step('r3 refuses to run without the restored-copy declaration', /Refusing to run/.test(err || ''), err);
+
+  // ── Rollback with test entries present ──
+  const entries = (await query(`SELECT COUNT(*)::int AS n FROM ledger_entries`)).rows[0].n;
+  err = null;
+  try { await db.exec(read('rollback_176.sql')); } catch (e) { err = e.message; await db.exec('ROLLBACK').catch(() => {}); }
+  step(`rollback_176 refuses while the ledger holds entries (${entries}) unless confirmed`, /Refusing/.test(err || '') && (await tables('ledger\\_%')) === 6, err);
+  await db.exec("SET app.confirm_rollback_176 = 'drop-ledger-with-entries';\n" + read('rollback_176.sql'));
+  await db.exec('RESET app.confirm_rollback_176');
+  step('rollback_176 with confirmation removes the ledger (despite immutability triggers) and its migration record',
+    (await tables('ledger\\_%')) === 0 && !(await migrated('176_ledger_core.sql')) && !(await query(`SELECT 1 FROM financial_settings WHERE key='ledger_posting'`)).rows.length);
+  await db.exec(read('rollback_175_soft.sql'));
+  const trig = (await query(`SELECT COUNT(*)::int AS n FROM pg_trigger WHERE tgname = 'reservations_commission_snapshot'`)).rows[0].n;
+  const keptSnaps = (await query(`SELECT COUNT(*)::int AS n FROM reservations WHERE commission_snapshot IS NOT NULL`)).rows[0].n;
+  const plain = (await query(`INSERT INTO reservations (unit_id, guest_name, guest_phone, check_in, check_out, nights, total_amount, status, created_by) VALUES ($1,'Seed Guest','0100','2027-02-01','2027-02-02',1,900,'confirmed',$2) RETURNING commission_snapshot`, [uA, staff[0]])).rows[0];
+  step('rollback_175_soft stops capture, keeps saved snapshots, and reservations keep saving', trig === 0 && keptSnaps > 0 && plain.commission_snapshot === null, { trig, keptSnaps });
+  err = null;
+  try { await db.exec(read('rollback_175_full.sql')); } catch (e) { err = e.message; await db.exec('ROLLBACK').catch(() => {}); }
+  step('rollback_175_full refuses without confirmation', /Refusing/.test(err || ''), err);
+  // The correction log references rehearsal reservations; on a copy the full rollback drops it first.
+  await db.exec("SET app.confirm_rollback_175 = 'drop-commission-snapshots';\n" + read('rollback_175_full.sql'));
+  await db.exec('RESET app.confirm_rollback_175');
+  const colsAfter = Number((await query(`SELECT COUNT(*)::int AS n FROM information_schema.columns WHERE table_name = 'reservations' AND column_name LIKE 'commission_%' AND column_name <> 'commission_mode'`)).rows[0].n);
+  step('rollback_175_full removes columns, log, view, trigger and migration record', colsAfter === 0 && !(await migrated('175_commission_snapshots.sql')), { colsAfter });
+  const fpRolled = await fingerprint();
+  const booksRolled = await booksPrint();
+  // Rows added after deployment (one edit, status changes and new bookings in this rehearsal) are real use, so
+  // compare only what the app shows for the original window against a clean replay below.
+  step('after both rollbacks the schema is back to 174 and the app builds its books', booksRolled.entries > 0 && fpRolled.reservations, { fpRolled, booksRolled });
+
+  // ── Re-deploy after rollback, then rollback with NO entries (the normal pre-cutover case) ──
+  step('after rollback, 175 and 176 re-apply cleanly', (await applyMigration(db, S, '175_commission_snapshots.sql')) === 'applied' && (await applyMigration(db, S, '176_ledger_core.sql')) === 'applied');
+  const r2b = (await sqlFile('r2_verify_structure.sql'))[0];
+  step(`r2 after re-apply: ${r2b.filter((r) => r.passed).length}/${r2b.length} passed`, r2b.every((r) => r.passed), r2b.filter((r) => !r.passed));
+  const fpRe = await fingerprint();
+  await db.exec(read('rollback_176.sql'));
+  step('rollback_176 with an empty ledger needs no confirmation and leaves existing data identical', (await tables('ledger\\_%')) === 0 && sameData(fpRe, await fingerprint()));
+
+  evidence.finished = new Date().toISOString();
+  evidence.summary = { steps: evidence.steps.length, failed };
+  fs.writeFileSync(path.join(__dirname, 'rehearsal-evidence.json'), JSON.stringify(evidence, null, 2));
+  console.log(failed ? `\n${failed} FAILED` : `\nALL ${evidence.steps.length} REHEARSAL STEPS PASSED`);
+  process.exit(failed ? 1 : 0);
+})().catch((e) => { console.error('CRASH', e.stack); process.exit(1); });

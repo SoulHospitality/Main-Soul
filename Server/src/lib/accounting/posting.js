@@ -93,7 +93,7 @@ async function nextNumber(db, date) {
 /**
  * Post one entry. Returns { entry, duplicate } — duplicate=true when the idempotency key was already posted.
  * entry: { transactionDate, description, sourceModule, sourceType, sourceId, sourceVersion?, origin?,
- *          idempotencyKey, policyVersion?, actorId?, approvedBy?, reversesId?, allowClosedPeriod?, lines: [...] }
+ *          idempotencyKey, policyVersion (an approved ledger_policies version), actorId?, approvedBy?, reversesId?, allowClosedPeriod?, lines: [...] }
  */
 async function postEntry(entry, { client = null } = {}) {
   return withClient(client, async (db) => {
@@ -107,6 +107,16 @@ async function postEntry(entry, { client = null } = {}) {
 
     const date = isoDate(entry.transactionDate);
     const period = date.slice(0, 7);
+    // Every entry is produced under an approved policy (D-01 presentation + VAT base); the database checks it too.
+    const policy = entry.policyVersion
+      ? (await db.query(
+          `SELECT 1 FROM ledger_policies WHERE version = $1 AND status = 'approved' AND effective_from <= $2::date`,
+          [entry.policyVersion, date]
+        )).rows[0]
+      : null;
+    if (!policy) {
+      throw new PostingError('No approved accounting policy (D-01 and VAT base) is in force for this date', 'NO_POLICY', 409);
+    }
     const lines = prepareLines(entry.lines);
     const debit = lines.reduce((s, l) => s.plus(l.base_debit), m.money(0));
     const credit = lines.reduce((s, l) => s.plus(l.base_credit), m.money(0));

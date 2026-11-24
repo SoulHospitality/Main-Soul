@@ -24,7 +24,7 @@ ALTER TABLE public.reservations ADD COLUMN IF NOT EXISTS commission_review_reaso
 -- Date snapshots began: a reservation created before it and confirmed later is captured but flagged,
 -- because it may have been confirmed once before (an edit back to pending and forward again).
 INSERT INTO public.financial_settings (key, value_text)
-VALUES ('commission_snapshots_since', to_char(now(), 'YYYY-MM-DD"T"HH24:MI:SSOF'))
+VALUES ('commission_snapshots_since', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'))
 ON CONFLICT (key) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS public.reservation_commission_corrections (
@@ -94,6 +94,16 @@ BEGIN
     END IF;
     IF NEW.commission_snapshot IS NULL THEN
       RAISE EXCEPTION 'A commission correction cannot remove a snapshot';
+    END IF;
+    -- Authorisation is enforced here too: corrector (and approver, if any) must be active admins, and different people.
+    IF NOT EXISTS (SELECT 1 FROM public.staff_users WHERE id = actor AND role = 'admin'
+                   AND COALESCE(is_active::text, '1') NOT IN ('0', 'false', 'f')) THEN
+      RAISE EXCEPTION 'Only an active admin can correct commission rates';
+    END IF;
+    IF approver IS NOT NULL AND (approver = actor OR NOT EXISTS (
+         SELECT 1 FROM public.staff_users WHERE id = approver AND role = 'admin'
+           AND COALESCE(is_active::text, '1') NOT IN ('0', 'false', 'f'))) THEN
+      RAISE EXCEPTION 'The approver of a commission correction must be a different active admin';
     END IF;
     INSERT INTO public.reservation_commission_corrections (reservation_id, previous, corrected, reason, corrected_by, approved_by)
     VALUES (NEW.id, old_snap, NEW.commission_snapshot, reason, actor, approver);

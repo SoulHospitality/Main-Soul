@@ -12,7 +12,7 @@
 - reconciliation buckets (matched, amount break, timing break, ledger only, subledger only).
 
 ## Database tests (PGlite: every migration applied to an in-memory Postgres)
-`ledger-test.js` (42 checks) covers the following. Migration 175 validation: applied-rate rules, idempotent retries, rate changes after confirmation, the review flags, protection against hand-written snapshots, admin-only corrections with a separate approver, the trigger-written log, and append-only logs. The checks are:
+`ledger-test.js` (52 checks; copied to `docs/finance/rehearsal/local/`) covers the following. Database-level posting controls: the switch, approved policies only, separate D-01 and VAT approvals, approved policies being permanent, and no lines added to a posted entry later. Migration 175 validation: applied-rate rules, idempotent retries, rate changes after confirmation, the review flags, protection against hand-written snapshots, admin-only corrections with a separate approver, the trigger-written log, and append-only logs. The checks are:
 - migrations 175 and 176 applying cleanly over the full migration chain;
 - the chart seeded with the same codes as `chartOfAccounts.js`;
 - posting refused while `ledger_posting = 'off'`;

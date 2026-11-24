@@ -11,9 +11,9 @@
 3. **The owner's explicit approval** of this plan for the specific migration run.
 
 ## Step 0: Live data checks (read-only), not yet run
-The six SQL scripts in `docs/finance/live-checks/` are run by an authorised person under a SELECT-only role. No application endpoint is involved.
+The SQL scripts in `docs/finance/live-checks/` (check 0 for the deployment state, checks 1–6 for data quality) are run by an authorised person under a SELECT-only role. No application endpoint is involved.
 
-Results are recorded below once received. **Go/no-go:**
+Results are recorded below and in `DEPLOYMENT_READINESS.md` §2 once received. **Go/no-go:**
 - USD stays without a rate (check 2), duplicate payment references (check 3) and unbalanced frozen months (check 6) must each be resolved, or explicitly accepted in writing, before Step 2.
 - The lists from checks 1 and 5 become review queues.
 

@@ -89,12 +89,38 @@ CREATE TABLE IF NOT EXISTS public.ledger_policies (
   effective_from date NOT NULL,
   settings       jsonb NOT NULL,
   status         text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'approved', 'retired')),
+  -- Decision 1: revenue presentation under EAS 48 (D-01).
   approved_by    integer,
   approved_at    timestamptz,
   approval_ref   text,
+  -- Decision 2: VAT base (D-11), a separate written approval.
+  vat_approved_by  integer,
+  vat_approved_at  timestamptz,
+  vat_approval_ref text,
   created_at     timestamptz NOT NULL DEFAULT now(),
-  CHECK (status <> 'approved' OR (approved_by IS NOT NULL AND approved_at IS NOT NULL AND approval_ref IS NOT NULL))
+  CHECK (status <> 'approved' OR (
+    approved_by IS NOT NULL AND approved_at IS NOT NULL AND approval_ref IS NOT NULL
+    AND vat_approved_by IS NOT NULL AND vat_approved_at IS NOT NULL AND vat_approval_ref IS NOT NULL
+    AND settings ? 'revenue_presentation' AND settings ? 'vat_base'))
 );
+
+-- An approved policy is a permanent record: it can only be retired, never edited or deleted.
+CREATE OR REPLACE FUNCTION public.ledger_policies_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    IF OLD.status = 'draft' THEN RETURN OLD; END IF;
+    RAISE EXCEPTION 'Accounting policy % has been approved and cannot be deleted', OLD.version;
+  END IF;
+  IF OLD.status = 'draft' THEN RETURN NEW; END IF;
+  IF OLD.status = 'approved' AND NEW.status = 'retired'
+     AND (to_jsonb(NEW) - 'status') = (to_jsonb(OLD) - 'status') THEN
+    RETURN NEW;
+  END IF;
+  RAISE EXCEPTION 'Accounting policy % is % and cannot be changed; create a new version', OLD.version, OLD.status;
+END $$;
+DROP TRIGGER IF EXISTS ledger_policies_guard ON public.ledger_policies;
+CREATE TRIGGER ledger_policies_guard BEFORE UPDATE OR DELETE ON public.ledger_policies
+  FOR EACH ROW EXECUTE FUNCTION public.ledger_policies_guard();
 
 CREATE TABLE IF NOT EXISTS public.ledger_periods (
   period        char(7) PRIMARY KEY,           -- YYYY-MM
@@ -127,6 +153,7 @@ CREATE TABLE IF NOT EXISTS public.ledger_entries (
   policy_version   text REFERENCES public.ledger_policies(version),
   created_by       integer,
   approved_by      integer,
+  created_txid     bigint NOT NULL DEFAULT txid_current(),  -- set by the insert guard; lines must join in the same transaction
   created_at       timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS ledger_entries_source_idx ON public.ledger_entries (source_type, source_id);
@@ -217,6 +244,41 @@ END $$;
 DROP TRIGGER IF EXISTS ledger_entry_balance_check ON public.ledger_entries;
 CREATE CONSTRAINT TRIGGER ledger_entry_balance_check AFTER INSERT ON public.ledger_entries
   DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.ledger_entry_balance_check();
+
+-- Posting controls enforced by the database, not only by the posting service:
+--  * nothing can be written while the posting switch is not 'on';
+--  * every entry names an approved policy (both D-01 and VAT approvals) in force on its date;
+--  * lines can only be added in the transaction that created their entry, so a posted entry can
+--    never gain lines later (and the balance check above covers every line it will ever have).
+CREATE OR REPLACE FUNCTION public.ledger_entries_insert_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE sw text;
+BEGIN
+  SELECT value_text INTO sw FROM public.financial_settings WHERE key = 'ledger_posting';
+  IF COALESCE(sw, 'off') <> 'on' THEN
+    RAISE EXCEPTION 'Ledger posting is switched off: no entry can be written (needs D-01 and VAT approval and sign-off)';
+  END IF;
+  IF NEW.policy_version IS NULL OR NOT EXISTS (
+       SELECT 1 FROM public.ledger_policies p
+       WHERE p.version = NEW.policy_version AND p.status = 'approved' AND p.effective_from <= NEW.transaction_date) THEN
+    RAISE EXCEPTION 'Ledger entry % needs an approved accounting policy in force on %', NEW.number, NEW.transaction_date;
+  END IF;
+  NEW.created_txid := txid_current();
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS ledger_entries_insert_guard ON public.ledger_entries;
+CREATE TRIGGER ledger_entries_insert_guard BEFORE INSERT ON public.ledger_entries
+  FOR EACH ROW EXECUTE FUNCTION public.ledger_entries_insert_guard();
+
+CREATE OR REPLACE FUNCTION public.ledger_lines_insert_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.ledger_entries e WHERE e.id = NEW.entry_id AND e.created_txid = txid_current()) THEN
+    RAISE EXCEPTION 'Lines can only be added while their entry is being posted; post a new entry instead';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS ledger_lines_insert_guard ON public.ledger_lines;
+CREATE TRIGGER ledger_lines_insert_guard BEFORE INSERT ON public.ledger_lines
+  FOR EACH ROW EXECUTE FUNCTION public.ledger_lines_insert_guard();
 
 -- Posting switch: 'off' until D-01 is approved and the parallel run is signed off.
 INSERT INTO public.financial_settings (key, value_text)
