@@ -1,16 +1,14 @@
 # Deployment Readiness: Finance Ledger Foundation (Migrations 175 and 176)
 
-**Date:** 2026-11-24 · **Branch:** `feature/finance-ledger` · **Decision: NO-GO.** Production deployment is blocked; see §10.
+**Date:** 2026-11-25 · **Branch:** `feature/finance-ledger` · **Decision: NO-GO.** Production deployment is blocked; see §10.
 Approval to commit or push is not approval to deploy. Nothing is deployed without the owner's explicit written approval.
 
 ## 1. Branch and production state
 | Item | Evidence | Status |
 |---|---|---|
-| Pushed commits | `origin/feature/finance-ledger` = `f743ac8` → `9e74bb4` → `b9d56fe` → `6955687` → `ff782cd` (the `main` base) | ✅ Verified |
-| Local-only commit | `3caa574`: report fixes DEF-PL-01 / DEF-BS-01 / DEF-CLOSE-01 with regression tests. **Not pushed** | ✅ Verified |
-| Uncommitted | Phase 5B ledger-control work (§3b) | ⚠ Awaiting review |
-| `main` unchanged | `origin/main` = `ff782cd`; 175 and 176 are not in `main`; no merge | ✅ Verified |
-| Production runs the existing implementation | **Assumption.** Production deploys from `main`, and `/api/health` does not report a version. **Direct proof needs live check 0** | ☐ Waiting for check 0 |
+| Branch | `feature/finance-ledger`, all work committed and pushed; the current commit is in `HANDOFF.md` | ✅ Verified |
+| `main` unchanged | `origin/main` = `ff782cd`; migrations 175 and 176 are not in `main`; no merge | ✅ Verified |
+| Production runs the existing implementation | **Assumption.** Production deploys from `main`; `/api/health` does not report a version. **Direct proof needs live check 0** | ☐ Waiting for check 0 |
 
 ## 2. Production database checks (read-only)
 These are run by an authorised DBA under the SELECT-only `finance_checks` role (`live-checks/README.md`). **None has been run.** No result is assumed.
@@ -105,25 +103,21 @@ Follow `rehearsal/README.md` §0–9.
 
 Run by: ________ · Copy restored from: ________ · Date: ________
 
-### 4c. Genuine multi-session test (done; local real PostgreSQL 17.5)
-`rehearsal/local/concurrency-test.js` on an embedded **real PostgreSQL 17.5** server: separate connections, truly concurrent. All 176 migrations were applied with the app's runner semantics. Evidence: `rehearsal/evidence/real-postgres-concurrency-2026-11-24.json`.
+### 4c. Real PostgreSQL tests (done; local embedded PostgreSQL 17.5, synthetic data)
+`rehearsal/local/real-postgres-test.js`, **13/13**: all migrations as the owner, then `db-security/ledger_roles.sql` and `provision_identity_key.sql`, with the posting and identity code running **as `soul_app`** over separate, concurrent connections. Evidence: `rehearsal/evidence/real-postgres-roles-identity-2026-11-24.json`.
+- **Normal PMS writes** work as `soul_app`.
+- **Refused for `soul_app`:** reading keys, TRUNCATE, `DISABLE`/`DROP TRIGGER`, `session_replication_role`, `SET ROLE`, function replacement, and forged log or correction rows.
+- **Identity:** forged signatures and claimed ids are refused; the verified switch-on, policy approval and manual entry work.
+- **Concurrency:** 20 same-key posts give one entry; 20 with different content give 19 conflicts; 10 concurrent reversals give one.
 
-| Test | Result |
-|---|---|
-| 20 concurrent posts, same key, same content | ✅ one entry; 1 creator, 19 duplicates |
-| 20 concurrent posts, same key, different amounts | ✅ one entry; 19 `IDEMPOTENCY_CONFLICT` |
-| 10 concurrent reversals of one entry (service) | ✅ one reversal; 9 `ALREADY_REVERSED` |
-| Two raw sessions inserting reversals of one entry | ✅ the second blocks, then fails on `ledger_entries_one_reversal` |
-| Non-owner role: TRUNCATE / `DISABLE TRIGGER` / `DROP TRIGGER` / `session_replication_role` / UPDATE | ✅ all refused |
-| Owner role can disable triggers | Confirmed (it is why §3d is a blocker) |
-
-This is a local server with synthetic data, **not** the restored copy and not Supabase.
+The earlier owner-role run (`real-postgres-concurrency-2026-11-24.json`, 7/7) is superseded. This is **not** Supabase and **not** the restored copy.
 
 ## 5. Rollback evidence and plan
 - **Evidence:** §4a, local only. Restored-copy evidence is pending.
 - **Scripts:** `rollback_175_soft.sql` (preferred), `rollback_175_full.sql`, `rollback_176.sql`. The last two need explicit confirmation when data would be lost. `rollback_176.sql` removes the TRUNCATE guards, the switch guard and the custom-account sync before dropping.
 - **Order in production:** redeploy the previous build (`main`) first, then run the rollback SQL. **Redeploying `main` also reverts the engine fixes**, so the displayed reports return to their old (defective) behaviour.
-- **Backup:** ☐ PITR/backup confirmed · ☐ test restore done · ☐ pre-deployment backup id: ________
+- **Backup:** procedure in `rehearsal/BACKUP_RESTORE_VALIDATION.md`. The inventory script `rehearsal/r0_table_inventory.sql` (read-only) proves the restored copy matches production table by table; it is checked locally as deterministic and sensitive to a single changed row.
+  ☐ PITR/backup confirmed · ☐ test restore done and inventory identical · ☐ pre-deployment backup id: ________
 
 ## 6. Accounting approvals (block posting and import)
 | Approval | Status |
@@ -144,33 +138,44 @@ Unchanged from the previous version:
 See `docs/security/NPM_AUDIT_REMEDIATION.md`. None of these items blocks 175/176. P1–P3 are recommended before the next release.
 
 ## 9. Deployment sequence (after GO only)
-1. **Pre-checks:** live check 0 shows `174`; checks 1–6 reviewed; restored-copy rehearsal all ✅, **including the old-vs-new-code comparison**; restricted posting role in place; owner's written GO.
+1. **Pre-checks:**
+   - live check 0 shows `174`; checks 1–6 reviewed;
+   - backup and restore validated;
+   - restored-copy rehearsal all ✅, including the old-vs-new-code comparison and the `soul_app` and identity checks;
+   - the owner's written GO.
 2. **Freeze** a 15-minute window.
 3. **Backup:** record its id.
-4. **Merge:** PR `feature/finance-ledger` → `main`; run `npm test` on the merge result (no CI exists).
-5. **Deploy:** the app applies 175 then 176 at start-up; watch for both `Applied migration` lines.
-6. **Verify (read-only role):** check 0 shows `176`; r2 all passed; r1 identical to the pre-deployment run apart from the migrations line.
-7. **Smoke test:**
+4. **Merge** (separately authorised): PR `feature/finance-ledger` → `main`; run `npm test` on the merge result (there is no CI).
+5. **Deploy:** set `MIGRATION_DATABASE_URL` to the owner connection. The app applies 175, then 176, at start-up; watch for both `Applied migration` lines. At this step the app still connects as before.
+6. **Verify (read-only):** check 0 shows `176`; r2 all passed; r1 identical to the pre-deployment run apart from the migrations line.
+7. **Security setup** (`db-security/README.md`):
+   - run `ledger_roles.sql` and `provision_identity_key.sql`;
+   - put the key in the app environment;
+   - switch `DATABASE_URL` to `soul_app`;
+   - restart, and confirm the app works.
+8. **Smoke test:**
    - log in, open the Today board, edit a reservation;
    - confirm a pending reservation and check its snapshot is `captured`;
-   - open the Financial System trial balance, P&L and balance sheet. They must match the **new-code** figures measured on the restored copy (`books_new_before.json`), **not** the old production figures: the engine fixes change them by design.
+   - take a Paymob sandbox payment, if available;
+   - open the Financial System trial balance, P&L and balance sheet. They must match the **new-code** figures measured on the restored copy (`books_new_before.json`), and `integrity.unknown_accounts` must be empty.
 
    Posting stays **off**.
-8. **If anything fails:** roll back as in §5.
-9. **Record** the deployment.
+9. **If anything fails:**
+   - roll back as in §5;
+   - for the role switch, point `DATABASE_URL` back to the owner (no data change).
+10. **Record** the deployment.
 
 ## 10. Go/no-go
-**NO-GO.**
+**NO-GO.** Development work is complete; what remains are external approvals and actions.
 
-| Gate | State |
-|---|---|
-| Branch verified, `main` untouched | ✅ |
-| Report fixes committed (local `3caa574`) | ✅. Push needs approval |
-| Phase 5B ledger controls reviewed and committed | ☐ |
-| Live checks 0–6 | ☐ |
-| Restored-copy rehearsal, including the engine-fix comparison | ☐ |
-| Backup and restore validated | ☐ |
-| Restricted role `soul_app` and identity key set up on the restored copy, then production (§3c, §3d) | ☐ (implemented and verified locally) |
-| H3 verified identity active on the target database (needs the row above): required before posting | ☐ |
-| Owner's explicit approval to deploy | ☐ |
-| (Posting and import) the three accounting approvals (§6) | ☐ |
+| Gate | Owner | State |
+|---|---|---|
+| Branch verified, `main` untouched, all work committed and pushed | Developer | ✅ |
+| Live checks 0–6 run and reviewed | DBA, then developer | ☐ |
+| Backup and restore validated (inventory identical) | DBA | ☐ |
+| Restored-copy rehearsal: engine-fix comparison, migrations, `soul_app`, identity, concurrency, rollbacks | DBA and developer | ☐ |
+| Restricted role, identity key and connection switch on production (part of deployment) | DBA | ☐ |
+| Owner's explicit approval to deploy, and separate authorisation to merge | Owner | ☐ |
+| (Posting and import only) the three accounting approvals (§6) | Accountant | ☐ |
+
+Packages: `ACCOUNTANT_REVIEW_PACKAGE.md`, `DBA_REVIEW_PACKAGE.md`.
