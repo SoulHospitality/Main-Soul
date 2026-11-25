@@ -1,5 +1,5 @@
 const express = require('express');
-const XLSX = require('xlsx');
+const { readFirstSheetRows } = require('../../lib/attendanceWorkbook');
 const { query, pool } = require('../../config/db');
 const { applyPayrollRules } = require('../../lib/hrPayrollRules');
 const { requireRoles } = require('../../middleware/auth');
@@ -2888,14 +2888,7 @@ function loadAttendanceJson(file) {
     return parseHtmlExcelTables(buf.toString('utf8'));
   }
   try {
-    const wb = XLSX.read(buf, { type: 'buffer', cellDates: true });
-    if (!wb.SheetNames?.length) {
-      const err = new Error('The Excel file has no sheets');
-      err.status = 400;
-      throw err;
-    }
-    const sheet = wb.Sheets[wb.SheetNames[0]];
-    return XLSX.utils.sheet_to_json(sheet, { defval: '' });
+    return readFirstSheetRows(buf);
   } catch (err) {
     if (err.status) throw err;
     const asText = buf.toString('utf8');
