@@ -19,12 +19,14 @@ Results are recorded below and in `DEPLOYMENT_READINESS.md` §2 once received. *
 
 | Check | Result received | Outcome |
 |---|---|---|
-| 1 Amount quality | not yet | — |
-| 2 USD rates | not yet | — |
-| 3 Duplicate refs | not yet | — |
-| 4 cash_ledger | not yet | — |
-| 5 Commission changes | not yet | — |
-| 6 Frozen balance | not yet | — |
+| 1 Amount quality | 2026-11-25 | 2 confirmed stays with total 0.00 (#2067, #2069): review queue |
+| 2 USD rates | 2026-11-25 | All EGP; none missing |
+| 3 Duplicate refs | 2026-11-25 | Unique index present; 0 duplicates |
+| 4 cash_ledger | 2026-11-25 | Never used (empty); retire as read-only (D-13) |
+| 5 Commission changes | 2026-11-25 | No rate changes; 184 historical stays → D-12 review list |
+| 6 Frozen balance | 2026-11-25 | No closed months; nothing to balance |
+
+Full results: `live-checks/RESULTS_2026-11-25.md`. There are no closed months, and the books were reset on 2026-11-12, so Step 2.1 (frozen copies) has nothing to import. All history comes from Step 2.2.
 
 ## Step 1: Additive schema (built in Phase 2, empty, posting off)
 - **Migration 175:** commission snapshots (D-12).

@@ -8,7 +8,7 @@ Approval to commit or push is not approval to deploy. Nothing is deployed withou
 |---|---|---|
 | Branch | `feature/finance-ledger`, all work committed and pushed; the current commit is in `HANDOFF.md` | ✅ Verified |
 | `main` unchanged | `origin/main` = `ff782cd`; migrations 175 and 176 are not in `main`; no merge | ✅ Verified |
-| Production runs the existing implementation | **Assumption.** Production deploys from `main`; `/api/health` does not report a version. **Direct proof needs live check 0** | ☐ Waiting for check 0 |
+| Production runs the existing implementation | Live check 0 on production (2026-11-25): last migration `174_leave_corrections.sql`, none of 175–178, no ledger objects (`live-checks/RESULTS_2026-11-25.md`) | ✅ Verified |
 
 ## 2. Production database checks (read-only)
 These are run by an authorised DBA under the SELECT-only `finance_checks` role (`live-checks/README.md`). **None has been run.** No result is assumed.
@@ -178,7 +178,7 @@ Done on its own branch, `security/remediation-2026-11` (record: `docs/security/N
 | Gate | Owner | State |
 |---|---|---|
 | Branch verified, `main` untouched, all work committed and pushed | Developer | ✅ |
-| Live checks 0–6 run and reviewed | DBA, then developer | ☐ |
+| Live checks 0–6 run and reviewed | DBA, then developer | ✅ Run read-only 2026-11-25 (`live-checks/RESULTS_2026-11-25.md`); two zero-total stays (#2067, #2069) to review before import |
 | Backup and restore validated (inventory identical) | DBA | ☐ |
 | Restored-copy rehearsal: engine-fix comparison, migrations, `soul_app`, identity, concurrency, rollbacks | DBA and developer | ☐ |
 | Restricted role, identity key and connection switch on production (part of deployment) | DBA | ☐ |

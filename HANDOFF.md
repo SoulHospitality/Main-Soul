@@ -57,7 +57,7 @@
 |---|---|---|
 | 1 Audit and architecture | ✅ | ✅ |
 | 2 Ledger foundation | ✅ | Not deployed |
-| 3 Deployment and external validation | ✅ Scripts, runbooks, local rehearsals on real PostgreSQL | ☐ Needs Supabase access and the accountant's decisions |
+| 3 Deployment and external validation | ✅ Scripts, runbooks, local rehearsals on real PostgreSQL | ◐ Production read-only checks 0–6, baselines and engine comparison **done** 2026-11-25 (`live-checks/RESULTS_2026-11-25.md`); ☐ backup confirmation, restore into a separate project, restored-copy rehearsal; ☐ accountant's decisions |
 | 4 Historical migration | ✅ `ledger-migration.js` (`HISTORICAL_MIGRATION_RUNBOOK.md`) | ☐ Nothing imported (needs Phase 3) |
 | 5 Parallel operation | ✅ `sync` + `reconcile` (same runbook) | ☐ Needs Phase 4 and a real month |
 | 6 Activation and reporting | ✅ Migration 177, reports from the ledger, tested rollback (`LEDGER_ACTIVATION_RUNBOOK.md`) | ☐ Posting off; reports on the existing calculation |
@@ -86,7 +86,7 @@ Nothing has been run on production, Supabase or a restored copy.
 
 ## External approvals and actions that remain (genuine blockers)
 1. **DBA, production access needed:**
-   - live checks 0–6 (read-only);
+   - ~~live checks 0–6 (read-only)~~ done 2026-11-25 (results file above); the production database password was shared in chat and **must be rotated**;
    - backup and restore into a separate project, with the inventory identical (`pg_dump` was not available locally, so this step is prepared but unrehearsed);
    - the restored-copy rehearsal, repeating the local runs above on real data.
 2. **Accountant:** decisions 1–3 and R-1 to R-8. None received (`ACCOUNTANT_DECISION_TRACKER.md`).
