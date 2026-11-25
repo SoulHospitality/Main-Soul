@@ -37,6 +37,20 @@ async function resolveUserIds({ roles, userIds, excludeUserIds = [] } = {}) {
 }
 
 
+/**
+ * notifications.entity_id is an integer column. Some entities (website bookings)
+ * have UUID ids; writing one there makes the whole INSERT fail. Keep integer ids
+ * and store null for anything else; links for those entities do not use the id.
+ */
+function toIntegerEntityId(value) {
+  if (value == null || value === '') return null;
+  if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null;
+  const s = String(value).trim();
+  if (!/^-?\d+$/.test(s)) return null;
+  const n = Number(s);
+  return Number.isSafeInteger(n) ? n : null;
+}
+
 async function notifyStaff({
   roles,
   userIds,
@@ -49,6 +63,7 @@ async function notifyStaff({
   dedupeSameDay = false,
 } = {}) {
   if (!type || !title || !message) return [];
+  entity_id = toIntegerEntityId(entity_id);
 
   const ids = await resolveUserIds({ roles, userIds, excludeUserIds });
   if (!ids.length) return [];
@@ -252,6 +267,7 @@ async function notifyPaymentRecorded(payment, reservation, actor) {
 
 module.exports = {
   notifyStaff,
+  toIntegerEntityId,
   notifyNewWebsiteBooking,
   notifyWebsiteBookingAccepted,
   notifyWebsiteBookingRejected,
