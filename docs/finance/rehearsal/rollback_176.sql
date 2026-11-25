@@ -8,6 +8,10 @@ BEGIN;
 DO $$
 DECLARE n bigint := 0;
 BEGIN
+  -- 177 (report source) depends on functions removed here: it must be rolled back first.
+  IF EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'financial_settings_ledger_reports_guard') THEN
+    RAISE EXCEPTION 'Refusing: migration 177 is still installed. Run rollback_177.sql first.';
+  END IF;
   IF to_regclass('public.ledger_entries') IS NOT NULL THEN
     EXECUTE 'SELECT COUNT(*) FROM public.ledger_entries' INTO n;
   END IF;

@@ -80,12 +80,12 @@ The real migration chain, seeded data and the repository's rehearsal scripts, ru
 | r0 inventory: read-only, deterministic; after the migrations only expected tables change (`reservations` gains columns; migration records; two new settings rows, posting off) | ✅ |
 | Partial-failure recovery (175 part-way, 176 at the end) | ✅ |
 | Apply, re-start skip, idempotent re-run | ✅ |
-| Structure (r2) | ✅ 16 of 16 |
+| Structure (r2) | ✅ 17 of 17 |
 | Existing data unchanged; books (same code) identical | ✅ |
 | App behaviour on the migrated DB | ✅ |
 | Behaviour (r3) | ✅ 45 of 45 |
 | Rollback with and without entries; re-apply | ✅ |
-| **Total** | **28 of 28 steps, on PGlite and on real PostgreSQL** |
+| **Total** | **31 of 31 steps, on PGlite and on real PostgreSQL** |
 
 ### 4b. Restored-copy rehearsal (not done; required)
 Follow `rehearsal/README.md` §0–9.
@@ -113,7 +113,7 @@ Run by: ________ · Copy restored from: ________ · Date: ________
 
 The earlier owner-role run (`real-postgres-concurrency-2026-11-24.json`, 7/7) is superseded. This is **not** Supabase and **not** the restored copy.
 
-**Runbook §1–§3 as the DBA runs them** (`rehearsal/local/runbook-real.js`, **8/8**, evidence `rehearsal/evidence/real-postgres-runbook-2026-11-25.json`), on a real PostgreSQL 17.5 database at migration 174 with October and November closed:
+**Runbook §1–§3 as the DBA runs them** (`rehearsal/local/runbook-real.js`, **9/9**, evidence `rehearsal/evidence/real-postgres-runbook-2026-11-25.json`), on a real PostgreSQL 17.5 database at migration 174 with October and November closed:
 - `compare-books.js` runs as a CLI with the **old code** (a checkout of `main`) and the **new code**;
 - the **app's own start-up runner** applies exactly 175 then 176 on `MIGRATION_DATABASE_URL`, and a second start applies nothing; the posting switch is `off`;
 - each code version shows identical books before and after the migrations;

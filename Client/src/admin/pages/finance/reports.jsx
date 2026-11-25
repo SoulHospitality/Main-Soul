@@ -58,7 +58,7 @@ import { PettyCashSection } from '../PettyCash';
 import { RefundApprovalSteps, refundReady } from '../../components/RefundApprovals';
 import { FinLocaleProvider, useFinLocale } from '../../context/FinLocaleContext';
 import { SmartTable } from './DataTable';
-import { IntegrityBanner } from './ledger';
+import { IntegrityBanner, ReportSourceNote } from './ledger';
 import { AccountLines, rangeParams } from './shared';
 
 export function CashFlowSection({ cf, fromDate, toDate }) {
@@ -277,6 +277,7 @@ export function ReportsTool({ rangeParams: params }) {
       <p className="text-sm text-gray-500">
         {t('pms.fin.reports.description', { from: data?.from_date, to: data?.to_date })}
       </p>
+      <ReportSourceNote source={data?.source} />
       <IntegrityBanner integrity={data?.integrity} />
       <div className="flex flex-wrap gap-2">
         {[

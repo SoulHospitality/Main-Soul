@@ -74,7 +74,10 @@ const step = (name, ok, detail) => {
   step('176 failing at its last statement leaves nothing behind: no ledger tables, not recorded, 175 unaffected',
     /injected failure/.test(err || '') && (await tables('ledger\\_%')) === 0 && !(await migrated('176_ledger_core.sql')) && (await migrated('175_commission_snapshots.sql')), { err });
   step('after the failure, a normal start applies 176 cleanly', (await applyMigration(db, S, '176_ledger_core.sql')) === 'applied');
-  step('a second app start skips both (already recorded)', (await applyMigration(db, S, '175_commission_snapshots.sql')) === 'skipped' && (await applyMigration(db, S, '176_ledger_core.sql')) === 'skipped');
+  step('177 (report source) applies; reports stay on the engine', (await applyMigration(db, S, '177_ledger_report_source.sql')) === 'applied'
+    && (await query(`SELECT value_text FROM financial_settings WHERE key = 'ledger_reports'`)).rows[0]?.value_text === 'engine');
+  step('a second app start skips all three (already recorded)', (await applyMigration(db, S, '175_commission_snapshots.sql')) === 'skipped' && (await applyMigration(db, S, '176_ledger_core.sql')) === 'skipped'
+    && (await applyMigration(db, S, '177_ledger_report_source.sql')) === 'skipped');
   err = null;
   try { await db.exec(m175.replace(/CREATE EXTENSION[^;]*;/gi, '')); await db.exec(m176); } catch (e) { err = e.message; }
   step('running both files again by hand is harmless (idempotent: IF NOT EXISTS / ON CONFLICT)', err === null, err);
@@ -95,7 +98,7 @@ const step = (name, ok, detail) => {
   const unexplained = hashChanged.filter((k) => colsNow[k] === colsBefore[k] && !expected.has(k));
   step(`r0 after the migrations: every pre-existing table present; changed hashes only where columns were added or rows are expected (${hashChanged.join(', ') || 'none'})`,
     Object.keys(invBefore).every((k) => k in invAfter) && unexplained.length === 0 && settingsKept &&
-      JSON.stringify(addedKeys) === '["commission_snapshots_since","ledger_posting"]', { hashChanged, unexplained, addedKeys, settingsKept });
+      JSON.stringify(addedKeys) === '["commission_snapshots_since","ledger_posting","ledger_reports"]', { hashChanged, unexplained, addedKeys, settingsKept });
   const fpAfter = await fingerprint();
   step('existing data unchanged by the migrations (fingerprints identical)', sameData(fpBefore, fpAfter), { fpBefore, fpAfter });
   const booksAfter = await booksPrint();
@@ -130,6 +133,12 @@ const step = (name, ok, detail) => {
   // ── Rollback with test entries present ──
   const entries = (await query(`SELECT COUNT(*)::int AS n FROM ledger_entries`)).rows[0].n;
   err = null;
+  try { await db.exec("SET app.confirm_rollback_176 = 'drop-ledger-with-entries';\n" + read('rollback_176.sql')); } catch (e) { err = e.message; await db.exec('ROLLBACK').catch(() => {}); }
+  await db.exec('RESET app.confirm_rollback_176');
+  step('rollback_176 refuses while 177 is installed (rollback order: 177 first)', /migration 177 is still installed/.test(err || '') && (await tables('ledger\\_%')) === 9, err);
+  await db.exec(read('rollback_177.sql'));
+  step('rollback_177 removes the report-source switch (reports were on the engine)', !(await query(`SELECT 1 FROM financial_settings WHERE key='ledger_reports'`)).rows.length && !(await migrated('177_ledger_report_source.sql')));
+  err = null;
   try { await db.exec(read('rollback_176.sql')); } catch (e) { err = e.message; await db.exec('ROLLBACK').catch(() => {}); }
   step(`rollback_176 refuses while the ledger holds entries (${entries}) unless confirmed`, /Refusing/.test(err || '') && (await tables('ledger\\_%')) === 9, err);
   await db.exec("SET app.confirm_rollback_176 = 'drop-ledger-with-entries';\n" + read('rollback_176.sql'));
@@ -156,12 +165,14 @@ const step = (name, ok, detail) => {
   step('after both rollbacks the schema is back to 174 and the app builds its books', booksRolled.entries > 0 && fpRolled.reservations, { fpRolled, booksRolled });
 
   // ── Re-deploy after rollback, then rollback with NO entries (the normal pre-cutover case) ──
-  step('after rollback, 175 and 176 re-apply cleanly', (await applyMigration(db, S, '175_commission_snapshots.sql')) === 'applied' && (await applyMigration(db, S, '176_ledger_core.sql')) === 'applied');
+  step('after rollback, 175, 176 and 177 re-apply cleanly', (await applyMigration(db, S, '175_commission_snapshots.sql')) === 'applied' && (await applyMigration(db, S, '176_ledger_core.sql')) === 'applied'
+    && (await applyMigration(db, S, '177_ledger_report_source.sql')) === 'applied');
   const r2b = (await sqlFile('r2_verify_structure.sql'))[0];
   step(`r2 after re-apply: ${r2b.filter((r) => r.passed).length}/${r2b.length} passed`, r2b.every((r) => r.passed), r2b.filter((r) => !r.passed));
   const fpRe = await fingerprint();
+  await db.exec(read('rollback_177.sql'));
   await db.exec(read('rollback_176.sql'));
-  step('rollback_176 with an empty ledger needs no confirmation and leaves existing data identical', (await tables('ledger\\_%')) === 0 && sameData(fpRe, await fingerprint()));
+  step('rollback_177 then rollback_176 with an empty ledger need no confirmation and leave existing data identical', (await tables('ledger\\_%')) === 0 && sameData(fpRe, await fingerprint()));
 
   evidence.finished = new Date().toISOString();
   evidence.summary = { steps: evidence.steps.length, failed };

@@ -122,6 +122,24 @@ export function LedgerControlsPage() {
         <Pill tone={on ? 'green' : 'gray'}>{on ? t('pms.fin.ledger.on') : t('pms.fin.ledger.off')}</Pill>
       </div>
 
+      {data.reports?.installed ? (
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-soul-line bg-white px-5 py-4">
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold text-gray-900">
+              {data.reports.source === 'ledger' ? t('pms.fin.ledger.reportsFromLedger') : t('pms.fin.ledger.reportsFromEngine')}
+            </p>
+            <p className="text-xs text-gray-500">
+              {data.reports.last_change?.actor_name
+                ? t('pms.fin.ledger.lastChange', { who: data.reports.last_change.actor_name, when: formatDateTime(data.reports.last_change.changed_at) })
+                : t('pms.fin.ledger.reportsHint')}
+            </p>
+          </div>
+          <Pill tone={data.reports.source === 'ledger' ? 'green' : 'gray'}>
+            {data.reports.source === 'ledger' ? t('pms.fin.ledger.sourceLedger') : t('pms.fin.ledger.sourceEngine')}
+          </Pill>
+        </div>
+      ) : null}
+
       <Section title={t('pms.fin.ledger.gatesTitle')} hint={t('pms.fin.ledger.gatesHint')}>
         <ol className="space-y-2">
           {gates.map((s, i) => (
@@ -222,12 +240,17 @@ export function LedgerControlsPage() {
           emptyText={t('pms.fin.ledger.noLog')}
           columns={[
             { key: 'changed_at', label: t('pms.fin.ledger.col.when'), nowrap: true, render: (r) => formatDateTime(r.changed_at) },
-            { key: 'control', label: t('pms.fin.ledger.col.control'), render: (r) => (r.control === 'ledger_posting' ? t('pms.fin.ledger.postingSwitch') : r.control) },
+            {
+              key: 'control',
+              label: t('pms.fin.ledger.col.control'),
+              render: (r) => (r.control === 'ledger_posting' ? t('pms.fin.ledger.postingSwitch') : r.control === 'ledger_reports' ? t('pms.fin.ledger.reportSource') : r.control),
+            },
             {
               key: 'change',
               label: t('pms.fin.ledger.col.change'),
               render: (r) => {
-                const v = (x) => (x === 'on' ? t('pms.fin.ledger.on') : x === 'off' ? t('pms.fin.ledger.off') : x ?? '—');
+                const words = { on: t('pms.fin.ledger.on'), off: t('pms.fin.ledger.off'), engine: t('pms.fin.ledger.sourceEngine'), ledger: t('pms.fin.ledger.sourceLedger') };
+                const v = (x) => words[x] ?? x ?? '—';
                 return `${v(r.old_value)} → ${v(r.new_value)}`;
               },
             },
@@ -328,6 +351,17 @@ export function CommissionReviewPage() {
       </Section>
       <p className="text-xs text-gray-500">{t('pms.fin.commissionReview.howToCorrect')}</p>
     </div>
+  );
+}
+
+/** Which source the statements were built from (Phase 6). Shown only once the stored ledger feeds the reports. */
+export function ReportSourceNote({ source }) {
+  const { t } = useFinLocale();
+  if (source !== 'ledger') return null;
+  return (
+    <p className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+      <ShieldCheck className="h-3.5 w-3.5" /> {t('pms.fin.ledger.statementsFromLedger')}
+    </p>
   );
 }
 

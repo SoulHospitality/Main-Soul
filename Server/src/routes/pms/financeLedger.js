@@ -38,7 +38,7 @@ router.get('/financial-system/ledger-controls', FINANCE, async (_req, res, next)
       return res.json({ deployed: false, migrations, identity: identityStatus() });
     }
 
-    const [posting, policies, approvals, totals, periods, log] = await Promise.all([
+    const [posting, policies, approvals, totals, periods, log, reports] = await Promise.all([
       query(`SELECT value_text FROM financial_settings WHERE key = 'ledger_posting'`),
       query(
         `SELECT p.version, p.effective_from, p.status, p.created_at,
@@ -75,6 +75,7 @@ router.get('/financial-system/ledger-controls', FINANCE, async (_req, res, next)
          FROM ledger_control_log l LEFT JOIN staff_users s ON s.id = l.actor_id
          ORDER BY l.changed_at DESC LIMIT 25`
       ),
+      query(`SELECT value_text FROM financial_settings WHERE key = 'ledger_reports'`),
     ]);
 
     const policyRows = policies.rows.map((p) => ({
@@ -88,6 +89,8 @@ router.get('/financial-system/ledger-controls', FINANCE, async (_req, res, next)
       migrations,
       identity: identityStatus(),
       posting: { state: posting.rows[0]?.value_text || 'off', last_change: log.rows.find((r) => r.control === 'ledger_posting') || null },
+      // Phase 6 (migration 177): which source the statements read; 'engine' until switched by a verified admin.
+      reports: { source: reports.rows[0]?.value_text || 'engine', installed: reports.rows.length > 0, last_change: log.rows.find((r) => r.control === 'ledger_reports') || null },
       gates: {
         revenue_presentation: Boolean(inForce?.d01_approved),
         vat_base: Boolean(inForce?.vat_approved),

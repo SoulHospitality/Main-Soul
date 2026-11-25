@@ -1492,8 +1492,12 @@ router.delete('/financial-system/custom-accounts/:code', requireRoles('admin', '
 router.get('/financial-system/reports', requireRoles('admin', 'finance', 'finance_manager'), async (req, res, next) => {
   try {
     const { from, to } = dateRange(req);
-    const built = await buildYtdStatements(to, from);
+    // Phase 6: the guarded setting ledger_reports chooses the source (engine by default; migration 177).
+    const { reportSource, ledgerYtdStatements } = require('../../lib/accounting/reportSource');
+    const source = await reportSource();
+    const built = source === 'ledger' ? await ledgerYtdStatements(to, from) : await buildYtdStatements(to, from);
     res.json({
+      source,
       from_date: built.from_date,
       to_date: built.to_date,
       trial_balance: built.trial_balance,

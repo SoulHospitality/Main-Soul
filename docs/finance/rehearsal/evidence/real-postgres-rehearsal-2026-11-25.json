@@ -1,5 +1,5 @@
 {
-  "started": "2026-11-25T02:26:46.017Z",
+  "started": "2026-11-25T11:35:47.782Z",
   "engine": "PostgreSQL (embedded, real server)",
   "steps": [
     {
@@ -12,15 +12,15 @@
       "detail": {
         "fpBefore": {
           "migrations >= 170": "170_stay_lifecycle.sql, 171_chatbot_live.sql, 172_data_cleaner.sql, 173_remove_calendar_sync.sql, 174_leave_corrections.sql",
-          "reservations": "8 rows / 23726a65c6868eea15982d6041eacef1",
-          "payments": "5 rows / e35e661e9a9f08a6f8dd584c5c6e1b5d",
-          "expenses": "2 rows / e736a5dabcce0bbbf07a3de75460d4ce",
-          "cash_ledger": "2 rows / 78c6433cfb796d3e24517ece3b585a7a",
-          "financial_posted_entries (closed months)": "1 rows / e1195b69c1470d8a36699fc8e22e0591",
-          "financial_custom_accounts": "3 rows / e13203a12e78f4023135246370aec086",
-          "unit commission rates": "3 units / fe3ef5c639b488ea2a412de012108a54",
+          "reservations": "8 rows / a426503e00793153074c26cb7ab17be1",
+          "payments": "5 rows / 169c620e896b1f16ea2b716d345a4b74",
+          "expenses": "2 rows / e1ca98bfc82a4e64fbfa87fcb089d4b7",
+          "cash_ledger": "2 rows / 903e9bc7e000f6d08b53c2873385d913",
+          "financial_posted_entries (closed months)": "1 rows / c649623c920c6692d0f298e7dc47a297",
+          "financial_custom_accounts": "3 rows / 2d0214c722c207069cf076c84b274fc5",
+          "unit commission rates": "3 units / 7324bfdc6d943008b8a6eb4e1297fb0c",
           "salesperson rates": "3 staff / b90f39b304209858db38e840405fa5e1",
-          "settings": "2 rows / 83d0c6f1c4f42bd072bf3c4e969a3331"
+          "settings": "2 rows / de3431087e68375f99b0646342d2bed6"
         },
         "booksBefore": {
           "entries": 8,
@@ -57,7 +57,11 @@
       "ok": true
     },
     {
-      "name": "a second app start skips both (already recorded)",
+      "name": "177 (report source) applies; reports stay on the engine",
+      "ok": true
+    },
+    {
+      "name": "a second app start skips all three (already recorded)",
       "ok": true
     },
     {
@@ -66,7 +70,7 @@
       "detail": null
     },
     {
-      "name": "r2 structure checks: 16/16 passed",
+      "name": "r2 structure checks: 17/17 passed",
       "ok": true,
       "detail": []
     },
@@ -82,7 +86,8 @@
         "unexplained": [],
         "addedKeys": [
           "commission_snapshots_since",
-          "ledger_posting"
+          "ledger_posting",
+          "ledger_reports"
         ],
         "settingsKept": true
       }
@@ -93,27 +98,27 @@
       "detail": {
         "fpBefore": {
           "migrations >= 170": "170_stay_lifecycle.sql, 171_chatbot_live.sql, 172_data_cleaner.sql, 173_remove_calendar_sync.sql, 174_leave_corrections.sql",
-          "reservations": "8 rows / 23726a65c6868eea15982d6041eacef1",
-          "payments": "5 rows / e35e661e9a9f08a6f8dd584c5c6e1b5d",
-          "expenses": "2 rows / e736a5dabcce0bbbf07a3de75460d4ce",
-          "cash_ledger": "2 rows / 78c6433cfb796d3e24517ece3b585a7a",
-          "financial_posted_entries (closed months)": "1 rows / e1195b69c1470d8a36699fc8e22e0591",
-          "financial_custom_accounts": "3 rows / e13203a12e78f4023135246370aec086",
-          "unit commission rates": "3 units / fe3ef5c639b488ea2a412de012108a54",
+          "reservations": "8 rows / a426503e00793153074c26cb7ab17be1",
+          "payments": "5 rows / 169c620e896b1f16ea2b716d345a4b74",
+          "expenses": "2 rows / e1ca98bfc82a4e64fbfa87fcb089d4b7",
+          "cash_ledger": "2 rows / 903e9bc7e000f6d08b53c2873385d913",
+          "financial_posted_entries (closed months)": "1 rows / c649623c920c6692d0f298e7dc47a297",
+          "financial_custom_accounts": "3 rows / 2d0214c722c207069cf076c84b274fc5",
+          "unit commission rates": "3 units / 7324bfdc6d943008b8a6eb4e1297fb0c",
           "salesperson rates": "3 staff / b90f39b304209858db38e840405fa5e1",
-          "settings": "2 rows / 83d0c6f1c4f42bd072bf3c4e969a3331"
+          "settings": "2 rows / de3431087e68375f99b0646342d2bed6"
         },
         "fpAfter": {
-          "migrations >= 170": "170_stay_lifecycle.sql, 171_chatbot_live.sql, 172_data_cleaner.sql, 173_remove_calendar_sync.sql, 174_leave_corrections.sql, 175_commission_snapshots.sql, 176_ledger_core.sql",
-          "reservations": "8 rows / 23726a65c6868eea15982d6041eacef1",
-          "payments": "5 rows / e35e661e9a9f08a6f8dd584c5c6e1b5d",
-          "expenses": "2 rows / e736a5dabcce0bbbf07a3de75460d4ce",
-          "cash_ledger": "2 rows / 78c6433cfb796d3e24517ece3b585a7a",
-          "financial_posted_entries (closed months)": "1 rows / e1195b69c1470d8a36699fc8e22e0591",
-          "financial_custom_accounts": "3 rows / e13203a12e78f4023135246370aec086",
-          "unit commission rates": "3 units / fe3ef5c639b488ea2a412de012108a54",
+          "migrations >= 170": "170_stay_lifecycle.sql, 171_chatbot_live.sql, 172_data_cleaner.sql, 173_remove_calendar_sync.sql, 174_leave_corrections.sql, 175_commission_snapshots.sql, 176_ledger_core.sql, 177_ledger_report_source.sql",
+          "reservations": "8 rows / a426503e00793153074c26cb7ab17be1",
+          "payments": "5 rows / 169c620e896b1f16ea2b716d345a4b74",
+          "expenses": "2 rows / e1ca98bfc82a4e64fbfa87fcb089d4b7",
+          "cash_ledger": "2 rows / 903e9bc7e000f6d08b53c2873385d913",
+          "financial_posted_entries (closed months)": "1 rows / c649623c920c6692d0f298e7dc47a297",
+          "financial_custom_accounts": "3 rows / 2d0214c722c207069cf076c84b274fc5",
+          "unit commission rates": "3 units / 7324bfdc6d943008b8a6eb4e1297fb0c",
           "salesperson rates": "3 staff / b90f39b304209858db38e840405fa5e1",
-          "settings": "2 rows / 83d0c6f1c4f42bd072bf3c4e969a3331"
+          "settings": "2 rows / de3431087e68375f99b0646342d2bed6"
         }
       }
     },
@@ -175,6 +180,15 @@
       "detail": "Refusing to run: r3 writes test data and is only for a restored copy of production."
     },
     {
+      "name": "rollback_176 refuses while 177 is installed (rollback order: 177 first)",
+      "ok": true,
+      "detail": "Refusing: migration 177 is still installed. Run rollback_177.sql first."
+    },
+    {
+      "name": "rollback_177 removes the report-source switch (reports were on the engine)",
+      "ok": true
+    },
+    {
       "name": "rollback_176 refuses while the ledger holds entries (3) unless confirmed",
       "ok": true,
       "detail": "Refusing: the ledger holds 3 entries. Set app.confirm_rollback_176 to confirm."
@@ -205,19 +219,19 @@
     },
     {
       "name": "after both rollbacks the schema is back to 174 and the app builds its books",
-      "ok": "10 rows / 8e5597be0620946502e74b125fe56cb9",
+      "ok": "10 rows / ae050b66132e295da6982a9dd61d1ce1",
       "detail": {
         "fpRolled": {
           "migrations >= 170": "170_stay_lifecycle.sql, 171_chatbot_live.sql, 172_data_cleaner.sql, 173_remove_calendar_sync.sql, 174_leave_corrections.sql",
-          "reservations": "10 rows / 8e5597be0620946502e74b125fe56cb9",
-          "payments": "5 rows / e35e661e9a9f08a6f8dd584c5c6e1b5d",
-          "expenses": "2 rows / e736a5dabcce0bbbf07a3de75460d4ce",
-          "cash_ledger": "2 rows / 78c6433cfb796d3e24517ece3b585a7a",
-          "financial_posted_entries (closed months)": "1 rows / e1195b69c1470d8a36699fc8e22e0591",
-          "financial_custom_accounts": "3 rows / e13203a12e78f4023135246370aec086",
-          "unit commission rates": "3 units / fe3ef5c639b488ea2a412de012108a54",
+          "reservations": "10 rows / ae050b66132e295da6982a9dd61d1ce1",
+          "payments": "5 rows / 169c620e896b1f16ea2b716d345a4b74",
+          "expenses": "2 rows / e1ca98bfc82a4e64fbfa87fcb089d4b7",
+          "cash_ledger": "2 rows / 903e9bc7e000f6d08b53c2873385d913",
+          "financial_posted_entries (closed months)": "1 rows / c649623c920c6692d0f298e7dc47a297",
+          "financial_custom_accounts": "3 rows / 2d0214c722c207069cf076c84b274fc5",
+          "unit commission rates": "3 units / 7324bfdc6d943008b8a6eb4e1297fb0c",
           "salesperson rates": "3 staff / b90f39b304209858db38e840405fa5e1",
-          "settings": "2 rows / 83d0c6f1c4f42bd072bf3c4e969a3331"
+          "settings": "2 rows / de3431087e68375f99b0646342d2bed6"
         },
         "booksRolled": {
           "entries": 8,
@@ -227,16 +241,16 @@
       }
     },
     {
-      "name": "after rollback, 175 and 176 re-apply cleanly",
+      "name": "after rollback, 175, 176 and 177 re-apply cleanly",
       "ok": true
     },
     {
-      "name": "r2 after re-apply: 16/16 passed",
+      "name": "r2 after re-apply: 17/17 passed",
       "ok": true,
       "detail": []
     },
     {
-      "name": "rollback_176 with an empty ledger needs no confirmation and leaves existing data identical",
+      "name": "rollback_177 then rollback_176 with an empty ledger need no confirmation and leave existing data identical",
       "ok": true
     }
   ],
@@ -244,15 +258,15 @@
   "baseline": {
     "fingerprint": {
       "migrations >= 170": "170_stay_lifecycle.sql, 171_chatbot_live.sql, 172_data_cleaner.sql, 173_remove_calendar_sync.sql, 174_leave_corrections.sql",
-      "reservations": "8 rows / 23726a65c6868eea15982d6041eacef1",
-      "payments": "5 rows / e35e661e9a9f08a6f8dd584c5c6e1b5d",
-      "expenses": "2 rows / e736a5dabcce0bbbf07a3de75460d4ce",
-      "cash_ledger": "2 rows / 78c6433cfb796d3e24517ece3b585a7a",
-      "financial_posted_entries (closed months)": "1 rows / e1195b69c1470d8a36699fc8e22e0591",
-      "financial_custom_accounts": "3 rows / e13203a12e78f4023135246370aec086",
-      "unit commission rates": "3 units / fe3ef5c639b488ea2a412de012108a54",
+      "reservations": "8 rows / a426503e00793153074c26cb7ab17be1",
+      "payments": "5 rows / 169c620e896b1f16ea2b716d345a4b74",
+      "expenses": "2 rows / e1ca98bfc82a4e64fbfa87fcb089d4b7",
+      "cash_ledger": "2 rows / 903e9bc7e000f6d08b53c2873385d913",
+      "financial_posted_entries (closed months)": "1 rows / c649623c920c6692d0f298e7dc47a297",
+      "financial_custom_accounts": "3 rows / 2d0214c722c207069cf076c84b274fc5",
+      "unit commission rates": "3 units / 7324bfdc6d943008b8a6eb4e1297fb0c",
       "salesperson rates": "3 staff / b90f39b304209858db38e840405fa5e1",
-      "settings": "2 rows / 83d0c6f1c4f42bd072bf3c4e969a3331"
+      "settings": "2 rows / de3431087e68375f99b0646342d2bed6"
     },
     "books": {
       "entries": 8,
@@ -323,6 +337,11 @@
     },
     {
       "check_name": "posting switch is off",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check_name": "177: reports read the engine, and the report-source switch is guarded",
       "passed": true,
       "detail": null
     },
@@ -614,9 +633,9 @@
       "detail": null
     }
   ],
-  "finished": "2026-11-25T02:27:04.835Z",
+  "finished": "2026-11-25T11:35:59.831Z",
   "summary": {
-    "steps": 28,
+    "steps": 31,
     "failed": 0
   }
 }

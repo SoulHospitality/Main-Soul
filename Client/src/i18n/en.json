@@ -2277,7 +2277,14 @@
         "readOnlyNote": "Read-only. Ledger entries cannot be edited or deleted; corrections are new, linked entries.",
         "installedOff": "Set to off when the ledger was installed, on {{when}}",
         "system": "System (installation)",
-        "postingSwitch": "Posting switch"
+        "postingSwitch": "Posting switch",
+        "reportsFromEngine": "Reports are calculated live from bookings, payments and expenses",
+        "reportsFromLedger": "Reports read the stored ledger",
+        "reportsHint": "Switching the report source needs posting on, a verified admin and a reason; every change is logged.",
+        "sourceEngine": "Live calculation",
+        "sourceLedger": "Stored ledger",
+        "reportSource": "Report source",
+        "statementsFromLedger": "Built from the stored ledger"
       },
       "commissionReview": {
         "intro": "Commission rates are saved on each stay when it is confirmed (since {{since}}), so later rate changes never alter past stays. Stays below need a rate decision.",

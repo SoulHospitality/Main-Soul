@@ -254,7 +254,14 @@ async function sync(p, { actorId, reason = 'Parallel-run sync: reference changed
       );
       const current = rows[0];
       if (!current) {
-        await posting.postEntry(entry, { client });
+        // Never posted, or posted and later reversed outright (not replaced): a reused key would be a silent
+        // no-op, so a reversed source gets the next version key.
+        const { rows: prior } = await client.query(
+          `SELECT idempotency_key FROM ledger_entries WHERE source_id = $1 AND source_module = $2 AND origin <> 'reversal' ORDER BY id DESC LIMIT 1`,
+          [entry.sourceId, entry.sourceModule]
+        );
+        const key = prior[0] ? `${entry.idempotencyKey}#v${Number(String(prior[0].idempotency_key).split('#v')[1] || 1) + 1}` : entry.idempotencyKey;
+        await posting.postEntry({ ...entry, idempotencyKey: key, ...(prior[0] ? { origin: 'adjustment', actorId } : {}) }, { client });
         result.posted++;
       } else {
         const lines = (await client.query(`SELECT account_code AS account, base_debit AS debit, base_credit AS credit FROM ledger_lines WHERE entry_id = $1`, [current.id])).rows;

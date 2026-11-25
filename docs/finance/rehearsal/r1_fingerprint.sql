@@ -34,8 +34,8 @@ UNION ALL
 SELECT 'salesperson rates', COUNT(*) || ' staff / ' || md5(COALESCE(string_agg(concat_ws(',', s.id, s.sales_commission_pct), '|' ORDER BY s.id), ''))
 FROM public.staff_users s WHERE s.username NOT LIKE 'rehearsal_%'
 UNION ALL
--- The migrations add two settings (ledger_posting, commission_snapshots_since); they are excluded here.
+-- The migrations add three settings (ledger_posting, commission_snapshots_since, ledger_reports); they are excluded here.
 SELECT 'settings', COUNT(*) || ' rows / ' || md5(COALESCE(string_agg(to_jsonb(fs)::text, '|' ORDER BY fs.key), ''))
-FROM public.financial_settings fs WHERE fs.key NOT IN ('ledger_posting', 'commission_snapshots_since');
+FROM public.financial_settings fs WHERE fs.key NOT IN ('ledger_posting', 'commission_snapshots_since', 'ledger_reports');
 
 ROLLBACK;
