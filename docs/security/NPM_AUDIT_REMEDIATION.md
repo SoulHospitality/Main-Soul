@@ -26,13 +26,17 @@
 - exceljs cannot read binary `.xls`, and door systems may export it.
 - exceljs builds dates as UTC; the attendance parser reads them with local-time getters, so times could shift.
 - SheetJS publishes its fixes only on `cdn.sheetjs.com`. The lockfile pins the tarball by sha512, and the package has no dependencies.
-- **Build dependency:** `npm ci` on Render now fetches from `cdn.sheetjs.com`.
+- **Build dependency:** the server build on Railway (`railway.json`: `npm install --omit=dev --prefix Server`) and the client build on Vercel now fetch `xlsx` from `cdn.sheetjs.com`. (An earlier version of this record said "Render"; the repository's deployment configuration is Railway for the server and Vercel for the client.)
 
 ## Accepted
 - `uuid <11.1.1` (moderate) via exceljs and node-cron. The flaw needs a caller-supplied buffer with v3/v5/v6; both packages only call v4.
 
 ## Checks for the deployer
-1. **Timezone:** confirm Render has no `TZ` set (UTC). Under UTC the attendance import is identical. Under another zone, 0.20.3 is the accurate reader: 0.18.5 was off by about 21 s on files from other producers.
-2. **Email:** confirm whether production uses Resend or SMTP; if SMTP, send one test email after deploying.
-3. **Click-through after deploy:** Today board live updates, one website inquiry, one attendance import of a real door file (compare with the previous month's import), one receipt PDF and one Excel export.
-4. **Rollback:** revert the individual commit and redeploy. There are no schema or data changes.
+Full evidence: `docs/security/PRE_MERGE_VERIFICATION.md`.
+
+1. **Timezone:** read the Railway service's `TZ` variable (none in the repository). Unset or `UTC`: the attendance import is identical before and after. A zone such as `Africa/Cairo`: 0.20.3 reads stored times correctly where 0.18.5 misread about half of them by a minute, so imports can differ from earlier ones, and the new figures are the correct ones.
+2. **Email:** read whether the Railway service has `RESEND_API_KEY` or `SMTP_HOST` set (the code uses Resend first, then SMTP, otherwise only logs). If SMTP, send one test email after deploying. If neither is set, inquiry and Become-a-Host emails are not being delivered today either.
+3. **Node version:** confirm in the Railway build log that Node is 20 or later (nodemailer 10 requires it; the root `package.json` declares `>=20`).
+4. **Builds reach the CDN:** the first Railway and Vercel builds after merging must download `xlsx-0.20.3.tgz` from `cdn.sheetjs.com`; a failed build shows `EINTEGRITY` or a fetch error, and the running version is unaffected.
+5. **Click-through after deploy:** Today board live updates, one website inquiry, one attendance import of a real door file (compare with the previous month's import), one receipt PDF and one Excel export.
+6. **Rollback:** revert the individual commit and redeploy. There are no schema or data changes.
