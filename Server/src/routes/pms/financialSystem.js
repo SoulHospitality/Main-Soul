@@ -1501,6 +1501,8 @@ router.get('/financial-system/reports', requireRoles('admin', 'finance', 'financ
       balance_sheet: built.balance_sheet,
       cash_flow: built.cash_flow,
       vat_return: built.vat_return,
+      // DEF-ACC-01: lines on accounts missing from the chart are reported, never silently dropped.
+      integrity: built.integrity || { unknown_accounts: [] },
     });
   } catch (e) {
     next(e);

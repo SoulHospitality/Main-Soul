@@ -34,7 +34,8 @@
 | `0fffa90` | Paymob webhook automated tests |
 | `609e6f9` | Backup and restore validation, accountant and DBA packages, final readiness |
 | `10f5b53` | Real-PostgreSQL rehearsal and runbook, accountant tracker, merge and deployment package |
-| (latest) | Pre-merge verification of all three branches; three-way merge helper; hosting corrected to Railway/Vercel |
+| `1e6d92d` | Pre-merge verification of all three branches; three-way merge helper; hosting corrected to Railway/Vercel |
+| (latest) | Financial System screens for the ledger: Ledger controls, Commission review, integrity warning (read-only; English and Arabic) |
 
 ## What the branch delivers (all inactive until deployed and approved)
 - **Stored, immutable double-entry ledger** (migration 176). The database enforces:
@@ -48,10 +49,20 @@
 - **Restricted application role** and the identity-key procedure (`docs/finance/db-security/`). The migration runner can use `MIGRATION_DATABASE_URL`.
 - **Rehearsal kit:** read-only live checks 0–6, a backup/restore inventory, r1–r5, rollbacks, the engine-fix comparison tool, and local runners for PGlite and real PostgreSQL.
 
+## Financial System screens (this branch)
+**Books → Ledger controls** and **Books → Commission review**, plus an integrity warning on Financial statements. They are read-only and bilingual, and they say plainly when 175/176 are not installed yet. Details, tests and screenshots: `docs/finance/FINANCIAL_SYSTEM_UI.md`.
+
+## Release state (outside this branch)
+- The fix and security branches are merged into **local** `main` (`8d31611`, `71118c5`) and published as `release/2026-11-25` (`71118c5`). It was pushed only as a Vercel Preview; Railway was not triggered.
+- GitHub `main` and production remain `ff782cd`. Confirmed on 2026-11-25 from the deployment records and by matching the live site's files to a rebuild of `ff782cd`.
+- The owner reports that automatic deployment from `main` is paused on Railway and Vercel. **This is not independently verified:** there is no dashboard access from development.
+- Checklist: `Desktop/Main-Soul-preserved/CONTROLLED_DEPLOYMENT_CHECKLIST_2026-11-25.md`.
+
 ## Test results (synthetic data; local)
 | Suite | Result |
 |---|---|
 | `npm test` | 155 tests, **154 pass**. The 1 failure is `hrRules.test.js:362` (commit `ad8515f` changed the attendance rule; HR to decide) |
+| Ledger screens API (`ledger-ui-api-test.js`) and end-to-end in Chrome (`ui-e2e.js`, English and Arabic) | 21/21 · all pages render, no errors |
 | PGlite: ledger / engine / engine-extra / security / Paymob / live checks | 139/139 · 43/43 · 23/23 · 20/20 · 11/11 · pass |
 | Rehearsal (r0–r3, rollbacks, re-apply) | **28/28 on PGlite and 28/28 on real PostgreSQL 17.5** |
 | Real PostgreSQL 17.5 as `soul_app` (genuine multi-session) | 13/13 |

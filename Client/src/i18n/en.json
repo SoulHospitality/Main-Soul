@@ -2077,7 +2077,9 @@
           "statements": "Financial statements",
           "tax": "Tax desk",
           "forecast": "Cash forecast",
-          "builder": "Report builder"
+          "builder": "Report builder",
+          "commission-review": "Commission review",
+          "ledger": "Ledger controls"
         },
         "tabs": {
           "whoOwes": "Who owes",
@@ -2191,6 +2193,132 @@
         "pay": "Pay",
         "rejectTitle": "Reject payout request",
         "reasonLabel": "Reason (the owner sees this)"
+      },
+      "ledger": {
+        "intro": "The stored, permanent ledger and the controls around it. This page only shows the state: switching posting on, approving policies and corrections go through the verified procedures.",
+        "loadError": "Could not load the ledger controls.",
+        "notDeployedTitle": "The stored ledger is not installed yet",
+        "notDeployedBody": "It arrives with the finance release. Until then, the books you see are calculated live from bookings, payments and expenses, as today.",
+        "postingOff": "Posting to the stored ledger is off",
+        "postingOn": "Posting to the stored ledger is on",
+        "on": "On",
+        "off": "Off",
+        "lastChange": "Last changed by {{who}} on {{when}}",
+        "neverChanged": "Never changed since installation",
+        "gatesTitle": "Before posting can start",
+        "gatesHint": "The database refuses to post until the first two are approved in writing and recorded by two different admins.",
+        "gatesFoot": "Switching posting on also needs the owner’s written instruction. It is never done from this page.",
+        "gates": {
+          "revenue": {
+            "title": "Revenue presentation (EAS 48)",
+            "what": "Gross or net, per contract type: the accountant’s written decision"
+          },
+          "vat": {
+            "title": "VAT base",
+            "what": "A separate written decision, not implied by the revenue decision"
+          },
+          "commission": {
+            "title": "Historical commission method",
+            "what": "How rates are set for stays confirmed before rates were saved"
+          },
+          "identity": {
+            "title": "Verified staff identity",
+            "what": "The server key that proves who made each ledger change"
+          }
+        },
+        "identity": {
+          "configured": "Configured",
+          "missing": "Not configured",
+          "invalid": "Misconfigured"
+        },
+        "outsideSystem": "Tracked in the decision tracker",
+        "approved": "Approved",
+        "awaiting": "Awaiting",
+        "policiesTitle": "Accounting policies",
+        "policiesHint": "Each version records the treatment and both written approvals, with their references.",
+        "noPolicies": "No policy recorded yet.",
+        "policyStatus": {
+          "draft": "Draft",
+          "approved": "Approved",
+          "retired": "Retired"
+        },
+        "col": {
+          "version": "Version",
+          "effective": "Effective from",
+          "status": "Status",
+          "revenue": "Revenue",
+          "vat": "VAT base",
+          "d01Approval": "Revenue approval",
+          "vatApproval": "VAT approval",
+          "recordedBy": "Recorded by",
+          "period": "Month",
+          "closed": "Closed",
+          "reopened": "Reopened",
+          "when": "When",
+          "control": "Control",
+          "change": "Change",
+          "who": "By",
+          "reason": "Reason"
+        },
+        "entries": "Ledger entries",
+        "lines": "{{count}} lines",
+        "reversed": "Reversed",
+        "manualMigrated": "Manual / migrated",
+        "lastEntry": "Last entry",
+        "periodsTitle": "Ledger months",
+        "periodStatus": {
+          "open": "Open",
+          "closing": "Closing",
+          "closed": "Closed"
+        },
+        "logTitle": "Control log",
+        "logHint": "Every change to the posting switch, kept permanently.",
+        "noLog": "No changes recorded.",
+        "readOnlyNote": "Read-only. Ledger entries cannot be edited or deleted; corrections are new, linked entries.",
+        "installedOff": "Set to off when the ledger was installed, on {{when}}",
+        "system": "System (installation)",
+        "postingSwitch": "Posting switch"
+      },
+      "commissionReview": {
+        "intro": "Commission rates are saved on each stay when it is confirmed (since {{since}}), so later rate changes never alter past stays. Stays below need a rate decision.",
+        "notDeployedTitle": "Rate snapshots are not installed yet",
+        "notDeployedBody": "They arrive with the finance release. Until then, commissions use the unit’s current rates, as today.",
+        "waiting": "{{count}} stays need a commission decision",
+        "clear": "No stays waiting for a commission decision",
+        "captured": "Saved at confirmation",
+        "capturedSub": "Rates frozen automatically",
+        "needsReview": "Flagged",
+        "needsReviewSub": "Saved, but the basis needs a check",
+        "none": "Before snapshots",
+        "noneSub": "Confirmed before rates were saved",
+        "corrected": "Corrected",
+        "lastCorrection": "Last on {{when}}",
+        "listTitle": "Stays to review",
+        "listHint": "Historical stays use the approved method; flagged stays are checked against the unit’s contract.",
+        "col": {
+          "stay": "Guest",
+          "unit": "Unit",
+          "dates": "Dates",
+          "status": "Status",
+          "total": "Total",
+          "salesperson": "Salesperson",
+          "reason": "Why"
+        },
+        "reasonHistorical": "Confirmed before rate snapshots: original rate unknown",
+        "reasonFlagged": "Flagged at confirmation: basis to check",
+        "howToCorrect": "Corrections are recorded through the logged, verified process with a reason. They are never edited here.",
+        "reasonHistoricalShort": "Before snapshots",
+        "reasonFlaggedShort": "Flagged",
+        "stayStatus": {
+          "confirmed": "Confirmed",
+          "checked_in": "Checked in",
+          "checked_out": "Checked out"
+        }
+      },
+      "integrity": {
+        "title": "Accounts missing from the chart of accounts: {{count}}",
+        "body": "These lines are included in the totals but belong to no known account. Add the account to the chart, or correct the source records.",
+        "line": "debit {{debit}} · credit {{credit}} · entries: {{count}}"
       }
     }
   }

@@ -44,6 +44,10 @@ Also on the real server (2026-11-25):
 - `REHEARSAL_ENGINE=real node rehearsal.js`: **28 / 28**, the same steps as on PGlite. Evidence: `real-postgres-rehearsal-2026-11-25.json`.
 - `runbook-real.js`: **8 / 8**. Runbook §1–§3 with `compare-books.js` as a CLI on old (`main`) and new code, and the app's own migration runner on `MIGRATION_DATABASE_URL`; the old close's DEF-CLOSE-01 defect shows up on real data shapes. Evidence: `real-postgres-runbook-2026-11-25.json`.
 
+## Financial System ledger screens (2026-11-25)
+- `rehearsal/local/ledger-ui-api-test.js`: **21 / 21** (PGlite). Before and after 175/176, role refusal, identity key never returned, drafts never count as approved, review list and counts, `integrity` in reports, read-only.
+- `rehearsal/local/ui-e2e.js`: the real server on real PostgreSQL 17.5, Vite and headless Chrome. Ledger controls, Commission review and the statements warning in English and Arabic: no page errors and no untranslated keys. Screenshots: `docs/finance/ui/`.
+
 ## Not yet covered
 - Coverage measurement of the database suites.
 - Load testing.

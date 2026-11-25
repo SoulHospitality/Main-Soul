@@ -9,6 +9,7 @@ import {
   Building2,
   CalendarDays,
   ChevronRight,
+  ClipboardCheck,
   ClipboardList,
   FileBarChart,
   FileSpreadsheet,
@@ -21,6 +22,7 @@ import {
   Receipt,
   Scale,
   Shield,
+  ShieldCheck,
   TrendingUp,
   Users,
   Wallet,
@@ -63,6 +65,7 @@ import {
   useNavBadges,
 } from './finance/pages';
 import { GlobalSearch, WorkspaceProvider } from './finance/workspace';
+import { CommissionReviewPage, LedgerControlsPage } from './finance/ledger';
 
 /**
  * Pages grouped by job. `period: true` means the page follows the date filter, so the filter shows only there.
@@ -102,6 +105,8 @@ const NAV = [
       { id: 'manual', icon: PenLine, period: true },
       { id: 'reconcile', icon: Landmark, period: true },
       { id: 'close', icon: Lock },
+      { id: 'commission-review', icon: ClipboardCheck },
+      { id: 'ledger', icon: ShieldCheck },
     ],
   },
   {
@@ -321,6 +326,8 @@ function FinancialSystemInner() {
   else if (page === 'manual') body = <ManualEntriesTab fromDate={fromDate} toDate={toDate} rangeParams={params} />;
   else if (page === 'reconcile') body = <ReconcilePage params={params} />;
   else if (page === 'close') body = <ClosePage toDate={toDate} />;
+  else if (page === 'commission-review') body = <CommissionReviewPage />;
+  else if (page === 'ledger') body = <LedgerControlsPage />;
   else if (page === 'statements') body = <StatementsPage params={params} />;
   else if (page === 'tax') body = <TaxTab rangeParams={params} />;
   else if (page === 'forecast') body = <CashForecastTool rangeParams={params} />;

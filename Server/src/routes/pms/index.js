@@ -133,6 +133,7 @@ router.use(require('./reservationReceipt'));
 router.use(require('./kpi'));
 router.use(require('./auditLog'));
 router.use(require('./financialSystem'));
+router.use(require('./financeLedger'));
 router.use(require('./financeWorkspace'));
 router.use(require('./pettyCashAccounts'));
 router.use(housekeepingOps);
