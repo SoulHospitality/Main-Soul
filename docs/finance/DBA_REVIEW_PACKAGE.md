@@ -31,7 +31,8 @@
 - **Retention and PITR window:** state them in the backup record.
 
 ## Evidence already available (local only; synthetic data)
-- PGlite suites: ledger 139/139, engine 43/43 + 23/23, security 20/20, rehearsal 26/26 (r3 45/45), Paymob 11/11, live checks.
-- **Real PostgreSQL 17.5:** 13/13 as `soul_app` (bypasses refused, verified identity, concurrency). Evidence is in `rehearsal/evidence/`.
+- PGlite suites: ledger 139/139, engine 43/43 + 23/23, security 20/20, rehearsal 28/28 (r3 45/45), Paymob 11/11, live checks.
+- **Real PostgreSQL 17.5:** 13/13 as `soul_app` (bypasses refused, verified identity, concurrency); the full rehearsal 28/28; runbook §1–§3 8/8, with `compare-books.js` on old and new code and the app's own migration runner on `MIGRATION_DATABASE_URL`. Evidence is in `rehearsal/evidence/`.
+- `pg_dump`/`pg_restore` were not available locally, so the backup-and-restore step itself has only been prepared, not rehearsed.
 
 None of this replaces the steps above on the real data and platform.

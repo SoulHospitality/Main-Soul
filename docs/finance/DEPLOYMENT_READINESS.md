@@ -73,10 +73,11 @@ The pre-commit review's findings, and what Phase 5B did about each:
 ## 4. Migration rehearsal
 
 ### 4a. Local rehearsal (done; local-only)
-PGlite, real migration chain, seeded data, the repository's rehearsal scripts. Evidence: `rehearsal/evidence/local-rehearsal-2026-11-24-phase5b.json`.
+The real migration chain, seeded data and the repository's rehearsal scripts, run on **both** PGlite and a **real PostgreSQL 17.5** server (`REHEARSAL_ENGINE=real`). Evidence: `rehearsal/evidence/local-rehearsal-2026-11-24-phase5b.json` (PGlite) and `rehearsal/evidence/real-postgres-rehearsal-2026-11-25.json` (real server).
 
 | Area | Result |
 |---|---|
+| r0 inventory: read-only, deterministic; after the migrations only expected tables change (`reservations` gains columns; migration records; two new settings rows, posting off) | ✅ |
 | Partial-failure recovery (175 part-way, 176 at the end) | ✅ |
 | Apply, re-start skip, idempotent re-run | ✅ |
 | Structure (r2) | ✅ 16 of 16 |
@@ -84,7 +85,7 @@ PGlite, real migration chain, seeded data, the repository's rehearsal scripts. E
 | App behaviour on the migrated DB | ✅ |
 | Behaviour (r3) | ✅ 45 of 45 |
 | Rollback with and without entries; re-apply | ✅ |
-| **Total** | **26 of 26 steps** |
+| **Total** | **28 of 28 steps, on PGlite and on real PostgreSQL** |
 
 ### 4b. Restored-copy rehearsal (not done; required)
 Follow `rehearsal/README.md` §0–9.
@@ -112,6 +113,12 @@ Run by: ________ · Copy restored from: ________ · Date: ________
 
 The earlier owner-role run (`real-postgres-concurrency-2026-11-24.json`, 7/7) is superseded. This is **not** Supabase and **not** the restored copy.
 
+**Runbook §1–§3 as the DBA runs them** (`rehearsal/local/runbook-real.js`, **8/8**, evidence `rehearsal/evidence/real-postgres-runbook-2026-11-25.json`), on a real PostgreSQL 17.5 database at migration 174 with October and November closed:
+- `compare-books.js` runs as a CLI with the **old code** (a checkout of `main`) and the **new code**;
+- the **app's own start-up runner** applies exactly 175 then 176 on `MIGRATION_DATABASE_URL`, and a second start applies nothing; the posting switch is `off`;
+- each code version shows identical books before and after the migrations;
+- the engine-fix effect is visible: where an allowance release puts expense 620000 in credit, the old November close **drops** that line and is **unbalanced by 700**; the new close includes it and balances.
+
 ## 5. Rollback evidence and plan
 - **Evidence:** §4a, local only. Restored-copy evidence is pending.
 - **Scripts:** `rollback_175_soft.sql` (preferred), `rollback_175_full.sql`, `rollback_176.sql`. The last two need explicit confirmation when data would be lost. `rollback_176.sql` removes the TRUNCATE guards, the switch guard and the custom-account sync before dropping.
@@ -135,7 +142,7 @@ Unchanged from the previous version:
 - **Unknown rates:** they stay `needs_review` until owner and accountant decide.
 
 ## 8. Security (separate work)
-See `docs/security/NPM_AUDIT_REMEDIATION.md`. None of these items blocks 175/176. P1–P3 are recommended before the next release.
+Done on its own branch, `security/remediation-2026-11` (record: `docs/security/NPM_AUDIT_REMEDIATION.md` on that branch). Server audit 12 → 3 moderate (accepted), client 16 → 0, email escaping fixed. It does not block 175/176. The trial merge of all three branches is in `MERGE_AND_DEPLOYMENT_PACKAGE.md`.
 
 ## 9. Deployment sequence (after GO only)
 1. **Pre-checks:**
@@ -178,4 +185,4 @@ See `docs/security/NPM_AUDIT_REMEDIATION.md`. None of these items blocks 175/176
 | Owner's explicit approval to deploy, and separate authorisation to merge | Owner | ☐ |
 | (Posting and import only) the three accounting approvals (§6) | Accountant | ☐ |
 
-Packages: `ACCOUNTANT_REVIEW_PACKAGE.md`, `DBA_REVIEW_PACKAGE.md`.
+Packages: `ACCOUNTANT_REVIEW_PACKAGE.md` (status in `ACCOUNTANT_DECISION_TRACKER.md`), `DBA_REVIEW_PACKAGE.md`, `MERGE_AND_DEPLOYMENT_PACKAGE.md`.

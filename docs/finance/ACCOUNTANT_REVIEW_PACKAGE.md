@@ -41,6 +41,9 @@ Before deployment, the developer and the DBA will show you an old-versus-new com
 - D-13: retiring the legacy cash ledger;
 - D-14: segregation of duties (who may record, approve, post, close and reopen). Today approvals are admin-only, with approver and recorder required to be different people.
 
+## Status
+What has been received is tracked in `ACCOUNTANT_DECISION_TRACKER.md`. As of 2026-11-25: nothing received.
+
 ## What to return
 1. The two signed tables from D01 pack §7, each with the person approving, the date and a reference.
 2. Approval of the historical commission method, or your alternative.

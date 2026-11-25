@@ -13,6 +13,8 @@
 | `src/lib/finance/applyCancellation.test.js`, `cancelSettlement.test.js`, `paymentInput.test.js` | 14 | Existing finance tests |
 | Other suites | 88 | Unchanged |
 
+On the trial merge of all three branches (`MERGE_AND_DEPLOYMENT_PACKAGE.md`): 171 tests, 170 pass (the same HR failure).
+
 **Result:** 155 tests, 154 pass. The one failure is `hrRules.test.js:362`: commit `ad8515f` changed the attendance rule and the test was not updated. That is an HR decision; the HR code is unchanged.
 
 ## Database suites (PGlite: an in-process Postgres with all migrations; single connection)
@@ -25,7 +27,7 @@ Location: `docs/finance/rehearsal/local/`.
 | `engine-validation-extra.js` | **23 / 23** | Insurance, cancellation forfeit, vendor invoice with WHT, recurring charge, petty cash, housekeeping order, holdback, payout; statements and parity with every scenario; a real query failure surfaces |
 | `paymob-webhook-test.js` | **11 / 11** | Webhook end to end: HMAC, unknown order, failed payment, amount mismatch, success, duplicate callbacks, dates taken meanwhile, fails closed |
 | `security-test.js` | **20 / 20** | Roles, page grants, API cannot flip posting, injection, owner isolation |
-| `rehearsal.js` | **26 / 26 steps** (r2 16/16, r3 45/45) | Apply, partial failure, rollback, re-apply; r3 signs its own claims with a disposable key |
+| `rehearsal.js` | **28 / 28 steps** (r2 16/16, r3 45/45) | r0 inventory, apply, partial failure, rollback, re-apply; r3 signs its own claims with a disposable key. Also runs on a real server (below) |
 | `livechecks-test.js` | all pass | Live checks 0–6 |
 | (inline) `r0_table_inventory.sql` | checked | Same database twice gives identical output; one changed row flags exactly that table |
 
@@ -37,6 +39,10 @@ PGlite has a single connection, so concurrency there is only simulated.
 The earlier `concurrency-test.js` (7/7, owner role, evidence `real-postgres-concurrency-2026-11-24.json`) is superseded by this test.
 
 This is **not** Supabase and **not** the restored copy; the rehearsal runbook repeats it there (§4b).
+
+Also on the real server (2026-11-25):
+- `REHEARSAL_ENGINE=real node rehearsal.js`: **28 / 28**, the same steps as on PGlite. Evidence: `real-postgres-rehearsal-2026-11-25.json`.
+- `runbook-real.js`: **8 / 8**. Runbook §1–§3 with `compare-books.js` as a CLI on old (`main`) and new code, and the app's own migration runner on `MIGRATION_DATABASE_URL`; the old close's DEF-CLOSE-01 defect shows up on real data shapes. Evidence: `real-postgres-runbook-2026-11-25.json`.
 
 ## Not yet covered
 - Coverage measurement of the database suites.

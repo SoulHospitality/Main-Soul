@@ -1,17 +1,26 @@
 # HANDOFF: Financial reconstruction
 
 **Updated:** 2026-11-25 · **Branch:** `feature/finance-ledger`, all work committed and pushed (the latest commit is this HANDOFF's). `main` is untouched (`ff782cd`).
-**Decision: NO-GO.** Development work is complete. What remains are external approvals and actions (below). Not merged, not deployed, posting **off**, no historical import, reports not switched to the stored ledger, production untouched.
+**Decision: NO-GO.** Development work is complete on all three branches. What remains are external approvals and actions (below). Nothing is merged or deployed. Posting is **off**, there is no historical import, reports are not switched to the stored ledger, and production is untouched.
 
 ## Start here
 | Reader | Document |
 |---|---|
-| Owner | `docs/finance/DEPLOYMENT_READINESS.md` (gates §10, deployment sequence §9) |
-| Accountant | `docs/finance/ACCOUNTANT_REVIEW_PACKAGE.md` (three decisions, questions R-1 to R-8) |
-| DBA | `docs/finance/DBA_REVIEW_PACKAGE.md` (live checks, backup and restore, rehearsal, roles and identity, deployment) |
+| Owner | `docs/finance/MERGE_AND_DEPLOYMENT_PACKAGE.md` (three branches, merge order, PR texts), then `docs/finance/DEPLOYMENT_READINESS.md` (gates §10, sequence §9) |
+| Accountant | `docs/finance/ACCOUNTANT_REVIEW_PACKAGE.md`; status in `docs/finance/ACCOUNTANT_DECISION_TRACKER.md` |
+| DBA | `docs/finance/DBA_REVIEW_PACKAGE.md` |
 | Developer | `docs/finance/TESTING_AND_VALIDATION.md`, `POSTING_CONTROLS_AUDIT.md`, `FINANCIAL_INTEGRATION_MATRIX.md`, `ACCOUNTING_ENGINE_VALIDATION.md`, `FINANCIAL_REPORT_VALIDATION.md` |
 
-## Commits on the branch
+## Branches (all pushed; none merged)
+| Branch | Head | Content |
+|---|---|---|
+| `feature/finance-ledger` | (this commit) | The financial reconstruction (below) |
+| `fix/website-booking-notification` | `21bbfc8` | Staff are now notified of new paid website bookings. A booking UUID was being written into the integer `notifications.entity_id`, so every insert failed silently. Test added |
+| `security/remediation-2026-11` | `c922268` | Server `npm audit` 12 → 3 moderate (one accepted `uuid` advisory); client 16 → 0; guest input escaped in staff emails. Record: `docs/security/NPM_AUDIT_REMEDIATION.md` on that branch |
+
+**Trial merge** of all three onto `main`: two mechanical conflicts in `Server/package.json` and its lockfile, resolutions written up. Result: 171 tests, 170 pass (the HR failure below); every database suite passes. Details are in `MERGE_AND_DEPLOYMENT_PACKAGE.md`.
+
+## Commits on this branch
 | Commit | Content |
 |---|---|
 | `6955687` | Foundation: documents, money layer, migrations 175/176, decimal.js |
@@ -21,9 +30,10 @@
 | `3caa574` | Report fixes: P&L with closed months, balance sheet after a close, unbalanced month close |
 | `97eec90` | Ledger controls from the pre-commit review (H1, H2, M1–M3, M6, M7, L1–L10) |
 | `bcefd43` | Verified identity (H3), restricted role `soul_app`, API lockdown |
-| `38a2e54` | Integration coverage (8 more scenarios) and engine error handling (query errors surface, closed-month check fails closed, unknown accounts reported) |
+| `38a2e54` | Integration coverage and engine error handling |
 | `0fffa90` | Paymob webhook automated tests |
-| (latest) | Backup and restore validation, accountant and DBA packages, final readiness |
+| `609e6f9` | Backup and restore validation, accountant and DBA packages, final readiness |
+| (latest) | Real-PostgreSQL rehearsal and runbook, accountant tracker, merge and deployment package |
 
 ## What the branch delivers (all inactive until deployed and approved)
 - **Stored, immutable double-entry ledger** (migration 176). The database enforces:
@@ -35,31 +45,33 @@
 - **Commission snapshots at confirmation** (migration 175), corrected only through a verified, logged process.
 - **Engine report fixes:** DEF-PL-01, DEF-BS-01, DEF-CLOSE-01, L4, L5, DEF-SRC-01, DEF-PER-01, DEF-ACC-01. These change displayed reports once deployed.
 - **Restricted application role** and the identity-key procedure (`docs/finance/db-security/`). The migration runner can use `MIGRATION_DATABASE_URL`.
-- **Rehearsal kit:** read-only live checks 0–6, a backup/restore inventory, r1–r5, rollbacks, and the engine-fix comparison tool.
+- **Rehearsal kit:** read-only live checks 0–6, a backup/restore inventory, r1–r5, rollbacks, the engine-fix comparison tool, and local runners for PGlite and real PostgreSQL.
 
 ## Test results (synthetic data; local)
 | Suite | Result |
 |---|---|
 | `npm test` | 155 tests, **154 pass**. The 1 failure is `hrRules.test.js:362` (commit `ad8515f` changed the attendance rule; HR to decide) |
-| PGlite: ledger / engine / engine-extra / security / Paymob / rehearsal / live checks | 139/139 · 43/43 · 23/23 · 20/20 · 11/11 · 26/26 (r3 45/45) · pass |
-| **Real PostgreSQL 17.5 as `soul_app`** (genuine multi-session) | 13/13 |
+| PGlite: ledger / engine / engine-extra / security / Paymob / live checks | 139/139 · 43/43 · 23/23 · 20/20 · 11/11 · pass |
+| Rehearsal (r0–r3, rollbacks, re-apply) | **28/28 on PGlite and 28/28 on real PostgreSQL 17.5** |
+| Real PostgreSQL 17.5 as `soul_app` (genuine multi-session) | 13/13 |
+| Real PostgreSQL 17.5, runbook §1–§3: old vs new code through `compare-books.js`, the app's own migration runner | 8/8. The old code's DEF-CLOSE-01 defect is visible (November close drops 620000 and is unbalanced by 700); the new code balances |
 
 Nothing has been run on production, Supabase or a restored copy.
 
-## External approvals and actions that remain
-1. **DBA:** live checks 0–6 on production (read-only).
-2. **DBA:** backup and restore validation into a separate project, with the inventory identical.
-3. **DBA and developer:** the restored-copy rehearsal, including the old-vs-new-code engine comparison, the `soul_app` and identity setup, concurrency and rollbacks.
-4. **Accountant** (before posting or import):
-   1. the EAS 48 decision;
-   2. a separate VAT-base decision;
-   3. the commission-history method.
+## External approvals and actions that remain (genuine blockers)
+1. **DBA, production access needed:**
+   - live checks 0–6 (read-only);
+   - backup and restore into a separate project, with the inventory identical (`pg_dump` was not available locally, so this step is prepared but unrehearsed);
+   - the restored-copy rehearsal, repeating the local runs above on real data.
+2. **Accountant:** decisions 1–3 and R-1 to R-8. None received (`ACCOUNTANT_DECISION_TRACKER.md`).
+3. **Owner:** written authorisation to merge each branch, and a separate GO to deploy each one.
+4. **At finance deployment:** the DBA runs the role and key setup on production and switches `DATABASE_URL` to `soul_app` (H3 is only effective after this).
+5. **Security deployment checks:**
+   - Render has no `TZ` set;
+   - production email path (Resend or SMTP);
+   - Render's build can reach `cdn.sheetjs.com`.
 
-   Also answers to R-1 to R-8.
-5. **Owner:** written GO to deploy, and separate authorisation to merge into `main`.
-6. **At deployment:** the DBA runs the role and key setup on production and switches `DATABASE_URL` to `soul_app` (H3 is only effective after this).
-
-## Found outside finance (not changed on this branch)
-- **HR:** the `hrRules.test.js:362` rule-versus-test mismatch (above).
-- **Website bookings:** `services/pmsNotifications.js:114` writes a booking UUID into the integer column `notifications.entity_id`, so the staff notification for each new paid website booking fails silently.
-- **Security:** `docs/security/NPM_AUDIT_REMEDIATION.md` (untracked) is the dependency and email-escaping plan, to run as its own approved work.
+## Found outside finance
+- **HR:** the `hrRules.test.js:362` rule-versus-test mismatch. Not changed; HR to decide.
+- The website-booking notification and security items are fixed on their own branches (above).
+- The untracked `docs/security/` folder in this working copy is the earlier plan. The final record is committed on the security branch.

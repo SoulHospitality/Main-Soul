@@ -1,15 +1,18 @@
-// Local deployment rehearsal of migrations 175/176 on PGlite (Postgres 16/17 in-process), using the
+// Local deployment rehearsal of migrations 175/176 on PGlite (Postgres 16/17 in-process) or, with
+// REHEARSAL_ENGINE=real, on a real PostgreSQL server (embedded-postgres; needs it and pg on NODE_PATH), using the
 // repository's rehearsal scripts. Evidence is written OUTSIDE the repository: to $REHEARSAL_EVIDENCE_DIR,
 // or the OS temp folder. Copy it into docs/finance/rehearsal/evidence/ deliberately if it should be kept.
 const fs = require('fs');
 const path = require('path');
-const { boot, applyMigration } = require('./harness');
+const { boot, bootReal, applyMigration } = require('./harness');
+const { seed174 } = require('./seed174');
+const REAL = process.env.REHEARSAL_ENGINE === 'real';
 
 const S = process.argv[2];                     // .../Server
 const REPO = path.join(S, '..');
 const RH = path.join(REPO, 'docs/finance/rehearsal');
 const read = (f) => fs.readFileSync(path.join(RH, f), 'utf8');
-const evidence = { started: new Date().toISOString(), engine: 'PGlite', steps: [] };
+const evidence = { started: new Date().toISOString(), engine: REAL ? 'PostgreSQL (embedded, real server)' : 'PGlite', steps: [] };
 let failed = 0;
 const step = (name, ok, detail) => {
   evidence.steps.push({ name, ok, detail });
@@ -18,7 +21,9 @@ const step = (name, ok, detail) => {
 };
 
 (async () => {
-  const { db, query } = await boot(S, { until: '174' });
+  const env = REAL ? await bootReal(S, { until: '174' }) : await boot(S, { until: '174' });
+  const { db, query } = env;
+  if (env.version) { evidence.version = env.version; console.log(env.version); }
   const rowsOf = (res) => res.filter((r) => r.fields.length).map((r) => r.rows);
   const sqlFile = async (f, prefix = '') => rowsOf(await db.exec(prefix + read(f)));
   // psql semantics: each statement is its own transaction (needed for r3's "later transaction" checks).
@@ -28,6 +33,8 @@ const step = (name, ok, detail) => {
     for (const s of splitSql(prefix + read(f))) { const r = await db.query(s); if (r.fields && r.fields.length) out.push(r.rows); }
     return out;
   };
+  const inventory = async () => Object.fromEntries((await sqlFile('r0_table_inventory.sql'))[0].map((r) => [r.table_name, r.fingerprint]));
+  const columnsOf = async () => Object.fromEntries((await query(`SELECT table_name, string_agg(column_name, ',' ORDER BY column_name) AS c FROM information_schema.columns WHERE table_schema = 'public' GROUP BY table_name`)).rows.map((r) => [r.table_name, r.c]));
   const fingerprint = async () => Object.fromEntries((await sqlFile('r1_fingerprint.sql'))[0].map((r) => [r.item, r.fingerprint]));
   const sameData = (a, b) => Object.keys(a).filter((k) => k !== 'migrations >= 170').every((k) => a[k] === b[k]);
   const books = require(path.join(RH, 'compare-books.js'));
@@ -36,31 +43,7 @@ const step = (name, ok, detail) => {
   const migrated = async (id) => (await query('SELECT 1 FROM _schema_migrations WHERE id = $1', [id])).rows.length === 1;
 
   // ── Seed a realistic pre-deployment database (state after migration 174) ──
-  const staff = (await query(`INSERT INTO staff_users (username, password_hash, full_name, role, is_active, sales_commission_pct)
-    VALUES ('seed_sales','x','Seed Sales','reservations',1,10),('seed_admin','x','Seed Admin','admin',1,0) RETURNING id`)).rows.map((r) => r.id);
-  const mkUnit = async (slug, pct, mode, ownerPct = null, tenant = null) => (await query(
-    `INSERT INTO units (slug, title, unit_number, status, listing_type, compound, project, beds, baths, guests, company_commission_pct, commission_mode, company_commission_owner_pct, commission_tenant_pct)
-     VALUES ($1,$1,$1,'published','rent','Marassi','Marassi',2,1,4,$2,$3,$4,$5) RETURNING id`, [slug, pct, mode, ownerPct, tenant])).rows[0].id;
-  const uA = await mkUnit('seed-a', 20, 'A'); const uB = await mkUnit('seed-b', 25, 'B', null, 5); const uC = await mkUnit('seed-c', 22, 'C', 12, 10);
-  const res = [];
-  const stays = [
-    [uA, '2026-10-03', 3, 2500, 'checked_out', 'EGP', null, 0], [uB, '2026-10-10', 4, 3000, 'checked_out', 'EGP', null, 0],
-    [uC, '2026-10-20', 2, 4000, 'checked_out', 'USD', 48.5, 0], [uC, '2026-11-02', 5, 2200, 'checked_out', 'EGP', null, 1],
-    [uA, '2026-11-15', 2, 2600, 'confirmed', 'EGP', null, 0], [uB, '2026-11-20', 3, 3100, 'checked_in', 'EGP', null, 0],
-    [uA, '2026-12-05', 4, 2700, 'pending', 'EGP', null, 0], [uB, '2026-12-12', 2, 3000, 'cancelled', 'EGP', null, 0],
-  ];
-  for (const [u, ci, n, ppn, st, cur, fx, owner] of stays) {
-    const r = (await query(`INSERT INTO reservations (unit_id, guest_name, guest_phone, check_in, check_out, nights, price_per_night, total_amount, status, currency, exchange_rate, is_owner_reservation, sales_person_id, created_by, created_at)
-      VALUES ($1,'Seed Guest','0100',$2::date,$2::date + $3::int,$3::int,$4::numeric,$4::numeric*$3::int,$5,$6,$7,$8,$9,$10,$2::date - 20) RETURNING id`, [u, ci, n, ppn, st, cur, fx, owner, staff[0], staff[1]])).rows[0].id;
-    res.push(r);
-  }
-  for (const [i, amt, method, kind, ref] of [[0, 7500, 'cash', 'collection', null], [1, 12000, 'bank_transfer', 'collection', 'TRX-1'], [2, 8000, 'paymob_card', 'collection', 'PM-1'], [4, 5200, 'cash', 'collection', null], [3, -1000, 'cash', 'refund', null]]) {
-    await query(`INSERT INTO payments (reservation_id, amount, payment_date, payment_method, status, kind, transaction_reference) VALUES ($1,$2,(SELECT check_in FROM reservations WHERE id=$1),$3,'successful',$4,$5)`, [res[i], amt, method, kind, ref]);
-  }
-  await query(`INSERT INTO expenses (unit_id, paid_by, category, description, amount, expense_date, created_by) VALUES ($2,'company','utilities_cost','Seed electricity',850,'2026-10-15',$1),($2,'owner','other','Seed repair',1200,'2026-11-05',$1)`, [staff[1], uA]);
-  await query(`INSERT INTO cash_ledger (entry_type, category, description, amount, entry_date, created_by) VALUES ('in','collection','Seed cash in',7500,'2026-10-06',$1),('out','expense','Seed cash out',850,'2026-10-15',$1)`, [staff[1]]);
-  await query(`INSERT INTO financial_posted_entries (year_month, kind, entry_id, entry_date, entry) VALUES ('2026-10','frozen','B-seed-1','2026-10-03',
-     '{"id":"B-seed-1","date":"2026-10-03","type":"booking","lines":[{"account":"105000","debit":7500,"credit":0},{"account":"404000","debit":0,"credit":6000},{"account":"401000","debit":0,"credit":1500}]}')`);
+  const { staff, res, uA } = await seed174(query);
   step('seeded a pre-deployment database (migration 174 state): 3 units (modes A/B/C), 8 stays incl. USD, owner-booked, pending, cancelled; payments incl. refund; expenses; cash_ledger; a frozen month', true);
 
   // ── Before ──
@@ -68,6 +51,12 @@ const step = (name, ok, detail) => {
   const booksBefore = await booksPrint();
   step('baseline: data fingerprint and the books the app shows (existing engine) recorded', !!fpBefore.reservations && booksBefore.entries > 0, { fpBefore, booksBefore });
   evidence.baseline = { fingerprint: fpBefore, books: booksBefore };
+  const invBefore = await inventory();
+  const invAgain = await inventory();
+  step(`r0 inventory: read-only, ${Object.keys(invBefore).length} tables, identical on a second run`, Object.keys(invBefore).length > 50 && JSON.stringify(invBefore) === JSON.stringify(invAgain));
+  const colsBefore = await columnsOf();
+  const settingsRows = async () => Object.fromEntries((await query(`SELECT key, md5(s::text) AS h FROM financial_settings s`)).rows.map((r) => [r.key, r.h]));
+  const settingsBefore = await settingsRows();
 
   // ── Recovery from a failed migration (before the real deployment) ──
   const m175 = fs.readFileSync(path.join(S, 'supabase/migrations/175_commission_snapshots.sql'), 'utf8');
@@ -94,6 +83,19 @@ const step = (name, ok, detail) => {
   const r2 = (await sqlFile('r2_verify_structure.sql'))[0];
   step(`r2 structure checks: ${r2.filter((r) => r.passed).length}/${r2.length} passed`, r2.every((r) => r.passed), r2.filter((r) => !r.passed));
   evidence.r2 = r2;
+  const invAfter = await inventory();
+  const colsNow = await columnsOf();
+  const hashChanged = Object.keys(invBefore).filter((k) => invAfter[k] !== invBefore[k]);
+  // Expected writes: the runner's migration records, and two settings rows (175's capture start date, 176's
+  // posting switch, off). Every pre-existing settings row must be unchanged.
+  const settingsNow = await settingsRows();
+  const addedKeys = Object.keys(settingsNow).filter((k) => !(k in settingsBefore)).sort();
+  const settingsKept = Object.keys(settingsBefore).every((k) => settingsNow[k] === settingsBefore[k]);
+  const expected = new Set(['_schema_migrations', 'financial_settings']);
+  const unexplained = hashChanged.filter((k) => colsNow[k] === colsBefore[k] && !expected.has(k));
+  step(`r0 after the migrations: every pre-existing table present; changed hashes only where columns were added or rows are expected (${hashChanged.join(', ') || 'none'})`,
+    Object.keys(invBefore).every((k) => k in invAfter) && unexplained.length === 0 && settingsKept &&
+      JSON.stringify(addedKeys) === '["commission_snapshots_since","ledger_posting"]', { hashChanged, unexplained, addedKeys, settingsKept });
   const fpAfter = await fingerprint();
   step('existing data unchanged by the migrations (fingerprints identical)', sameData(fpBefore, fpAfter), { fpBefore, fpAfter });
   const booksAfter = await booksPrint();
@@ -168,5 +170,6 @@ const step = (name, ok, detail) => {
   fs.writeFileSync(outFile, JSON.stringify(evidence, null, 2));
   console.log('evidence written to ' + outFile);
   console.log(failed ? `\n${failed} FAILED` : `\nALL ${evidence.steps.length} REHEARSAL STEPS PASSED`);
+  if (env.stop) await env.stop();
   process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error('CRASH', e.stack); process.exit(1); });
