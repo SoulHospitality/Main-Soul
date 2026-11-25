@@ -40,7 +40,8 @@
 | `88ef5c0` | Phase 6: migration 177 (guarded report source), reports from the stored ledger, rollback_177, rehearsal covering 177 |
 | `c7a7d0b` | Phase 7: migration 178 (permanent reconciliation history), nightly job, Data health exception, Close-month step, reconciliation dashboard |
 | `3e1cbfb` | Phase 3: production read-only checks 0–6, baselines, engine comparison |
-| (latest) | Accountant's decisions: VAT suspension, refunds reverse revenue (R-1), owner share of forfeits (R-5), books from 25/11, policy 2026.11 and its tools, full go-live rehearsal |
+| `7c6055d` | Accountant's decisions: VAT suspension, refunds reverse revenue (R-1), owner share of forfeits (R-5), books from 25/11, policy 2026.11 and its tools, full go-live rehearsal |
+| (latest) | Withholding suspended; go-live and ledger operation inside the app for CEOs and financial managers (migration 179); nightly auto-posting; "Sync changes" |
 
 ## What the branch delivers (all inactive until deployed and approved)
 - **Stored, immutable double-entry ledger** (migration 176). The database enforces:

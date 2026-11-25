@@ -29,16 +29,17 @@
 | D-03 Guest advance payments | A liability (203000) until the stay (as today) |
 | D-08 Expected credit loss | Aging matrix (as today) |
 | D-10 Income and deferred tax | Outside the system; one manual year-end entry |
-| D-14 Segregation of duties | Finance records; admins approve, close and reopen; an approver can never be the recorder (enforced by the database) |
+| D-14 Segregation of duties | CEOs and financial managers approve, switch, close and reopen (migration 179); finance records; an approver can never be the recorder (enforced by the database) |
 | D-13 Legacy cash ledger | Retired as read-only history (live check 4: never used) |
 
 ## Still open (not blocking go-live)
-- **Withholding tax** on vendor bills (3% or 1%) is a tax too, but every answer was about VAT, so it is **not** suspended. **Ask the accountant** whether "taxes 0" includes withholding.
+- ~~Withholding tax~~ **answered 2026-11-25: suspended too** (`wht_suspended_from`); vendors are paid in full from 25/11.
 - **Bank and cash balances on 25/11.** Counting starts from zero. If the accountant wants actual balances carried in, they must be signed figures, entered as one opening entry.
-- **Signed copy** of these answers, to file and to cite in the approvals.
+- ~~Signed copy~~ **not required (owner, 2026-11-25):** the owner and the accountant approve. In the system, CEOs and financial managers approve from their own login, citing "Accountant's approval confirmed by the owner".
 
 ## Change log
 | Date | Change | By |
 |---|---|---|
 | 2026-11-25 | Tracker created; nothing received | Developer |
 | 2026-11-25 | Answers received (relayed by the owner); Part D decided by the owner; engine updated (VAT suspension, R-1, R-5) | Developer, on the owner's instruction |
+| 2026-11-25 | Withholding suspended too; no signed copy needed; approvers = CEOs and financial managers (migration 179), from their own login | Developer, on the owner's instruction |

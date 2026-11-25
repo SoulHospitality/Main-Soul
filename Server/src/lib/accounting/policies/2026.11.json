@@ -1,11 +1,13 @@
 {
   "version": "2026.11",
   "effective_from": "2026-11-25",
-  "source": "Accountant's answers relayed by the owner on 2026-11-25; Part D decided by the owner (delegated). The written references are entered by the approvers when recording, from the accountant's signed copy.",
+  "source": "The accountant's decisions of 2026-11-25, approved by the accountant and the owner (owner's confirmation; no separate signed copy). Part D decided by the owner. Approved in the system by CEOs or financial managers, each from their own login.",
   "settings": {
     "revenue_presentation": "gross",
     "vat_base": "suspended",
     "vat_suspended_from": "2026-11-25",
+    "withholding_tax": "suspended",
+    "wht_suspended_from": "2026-11-25",
     "vat_note": "Taxes postponed (0) while the company negotiates with the tax authority; resume by a new policy version.",
     "books_start": "2026-11-25",
     "opening_balances": "none",

@@ -80,12 +80,12 @@ The real migration chain, seeded data and the repository's rehearsal scripts, ru
 | r0 inventory: read-only, deterministic; after the migrations only expected tables change (`reservations` gains columns; migration records; two new settings rows, posting off) | ✅ |
 | Partial-failure recovery (175 part-way, 176 at the end) | ✅ |
 | Apply, re-start skip, idempotent re-run | ✅ |
-| Structure (r2) | ✅ 18 of 18 |
+| Structure (r2) | ✅ 19 of 19 |
 | Existing data unchanged; books (same code) identical | ✅ |
 | App behaviour on the migrated DB | ✅ |
 | Behaviour (r3) | ✅ 45 of 45 |
 | Rollback with and without entries; re-apply | ✅ |
-| **Total** | **33 of 33 steps, on PGlite and on real PostgreSQL** |
+| **Total** | **35 of 35 steps, on PGlite and on real PostgreSQL** |
 
 ### 4b. Restored-copy rehearsal (not done; required)
 Follow `rehearsal/README.md` §0–9.
@@ -153,8 +153,8 @@ Done on its own branch, `security/remediation-2026-11` (record: `docs/security/N
 2. **Freeze** a 15-minute window.
 3. **Backup:** record its id.
 4. **Merge** (separately authorised): PR `feature/finance-ledger` → `main`; run `npm test` on the merge result (there is no CI).
-5. **Deploy:** set `MIGRATION_DATABASE_URL` to the owner connection. The app applies 175, 176, 177 and 178 at start-up, in that order; watch for four `Applied migration` lines. At this step the app still connects as before. Posting stays off, reports stay on the existing calculation (177), and the nightly reconciliation does nothing until posting is on (178).
-6. **Verify (read-only):** check 0 shows `178`; r2 all passed (18 checks); r1 identical to the pre-deployment run apart from the migrations line.
+5. **Deploy:** set `MIGRATION_DATABASE_URL` to the owner connection. The app applies 175, 176, 177, 178 and 179 at start-up, in that order; watch for five `Applied migration` lines. At this step the app still connects as before. Posting stays off, reports stay on the existing calculation (177), and the nightly reconciliation does nothing until posting is on (178).
+6. **Verify (read-only):** check 0 shows `179`; r2 all passed (19 checks); r1 identical to the pre-deployment run apart from the migrations line.
 7. **Security setup** (`db-security/README.md`):
    - run `ledger_roles.sql` and `provision_identity_key.sql`;
    - put the key in the app environment;

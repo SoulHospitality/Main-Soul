@@ -2,7 +2,7 @@
 
 **Scope:** `Server/src/lib/accounting/posting.js` and the database controls in migrations 175 and 176 (uncommitted Phase 5B; never applied anywhere).
 **Evidence:**
-- **PGlite suites (local, synthetic data):** `rehearsal/local/ledger-test.js` **139 of 139**; rehearsal `r3_behaviour.sql` **45 of 45**; `rehearsal.js` **33 of 33** steps (also 33 of 33 on real PostgreSQL 17.5); `security-test.js` **20 of 20**.
+- **PGlite suites (local, synthetic data):** `rehearsal/local/ledger-test.js` **139 of 139**; rehearsal `r3_behaviour.sql` **45 of 45**; `rehearsal.js` **35 of 35** steps (also 35 of 35 on real PostgreSQL 17.5); `security-test.js` **20 of 20**.
 - **Real PostgreSQL 17.5 (local embedded server, synthetic data):** `rehearsal/local/concurrency-test.js` **7 of 7**, a **genuine** multi-session test.
 
 **Principle:** every control that matters is enforced **in the database**, so no route, script or future code path can bypass it. The service adds clear error codes on top. **Limits:** §"Unresolved".

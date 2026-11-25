@@ -1,5 +1,5 @@
 {
-  "started": "2026-11-25T11:43:34.222Z",
+  "started": "2026-11-25T16:18:11.354Z",
   "steps": [
     {
       "name": "synthetic database at migration 174 (174_leave_corrections.sql) with stays, payments, expenses, cash, a frozen month, an allowance raised then released, October and November closed",
@@ -104,7 +104,7 @@
             "lines": [
               [
                 "401000",
-                "4568.75",
+                "4450.73",
                 "0.00"
               ],
               [
@@ -114,13 +114,13 @@
               ],
               [
                 "404000",
-                "20466.25",
+                "19600.79",
                 "0.00"
               ],
               [
                 "506000",
                 "0.00",
-                "20466.25"
+                "19600.79"
               ],
               [
                 "609000",
@@ -135,7 +135,7 @@
               [
                 "302000",
                 "0.00",
-                "5276.87"
+                "5158.85"
               ]
             ]
           }
@@ -146,16 +146,17 @@
       }
     },
     {
-      "name": "the app's runner (on MIGRATION_DATABASE_URL) applies exactly 175, 176, 177 then 178: 175_commission_snapshots.sql, 176_ledger_core.sql, 177_ledger_report_source.sql, 178_ledger_reconciliation_runs.sql",
+      "name": "the app's runner (on MIGRATION_DATABASE_URL) applies exactly 175, 176, 177, 178 then 179: 175_commission_snapshots.sql, 176_ledger_core.sql, 177_ledger_report_source.sql, 178_ledger_reconciliation_runs.sql, 179_ledger_finance_managers.sql",
       "ok": true,
       "detail": {
         "applied1": [
           "Applied migration 175_commission_snapshots.sql",
           "Applied migration 176_ledger_core.sql",
           "Applied migration 177_ledger_report_source.sql",
-          "Applied migration 178_ledger_reconciliation_runs.sql"
+          "Applied migration 178_ledger_reconciliation_runs.sql",
+          "Applied migration 179_ledger_finance_managers.sql"
         ],
-        "log": "[db] Migrations dir: C:\\Users\\i7\\Desktop\\Main-Soul\\Server\\supabase\\migrations\n[db] Found 178 migration file(s)\n[db] Running migrations on MIGRATION_DATABASE_URL\n[db] Applied migration 175_commission_snapshots.sql\n[db] Applied migration 176_ledger_core.sql\n[db] Applied migration 177_ledger_report_source.sql\n[db] Applied migration 178_ledger_reconciliation_runs.sql\n"
+        "log": "[db] Migrations dir: C:\\Users\\i7\\Desktop\\Main-Soul\\Server\\supabase\\migrations\n[db] Found 179 migration file(s)\n[db] Running migrations on MIGRATION_DATABASE_URL\n[db] Applied migration 175_commission_snapshots.sql\n[db] Applied migration 176_ledger_core.sql\n[db] Applied migration 177_ledger_report_source.sql\n[db] Applied migration 178_ledger_reconciliation_runs.sql\n[db] Applied migration 179_ledger_finance_managers.sql\n"
       }
     },
     {
@@ -165,7 +166,7 @@
     {
       "name": "a second app start applies nothing",
       "ok": true,
-      "detail": "[db] Migrations dir: C:\\Users\\i7\\Desktop\\Main-Soul\\Server\\supabase\\migrations\n[db] Found 178 migration file(s)\n[db] Running migrations on MIGRATION_DATABASE_URL\n"
+      "detail": "[db] Migrations dir: C:\\Users\\i7\\Desktop\\Main-Soul\\Server\\supabase\\migrations\n[db] Found 179 migration file(s)\n[db] Running migrations on MIGRATION_DATABASE_URL\n"
     },
     {
       "name": "posting switch present and off after deployment (off)",
@@ -269,7 +270,7 @@
         "lines": [
           [
             "401000",
-            "4568.75",
+            "4450.73",
             "0.00"
           ],
           [
@@ -279,13 +280,13 @@
           ],
           [
             "404000",
-            "20466.25",
+            "19600.79",
             "0.00"
           ],
           [
             "506000",
             "0.00",
-            "20466.25"
+            "19600.79"
           ],
           [
             "609000",
@@ -300,7 +301,7 @@
           [
             "302000",
             "0.00",
-            "5276.87"
+            "5158.85"
           ]
         ]
       }
@@ -644,9 +645,9 @@
       ],
       [
         "105000",
-        "34639.63",
+        "33639.63",
         "5200.00",
-        6
+        5
       ],
       [
         "105900",
@@ -710,9 +711,9 @@
       ],
       [
         "202000",
-        "1200.00",
+        "2065.46",
         "20466.25",
-        4
+        5
       ],
       [
         "203000",
@@ -728,9 +729,9 @@
       ],
       [
         "205000",
-        "0.00",
+        "16.52",
         "639.63",
-        3
+        4
       ],
       [
         "206000",
@@ -759,7 +760,7 @@
       [
         "302000",
         "0.00",
-        "1125608.63",
+        "1125490.61",
         6
       ],
       [
@@ -778,7 +779,7 @@
         "401000",
         "6068.75",
         "6068.75",
-        6
+        7
       ],
       [
         "402000",
@@ -796,7 +797,7 @@
         "404000",
         "26466.25",
         "26466.25",
-        6
+        7
       ],
       [
         "409000",
@@ -826,7 +827,7 @@
         "506000",
         "20466.25",
         "20466.25",
-        4
+        5
       ],
       [
         "508000",
@@ -926,7 +927,7 @@
       ]
     ]
   },
-  "finished": "2026-11-25T11:43:46.140Z",
+  "finished": "2026-11-25T16:18:35.358Z",
   "summary": {
     "steps": 9,
     "failed": 0

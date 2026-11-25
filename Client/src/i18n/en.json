@@ -1068,8 +1068,8 @@
         "rate": "Rate",
         "wht": "WHT",
         "totalWhtPayable": "Total WHT payable",
-        "suspendedTitle": "VAT is suspended from {{date}}",
-        "suspendedBody": "By the accountant's decision, no output or input VAT is booked from this date while the company agrees its position with the tax authority. Earlier periods keep their VAT. Withholding tax is not affected."
+        "suspendedTitle": "Taxes are suspended from {{date}}",
+        "suspendedBody": "By the accountant's decision, no VAT (output or input) and no withholding tax are booked from this date while the company agrees its position with the tax authority; vendors are paid in full. Earlier periods keep their taxes."
       },
       "owners": {
         "description": "You can settle an owner's balance yourself — no withdrawal request required. Paid amounts post against owner trust (202000).",
@@ -2310,6 +2310,39 @@
           "breaks": "Breaks",
           "accountsOff": "Accounts off",
           "nightly": "Nightly"
+        },
+        "go": {
+          "title": "Go-live: accounting policy {{version}}",
+          "hint": "Approved decisions from {{date}}. CEOs and financial managers do each step from their own login; every step is checked by the database and logged.",
+          "confirm": "Confirm",
+          "cancel": "Cancel",
+          "done": "Done",
+          "approve": "Approve",
+          "approvedBy": "Approved by {{who}}",
+          "d01What": "Revenue presented gross (the accountant's decision)",
+          "vatWhat": "Taxes suspended from the start date: no VAT and no withholding",
+          "record": "Record policy",
+          "recorded": "Policy recorded as approved",
+          "recordWhat": "Done by a CEO or financial manager who did not approve; cite the basis of the approval",
+          "referencePh": "e.g. Accountant's approval confirmed by the owner, 25 Nov 2026",
+          "postingOn": "Switch posting on",
+          "postingWhat": "The ledger starts recording; the nightly job posts new activity",
+          "sync": "Sync changes",
+          "syncWhat": "Posts new activity now and replaces entries whose source changed (under your name); runs nightly automatically for new activity",
+          "reportsLedger": "Switch reports to the ledger",
+          "reportsBack": "Switch reports back to live calculation",
+          "reportsWhat": "After a clean month of parallel running",
+          "reasonLabel": "Reason for switches:",
+          "reasonPh": "e.g. Owner's instruction, 25 Nov 2026",
+          "onlyManagers": "Only CEOs and financial managers can do these steps.",
+          "steps": {
+            "d01": "Approve revenue presentation",
+            "vat": "Approve taxes",
+            "record": "Record the approved policy",
+            "posting": "Posting",
+            "sync": "Ledger up to date",
+            "reports": "Reports from the ledger"
+          }
         }
       },
       "commissionReview": {

@@ -632,14 +632,15 @@ router.get('/financial-system/overview', requireRoles('admin', 'finance', 'finan
       expParams
     );
 
+    await require('../../lib/finance/vatPolicy').refreshVatPolicy();
     let expensesPayable = 0;
     let totalWht = 0;
     for (const e of expenseRows) {
       const amt = parseFloat(e.amount) || 0;
       expensesPayable += amt;
-      const wht = withholdingTax(amt, {
-        ratePct: e.category === 'professional' ? 1 : 3,
-      });
+      const wht = require('../../lib/finance/vatPolicy').whtActiveFor(String(e.expense_date || e.created_at || '').slice(0, 10))
+        ? withholdingTax(amt, { ratePct: e.category === 'professional' ? 1 : 3 })
+        : { wht_amount: 0 };
       totalWht += wht.wht_amount;
     }
 
@@ -929,10 +930,13 @@ router.get('/financial-system/ledger', requireRoles('admin', 'finance', 'finance
       expParams
     );
 
+    await require('../../lib/finance/vatPolicy').refreshVatPolicy();
     for (const e of expenses) {
       const amt = parseFloat(e.amount) || 0;
       const acct = EXPENSE_CATEGORY_TO_ACCOUNT[e.category] || '605000';
-      const wht = withholdingTax(amt, { ratePct: e.category === 'professional' ? 1 : 3 });
+      const wht = require('../../lib/finance/vatPolicy').whtActiveFor(String(e.expense_date || '').slice(0, 10))
+        ? withholdingTax(amt, { ratePct: e.category === 'professional' ? 1 : 3 })
+        : { wht_amount: 0 };
       journal.push({
         id: `EXP-${e.id}`,
         date: e.expense_date,
@@ -3367,7 +3371,10 @@ router.post('/financial-system/vendor-invoices', requireRoles('admin', 'finance'
     if (!vendorRows[0]) return res.status(404).json({ error: 'Vendor not found' });
     const vendor = vendorRows[0];
 
-    const whtPct = parseFloat(vendor.wht_rate_pct) || 0;
+    // Withholding is suspended from wht_suspended_from (accountant, 2026-11-25): the vendor is then paid in full.
+    const taxPolicy = require('../../lib/finance/vatPolicy');
+    await taxPolicy.refreshVatPolicy();
+    const whtPct = taxPolicy.whtActiveFor(date) ? parseFloat(vendor.wht_rate_pct) || 0 : 0;
     const whtAmount = round2(amt * whtPct / 100);
     const netPayable = round2(amt - whtAmount);
     const termsDays = parseInt(vendor.payment_terms_days, 10) || 30;

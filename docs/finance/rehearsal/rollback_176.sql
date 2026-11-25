@@ -9,6 +9,9 @@ DO $$
 DECLARE n bigint := 0;
 BEGIN
   -- 178 (reconciliation history) and 177 (report source) depend on functions removed here: roll them back first.
+  IF EXISTS (SELECT 1 FROM public._schema_migrations WHERE id = '179_ledger_finance_managers.sql') THEN
+    RAISE EXCEPTION 'Refusing: migration 179 is still installed. Run rollback_179.sql first.';
+  END IF;
   IF to_regclass('public.ledger_reconciliation_runs') IS NOT NULL THEN
     RAISE EXCEPTION 'Refusing: migration 178 is still installed. Run rollback_178.sql first.';
   END IF;

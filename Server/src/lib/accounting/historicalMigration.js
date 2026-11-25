@@ -245,9 +245,14 @@ async function execute(p, { actorId = null, runBy = null } = {}, deps = {}) {
  * required because replacements are corrections. Reference entries that disappeared are reported, not
  * reversed automatically.
  */
-async function sync(p, { actorId, reason = 'Parallel-run sync: reference changed' }, deps = {}) {
+/**
+ * replaceChanged=false (the nightly job): post new entries only; changed or reversed ones are counted as
+ * pendingChanges for a person to sync. origin: what new entries are posted as ('migrated' for the history import,
+ * 'system' for live activity).
+ */
+async function sync(p, { actorId = null, reason = 'Parallel-run sync: reference changed', replaceChanged = true, origin = null }, deps = {}) {
   const pool = deps.pool || defaultPool;
-  if (!actorId) throw new MigrationError('A verified person is required to sync (replacements are corrections)', 'NO_ACTOR');
+  if (replaceChanged && !actorId) throw new MigrationError('A verified person is required to sync (replacements are corrections)', 'NO_ACTOR');
   assertPlanClean(p);
   const c0 = await pool.connect();
   try {
@@ -255,7 +260,7 @@ async function sync(p, { actorId, reason = 'Parallel-run sync: reference changed
   } finally {
     c0.release();
   }
-  const result = { posted: 0, unchanged: 0, replaced: 0, failed: [] };
+  const result = { posted: 0, unchanged: 0, replaced: 0, pendingChanges: 0, failed: [] };
   for (const entry of p.entries) {
     const client = await pool.connect();
     try {
@@ -274,13 +279,18 @@ async function sync(p, { actorId, reason = 'Parallel-run sync: reference changed
           `SELECT idempotency_key FROM ledger_entries WHERE source_id = $1 AND source_module = $2 AND origin <> 'reversal' ORDER BY id DESC LIMIT 1`,
           [entry.sourceId, entry.sourceModule]
         );
-        const key = prior[0] ? `${entry.idempotencyKey}#v${Number(String(prior[0].idempotency_key).split('#v')[1] || 1) + 1}` : entry.idempotencyKey;
-        await posting.postEntry({ ...entry, idempotencyKey: key, ...(prior[0] ? { origin: 'adjustment', actorId } : {}) }, { client });
-        result.posted++;
+        if (prior[0] && !replaceChanged) {
+          result.pendingChanges++;
+        } else {
+          const key = prior[0] ? `${entry.idempotencyKey}#v${Number(String(prior[0].idempotency_key).split('#v')[1] || 1) + 1}` : entry.idempotencyKey;
+          await posting.postEntry({ ...entry, ...(origin ? { origin } : {}), idempotencyKey: key, ...(prior[0] ? { origin: 'adjustment', actorId } : {}) }, { client });
+          result.posted++;
+        }
       } else {
         const lines = (await client.query(`SELECT account_code AS account, base_debit AS debit, base_credit AS credit FROM ledger_lines WHERE entry_id = $1`, [current.id])).rows;
         const same = JSON.stringify(netByAccount(lines)) === JSON.stringify(netByAccount(entry.lines.map(lineBase)));
         if (same) result.unchanged++;
+        else if (!replaceChanged) result.pendingChanges++;
         else {
           const version = Number(String(current.idempotency_key).split('#v')[1] || 1) + 1;
           await posting.replaceEntry(current.id, { ...entry, origin: 'adjustment', idempotencyKey: `${entry.idempotencyKey}#v${version}` }, { reason, actorId }, { client });

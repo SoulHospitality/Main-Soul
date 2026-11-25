@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { AlertTriangle, CheckCircle2, CircleDashed, KeyRound, Lock, RefreshCw, ShieldCheck } from 'lucide-react';
@@ -141,6 +142,8 @@ export function LedgerControlsPage() {
         </div>
       ) : null}
 
+      <GoLiveSection data={data} />
+
       <Section title={t('pms.fin.ledger.gatesTitle')} hint={t('pms.fin.ledger.gatesHint')}>
         <ol className="space-y-2">
           {gates.map((s, i) => (
@@ -268,6 +271,133 @@ export function LedgerControlsPage() {
         {t('pms.fin.ledger.readOnlyNote')}
       </p>
     </div>
+  );
+}
+
+/** Two-step button: the first click arms it, the second performs the action (no browser dialogs). */
+function ConfirmButton({ label, confirmLabel, onConfirm, disabled, pending, tone = 'primary' }) {
+  const { t } = useFinLocale();
+  const [armed, setArmed] = useState(false);
+  if (armed) {
+    return (
+      <span className="inline-flex gap-1.5">
+        <button type="button" className="btn-primary !px-3 !py-1.5 text-sm" disabled={pending} onClick={() => { setArmed(false); onConfirm(); }}>
+          {confirmLabel || t('pms.fin.ledger.go.confirm')}
+        </button>
+        <button type="button" className="btn-secondary !px-3 !py-1.5 text-sm" onClick={() => setArmed(false)}>{t('pms.fin.ledger.go.cancel')}</button>
+      </span>
+    );
+  }
+  return (
+    <button type="button" className={`${tone === 'primary' ? 'btn-primary' : 'btn-secondary'} !px-3 !py-1.5 text-sm`} disabled={disabled || pending} onClick={() => setArmed(true)}>
+      {label}
+    </button>
+  );
+}
+
+/**
+ * Go-live (owner's decision, 2026-11-25): CEOs and financial managers approve, record and switch from their own login.
+ * The server acts as the logged-in person; the database enforces every rule and logs each step.
+ */
+function GoLiveSection({ data }) {
+  const { t } = useFinLocale();
+  const qc = useQueryClient();
+  const go = data.golive;
+  const [reference, setReference] = useState('');
+  const [reason, setReason] = useState('');
+  const act = useMutation({
+    mutationFn: ({ path, body }) => api.post(path, body).then((r) => r.data),
+    onSuccess: () => {
+      toast.success(t('pms.fin.ledger.go.done'));
+      qc.invalidateQueries({ queryKey: ['financial-system-ledger-controls'] });
+      qc.invalidateQueries({ queryKey: ['financial-system-health'] });
+    },
+    onError: (e) => toast.error(e?.response?.data?.error || t('pms.fin.ledger.loadError'), { duration: 8000 }),
+  });
+  if (!go) return null;
+  const can = go.me?.can_manage;
+  const byPurpose = (p) => (go.approvals || []).filter((a) => a.purpose === p);
+  const approvedPolicy = go.status === 'approved';
+  const postingOn = data.posting?.state === 'on';
+  const reportsLedger = data.reports?.source === 'ledger';
+  const done = (x) => (x ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-gray-600');
+  const who = (list) => list.map((a) => a.approver_name).filter(Boolean).join(', ');
+  const steps = [
+    {
+      id: 'd01',
+      ok: byPurpose('policy_d01').length > 0,
+      detail: byPurpose('policy_d01').length ? t('pms.fin.ledger.go.approvedBy', { who: who(byPurpose('policy_d01')) }) : t('pms.fin.ledger.go.d01What'),
+      action: can && !byPurpose('policy_d01').length ? <ConfirmButton label={t('pms.fin.ledger.go.approve')} pending={act.isPending} onConfirm={() => act.mutate({ path: '/financial-system/ledger/approve', body: { purpose: 'd01' } })} /> : null,
+    },
+    {
+      id: 'vat',
+      ok: byPurpose('policy_vat').length > 0,
+      detail: byPurpose('policy_vat').length ? t('pms.fin.ledger.go.approvedBy', { who: who(byPurpose('policy_vat')) }) : t('pms.fin.ledger.go.vatWhat'),
+      action: can && !byPurpose('policy_vat').length ? <ConfirmButton label={t('pms.fin.ledger.go.approve')} pending={act.isPending} onConfirm={() => act.mutate({ path: '/financial-system/ledger/approve', body: { purpose: 'vat' } })} /> : null,
+    },
+    {
+      id: 'record',
+      ok: approvedPolicy,
+      detail: approvedPolicy ? t('pms.fin.ledger.go.recorded') : t('pms.fin.ledger.go.recordWhat'),
+      action:
+        can && !approvedPolicy && byPurpose('policy_d01').length && byPurpose('policy_vat').length ? (
+          <span className="flex flex-wrap items-center gap-2">
+            <input className="input !py-1.5 text-sm" style={{ minWidth: 260 }} value={reference} onChange={(e) => setReference(e.target.value)} placeholder={t('pms.fin.ledger.go.referencePh')} />
+            <ConfirmButton label={t('pms.fin.ledger.go.record')} pending={act.isPending} disabled={reference.trim().length < 10} onConfirm={() => act.mutate({ path: '/financial-system/ledger/record', body: { reference } })} />
+          </span>
+        ) : null,
+    },
+    {
+      id: 'posting',
+      ok: postingOn,
+      detail: postingOn ? t('pms.fin.ledger.postingOn') : t('pms.fin.ledger.go.postingWhat'),
+      action: can && approvedPolicy && !postingOn ? <ConfirmButton label={t('pms.fin.ledger.go.postingOn')} pending={act.isPending} disabled={reason.trim().length < 10} onConfirm={() => act.mutate({ path: '/financial-system/ledger/switch', body: { control: 'posting', value: 'on', reason } })} /> : null,
+    },
+    {
+      id: 'sync',
+      ok: postingOn && (data.ledger?.entries ?? 0) > 0,
+      detail: t('pms.fin.ledger.go.syncWhat'),
+      action: can && postingOn ? <ConfirmButton label={t('pms.fin.ledger.go.sync')} tone="secondary" pending={act.isPending} onConfirm={() => act.mutate({ path: '/financial-system/ledger/sync', body: {} })} /> : null,
+    },
+    {
+      id: 'reports',
+      ok: reportsLedger,
+      detail: reportsLedger ? t('pms.fin.ledger.reportsFromLedger') : t('pms.fin.ledger.go.reportsWhat'),
+      action:
+        can && postingOn ? (
+          <ConfirmButton
+            label={reportsLedger ? t('pms.fin.ledger.go.reportsBack') : t('pms.fin.ledger.go.reportsLedger')}
+            tone="secondary"
+            pending={act.isPending}
+            disabled={reason.trim().length < 10}
+            onConfirm={() => act.mutate({ path: '/financial-system/ledger/switch', body: { control: 'reports', value: reportsLedger ? 'engine' : 'ledger', reason } })}
+          />
+        ) : null,
+    },
+  ];
+  return (
+    <Section title={t('pms.fin.ledger.go.title', { version: go.policy.version })} hint={t('pms.fin.ledger.go.hint', { date: formatDate(go.policy.effective_from) })}>
+      <ol className="space-y-2">
+        {steps.map((s, i) => (
+          <li key={s.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-soul-line/70 px-4 py-2.5">
+            <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${done(s.ok)}`}>{s.ok ? '✓' : i + 1}</span>
+            <span className="min-w-0 flex-1 text-sm">
+              <span className="font-medium">{t(`pms.fin.ledger.go.steps.${s.id}`)}</span>
+              <span className="block text-xs text-gray-500">{s.detail}</span>
+            </span>
+            {s.action}
+          </li>
+        ))}
+      </ol>
+      {can ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <label className="text-xs text-gray-500" htmlFor="go-reason">{t('pms.fin.ledger.go.reasonLabel')}</label>
+          <input id="go-reason" className="input !py-1.5 text-sm" style={{ minWidth: 300 }} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t('pms.fin.ledger.go.reasonPh')} />
+        </div>
+      ) : (
+        <p className="mt-3 text-xs text-gray-500">{t('pms.fin.ledger.go.onlyManagers')}</p>
+      )}
+    </Section>
   );
 }
 

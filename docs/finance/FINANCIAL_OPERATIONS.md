@@ -48,4 +48,4 @@
 - the Data health endpoint includes the check, and it clears after the fix;
 - the job is started with the server.
 
-The deployment rehearsal now applies and rolls back 175–178 in order: 33/33 on PGlite and on real PostgreSQL 17.5, r2 18/18.
+The deployment rehearsal now applies and rolls back 175–179 in order: 35/35 on PGlite and on real PostgreSQL 17.5, r2 19/19.

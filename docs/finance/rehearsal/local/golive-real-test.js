@@ -47,7 +47,7 @@ const ok = (cond, name, detail) => {
     const childEnv = { ...process.env, DATABASE_URL: url, MIGRATION_DATABASE_URL: url, NODE_ENV: 'development' };
     const dep = spawnSync(process.execPath, ['-e', runner], { env: childEnv, encoding: 'utf8' });
     const applied = (await query(`SELECT id FROM _schema_migrations WHERE id >= '175' ORDER BY id`)).rows.map((r) => r.id);
-    ok(dep.status === 0 && applied.length === 4, `deploy: the app applied ${applied.join(', ')}`, dep.stderr);
+    ok(dep.status === 0 && applied.length === 5, `deploy: the app applied ${applied.join(', ')}`, dep.stderr);
 
     // ── The accountant's settings ──
     await db.exec(fs.readFileSync(path.join(DEP, '2026-11-25_accountant_settings.sql'), 'utf8'));
@@ -65,7 +65,7 @@ const ok = (cond, name, detail) => {
       return { code: r.status, out: r.stdout, err: r.stderr };
     };
     const host = ['--confirm-host', '127.0.0.1', '--execute'];
-    let r = tool('ledger-policy.js', 'record', '--version', '2026.11', '--effective', '2026-11-25', '--settings', path.join(DEP, 'policy-2026.11.json'), '--actor', '903',
+    let r = tool('ledger-policy.js', 'record', '--version', '2026.11', '--effective', '2026-11-25', '--settings', path.join(S, 'src/lib/accounting/policies/2026.11.json'), '--actor', '903',
       '--d01-approver', '901', '--d01-ref', 'SYNTHETIC TEST REF', '--vat-approver', '902', '--vat-ref', 'SYNTHETIC TEST REF', ...host);
     ok(r.code === 1 && /has not recorded/.test(r.err), 'recording the policy before the approvals is refused by the database', r.err.slice(-200));
     r = tool('ledger-policy.js', 'approve', '--purpose', 'd01', '--version', '2026.11', '--actor', '903', ...host);
@@ -74,10 +74,10 @@ const ok = (cond, name, detail) => {
     ok(r.code === 0, 'admin A records the revenue (EAS 48) approval', r.err.slice(-200));
     r = tool('ledger-policy.js', 'approve', '--purpose', 'vat', '--version', '2026.11', '--actor', '902', ...host);
     ok(r.code === 0, 'admin B records the VAT-base approval', r.err.slice(-200));
-    r = tool('ledger-policy.js', 'record', '--version', '2026.11', '--effective', '2026-11-25', '--settings', path.join(DEP, 'policy-2026.11.json'), '--actor', '901',
+    r = tool('ledger-policy.js', 'record', '--version', '2026.11', '--effective', '2026-11-25', '--settings', path.join(S, 'src/lib/accounting/policies/2026.11.json'), '--actor', '901',
       '--d01-approver', '901', '--d01-ref', 'SYNTHETIC TEST REF', '--vat-approver', '902', '--vat-ref', 'SYNTHETIC TEST REF', ...host);
     ok(r.code === 1 && /cannot be the person who recorded/.test(r.err), 'an approver cannot record the policy', r.err.slice(-200));
-    r = tool('ledger-policy.js', 'record', '--version', '2026.11', '--effective', '2026-11-25', '--settings', path.join(DEP, 'policy-2026.11.json'), '--actor', '903',
+    r = tool('ledger-policy.js', 'record', '--version', '2026.11', '--effective', '2026-11-25', '--settings', path.join(S, 'src/lib/accounting/policies/2026.11.json'), '--actor', '903',
       '--d01-approver', '901', '--d01-ref', 'SYNTHETIC TEST REF', '--vat-approver', '902', '--vat-ref', 'SYNTHETIC TEST REF', ...host);
     const pol = (await query(`SELECT status, settings->>'revenue_presentation' AS rev, settings->>'vat_base' AS vat, effective_from::text AS eff FROM ledger_policies WHERE version = '2026.11'`)).rows[0];
     ok(r.code === 0 && pol?.status === 'approved' && pol.rev === 'gross' && pol.vat === 'suspended' && pol.eff === '2026-11-25', 'the finance recorder records policy 2026.11 (gross, VAT suspended, from 25/11) as approved', { pol, err: r.err.slice(-200) });

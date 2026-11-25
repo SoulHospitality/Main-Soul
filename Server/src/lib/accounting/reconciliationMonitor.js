@@ -34,7 +34,12 @@ async function runReconciliation({ trigger = 'nightly', runBy = null, from = nul
   if (!st.installed) return { skipped: 'not installed (migration 178)' };
   if (!st.live) return { skipped: 'ledger posting is off' };
   const periodTo = to || cairoToday();
-  const periodFrom = from || previousMonthStart(periodTo);
+  // Never before the approved policy's start (the books start): earlier activity is outside the ledger by design.
+  let periodFrom = from || previousMonthStart(periodTo);
+  if (!from) {
+    const { rows } = await query(`SELECT p.effective_from::text AS f FROM ledger_policies p WHERE p.version = public.ledger_policy_in_force($1::date)`, [periodTo]).catch(() => ({ rows: [] }));
+    if (rows[0]?.f && rows[0].f > periodFrom) periodFrom = rows[0].f;
+  }
   const r = await reconcile({ from: periodFrom, to: periodTo }, deps);
   const { rows } = await query(
     `INSERT INTO ledger_reconciliation_runs (trigger, run_by, period_from, period_to, clean, buckets, account_differences, sample)

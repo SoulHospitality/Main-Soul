@@ -1,4 +1,4 @@
--- Rehearsal r2: migrations 175, 176, 177 and 178 are in place and inert. READ-ONLY. Every row must say passed = true.
+-- Rehearsal r2: migrations 175 to 179 are in place and inert. READ-ONLY. Every row must say passed = true.
 BEGIN TRANSACTION READ ONLY;
 
 WITH c(check_name, passed, detail) AS (
@@ -32,6 +32,9 @@ WITH c(check_name, passed, detail) AS (
   UNION ALL SELECT 'no approved accounting policy exists', NOT EXISTS (SELECT 1 FROM public.ledger_policies WHERE status = 'approved'), NULL
   UNION ALL SELECT 'posting switch is off',
     (SELECT value_text FROM public.financial_settings WHERE key = 'ledger_posting') = 'off', NULL
+  UNION ALL SELECT '179: CEOs and financial managers are the authorised approvers',
+    EXISTS (SELECT 1 FROM public._schema_migrations WHERE id = '179_ledger_finance_managers.sql')
+    AND pg_get_functiondef('public.ledger_is_active_admin(integer)'::regprocedure) LIKE '%finance_manager%', NULL
   UNION ALL SELECT '178: reconciliation history installed, append-only and empty',
     EXISTS (SELECT 1 FROM public._schema_migrations WHERE id = '178_ledger_reconciliation_runs.sql')
     AND (SELECT COUNT(*) = 0 FROM public.ledger_reconciliation_runs)

@@ -9,6 +9,16 @@ const { query } = require('../../config/db');
 const { requireRoles } = require('../../middleware/auth');
 const { identityKey } = require('../../lib/accounting/identity');
 const monitor = require('../../lib/accounting/reconciliationMonitor');
+const POLICY = require('../../lib/accounting/policies/2026.11.json');
+
+// CEOs (role admin) and financial managers run the go-live and the ledger (owner's decision, 2026-11-25; migration 179).
+const MANAGE = requireRoles('admin', 'finance_manager');
+
+/** A database refusal (a guard or rule) is the user's answer, not a server fault. */
+function refusal(res, e) {
+  const msg = String(e.message || e);
+  return res.status(409).json({ error: msg.replace(/^.*?ERROR:s*/, '') });
+}
 
 const router = express.Router();
 const FINANCE = requireRoles('admin', 'finance', 'finance_manager');
@@ -25,6 +35,24 @@ function identityStatus() {
   } catch {
     return 'invalid';
   }
+}
+
+/** The policy to approve (from the server's policy file), its recorded approvals, and what this user may do. */
+async function goliveState(user) {
+  const { rows: approvals } = await query(
+    `SELECT a.purpose, a.approver_id, s.full_name AS approver_name, a.approved_at
+     FROM ledger_approvals a LEFT JOIN staff_users s ON s.id = a.approver_id
+     WHERE a.subject = $1 AND a.purpose IN ('policy_d01', 'policy_vat') ORDER BY a.approved_at`,
+    [POLICY.version]
+  );
+  const { rows: rec } = await query(`SELECT status FROM ledger_policies WHERE version = $1`, [POLICY.version]);
+  const role = user?.role;
+  return {
+    policy: { version: POLICY.version, effective_from: POLICY.effective_from, settings: POLICY.settings, source: POLICY.source },
+    approvals,
+    status: rec[0]?.status || null,
+    me: { id: user?.id || null, can_manage: role === 'admin' || role === 'finance_manager', approved: approvals.filter((a) => a.approver_id === user?.id).map((a) => a.purpose) },
+  };
 }
 
 router.get('/financial-system/ledger-controls', FINANCE, async (_req, res, next) => {
@@ -105,6 +133,7 @@ router.get('/financial-system/ledger-controls', FINANCE, async (_req, res, next)
       periods: periods.rows,
       control_log: log.rows,
       reconciliation: await monitor.recentRuns(10),
+      golive: await goliveState(_req.user),
     });
   } catch (e) {
     next(e);
@@ -114,10 +143,77 @@ router.get('/financial-system/ledger-controls', FINANCE, async (_req, res, next)
 /** Accountant's decisions in force (2026-11-25): VAT suspension date and the historical-commission decision. */
 router.get('/financial-system/vat-policy', FINANCE, async (_req, res, next) => {
   try {
-    const { rows } = await query(`SELECT key, value_text FROM financial_settings WHERE key IN ('vat_suspended_from', 'commission_history_decision')`);
+    const { rows } = await query(`SELECT key, value_text FROM financial_settings WHERE key IN ('vat_suspended_from', 'wht_suspended_from', 'commission_history_decision')`);
     const s = Object.fromEntries(rows.map((r) => [r.key, r.value_text]));
-    res.json({ vat_suspended_from: s.vat_suspended_from || null, commission_history_decision: s.commission_history_decision || null });
+    res.json({ vat_suspended_from: s.vat_suspended_from || null, wht_suspended_from: s.wht_suspended_from || null, commission_history_decision: s.commission_history_decision || null });
   } catch (e) {
+    next(e);
+  }
+});
+
+/** Go-live step: the logged-in CEO or financial manager records their own approval ('d01' revenue, or 'vat' taxes). */
+router.post('/financial-system/ledger/approve', MANAGE, async (req, res, next) => {
+  try {
+    const purpose = req.body?.purpose;
+    if (!['d01', 'vat'].includes(purpose)) return res.status(400).json({ error: 'purpose must be d01 or vat' });
+    await require('../../lib/accounting/policy').approve({ version: POLICY.version, purpose, actorId: req.user.id });
+    res.json({ approved: purpose, version: POLICY.version });
+  } catch (e) {
+    if (e.code && /^[0-9A-Z]{5}$/.test(e.code)) return refusal(res, e);
+    if (/approval|admin|identity|claim/i.test(e.message || '')) return refusal(res, e);
+    next(e);
+  }
+});
+
+/** Go-live step: a CEO or financial manager who did NOT approve records the policy as approved, citing the basis. */
+router.post('/financial-system/ledger/record', MANAGE, async (req, res, next) => {
+  try {
+    const reference = String(req.body?.reference || '').trim();
+    if (reference.length < 10) return res.status(400).json({ error: 'Give the basis of the approval (10+ characters)' });
+    const { rows } = await query(
+      `SELECT purpose, approver_id FROM ledger_approvals WHERE subject = $1 AND purpose IN ('policy_d01', 'policy_vat') ORDER BY approved_at DESC`,
+      [POLICY.version]
+    );
+    const d01 = rows.find((r) => r.purpose === 'policy_d01');
+    const vat = rows.find((r) => r.purpose === 'policy_vat');
+    if (!d01 || !vat) return res.status(409).json({ error: 'Both approvals (revenue and taxes) must be recorded first' });
+    const row = await require('../../lib/accounting/policy').recordApproved({
+      version: POLICY.version, effectiveFrom: POLICY.effective_from, settings: POLICY.settings, recorderId: req.user.id,
+      d01ApproverId: d01.approver_id, d01Ref: reference, vatApproverId: vat.approver_id, vatRef: reference,
+    });
+    res.json(row);
+  } catch (e) {
+    if (e.code && /^[0-9A-Z]{5}$/.test(e.code)) return refusal(res, e);
+    next(e);
+  }
+});
+
+/** Posting switch and report source: a CEO or financial manager, with a reason; verified and logged by the database. */
+router.post('/financial-system/ledger/switch', MANAGE, async (req, res, next) => {
+  try {
+    const { control, value, reason } = req.body || {};
+    if (String(reason || '').trim().length < 10) return res.status(400).json({ error: 'Give a reason (10+ characters)' });
+    if (control === 'posting' && ['on', 'off'].includes(value)) {
+      await require('../../lib/accounting/posting').setPostingSwitch(value, { actorId: req.user.id, reason: String(reason) });
+    } else if (control === 'reports' && ['ledger', 'engine'].includes(value)) {
+      await require('../../lib/accounting/reportSource').setReportSource(value, { actorId: req.user.id, reason: String(reason) });
+    } else return res.status(400).json({ error: 'control/value must be posting on|off or reports ledger|engine' });
+    res.json({ control, value });
+  } catch (e) {
+    if ((e.code && /^[0-9A-Z]{5}$/.test(e.code)) || /posting|report|admin|policy/i.test(e.message || '')) return refusal(res, e);
+    next(e);
+  }
+});
+
+/** "Sync changes": post new activity and replace changed entries under this person's identity, then reconcile. */
+router.post('/financial-system/ledger/sync', MANAGE, async (req, res, next) => {
+  try {
+    const s = await require('../../lib/accounting/ledgerOperations').manualSync({ actorId: req.user.id });
+    if (s.skipped) return res.status(409).json({ error: s.skipped });
+    const run = await monitor.runReconciliation({ trigger: 'manual', runBy: req.user.id });
+    res.json({ sync: s, reconciliation: run });
+  } catch (e) {
+    if (e.code && /^[0-9A-Z]{5}$/.test(e.code)) return refusal(res, e);
     next(e);
   }
 });

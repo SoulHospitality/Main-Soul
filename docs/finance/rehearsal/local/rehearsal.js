@@ -78,11 +78,19 @@ const step = (name, ok, detail) => {
     && (await query(`SELECT value_text FROM financial_settings WHERE key = 'ledger_reports'`)).rows[0]?.value_text === 'engine');
   step('178 (reconciliation history) applies, empty', (await applyMigration(db, S, '178_ledger_reconciliation_runs.sql')) === 'applied'
     && Number((await query('SELECT COUNT(*)::int AS n FROM ledger_reconciliation_runs')).rows[0].n) === 0);
-  step('a second app start skips all four (already recorded)', (await applyMigration(db, S, '175_commission_snapshots.sql')) === 'skipped' && (await applyMigration(db, S, '176_ledger_core.sql')) === 'skipped'
-    && (await applyMigration(db, S, '177_ledger_report_source.sql')) === 'skipped' && (await applyMigration(db, S, '178_ledger_reconciliation_runs.sql')) === 'skipped');
+  step('179 (financial managers may approve and switch) applies', (await applyMigration(db, S, '179_ledger_finance_managers.sql')) === 'applied');
+  step('a second app start skips all five (already recorded)', (await applyMigration(db, S, '175_commission_snapshots.sql')) === 'skipped' && (await applyMigration(db, S, '176_ledger_core.sql')) === 'skipped'
+    && (await applyMigration(db, S, '177_ledger_report_source.sql')) === 'skipped' && (await applyMigration(db, S, '178_ledger_reconciliation_runs.sql')) === 'skipped' && (await applyMigration(db, S, '179_ledger_finance_managers.sql')) === 'skipped');
   err = null;
-  try { await db.exec(m175.replace(/CREATE EXTENSION[^;]*;/gi, '')); await db.exec(m176); } catch (e) { err = e.message; }
-  step('running both files again by hand is harmless (idempotent: IF NOT EXISTS / ON CONFLICT)', err === null, err);
+  // Re-running by hand must cover the whole set in order: 176 alone would put back its CEO-only approver function and
+  // silently undo 179 (r2 catches that). The app's start-up runner never re-runs a recorded file.
+  const mig = (n) => fs.readFileSync(path.join(S, 'supabase/migrations', n), 'utf8');
+  try {
+    await db.exec(m175.replace(/CREATE EXTENSION[^;]*;/gi, ''));
+    await db.exec(m176);
+    for (const n of ['177_ledger_report_source.sql', '178_ledger_reconciliation_runs.sql', '179_ledger_finance_managers.sql']) await db.exec(mig(n));
+  } catch (e) { err = e.message; }
+  step('running 175 to 179 again by hand, in order, is harmless (idempotent)', err === null, err);
 
   // ── Verify structure and that nothing existing changed ──
   const r2 = (await sqlFile('r2_verify_structure.sql'))[0];
@@ -134,6 +142,8 @@ const step = (name, ok, detail) => {
 
   // ── Rollback with test entries present ──
   const entries = (await query(`SELECT COUNT(*)::int AS n FROM ledger_entries`)).rows[0].n;
+  await db.exec(read('rollback_179.sql'));
+  step('rollback_179 returns approvals and switches to CEOs only', !(await migrated('179_ledger_finance_managers.sql')));
   await db.exec(read('rollback_178.sql'));
   step('rollback_178 removes the reconciliation history table (empty: no confirmation needed)', !(await migrated('178_ledger_reconciliation_runs.sql')) && (await tables('ledger\_reconciliation%')) === 0);
   err = null;
@@ -169,15 +179,16 @@ const step = (name, ok, detail) => {
   step('after both rollbacks the schema is back to 174 and the app builds its books', booksRolled.entries > 0 && fpRolled.reservations, { fpRolled, booksRolled });
 
   // ── Re-deploy after rollback, then rollback with NO entries (the normal pre-cutover case) ──
-  step('after rollback, 175, 176, 177 and 178 re-apply cleanly', (await applyMigration(db, S, '175_commission_snapshots.sql')) === 'applied' && (await applyMigration(db, S, '176_ledger_core.sql')) === 'applied'
-    && (await applyMigration(db, S, '177_ledger_report_source.sql')) === 'applied' && (await applyMigration(db, S, '178_ledger_reconciliation_runs.sql')) === 'applied');
+  step('after rollback, 175 to 179 re-apply cleanly', (await applyMigration(db, S, '175_commission_snapshots.sql')) === 'applied' && (await applyMigration(db, S, '176_ledger_core.sql')) === 'applied'
+    && (await applyMigration(db, S, '177_ledger_report_source.sql')) === 'applied' && (await applyMigration(db, S, '178_ledger_reconciliation_runs.sql')) === 'applied' && (await applyMigration(db, S, '179_ledger_finance_managers.sql')) === 'applied');
   const r2b = (await sqlFile('r2_verify_structure.sql'))[0];
   step(`r2 after re-apply: ${r2b.filter((r) => r.passed).length}/${r2b.length} passed`, r2b.every((r) => r.passed), r2b.filter((r) => !r.passed));
   const fpRe = await fingerprint();
+  await db.exec(read('rollback_179.sql'));
   await db.exec(read('rollback_178.sql'));
   await db.exec(read('rollback_177.sql'));
   await db.exec(read('rollback_176.sql'));
-  step('rollback_178, rollback_177 then rollback_176 with an empty ledger need no confirmation and leave existing data identical', (await tables('ledger\\_%')) === 0 && sameData(fpRe, await fingerprint()));
+  step('rollback_179, 178, 177 then 176 with an empty ledger need no confirmation and leave existing data identical', (await tables('ledger\\_%')) === 0 && sameData(fpRe, await fingerprint()));
 
   evidence.finished = new Date().toISOString();
   evidence.summary = { steps: evidence.steps.length, failed };

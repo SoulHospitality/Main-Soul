@@ -1,8 +1,8 @@
 {
-  "started": "2026-11-25T12:41:27.199Z",
+  "started": "2026-11-25T16:16:50.674Z",
   "steps": [
     {
-      "name": "deploy: the app applied 175_commission_snapshots.sql, 176_ledger_core.sql, 177_ledger_report_source.sql, 178_ledger_reconciliation_runs.sql",
+      "name": "deploy: the app applied 175_commission_snapshots.sql, 176_ledger_core.sql, 177_ledger_report_source.sql, 178_ledger_reconciliation_runs.sql, 179_ledger_finance_managers.sql",
       "ok": true
     },
     {
@@ -83,7 +83,7 @@
     }
   ],
   "version": "PostgreSQL 17.5 on x86_64-windows, compiled by msvc-19.43.34808, 64-bit",
-  "finished": "2026-11-25T12:41:56.147Z",
+  "finished": "2026-11-25T16:17:17.471Z",
   "summary": {
     "steps": 20,
     "failed": 0

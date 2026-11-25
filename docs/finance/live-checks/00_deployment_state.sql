@@ -3,7 +3,7 @@
 BEGIN TRANSACTION READ ONLY;
 
 SELECT 'last applied migration' AS item, (SELECT MAX(id) FROM public._schema_migrations) AS value
-UNION ALL SELECT '175-178 applied', (SELECT COUNT(*)::text FROM public._schema_migrations WHERE id >= '175')
+UNION ALL SELECT '175-179 applied', (SELECT COUNT(*)::text FROM public._schema_migrations WHERE id >= '175')
 UNION ALL SELECT 'reservations.commission_snapshot column exists',
   (SELECT (COUNT(*) > 0)::text FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'reservations' AND column_name = 'commission_snapshot')

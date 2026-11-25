@@ -18,7 +18,7 @@ const {
 const { refreshCustomAccounts } = require('./customAccounts');
 const { refreshBooksReset, booksResetAt, afterReset } = require('./booksReset');
 const { bookingSplit, withholdingTax, extractInputVat } = require('./taxEngine');
-const { refreshVatPolicy, vatRateFor } = require('./vatPolicy');
+const { refreshVatPolicy, vatRateFor, whtActiveFor } = require('./vatPolicy');
 const { reservationPeriodSql, currentPeriodBasis, STAY } = require('./periodBasis');
 
 /** Cairo calendar day of the books restart ('' when the books were never restarted). */
@@ -694,7 +694,7 @@ function expenseEntries(e) {
   const expenseNet = inputVat ? inputVat.net : amt;
   const vatAmt = inputVat ? inputVat.vat : 0;
   const skipWht = WHT_SKIP_CATEGORIES.includes(e.category);
-  const wht = companyPaid && taxed && !skipWht
+  const wht = companyPaid && taxed && !skipWht && whtActiveFor(isoDate(e.expense_date) || isoDate(e.created_at))
     ? withholdingTax(expenseNet, { ratePct: e.category === 'professional' ? 1 : 3 })
     : { wht_amount: 0 };
   const payTreasury = String(e.paid_from_account || '').trim() || '101000';

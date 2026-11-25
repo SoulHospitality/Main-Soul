@@ -79,8 +79,8 @@ const step = (name, ok, detail) => {
     const log1 = execFileSync(process.execPath, ['-e', runner], { env: childEnv, encoding: 'utf8' });
     const applied1 = (log1.match(/Applied migration[^\n]*/gi) || []).map((s) => s.trim());
     const after = (await query(`SELECT id FROM _schema_migrations WHERE id >= '175' ORDER BY id`)).rows.map((r) => r.id);
-    step(`the app's runner (on MIGRATION_DATABASE_URL) applies exactly 175, 176, 177 then 178: ${after.join(', ')}`,
-      /MIGRATION_DATABASE_URL/.test(log1) && JSON.stringify(after) === '["175_commission_snapshots.sql","176_ledger_core.sql","177_ledger_report_source.sql","178_ledger_reconciliation_runs.sql"]', { applied1, log: log1.slice(-800) });
+    step(`the app's runner (on MIGRATION_DATABASE_URL) applies exactly 175, 176, 177, 178 then 179: ${after.join(', ')}`,
+      /MIGRATION_DATABASE_URL/.test(log1) && JSON.stringify(after) === '["175_commission_snapshots.sql","176_ledger_core.sql","177_ledger_report_source.sql","178_ledger_reconciliation_runs.sql","179_ledger_finance_managers.sql"]', { applied1, log: log1.slice(-800) });
     const reportsSource = (await query(`SELECT value_text FROM financial_settings WHERE key = 'ledger_reports'`)).rows[0]?.value_text;
     step(`after deployment the reports stay on the engine (${reportsSource})`, reportsSource === 'engine');
     const log2 = execFileSync(process.execPath, ['-e', runner], { env: childEnv, encoding: 'utf8' });

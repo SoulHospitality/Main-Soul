@@ -27,7 +27,7 @@ Location: `docs/finance/rehearsal/local/`.
 | `engine-validation-extra.js` | **23 / 23** | Insurance, cancellation forfeit, vendor invoice with WHT, recurring charge, petty cash, housekeeping order, holdback, payout; statements and parity with every scenario; a real query failure surfaces |
 | `paymob-webhook-test.js` | **11 / 11** | Webhook end to end: HMAC, unknown order, failed payment, amount mismatch, success, duplicate callbacks, dates taken meanwhile, fails closed |
 | `security-test.js` | **20 / 20** | Roles, page grants, API cannot flip posting, injection, owner isolation |
-| `rehearsal.js` | **33 / 33 steps** (r2 18/18, r3 45/45) | r0 inventory, apply, partial failure, rollback, re-apply; r3 signs its own claims with a disposable key. Also runs on a real server (below) |
+| `rehearsal.js` | **35 / 35 steps** (r2 19/19, r3 45/45) | r0 inventory, apply, partial failure, rollback, re-apply; r3 signs its own claims with a disposable key. Also runs on a real server (below) |
 | `livechecks-test.js` | all pass | Live checks 0–6 |
 | (inline) `r0_table_inventory.sql` | checked | Same database twice gives identical output; one changed row flags exactly that table |
 
@@ -41,7 +41,7 @@ The earlier `concurrency-test.js` (7/7, owner role, evidence `real-postgres-conc
 This is **not** Supabase and **not** the restored copy; the rehearsal runbook repeats it there (§4b).
 
 Also on the real server (2026-11-25):
-- `REHEARSAL_ENGINE=real node rehearsal.js`: **33 / 33**, the same steps as on PGlite. Evidence: `real-postgres-rehearsal-2026-11-25.json`.
+- `REHEARSAL_ENGINE=real node rehearsal.js`: **35 / 35**, the same steps as on PGlite. Evidence: `real-postgres-rehearsal-2026-11-25.json`.
 - `runbook-real.js`: **8 / 8**. Runbook §1–§3 with `compare-books.js` as a CLI on old (`main`) and new code, and the app's own migration runner on `MIGRATION_DATABASE_URL`; the old close's DEF-CLOSE-01 defect shows up on real data shapes. Evidence: `real-postgres-runbook-2026-11-25.json`.
 
 ## Financial System ledger screens (2026-11-25)
@@ -61,6 +61,14 @@ Also on the real server (2026-11-25):
 - `engine-validation.js`: **45 / 45**. The refund characterisation was replaced by the R-1 treatment: the reversal is proportional and adds up exactly.
 - `migration-test.js`: **34 / 34**. The treatment check follows the VAT suspension; ranges that straddle the date are refused.
 - `rehearsal/local/golive-real-test.js`: **20 / 20** (real PostgreSQL 17.5). The full go-live through the operator tools: deploy, settings, approvals and refusals, posting, sync and reconciliation from 25/11, no VAT, R-1 and R-5 in the books, reports from the ledger, monitoring, control log.
+
+## In-app go-live (2026-11-25)
+- `rehearsal/local/golive-inapp-test.js`: **20 / 20** (real PostgreSQL 17.5).
+  - Withholding suspended on a real vendor invoice; earlier invoices keep it.
+  - The CEO approves from his login; an approver can't record; a financial manager records and switches posting on (179).
+  - The nightly job posts new activity, with no VAT and no withholding; a changed booking waits for a person; "Sync changes" replaces it under that person's name.
+  - Reports switched from the app; the control log names each person.
+- `rehearsal.js`: **35 / 35** on both engines (r2 19/19). Re-running 176 alone would undo 179, and r2 catches it.
 
 ## Not yet covered
 - Coverage measurement of the database suites.
