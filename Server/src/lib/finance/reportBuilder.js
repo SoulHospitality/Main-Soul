@@ -102,7 +102,9 @@ async function position(to) {
 async function balanceSheetReport(to) {
   const { bals } = await position(to);
   const pnl = bals.filter((x) => x.type === 'revenue' || x.type === 'expense');
-  const earnings = money(pnl.reduce((s, x) => s + (x.type === 'revenue' && !x.virtual ? x.balance : x.type === 'expense' ? -x.balance : 0), 0));
+  // Open P&L plus anything posted to 303000 directly (it is shown on the 303000 line, never dropped).
+  const posted303 = bals.find((x) => x.code === '303000')?.balance || 0;
+  const earnings = money(posted303 + pnl.reduce((s, x) => s + (x.type === 'revenue' && !x.virtual ? x.balance : x.type === 'expense' ? -x.balance : 0), 0));
   const list = (group) => bals.filter((x) => x.group === group && Math.abs(x.balance) > 0.009);
   const assets = list('assets');
   const liabilities = list('liabilities');

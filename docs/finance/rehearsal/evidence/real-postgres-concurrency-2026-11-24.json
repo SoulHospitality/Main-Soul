@@ -1,0 +1,65 @@
+{
+  "engine": "PostgreSQL 17.5 (embedded, local)",
+  "evidence": [
+    {
+      "name": "all 176 migrations apply on real PostgreSQL with the app's runner semantics",
+      "ok": true
+    },
+    {
+      "name": "20 concurrent posts of one key: exactly one entry; one creator, 19 duplicates returning the same entry",
+      "ok": true,
+      "detail": {
+        "count1": 1,
+        "fulfilled": 20,
+        "creators": 1,
+        "rejected": []
+      }
+    },
+    {
+      "name": "20 concurrent posts of one key with different amounts: one entry, the others refused as conflicts",
+      "ok": true,
+      "detail": {
+        "count2": 1,
+        "wins": 1,
+        "conflicts": 19
+      }
+    },
+    {
+      "name": "10 concurrent reversals of one entry: exactly one reversal; the others refused",
+      "ok": true,
+      "detail": {
+        "revOk": 1,
+        "revCount": 1,
+        "errors": [
+          "ALREADY_REVERSED"
+        ]
+      }
+    },
+    {
+      "name": "two sessions inserting reversals of one entry: the second blocks, then fails on the uniqueness index",
+      "ok": true,
+      "detail": {
+        "bResult": "refused: duplicate key value violates unique constraint \"ledger_entries_one_reversal\"",
+        "raw4": 1
+      }
+    },
+    {
+      "name": "non-owner app role: TRUNCATE, DISABLE TRIGGER, session_replication_role, DROP TRIGGER and UPDATE are all refused",
+      "ok": true,
+      "detail": {
+        "t1": "refused (ledger_entries is a permanent finance record and cannot be truncated)",
+        "t2": "refused (must be owner of table ledger_entries)",
+        "t3": "refused (permission denied to set parameter \"session_replication_role\")",
+        "t4": "refused (must be owner of relation ledger_entries)",
+        "t5": "refused (Posted ledger entries are immutable (entry JE-2026-000023). Post a rev)"
+      }
+    },
+    {
+      "name": "the owner / superuser role CAN still disable triggers (why a restricted posting role is required)",
+      "ok": true,
+      "detail": {
+        "o1": "ALLOWED"
+      }
+    }
+  ]
+}

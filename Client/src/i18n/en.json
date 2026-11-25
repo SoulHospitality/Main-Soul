@@ -1067,7 +1067,9 @@
         "vendor": "Vendor",
         "rate": "Rate",
         "wht": "WHT",
-        "totalWhtPayable": "Total WHT payable"
+        "totalWhtPayable": "Total WHT payable",
+        "suspendedTitle": "Taxes are suspended from {{date}}",
+        "suspendedBody": "By the accountant's decision, no VAT (output or input) and no withholding tax are booked from this date while the company agrees its position with the tax authority; vendors are paid in full. Earlier periods keep their taxes."
       },
       "owners": {
         "description": "You can settle an owner's balance yourself — no withdrawal request required. Paid amounts post against owner trust (202000).",
@@ -2043,6 +2045,11 @@
             "title": "Accounts on the wrong side",
             "what": "A bank, cash, receivable, deposit, insurance or owner account has a negative balance, which usually means money was recorded against the wrong account or an opening balance is missing.",
             "fix": "Open the account, find the entry that pushed it negative and correct it, or add the missing opening balance."
+          },
+          "ledger_not_reconciled": {
+            "title": "Stored ledger not reconciled",
+            "what": "The latest reconciliation of the stored ledger is missing, older than 36 hours, or found differences.",
+            "fix": "Open Ledger controls, run Reconcile now and investigate each difference."
           }
         }
       },
@@ -2077,7 +2084,9 @@
           "statements": "Financial statements",
           "tax": "Tax desk",
           "forecast": "Cash forecast",
-          "builder": "Report builder"
+          "builder": "Report builder",
+          "commission-review": "Commission review",
+          "ledger": "Ledger controls"
         },
         "tabs": {
           "whoOwes": "Who owes",
@@ -2106,7 +2115,8 @@
           "refunds": "Settle refund requests",
           "calendar": "Pay or reschedule overdue calendar payments",
           "outstanding": "Follow up guests who left owing money",
-          "health": "Clear the data health issues"
+          "health": "Clear the data health issues",
+          "ledger": "Stored ledger reconciled"
         }
       },
       "payFrom": {
@@ -2191,6 +2201,191 @@
         "pay": "Pay",
         "rejectTitle": "Reject payout request",
         "reasonLabel": "Reason (the owner sees this)"
+      },
+      "ledger": {
+        "intro": "The stored, permanent ledger and the controls around it. This page only shows the state: switching posting on, approving policies and corrections go through the verified procedures.",
+        "loadError": "Could not load the ledger controls.",
+        "notDeployedTitle": "The stored ledger is not installed yet",
+        "notDeployedBody": "It arrives with the finance release. Until then, the books you see are calculated live from bookings, payments and expenses, as today.",
+        "postingOff": "Posting to the stored ledger is off",
+        "postingOn": "Posting to the stored ledger is on",
+        "on": "On",
+        "off": "Off",
+        "lastChange": "Last changed by {{who}} on {{when}}",
+        "neverChanged": "Never changed since installation",
+        "gatesTitle": "Before posting can start",
+        "gatesHint": "The database refuses to post until the first two are approved in writing and recorded by two different admins.",
+        "gatesFoot": "Switching posting on also needs the owner’s written instruction. It is never done from this page.",
+        "gates": {
+          "revenue": {
+            "title": "Revenue presentation (EAS 48)",
+            "what": "Gross or net, per contract type: the accountant’s written decision"
+          },
+          "vat": {
+            "title": "VAT base",
+            "what": "A separate written decision, not implied by the revenue decision"
+          },
+          "commission": {
+            "title": "Historical commission method",
+            "what": "How rates are set for stays confirmed before rates were saved"
+          },
+          "identity": {
+            "title": "Verified staff identity",
+            "what": "The server key that proves who made each ledger change"
+          }
+        },
+        "identity": {
+          "configured": "Configured",
+          "missing": "Not configured",
+          "invalid": "Misconfigured"
+        },
+        "outsideSystem": "Tracked in the decision tracker",
+        "approved": "Approved",
+        "awaiting": "Awaiting",
+        "policiesTitle": "Accounting policies",
+        "policiesHint": "Each version records the treatment and both written approvals, with their references.",
+        "noPolicies": "No policy recorded yet.",
+        "policyStatus": {
+          "draft": "Draft",
+          "approved": "Approved",
+          "retired": "Retired"
+        },
+        "col": {
+          "version": "Version",
+          "effective": "Effective from",
+          "status": "Status",
+          "revenue": "Revenue",
+          "vat": "VAT base",
+          "d01Approval": "Revenue approval",
+          "vatApproval": "VAT approval",
+          "recordedBy": "Recorded by",
+          "period": "Month",
+          "closed": "Closed",
+          "reopened": "Reopened",
+          "when": "When",
+          "control": "Control",
+          "change": "Change",
+          "who": "By",
+          "reason": "Reason"
+        },
+        "entries": "Ledger entries",
+        "lines": "{{count}} lines",
+        "reversed": "Reversed",
+        "manualMigrated": "Manual / migrated",
+        "lastEntry": "Last entry",
+        "periodsTitle": "Ledger months",
+        "periodStatus": {
+          "open": "Open",
+          "closing": "Closing",
+          "closed": "Closed"
+        },
+        "logTitle": "Control log",
+        "logHint": "Every change to the posting switch and the report source, kept permanently.",
+        "noLog": "No changes recorded.",
+        "readOnlyNote": "Read-only. Ledger entries cannot be edited or deleted; corrections are new, linked entries.",
+        "installedOff": "Set to off when the ledger was installed, on {{when}}",
+        "system": "System (installation)",
+        "postingSwitch": "Posting switch",
+        "reportsFromEngine": "Reports are calculated live from bookings, payments and expenses",
+        "reportsFromLedger": "Reports read the stored ledger",
+        "reportsHint": "Switching the report source needs posting on, a verified admin and a reason; every change is logged.",
+        "sourceEngine": "Live calculation",
+        "sourceLedger": "Stored ledger",
+        "reportSource": "Report source",
+        "statementsFromLedger": "Built from the stored ledger",
+        "recon": {
+          "title": "Reconciliation",
+          "hint": "The stored ledger is compared with the live calculation every night for the previous and current month. Every run is kept.",
+          "notLive": "Starts once ledger posting is on.",
+          "runNow": "Reconcile now",
+          "doneClean": "Reconciled: no differences",
+          "doneDiff": "Reconciled: differences found",
+          "lastClean": "Last run {{when}}: no differences",
+          "lastDiff": "Last run {{when}}: differences to investigate",
+          "none": "No reconciliation has run yet.",
+          "period": "Period",
+          "clean": "Clean",
+          "differences": "Differences",
+          "matched": "Matched",
+          "breaks": "Breaks",
+          "accountsOff": "Accounts off",
+          "nightly": "Nightly"
+        },
+        "go": {
+          "title": "Go-live: accounting policy {{version}}",
+          "hint": "Approved decisions from {{date}}. CEOs and financial managers do each step from their own login; every step is checked by the database and logged.",
+          "confirm": "Confirm",
+          "cancel": "Cancel",
+          "done": "Done",
+          "approve": "Approve",
+          "approvedBy": "Approved by {{who}}",
+          "d01What": "Revenue presented gross (the accountant's decision)",
+          "vatWhat": "Taxes suspended from the start date: no VAT and no withholding",
+          "record": "Record policy",
+          "recorded": "Policy recorded as approved",
+          "recordWhat": "Done by a CEO or financial manager who did not approve; cite the basis of the approval",
+          "referencePh": "e.g. Accountant's approval confirmed by the owner, 25 Nov 2026",
+          "postingOn": "Switch posting on",
+          "postingWhat": "The ledger starts recording; the nightly job posts new activity",
+          "sync": "Sync changes",
+          "syncWhat": "Posts new activity now and replaces entries whose source changed (under your name); runs nightly automatically for new activity",
+          "reportsLedger": "Switch reports to the ledger",
+          "reportsBack": "Switch reports back to live calculation",
+          "reportsWhat": "After a clean month of parallel running",
+          "reasonLabel": "Reason for switches:",
+          "reasonPh": "e.g. Owner's instruction, 25 Nov 2026",
+          "onlyManagers": "Only CEOs and financial managers can do these steps.",
+          "steps": {
+            "d01": "Approve revenue presentation",
+            "vat": "Approve taxes",
+            "record": "Record the approved policy",
+            "posting": "Posting",
+            "sync": "Ledger up to date",
+            "reports": "Reports from the ledger"
+          }
+        }
+      },
+      "commissionReview": {
+        "intro": "Commission rates are saved on each stay when it is confirmed (since {{since}}), so later rate changes never alter past stays. Stays below need a rate decision.",
+        "notDeployedTitle": "Rate snapshots are not installed yet",
+        "notDeployedBody": "They arrive with the finance release. Until then, commissions use the unit’s current rates, as today.",
+        "waiting": "{{count}} stays need a commission decision",
+        "clear": "No stays waiting for a commission decision",
+        "captured": "Saved at confirmation",
+        "capturedSub": "Rates frozen automatically",
+        "needsReview": "Flagged",
+        "needsReviewSub": "Saved, but the basis needs a check",
+        "none": "Before snapshots",
+        "noneSub": "Confirmed before rates were saved",
+        "corrected": "Corrected",
+        "lastCorrection": "Last on {{when}}",
+        "listTitle": "Stays to review",
+        "listHint": "Historical stays use the approved method; flagged stays are checked against the unit’s contract.",
+        "col": {
+          "stay": "Guest",
+          "unit": "Unit",
+          "dates": "Dates",
+          "status": "Status",
+          "total": "Total",
+          "salesperson": "Salesperson",
+          "reason": "Why"
+        },
+        "reasonHistorical": "Confirmed before rate snapshots: original rate unknown",
+        "reasonFlagged": "Flagged at confirmation: basis to check",
+        "howToCorrect": "Corrections are recorded through the logged, verified process with a reason. They are never edited here.",
+        "reasonHistoricalShort": "Before snapshots",
+        "reasonFlaggedShort": "Flagged",
+        "stayStatus": {
+          "confirmed": "Confirmed",
+          "checked_in": "Checked in",
+          "checked_out": "Checked out"
+        },
+        "settled": "Historical commissions were already paid (accountant, 25 Nov 2026): the {{count}} older stays below need no rate decision and are kept for reference"
+      },
+      "integrity": {
+        "title": "Accounts missing from the chart of accounts: {{count}}",
+        "body": "These lines are included in the totals but belong to no known account. Add the account to the chart, or correct the source records.",
+        "line": "debit {{debit}} · credit {{credit}} · entries: {{count}}"
       }
     }
   }

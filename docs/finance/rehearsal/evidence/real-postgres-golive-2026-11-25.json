@@ -1,0 +1,91 @@
+{
+  "started": "2026-11-25T16:16:50.674Z",
+  "steps": [
+    {
+      "name": "deploy: the app applied 175_commission_snapshots.sql, 176_ledger_core.sql, 177_ledger_report_source.sql, 178_ledger_reconciliation_runs.sql, 179_ledger_finance_managers.sql",
+      "ok": true
+    },
+    {
+      "name": "settings script: books from 25/11 (Cairo), VAT suspended, commissions settled; posting off, reports on engine",
+      "ok": true
+    },
+    {
+      "name": "recording the policy before the approvals is refused by the database",
+      "ok": true
+    },
+    {
+      "name": "a non-admin cannot approve",
+      "ok": true
+    },
+    {
+      "name": "admin A records the revenue (EAS 48) approval",
+      "ok": true
+    },
+    {
+      "name": "admin B records the VAT-base approval",
+      "ok": true
+    },
+    {
+      "name": "an approver cannot record the policy",
+      "ok": true
+    },
+    {
+      "name": "the finance recorder records policy 2026.11 (gross, VAT suspended, from 25/11) as approved",
+      "ok": true
+    },
+    {
+      "name": "a non-admin cannot switch posting on",
+      "ok": true
+    },
+    {
+      "name": "admin switches posting on (verified, logged)",
+      "ok": true
+    },
+    {
+      "name": "syncing a range that starts before 25/11 is refused (straddles the VAT suspension)",
+      "ok": true
+    },
+    {
+      "name": "sync from 25/11 posts the books and reconciles clean",
+      "ok": true
+    },
+    {
+      "name": "10 entries posted, none dated before 25/11 (books start 25/11; no history, no opening balances)",
+      "ok": true
+    },
+    {
+      "name": "no output or input VAT anywhere in the books (taxes postponed)",
+      "ok": true
+    },
+    {
+      "name": "the refund reduced revenue (R-1), not the guest receivable",
+      "ok": true
+    },
+    {
+      "name": "the forfeited 1200 deposit: revenue 1200, owner gets 900 (100% − company 25%) (R-5)",
+      "ok": true
+    },
+    {
+      "name": "admin switches reports to the ledger (verified, logged)",
+      "ok": true
+    },
+    {
+      "name": "statements from the stored ledger equal the live calculation (trial balance, P&L)",
+      "ok": true
+    },
+    {
+      "name": "the reconciliation monitor records a clean run; Data health is clear",
+      "ok": true
+    },
+    {
+      "name": "the control log names who switched posting and reports on",
+      "ok": true
+    }
+  ],
+  "version": "PostgreSQL 17.5 on x86_64-windows, compiled by msvc-19.43.34808, 64-bit",
+  "finished": "2026-11-25T16:17:17.471Z",
+  "summary": {
+    "steps": 20,
+    "failed": 0
+  }
+}

@@ -19,6 +19,20 @@ async function query(text, params) {
   return pool.query(text, params);
 }
 
+/**
+ * Migrations run on MIGRATION_DATABASE_URL when it is set (an owner/admin connection), so the app itself
+ * can connect with DATABASE_URL as a restricted role that cannot change the schema, disable triggers or
+ * read the ledger identity keys (docs/finance/db-security). Without it, the app's own connection is used,
+ * as before.
+ */
+function migrationPool() {
+  const url = process.env.MIGRATION_DATABASE_URL;
+  if (!url) return { db: pool, end: async () => {} };
+  const ssl = /supabase\.co|sslmode=require/i.test(url) || process.env.NODE_ENV === 'production';
+  const p = new Pool({ connectionString: url, ssl: ssl ? { rejectUnauthorized: false } : false, max: 2 });
+  return { db: p, end: () => p.end() };
+}
+
 async function runMigrations() {
   const migrationsDir = path.join(__dirname, '../../supabase/migrations');
   console.log(`[db] Migrations dir: ${migrationsDir}`);
@@ -28,6 +42,16 @@ async function runMigrations() {
   }
   const files = fs.readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort();
   console.log(`[db] Found ${files.length} migration file(s)`);
+  const { db: mpool, end } = migrationPool();
+  if (mpool !== pool) console.log('[db] Running migrations on MIGRATION_DATABASE_URL');
+  try {
+    await runMigrationFiles(mpool, migrationsDir, files);
+  } finally {
+    await end();
+  }
+}
+
+async function runMigrationFiles(pool, migrationsDir, files) {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS public._schema_migrations (
       id text PRIMARY KEY,

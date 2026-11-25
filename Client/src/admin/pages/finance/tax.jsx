@@ -69,6 +69,11 @@ export function TaxTab({ rangeParams: params }) {
     queryKey: ['financial-system-tax', params],
     queryFn: () => api.get('/financial-system/tax', { params }).then((r) => r.data),
   });
+  const { data: vatPolicy } = useQuery({
+    queryKey: ['financial-system-vat-policy'],
+    queryFn: () => api.get('/financial-system/vat-policy').then((r) => r.data),
+    staleTime: 300_000,
+  });
   const { data: packData, isLoading: packLoading } = useQuery({
     queryKey: ['financial-system-tax-pack', packMonth],
     queryFn: () => api.get(`/financial-system/tax-filing-pack/${packMonth}`).then((r) => r.data),
@@ -81,6 +86,12 @@ export function TaxTab({ rangeParams: params }) {
   const vatReturn = data?.vat_return || {};
   return (
     <div className="space-y-6">
+      {vatPolicy?.vat_suspended_from ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/50 px-5 py-4">
+          <p className="font-semibold text-amber-900">{t('pms.fin.tax.suspendedTitle', { date: formatDate(vatPolicy.vat_suspended_from) })}</p>
+          <p className="text-xs text-amber-900/80">{t('pms.fin.tax.suspendedBody')}</p>
+        </div>
+      ) : null}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="rounded-2xl border border-amber-200 bg-white p-5">
           <p className="text-xs text-gray-500">{t('pms.fin.tax.outputVat', { pct: VAT_OUTPUT_PCT })}</p>

@@ -262,6 +262,13 @@ async function healthChecks() {
   );
   add({ id: 'closed_month_edits', severity: 'medium', count: closedEdits.length, amount: 0, rows: closedEdits, tool: 'close' });
 
+  // Phase 7: while the stored ledger is live, the latest reconciliation must exist, be clean and be recent.
+  try {
+    const ledgerCheck = await require('../../lib/accounting/reconciliationMonitor').healthCheck();
+    if (ledgerCheck) add(ledgerCheck);
+  } catch (e) {
+    if (e.code !== '42P01') throw e;
+  }
   return checks;
 }
 

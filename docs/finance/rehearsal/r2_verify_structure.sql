@@ -1,0 +1,58 @@
+-- Rehearsal r2: migrations 175 to 179 are in place and inert. READ-ONLY. Every row must say passed = true.
+BEGIN TRANSACTION READ ONLY;
+
+WITH c(check_name, passed, detail) AS (
+  SELECT '175 recorded as applied', EXISTS (SELECT 1 FROM public._schema_migrations WHERE id = '175_commission_snapshots.sql'), NULL::text
+  UNION ALL SELECT '176 recorded as applied', EXISTS (SELECT 1 FROM public._schema_migrations WHERE id = '176_ledger_core.sql'), NULL
+  UNION ALL SELECT 'reservation snapshot columns exist',
+    (SELECT COUNT(*) = 4 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'reservations'
+       AND column_name IN ('commission_snapshot', 'commission_snapshot_at', 'commission_snapshot_status', 'commission_review_reason')), NULL
+  UNION ALL SELECT 'snapshot trigger enabled',
+    EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'reservations_commission_snapshot' AND tgenabled <> 'D'), NULL
+  UNION ALL SELECT 'correction log is append-only (trigger present)',
+    EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'reservation_commission_corrections_append_only'), NULL
+  UNION ALL SELECT 'no existing reservation was given a snapshot by the migration',
+    NOT EXISTS (SELECT 1 FROM public.reservations r, public.financial_settings s
+                WHERE s.key = 'commission_snapshots_since' AND r.commission_snapshot IS NOT NULL
+                  AND r.commission_snapshot_at < s.value_text::timestamptz),
+    (SELECT COUNT(*) || ' snapshots in total' FROM public.reservations WHERE commission_snapshot IS NOT NULL)
+  UNION ALL SELECT 'historical confirmed stays listed for review',
+    (SELECT COUNT(*) FROM public.reservation_commission_review) >=
+    (SELECT COUNT(*) FROM public.reservations WHERE status IN ('confirmed', 'checked_in', 'checked_out') AND commission_snapshot IS NULL),
+    (SELECT COUNT(*) || ' stays on the review list' FROM public.reservation_commission_review)
+  UNION ALL SELECT 'ledger tables exist',
+    (SELECT COUNT(*) = 7 FROM information_schema.tables WHERE table_schema = 'public'
+       AND table_name IN ('ledger_accounts', 'ledger_policies', 'ledger_periods', 'ledger_entries', 'ledger_lines', 'ledger_events', 'ledger_control_log')), NULL
+  UNION ALL SELECT 'chart seeded: 47 system accounts',
+    (SELECT COUNT(*) = 47 FROM public.ledger_accounts WHERE is_system), (SELECT COUNT(*)::text FROM public.ledger_accounts WHERE is_system)
+  UNION ALL SELECT 'every custom account copied into the ledger chart',
+    NOT EXISTS (SELECT 1 FROM public.financial_custom_accounts c LEFT JOIN public.ledger_accounts l ON l.code = c.code WHERE l.code IS NULL),
+    (SELECT COUNT(*) || ' custom accounts' FROM public.financial_custom_accounts)
+  UNION ALL SELECT 'ledger is empty', (SELECT COUNT(*) = 0 FROM public.ledger_entries) AND (SELECT COUNT(*) = 0 FROM public.ledger_lines), NULL
+  UNION ALL SELECT 'no approved accounting policy exists', NOT EXISTS (SELECT 1 FROM public.ledger_policies WHERE status = 'approved'), NULL
+  UNION ALL SELECT 'posting switch is off',
+    (SELECT value_text FROM public.financial_settings WHERE key = 'ledger_posting') = 'off', NULL
+  UNION ALL SELECT '179: CEOs and financial managers are the authorised approvers',
+    EXISTS (SELECT 1 FROM public._schema_migrations WHERE id = '179_ledger_finance_managers.sql')
+    AND pg_get_functiondef('public.ledger_is_active_admin(integer)'::regprocedure) LIKE '%finance_manager%', NULL
+  UNION ALL SELECT '178: reconciliation history installed, append-only and empty',
+    EXISTS (SELECT 1 FROM public._schema_migrations WHERE id = '178_ledger_reconciliation_runs.sql')
+    AND (SELECT COUNT(*) = 0 FROM public.ledger_reconciliation_runs)
+    AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'ledger_reconciliation_runs_append_only'), NULL
+  UNION ALL SELECT '177: reports read the engine, and the report-source switch is guarded',
+    EXISTS (SELECT 1 FROM public._schema_migrations WHERE id = '177_ledger_report_source.sql')
+    AND (SELECT value_text FROM public.financial_settings WHERE key = 'ledger_reports') = 'engine'
+    AND (SELECT COUNT(DISTINCT tgname) = 2 FROM pg_trigger WHERE tgname IN ('financial_settings_ledger_reports_guard', 'financial_settings_ledger_posting_off_guard')), NULL
+  UNION ALL SELECT 'verified identity installed (functions; no key is required until posting)',
+    (SELECT COUNT(*) = 3 FROM pg_proc WHERE proname IN ('ledger_verified_actor', 'ledger_hmac_sha256', 'ledger_has_approval')), NULL
+  UNION ALL SELECT 'uniqueness: one reversal / one replacement / one approved policy per date',
+    (SELECT COUNT(*) = 3 FROM pg_indexes WHERE schemaname = 'public'
+       AND indexname IN ('ledger_entries_one_reversal', 'ledger_entries_one_replacement', 'ledger_policies_one_approved_per_date')), NULL
+  UNION ALL SELECT 'database posting guards present (detail lists any missing)',
+    (SELECT COUNT(DISTINCT tgname) = 25 FROM pg_trigger WHERE tgname IN ('ledger_entries_insert_guard', 'ledger_lines_insert_guard', 'ledger_entries_guard', 'ledger_lines_guard', 'ledger_entry_balance_check', 'ledger_policies_guard', 'ledger_periods_guard', 'ledger_reversal_mirror_check', 'ledger_control_log_append_only', 'financial_settings_ledger_posting_guard', 'ledger_accounts_guard', 'financial_custom_accounts_ledger_sync', 'ledger_accounts_no_truncate', 'ledger_policies_no_truncate', 'ledger_periods_no_truncate', 'ledger_entries_no_truncate', 'ledger_lines_no_truncate', 'ledger_events_no_truncate', 'ledger_control_log_no_truncate', 'financial_settings_no_truncate', 'reservation_commission_corrections_no_truncate', 'ledger_identity_keys_guard', 'ledger_approvals_guard', 'ledger_identity_keys_no_truncate', 'ledger_approvals_no_truncate')),
+    (SELECT string_agg(g, ', ') FROM unnest(ARRAY['ledger_entries_insert_guard', 'ledger_lines_insert_guard', 'ledger_entries_guard', 'ledger_lines_guard', 'ledger_entry_balance_check', 'ledger_policies_guard', 'ledger_periods_guard', 'ledger_reversal_mirror_check', 'ledger_control_log_append_only', 'financial_settings_ledger_posting_guard', 'ledger_accounts_guard', 'financial_custom_accounts_ledger_sync', 'ledger_accounts_no_truncate', 'ledger_policies_no_truncate', 'ledger_periods_no_truncate', 'ledger_entries_no_truncate', 'ledger_lines_no_truncate', 'ledger_events_no_truncate', 'ledger_control_log_no_truncate', 'financial_settings_no_truncate', 'reservation_commission_corrections_no_truncate', 'ledger_identity_keys_guard', 'ledger_approvals_guard', 'ledger_identity_keys_no_truncate', 'ledger_approvals_no_truncate']) g
+       WHERE NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = g))
+)
+SELECT check_name, passed, detail FROM c;
+
+ROLLBACK;

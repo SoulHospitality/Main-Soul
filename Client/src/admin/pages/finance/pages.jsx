@@ -492,6 +492,8 @@ export function ClosePage({ toDate }) {
     { id: 'calendar', done: !byId.calendar_overdue, tool: 'calendar', count: byId.calendar_overdue?.count },
     { id: 'outstanding', done: !byId.left_owing, tool: 'outstanding', count: byId.left_owing?.count },
     { id: 'health', done: !(health.data?.issues), tool: 'health', count: health.data?.issues },
+    // Phase 7: once the stored ledger is live, the month closes only after a clean reconciliation.
+    ...(checkBy.ledger_not_reconciled ? [{ id: 'ledger', done: !checkBy.ledger_not_reconciled.count, tool: 'ledger', count: checkBy.ledger_not_reconciled.count }] : []),
   ];
   const ready = steps.every((s) => s.done);
   return (

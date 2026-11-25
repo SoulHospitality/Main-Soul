@@ -1,0 +1,91 @@
+{
+  "started": "2026-11-25T16:17:18.443Z",
+  "steps": [
+    {
+      "name": "vendor invoice recorded",
+      "ok": true
+    },
+    {
+      "name": "withholding suspended: a 2000 invoice from a 3% vendor carries 0 withholding; the vendor is paid 2000",
+      "ok": true
+    },
+    {
+      "name": "an invoice dated before 25/11 keeps its 3% withholding (60)",
+      "ok": true
+    },
+    {
+      "name": "Ledger controls shows policy 2026.11 (gross, taxes suspended) waiting for approval; the CEO may act",
+      "ok": true
+    },
+    {
+      "name": "a reservations user cannot approve (403)",
+      "ok": true
+    },
+    {
+      "name": "the owner (CEO) approves revenue and taxes from his own login",
+      "ok": true
+    },
+    {
+      "name": "the approver cannot also record the policy (database refuses)",
+      "ok": true
+    },
+    {
+      "name": "recording needs the basis of the approval (10+ characters)",
+      "ok": true
+    },
+    {
+      "name": "a financial manager records it: approved, recorder 904, approvals by the owner, basis cited",
+      "ok": true
+    },
+    {
+      "name": "a financial manager switches posting on (migration 179)",
+      "ok": true
+    },
+    {
+      "name": "the nightly job posts the new activity (9 entries, all 'system', from 25/11)",
+      "ok": true
+    },
+    {
+      "name": "the nightly reconciliation starts at the policy date (25/11) and is clean",
+      "ok": true
+    },
+    {
+      "name": "no VAT and no withholding anywhere in the ledger (the 5000 service fee carries no 3% withholding)",
+      "ok": true
+    },
+    {
+      "name": "the job does not replace changed entries by itself (2 pending)",
+      "ok": true
+    },
+    {
+      "name": "and the reconciliation flags the difference",
+      "ok": true
+    },
+    {
+      "name": "\"Sync changes\" by a financial manager replaces them under her name (2)",
+      "ok": true
+    },
+    {
+      "name": "and the reconciliation that follows is clean",
+      "ok": true
+    },
+    {
+      "name": "reports switched to the ledger from the app",
+      "ok": true
+    },
+    {
+      "name": "Ledger controls shows every go-live step done",
+      "ok": true
+    },
+    {
+      "name": "the control log names each person (posting by 904, reports by 905)",
+      "ok": true
+    }
+  ],
+  "version": "PostgreSQL 17.5 on x86_64-windows, compiled by msvc-19.43.34808, 64-bit",
+  "finished": "2026-11-25T16:17:42.920Z",
+  "summary": {
+    "steps": 20,
+    "failed": 0
+  }
+}
