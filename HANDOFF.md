@@ -1,7 +1,7 @@
 # HANDOFF: Financial reconstruction
 
-**Updated:** 2026-11-25 · **Branch:** `feature/finance-ledger`, all work committed and pushed (the latest commit is this HANDOFF's). `main` is untouched (`ff782cd`).
-**Decision: NO-GO.** Development work is complete on all three branches. What remains are external approvals and actions (below). Nothing is merged or deployed. Posting is **off**, there is no historical import, reports are not switched to the stored ledger, and production is untouched.
+**Updated:** 2026-11-25 · **Branch:** `feature/finance-ledger`. **Deployed:** GitHub `main` `81ae640` is live on Railway and Vercel (deployment record below).
+**Status: LIVE, posting ON (2026-11-25).** The fixes, security and finance are live. Migrations 175–179 are applied, the accountant's settings are in place, the CEOs and a financial manager completed the go-live in the app (policy 2026.11 approved, posting switched on), and the opening treasury balances are entered. Reports stay on the live calculation until a clean December.
 
 ## Start here
 | Reader | Document |
@@ -62,21 +62,31 @@ Gross revenue; **VAT 0 from 25/11** (taxes postponed); no historical commissions
 | Phase | Built and tested | Executed for real |
 |---|---|---|
 | 1 Audit and architecture | ✅ | ✅ |
-| 2 Ledger foundation | ✅ | Not deployed |
-| 3 Deployment and external validation | ✅ | ◐ Read-only checks 0–6 done; **accountant's decisions received**; ☐ backup and restore test, deployment (needs Supabase/Railway access and the rotated password) |
+| 2 Ledger foundation | ✅ | ✅ Deployed 2026-11-25 (175, 176) |
+| 3 Deployment and external validation | ✅ | ✅ Checks 0–6, accountant's decisions, deployment and settings (backup/restore test waived by the owner) |
 | 4 Historical migration | ✅ | ✅ **Not needed: the books start 25/11** (accountant). Only the 25/11-onward sync remains, which is part of go-live |
 | 5 Parallel operation | ✅ `sync` + `reconcile` (same runbook) | ☐ Needs Phase 4 and a real month |
-| 6 Activation and reporting | ✅ Migration 177, reports from the ledger, tested rollback (`LEDGER_ACTIVATION_RUNBOOK.md`) | ☐ Posting off; reports on the existing calculation |
+| 6 Activation and reporting | ✅ Migration 177, reports from the ledger, tested rollback (`LEDGER_ACTIVATION_RUNBOOK.md`) | ◐ Deployed. ☐ Go-live in the app (approve, record, posting on, sync); reports switch after a clean December |
 | 7 Operations and optimisation | ✅ Nightly reconciliation (migration 178), Data health exception, month-end step, reconciliation dashboard (`FINANCIAL_OPERATIONS.md`) | ☐ Starts by itself once posting is on |
 
 ## Financial System screens (this branch)
 **Books → Ledger controls** and **Books → Commission review**, plus an integrity warning on Financial statements. They are read-only and bilingual, and they say plainly when 175/176 are not installed yet. Details, tests and screenshots: `docs/finance/FINANCIAL_SYSTEM_UI.md`.
 
-## Release state (outside this branch)
-- The fix and security branches are merged into **local** `main` (`8d31611`, `71118c5`) and published as `release/2026-11-25` (`71118c5`). It was pushed only as a Vercel Preview; Railway was not triggered.
-- GitHub `main` and production remain `ff782cd`. Confirmed on 2026-11-25 from the deployment records and by matching the live site's files to a rebuild of `ff782cd`.
-- The owner reports that automatic deployment from `main` is paused on Railway and Vercel. **This is not independently verified:** there is no dashboard access from development.
-- Checklist: `Desktop/Main-Soul-preserved/CONTROLLED_DEPLOYMENT_CHECKLIST_2026-11-25.md`.
+## Deployment record (2026-11-25)
+| Step | Result |
+|---|---|
+| 1. Release (fixes + security) | `main` `71118c5` (fast-forward from `ff782cd`). Railway `a53e906d` SUCCESS, Vercel `dpl_8tc5WNix…` READY. Smoke checks passed |
+| 2. Finance merge | `main` `81ae640` (`--no-ff` from this branch; package files resolved with `resolve-package-json.js`). `npm test` 170/171 (HR only), audit: only `uuid`. Every finance file identical to the branch |
+| 3. Railway variables | `LEDGER_IDENTITY_KEY_ID=k2026a` and a newly generated `LEDGER_IDENTITY_KEY` (set without redeploy; never printed). `FINANCE_BOOKS_START=2026-11-25` set afterwards (the server does read it, in `lib/financialEpoch.js`; first noted wrongly as not needed). Redeploy `3d4076c8` SUCCESS |
+| 4. Deploy | Railway `bb6a9b75` SUCCESS: "Applied migration 175 … 179" in the start-up log. Vercel `dpl_6ZF3tzke…` READY |
+| 5. Database | Identity key row `k2026a` inserted (matches the service variable). `2026-11-25_accountant_settings.sql`: books_reset_at 2026-11-12T12:17:42Z → 2026-11-24T22:00:00Z; VAT and withholding suspended from 2026-11-25; commissions settled |
+| 6. Checks | Live check 0: last migration 179, five applied, 10 ledger tables, both switches present. r2: **19/19**. Health, socket and admin page 200; bad staff login 401; finance API 401 without login |
+| Approvers | 4 admin (CEO) accounts and 1 financial manager are authorised by 179 |
+| 7. Go-live (in the app) | Policy 2026.11 approved; posting switched on 15:58 UTC ("Approved by both"). The ledger was still empty: nothing had been recorded in the app since 25/11 |
+| 8. Opening balances | `deployment/2026-11-25_opening_balances.sql`: ADIB 631,317.71 · CIB 147,732.00 · Cash EGP 4,753.27 · Petty cash Sokhna 424.00 = 784,226.98, Cr retained earnings, dated 25/11, from the owner's sheets (balances only). The superseded 12/11 openings were removed (copy: `Main-Soul-preserved/opening-balances-before-2026-11-25.json`). The engine shows exactly these balances, balanced, from 25/11 and from 1/1 |
+| 9. Statements | Statement of profit or loss by function, statement of financial position (current / non-current) and trial balance of totals and balances, in English and Arabic (below) |
+
+Automatic deployment from `main` is **on** for both Railway and Vercel (every push to `main` deploys).
 
 ## Test results (synthetic data; local)
 | Suite | Result |
@@ -90,21 +100,13 @@ Gross revenue; **VAT 0 from 25/11** (taxes postponed); no historical commissions
 
 Nothing has been run on production, Supabase or a restored copy.
 
-## External approvals and actions that remain (genuine blockers)
-1. **DBA, production access needed:**
-   - ~~live checks 0–6 (read-only)~~ done 2026-11-25 (results file above); the production database password was shared in chat and **must be rotated**;
-   - backup and restore into a separate project, with the inventory identical (`pg_dump` was not available locally, so this step is prepared but unrehearsed);
-   - the restored-copy rehearsal, repeating the local runs above on real data.
-2. **Accountant:** decisions 1–3 and R-1 to R-8. None received (`ACCOUNTANT_DECISION_TRACKER.md`).
-3. **Owner:** written authorisation to merge each branch, and a separate GO to deploy each one.
-4. **At finance deployment:** the DBA runs the role and key setup on production and switches `DATABASE_URL` to `soul_app` (H3 is only effective after this).
-5. **Security deployment checks:**
-   - record whether the Railway service sets `TZ` (unset/UTC: attendance import unchanged; Cairo: corrected readings);
-   - whether `RESEND_API_KEY` or `SMTP_HOST` is set on Railway (the repository cannot show which);
-   - the Railway build uses Node ≥ 20;
-   - the Railway and Vercel builds fetch `xlsx` from `cdn.sheetjs.com` without `EINTEGRITY`.
-
-   (The server deploys on Railway and the client on Vercel, per `railway.json` and `Client/vercel.json`; earlier notes said Render.)
+## What remains
+1. ~~Go-live in the app~~ done. The 25/11 opening entries reach the stored ledger at the nightly run (04:30 Cairo), or at once with **Sync changes**.
+2. **Owner:** Petty Cash (Tatweer) −26,981.00: receivable from Tatweer or payable? Not entered until answered.
+3. **Rotate the production database password** (it was shared in chat). Afterwards update `DATABASE_URL` on Railway.
+4. **After a clean December:** switch reports to the ledger.
+5. Optional hardening: `db-security/ledger_roles.sql`, then `DATABASE_URL` → `soul_app`.
+6. HR to decide `hrRules.test.js:362`.
 
 ## Found outside finance
 - **HR:** the `hrRules.test.js:362` rule-versus-test mismatch. Not changed; HR to decide.

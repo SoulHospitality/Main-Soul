@@ -2651,6 +2651,41 @@ function buildPortal(journal, reservations, recurring, extras = {}) {
   };
 }
 
+/**
+ * Statement of profit or loss by function (IAS 1 / EAS 1 §99–103), built only from the posted accounts, so it
+ * ties to the balance sheet and to the stored ledger. Gross presentation (D-01, principal): revenue is the full
+ * stay price earned over the nights stayed; the owner share (506000) is a cost of revenue, not a deduction from
+ * revenue. Income tax is outside the system (D-10). The booking-date totals in `receipts` are a management
+ * figure (bookings made in the period), not revenue.
+ */
+function profitOrLossStatement(pnl) {
+  const sum = (rows) => round2((rows || []).reduce((s, a) => s + (a.balance || 0), 0));
+  const other = (pnl.expenses || []).filter((a) => !/^[56]/.test(String(a.code || '')));
+  const revenue = sum(pnl.revenue);
+  const costOfRevenue = sum(pnl.cogs);
+  const operating = sum(pnl.opex);
+  const otherTotal = sum(other);
+  const grossProfit = round2(revenue - costOfRevenue);
+  const operatingProfit = round2(grossProfit - operating);
+  return {
+    revenue: pnl.revenue || [],
+    cost_of_revenue: pnl.cogs || [],
+    operating_expenses: pnl.opex || [],
+    other_expenses: other,
+    totals: {
+      revenue,
+      cost_of_revenue: costOfRevenue,
+      gross_profit: grossProfit,
+      operating_expenses: operating,
+      operating_profit: operatingProfit,
+      other_expenses: otherTotal,
+      profit_before_tax: round2(operatingProfit - otherTotal),
+      income_tax: 0,
+      profit_for_period: round2(operatingProfit - otherTotal),
+    },
+  };
+}
+
 function buildStatements(journal, reservations, from, to, reservationTotals) {
   const isPnl = (a) => a.type === 'revenue' || a.type === 'expense';
   const bals = balancesFromJournal(journal);
@@ -2673,6 +2708,7 @@ function buildStatements(journal, reservations, from, to, reservationTotals) {
       ...pnl,
       receipts,
       totals: pnlTotalsFromReceipts(pnl, receipts),
+      statement: profitOrLossStatement(pnl),
     },
     balance_sheet: bs,
     cash_flow: cashFlow(journal, { openingJournal: [], closingJournal: journal, from, to }),
@@ -2766,6 +2802,7 @@ module.exports = {
   buildFinancialPortal,
   buildYtdStatements,
   buildStatements,
+  profitOrLossStatement,
   buildJournal,
   loadPortalData,
   balancesFromJournal,

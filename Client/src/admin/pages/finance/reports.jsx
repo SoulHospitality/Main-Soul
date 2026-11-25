@@ -59,7 +59,7 @@ import { RefundApprovalSteps, refundReady } from '../../components/RefundApprova
 import { FinLocaleProvider, useFinLocale } from '../../context/FinLocaleContext';
 import { SmartTable } from './DataTable';
 import { IntegrityBanner, ReportSourceNote } from './ledger';
-import { AccountLines, rangeParams } from './shared';
+import { rangeParams } from './shared';
 
 export function CashFlowSection({ cf, fromDate, toDate }) {
   const { t } = useFinLocale();
@@ -261,6 +261,201 @@ export function CashFlowTool({ rangeParams: params }) {
   );
 }
 
+const nonZero = (rows) => (rows || []).filter((a) => Math.abs(Number(a.balance) || 0) >= 0.005);
+const sumRows = (rows) => Math.round((rows || []).reduce((s, a) => s + (Number(a.balance) || 0), 0) * 100) / 100;
+/** Accounting format: negatives in parentheses, e.g. (19,600.79). */
+const acct = (n) => {
+  const v = Math.round((Number(n) || 0) * 100) / 100;
+  return v < 0 ? `(${currency(-v)})` : currency(v);
+};
+
+/** Statement of profit or loss by function, from the posted accounts (mirrors profitOrLossStatement on the server). */
+function profitOrLoss(pnl) {
+  if (pnl?.statement?.totals) return pnl.statement;
+  const revenue = pnl?.revenue || [];
+  const cost = pnl?.cogs || [];
+  const opex = pnl?.opex || [];
+  const other = (pnl?.expenses || []).filter((a) => !/^[56]/.test(String(a.code || '')));
+  const gross = sumRows(revenue) - sumRows(cost);
+  const operating = gross - sumRows(opex);
+  const pbt = operating - sumRows(other);
+  return {
+    revenue,
+    cost_of_revenue: cost,
+    operating_expenses: opex,
+    other_expenses: other,
+    totals: {
+      revenue: sumRows(revenue),
+      cost_of_revenue: sumRows(cost),
+      gross_profit: gross,
+      operating_expenses: sumRows(opex),
+      operating_profit: operating,
+      other_expenses: sumRows(other),
+      profit_before_tax: pbt,
+      income_tax: 0,
+      profit_for_period: pbt,
+    },
+  };
+}
+
+/** IAS 1 classification by account code: assets 10–11 and liabilities 20–21 are current; the rest non-current. */
+const isCurrentAsset = (code) => /^1[01]/.test(String(code));
+const isCurrentLiability = (code) => /^2[01]/.test(String(code));
+
+function StatementHeader({ title, period }) {
+  const { t } = useFinLocale();
+  return (
+    <div className="px-6 py-4 border-b">
+      <h3 className="font-semibold text-soul-blue">{title}</h3>
+      <p className="text-xs text-gray-500 mt-0.5">
+        {period} · {t('pms.fin.reports.std.currencyNote')}
+      </p>
+    </div>
+  );
+}
+
+function StatementLines({ rows, negate = false }) {
+  const shown = nonZero(rows);
+  if (!shown.length) return null;
+  return (
+    <div className="divide-y divide-soul-line/50">
+      {shown.map((a) => (
+        <div key={a.code} className="px-6 py-1.5 text-sm flex justify-between gap-3">
+          <span className="min-w-0">
+            <span className="font-mono text-[11px] text-gray-400 mr-2">{a.code}</span>
+            {a.name}
+          </span>
+          <span className="tabular-nums shrink-0">{acct(negate ? -a.balance : a.balance)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function StatementHeading({ children }) {
+  return <div className="px-6 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500">{children}</div>;
+}
+
+function StatementTotal({ label, amount, tone = 'sub' }) {
+  const cls =
+    tone === 'final'
+      ? 'px-6 py-3 bg-soul-blue text-white font-bold'
+      : tone === 'key'
+        ? 'px-6 py-2.5 bg-slate-50 font-semibold border-y border-soul-line'
+        : 'px-6 py-2 text-sm font-medium border-t border-soul-line/60';
+  return (
+    <div className={`flex justify-between gap-3 ${cls}`}>
+      <span>{label}</span>
+      <span className="tabular-nums">{acct(amount)}</span>
+    </div>
+  );
+}
+
+function ProfitOrLossStatement({ pnl, from, to }) {
+  const { t } = useFinLocale();
+  const s = profitOrLoss(pnl);
+  const tt = s.totals;
+  const receipts = pnl?.receipts || {};
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
+        <StatementHeader title={t('pms.fin.reports.std.plTitle')} period={t('pms.fin.reports.std.forPeriod', { from, to })} />
+        <StatementHeading>{t('pms.fin.reports.std.revenue')}</StatementHeading>
+        <StatementLines rows={s.revenue} />
+        <StatementTotal label={t('pms.fin.reports.std.totalRevenue')} amount={tt.revenue} />
+        <StatementHeading>{t('pms.fin.reports.std.costOfRevenue')}</StatementHeading>
+        <StatementLines rows={s.cost_of_revenue} negate />
+        <StatementTotal label={t('pms.fin.reports.std.totalCostOfRevenue')} amount={-tt.cost_of_revenue} />
+        <StatementTotal label={t('pms.fin.reports.std.grossProfit')} amount={tt.gross_profit} tone="key" />
+        <StatementHeading>{t('pms.fin.reports.std.operatingExpenses')}</StatementHeading>
+        <StatementLines rows={s.operating_expenses} negate />
+        <StatementTotal label={t('pms.fin.reports.std.totalOperatingExpenses')} amount={-tt.operating_expenses} />
+        <StatementTotal label={t('pms.fin.reports.std.operatingProfit')} amount={tt.operating_profit} tone="key" />
+        {nonZero(s.other_expenses).length ? (
+          <>
+            <StatementHeading>{t('pms.fin.reports.std.otherExpenses')}</StatementHeading>
+            <StatementLines rows={s.other_expenses} negate />
+          </>
+        ) : null}
+        <StatementTotal label={t('pms.fin.reports.std.profitBeforeTax')} amount={tt.profit_before_tax} />
+        <div className="px-6 py-2 text-sm flex justify-between gap-3 text-gray-500">
+          <span>{t('pms.fin.reports.std.incomeTax')}</span>
+          <span className="tabular-nums">—</span>
+        </div>
+        <StatementTotal label={t('pms.fin.reports.std.profitForPeriod')} amount={tt.profit_for_period} tone="final" />
+        <p className="px-6 py-3 text-[11px] text-gray-500 border-t">{t('pms.fin.reports.std.plBasis')}</p>
+      </div>
+      <div className="rounded-2xl border border-dashed border-soul-line bg-slate-50/60 p-4 text-sm space-y-1">
+        <p className="font-medium">{t('pms.fin.reports.std.bookingsTitle')}</p>
+        <div className="flex justify-between gap-3 text-gray-600">
+          <span>{t('pms.fin.reports.std.bookingsValue', { count: receipts.stay_count || 0 })}</span>
+          <span className="tabular-nums">{currency(receipts.total)}</span>
+        </div>
+        <p className="text-[11px] text-gray-500">{t('pms.fin.reports.std.bookingsNote')}</p>
+      </div>
+    </div>
+  );
+}
+
+function FinancialPositionStatement({ bs, to }) {
+  const { t } = useFinLocale();
+  const assets = bs?.assets || [];
+  const liabilities = bs?.liabilities || [];
+  const equity = bs?.equity || [];
+  const ncA = assets.filter((a) => !isCurrentAsset(a.code));
+  const cA = assets.filter((a) => isCurrentAsset(a.code));
+  const ncL = liabilities.filter((a) => !isCurrentLiability(a.code));
+  const cL = liabilities.filter((a) => isCurrentLiability(a.code));
+  const totalAssets = bs?.totals?.assets ?? sumRows(assets);
+  const totalLiab = bs?.totals?.liabilities ?? sumRows(liabilities);
+  const totalEquity = bs?.totals?.equity ?? sumRows(equity);
+  const diff = Math.round((totalAssets - totalLiab - totalEquity) * 100) / 100;
+  return (
+    <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
+      <StatementHeader title={t('pms.fin.reports.std.fpTitle')} period={t('pms.fin.reports.std.asAt', { date: to })} />
+      <div className="grid grid-cols-1 lg:grid-cols-2 lg:divide-x divide-soul-line">
+        <div>
+          <StatementHeading>{t('pms.fin.reports.std.assets')}</StatementHeading>
+          {nonZero(ncA).length ? (
+            <>
+              <StatementHeading>{t('pms.fin.reports.std.nonCurrentAssets')}</StatementHeading>
+              <StatementLines rows={ncA} />
+              <StatementTotal label={t('pms.fin.reports.std.totalNonCurrentAssets')} amount={sumRows(ncA)} />
+            </>
+          ) : null}
+          <StatementHeading>{t('pms.fin.reports.std.currentAssets')}</StatementHeading>
+          <StatementLines rows={cA} />
+          <StatementTotal label={t('pms.fin.reports.std.totalCurrentAssets')} amount={sumRows(cA)} />
+          <StatementTotal label={t('pms.fin.reports.std.totalAssets')} amount={totalAssets} tone="key" />
+        </div>
+        <div>
+          <StatementHeading>{t('pms.fin.reports.std.equity')}</StatementHeading>
+          <StatementLines rows={equity} />
+          <StatementTotal label={t('pms.fin.reports.std.totalEquity')} amount={totalEquity} />
+          {nonZero(ncL).length ? (
+            <>
+              <StatementHeading>{t('pms.fin.reports.std.nonCurrentLiabilities')}</StatementHeading>
+              <StatementLines rows={ncL} />
+              <StatementTotal label={t('pms.fin.reports.std.totalNonCurrentLiabilities')} amount={sumRows(ncL)} />
+            </>
+          ) : null}
+          <StatementHeading>{t('pms.fin.reports.std.currentLiabilities')}</StatementHeading>
+          <StatementLines rows={cL} />
+          <StatementTotal label={t('pms.fin.reports.std.totalCurrentLiabilities')} amount={sumRows(cL)} />
+          <StatementTotal label={t('pms.fin.reports.std.totalLiabilities')} amount={totalLiab} />
+          <StatementTotal label={t('pms.fin.reports.std.totalEquityAndLiabilities')} amount={totalLiab + totalEquity} tone="key" />
+        </div>
+      </div>
+      <div className={`px-6 py-2.5 text-xs border-t ${Math.abs(diff) < 0.01 ? 'text-emerald-700 bg-emerald-50/50' : 'text-rose-700 bg-rose-50/60'}`}>
+        {Math.abs(diff) < 0.01
+          ? t('pms.fin.reports.std.balanced')
+          : t('pms.fin.reports.std.notBalanced', { amount: currency(diff) })}
+      </div>
+      <p className="px-6 py-3 text-[11px] text-gray-500 border-t">{t('pms.fin.reports.std.fpBasis')}</p>
+    </div>
+  );
+}
+
 export function ReportsTool({ rangeParams: params }) {
   const { t } = useFinLocale();
   const [tab, setTab] = useState('pnl');
@@ -295,97 +490,67 @@ export function ReportsTool({ rangeParams: params }) {
           </button>
         ))}
       </div>
-      {tab === 'pnl' && (
-        <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
-          <div className="px-6 py-4 border-b">
-            <h3 className="font-semibold">{t('pms.fin.reports.pnlTitle')}</h3>
-            <p className="text-xs text-gray-500">{t('pms.fin.reports.pnlHint')}</p>
-          </div>
-          <div className="px-6 py-3 bg-emerald-50 text-sm flex justify-between font-semibold">
-            <span>{t('pms.fin.reports.grossRevenueLabel')}</span>
-            <span className="tabular-nums">{currency(pnl.totals?.gross_revenue ?? pnl.receipts?.total)}</span>
-          </div>
-          <div className="px-6 py-1.5 text-sm flex justify-between text-gray-600">
-            <span>{t('pms.fin.reports.reservationTotals')}</span>
-            <span className="tabular-nums">{currency(pnl.receipts?.stays)}</span>
-          </div>
-          <div className="px-6 py-1.5 text-sm flex justify-between text-gray-600">
-            <span>{t('pms.fin.reports.customRevenue')}</span>
-            <span className="tabular-nums">{currency(pnl.receipts?.custom)}</span>
-          </div>
-          <div className="px-6 py-2 text-sm flex justify-between text-rose-800 bg-rose-50/70">
-            <span>{t('pms.fin.reports.ownerShareLabel')}</span>
-            <span className="tabular-nums">−{currency(pnl.totals?.owner_share ?? pnl.receipts?.owner_share)}</span>
-          </div>
-          <div className="px-6 py-2 text-sm flex justify-between font-semibold">
-            <span>{t('pms.fin.reports.revenueAfterOwners')}</span>
-            <span className="tabular-nums">{currency(pnl.totals?.net_revenue)}</span>
-          </div>
-          <AccountLines rows={(pnl.cogs || []).filter((a) => a.code !== '506000')} />
-          <div className="px-6 py-2 bg-slate-50 text-sm flex justify-between">
-            <span>{t('pms.fin.reports.grossAfterDirect')}</span>
-            <span className="tabular-nums font-semibold">{currency(pnl.totals?.gross)}</span>
-          </div>
-          <AccountLines rows={pnl.opex} />
-          <div className="px-6 py-3 bg-soul-blue text-white flex justify-between">
-            <span>{t('pms.fin.reports.netProfitLoss')}</span>
-            <span className="tabular-nums font-bold">{currency(pnl.totals?.net)}</span>
-          </div>
-        </div>
-      )}
+      {tab === 'pnl' && <ProfitOrLossStatement pnl={pnl} from={data?.from_date} to={data?.to_date} />}
       {tab === 'tb' && (
         <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
           <SmartTable name="reports-2"><table className="table text-sm">
             <thead>
               <tr>
                 <th>{t('pms.fin.reports.thAccount')}</th>
-                <th className="text-right">{t('pms.fin.reports.thDebit')}</th>
-                <th className="text-right">{t('pms.fin.reports.thCredit')}</th>
+                <th className="text-right">{t('pms.fin.reports.std.tbDebitTotal')}</th>
+                <th className="text-right">{t('pms.fin.reports.std.tbCreditTotal')}</th>
+                <th className="text-right">{t('pms.fin.reports.std.tbDebitBalance')}</th>
+                <th className="text-right">{t('pms.fin.reports.std.tbCreditBalance')}</th>
               </tr>
             </thead>
             <tbody>
-              {(tb.rows || []).map((a) => (
-                <tr key={a.code}>
-                  <td>
-                    <span className="font-mono text-[11px] text-gray-400 mr-2">{a.code}</span>
-                    {a.name}
-                  </td>
-                  <td className="text-right tabular-nums">{a.debit ? currency(a.debit) : '—'}</td>
-                  <td className="text-right tabular-nums">{a.credit ? currency(a.credit) : '—'}</td>
-                </tr>
-              ))}
+              {(tb.rows || []).map((a) => {
+                const net = Math.round(((Number(a.debit) || 0) - (Number(a.credit) || 0)) * 100) / 100;
+                return (
+                  <tr key={a.code}>
+                    <td className="!whitespace-normal min-w-[12rem]">
+                      <span className="font-mono text-[11px] text-gray-400 mr-2">{a.code}</span>
+                      {a.name}
+                    </td>
+                    <td className="text-right tabular-nums whitespace-nowrap text-gray-500">{a.debit ? currency(a.debit) : '—'}</td>
+                    <td className="text-right tabular-nums whitespace-nowrap text-gray-500">{a.credit ? currency(a.credit) : '—'}</td>
+                    <td className="text-right tabular-nums whitespace-nowrap">{net > 0.004 ? currency(net) : '—'}</td>
+                    <td className="text-right tabular-nums whitespace-nowrap">{net < -0.004 ? currency(-net) : '—'}</td>
+                  </tr>
+                );
+              })}
             </tbody>
             <tfoot>
-              <tr className="font-semibold">
-                <td>{t('pms.fin.reports.total')}</td>
-                <td className="text-right tabular-nums">{currency(tb.debit)}</td>
-                <td className="text-right tabular-nums">{currency(tb.credit)}</td>
-              </tr>
+              {(() => {
+                const rows = tb.rows || [];
+                const nets = rows.map((a) => (Number(a.debit) || 0) - (Number(a.credit) || 0));
+                const dr = nets.filter((n) => n > 0).reduce((s, n) => s + n, 0);
+                const cr = -nets.filter((n) => n < 0).reduce((s, n) => s + n, 0);
+                return (
+                  <tr className="font-semibold">
+                    <td>{t('pms.fin.reports.total')}</td>
+                    <td className="text-right tabular-nums">{currency(tb.debit)}</td>
+                    <td className="text-right tabular-nums">{currency(tb.credit)}</td>
+                    <td className="text-right tabular-nums">{currency(dr)}</td>
+                    <td className="text-right tabular-nums">{currency(cr)}</td>
+                  </tr>
+                );
+              })()}
             </tfoot>
           </table></SmartTable>
+          {(() => {
+            const diff = Math.round(((Number(tb.debit) || 0) - (Number(tb.credit) || 0)) * 100) / 100;
+            return (
+              <div className={`px-4 py-2.5 text-xs border-t ${Math.abs(diff) < 0.01 ? 'text-emerald-700 bg-emerald-50/50' : 'text-rose-700 bg-rose-50/60'}`}>
+                {Math.abs(diff) < 0.01
+                  ? t('pms.fin.reports.std.tbBalanced', { date: data?.to_date })
+                  : t('pms.fin.reports.std.tbNotBalanced', { amount: currency(diff) })}
+              </div>
+            );
+          })()}
         </div>
       )}
-      {tab === 'bs' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
-            <div className="px-6 py-3 border-b font-semibold">{t('pms.fin.reports.assets')}</div>
-            <AccountLines rows={bs.assets} />
-            <div className="px-6 py-3 bg-slate-50 flex justify-between font-semibold">
-              <span>{t('pms.fin.reports.totalAssets')}</span>
-              <span className="tabular-nums">{currency(bs.totals?.assets)}</span>
-            </div>
-          </div>
-          <div className="rounded-2xl border border-soul-line bg-white overflow-hidden">
-            <div className="px-6 py-3 border-b font-semibold">{t('pms.fin.reports.liabilitiesEquity')}</div>
-            <AccountLines rows={bs.liabilities} />
-            <AccountLines rows={bs.equity} />
-            <div className="px-6 py-3 bg-slate-50 flex justify-between font-semibold">
-              <span>{t('pms.fin.reports.liabilitiesPlusEquity')}</span>
-              <span className="tabular-nums">{currency(bs.totals?.liabilities_and_equity)}</span>
-            </div>
-          </div>
-        </div>
-      )}
+      {tab === 'bs' && <FinancialPositionStatement bs={bs} to={data?.to_date} />}
     </div>
   );
 }
