@@ -1,7 +1,7 @@
 # HANDOFF: Financial reconstruction
 
 **Updated:** 2026-11-25 · **Branch:** `feature/finance-ledger`. **Deployed:** GitHub `main` `81ae640` is live on Railway and Vercel (deployment record below).
-**Status: DEPLOYED, posting OFF.** The fixes, security and finance are live. Migrations 175–179 are applied and the accountant's settings are in place. What remains is the in-app go-live by the CEOs and financial managers, then the opening balances from the owner.
+**Status: LIVE, posting ON (2026-11-25).** The fixes, security and finance are live. Migrations 175–179 are applied, the accountant's settings are in place, the CEOs and a financial manager completed the go-live in the app (policy 2026.11 approved, posting switched on), and the opening treasury balances are entered. Reports stay on the live calculation until a clean December.
 
 ## Start here
 | Reader | Document |
@@ -77,11 +77,14 @@ Gross revenue; **VAT 0 from 25/11** (taxes postponed); no historical commissions
 |---|---|
 | 1. Release (fixes + security) | `main` `71118c5` (fast-forward from `ff782cd`). Railway `a53e906d` SUCCESS, Vercel `dpl_8tc5WNix…` READY. Smoke checks passed |
 | 2. Finance merge | `main` `81ae640` (`--no-ff` from this branch; package files resolved with `resolve-package-json.js`). `npm test` 170/171 (HR only), audit: only `uuid`. Every finance file identical to the branch |
-| 3. Railway variables | `LEDGER_IDENTITY_KEY_ID=k2026a` and a newly generated `LEDGER_IDENTITY_KEY` (set without redeploy; never printed). `FINANCE_BOOKS_START` is not needed: the server reads the books start from the database |
+| 3. Railway variables | `LEDGER_IDENTITY_KEY_ID=k2026a` and a newly generated `LEDGER_IDENTITY_KEY` (set without redeploy; never printed). `FINANCE_BOOKS_START=2026-11-25` set afterwards (the server does read it, in `lib/financialEpoch.js`; first noted wrongly as not needed). Redeploy `3d4076c8` SUCCESS |
 | 4. Deploy | Railway `bb6a9b75` SUCCESS: "Applied migration 175 … 179" in the start-up log. Vercel `dpl_6ZF3tzke…` READY |
 | 5. Database | Identity key row `k2026a` inserted (matches the service variable). `2026-11-25_accountant_settings.sql`: books_reset_at 2026-11-12T12:17:42Z → 2026-11-24T22:00:00Z; VAT and withholding suspended from 2026-11-25; commissions settled |
 | 6. Checks | Live check 0: last migration 179, five applied, 10 ledger tables, both switches present. r2: **19/19**. Health, socket and admin page 200; bad staff login 401; finance API 401 without login |
 | Approvers | 4 admin (CEO) accounts and 1 financial manager are authorised by 179 |
+| 7. Go-live (in the app) | Policy 2026.11 approved; posting switched on 15:58 UTC ("Approved by both"). The ledger was still empty: nothing had been recorded in the app since 25/11 |
+| 8. Opening balances | `deployment/2026-11-25_opening_balances.sql`: ADIB 631,317.71 · CIB 147,732.00 · Cash EGP 4,753.27 · Petty cash Sokhna 424.00 = 784,226.98, Cr retained earnings, dated 25/11, from the owner's sheets (balances only). The superseded 12/11 openings were removed (copy: `Main-Soul-preserved/opening-balances-before-2026-11-25.json`). The engine shows exactly these balances, balanced, from 25/11 and from 1/1 |
+| 9. Statements | Statement of profit or loss by function, statement of financial position (current / non-current) and trial balance of totals and balances, in English and Arabic (below) |
 
 Automatic deployment from `main` is **on** for both Railway and Vercel (every push to `main` deploys).
 
@@ -98,8 +101,8 @@ Automatic deployment from `main` is **on** for both Railway and Vercel (every pu
 Nothing has been run on production, Supabase or a restored copy.
 
 ## What remains
-1. **CEOs and financial managers, in the app** (Financial System → Ledger controls → Go-live; `FINANCE_GO_LIVE.md` §2): approve revenue (gross), approve taxes (suspended), record the policy (a *different* person), switch posting on with a reason, then **Sync changes**.
-2. **Owner:** the bank and cash balances at 25/11, posted as one opening entry.
+1. ~~Go-live in the app~~ done. The 25/11 opening entries reach the stored ledger at the nightly run (04:30 Cairo), or at once with **Sync changes**.
+2. **Owner:** Petty Cash (Tatweer) −26,981.00: receivable from Tatweer or payable? Not entered until answered.
 3. **Rotate the production database password** (it was shared in chat). Afterwards update `DATABASE_URL` on Railway.
 4. **After a clean December:** switch reports to the ledger.
 5. Optional hardening: `db-security/ledger_roles.sql`, then `DATABASE_URL` → `soul_app`.

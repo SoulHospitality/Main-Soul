@@ -34,7 +34,8 @@
 
 ## Still open (not blocking go-live)
 - ~~Withholding tax~~ **answered 2026-11-25: suspended too** (`wht_suspended_from`); vendors are paid in full from 25/11.
-- **Bank and cash balances on 25/11.** Counting starts from zero. If the accountant wants actual balances carried in, they must be signed figures, entered as one opening entry.
+- ~~Bank and cash balances on 25/11~~ **entered 2026-11-25 from the owner's treasury sheets:** ADIB 631,317.71 · CIB 147,732.00 · Cash EGP 4,753.27 · Petty cash Sokhna 424.00 (total 784,226.98, against retained earnings). `deployment/2026-11-25_opening_balances.sql`.
+- **Petty Cash (Tatweer), −26,981.00** (no movement since July): not entered. A drawer can't be negative; it is money spent for Tatweer units, so it is a receivable from Tatweer or a payable to whoever funded it. **Owner to say which.**
 - ~~Signed copy~~ **not required (owner, 2026-11-25):** the owner and the accountant approve. In the system, CEOs and financial managers approve from their own login, citing "Accountant's approval confirmed by the owner".
 
 ## Change log
@@ -43,3 +44,4 @@
 | 2026-11-25 | Tracker created; nothing received | Developer |
 | 2026-11-25 | Answers received (relayed by the owner); Part D decided by the owner; engine updated (VAT suspension, R-1, R-5) | Developer, on the owner's instruction |
 | 2026-11-25 | Withholding suspended too; no signed copy needed; approvers = CEOs and financial managers (migration 179), from their own login | Developer, on the owner's instruction |
+| 2026-11-25 | Go-live done in the app (policy 2026.11 approved, posting on). Opening treasury balances entered from the owner's sheets | CEOs / financial manager; developer for the balances, on the owner's instruction |

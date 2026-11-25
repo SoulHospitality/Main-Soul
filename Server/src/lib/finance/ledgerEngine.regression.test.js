@@ -138,3 +138,28 @@ describe('engine error handling (Phase 7)', () => {
     assert.deepEqual(clean.integrity.unknown_accounts, []);
   });
 });
+
+describe('Statement of profit or loss by function (D-01 gross, IAS 1)', () => {
+  // A 1,000 stay: owner slice 750 (404000) + company 250 (401000); owner share 750 is a cost of revenue (506000).
+  const j = [
+    entry('OB', '2026-11-25', 'manual_journal', [line('101000', 5000, 0), line('302000', 0, 5000)]),
+    entry('BK', '2026-11-26', 'booking', [line('105000', 1000, 0), line('404000', 0, 750), line('401000', 0, 250)]),
+    entry('OS', '2026-11-26', 'booking', [line('506000', 750, 0), line('202000', 0, 750)]),
+    entry('EX', '2026-11-27', 'expense', [line('608000', 100, 0), line('101000', 0, 100)]),
+  ];
+  const st = e.buildStatements(j, [], '2026-11-25', '2026-11-30');
+  const p = st.profit_and_loss.statement;
+  it('revenue is the full stay price, and the owner share is a cost of revenue', () => {
+    assert.equal(p.totals.revenue, 1000);
+    assert.equal(p.totals.cost_of_revenue, 750);
+    assert.equal(p.totals.gross_profit, 250);
+    assert.ok(p.cost_of_revenue.some((a) => a.code === '506000'));
+  });
+  it('profit for the period = revenue − expenses = current-year earnings on the balance sheet', () => {
+    assert.equal(p.totals.operating_expenses, 100);
+    assert.equal(p.totals.profit_for_period, 150);
+    const eq = Object.fromEntries(st.balance_sheet.equity.map((a) => [a.code, a.balance]));
+    assert.equal(eq['303000'], 150);
+    assert.equal(st.balance_sheet.totals.assets, st.balance_sheet.totals.liabilities_and_equity);
+  });
+});

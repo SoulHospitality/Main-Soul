@@ -31,3 +31,30 @@ Everything is in English and Arabic (`pms.fin.ledger`, `pms.fin.commissionReview
 
 ## Screenshots
 `ui/fin-ledger-en.png`, `ui/fin-ledger-ar.png`, `ui/fin-commission-review-en.png`, `ui/fin-commission-review-ar.png`, `ui/fin-statements-en.png`, `ui/fin-statements-ar.png`.
+
+## Financial statements to the accounting standards (2026-11-25)
+**Reports → Financial statements** now presents the statements as EAS 1 / IAS 1 require, with the accountant's decisions applied:
+- **Statement of profit or loss, by function:**
+  - Revenue (the full stay price over the nights stayed: gross, D-01 / EAS 48);
+  - Cost of revenue, including the owner share (506000);
+  - Gross profit, operating expenses, operating profit, profit before tax;
+  - Income tax (outside the system, D-10);
+  - Profit for the period.
+
+  It is built from the posted accounts (`profitOrLossStatement` in `ledgerEngine.js`), so it agrees with the statement of financial position and with the stored ledger. Before this change the page took booking-date reservation totals as revenue and deducted the owner share from revenue (the net, agent presentation). That figure is still shown, labelled *Management figure (not revenue): bookings made in the period*.
+- **Statement of financial position, as at the period end:**
+  - current and non-current assets and liabilities (by account code: 10–11 and 20–21 are current);
+  - equity, with retained earnings including the 25/11 opening balances, and the profit for the period;
+  - a check that assets equal equity plus liabilities.
+- **Trial balance:**
+  - totals and balances (Egyptian practice): debit and credit totals, then each account's debit or credit balance;
+  - a check that it balances.
+- **Presentation:**
+  - every statement shows its title, its period or "as at" date, and the currency (EGP);
+  - costs and credit balances appear in parentheses;
+  - zero lines are hidden.
+- **Excel export** (statements workbook): the same statement layout, with bookings in a separate *Management figures (not revenue)* section.
+- **Tested:**
+  - engine regression test (gross statement ties to the balance sheet), 17/17;
+  - `engine-validation` 45/45, `engine-validation-extra` 23/23, `accountant-decisions-test` 15/15, `ledger-ui-api-test` 21/21;
+  - all three tabs rendered in Chrome in English and Arabic with no errors and no missing labels (the test data's deliberate unknown-account line is flagged as "not balanced", as intended).

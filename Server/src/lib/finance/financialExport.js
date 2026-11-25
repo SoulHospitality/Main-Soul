@@ -350,45 +350,37 @@ function buildPnlSheet(statements) {
   const pnl = statements?.profit_and_loss || {};
   const totals = pnl.totals || {};
   const receipts = pnl.receipts || {};
+  // Statement of profit or loss by function (IAS 1 / EAS 1), from the posted accounts; gross presentation (D-01).
+  const st = (pnl.statement || require('./ledgerEngine').profitOrLossStatement(pnl)).totals;
   const rows = [
-    banner('PROFIT & LOSS'),
-    subtitle('Gross receipts and ledger P&L'),
-    blank(),
-    section('GROSS RECEIPTS'),
-    blank(),
-    header('Section', 'Account / Item', 'Amount (EGP)'),
-    data('Receipts', 'Gross reservation + custom revenue', money(receipts.total ?? totals.gross_revenue)),
-    data('Receipts', 'Stay revenue', money(receipts.stays)),
-    data('Receipts', 'Stay count', receipts.stay_count || 0),
-    data('Receipts', 'Custom / manual revenue', money(receipts.custom)),
-    data('Receipts', 'Custom revenue count', receipts.custom_count || 0),
-    data('Receipts', 'Owner share (of stays)', money(receipts.owner_share ?? totals.owner_share)),
-    data('Receipts', 'Company / commission share', money(totals.company_share ?? receipts.company_share)),
-    blank(),
-    section('LEDGER P&L ACCOUNTS'),
+    banner('STATEMENT OF PROFIT OR LOSS'),
+    subtitle('Accrual basis, by function. Revenue over the nights stayed at the full price (gross); owner share is a cost of revenue.'),
     blank(),
     header('Section', 'Account / Item', 'Amount (EGP)'),
   ];
 
   pushAccountSection(rows, 'REVENUE', pnl.revenue);
-  rows.push(blank());
-  pushAccountSection(rows, 'COGS', pnl.cogs);
-  rows.push(blank());
-  pushAccountSection(rows, 'OPEX', pnl.opex);
-
+  rows.push(kv('Total revenue', money(st.revenue ?? totals.revenue)), blank());
+  pushAccountSection(rows, 'COST OF REVENUE', pnl.cogs);
+  rows.push(kv('Total cost of revenue', money(st.cost_of_revenue)), kv('Gross profit', money(st.gross_profit)), blank());
+  pushAccountSection(rows, 'OPERATING EXPENSES', pnl.opex);
   rows.push(
+    kv('Total operating expenses', money(st.operating_expenses)),
+    kv('Operating profit', money(st.operating_profit)),
+    kv('Other expenses', money(st.other_expenses)),
+    kv('Profit before tax', money(st.profit_before_tax)),
+    kv('Income tax (recorded at year end, outside the system)', money(0)),
+    total('Profit (loss) for the period', money(st.profit_for_period)),
     blank(),
-    section('TOTALS'),
+    section('MANAGEMENT FIGURES (NOT REVENUE)'),
     blank(),
-    header('Metric', 'Amount (EGP)'),
-    kv('Gross revenue', money(totals.gross_revenue ?? receipts.total)),
-    kv('Owner share', money(totals.owner_share)),
-    kv('Net revenue (after owner share)', money(totals.net_revenue)),
-    kv('Soul fees / posted revenue', money(totals.soul_fees ?? totals.revenue)),
-    kv('COGS (ex owner share)', money(totals.cogs)),
-    kv('Gross profit', money(totals.gross)),
-    kv('Operating expenses', money(totals.opex)),
-    total('Net profit', money(totals.net))
+    header('Section', 'Item', 'Amount (EGP)'),
+    data('Bookings', 'Bookings made in the period, by booking date', money(receipts.total ?? totals.gross_revenue)),
+    data('Bookings', 'of which stays', money(receipts.stays)),
+    data('Bookings', 'Stay count', receipts.stay_count || 0),
+    data('Bookings', 'of which custom / manual revenue', money(receipts.custom)),
+    data('Bookings', 'Owner share of those bookings', money(receipts.owner_share ?? totals.owner_share)),
+    data('Bookings', 'Company share of those bookings', money(totals.company_share ?? receipts.company_share))
   );
   return rows;
 }
