@@ -18,6 +18,7 @@ const {
 const { refreshCustomAccounts } = require('./customAccounts');
 const { refreshBooksReset, booksResetAt, afterReset } = require('./booksReset');
 const { bookingSplit, withholdingTax, extractInputVat } = require('./taxEngine');
+const { refreshVatPolicy, vatRateFor } = require('./vatPolicy');
 const { reservationPeriodSql, currentPeriodBasis, STAY } = require('./periodBasis');
 
 /** Cairo calendar day of the books restart ('' when the books were never restarted). */
@@ -184,7 +185,8 @@ function makeEntry({ id, date, type, description, lines, meta }) {
 function reservationFinancials(r) {
   const utilitiesAmount = reservationUtilitiesAmount(r, r.utilities_cost);
   const fin = calcReservationFinancials(r, { ...r, utilities_amount: utilitiesAmount });
-  return { fin, split: bookingSplit(fin, r) };
+  // VAT follows the policy for the stay's booking date (suspended from vat_suspended_from: accountant, 2026-11-25).
+  return { fin, split: bookingSplit(fin, r, { vatRatePct: vatRateFor(reservationBookedDate(r)) }) };
 }
 
 function guestQuotedTotal(r, split) {
@@ -478,6 +480,40 @@ function collectionEntry(p, reservation) {
     ? '302000'
     : unearned || (cancelled && payDate && checkIn && payDate < checkIn) ? '203000' : '105000';
 
+  // R-1 (accountant, 2026-11-25): a refund on an earned stay reduces revenue and tax "like it never happened": it
+  // reverses the stay's own booking lines in proportion (revenue, VAT, owner share and payable). Any part beyond the
+  // stay's invoice is a returned overpayment and goes back to the guest receivable as before.
+  if (refund && creditAccount === '105000' && reservation && !reservation.legacy_outside) {
+    const reversal = refundReversalLines(reservation, abs);
+    if (reversal) {
+      const lines = [...reversal.lines];
+      if (reversal.overpayment > 0.009) lines.push(journalLine('105000', reversal.overpayment, 0, 'Return overpayment'));
+      lines.push(withUsd(journalLine(treasury, 0, abs, `Treasury out (${method})`), abs, reservation));
+      return makeEntry({
+        id: p.synthetic ? `PAYX-${p.reservation_id}` : `PAY-${p.id}`,
+        date: payDate,
+        type: 'refund',
+        description: `Refund ${method} — ${reservation?.guest_name || 'Guest'}`,
+        lines,
+        meta: {
+          reservation_id: p.reservation_id,
+          payment_id: p.synthetic ? null : p.id,
+          guest_name: reservation?.guest_name,
+          unit_name: reservation?.unit_name,
+          payment_method: method,
+          treasury_account: treasury,
+          from_account: treasury,
+          to_account: '401000',
+          collected: false,
+          refund: true,
+          unit_id: reservation?.unit_id,
+          revenue_reversed: reversal.reversed,
+          overpayment: reversal.overpayment,
+        },
+      });
+    }
+  }
+
   if (refund) {
     return makeEntry({
       id: p.synthetic ? `PAYX-${p.reservation_id}` : `PAY-${p.id}`,
@@ -530,6 +566,36 @@ function collectionEntry(p, reservation) {
   });
 }
 
+/**
+ * Lines that reverse a stay's booking in proportion to a refund (R-1). Returns { lines, reversed, overpayment }:
+ * `reversed` is the part of the refund (up to the stay's invoice incl. VAT) taken back out of revenue, VAT and the
+ * owner's share; `overpayment` is the rest. The receivable lines of the booking are not reversed (the cash goes out
+ * instead). Rounding is put on the largest line so the lines always net to exactly `reversed`.
+ */
+function refundReversalLines(r, refundAmount) {
+  const { fin, split } = reservationFinancials(r);
+  const alloc = allocateStayCredits(r, fin, split);
+  const invoice = round2(alloc.ar);
+  if (!(invoice > 0.009)) return null;
+  const reversed = round2(Math.min(refundAmount, invoice));
+  const factor = reversed / invoice;
+  const lines = [];
+  for (const l of alloc.lines) {
+    if (l.account === '105000') continue;
+    const dr = round2((l.credit || 0) * factor);
+    const cr = round2((l.debit || 0) * factor);
+    if (dr > 0.009) lines.push(journalLine(l.account, dr, 0, `Refund: reverse ${l.memo || l.account}`));
+    if (cr > 0.009) lines.push(journalLine(l.account, 0, cr, `Refund: reverse ${l.memo || l.account}`));
+  }
+  const net = round2(lines.reduce((s, l) => s + (l.debit || 0) - (l.credit || 0), 0));
+  const diff = round2(reversed - net);
+  if (Math.abs(diff) > 0.0001) {
+    const target = lines.filter((l) => (l.debit || 0) > 0).sort((a, b) => b.debit - a.debit)[0];
+    if (target) target.debit = round2(target.debit + diff);
+  }
+  return { lines, reversed, overpayment: round2(refundAmount - reversed) };
+}
+
 function depositReclassEntry(r, prepaid, asOf) {
   const amt = round2(prepaid);
   if (!(amt > 0.009) || !shouldRecognizeStay(r, asOf)) return null;
@@ -555,20 +621,36 @@ function cancelForfeitEntry(r, prepaid) {
   const amt = round2(prepaid);
   if (!(amt > 0.009) || !isCancelledStay(r)) return null;
   const date = isoDate(r.updated_at || r.cancelled_at || r.check_in);
+  // R-5 (accountant, 2026-11-25): the owner always gets accommodation − utilities − the company's %. A cancelled stay
+  // used no utilities, so the owner's share of a forfeit is the forfeit less the company's %. Gross presentation:
+  // the whole forfeit is revenue and the owner's share is an expense owed to the owner.
+  // The commission calculation gives a cancelled stay 0%, so take the rate the stay carried as booked.
+  const { split } = reservationFinancials({ ...r, status: 'confirmed' });
+  const companyPct = Math.max(0, Math.min(100, Number(split.soul_commission_pct) || 0));
+  const ownerShare = round2(amt - round2(amt * (companyPct / 100)));
+  const lines = [
+    journalLine('203000', amt, 0, 'Release unearned deposit'),
+    journalLine('409000', 0, amt, 'Cancelled stay forfeiture'),
+  ];
+  if (ownerShare > 0.009) {
+    lines.push(journalLine('506000', ownerShare, 0, `Owner share of forfeit (100% − company ${companyPct}%)`));
+    lines.push(journalLine('202000', 0, ownerShare, 'Forfeit share owed to the owner'));
+  }
   return makeEntry({
     id: `CXL-${r.id}`,
     date,
     type: 'cancellation',
     description: `Forfeit deposit — ${r.guest_name || 'Guest'}`,
-    lines: [
-      journalLine('203000', amt, 0, 'Release unearned deposit'),
-      journalLine('409000', 0, amt, 'Cancelled stay forfeiture'),
-    ],
+    lines,
     meta: {
       reservation_id: r.id,
       guest_name: r.guest_name,
       from_account: '203000',
       to_account: '409000',
+      unit_id: r.unit_id,
+      unit_name: r.unit_name,
+      owner_share: ownerShare,
+      company_pct: companyPct,
     },
   });
 }
@@ -607,7 +689,8 @@ function expenseEntries(e) {
   const acct = EXPENSE_CATEGORY_TO_ACCOUNT[e.category] || '605000';
   const companyPaid = String(e.paid_by || 'company') !== 'owner';
   const taxed = String(e.tax_mode || 'auto') !== 'none';
-  const inputVat = companyPaid && taxed && INPUT_VAT_CATEGORIES.includes(e.category) ? extractInputVat(amt) : null;
+  const vatOn = vatRateFor(isoDate(e.expense_date) || isoDate(e.created_at)) > 0;
+  const inputVat = vatOn && companyPaid && taxed && INPUT_VAT_CATEGORIES.includes(e.category) ? extractInputVat(amt) : null;
   const expenseNet = inputVat ? inputVat.net : amt;
   const vatAmt = inputVat ? inputVat.vat : 0;
   const skipWht = WHT_SKIP_CATEGORIES.includes(e.category);
@@ -681,7 +764,7 @@ function recurringEntries(rec, month, from, to) {
   const date = `${month}-${day}`;
   if (!inRange(date, from, to)) return [];
   const amt = round2(Number(rec.amount_egp) || 0);
-  const vatKinds = rec.kind === 'rent' || rec.kind === 'utilities';
+  const vatKinds = (rec.kind === 'rent' || rec.kind === 'utilities') && vatRateFor(date) > 0;
   const inputVat = vatKinds ? extractInputVat(amt) : { net: amt, vat: 0 };
   const expenseNet = inputVat.net;
   const vatAmt = inputVat.vat;
@@ -983,6 +1066,7 @@ function prepaidAmount(r, payments) {
 async function loadPortalData(from, to) {
   await refreshCustomAccounts();
   await refreshBooksReset();
+  await refreshVatPolicy();
   const period = reservationPeriodSql('r');
   const resParams = [from];
   let resSql = `(
@@ -2397,6 +2481,18 @@ function ownerTrustSubledger(journal, data) {
     }
     if (e.type === 'owner_payout') {
       touch(e.meta?.owner_id, e.meta?.owner_name).payouts += e.debit || 0;
+    }
+    // R-1 refunds reduce, and R-5 forfeits add to, what the stay's owner is owed (lines on 202000).
+    if (e.type === 'refund' || e.type === 'cancellation') {
+      const net = round2(e.lines.filter((l) => l.account === '202000').reduce((s, l) => s + (l.credit || 0) - (l.debit || 0), 0));
+      if (Math.abs(net) > 0.009) {
+        const links = linksByUnit[String(e.meta?.unit_id)] || [];
+        if (!links.length) touch(null, e.meta?.unit_name).credits += net;
+        else {
+          const each = round2(net / links.length);
+          for (const link of links) touch(link.owner_id, link.owner_name).credits += each;
+        }
+      }
     }
     if (e.type === 'owner_holdback') {
       const amt = e.lines.find((l) => l.account === '202000')?.debit || e.debit || 0;

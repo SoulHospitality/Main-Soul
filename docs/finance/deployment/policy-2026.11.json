@@ -1,0 +1,25 @@
+{
+  "version": "2026.11",
+  "effective_from": "2026-11-25",
+  "source": "Accountant's answers relayed by the owner on 2026-11-25; Part D decided by the owner (delegated). The written references are entered by the approvers when recording, from the accountant's signed copy.",
+  "settings": {
+    "revenue_presentation": "gross",
+    "vat_base": "suspended",
+    "vat_suspended_from": "2026-11-25",
+    "vat_note": "Taxes postponed (0) while the company negotiates with the tax authority; resume by a new policy version.",
+    "books_start": "2026-11-25",
+    "opening_balances": "none",
+    "historical_commissions": "settled_already_paid_no_reconstruction",
+    "refunds": "reverse_revenue_and_tax_pro_rata",
+    "forfeit_owner_share": "forfeit_minus_company_pct (accommodation − utilities − company %; a cancelled stay has no utilities)",
+    "payroll": "net_as_paid",
+    "petty_cash_topup_without_source": "miscellaneous_revenue",
+    "fixed_monthly_charges_input_vat": "14pct_inclusive_when_vat_applies",
+    "revenue_timing": "over_nights_stayed",
+    "guest_advances": "liability_until_stay",
+    "credit_loss_method": "aging_matrix",
+    "income_tax": "outside_the_system_year_end_manual_entry",
+    "segregation_of_duties": "finance_records; admins_approve_close_reopen; approver_differs_from_recorder",
+    "legacy_cash_ledger": "retired_read_only"
+  }
+}

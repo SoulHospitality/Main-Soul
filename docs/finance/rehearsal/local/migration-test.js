@@ -120,6 +120,19 @@ const TO = '2026-12-31';
   const pOpen = await mig.plan({ from: FROM, to: TO, policyVersion: 'MIG-TEST', openingBalances: [{ account: '101000', debit: 1000 }, { account: '301000', credit: 1000 }] });
   ok(pOpen.entries[0].sourceType === 'opening_balance' && pOpen.entries[0].idempotencyKey === `opening:${FROM}` && pOpen.balanced, 'balanced opening balances become one opening entry at the start date');
 
+  // ── VAT suspended (accountant, 2026-11-25): the treatment check follows the engine ──
+  await query(`INSERT INTO financial_settings (key, value_text) VALUES ('vat_suspended_from', '2026-11-01')`);
+  const db0 = { query };
+  err = null;
+  try { await mig.engineTreatmentFor(db0, '2026-10-01', '2026-12-31'); } catch (x) { err = x; }
+  ok(err?.code === 'RANGE_SPANS_VAT_CHANGE', 'a range straddling the VAT suspension date is refused (split it at the date)', err?.code);
+  ok(JSON.stringify(await mig.engineTreatmentFor(db0, '2026-11-01', '2026-12-31')) === JSON.stringify(mig.ENGINE_TREATMENT_VAT_SUSPENDED)
+    && JSON.stringify(await mig.engineTreatmentFor(db0, '2026-10-01', '2026-10-31')) === JSON.stringify(mig.ENGINE_TREATMENT),
+    'after the date the engine treatment is gross + VAT suspended; before it, gross + standard VAT');
+  ok(mig.methodCompatible({ revenue_presentation: 'gross', vat_base: 'suspended' }, mig.ENGINE_TREATMENT_VAT_SUSPENDED).compatible
+    && !mig.methodCompatible({ revenue_presentation: 'gross', vat_base: 'fee_plus_cleaning' }, mig.ENGINE_TREATMENT_VAT_SUSPENDED).compatible,
+    'the accountant\'s policy (gross, VAT suspended) matches the suspended engine; the old treatment does not');
+
   await pool.end?.();
   console.log(failed ? `\n${failed} FAILED (${passed} passed)` : `\nALL ${passed} PASSED`);
   process.exit(failed ? 1 : 0);

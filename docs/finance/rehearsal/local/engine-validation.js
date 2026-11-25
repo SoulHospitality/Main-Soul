@@ -83,8 +83,19 @@ const ok = (cond, name, detail) => {
   const gw = journal.find((x) => x.type === 'gateway_settle' && x.meta?.reservation_id === fx.res.s4);
   ok(gw && eq(sumLines([gw], '504000', 'debit'), m.percentOf('4500', '1.5')) && eq(sumLines([gw], '106000', 'credit'), '4500'), 'Paymob settlement: 1.5% gateway fee expensed, clearing account emptied');
   const ref = forRes('s4', 'refund');
-  ok(eq(sumLines(ref, '106000', 'credit'), '500') && eq(sumLines(ref, '105000', 'debit'), '500'),
-    'refund: paid out through the gateway and put back on the guest receivable (revenue is not reduced by a refund alone)');
+  // R-1 (accountant, 2026-11-25): a refund reverses revenue and tax "like it never happened", in proportion to the
+  // stay's invoice; nothing goes back on the guest receivable.
+  const bk4 = forRes('s4', 'booking');
+  const inv4 = sumLines(bk4, '105000', 'debit');
+  const f4 = m.div(500, inv4);
+  const expect4 = (acct) => m.round(m.mul(sumLines(bk4, acct, 'credit'), f4));
+  const refNet = m.sub(m.sum(ref.flatMap((x) => x.lines).map((l) => l.debit || 0)), m.sum(ref.flatMap((x) => x.lines).filter((l) => l.account !== '106000').map((l) => l.credit || 0)));
+  ok(eq(sumLines(ref, '106000', 'credit'), '500') && eq(sumLines(ref, '105000', 'debit'), '0') && ref.every((x) => x.balanced),
+    'refund (R-1): 500 paid out through the gateway; nothing put back on the guest receivable; entry balanced');
+  ok(eq(sumLines(ref, '205000', 'debit'), expect4('205000')) && eq(sumLines(ref, '401000', 'debit'), expect4('401000'))
+    && m.abs(m.sub(sumLines(ref, '404000', 'debit'), expect4('404000'))).lte('0.02') && eq(sumLines(ref, '202000', 'debit'), m.round(m.mul(sumLines(bk4, '202000', 'credit'), f4))),
+    `refund (R-1): revenue, VAT and the owner's share are reversed in proportion (500 / ${m.toFixed(inv4)} of the stay)`, { vat: sumLines(ref, '205000', 'debit'), want: expect4('205000') });
+  ok(eq(refNet, '500'), 'refund (R-1): the reversed lines add up to exactly the refund', m.toFixed(refNet));
   // ── 4. FX: USD cash carries its dollar figure ──
   const usdLines = journal.flatMap((x) => (x.lines || []).filter((l) => l.account === '104000'));
   ok(usdLines.length > 0 && usdLines.every((l) => Number(l.usd) > 0) && eq(m.round(m.div(usdLines[0].debit, 48.5)), usdLines[0].usd),
@@ -142,8 +153,8 @@ const ok = (cond, name, detail) => {
   ok(ot.tied && eq(ot.control_202000, byCode['202000'].balance), 'owner balances: subledger ties to the owner payable control account (202000)');
   ok(eq(byCode['201000'].balance, '1200'), 'accounts payable: only the owner-paid repair (1200) is still open; the paid utility bill is cleared');
   const vr = e.vatReturn(journal);
-  const expectedOut = m.sum([vat(s1.company.plus(500)), vat(s2.company), vat(s3.company), vat(s4.company)]);
-  ok(eq(vr.output_vat, expectedOut) && eq(vr.output_vat, byCode['205000'].balance), 'tax: output VAT return = sum of stay VAT = control account 205000', vr);
+  const expectedOut = m.sub(m.sum([vat(s1.company.plus(500)), vat(s2.company), vat(s3.company), vat(s4.company)]), sumLines(ref, '205000', 'debit'));
+  ok(eq(vr.output_vat, expectedOut) && eq(vr.output_vat, byCode['205000'].balance), 'tax: output VAT return = sum of stay VAT less the VAT reversed by the S4 refund (R-1) = control account 205000', vr);
   ok(eq(vr.input_vat, byCode['107000'].balance) && eq(vr.input_vat, '104.39'), 'tax: input VAT = 107000 (utility bill treated as VAT-inclusive at 14%: 850 → 104.39)');
   const commissions = m.sum([s1.company, s2.company, s3.company, s4.company]);
   ok(eq(byCode['401000'].balance + 0, byCode['401000'].balance) && eq(sumLines(journal.filter((x) => x.type === 'booking'), '401000', 'credit'), commissions),
@@ -151,9 +162,9 @@ const ok = (cond, name, detail) => {
   ok(eq(sumLines(journal, '209000', 'credit'), m.sum([s1.company, s2.company, s3.company, s4.company].map((c) => m.percentOf(c, 10)))),
     'commission report: salesperson commission payable = 10% of each company share (430.85)');
   // Receivable composition: everything the ledger says guests still owe, rebuilt independently.
-  const expectedAr = m.sum([vat(s1.company.plus(500)), vat(s2.company), m.add(4000, vat(s3.company)), m.add(vat(s4.company), 500), -100]);
+  const expectedAr = m.sum([vat(s1.company.plus(500)), vat(s2.company), m.add(4000, vat(s3.company)), vat(s4.company), -100]);
   ok(eq(byCode['105000'].balance, expectedAr),
-    'receivables (105000) = unpaid VAT added on top of S1, S2, S4 + unpaid owner-booked S3 + S4 refund − write-off (5073.19)', { ledger: byCode['105000'].balance, expected: m.toFixed(expectedAr) });
+    'receivables (105000) = unpaid VAT added on top of S1, S2, S4 + unpaid owner-booked S3 − write-off; the S4 refund no longer sits on the receivable (R-1) (4573.19)', { ledger: byCode['105000'].balance, expected: m.toFixed(expectedAr) });
   // AR: ledger receivable vs the reservation-based outstanding list.
   const aging = e.agingFromReservations(data.reservations);
   ok(true, `INFO receivables: ledger 105000 = ${byCode['105000'].balance}, reservation outstanding list = ${aging.total} (different definitions; see report doc)`);

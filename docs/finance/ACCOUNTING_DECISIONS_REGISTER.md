@@ -1,5 +1,15 @@
 # Accounting Decisions Register
 
+> **Status update, 2026-11-25:** the accountant's answers have been received (relayed by the owner; signed copy to file), and Part D was decided by the owner. The rows below are the original register; current answers and their effect are in `ACCOUNTANT_DECISION_TRACKER.md`.
+> - **D-01:** gross.
+> - **D-11:** VAT suspended (0) from 25/11 pending the tax-authority negotiation.
+> - **D-12:** historical commissions already paid; no reconstruction.
+> - **D-15:** books start 25/11; no import, no opening balances.
+> - **D-04:** the owner gets forfeit − company %.
+> - **D-06:** payroll net, as today.
+> - **D-02, D-03, D-08, D-10, D-13 and D-14:** see the tracker.
+> - **Withholding tax** is still to be confirmed.
+
 Each decision needs an owner, a date and an effective period. The ledger will store which policy version produced each entry, so changing a decision later is a dated policy change, not a rewrite of history.
 
 | ID | Decision | Options | Current system | Recommendation | Owner | Status |

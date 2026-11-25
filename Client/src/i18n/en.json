@@ -1067,7 +1067,9 @@
         "vendor": "Vendor",
         "rate": "Rate",
         "wht": "WHT",
-        "totalWhtPayable": "Total WHT payable"
+        "totalWhtPayable": "Total WHT payable",
+        "suspendedTitle": "VAT is suspended from {{date}}",
+        "suspendedBody": "By the accountant's decision, no output or input VAT is booked from this date while the company agrees its position with the tax authority. Earlier periods keep their VAT. Withholding tax is not affected."
       },
       "owners": {
         "description": "You can settle an owner's balance yourself — no withdrawal request required. Paid amounts post against owner trust (202000).",
@@ -2344,7 +2346,8 @@
           "confirmed": "Confirmed",
           "checked_in": "Checked in",
           "checked_out": "Checked out"
-        }
+        },
+        "settled": "Historical commissions were already paid (accountant, 25 Nov 2026): the {{count}} older stays below need no rate decision and are kept for reference"
       },
       "integrity": {
         "title": "Accounts missing from the chart of accounts: {{count}}",

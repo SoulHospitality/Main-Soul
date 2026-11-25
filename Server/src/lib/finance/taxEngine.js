@@ -30,13 +30,13 @@ function outputVatOnCommission(commissionBase) {
   };
 }
 
-function outputVatOnTaxableFees(commission, cleaning) {
+function outputVatOnTaxableFees(commission, cleaning, ratePct = VAT_OUTPUT_PCT) {
   const c = Math.max(0, Number(commission) || 0);
   const k = Math.max(0, Number(cleaning) || 0);
-  const commissionVat = outputVatExclusive(c);
-  const cleaningVat = outputVatExclusive(k);
+  const commissionVat = outputVatExclusive(c, ratePct);
+  const cleaningVat = outputVatExclusive(k, ratePct);
   return {
-    rate_pct: VAT_OUTPUT_PCT,
+    rate_pct: ratePct,
     commission_net: round2(c),
     cleaning_net: round2(k),
     commission_vat: commissionVat,
@@ -58,12 +58,13 @@ function withholdingTax(vendorBillAmount, { ratePct = WHT_STANDARD_PCT } = {}) {
   };
 }
 
-function bookingSplit(fin, reservation) {
+/** vatRatePct: the rate for the stay's booking date (0 while VAT is suspended; lib/finance/vatPolicy.js). */
+function bookingSplit(fin, reservation, { vatRatePct = VAT_OUTPUT_PCT } = {}) {
   const gross = fin.grossAmount || 0;
   const cleaning = fin.housekeepingFees || 0;
   const commission = fin.companyCommission || 0;
   const ownerNet = fin.ownerNet || 0;
-  const vat = outputVatOnTaxableFees(commission, cleaning);
+  const vat = outputVatOnTaxableFees(commission, cleaning, vatRatePct);
 
   return {
     gross_booking: round2(gross + cleaning),
@@ -72,7 +73,7 @@ function bookingSplit(fin, reservation) {
     soul_commission_pct: fin.appliedCommissionPct || 0,
     cleaning_fee: round2(cleaning),
     vat_on_commission: vat.vat_amount,
-    vat_pct: VAT_OUTPUT_PCT,
+    vat_pct: vatRatePct,
     commission_vat: vat.commission_vat,
     cleaning_vat: vat.cleaning_vat,
     owner_trust_credit: round2(ownerNet),

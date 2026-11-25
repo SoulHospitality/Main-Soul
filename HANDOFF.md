@@ -38,7 +38,9 @@
 | `30cec75` | Financial System screens for the ledger: Ledger controls, Commission review, integrity warning (read-only; English and Arabic) |
 | `eeb1a88` | Phase 4/5 tooling: historical migration, reconciliation, parallel-run sync |
 | `88ef5c0` | Phase 6: migration 177 (guarded report source), reports from the stored ledger, rollback_177, rehearsal covering 177 |
-| (latest) | Phase 7: migration 178 (permanent reconciliation history), nightly job, Data health exception, Close-month step, reconciliation dashboard |
+| `c7a7d0b` | Phase 7: migration 178 (permanent reconciliation history), nightly job, Data health exception, Close-month step, reconciliation dashboard |
+| `3e1cbfb` | Phase 3: production read-only checks 0–6, baselines, engine comparison |
+| (latest) | Accountant's decisions: VAT suspension, refunds reverse revenue (R-1), owner share of forfeits (R-5), books from 25/11, policy 2026.11 and its tools, full go-live rehearsal |
 
 ## What the branch delivers (all inactive until deployed and approved)
 - **Stored, immutable double-entry ledger** (migration 176). The database enforces:
@@ -52,13 +54,16 @@
 - **Restricted application role** and the identity-key procedure (`docs/finance/db-security/`). The migration runner can use `MIGRATION_DATABASE_URL`.
 - **Rehearsal kit:** read-only live checks 0–6, a backup/restore inventory, r1–r5, rollbacks, the engine-fix comparison tool, and local runners for PGlite and real PostgreSQL.
 
+## Accountant's decisions (received 2026-11-25, relayed by the owner)
+Gross revenue; **VAT 0 from 25/11** (taxes postponed); no historical commissions; **books start 25/11** (no import); refunds reverse revenue and tax; the owner gets forfeit − company %. Part D was decided by the owner. Details: `docs/finance/ACCOUNTANT_DECISION_TRACKER.md`. Go-live steps: **`docs/finance/FINANCE_GO_LIVE.md`** (rehearsed end to end on real PostgreSQL, 20/20). Still open: withholding tax, and the signed copy reference.
+
 ## Phase status (honest)
 | Phase | Built and tested | Executed for real |
 |---|---|---|
 | 1 Audit and architecture | ✅ | ✅ |
 | 2 Ledger foundation | ✅ | Not deployed |
-| 3 Deployment and external validation | ✅ Scripts, runbooks, local rehearsals on real PostgreSQL | ◐ Production read-only checks 0–6, baselines and engine comparison **done** 2026-11-25 (`live-checks/RESULTS_2026-11-25.md`); ☐ backup confirmation, restore into a separate project, restored-copy rehearsal; ☐ accountant's decisions |
-| 4 Historical migration | ✅ `ledger-migration.js` (`HISTORICAL_MIGRATION_RUNBOOK.md`) | ☐ Nothing imported (needs Phase 3) |
+| 3 Deployment and external validation | ✅ | ◐ Read-only checks 0–6 done; **accountant's decisions received**; ☐ backup and restore test, deployment (needs Supabase/Railway access and the rotated password) |
+| 4 Historical migration | ✅ | ✅ **Not needed: the books start 25/11** (accountant). Only the 25/11-onward sync remains, which is part of go-live |
 | 5 Parallel operation | ✅ `sync` + `reconcile` (same runbook) | ☐ Needs Phase 4 and a real month |
 | 6 Activation and reporting | ✅ Migration 177, reports from the ledger, tested rollback (`LEDGER_ACTIVATION_RUNBOOK.md`) | ☐ Posting off; reports on the existing calculation |
 | 7 Operations and optimisation | ✅ Nightly reconciliation (migration 178), Data health exception, month-end step, reconciliation dashboard (`FINANCIAL_OPERATIONS.md`) | ☐ Starts by itself once posting is on |

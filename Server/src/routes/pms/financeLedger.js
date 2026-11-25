@@ -111,6 +111,17 @@ router.get('/financial-system/ledger-controls', FINANCE, async (_req, res, next)
   }
 });
 
+/** Accountant's decisions in force (2026-11-25): VAT suspension date and the historical-commission decision. */
+router.get('/financial-system/vat-policy', FINANCE, async (_req, res, next) => {
+  try {
+    const { rows } = await query(`SELECT key, value_text FROM financial_settings WHERE key IN ('vat_suspended_from', 'commission_history_decision')`);
+    const s = Object.fromEntries(rows.map((r) => [r.key, r.value_text]));
+    res.json({ vat_suspended_from: s.vat_suspended_from || null, commission_history_decision: s.commission_history_decision || null });
+  } catch (e) {
+    next(e);
+  }
+});
+
 /** Phase 7: reconcile now (reads the ledger; records the result). Refused unless posting is on. */
 router.post('/financial-system/ledger-reconcile', FINANCE, async (req, res, next) => {
   try {
@@ -126,7 +137,7 @@ router.get('/financial-system/commission-review', FINANCE, async (_req, res, nex
   try {
     const deployed = await relationExists('reservation_commission_review');
     if (!deployed) return res.json({ deployed: false });
-    const [since, counts, rows, corrections] = await Promise.all([
+    const [since, counts, rows, corrections, decision] = await Promise.all([
       query(`SELECT value_text FROM financial_settings WHERE key = 'commission_snapshots_since'`),
       query(
         `SELECT COALESCE(commission_snapshot_status, 'none') AS status, COUNT(*)::int AS n
@@ -146,6 +157,7 @@ router.get('/financial-system/commission-review', FINANCE, async (_req, res, nex
       query(
         `SELECT COUNT(*)::int AS n, MAX(created_at) AS last_at FROM reservation_commission_corrections`
       ).catch(() => ({ rows: [{ n: 0, last_at: null }] })),
+      query(`SELECT value_text FROM financial_settings WHERE key = 'commission_history_decision'`),
     ]);
     const byStatus = Object.fromEntries(counts.rows.map((r) => [r.status, r.n]));
     res.json({
@@ -160,6 +172,8 @@ router.get('/financial-system/commission-review', FINANCE, async (_req, res, nex
       review_total: rows.rows.length,
       rows: rows.rows,
       corrections: corrections.rows[0],
+      // Accountant, 2026-11-25: historical commissions were already paid; no rate reconstruction is needed.
+      history_decision: decision.rows[0]?.value_text || null,
     });
   } catch (e) {
     next(e);

@@ -56,6 +56,12 @@ Also on the real server (2026-11-25):
 ## Phase 7 monitoring (2026-11-25)
 - `rehearsal/local/monitor-test.js`: **19 / 19**. Nightly reconciliation recorded only while live, the permanent history, the Data health exception (never, differences, stale), Reconcile now (roles, who ran it), Ledger controls history, and the job started with the server.
 
+## Accountant's decisions and go-live (2026-11-25)
+- `rehearsal/local/accountant-decisions-test.js`: **15 / 15**. VAT suspended by date, read from the database: no output or input VAT after the date, earlier periods unchanged, resumable. Refunds reverse revenue (R-1); forfeits split owner and company (R-5); the owner subledger ties.
+- `engine-validation.js`: **45 / 45**. The refund characterisation was replaced by the R-1 treatment: the reversal is proportional and adds up exactly.
+- `migration-test.js`: **34 / 34**. The treatment check follows the VAT suspension; ranges that straddle the date are refused.
+- `rehearsal/local/golive-real-test.js`: **20 / 20** (real PostgreSQL 17.5). The full go-live through the operator tools: deploy, settings, approvals and refusals, posting, sync and reconciliation from 25/11, no VAT, R-1 and R-5 in the books, reports from the ledger, monitoring, control log.
+
 ## Not yet covered
 - Coverage measurement of the database suites.
 - Load testing.

@@ -346,7 +346,9 @@ export function CommissionReviewPage() {
     );
   }
   const c = data.counts || {};
-  const waiting = data.review_total || 0;
+  // Accountant, 2026-11-25: historical commissions were already paid, so older stays need no rate decision.
+  const settled = String(data.history_decision || '').startsWith('settled');
+  const waiting = settled ? 0 : data.review_total || 0;
   return (
     <div className="space-y-5">
       <p className="max-w-3xl text-sm text-gray-500">
@@ -356,7 +358,11 @@ export function CommissionReviewPage() {
       <div className={`flex flex-wrap items-center gap-3 rounded-2xl border px-5 py-4 ${waiting ? 'border-amber-200 bg-amber-50/40' : 'border-emerald-200 bg-emerald-50/50'}`}>
         {waiting ? <AlertTriangle className="h-5 w-5 text-amber-600" /> : <CheckCircle2 className="h-5 w-5 text-emerald-600" />}
         <p className="min-w-0 flex-1 font-semibold text-gray-900">
-          {waiting ? t('pms.fin.commissionReview.waiting', { count: waiting }) : t('pms.fin.commissionReview.clear')}
+          {settled
+            ? t('pms.fin.commissionReview.settled', { count: data.review_total || 0 })
+            : waiting
+              ? t('pms.fin.commissionReview.waiting', { count: waiting })
+              : t('pms.fin.commissionReview.clear')}
         </p>
       </div>
 

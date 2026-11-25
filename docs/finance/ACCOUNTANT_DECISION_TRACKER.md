@@ -1,53 +1,44 @@
 # Accountant Decision Tracker
 
-**Updated:** 2026-11-25 · **Status of every item below: not received.** No decision has been made, recorded or assumed on anyone's behalf.
-This tracker records only what has actually been received in writing. The decisions themselves are in `ACCOUNTING_DECISIONS_REGISTER.md`; the questions are in `ACCOUNTANT_REVIEW_PACKAGE.md` and `D01_ACCOUNTANT_REVIEW_PACK.md`.
+**Updated:** 2026-11-25. **Source of the answers below:** the accountant's answers as **relayed by the owner** on 2026-11-25. Part D was decided by the owner, at the owner's request. **A signed written copy from the accountant is still to be filed.** Its reference is what the two approvers enter when they record the policy; it is never filled in by the system or the developer.
 
-## Gates for posting and historical import (all three required)
-| # | Decision | Register | Sent? | Received? | Approver | Date | Written reference | Entered as verified approval? |
-|---|---|---|---|---|---|---|---|---|
-| 1 | EAS 48 principal or agent, per contract type | D-01 | ☐ | ☐ Not received | | | | ☐ |
-| 2 | VAT base, per contract type (separate from 1) | D-11 | ☐ | ☐ Not received | | | | ☐ |
-| 3 | Historical commission-rate method (`DEPLOYMENT_READINESS.md` §7) | D-12 (method part) | ☐ | ☐ Not received | | | | ☐ |
+## Gates for posting
+| # | Decision | Register | Received | Answer | Entered as verified approval? |
+|---|---|---|---|---|---|
+| 1 | EAS 48 principal or agent | D-01 | ✅ 2026-11-25 (relayed) | **Gross** revenue | ☐ At go-live, by admin A (`ledger-policy.js approve --purpose d01`) |
+| 2 | VAT base | D-11 | ✅ 2026-11-25 (relayed) | **Taxes postponed: VAT 0** from 25/11 while the company negotiates with the tax authority (`vat_base = suspended`) | ☐ At go-live, by admin B (`--purpose vat`) |
+| 3 | Historical commission method | D-12 | ✅ 2026-11-25 (relayed) | **Not needed: historical commissions were already paid.** The review list is kept for reference only | n/a (setting `commission_history_decision`) |
+| 4 | Opening balances / history | D-15 | ✅ 2026-11-25 (relayed) | **Start counting from 25/11/2026.** No historical import, no opening balances | n/a (books start setting) |
 
-Until all three rows are complete, posting stays **off** and no historical figures are imported. The database enforces the first two: it will not approve a ledger policy without two verified approvals. The third gates the commission review list and any import.
+## Questions R-1 to R-8
+| Ref | Answer (relayed) | Effect in the system |
+|---|---|---|
+| R-1 Refunds | Reduce revenue and tax, "like it never happened" | **Changed:** a refund on an earned stay reverses that stay's revenue, VAT and owner share in proportion; any overpayment returns to the guest receivable |
+| R-2 VAT on top of quoted price | Taxes postponed | VAT 0 from 25/11 |
+| R-3 Output VAT on markups and fees | Taxes postponed | VAT 0 from 25/11 |
+| R-4 Input VAT on utilities | Taxes postponed | VAT 0 from 25/11 (bills expensed in full) |
+| R-5 Forfeited deposits | The owner always gets accommodation total − utilities − the company % | **Changed:** forfeits are revenue in full (gross); the owner's share (forfeit − company %; no utilities on a cancelled stay) is an expense owed to the owner |
+| R-6 Payroll | Leave as it is | Unchanged (net, as paid) |
+| R-7 Petty cash top-up without a source | True | Unchanged (miscellaneous revenue) |
+| R-8 Fixed monthly charges include 14% input VAT | True | Unchanged rule; it applies when VAT resumes (0 while suspended) |
 
-## Questions raised by the system work (answers change treatments; not gates for the first deployment)
-| Ref | Question (short) | Received? | Answer / reference |
-|---|---|---|---|
-| R-1 | Refunds: returned overpayment, or price reduction needing a credit note? | ☐ | |
-| R-2 | Is the quoted stay price VAT-inclusive? | ☐ | |
-| R-3 | Output VAT on tenant markups and service fees (403000)? | ☐ | |
-| R-4 | Input VAT on utility bills? | ☐ | |
-| R-5 | Forfeited deposits: all company revenue? (with D-04) | ☐ | |
-| R-6 | Payroll journals: gross with deductions? (with D-06) | ☐ | |
-| R-7 | Petty-cash top-ups with no recorded source | ☐ | |
-| R-8 | Input VAT on fixed monthly charges | ☐ | |
+## Part D (decided by the owner, 2026-11-25; the accountant may revise)
+| Topic | Decision |
+|---|---|
+| D-02 Revenue timing | Over the nights stayed (as today) |
+| D-03 Guest advance payments | A liability (203000) until the stay (as today) |
+| D-08 Expected credit loss | Aging matrix (as today) |
+| D-10 Income and deferred tax | Outside the system; one manual year-end entry |
+| D-14 Segregation of duties | Finance records; admins approve, close and reopen; an approver can never be the recorder (enforced by the database) |
+| D-13 Legacy cash ledger | Retired as read-only history (live check 4: never used) |
 
-## Other open register items (not blocking the first deployment)
-| Register | Topic | Owner | Status |
-|---|---|---|---|
-| D-02 | Revenue timing (over nights stayed) | Accountant | Open (confirm) |
-| D-03 | Guest advances as a liability until the stay | Accountant | Open (confirm) |
-| D-04 | Owner share of forfeits | Management | Open |
-| D-05 | Currency, USD revaluation, exchange differences | Accountant | Open |
-| D-06 | Payroll recognition | Accountant | Open |
-| D-07 | Leases | Management | Open |
-| D-08 | Expected credit-loss method | Accountant | Open |
-| D-09 | Related parties | Management | Open |
-| D-10 | Income tax and deferred tax | Accountant | Open |
-| D-13 | Retiring the legacy cash ledger | Management | Open |
-| D-14 | Segregation of duties | Management | Open |
-| D-15 | Historical data: opening balances or migrated entries | Accountant | Open |
-
-## How a received decision is recorded
-1. File the signed document privately (not in this repository). Note only the approver's role, the date and a reference here.
-2. Update the register row's status, citing the reference.
-3. For decisions 1 and 2: create the policy version with the written treatment. **Two different admins** each record their own verified approval in a separate signed step (`docs/finance/db-security/README.md`), entering the document reference. The system refuses an approval recorded on someone else's behalf.
-4. For decision 3: record the approved method, or the accountant's alternative, in `DEPLOYMENT_READINESS.md` §7, then work the commission review list with it.
-5. Posting is switched on only after deployment, all three gates, and the owner's separate written instruction.
+## Still open (not blocking go-live)
+- **Withholding tax** on vendor bills (3% or 1%) is a tax too, but every answer was about VAT, so it is **not** suspended. **Ask the accountant** whether "taxes 0" includes withholding.
+- **Bank and cash balances on 25/11.** Counting starts from zero. If the accountant wants actual balances carried in, they must be signed figures, entered as one opening entry.
+- **Signed copy** of these answers, to file and to cite in the approvals.
 
 ## Change log
 | Date | Change | By |
 |---|---|---|
-| 2026-11-25 | Tracker created. Nothing received. | Developer |
+| 2026-11-25 | Tracker created; nothing received | Developer |
+| 2026-11-25 | Answers received (relayed by the owner); Part D decided by the owner; engine updated (VAT suspension, R-1, R-5) | Developer, on the owner's instruction |

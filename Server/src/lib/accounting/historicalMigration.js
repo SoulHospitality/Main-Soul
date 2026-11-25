@@ -25,6 +25,8 @@ const posting = require('./posting');
  * defined and approved transformation, or dated restating adjustments; until then the importer refuses.
  */
 const ENGINE_TREATMENT = Object.freeze({ revenue_presentation: 'gross', vat_base: 'fee_plus_cleaning' });
+/** While VAT is suspended (financial_settings.vat_suspended_from; accountant, 2026-11-25) the engine books no VAT. */
+const ENGINE_TREATMENT_VAT_SUSPENDED = Object.freeze({ revenue_presentation: 'gross', vat_base: 'suspended' });
 
 class MigrationError extends Error {
   constructor(message, code, detail) {
@@ -71,9 +73,9 @@ function settingValues(v) {
 }
 
 /** Whether an approved policy's treatment is what the engine produced (so amounts can be copied as they are). */
-function methodCompatible(settings) {
+function methodCompatible(settings, treatment = ENGINE_TREATMENT) {
   const mismatches = [];
-  for (const [key, want] of Object.entries(ENGINE_TREATMENT)) {
+  for (const [key, want] of Object.entries(treatment)) {
     const vals = settingValues(settings?.[key]);
     if (!vals.length || vals.some((v) => v !== want)) mismatches.push({ setting: key, policy: vals, engine: want });
   }
@@ -163,12 +165,24 @@ async function plan({ from, to, policyVersion, openingBalances = null }, deps = 
   };
 }
 
-async function policyCheck(db, policyVersion) {
+/**
+ * The treatment the engine applies over a range: VAT suspended (the whole range on or after vat_suspended_from) or
+ * standard (the whole range before it). A range that straddles the date is refused: split it at the date.
+ */
+async function engineTreatmentFor(db, from, to) {
+  const { rows } = await db.query(`SELECT value_text FROM financial_settings WHERE key = 'vat_suspended_from'`);
+  const since = String(rows[0]?.value_text || '').slice(0, 10) || null;
+  if (!since || to < since) return ENGINE_TREATMENT;
+  if (from >= since) return ENGINE_TREATMENT_VAT_SUSPENDED;
+  throw new MigrationError(`The range ${from} → ${to} straddles the VAT suspension date ${since}; run it as two ranges split at that date`, 'RANGE_SPANS_VAT_CHANGE');
+}
+
+async function policyCheck(db, policyVersion, from, to) {
   const { rows } = await db.query(`SELECT status, settings FROM ledger_policies WHERE version = $1`, [policyVersion]);
   const p = rows[0];
   if (!p) throw new MigrationError(`Policy ${policyVersion} does not exist`, 'NO_POLICY');
   if (p.status !== 'approved') throw new MigrationError(`Policy ${policyVersion} is not approved (${p.status})`, 'POLICY_NOT_APPROVED');
-  const check = methodCompatible(p.settings);
+  const check = methodCompatible(p.settings, from && to ? await engineTreatmentFor(db, from, to) : ENGINE_TREATMENT);
   if (!check.compatible) {
     throw new MigrationError(
       'The approved policy treats revenue or VAT differently from the engine; copying engine history would book it under the wrong treatment. Define and approve a transformation or restating adjustments first.',
@@ -195,7 +209,7 @@ async function execute(p, { actorId = null, runBy = null } = {}, deps = {}) {
   {
     const c = await pool.connect();
     try {
-      await policyCheck(c, p.policyVersion);
+      await policyCheck(c, p.policyVersion, p.from, p.to);
     } finally {
       c.release();
     }
@@ -237,7 +251,7 @@ async function sync(p, { actorId, reason = 'Parallel-run sync: reference changed
   assertPlanClean(p);
   const c0 = await pool.connect();
   try {
-    await policyCheck(c0, p.policyVersion);
+    await policyCheck(c0, p.policyVersion, p.from, p.to);
   } finally {
     c0.release();
   }
@@ -373,4 +387,4 @@ function reconciliationCsv(r) {
   return [head, ...r.rows.map((x) => [x.id, x.bucket, x.date, x.ledgerDate, x.entry, x.maxDiff].map(esc).join(','))].join('\n') + '\n';
 }
 
-module.exports = { plan, execute, sync, reconcile, reconciliationCsv, methodCompatible, ENGINE_TREATMENT, MigrationError };
+module.exports = { plan, execute, sync, reconcile, reconciliationCsv, methodCompatible, engineTreatmentFor, ENGINE_TREATMENT, ENGINE_TREATMENT_VAT_SUSPENDED, MigrationError };
