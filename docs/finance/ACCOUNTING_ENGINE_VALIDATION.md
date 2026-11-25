@@ -48,6 +48,9 @@
 | **DEF-PL-01** | `buildStatements` built the P&L from post-close balances | Any closed month inside the selected range **dropped out of the P&L** (example: 500 / 50 shown instead of 1,500 / 250) | The P&L comes from operating activity, closing entries excluded | regression test (4); reproduced on the committed code |
 | L4 (Phase 5B) | The close chose its side from the contra-aware signed balance | A contra P&L account would have closed on the wrong side | Close each P&L account by reversing its raw net | regression test "L4" |
 | L5 (Phase 5B) | `balanceSheet` / `reportBuilder.balanceSheetReport` replaced 303000 with the open P&L | A manual posting to 303000 vanished from the balance sheet | 303000 = posted balance + open P&L | regression test "L5" |
+| DEF-SRC-01 (Phase 7) | `loadPortalData` swallowed every query error (`catch (_)`, 19 places) and continued with an empty list | A failing query silently built the books without a whole category (write-offs, payouts, vendor bills …) | Only a missing table or column (older schema) falls back; any other error is raised with the source named (`optionalSource`) | regression test; engine-validation-extra (real query failure through a view) |
+| DEF-PER-01 (Phase 7) | `isPeriodClosed` answered "not closed" on any error | A database error let edits into a closed month | Fails closed: only a missing table means "not closed" | regression test |
+| DEF-ACC-01 (Phase 7) | Lines on an account outside the chart vanished from every report (`balancesFromJournal` lists chart accounts only) | Found with a recurring charge pointing at retired account 604000: 3,508.77/month of expense missing from P&L and the balance sheet | `buildStatements` reports `integrity.unknown_accounts` (account, totals, entries). The stored ledger already refuses unknown accounts | regression test |
 | DEF-TEST-01 | Three finance test files (`applyCancellation`, `cancelSettlement`, `paymentInput`, 14 tests) were not in `npm test` | They never ran | Added to the `npm test` script | `npm test` now 134 tests |
 
 **Production impact (what changes when the fixed code is deployed):**
@@ -60,6 +63,8 @@
 - **R-3, tenant markup and service fees (403000) carry no output VAT.** (D-11)
 - **R-4, input VAT:** every utility bill is assumed to include 14% VAT. (T3)
 - **R-5, forfeits:** forfeited deposits go entirely to company revenue. (D-04)
+- **R-7, petty cash funding:** a petty-cash "in" with no stated funding source is credited to miscellaneous revenue (409000). Topping up the float from somewhere unrecorded therefore shows as income. (engine-validation-extra)
+- **R-8, recurring charges:** fixed monthly charges are split as VAT-inclusive at 14%, like utility bills (R-4).
 - **R-6, payroll:** salaries post as expenses at the net amount; there are no payroll journals or deductions. (D-06)
 
 ## Engine robustness notes (not changed; reference implementation)

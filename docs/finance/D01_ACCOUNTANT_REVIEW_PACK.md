@@ -69,7 +69,8 @@ Please answer these for each contract type. Where useful, attach a sample signed
 16. **Is the quoted stay price VAT-inclusive or VAT-exclusive?** Today VAT is added *on top* of the quoted total, so a guest who pays exactly the quoted price leaves the VAT open on their receivable.
 17. **Do tenant markups and service fees (account 403000) carry output VAT?** Today they don't.
 18. **Is a refund a return of an overpayment, or a price reduction?** Today a refund puts the amount back on the guest's receivable without reducing revenue or VAT. A price reduction or partial cancellation would need a credit note that reverses revenue (and VAT).
-19. **Do supplier bills always include 14% input VAT?** Today every utility bill is assumed to.
+19. **Do supplier bills always include 14% input VAT?** Today every utility bill and fixed monthly charge is assumed to.
+20. **How should petty-cash top-ups be booked?** Today a top-up with no recorded source is credited to miscellaneous revenue (409000). A transfer from cash or bank, or an owner or company contribution, would not be revenue.
 
 ## 4. Worked example: the same stay under each treatment
 

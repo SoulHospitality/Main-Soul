@@ -45,5 +45,5 @@
   - G-3: chargebacks are not modelled.
   - G-4: no distinct no-show treatment.
   - G-5: no payroll posting.
-  - T-2: insurance, vendor invoices, recurring charges, petty cash, housekeeping orders and holdbacks are not yet in the synthetic fixtures.
+  - T-2 (closed in Phase 7): insurance, cancellation forfeit, vendor invoice with WHT, recurring charge, petty cash, housekeeping order, holdback and owner payout are covered by `rehearsal/local/engine-validation-extra.js` (23/23), including stored-ledger parity with every scenario.
   - T-3: the Paymob webhook (HMAC, amount check, duplicate callback) has no automated test.

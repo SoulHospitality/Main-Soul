@@ -121,3 +121,20 @@ describe('review L5: entries posted directly to 303000 are not lost', () => {
     assert.equal(st.balance_sheet.totals.assets, st.balance_sheet.totals.liabilities_and_equity);
   });
 });
+
+describe('engine error handling (Phase 7)', () => {
+  it('optionalSource: a missing table or column falls back; any other error is raised with the source named', () => {
+    assert.deepEqual(e.optionalSource({ code: '42P01', message: 'relation does not exist' }, [], 'writeOffs'), []);
+    assert.equal(e.optionalSource({ code: '42703', message: 'column does not exist' }, false, 'period closes'), false);
+    const err = new Error('connection terminated');
+    err.code = '57P01';
+    assert.throws(() => e.optionalSource(err, [], 'writeOffs'), /could not load writeOffs: connection terminated/);
+  });
+  it('lines on an account outside the chart are reported, not silently dropped', () => {
+    const j = [entry('REC-1', '2026-11-05', 'recurring_accrual', [line('604000', 3508.77, 0), line('107000', 491.23, 0), line('201000', 0, 4000)])];
+    const st = e.buildStatements(j, [], '2026-11-01', '2026-11-30');
+    assert.deepEqual(st.integrity.unknown_accounts, [{ account: '604000', debit: 3508.77, credit: 0, entries: ['REC-1'] }]);
+    const clean = e.buildStatements([entry('B', '2026-11-05', 'booking', [line('103000', 10, 0), line('401000', 0, 10)])], [], '2026-11-01', '2026-11-30');
+    assert.deepEqual(clean.integrity.unknown_accounts, []);
+  });
+});

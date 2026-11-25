@@ -72,6 +72,17 @@ function accountLabel(code) {
   return getAccount(code)?.name || code;
 }
 
+/**
+ * Data sources of the books. A missing table or column (an older schema without that feature) falls back to
+ * the empty value; ANY other error is raised with the source named, so the books are never silently built
+ * without a whole category (write-offs, payouts …). Previously every error fell back silently.
+ */
+function optionalSource(err, fallback, label) {
+  if (err && (err.code === '42P01' || err.code === '42703')) return fallback;
+  if (err && typeof err.message === 'string') err.message = `Financial books: could not load ${label}: ${err.message}`;
+  throw err;
+}
+
 function journalLine(account, debit, credit, memo) {
   return {
     account,
@@ -1061,8 +1072,8 @@ async function loadPortalData(from, to) {
       );
       const loaded = new Set(reservations.map((r) => String(r.id)));
       spanning = rows.filter((r) => !loaded.has(String(r.id)));
-    } catch (_) {
-      spanning = [];
+    } catch (e) {
+      spanning = optionalSource(e, [], 'spanning');
     }
   }
 
@@ -1112,8 +1123,8 @@ async function loadPortalData(from, to) {
       for (const p of extraPays) {
         if (!seen.has(p.id)) stayPayments.push(p);
       }
-    } catch (_) {
-      stayPayments = payments;
+    } catch (e) {
+      stayPayments = optionalSource(e, payments, 'stayPayments');
     }
   }
 
@@ -1145,8 +1156,8 @@ async function loadPortalData(from, to) {
           [missing, reset]
         );
         legacyStays = rows.map((r) => ({ ...r, legacy_outside: true }));
-      } catch (_) {
-        legacyStays = [];
+      } catch (e) {
+        legacyStays = optionalSource(e, [], 'legacyStays');
       }
     }
   }
@@ -1175,8 +1186,8 @@ async function loadPortalData(from, to) {
       hkParams
     );
     hkOrders = rows;
-  } catch (_) {
-    hkOrders = [];
+  } catch (e) {
+    hkOrders = optionalSource(e, [], 'hkOrders');
   }
 
   let petty = [];
@@ -1189,16 +1200,16 @@ async function loadPortalData(from, to) {
     }
     const { rows } = await query(`SELECT * FROM petty_cash WHERE ${pcSql} ORDER BY created_at DESC`, pcParams);
     petty = rows;
-  } catch (_) {
-    petty = [];
+  } catch (e) {
+    petty = optionalSource(e, [], 'petty');
   }
 
   let pettyAccounts = {};
   try {
     const { rows } = await query(`SELECT location_key, account_code FROM petty_cash_accounts WHERE account_code IS NOT NULL`);
     pettyAccounts = Object.fromEntries(rows.map((r) => [r.location_key, r.account_code]));
-  } catch (_) {
-    pettyAccounts = {};
+  } catch (e) {
+    pettyAccounts = optionalSource(e, {}, 'pettyAccounts');
   }
 
   let manuals = [];
@@ -1219,8 +1230,8 @@ async function loadPortalData(from, to) {
       mParams
     );
     manuals = rows;
-  } catch (_) {
-    manuals = [];
+  } catch (e) {
+    manuals = optionalSource(e, [], 'manuals');
   }
 
   let payouts = [];
@@ -1234,8 +1245,8 @@ async function loadPortalData(from, to) {
        LIMIT 300`
     );
     payouts = rows;
-  } catch (_) {
-    payouts = [];
+  } catch (e) {
+    payouts = optionalSource(e, [], 'payouts');
   }
 
   const sinceDate = from || '1900-01-01';
@@ -1249,8 +1260,8 @@ async function loadPortalData(from, to) {
       [sinceDate]
     );
     vendorBills = rows;
-  } catch (_) {
-    vendorBills = [];
+  } catch (e) {
+    vendorBills = optionalSource(e, [], 'vendorBills');
   }
 
   let writeOffs = [];
@@ -1268,8 +1279,8 @@ async function loadPortalData(from, to) {
       [sinceDate]
     );
     writeOffs = rows;
-  } catch (_) {
-    writeOffs = [];
+  } catch (e) {
+    writeOffs = optionalSource(e, [], 'writeOffs');
   }
 
   let provisions = [];
@@ -1281,8 +1292,8 @@ async function loadPortalData(from, to) {
       [resetMonth]
     );
     provisions = rows;
-  } catch (_) {
-    provisions = [];
+  } catch (e) {
+    provisions = optionalSource(e, [], 'provisions');
   }
 
   // Closed months read their frozen journal; later changes arrive as dated corrections.
@@ -1304,8 +1315,8 @@ async function loadPortalData(from, to) {
       posted = rows;
       const { rows: months } = await query(`SELECT DISTINCT year_month FROM financial_posted_entries WHERE kind = 'frozen'`);
       frozenMonths = months.map((m) => m.year_month);
-    } catch (_) {
-      posted = [];
+    } catch (e) {
+      posted = optionalSource(e, [], 'posted');
       frozenMonths = [];
     }
   }
@@ -1318,8 +1329,8 @@ async function loadPortalData(from, to) {
        ORDER BY kind`
     );
     recurring = rows;
-  } catch (_) {
-    recurring = [];
+  } catch (e) {
+    recurring = optionalSource(e, [], 'recurring');
   }
 
   let settings = { gateway_mdr_pct: 1.5 };
@@ -1328,7 +1339,9 @@ async function loadPortalData(from, to) {
     for (const row of rows) {
       if (row.key === 'gateway_mdr_pct') settings.gateway_mdr_pct = Number(row.value_num) || 1.5;
     }
-  } catch (_) {}
+  } catch (e) {
+    optionalSource(e, null, 'settings');
+  }
 
   let closes = [];
   try {
@@ -1336,8 +1349,8 @@ async function loadPortalData(from, to) {
       `SELECT year_month, pnl_amount, closed_at, notes FROM financial_period_closes ORDER BY year_month`
     );
     closes = rows;
-  } catch (_) {
-    closes = [];
+  } catch (e) {
+    closes = optionalSource(e, [], 'closes');
   }
 
   let holdbacks = [];
@@ -1350,8 +1363,8 @@ async function loadPortalData(from, to) {
        ORDER BY h.created_at DESC`
     );
     holdbacks = rows;
-  } catch (_) {
-    holdbacks = [];
+  } catch (e) {
+    holdbacks = optionalSource(e, [], 'holdbacks');
   }
 
   let ownerLinks = [];
@@ -1362,8 +1375,8 @@ async function loadPortalData(from, to) {
        JOIN staff_users su ON su.id = ou.owner_id`
     );
     ownerLinks = rows;
-  } catch (_) {
-    ownerLinks = [];
+  } catch (e) {
+    ownerLinks = optionalSource(e, [], 'ownerLinks');
   }
 
   let snapshots = [];
@@ -1372,16 +1385,16 @@ async function loadPortalData(from, to) {
       `SELECT * FROM financial_bank_snapshots ORDER BY statement_date DESC, id DESC LIMIT 50`
     );
     snapshots = rows;
-  } catch (_) {
-    snapshots = [];
+  } catch (e) {
+    snapshots = optionalSource(e, [], 'snapshots');
   }
 
   let reconciled = [];
   try {
     const { rows } = await query(`SELECT entry_id, account_code FROM financial_reconciled_entries`);
     reconciled = rows;
-  } catch (_) {
-    reconciled = [];
+  } catch (e) {
+    reconciled = optionalSource(e, [], 'reconciled');
   }
 
   return {
@@ -1771,6 +1784,27 @@ function buildJournal(data, from, to, { includeCloses = true, useFrozen = true }
 
   journal.sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.id).localeCompare(String(a.id)));
   return journal.filter((e) => inRange(e.date, from, to) && e.lines.length);
+}
+
+/**
+ * Lines posted to accounts that are not in the chart. balancesFromJournal only reports chart accounts, so
+ * such lines would silently vanish from every report (found when a recurring charge pointed at a removed
+ * account). Reported by buildStatements as integrity.unknown_accounts so they can be fixed, never hidden.
+ */
+function unknownAccountLines(journal) {
+  const known = new Set(CHART_OF_ACCOUNTS.map((a) => a.code));
+  const out = {};
+  for (const entry of journal || []) {
+    for (const line of entry.lines || []) {
+      if (known.has(line.account)) continue;
+      const k = String(line.account);
+      if (!out[k]) out[k] = { account: k, debit: 0, credit: 0, entries: [] };
+      out[k].debit = round2(out[k].debit + (line.debit || 0));
+      out[k].credit = round2(out[k].credit + (line.credit || 0));
+      if (!out[k].entries.includes(entry.id)) out[k].entries.push(entry.id);
+    }
+  }
+  return Object.values(out);
 }
 
 function balancesFromJournal(journal) {
@@ -2546,6 +2580,7 @@ function buildStatements(journal, reservations, from, to, reservationTotals) {
     },
     balance_sheet: bs,
     cash_flow: cashFlow(journal, { openingJournal: [], closingJournal: journal, from, to }),
+    integrity: { unknown_accounts: unknownAccountLines(journal) },
   };
 }
 
@@ -2624,8 +2659,9 @@ async function isPeriodClosed(date) {
   try {
     const { rows } = await query(`SELECT year_month FROM financial_period_closes WHERE year_month = $1`, [ym]);
     return Boolean(rows[0]);
-  } catch (_) {
-    return false;
+  } catch (e) {
+    // Fail closed on a real error: an unknown state must not be treated as an open month.
+    return optionalSource(e, false, 'period closes');
   }
 }
 
@@ -2647,6 +2683,8 @@ module.exports = {
   vatReturn,
   isPeriodClosed,
   closeMonthEntry,
+  optionalSource,
+  unknownAccountLines,
   FINANCIAL_EPOCH,
   cashFlow,
   buildCashFlowStatement,
