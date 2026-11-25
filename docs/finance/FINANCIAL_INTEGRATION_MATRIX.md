@@ -46,4 +46,5 @@
   - G-4: no distinct no-show treatment.
   - G-5: no payroll posting.
   - T-2 (closed in Phase 7): insurance, cancellation forfeit, vendor invoice with WHT, recurring charge, petty cash, housekeeping order, holdback and owner payout are covered by `rehearsal/local/engine-validation-extra.js` (23/23), including stored-ledger parity with every scenario.
-  - T-3: the Paymob webhook (HMAC, amount check, duplicate callback) has no automated test.
+  - T-3 (closed in Phase 8): the Paymob webhook is tested end to end in `rehearsal/local/paymob-webhook-test.js` (11/11: bad or altered HMAC, unknown order, failed payment, amount mismatch, success, duplicate callbacks, dates taken meanwhile, missing secret fails closed), and the HMAC check against Paymob's field order in `Server/src/config/paymob.test.js` (npm test).
+  - Found while testing (not finance; not fixed on this branch): `services/pmsNotifications.js:114` writes a booking UUID into the integer column `notifications.entity_id` (`002_pms_ops.sql:112`), so the staff notification for every new paid website booking fails silently (caught in `bookingWorkflow.assignSalesOnCreate`).
