@@ -4,6 +4,7 @@ const { query } = require('../../config/db');
 const { requireRoles } = require('../../middleware/auth');
 const { STAFF_EDITOR_ROLES } = require('../../lib/staffEditorRoles');
 const { sendEmail } = require('../../services/email');
+const { escapeHtml } = require('../../lib/escapeHtml');
 
 const router = express.Router();
 
@@ -162,7 +163,7 @@ router.post('/reservations/:id/receipt/email', requireRoles(...STAFF_EDITOR_ROLE
       to,
       subject: `Your Soul Hospitality receipt SH-${loaded.reservation.id}`,
       text: `Your receipt for ${loaded.reservation.unit_label || 'your stay'} is attached.`,
-      html: `<p>Your receipt for ${loaded.reservation.unit_label || 'your stay'} is attached.</p>`,
+      html: `<p>Your receipt for ${escapeHtml(loaded.reservation.unit_label || 'your stay')} is attached.</p>`,
       attachments: [{ filename: `receipt-SH-${loaded.reservation.id}.pdf`, content: buffer }],
     });
     res.json({ ok: true, sent_to: to });
