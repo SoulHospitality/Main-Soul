@@ -1,5 +1,6 @@
-import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, CheckCircle2, CircleDashed, KeyRound, Lock, ShieldCheck } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
+import { AlertTriangle, CheckCircle2, CircleDashed, KeyRound, Lock, RefreshCw, ShieldCheck } from 'lucide-react';
 import api from '../../api/axios';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import { currency, formatDate, formatDateTime } from '../../utils/formatters';
@@ -209,6 +210,8 @@ export function LedgerControlsPage() {
         />
       </Section>
 
+      <ReconciliationSection rec={data.reconciliation} live={on} />
+
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Tile label={t('pms.fin.ledger.entries')} value={ledger.entries ?? 0} sub={t('pms.fin.ledger.lines', { count: ledger.lines ?? 0 })} />
         <Tile label={t('pms.fin.ledger.reversed')} value={ledger.reversed ?? 0} />
@@ -265,6 +268,64 @@ export function LedgerControlsPage() {
         {t('pms.fin.ledger.readOnlyNote')}
       </p>
     </div>
+  );
+}
+
+/** Phase 7: recurring reconciliation of the stored ledger against the live calculation, with its history. */
+function ReconciliationSection({ rec, live }) {
+  const { t } = useFinLocale();
+  const qc = useQueryClient();
+  const run = useMutation({
+    mutationFn: () => api.post('/financial-system/ledger-reconcile').then((r) => r.data),
+    onSuccess: (r) => {
+      toast[r.clean ? 'success' : 'error'](r.clean ? t('pms.fin.ledger.recon.doneClean') : t('pms.fin.ledger.recon.doneDiff'));
+      qc.invalidateQueries({ queryKey: ['financial-system-ledger-controls'] });
+      qc.invalidateQueries({ queryKey: ['financial-system-health'] });
+    },
+    onError: (e) => toast.error(e?.response?.data?.error || t('pms.fin.ledger.loadError')),
+  });
+  if (!rec?.installed) return null;
+  const runs = rec.runs || [];
+  const last = runs[0];
+  return (
+    <Section
+      title={t('pms.fin.ledger.recon.title')}
+      hint={live ? t('pms.fin.ledger.recon.hint') : t('pms.fin.ledger.recon.notLive')}
+      right={
+        live ? (
+          <button type="button" className="btn-secondary inline-flex items-center gap-1.5 !px-3 !py-1.5 text-sm" disabled={run.isPending} onClick={() => run.mutate()}>
+            <RefreshCw className={`h-4 w-4 ${run.isPending ? 'animate-spin' : ''}`} /> {t('pms.fin.ledger.recon.runNow')}
+          </button>
+        ) : null
+      }
+    >
+      {last ? (
+        <p className={`mb-3 flex items-center gap-2 text-sm font-semibold ${last.clean ? 'text-emerald-700' : 'text-rose-700'}`}>
+          {last.clean ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+          {last.clean ? t('pms.fin.ledger.recon.lastClean', { when: formatDateTime(last.ran_at) }) : t('pms.fin.ledger.recon.lastDiff', { when: formatDateTime(last.ran_at) })}
+        </p>
+      ) : null}
+      <DataTable
+        rows={runs}
+        rowKey={(r) => r.id}
+        exportName="ledger-reconciliation"
+        emptyText={t('pms.fin.ledger.recon.none')}
+        columns={[
+          { key: 'ran_at', label: t('pms.fin.ledger.col.when'), nowrap: true, render: (r) => formatDateTime(r.ran_at) },
+          { key: 'period', label: t('pms.fin.ledger.recon.period'), nowrap: true, render: (r) => `${formatDate(r.period_from)} → ${formatDate(r.period_to)}` },
+          { key: 'clean', label: t('pms.fin.ledger.col.status'), render: (r) => <Pill tone={r.clean ? 'green' : 'red'}>{r.clean ? t('pms.fin.ledger.recon.clean') : t('pms.fin.ledger.recon.differences')}</Pill> },
+          { key: 'matched', label: t('pms.fin.ledger.recon.matched'), align: 'end', render: (r) => r.buckets?.matched ?? 0 },
+          {
+            key: 'breaks',
+            label: t('pms.fin.ledger.recon.breaks'),
+            align: 'end',
+            render: (r) => (r.buckets?.amount_break || 0) + (r.buckets?.reference_only || 0) + (r.buckets?.ledger_only || 0) + (r.buckets?.timing_break || 0),
+          },
+          { key: 'accounts_off', label: t('pms.fin.ledger.recon.accountsOff'), align: 'end' },
+          { key: 'trigger', label: t('pms.fin.ledger.col.who'), render: (r) => (r.trigger === 'nightly' ? t('pms.fin.ledger.recon.nightly') : r.run_by_name || '—') },
+        ]}
+      />
+    </Section>
   );
 }
 

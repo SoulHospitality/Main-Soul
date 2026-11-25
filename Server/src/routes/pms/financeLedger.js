@@ -8,6 +8,7 @@ const express = require('express');
 const { query } = require('../../config/db');
 const { requireRoles } = require('../../middleware/auth');
 const { identityKey } = require('../../lib/accounting/identity');
+const monitor = require('../../lib/accounting/reconciliationMonitor');
 
 const router = express.Router();
 const FINANCE = requireRoles('admin', 'finance', 'finance_manager');
@@ -103,7 +104,19 @@ router.get('/financial-system/ledger-controls', FINANCE, async (_req, res, next)
       ledger: totals.rows[0],
       periods: periods.rows,
       control_log: log.rows,
+      reconciliation: await monitor.recentRuns(10),
     });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/** Phase 7: reconcile now (reads the ledger; records the result). Refused unless posting is on. */
+router.post('/financial-system/ledger-reconcile', FINANCE, async (req, res, next) => {
+  try {
+    const run = await monitor.runReconciliation({ trigger: 'manual', runBy: req.user?.id || null });
+    if (run.skipped) return res.status(409).json({ error: run.skipped });
+    res.json(run);
   } catch (e) {
     next(e);
   }

@@ -17,7 +17,7 @@ const dir = path.join(S, '..', 'docs/finance/live-checks');
     try {
       const res = await db.exec(sql);
       console.log('ok', f, res.filter((r) => r.fields.length).map((r) => r.rows.length + ' rows').join(', '));
-      if (f.startsWith('00')) { const v = Object.fromEntries(res.find((r) => r.fields.length).rows.map((r) => [r.item, r.value])); const good = /^174_/.test(v['last applied migration']) && v['175 or 176 applied'] === '0' && v['reservations.commission_snapshot column exists'] === 'false' && v['ledger tables exist'] === '0' && v['ledger_posting setting exists'] === '0'; console.log('   check 0 reads pre-deployment state correctly:', good, JSON.stringify(v)); if (!good) fail++; }
+      if (f.startsWith('00')) { const v = Object.fromEntries(res.find((r) => r.fields.length).rows.map((r) => [r.item, r.value])); const good = /^174_/.test(v['last applied migration']) && v['175-178 applied'] === '0' && v['ledger_reports setting exists'] === '0' && v['reservations.commission_snapshot column exists'] === 'false' && v['ledger tables exist'] === '0' && v['ledger_posting setting exists'] === '0'; console.log('   check 0 reads pre-deployment state correctly:', good, JSON.stringify(v)); if (!good) fail++; }
       if (f.startsWith('06')) console.log('   ', JSON.stringify(res.filter((r) => r.fields.length).map((r) => r.rows)));
     } catch (e) { console.log('FAIL', f, e.message); fail++; try { await db.exec('ROLLBACK'); } catch (_) {} }
   }

@@ -16,6 +16,7 @@ const { startMonthlySalaryExpenseJob } = require('./jobs/monthlySalaryExpenses')
 const { startChannelSyncJob } = require('./jobs/channelSync');
 const { startGuestCareJobs } = require('./jobs/guestCare');
 const { startDataCleanerJob } = require('./jobs/dataCleaner');
+const { startLedgerReconciliationJob } = require('./jobs/ledgerReconciliation');
 const { startClockShiftEndJob } = require('./lib/clockAutoOut');
 const { startInboxSlaLoop } = require('./lib/inbox/sla');
 const { syncAllUnitListingStatusesOnBoot } = require('./lib/bootUnitStatusSync');
@@ -91,6 +92,7 @@ async function main() {
   if (process.env.DATABASE_URL) startInboxSlaLoop();
   if (process.env.DATABASE_URL) startGuestCareJobs();
   if (process.env.DATABASE_URL) startDataCleanerJob();
+  if (process.env.DATABASE_URL) startLedgerReconciliationJob();
 
   const port = Number(process.env.PORT || 5000);
   server.listen(port, () => {

@@ -1,5 +1,5 @@
 {
-  "started": "2026-11-25T11:36:00.381Z",
+  "started": "2026-11-25T11:43:34.222Z",
   "steps": [
     {
       "name": "synthetic database at migration 174 (174_leave_corrections.sql) with stays, payments, expenses, cash, a frozen month, an allowance raised then released, October and November closed",
@@ -146,15 +146,16 @@
       }
     },
     {
-      "name": "the app's runner (on MIGRATION_DATABASE_URL) applies exactly 175, 176 then 177: 175_commission_snapshots.sql, 176_ledger_core.sql, 177_ledger_report_source.sql",
+      "name": "the app's runner (on MIGRATION_DATABASE_URL) applies exactly 175, 176, 177 then 178: 175_commission_snapshots.sql, 176_ledger_core.sql, 177_ledger_report_source.sql, 178_ledger_reconciliation_runs.sql",
       "ok": true,
       "detail": {
         "applied1": [
           "Applied migration 175_commission_snapshots.sql",
           "Applied migration 176_ledger_core.sql",
-          "Applied migration 177_ledger_report_source.sql"
+          "Applied migration 177_ledger_report_source.sql",
+          "Applied migration 178_ledger_reconciliation_runs.sql"
         ],
-        "log": "[db] Migrations dir: C:\\Users\\i7\\Desktop\\Main-Soul\\Server\\supabase\\migrations\n[db] Found 177 migration file(s)\n[db] Running migrations on MIGRATION_DATABASE_URL\n[db] Applied migration 175_commission_snapshots.sql\n[db] Applied migration 176_ledger_core.sql\n[db] Applied migration 177_ledger_report_source.sql\n"
+        "log": "[db] Migrations dir: C:\\Users\\i7\\Desktop\\Main-Soul\\Server\\supabase\\migrations\n[db] Found 178 migration file(s)\n[db] Running migrations on MIGRATION_DATABASE_URL\n[db] Applied migration 175_commission_snapshots.sql\n[db] Applied migration 176_ledger_core.sql\n[db] Applied migration 177_ledger_report_source.sql\n[db] Applied migration 178_ledger_reconciliation_runs.sql\n"
       }
     },
     {
@@ -164,7 +165,7 @@
     {
       "name": "a second app start applies nothing",
       "ok": true,
-      "detail": "[db] Migrations dir: C:\\Users\\i7\\Desktop\\Main-Soul\\Server\\supabase\\migrations\n[db] Found 177 migration file(s)\n[db] Running migrations on MIGRATION_DATABASE_URL\n"
+      "detail": "[db] Migrations dir: C:\\Users\\i7\\Desktop\\Main-Soul\\Server\\supabase\\migrations\n[db] Found 178 migration file(s)\n[db] Running migrations on MIGRATION_DATABASE_URL\n"
     },
     {
       "name": "posting switch present and off after deployment (off)",
@@ -925,7 +926,7 @@
       ]
     ]
   },
-  "finished": "2026-11-25T11:36:11.693Z",
+  "finished": "2026-11-25T11:43:46.140Z",
   "summary": {
     "steps": 9,
     "failed": 0

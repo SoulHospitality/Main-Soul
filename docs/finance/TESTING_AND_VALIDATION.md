@@ -27,7 +27,7 @@ Location: `docs/finance/rehearsal/local/`.
 | `engine-validation-extra.js` | **23 / 23** | Insurance, cancellation forfeit, vendor invoice with WHT, recurring charge, petty cash, housekeeping order, holdback, payout; statements and parity with every scenario; a real query failure surfaces |
 | `paymob-webhook-test.js` | **11 / 11** | Webhook end to end: HMAC, unknown order, failed payment, amount mismatch, success, duplicate callbacks, dates taken meanwhile, fails closed |
 | `security-test.js` | **20 / 20** | Roles, page grants, API cannot flip posting, injection, owner isolation |
-| `rehearsal.js` | **31 / 31 steps** (r2 17/17, r3 45/45) | r0 inventory, apply, partial failure, rollback, re-apply; r3 signs its own claims with a disposable key. Also runs on a real server (below) |
+| `rehearsal.js` | **33 / 33 steps** (r2 18/18, r3 45/45) | r0 inventory, apply, partial failure, rollback, re-apply; r3 signs its own claims with a disposable key. Also runs on a real server (below) |
 | `livechecks-test.js` | all pass | Live checks 0–6 |
 | (inline) `r0_table_inventory.sql` | checked | Same database twice gives identical output; one changed row flags exactly that table |
 
@@ -41,7 +41,7 @@ The earlier `concurrency-test.js` (7/7, owner role, evidence `real-postgres-conc
 This is **not** Supabase and **not** the restored copy; the rehearsal runbook repeats it there (§4b).
 
 Also on the real server (2026-11-25):
-- `REHEARSAL_ENGINE=real node rehearsal.js`: **31 / 31**, the same steps as on PGlite. Evidence: `real-postgres-rehearsal-2026-11-25.json`.
+- `REHEARSAL_ENGINE=real node rehearsal.js`: **33 / 33**, the same steps as on PGlite. Evidence: `real-postgres-rehearsal-2026-11-25.json`.
 - `runbook-real.js`: **8 / 8**. Runbook §1–§3 with `compare-books.js` as a CLI on old (`main`) and new code, and the app's own migration runner on `MIGRATION_DATABASE_URL`; the old close's DEF-CLOSE-01 defect shows up on real data shapes. Evidence: `real-postgres-runbook-2026-11-25.json`.
 
 ## Financial System ledger screens (2026-11-25)
@@ -52,6 +52,9 @@ Also on the real server (2026-11-25):
 - `rehearsal/local/migration-test.js`: **31 / 31** (PGlite). Historical migration plan, execute, reconcile and parallel-run sync, with every refusal.
 - `rehearsal/local/migration-cli-real-test.js`: **14 / 14** (real PostgreSQL 17.5). `scripts/ledger-migration.js` as the DBA runs it.
 - `rehearsal/local/activation-test.js`: **31 / 31** (PGlite). Migration 177 guards; reports from the stored ledger identical to the engine (trial balance, P&L, balance sheet, month-end close); the reversal procedure; tested rollback (`rollback_177` → `rollback_176`).
+
+## Phase 7 monitoring (2026-11-25)
+- `rehearsal/local/monitor-test.js`: **19 / 19**. Nightly reconciliation recorded only while live, the permanent history, the Data health exception (never, differences, stale), Reconcile now (roles, who ran it), Ledger controls history, and the job started with the server.
 
 ## Not yet covered
 - Coverage measurement of the database suites.

@@ -8,7 +8,10 @@ BEGIN;
 DO $$
 DECLARE n bigint := 0;
 BEGIN
-  -- 177 (report source) depends on functions removed here: it must be rolled back first.
+  -- 178 (reconciliation history) and 177 (report source) depend on functions removed here: roll them back first.
+  IF to_regclass('public.ledger_reconciliation_runs') IS NOT NULL THEN
+    RAISE EXCEPTION 'Refusing: migration 178 is still installed. Run rollback_178.sql first.';
+  END IF;
   IF EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'financial_settings_ledger_reports_guard') THEN
     RAISE EXCEPTION 'Refusing: migration 177 is still installed. Run rollback_177.sql first.';
   END IF;

@@ -26,6 +26,8 @@ async function waitFor(url, ms = 120000) {
       '{"id":"X-unknown-1","date":"2026-10-20","type":"manual","lines":[{"account":"105000","debit":100,"credit":0},{"account":"999999","debit":0,"credit":100}]}')`);
     await applyMigration(db, S, '175_commission_snapshots.sql');
     await applyMigration(db, S, '176_ledger_core.sql');
+    await applyMigration(db, S, '177_ledger_report_source.sql');
+    await applyMigration(db, S, '178_ledger_reconciliation_runs.sql');
     await query(`UPDATE financial_settings SET value_text = '2026-09-01T00:00:00Z' WHERE key = 'books_reset_at'`);
     const pw = crypto.randomBytes(9).toString('hex');
     const bcrypt = require(path.join(S, 'node_modules/bcryptjs'));

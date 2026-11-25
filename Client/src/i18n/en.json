@@ -2043,6 +2043,11 @@
             "title": "Accounts on the wrong side",
             "what": "A bank, cash, receivable, deposit, insurance or owner account has a negative balance, which usually means money was recorded against the wrong account or an opening balance is missing.",
             "fix": "Open the account, find the entry that pushed it negative and correct it, or add the missing opening balance."
+          },
+          "ledger_not_reconciled": {
+            "title": "Stored ledger not reconciled",
+            "what": "The latest reconciliation of the stored ledger is missing, older than 36 hours, or found differences.",
+            "fix": "Open Ledger controls, run Reconcile now and investigate each difference."
           }
         }
       },
@@ -2108,7 +2113,8 @@
           "refunds": "Settle refund requests",
           "calendar": "Pay or reschedule overdue calendar payments",
           "outstanding": "Follow up guests who left owing money",
-          "health": "Clear the data health issues"
+          "health": "Clear the data health issues",
+          "ledger": "Stored ledger reconciled"
         }
       },
       "payFrom": {
@@ -2272,7 +2278,7 @@
           "closed": "Closed"
         },
         "logTitle": "Control log",
-        "logHint": "Every change to the posting switch, kept permanently.",
+        "logHint": "Every change to the posting switch and the report source, kept permanently.",
         "noLog": "No changes recorded.",
         "readOnlyNote": "Read-only. Ledger entries cannot be edited or deleted; corrections are new, linked entries.",
         "installedOff": "Set to off when the ledger was installed, on {{when}}",
@@ -2284,7 +2290,25 @@
         "sourceEngine": "Live calculation",
         "sourceLedger": "Stored ledger",
         "reportSource": "Report source",
-        "statementsFromLedger": "Built from the stored ledger"
+        "statementsFromLedger": "Built from the stored ledger",
+        "recon": {
+          "title": "Reconciliation",
+          "hint": "The stored ledger is compared with the live calculation every night for the previous and current month. Every run is kept.",
+          "notLive": "Starts once ledger posting is on.",
+          "runNow": "Reconcile now",
+          "doneClean": "Reconciled: no differences",
+          "doneDiff": "Reconciled: differences found",
+          "lastClean": "Last run {{when}}: no differences",
+          "lastDiff": "Last run {{when}}: differences to investigate",
+          "none": "No reconciliation has run yet.",
+          "period": "Period",
+          "clean": "Clean",
+          "differences": "Differences",
+          "matched": "Matched",
+          "breaks": "Breaks",
+          "accountsOff": "Accounts off",
+          "nightly": "Nightly"
+        }
       },
       "commissionReview": {
         "intro": "Commission rates are saved on each stay when it is confirmed (since {{since}}), so later rate changes never alter past stays. Stays below need a rate decision.",

@@ -37,7 +37,8 @@
 | `1e6d92d` | Pre-merge verification of all three branches; three-way merge helper; hosting corrected to Railway/Vercel |
 | `30cec75` | Financial System screens for the ledger: Ledger controls, Commission review, integrity warning (read-only; English and Arabic) |
 | `eeb1a88` | Phase 4/5 tooling: historical migration, reconciliation, parallel-run sync |
-| (latest) | Phase 6: migration 177 (guarded report source), reports from the stored ledger, rollback_177, rehearsal covering 177 |
+| `88ef5c0` | Phase 6: migration 177 (guarded report source), reports from the stored ledger, rollback_177, rehearsal covering 177 |
+| (latest) | Phase 7: migration 178 (permanent reconciliation history), nightly job, Data health exception, Close-month step, reconciliation dashboard |
 
 ## What the branch delivers (all inactive until deployed and approved)
 - **Stored, immutable double-entry ledger** (migration 176). The database enforces:
@@ -60,7 +61,7 @@
 | 4 Historical migration | ✅ `ledger-migration.js` (`HISTORICAL_MIGRATION_RUNBOOK.md`) | ☐ Nothing imported (needs Phase 3) |
 | 5 Parallel operation | ✅ `sync` + `reconcile` (same runbook) | ☐ Needs Phase 4 and a real month |
 | 6 Activation and reporting | ✅ Migration 177, reports from the ledger, tested rollback (`LEDGER_ACTIVATION_RUNBOOK.md`) | ☐ Posting off; reports on the existing calculation |
-| 7 Operations and optimisation | Partly (read-only ledger screens) | ☐ |
+| 7 Operations and optimisation | ✅ Nightly reconciliation (migration 178), Data health exception, month-end step, reconciliation dashboard (`FINANCIAL_OPERATIONS.md`) | ☐ Starts by itself once posting is on |
 
 ## Financial System screens (this branch)
 **Books → Ledger controls** and **Books → Commission review**, plus an integrity warning on Financial statements. They are read-only and bilingual, and they say plainly when 175/176 are not installed yet. Details, tests and screenshots: `docs/finance/FINANCIAL_SYSTEM_UI.md`.

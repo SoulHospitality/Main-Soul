@@ -46,7 +46,7 @@ Send the seven `result_*.txt` files back privately, not through a public channel
 
 | File | Verifies | Reading the result |
 |---|---|---|
-| `00_deployment_state.sql` | Production is still on the existing implementation | Expected: last migration `174_…`, "175 or 176 applied" = 0, no snapshot column, 0 ledger tables, no `ledger_posting` setting. Anything else means a migration ran early, so **stop and report it**. |
+| `00_deployment_state.sql` | Production is still on the existing implementation | Expected: last migration `174_…`, "175-178 applied" = 0, no snapshot column, 0 ledger tables, no `ledger_posting` or `ledger_reports` setting. Anything else means a migration ran early, so **stop and report it**. |
 | `01_amount_quality.sql` | Rows per finance table since the books start (2026-10-01); null, zero, negative and unusually large amounts | Negatives are expected only for refunds (`payments.kind = 'refund'`). Nulls or zero totals on confirmed stays, and amounts above the stated threshold, are listed for review before migration. |
 | `02_usd_rates.sql` | USD reservations missing an exchange rate, and the spread of rates used | Any row in the "missing rate" list blocks migrating that reservation: its EGP value cannot be established without inventing a rate. |
 | `03_duplicate_payment_refs.sql` | Payments sharing the same method + transaction reference | 0 groups = the unique index exists and duplicates are impossible. Any group = possible double-recorded payment to investigate. |

@@ -76,8 +76,10 @@ const step = (name, ok, detail) => {
   step('after the failure, a normal start applies 176 cleanly', (await applyMigration(db, S, '176_ledger_core.sql')) === 'applied');
   step('177 (report source) applies; reports stay on the engine', (await applyMigration(db, S, '177_ledger_report_source.sql')) === 'applied'
     && (await query(`SELECT value_text FROM financial_settings WHERE key = 'ledger_reports'`)).rows[0]?.value_text === 'engine');
-  step('a second app start skips all three (already recorded)', (await applyMigration(db, S, '175_commission_snapshots.sql')) === 'skipped' && (await applyMigration(db, S, '176_ledger_core.sql')) === 'skipped'
-    && (await applyMigration(db, S, '177_ledger_report_source.sql')) === 'skipped');
+  step('178 (reconciliation history) applies, empty', (await applyMigration(db, S, '178_ledger_reconciliation_runs.sql')) === 'applied'
+    && Number((await query('SELECT COUNT(*)::int AS n FROM ledger_reconciliation_runs')).rows[0].n) === 0);
+  step('a second app start skips all four (already recorded)', (await applyMigration(db, S, '175_commission_snapshots.sql')) === 'skipped' && (await applyMigration(db, S, '176_ledger_core.sql')) === 'skipped'
+    && (await applyMigration(db, S, '177_ledger_report_source.sql')) === 'skipped' && (await applyMigration(db, S, '178_ledger_reconciliation_runs.sql')) === 'skipped');
   err = null;
   try { await db.exec(m175.replace(/CREATE EXTENSION[^;]*;/gi, '')); await db.exec(m176); } catch (e) { err = e.message; }
   step('running both files again by hand is harmless (idempotent: IF NOT EXISTS / ON CONFLICT)', err === null, err);
@@ -132,6 +134,8 @@ const step = (name, ok, detail) => {
 
   // ── Rollback with test entries present ──
   const entries = (await query(`SELECT COUNT(*)::int AS n FROM ledger_entries`)).rows[0].n;
+  await db.exec(read('rollback_178.sql'));
+  step('rollback_178 removes the reconciliation history table (empty: no confirmation needed)', !(await migrated('178_ledger_reconciliation_runs.sql')) && (await tables('ledger\_reconciliation%')) === 0);
   err = null;
   try { await db.exec("SET app.confirm_rollback_176 = 'drop-ledger-with-entries';\n" + read('rollback_176.sql')); } catch (e) { err = e.message; await db.exec('ROLLBACK').catch(() => {}); }
   await db.exec('RESET app.confirm_rollback_176');
@@ -165,14 +169,15 @@ const step = (name, ok, detail) => {
   step('after both rollbacks the schema is back to 174 and the app builds its books', booksRolled.entries > 0 && fpRolled.reservations, { fpRolled, booksRolled });
 
   // ── Re-deploy after rollback, then rollback with NO entries (the normal pre-cutover case) ──
-  step('after rollback, 175, 176 and 177 re-apply cleanly', (await applyMigration(db, S, '175_commission_snapshots.sql')) === 'applied' && (await applyMigration(db, S, '176_ledger_core.sql')) === 'applied'
-    && (await applyMigration(db, S, '177_ledger_report_source.sql')) === 'applied');
+  step('after rollback, 175, 176, 177 and 178 re-apply cleanly', (await applyMigration(db, S, '175_commission_snapshots.sql')) === 'applied' && (await applyMigration(db, S, '176_ledger_core.sql')) === 'applied'
+    && (await applyMigration(db, S, '177_ledger_report_source.sql')) === 'applied' && (await applyMigration(db, S, '178_ledger_reconciliation_runs.sql')) === 'applied');
   const r2b = (await sqlFile('r2_verify_structure.sql'))[0];
   step(`r2 after re-apply: ${r2b.filter((r) => r.passed).length}/${r2b.length} passed`, r2b.every((r) => r.passed), r2b.filter((r) => !r.passed));
   const fpRe = await fingerprint();
+  await db.exec(read('rollback_178.sql'));
   await db.exec(read('rollback_177.sql'));
   await db.exec(read('rollback_176.sql'));
-  step('rollback_177 then rollback_176 with an empty ledger need no confirmation and leave existing data identical', (await tables('ledger\\_%')) === 0 && sameData(fpRe, await fingerprint()));
+  step('rollback_178, rollback_177 then rollback_176 with an empty ledger need no confirmation and leave existing data identical', (await tables('ledger\\_%')) === 0 && sameData(fpRe, await fingerprint()));
 
   evidence.finished = new Date().toISOString();
   evidence.summary = { steps: evidence.steps.length, failed };

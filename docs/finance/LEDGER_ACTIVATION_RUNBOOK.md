@@ -43,7 +43,7 @@
 - **Endpoints:** the reports endpoint and Ledger controls report the source.
 - **Rollback:** back to `engine` (logged), then `rollback_177` → `rollback_176`, in the enforced order.
 
-The deployment rehearsal now covers 175, 176 and 177: `rehearsal.js` 31/31 on PGlite and on real PostgreSQL 17.5 (r2 17/17); `runbook-real.js` 9/9.
+The deployment rehearsal now covers 175, 176 and 177: `rehearsal.js` 33/33 on PGlite and on real PostgreSQL 17.5 (r2 18/18); `runbook-real.js` 9/9.
 
 ## Sign-off (completed by the people named; never pre-filled)
 | Step | Name | Date | Reference |
