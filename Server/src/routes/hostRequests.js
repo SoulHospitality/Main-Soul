@@ -2,6 +2,7 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { query } = require('../config/db');
 const { sendEmail } = require('../services/email');
+const { hostRequestEmailHtml } = require('../lib/leadEmailHtml');
 
 const router = express.Router();
 
@@ -131,17 +132,17 @@ router.post('/', submitLimiter, async (req, res, next) => {
           `Preferred contact: ${preferredContact}`,
           `Lead #${lead.id}`,
         ].join('\n'),
-        html: `<p><strong>${fullName}</strong> requested to list a property.</p>
-               <ul>
-                 <li>Email: ${email}</li>
-                 <li>Phone: ${phone}</li>
-                 <li>Destination: ${destination}</li>
-                 <li>Project: ${project}</li>
-                 <li>Property type: ${propertyType}</li>
-                 <li>Furnishing: ${furnishing}</li>
-                 <li>Preferred contact: ${preferredContact}</li>
-                 <li>Lead #${lead.id}</li>
-               </ul>`,
+        html: hostRequestEmailHtml({
+          fullName,
+          email,
+          phone,
+          destination,
+          project,
+          propertyType,
+          furnishing,
+          preferredContact,
+          leadId: lead.id,
+        }),
       }).catch((e) => console.warn('[host-request email]', e.message));
     }
 

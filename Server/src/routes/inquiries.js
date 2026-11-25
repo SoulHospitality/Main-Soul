@@ -2,6 +2,7 @@ const express = require('express');
 const { query } = require('../config/db');
 const { quoteStay } = require('../services/pricing');
 const { sendEmail } = require('../services/email');
+const { inquiryEmailHtml } = require('../lib/leadEmailHtml');
 const { optionalGuest } = require('../middleware/auth');
 
 const router = express.Router();
@@ -87,9 +88,15 @@ router.post('/', optionalGuest, async (req, res, next) => {
         to,
         subject: `Inquiry: ${unit.title} (${checkin} → ${checkout})`,
         text: `${guest_name} (${guest_phone}) inquired about ${unit.title}\n${message || ''}`,
-        html: `<p><strong>${guest_name}</strong> (${guest_phone}) inquired about <em>${unit.title}</em></p>
-               <p>${checkin} → ${checkout}, ${guests} guests</p>
-               <p>${message || ''}</p>`,
+        html: inquiryEmailHtml({
+          guestName: guest_name,
+          guestPhone: guest_phone,
+          unitTitle: unit.title,
+          checkin,
+          checkout,
+          guests,
+          message,
+        }),
       }).catch((e) => console.warn('[inquiry email]', e.message));
     }
 
