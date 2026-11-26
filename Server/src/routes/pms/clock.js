@@ -62,13 +62,20 @@ function allowedOrigins(req) {
   return list;
 }
 
-/** The website's origin and RP ID; passkeys are tied to the site's domain. */
+/**
+ * The website's origin and RP ID; passkeys are tied to the site's domain. The site answers on both
+ * soulhospitality.co and www.soulhospitality.co, so the RP ID is the domain without "www." — one key
+ * then works from either address (a key made for "www." only worked there, and iPhones reported
+ * that as Face ID failing). Keys already made on "www." are still accepted when the phone offers one.
+ */
 function relyingParty(req) {
   const origin = String(req.get('origin') || '').replace(/\/$/, '');
   if (!origin || !allowedOrigins(req).includes(origin)) {
     throw new HttpError(400, 'Open the clock-in page from the Soul website on your phone.');
   }
-  return { origin, rpID: process.env.WEBAUTHN_RP_ID || new URL(origin).hostname };
+  const host = new URL(origin).hostname;
+  const rpID = process.env.WEBAUTHN_RP_ID || host.replace(/^www\./, '');
+  return { origin, rpID, rpIDs: [...new Set([rpID, host])] };
 }
 
 function challengeToken(userId, challenge, purpose) {
@@ -250,6 +257,7 @@ router.post('/clock/passkey/register', handle(async (req, res) => {
       requireUserVerification: true,
     });
   } catch (err) {
+    console.warn('[clock] passkey setup refused', { staff: me.id, error: err.message, ua: String(req.get('user-agent') || '').slice(0, 160) });
     throw new HttpError(400, `Could not set up fingerprint / Face ID: ${err.message}`);
   }
   if (!verification.verified || !verification.registrationInfo) throw new HttpError(400, 'Could not set up fingerprint / Face ID.');
@@ -356,14 +364,14 @@ router.post('/clock/punch', handle(async (req, res) => {
   const creds = await credentialsFor(me.id);
   const cred = creds.find((c) => c.credential_id === response?.id);
   if (!cred) throw new HttpError(403, 'This isn’t the phone set up for your clock-in.');
-  const { origin, rpID } = relyingParty(req);
+  const { origin, rpIDs } = relyingParty(req);
   let verification;
   try {
     verification = await verifyAuthenticationResponse({
       response,
       expectedChallenge,
       expectedOrigin: origin,
-      expectedRPID: rpID,
+      expectedRPID: rpIDs,
       requireUserVerification: true,
       credential: {
         id: cred.credential_id,
@@ -373,6 +381,7 @@ router.post('/clock/punch', handle(async (req, res) => {
       },
     });
   } catch (err) {
+    console.warn('[clock] passkey check refused', { staff: me.id, error: err.message, ua: String(req.get('user-agent') || '').slice(0, 160) });
     throw new HttpError(403, `Fingerprint / Face ID check failed: ${err.message}`);
   }
   if (!verification.verified) throw new HttpError(403, 'Fingerprint / Face ID check failed.');
@@ -426,6 +435,29 @@ router.post('/clock/left-area', handle(async (req, res) => {
     details: { name: me.full_name, distance_m: Math.round(distance), at: hhmm(minutes) },
   });
   res.json({ clocked_out: true, distance_m: Math.round(distance), ...(await statusPayload(req, me)) });
+}));
+
+/**
+ * The phone could not complete fingerprint / Face ID (the error never reaches the server otherwise).
+ * Logged and kept in the audit log, at most one entry a minute per person.
+ */
+const lastReport = new Map();
+router.post('/clock/report', handle(async (req, res) => {
+  staffOnly(req);
+  const now = Date.now();
+  if (now - (lastReport.get(req.user.id) || 0) < 60000) return res.json({ ok: true });
+  lastReport.set(req.user.id, now);
+  const clip = (v, n) => String(v || '').slice(0, n);
+  const details = {
+    stage: req.body?.stage === 'setup' ? 'setup' : 'clock',
+    name: clip(req.body?.name, 60),
+    message: clip(req.body?.message, 300),
+    origin: clip(req.get('origin'), 80),
+    ua: clip(req.get('user-agent'), 200),
+  };
+  console.warn('[clock] passkey failed on the phone', { staff: req.user.id, ...details });
+  await logAudit({ userId: req.user.id, action: 'CLOCK_PASSKEY_ERROR', entityType: 'staff_user', entityId: req.user.id, details }).catch(() => {});
+  res.json({ ok: true });
 }));
 
 // ── HR: who is in, phones, and the office location ──

@@ -75,14 +75,45 @@ function WeekHours({ week }) {
   );
 }
 
-function errorText(err, fallback) {
+const IS_IOS = typeof navigator !== 'undefined' && /iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+const ICLOUD_KEYCHAIN = 'Settings → your name → iCloud → Passwords (or Passwords & Keychain) → turn on "Sync this iPhone"';
+
+/** Apps that open links in their own browser, where websites can't use fingerprint / Face ID. */
+function inAppBrowser() {
+  if (typeof navigator === 'undefined') return null;
+  const ua = navigator.userAgent || '';
+  const apps = [
+    [/FBAN|FBAV|FB_IAB/i, 'Facebook'], [/Instagram/i, 'Instagram'], [/WhatsApp/i, 'WhatsApp'], [/Snapchat/i, 'Snapchat'],
+    [/TikTok|musical_ly|BytedanceWebview/i, 'TikTok'], [/LinkedInApp/i, 'LinkedIn'], [/\bLine\//i, 'LINE'], [/GSA\//i, 'the Google app'],
+    [/Twitter/i, 'X'], [/Telegram/i, 'Telegram'], [/Messenger/i, 'Messenger'],
+  ];
+  const hit = apps.find(([re]) => re.test(ua));
+  return hit ? hit[1] : null;
+}
+
+function errorText(err, fallback, stage = 'clock') {
   if (err?.name === 'NotAllowedError') {
-    return /iPhone|iPad/i.test(navigator.userAgent)
-      ? 'Face ID was cancelled or didn’t start. Tap the button again. If it keeps happening, turn on iCloud Keychain (Settings → your name → iCloud → Passwords & Keychain).'
-      : 'Fingerprint was cancelled or timed out. Tap the button again.';
+    if (IS_IOS) {
+      return stage === 'setup'
+        ? `Face ID setup didn’t finish. Tap the button again and look at the phone. If it keeps failing, iCloud Keychain is probably off: ${ICLOUD_KEYCHAIN}, then try again in Safari.`
+        : 'Face ID was cancelled or found no clock-in key on this iPhone. Tap again. If it keeps happening, ask HR to reset your phone and set it up again in Safari.';
+    }
+    return 'Fingerprint was cancelled or timed out. Tap the button again.';
   }
   if (err?.name === 'InvalidStateError') return 'This phone is already set up.';
+  if (err?.name === 'SecurityError') return 'This address can’t use fingerprint / Face ID. Open soulhospitality.co/admin/clock in Safari (iPhone) or Chrome (Android).';
+  if (err?.name === 'NotSupportedError') {
+    return IS_IOS
+      ? `This iPhone can’t save a Face ID key for websites. Check that a passcode and Face ID are set, and that iCloud Keychain is on (${ICLOUD_KEYCHAIN}).`
+      : 'This phone can’t use fingerprint for websites. Check that a screen lock and fingerprint are set.';
+  }
   return err?.response?.data?.error || err?.message || fallback;
+}
+
+/** Tell the server why the phone refused (it never sees these errors otherwise). */
+function reportPasskeyError(stage, err) {
+  if (!err?.name || err?.response) return; // server answers are already known to the server
+  api.post('/clock/report', { stage, name: err.name, message: err.message }).catch(() => {});
 }
 
 /** Watches the phone's position while the page is open. */
@@ -348,7 +379,8 @@ function PhoneClock() {
       setStatus(res);
       toast.success('Fingerprint / Face ID is set up on this phone');
     } catch (e) {
-      toast.error(errorText(e, 'Could not set up fingerprint / Face ID'));
+      reportPasskeyError('setup', e);
+      toast.error(errorText(e, 'Could not set up fingerprint / Face ID', 'setup'), { duration: 12000 });
     } finally {
       setBusy(false);
       nextChallenge();
@@ -367,7 +399,8 @@ function PhoneClock() {
       setStatus(res);
       toast.success(action === 'in' ? `Clocked in at ${res.now}` : `Clocked out at ${res.now}`);
     } catch (e) {
-      toast.error(errorText(e, action === 'in' ? 'Could not clock in' : 'Could not clock out'));
+      reportPasskeyError('clock', e);
+      toast.error(errorText(e, action === 'in' ? 'Could not clock in' : 'Could not clock out'), { duration: 10000 });
       status.refetch();
     } finally {
       setBusy(false);
@@ -377,6 +410,16 @@ function PhoneClock() {
 
   if (status.isLoading) return <LoadingSpinner />;
   if (status.error) return <EmptyState title={errorText(status.error, 'Could not load clock-in')} />;
+  const inApp = inAppBrowser();
+  if (inApp) {
+    return (
+      <EmptyState
+        icon={Fingerprint}
+        title={`This page is open inside ${inApp}, which can’t use ${IS_IOS ? 'Face ID' : 'fingerprint'}.`}
+        subtitle={`Open it in ${IS_IOS ? 'Safari' : 'Chrome'}: tap ••• or the share button and choose “Open in ${IS_IOS ? 'Safari' : 'browser'}”, or type soulhospitality.co/admin/clock.`}
+      />
+    );
+  }
   if (!browserSupportsWebAuthn()) {
     return <EmptyState icon={Fingerprint} title="This browser can’t use fingerprint / Face ID. Open the site in Safari (iPhone) or Chrome (Android)." />;
   }
@@ -412,6 +455,11 @@ function PhoneClock() {
             One time only. Your phone confirms it’s you each time you clock in. Only this phone will work for your clock-in; if you change
             phones, ask HR to reset it.
           </p>
+          {IS_IOS ? (
+            <p className="rounded-xl bg-slate-50 px-3 py-2 text-left text-[12px] text-soul-muted">
+              iPhone: use Safari, and make sure iCloud Keychain is on ({ICLOUD_KEYCHAIN}). Face ID saves the clock-in key there.
+            </p>
+          ) : null}
           <button type="button" className="btn-primary w-full justify-center py-3" disabled={busy} onClick={setUp}>
             <Fingerprint className="h-5 w-5" /> {busy ? 'Waiting…' : 'Set up on this phone'}
           </button>
