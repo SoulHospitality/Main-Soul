@@ -30,8 +30,9 @@ describe('Own shift per staff member', () => {
   });
 
   it('counts leaving early against the person\'s own shift end', () => {
-    const salary = 7200; // daily 240, hourly (÷24) 10
+    const salary = 7200; // daily 240, hourly (÷8) 30
     assert.equal(computeEarlyLeaveDeduction(salary, '17:00').hours, 2); // 19:00 shift
+    assert.equal(computeEarlyLeaveDeduction(salary, '17:00').amount, 60);
     assert.equal(computeEarlyLeaveDeduction(salary, '17:00', '17:00').amount, 0);
     assert.equal(computeEarlyLeaveDeduction(salary, '16:00', '17:00:00').hours, 1);
   });

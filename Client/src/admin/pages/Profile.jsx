@@ -234,7 +234,7 @@ export default function Profile() {
             Unpaid leave deducts 1× daily rate; no show is 2× daily rate.
             Unpaid leave: unlimited (1× daily rate per approved day). Daily rate = base salary ÷ 30.
             Excuses: 2 per month (26th–25th), any length (manager or HR approval, no deduction). Leaving before the shift ends without an approved excuse that day is deducted.
-            Unpaid excuses: unlimited, manager or HR approval, deducted hours × hourly rate (daily rate ÷ 24).
+            Unpaid excuses: unlimited, manager or HR approval, deducted hours × hourly rate (daily rate ÷ 8).
           </p>
           {leaveSnap && !leaveSnap.can_request_holidays ? (
             <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mb-4">
@@ -336,7 +336,7 @@ export default function Profile() {
                           ? 'Paid mission time. Does not affect attendance. Needs manager or HR approval.'
                           : leaveForm.leave_type === 'paid_excuse'
                             ? 'Excuse: any length, 2 per month (26th–25th). Needs manager or HR approval.'
-                            : 'Unpaid excuse: hours × (daily rate ÷ 24). Needs manager or HR approval.'}
+                            : 'Unpaid excuse: hours × (daily rate ÷ 8). Needs manager or HR approval.'}
                       </p>
                     </div>
                   </>

@@ -62,9 +62,9 @@ const {
 } = require('./hrRules');
 
 describe('HR daily-rate deductions and leave rules', () => {
-  it('uses salary / 30 as the daily rate and / 24 as hourly', () => {
+  it('uses salary / 30 as the daily rate and / 8 as hourly', () => {
     assert.equal(dailyRate(9000), 300);
-    assert.equal(hourlyRate(9000), Math.round((300 / 24 + Number.EPSILON) * 100) / 100);
+    assert.equal(hourlyRate(9000), 37.5);
   });
 
   it('applies lateness bands after the 11:00–11:15 grace', () => {
