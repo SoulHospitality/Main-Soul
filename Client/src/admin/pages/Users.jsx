@@ -105,6 +105,30 @@ function formatDaysOff(days) {
   return labels.length ? labels.join(', ') : 'Not set';
 }
 
+/** Shift times every 30 minutes, 05:00–23:30. */
+const SHIFT_TIME_OPTIONS = Array.from({ length: 38 }, (_, i) => {
+  const minutes = 5 * 60 + i * 30;
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+});
+
+/** Roles that are usually paid by hours per week; the form picks it for them (it can be changed). */
+const WEEKLY_HOURS_ROLES = new Set(['marketing_pr', 'web_developer']);
+
+const PAY_BASIS_OPTIONS = [
+  { value: 'shift', label: 'Shifts & attendance', hint: 'Lateness, leaving early and no-shows are deducted against this shift.' },
+  { value: 'weekly_hours', label: 'Hours per week', hint: 'No attendance deductions. Each hour short of the week costs 2 × hourly rate (daily rate ÷ 8).' },
+];
+
+function minutesOfTime(value) {
+  const m = String(value || '').match(/^(\d{1,2}):(\d{2})/);
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+}
+
+function formatShiftAndPay(u) {
+  const shift = `Shift ${u.shift_start || '11:00'}–${u.shift_end || '19:00'}`;
+  return u.pay_basis === 'weekly_hours' ? `${shift} · Paid by hours: ${Number(u.weekly_hours) || 0} h/week` : shift;
+}
+
 const EMPTY_STAFF_FORM = {
   full_name: '',
   email: '',
@@ -116,6 +140,10 @@ const EMPTY_STAFF_FORM = {
   leave_annual_days: '0',
   leave_unpaid_days: '0',
   days_off: ['fri'],
+  shift_start: '11:00',
+  shift_end: '19:00',
+  pay_basis: 'shift',
+  weekly_hours: '',
   staff_code: '',
   manager_id: '',
   manager_ids: [],
@@ -419,6 +447,7 @@ function StaffForm({
                   role: v,
                   sales_commission_pct: usesCommissionPct(v) ? f.sales_commission_pct : '',
                 };
+                if (!isEdit) next.pay_basis = WEEKLY_HOURS_ROLES.has(v) ? 'weekly_hours' : 'shift';
                 if (v === 'web_developer' && f.manager_id) {
                   next.manager_ids = [
                     ...new Set([...(f.manager_ids || []), String(f.manager_id)]),
@@ -627,6 +656,79 @@ function StaffForm({
             Choose at least one weekly day off. Those days show in purple on attendance and are skipped by the Excel import.
           </p>
         </div>
+        <div>
+          <label className="label">Shift start *</label>
+          <select
+            className="input"
+            value={form.shift_start || '11:00'}
+            disabled={lockPayAndLeave}
+            onChange={(e) => setForm((f) => ({ ...f, shift_start: e.target.value }))}
+          >
+            {SHIFT_TIME_OPTIONS.map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+          <p className="mt-1 text-[11px] text-slate-400">Lateness counts from this time.</p>
+        </div>
+        <div>
+          <label className="label">Shift end *</label>
+          <select
+            className="input"
+            value={form.shift_end || '19:00'}
+            disabled={lockPayAndLeave}
+            onChange={(e) => setForm((f) => ({ ...f, shift_end: e.target.value }))}
+          >
+            {SHIFT_TIME_OPTIONS.map((t) => (
+              <option key={t} value={t} disabled={minutesOfTime(t) <= minutesOfTime(form.shift_start || '11:00')}>
+                {t}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-[11px] text-slate-400">Leaving before this is leaving early; a forgotten clock-out closes here.</p>
+        </div>
+        <div className="sm:col-span-2">
+          <label className="label">Paid by *</label>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {PAY_BASIS_OPTIONS.map((o) => {
+              const selected = (form.pay_basis || 'shift') === o.value;
+              return (
+                <button
+                  key={o.value}
+                  type="button"
+                  disabled={lockPayAndLeave}
+                  onClick={() => setForm((f) => ({ ...f, pay_basis: o.value }))}
+                  className={`rounded-xl border px-3 py-2 text-left text-sm transition-colors disabled:opacity-60 ${
+                    selected
+                      ? 'border-violet-600 bg-violet-600 text-white'
+                      : 'border-soul-line bg-white text-soul-blue hover:border-violet-300'
+                  }`}
+                >
+                  <span className="block font-medium">{o.label}</span>
+                  <span className={`block text-[11px] ${selected ? 'text-white/80' : 'text-soul-muted'}`}>{o.hint}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        {form.pay_basis === 'weekly_hours' ? (
+          <div>
+            <label className="label">Hours per week *</label>
+            <input
+              type="number"
+              min="1"
+              max="84"
+              step="0.5"
+              className="input"
+              value={form.weekly_hours}
+              disabled={lockPayAndLeave}
+              onChange={(e) => setForm((f) => ({ ...f, weekly_hours: e.target.value }))}
+              placeholder="16"
+            />
+            <p className="mt-1 text-[11px] text-slate-400">
+              Counted from phone clock-ins, Saturday to Friday. Approved leave and work-from-home days lower the target by one day&apos;s share.
+            </p>
+          </div>
+        ) : null}
         </>
         )}
         {form.role === 'operations_supervisor' && (
@@ -1248,6 +1350,10 @@ export default function Users() {
         leave_annual_days: String(u.leave_annual_days ?? 0),
         leave_unpaid_days: String(u.leave_unpaid_days ?? 0),
         days_off: Array.isArray(u.days_off) ? u.days_off : [],
+        shift_start: u.shift_start || '11:00',
+        shift_end: u.shift_end || '19:00',
+        pay_basis: u.pay_basis || 'shift',
+        weekly_hours: u.weekly_hours != null ? String(u.weekly_hours) : '',
         staff_code: u.staff_code || '',
         manager_id: u.manager_id ? String(u.manager_id) : '',
         manager_ids: (Array.isArray(u.manager_ids) && u.manager_ids.length
@@ -1306,6 +1412,17 @@ export default function Users() {
       toast.error('Choose which petty cash this operations manager can see');
       return;
     }
+    if (!ceo && minutesOfTime(staffForm.shift_end) <= minutesOfTime(staffForm.shift_start)) {
+      toast.error('The shift must end after it starts');
+      return;
+    }
+    if (!ceo && staffForm.pay_basis === 'weekly_hours') {
+      const hours = Number(staffForm.weekly_hours);
+      if (!(hours > 0) || hours > 84) {
+        toast.error('Enter the hours per week (more than 0, up to 84)');
+        return;
+      }
+    }
     for (const kpi of staffForm.kpis || []) {
       if (kpi.shared) continue;
       if (!kpi.starts_on || !kpi.deadline || kpi.target_value === '' || kpi.target_value == null) {
@@ -1330,6 +1447,7 @@ export default function Users() {
       leave_casual_days: Number(staffForm.leave_casual_days) || 0,
       leave_annual_days: Number(staffForm.leave_annual_days) || 0,
       days_off: Array.isArray(staffForm.days_off) ? staffForm.days_off : [],
+      weekly_hours: staffForm.pay_basis === 'weekly_hours' ? Number(staffForm.weekly_hours) : null,
       staff_code: String(staffForm.staff_code || '').trim(),
       manager_id: isWebDeveloperRole(staffForm.role)
         ? null
@@ -1701,6 +1819,7 @@ export default function Users() {
                           <div className="mt-0.5 text-[11px] text-soul-muted">
                             Casual {u.leave_casual_days ?? 0} · Annual {u.leave_annual_days ?? 0} · Unpaid Unlimited
                             {' · '}Days off {formatDaysOff(u.days_off)}
+                            {' · '}{formatShiftAndPay(u)}
                           </div>
                         </>
                       )}

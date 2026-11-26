@@ -143,4 +143,5 @@ export const DEDUCTION_TYPE_LABELS = {
   loan: 'Loan',
   wfh: 'Work from home',
   early_leave: 'Left early',
+  weekly_hours: 'Hours short (week)',
 };

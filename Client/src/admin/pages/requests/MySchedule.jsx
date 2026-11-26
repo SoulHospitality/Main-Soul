@@ -73,6 +73,7 @@ export function ScheduleCalendar({
           {data.shift ? (
             <p className="text-[11px] text-soul-muted">
               Shift {data.shift.start}–{data.shift.end}
+              {data.pay_basis === 'weekly_hours' && data.weekly_hours ? ` · paid by hours, ${data.weekly_hours} h a week` : ''}
               {data.days_off?.length ? ` · day off ${data.days_off.map((d) => d[0].toUpperCase() + d.slice(1)).join(', ')}` : ''}
             </p>
           ) : null}
