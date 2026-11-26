@@ -1,16 +1,18 @@
 /**
- * Clocks out anyone still clocked in once their shift is over: at the shift end (19:00 Cairo) of the day
- * they clocked in, or at the moment they clocked in if that was after the shift had ended.
+ * Clocks out anyone still clocked in once their shift is over: at their own shift end (staff_users.shift_end,
+ * Cairo time; 19:00 unless HR set another) of the day they clocked in, or at the moment they clocked in if that
+ * was after the shift had ended.
  * Days left open from before today are closed the same way. Clocking in early is never affected.
  */
 const { query } = require('../config/db');
 const {
   cairoParts,
-  SHIFT_END_MINUTES,
   computeEarlyLeaveDeduction,
   hasOfficeAttendance,
   isScheduledDayOff,
+  isWeeklyHoursStaff,
 } = require('./hrRules');
+const { settleWeeklyHours } = require('./weeklyHours');
 const { logAudit } = require('./audit');
 
 const TIMEZONE = 'Africa/Cairo';
@@ -22,8 +24,7 @@ function hhmm(minutes) {
 /** Closes every open clock-in whose shift has ended. Pass staffId to close one person's only. */
 async function closeEndedShifts({ staffId = null, now = new Date() } = {}) {
   const { date: today, minutes } = cairoParts(now);
-  const shiftEnd = hhmm(SHIFT_END_MINUTES);
-  const params = [today, minutes >= SHIFT_END_MINUTES, shiftEnd, TIMEZONE];
+  const params = [today, hhmm(minutes), TIMEZONE];
   let staffFilter = '';
   if (staffId) {
     params.push(staffId);
@@ -31,8 +32,8 @@ async function closeEndedShifts({ staffId = null, now = new Date() } = {}) {
   }
   const { rows: open } = await query(
     `SELECT l.staff_user_id, to_char(l.work_date, 'YYYY-MM-DD') AS work_date, l.at,
-            GREATEST(((l.work_date + $3::time) AT TIME ZONE $4), l.at) AS out_at,
-            to_char(GREATEST(((l.work_date + $3::time) AT TIME ZONE $4), l.at) AT TIME ZONE $4, 'HH24:MI') AS out_time,
+            GREATEST(((l.work_date + su.shift_end) AT TIME ZONE $3), l.at) AS out_at,
+            to_char(GREATEST(((l.work_date + su.shift_end) AT TIME ZONE $3), l.at) AT TIME ZONE $3, 'HH24:MI') AS out_time,
             su.full_name
      FROM (
        SELECT DISTINCT ON (staff_user_id, work_date) staff_user_id, work_date, kind, at
@@ -41,7 +42,7 @@ async function closeEndedShifts({ staffId = null, now = new Date() } = {}) {
        ORDER BY staff_user_id, work_date, at DESC, id DESC
      ) l
      JOIN staff_users su ON su.id = l.staff_user_id
-     WHERE l.kind = 'in' AND (l.work_date < $1::date OR $2::boolean)`,
+     WHERE l.kind = 'in' AND (l.work_date < $1::date OR $2::time >= su.shift_end)`,
     params
   );
   for (const row of open) {
@@ -69,8 +70,8 @@ async function closeEndedShifts({ staffId = null, now = new Date() } = {}) {
 const EXCUSED_TYPES = ['paid_excuse', 'unpaid_excuse', 'early_leave', 'mission'];
 
 /**
- * Leaving early: once a day's shift has ended, anyone whose clock-in day ended before the shift end
- * (last clock-out before 19:00) is deducted hours missed × hourly rate, unless an approved excuse or
+ * Leaving early: once a day's shift has ended, anyone whose clock-in day ended before their shift end
+ * (last clock-out before staff_users.shift_end) is deducted hours missed × hourly rate, unless an approved excuse or
  * mission covers that day. Re-checked for the last 7 days, so an excuse approved afterwards, or HR
  * correcting the check-out, removes the deduction again.
  */
@@ -80,6 +81,7 @@ async function settleEarlyLeaves({ now = new Date() } = {}) {
     `SELECT a.staff_user_id, to_char(a.work_date, 'YYYY-MM-DD') AS work_date, a.check_out::text AS check_out, a.status,
             su.full_name, su.role, COALESCE(su.base_salary, 0)::float AS base_salary,
             COALESCE(su.days_off, '{}') AS days_off, COALESCE(su.office_attendance_exempt, false) AS exempt,
+            su.shift_end::text AS shift_end, su.pay_basis, su.weekly_hours::float AS weekly_hours,
             EXISTS (
               SELECT 1 FROM staff_leave_requests l
               WHERE l.staff_user_id = a.staff_user_id AND l.status = 'approved'
@@ -98,9 +100,9 @@ async function settleEarlyLeaves({ now = new Date() } = {}) {
        ORDER BY id LIMIT 1
      ) d ON true
      WHERE a.work_date >= $1::date - 7 AND a.work_date <= $1::date
-       AND (a.work_date < $1::date OR $2::boolean)
+       AND (a.work_date < $1::date OR $2::time >= su.shift_end)
        AND a.check_in IS NOT NULL`,
-    [today, minutes >= SHIFT_END_MINUTES, EXCUSED_TYPES]
+    [today, hhmm(minutes), EXCUSED_TYPES]
   );
   let changed = 0;
   for (const r of rows) {
@@ -110,9 +112,11 @@ async function settleEarlyLeaves({ now = new Date() } = {}) {
       ['on_time', 'late'].includes(r.status) &&
       hasOfficeAttendance(r.role) &&
       !r.exempt &&
+      // Hours-per-week staff are settled on the week's hours instead.
+      !isWeeklyHoursStaff(r) &&
       !isScheduledDayOff(r.days_off, r.work_date) &&
       !r.excused;
-    const due = counts ? computeEarlyLeaveDeduction(r.base_salary, r.check_out) : { amount: 0 };
+    const due = counts ? computeEarlyLeaveDeduction(r.base_salary, r.check_out, r.shift_end) : { amount: 0 };
     const amount = Number(due.amount) || 0;
     if (amount > 0 && !r.deduction_id) {
       await query(
@@ -132,6 +136,9 @@ async function settleEarlyLeaves({ now = new Date() } = {}) {
   return changed;
 }
 
+const WEEKLY_INTERVAL_MS = 15 * 60 * 1000;
+let lastWeeklyRun = 0;
+
 function startClockShiftEndJob() {
   const interval = Number(process.env.CLOCK_SHIFT_END_INTERVAL_MS || 60000);
   const timer = setInterval(async () => {
@@ -140,6 +147,12 @@ function startClockShiftEndJob() {
       if (n) console.log(`[clock] clocked out ${n} at shift end`);
       const early = await settleEarlyLeaves();
       if (early) console.log(`[clock] early-leave deductions updated: ${early}`);
+      // Hours per week: re-checked every 15 minutes, so leave approved after the week still counts.
+      if (Date.now() - lastWeeklyRun >= WEEKLY_INTERVAL_MS) {
+        lastWeeklyRun = Date.now();
+        const weekly = await settleWeeklyHours();
+        if (weekly) console.log(`[clock] weekly-hours deductions updated: ${weekly}`);
+      }
     } catch (err) {
       if (err.code !== '42P01') console.error('[clock] shift-end clock-out', err.message);
     }

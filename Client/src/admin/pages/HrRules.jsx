@@ -686,7 +686,9 @@ function AttendanceBasics() {
       <p className="text-sm text-soul-muted">
         Applied the moment attendance is recorded (including phone clock-ins). A late arrival gets the penalty of the band it falls in:
         from the start time to the end time. Leave the end empty to run until the end of the shift ({SHIFT_END_LABEL}). The penalty is
-        either days of pay (base salary ÷ 30 per day) or a fixed amount in EGP.
+        either days of pay (base salary ÷ 30 per day) or a fixed amount in EGP. The bands are written for the 11:00 shift; for
+        someone whose shift starts at another time they move by the same amount (a 09:00 shift is on time until 09:15, and so on).
+        Staff paid by hours per week have no lateness penalties.
       </p>
       <section className="card overflow-x-auto">
         <table className="w-full min-w-[820px] text-sm">

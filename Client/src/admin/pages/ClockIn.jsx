@@ -37,6 +37,44 @@ function timeOf(iso) {
   return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Cairo' });
 }
 
+function hoursText(h) {
+  const minutes = Math.round((Number(h) || 0) * 60);
+  const mm = minutes % 60;
+  return mm ? `${Math.floor(minutes / 60)}h ${String(mm).padStart(2, '0')}m` : `${Math.floor(minutes / 60)}h`;
+}
+
+function shortDay(iso) {
+  return new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+}
+
+/** Paid by hours per week: hours clocked this week against the hours due. */
+function WeekHours({ week }) {
+  const pct = week.required_hours > 0 ? Math.min(100, (week.worked_hours / week.required_hours) * 100) : 100;
+  const covered = week.worked_hours >= week.required_hours;
+  return (
+    <section className="card space-y-2">
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="text-sm font-semibold text-soul-blue">This week</p>
+        <p className="text-[11px] text-soul-muted">
+          {shortDay(week.from)} – {shortDay(week.to)}
+        </p>
+      </div>
+      <p className="text-2xl font-semibold tabular-nums text-soul-blue">
+        {hoursText(week.worked_hours)} <span className="text-base font-normal text-soul-muted">of {hoursText(week.required_hours)}</span>
+      </p>
+      <div className="h-2 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)}>
+        <div className={`h-full rounded-full ${covered ? 'bg-emerald-500' : 'bg-soul-blue'}`} style={{ width: `${pct}%` }} />
+      </div>
+      <p className="text-[11px] text-soul-muted">
+        {covered
+          ? 'Your hours for this week are covered.'
+          : `${hoursText(week.required_hours - week.worked_hours)} to go. Hours short at the end of Friday are deducted.`}
+        {week.required_hours < week.weekly_hours ? ` Your target is lower than ${hoursText(week.weekly_hours)} because of approved leave or work from home.` : ''}
+      </p>
+    </section>
+  );
+}
+
 function errorText(err, fallback) {
   if (err?.name === 'NotAllowedError') {
     return /iPhone|iPad/i.test(navigator.userAgent)
@@ -353,6 +391,7 @@ function PhoneClock() {
         <p className="mt-1 text-4xl font-semibold tabular-nums">{data.now}</p>
         <p className="mt-1 text-sm text-white/75">
           {data.day_off ? 'Your day off' : `Shift ${data.shift.start}–${data.shift.end}`}
+          {data.pay_basis === 'weekly_hours' && data.week ? ` · ${hoursText(data.week.weekly_hours)} a week` : ''}
           {data.clocked_in ? ' · you’re clocked in' : ''}
         </p>
       </section>
@@ -397,6 +436,8 @@ function PhoneClock() {
           {busy ? 'Confirm with fingerprint / Face ID…' : !pos ? 'Waiting for location…' : !preciseEnough ? 'Waiting for a precise location…' : inside ? 'Clock in' : 'Get to the office to clock in'}
         </button>
       )}
+
+      {data.week ? <WeekHours week={data.week} /> : null}
 
       {att ? (
         <section className="card grid grid-cols-2 gap-2 text-center">

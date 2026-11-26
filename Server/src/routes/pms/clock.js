@@ -6,8 +6,9 @@
  * - Clocking in needs the phone's location within the office area (300 m around the office pin).
  * - While the page is open it keeps checking the location; once the phone is clearly outside the area
  *   the person is clocked out automatically and has to clock in again when they're back.
- * - The first clock-in of the day becomes the attendance check-in (and goes through the lateness rules);
- *   the last clock-out becomes the check-out.
+ * - The first clock-in of the day becomes the attendance check-in (and goes through the lateness rules,
+ *   against the person's own shift); the last clock-out becomes the check-out.
+ * - Staff paid by hours per week have no lateness: their clock-in sessions add up to the week's hours.
  */
 const express = require('express');
 const jwt = require('jsonwebtoken');
@@ -25,10 +26,10 @@ const {
   computeLatenessDeduction,
   hasOfficeAttendance,
   isScheduledDayOff,
-  DEFAULT_ATTENDANCE_CHECKOUT,
-  SHIFT_START_MINUTES,
-  SHIFT_END_MINUTES,
+  shiftOf,
+  isWeeklyHoursStaff,
 } = require('../../lib/hrRules');
+const { weekSummary } = require('../../lib/weeklyHours');
 const { closeEndedShifts } = require('../../lib/clockAutoOut');
 const { attendanceHelpers } = require('./hr');
 
@@ -119,7 +120,9 @@ function hhmm(minutes) {
 async function loadMe(userId) {
   const { rows } = await query(
     `SELECT id, full_name, role, staff_code, COALESCE(base_salary, 0)::float AS base_salary,
-            COALESCE(days_off, '{}') AS days_off, COALESCE(office_attendance_exempt, false) AS office_attendance_exempt
+            COALESCE(days_off, '{}') AS days_off, COALESCE(office_attendance_exempt, false) AS office_attendance_exempt,
+            shift_start::text AS shift_start, shift_end::text AS shift_end, pay_basis,
+            weekly_hours::float AS weekly_hours, weekly_hours_since::text AS weekly_hours_since
      FROM staff_users WHERE id = $1 AND COALESCE(is_active, 1)::int = 1`,
     [userId]
   );
@@ -160,11 +163,19 @@ async function statusPayload(req, me) {
     ),
   ]);
   const a = attendance.rows[0];
+  const shift = shiftOf(me);
+  const weekly = isWeeklyHoursStaff(me);
+  const week = weekly ? await weekSummary(query, me, date).catch(() => null) : null;
   return {
     today: date,
     now: hhmm(minutes),
     site: { name: site.name, lat: site.lat, lng: site.lng, radius_m: site.radius_m },
-    shift: { start: hhmm(SHIFT_START_MINUTES), end: DEFAULT_ATTENDANCE_CHECKOUT },
+    shift: { start: shift.startText, end: shift.endText },
+    pay_basis: weekly ? 'weekly_hours' : 'shift',
+    // Hours per week: this week so far (staff see hours, not money).
+    week: week
+      ? { from: week.from, to: week.to, weekly_hours: week.weekly_hours, required_hours: week.required_hours, worked_hours: week.worked_hours, short_hours: week.short_hours }
+      : null,
     day_off: isScheduledDayOff(me.days_off, date),
     office_attendance: hasOfficeAttendance(me.role) && !me.office_attendance_exempt,
     is_phone: isPhoneRequest(req),
@@ -285,8 +296,10 @@ async function recordClockIn(me, date, minutes) {
     return; // HR already set this day (leave, WFH, day off, or a manual entry).
   }
   const arrival = hhmm(minutes);
+  const shift = shiftOf(me);
   let status = 'on_time';
-  if (!isScheduledDayOff(me.days_off, date) && computeLatenessDeduction(me.base_salary, arrival).factor > 0) {
+  // Hours per week: no lateness, the hours are what count.
+  if (!isWeeklyHoursStaff(me) && !isScheduledDayOff(me.days_off, date) && computeLatenessDeduction(me.base_salary, arrival, shift.start).factor > 0) {
     // An approved excuse or mission that starts at the beginning of the shift covers a late arrival.
     const { rows: covered } = await query(
       `SELECT 1 FROM staff_leave_requests
@@ -294,7 +307,7 @@ async function recordClockIn(me, date, minutes) {
          AND leave_type IN ('paid_excuse', 'unpaid_excuse', 'early_leave', 'mission')
          AND start_time <= $3::time AND end_time >= $4::time
        LIMIT 1`,
-      [me.id, date, hhmm(SHIFT_START_MINUTES + 15), arrival]
+      [me.id, date, hhmm(shift.start + 15), arrival]
     );
     status = covered[0] ? 'on_time' : 'late';
   }
@@ -327,8 +340,9 @@ router.post('/clock/punch', handle(async (req, res) => {
   if (location.accuracy != null && location.accuracy > MAX_ACCURACY_M) {
     throw new HttpError(400, `Your location isn’t precise enough (about ${Math.round(location.accuracy)} m). Turn on precise location and try again.`);
   }
-  if (action === 'in' && cairoParts().minutes >= SHIFT_END_MINUTES) {
-    throw new HttpError(403, `Your shift ended at ${DEFAULT_ATTENDANCE_CHECKOUT}. You can clock in again tomorrow (early is fine).`);
+  const myShift = shiftOf(me);
+  if (action === 'in' && cairoParts().minutes >= myShift.end) {
+    throw new HttpError(403, `Your shift ended at ${myShift.endText}. You can clock in again tomorrow (early is fine).`);
   }
   const site = await activeSite();
   const distance = distanceMeters(site, location);

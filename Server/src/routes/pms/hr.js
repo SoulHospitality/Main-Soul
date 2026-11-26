@@ -66,7 +66,11 @@ const {
   isUnpaidLeaveUnlimited,
   refreshDeductionRules,
   DEFAULT_ATTENDANCE_CHECKOUT,
+  shiftOf,
+  minutesToHhMm,
+  isWeeklyHoursStaff,
 } = require('../../lib/hrRules');
+const { weekSummary } = require('../../lib/weeklyHours');
 const { loadManagerIds, sqlStaffManagedBy } = require('../../lib/staffManagers');
 const { logAudit } = require('../../lib/audit');
 const { notifyRequestSubmitted, notifyRequestReviewed, requestCategory } = require('../../lib/requestNotifications');
@@ -394,7 +398,9 @@ async function loadStaffForHr(staffUserId) {
             COALESCE(leave_unpaid_days, 0)::int AS leave_unpaid_days,
             COALESCE(holiday_access, 'auto') AS holiday_access,
             COALESCE(office_attendance_exempt, false) AS office_attendance_exempt,
-            COALESCE(days_off, '{}') AS days_off
+            COALESCE(days_off, '{}') AS days_off,
+            shift_start::text AS shift_start, shift_end::text AS shift_end, pay_basis,
+            weekly_hours::float AS weekly_hours, weekly_hours_since::text AS weekly_hours_since
      FROM staff_users WHERE id = $1`,
     [staffUserId]
   );
@@ -553,10 +559,12 @@ function buildAttendanceWrite({ staff, date, status, checkIn, checkOut, amount, 
   let lateComputed = null;
   let absenceComputed = null;
   let deductionAmount = amount;
+  const shiftStart = shiftOf(staff).start;
   if (deductionAmount == null || Number.isNaN(Number(deductionAmount))) {
-    if (st === 'on_time') deductionAmount = 0;
+    // Hours per week: no lateness or no-show deductions; the week's hours are settled instead.
+    if (st === 'on_time' || isWeeklyHoursStaff(staff)) deductionAmount = 0;
     else if (st === 'late') {
-      lateComputed = computeLatenessDeduction(staff.base_salary, inTime);
+      lateComputed = computeLatenessDeduction(staff.base_salary, inTime, shiftStart);
       deductionAmount = lateComputed.amount;
     } else {
       absenceComputed = computeAbsenceDeduction(staff.base_salary);
@@ -567,7 +575,7 @@ function buildAttendanceWrite({ staff, date, status, checkIn, checkOut, amount, 
   if (deductionAmount < 0) deductionAmount = 0;
 
   if (st === 'late' && !lateComputed && inTime) {
-    lateComputed = computeLatenessDeduction(staff.base_salary, inTime);
+    lateComputed = computeLatenessDeduction(staff.base_salary, inTime, shiftStart);
   }
   if (st === 'no_show' && !absenceComputed) {
     absenceComputed = computeAbsenceDeduction(staff.base_salary);
@@ -791,11 +799,13 @@ async function upsertAttendanceRecord({
   }
 
   let deductionAmount = amount;
+  const shiftStart = shiftOf(staff).start;
   if (st === 'day_off') deductionAmount = 0;
   else if (deductionAmount == null || Number.isNaN(Number(deductionAmount))) {
-    if (st === 'on_time') deductionAmount = 0;
+    // Hours per week: no lateness or no-show deductions; the week's hours are settled instead.
+    if (st === 'on_time' || isWeeklyHoursStaff(staff)) deductionAmount = 0;
     else if (st === 'late') {
-      deductionAmount = computeLatenessDeduction(staff.base_salary, inTime).amount;
+      deductionAmount = computeLatenessDeduction(staff.base_salary, inTime, shiftStart).amount;
     } else {
       deductionAmount = computeAbsenceDeduction(staff.base_salary).amount;
     }
@@ -821,7 +831,7 @@ async function upsertAttendanceRecord({
   await clearDayPenalties(staff.id, date);
   if (deductionAmount > 0 && st !== 'on_time') {
     if (st === 'late') {
-      const computed = computeLatenessDeduction(staff.base_salary, inTime);
+      const computed = computeLatenessDeduction(staff.base_salary, inTime, shiftStart);
       await insertDeduction(null, [
         staff.id,
         deductionAmount,
@@ -1252,7 +1262,7 @@ async function markAttendanceExcuse({ staff, date, checkIn, actorId }) {
       staff,
       date,
       status: 'late',
-      checkIn: checkIn || '11:16',
+      checkIn: checkIn || minutesToHhMm(shiftOf(staff).start + 16),
       checkOut: null,
       amount: null,
       notified: false,
@@ -1874,8 +1884,6 @@ router.post('/hr/requests/seen', async (req, res, next) => {
   }
 });
 
-const SHIFT_START = '11:00';
-
 /**
  * The signed-in person's own month: working days and days off, their shift, attendance so far,
  * and every holiday, excuse, mission and work-from-home day (pending or approved) on it.
@@ -1892,7 +1900,10 @@ router.get('/hr/my-schedule', async (req, res, next) => {
 
     const { rows: staffRows } = await query(
       `SELECT id, full_name, role, COALESCE(days_off, '{}') AS days_off,
-              COALESCE(office_attendance_exempt, false) AS office_attendance_exempt
+              COALESCE(office_attendance_exempt, false) AS office_attendance_exempt,
+              COALESCE(base_salary, 0)::float AS base_salary,
+              shift_start::text AS shift_start, shift_end::text AS shift_end, pay_basis,
+              weekly_hours::float AS weekly_hours, weekly_hours_since::text AS weekly_hours_since
        FROM staff_users WHERE id = $1`,
       [req.user.id]
     );
@@ -1965,7 +1976,14 @@ router.get('/hr/my-schedule', async (req, res, next) => {
       today,
       office_attendance: office,
       days_off: me.days_off || [],
-      shift: office ? { start: SHIFT_START, end: DEFAULT_ATTENDANCE_CHECKOUT } : null,
+      shift: office ? { start: shiftOf(me).startText, end: shiftOf(me).endText } : null,
+      pay_basis: isWeeklyHoursStaff(me) ? 'weekly_hours' : 'shift',
+      weekly_hours: isWeeklyHoursStaff(me) ? Number(me.weekly_hours) : null,
+      week: office && isWeeklyHoursStaff(me)
+        ? await weekSummary(query, me, today).then((w) => ({
+            from: w.from, to: w.to, required_hours: w.required_hours, worked_hours: w.worked_hours, short_hours: w.short_hours,
+          })).catch(() => null)
+        : null,
       can_request_wfh: canRequestWfh(me.role),
       days,
     });
@@ -3218,7 +3236,9 @@ router.post(
       const { rows: staffRows } = await query(
         `SELECT id, staff_code, legacy_staff_code, full_name, base_salary, role,
                 COALESCE(office_attendance_exempt, false) AS office_attendance_exempt,
-                COALESCE(days_off, '{}') AS days_off
+                COALESCE(days_off, '{}') AS days_off,
+                shift_start::text AS shift_start, shift_end::text AS shift_end, pay_basis,
+                weekly_hours::float AS weekly_hours
          FROM staff_users WHERE role NOT IN ('owner', 'admin')`
       );
 
@@ -3252,15 +3272,12 @@ router.post(
         list.push(l);
         leavesByStaff.set(l.staff_user_id, list);
       }
-      // An approved excuse or mission that starts at the beginning of the shift covers a late arrival
-      // up to its end time — the same rule as the phone clock-in.
-      const [shiftH, shiftM] = SHIFT_START.split(':').map(Number);
-      const graceMinutes = shiftH * 60 + shiftM + 15;
-      const shiftStartGrace = `${String(Math.floor(graceMinutes / 60)).padStart(2, '0')}:${String(graceMinutes % 60).padStart(2, '0')}`;
-      const coveredLateArrival = (staffId, date, arrival) =>
-        (timedExcusesByStaff.get(staffId) || []).some(
+      // An approved excuse or mission that starts at the beginning of the person's shift covers a late
+      // arrival up to its end time — the same rule as the phone clock-in.
+      const coveredLateArrival = (staff, date, arrival) =>
+        (timedExcusesByStaff.get(staff.id) || []).some(
           (l) => l.start_date <= date && l.end_date >= date
-            && String(l.start_time).slice(0, 5) <= shiftStartGrace
+            && String(l.start_time).slice(0, 5) <= minutesToHhMm(shiftOf(staff).start + 15)
             && String(l.end_time).slice(0, 5) >= String(arrival).slice(0, 5)
         );
 
@@ -3317,6 +3334,11 @@ router.post(
           skipped.push({ row: row.row, staff_user_id: staff.id, reason: 'no_office_attendance' });
           continue;
         }
+        // Paid by hours per week: their hours come from the phone clock-in, not the door report.
+        if (isWeeklyHoursStaff(staff)) {
+          skipped.push({ row: row.row, staff_user_id: staff.id, reason: 'weekly_hours' });
+          continue;
+        }
         if (isScheduledDayOff(staff.days_off, row.date)) {
           skipped.push({ row: row.row, staff_user_id: staff.id, reason: 'day_off' });
           continue;
@@ -3332,10 +3354,11 @@ router.post(
 
         try {
           const absent = row.absent || !row.arrival_time;
+          const shift = shiftOf(staff);
           let computed = absent
             ? null
-            : computeLatenessDeduction(staff.base_salary, row.arrival_time);
-          if (computed && computed.factor > 0 && coveredLateArrival(staff.id, row.date, row.arrival_time)) {
+            : computeLatenessDeduction(staff.base_salary, row.arrival_time, shift.start);
+          if (computed && computed.factor > 0 && coveredLateArrival(staff, row.date, row.arrival_time)) {
             computed = { ...computed, factor: 0, amount: 0 };
           }
           const write = buildAttendanceWrite({
@@ -3343,7 +3366,7 @@ router.post(
             date: row.date,
             status: absent ? 'no_show' : computed.factor <= 0 ? 'on_time' : 'late',
             checkIn: absent ? null : row.arrival_time,
-            checkOut: absent ? null : row.check_out,
+            checkOut: absent ? null : row.check_out_defaulted ? shift.endText : row.check_out,
             amount: absent ? null : computed.amount,
             notified: row.notified,
             actorId: req.user.id,

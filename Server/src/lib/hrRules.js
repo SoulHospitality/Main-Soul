@@ -181,17 +181,91 @@ function absenceFactor() {
   return ruleFactor('absence', 2);
 }
 
-function computeLatenessDeduction(baseSalary, arrivalTime) {
-  const minutes = typeof arrivalTime === 'number' ? arrivalTime : parseHhMm(arrivalTime);
+/** Minutes after midnight from a number or 'HH:MM[:SS]'; null when missing or invalid. */
+function toMinutes(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  return parseHhMm(value);
+}
+
+function minutesToHhMm(minutes) {
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+}
+
+/**
+ * A person's own shift (staff_users.shift_start / shift_end), falling back to 11:00–19:00.
+ * @returns {{ start: number, end: number, startText: string, endText: string }}
+ */
+function shiftOf(staff) {
+  let start = toMinutes(staff?.shift_start);
+  let end = toMinutes(staff?.shift_end);
+  if (start == null) start = SHIFT_START_MINUTES;
+  if (end == null) end = SHIFT_END_MINUTES;
+  if (end <= start) {
+    start = SHIFT_START_MINUTES;
+    end = SHIFT_END_MINUTES;
+  }
+  return { start, end, startText: minutesToHhMm(start), endText: minutesToHhMm(end) };
+}
+
+const PAY_BASIS_SHIFT = 'shift';
+const PAY_BASIS_WEEKLY_HOURS = 'weekly_hours';
+/** Hours-per-week pay: hourly rate = daily rate ÷ 8; each hour short of the week costs 2 × that rate. */
+const WEEKLY_HOURS_PER_DAY = 8;
+const WEEKLY_SHORTFALL_MULTIPLIER = 2;
+
+/** Paid by hours per week (no lateness, early-leave or no-show deductions). */
+function isWeeklyHoursStaff(staff) {
+  return String(staff?.pay_basis || '') === PAY_BASIS_WEEKLY_HOURS && Number(staff?.weekly_hours) > 0;
+}
+
+function weeklyHourlyRate(baseSalary) {
+  return roundMoney(dailyRate(baseSalary) / WEEKLY_HOURS_PER_DAY);
+}
+
+/**
+ * Hours per week: covering the required hours costs nothing; each hour short costs
+ * hourly rate (daily rate ÷ 8) × 2. Hours are rounded to the minute.
+ */
+function computeWeeklyHoursDeduction(baseSalary, requiredHours, workedHours) {
+  const required = Math.max(0, roundMoney(Number(requiredHours) || 0));
+  const worked = Math.max(0, roundMoney(Number(workedHours) || 0));
+  const shortMinutes = Math.max(0, Math.round(required * 60) - Math.round(worked * 60));
+  const short = roundMoney(shortMinutes / 60);
+  const rate = weeklyHourlyRate(baseSalary);
+  return {
+    required_hours: required,
+    worked_hours: worked,
+    short_hours: short,
+    hourly_rate: rate,
+    multiplier: WEEKLY_SHORTFALL_MULTIPLIER,
+    daily_rate: dailyRate(baseSalary),
+    amount: roundMoney((shortMinutes / 60) * rate * WEEKLY_SHORTFALL_MULTIPLIER),
+  };
+}
+
+/**
+ * Lateness against the person's own shift. The lateness bands on the HR rules page are written for
+ * the standard 11:00 start; for another start they apply by the same offset (a 09:00 shift uses
+ * 09:00–09:15 as the grace window, and so on).
+ */
+function computeLatenessDeduction(baseSalary, arrivalTime, shiftStart = null) {
+  const minutes = toMinutes(arrivalTime);
   if (minutes == null) {
     const err = new Error('Arrival time must be HH:MM');
     err.status = 400;
     throw err;
   }
+  const start = toMinutes(shiftStart);
+  const offset = start == null ? 0 : start - SHIFT_START_MINUTES;
   const rate = dailyRate(baseSalary);
-  const late = latenessFactor(minutes);
+  const late = latenessFactor(minutes - offset);
   return {
     ...late,
+    // The band names are written in 11:00 times, so another shift says how late instead.
+    label:
+      offset && late.factor > 0
+        ? `${minutes - start} min after the ${minutesToHhMm(start)} shift start · ${describePenalty(late.factor, late.penalty_type || 'days')}`
+        : late.label,
     penalty_type: late.penalty_type || 'days',
     daily_rate: rate,
     amount: penaltyAmount(rate, late.factor, late.penalty_type),
@@ -240,9 +314,10 @@ function computeUnpaidExcuseDeduction(baseSalary, hours) {
  * Leaving before the shift ends without an approved excuse that day: hours missed × hourly rate
  * (the same formula as an unpaid excuse).
  */
-function computeEarlyLeaveDeduction(baseSalary, checkOut) {
+function computeEarlyLeaveDeduction(baseSalary, checkOut, shiftEnd = null) {
   const out = parseHhMm(checkOut);
-  const missed = out == null ? 0 : Math.max(0, SHIFT_END_MINUTES - out);
+  const end = toMinutes(shiftEnd) ?? SHIFT_END_MINUTES;
+  const missed = out == null ? 0 : Math.max(0, end - out);
   const hours = roundMoney(missed / 60);
   const rate = hourlyRate(baseSalary);
   return {
@@ -841,8 +916,10 @@ function collapsePunchAttendance(rows) {
       const last = pickLatest(cur.punches);
       if (last && last !== arrival) check_out = last;
     }
-    // Door reports often only log check-in; missing checkout defaults to 7:00 PM that day.
-    if (!check_out && arrival) check_out = DEFAULT_ATTENDANCE_CHECKOUT;
+    // Door reports often only log check-in; a missing checkout defaults to the end of the shift
+    // (7:00 PM here; the import replaces it with the person's own shift end once it knows who it is).
+    const checkOutDefaulted = !check_out && Boolean(arrival);
+    if (checkOutDefaulted) check_out = DEFAULT_ATTENDANCE_CHECKOUT;
     const absent = cur.explicitAbsent && !arrival;
     return {
       staff_code: cur.staff_code,
@@ -850,6 +927,7 @@ function collapsePunchAttendance(rows) {
       date: cur.date,
       arrival_time: absent ? null : arrival,
       check_out: absent ? null : check_out,
+      check_out_defaulted: !absent && checkOutDefaulted,
       notified: cur.notified,
       absent,
     };
@@ -895,14 +973,15 @@ function fillMissingOfficeAbsences(dailyRows, staffList) {
   const present = new Set();
   for (const row of dailyRows || []) {
     const staff = matchAttendanceStaff(row, staffList);
-    if (!staff || !hasOfficeAttendance(staff.role, staff) || !row.date) continue;
+    if (!staff || !hasOfficeAttendance(staff.role, staff) || isWeeklyHoursStaff(staff) || !row.date) continue;
     if (isScheduledDayOff(staff.days_off, row.date)) continue;
     present.add(`${staff.id}|${row.date}`);
     if (!row.absent) workDates.add(row.date);
   }
   const extra = [];
   for (const staff of staffList || []) {
-    if (!hasOfficeAttendance(staff.role, staff)) continue;
+    // Hours-per-week staff have no no-shows: their week is settled on hours.
+    if (!hasOfficeAttendance(staff.role, staff) || isWeeklyHoursStaff(staff)) continue;
     for (const date of workDates) {
       const key = `${staff.id}|${date}`;
       if (present.has(key)) continue;
@@ -1323,6 +1402,15 @@ module.exports = {
   dailyRate,
   hourlyRate,
   computeEarlyLeaveDeduction,
+  shiftOf,
+  minutesToHhMm,
+  PAY_BASIS_SHIFT,
+  PAY_BASIS_WEEKLY_HOURS,
+  WEEKLY_HOURS_PER_DAY,
+  WEEKLY_SHORTFALL_MULTIPLIER,
+  isWeeklyHoursStaff,
+  weeklyHourlyRate,
+  computeWeeklyHoursDeduction,
   isExcuseLeaveType,
   isMissionLeaveType,
   leaveDoesNotAffectAttendance,

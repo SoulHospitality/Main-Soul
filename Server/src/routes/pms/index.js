@@ -60,6 +60,8 @@ const {
   assertCanEditStaffCompensation,
   appliesSalaryImmediately,
   normalizeDaysOff,
+  parseHhMm,
+  cairoParts,
 } = require('../../lib/hrRules');
 const {
   attachManagerIds,
@@ -337,7 +339,12 @@ const STAFF_SELECT = `
   COALESCE(leave_unpaid_days, 0) AS leave_unpaid_days,
   COALESCE(holiday_access, 'auto') AS holiday_access,
   manager_id,
-  COALESCE(days_off, '{}') AS days_off
+  COALESCE(days_off, '{}') AS days_off,
+  to_char(shift_start, 'HH24:MI') AS shift_start,
+  to_char(shift_end, 'HH24:MI') AS shift_end,
+  pay_basis,
+  weekly_hours::float AS weekly_hours,
+  weekly_hours_since::text AS weekly_hours_since
 `;
 
 function assertCanAssignRole(actorRole, targetRole) {
@@ -452,6 +459,49 @@ function parseAgentCommissionPct(b, role) {
   return pct;
 }
 
+function badRequest(message) {
+  const err = new Error(message);
+  err.status = 400;
+  return err;
+}
+
+/**
+ * Shift and pay basis from a create / edit body. Every staff member has a shift (start and end). Pay is
+ * either by shifts and attendance, or by hours per week (then the weekly hours are required).
+ * Returns only what the body sets; `existing` fills the rest on an edit.
+ */
+function parseShiftAndPay(b, existing = null) {
+  const out = {};
+  const timeOf = (value, label) => {
+    const m = parseHhMm(value);
+    if (m == null) throw badRequest(`${label} must be a time like 09:00`);
+    return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  };
+  const start = b.shift_start !== undefined && b.shift_start !== '' ? timeOf(b.shift_start, 'Shift start') : existing?.shift_start ?? '11:00';
+  const end = b.shift_end !== undefined && b.shift_end !== '' ? timeOf(b.shift_end, 'Shift end') : existing?.shift_end ?? '19:00';
+  if (parseHhMm(end) <= parseHhMm(start)) throw badRequest('The shift must end after it starts');
+  out.shift_start = start;
+  out.shift_end = end;
+
+  const basis = b.pay_basis !== undefined && b.pay_basis !== '' ? String(b.pay_basis) : existing?.pay_basis || 'shift';
+  if (!['shift', 'weekly_hours'].includes(basis)) throw badRequest('Choose how this person is paid: by shifts and attendance, or by hours per week');
+  out.pay_basis = basis;
+  if (basis === 'weekly_hours') {
+    const raw = b.weekly_hours !== undefined && b.weekly_hours !== '' && b.weekly_hours != null ? b.weekly_hours : existing?.weekly_hours;
+    const hours = Number(raw);
+    if (!(hours > 0) || hours > 84) throw badRequest('Enter the hours per week (more than 0, up to 84)');
+    out.weekly_hours = Math.round(hours * 100) / 100;
+    // The week's hours count from the day someone is put on hours per week.
+    out.weekly_hours_since = existing?.pay_basis === 'weekly_hours' && existing?.weekly_hours_since
+      ? String(existing.weekly_hours_since).slice(0, 10)
+      : cairoParts().date;
+  } else {
+    out.weekly_hours = null;
+    out.weekly_hours_since = null;
+  }
+  return out;
+}
+
 function assertCanMutateAccount(actor, existingRole) {
   if (isUnitAcquisitionRole(actor) && existingRole !== 'owner') {
     const err = new Error('Unit acquisition can only manage owner accounts');
@@ -527,6 +577,8 @@ router.post('/users', requireRoles(...USER_ACCOUNT_ROLES), async (req, res, next
       return res.status(400).json({ error: 'Choose at least one day off' });
     }
     await assertStaffCodeAvailable(staff_code);
+    // CEOs and owners aren't on attendance: they keep the defaults.
+    const shiftPay = isOwner || role === 'admin' ? parseShiftAndPay({}) : parseShiftAndPay(b);
 
     let username = String(b.username || b.phone || '').trim();
     if (isOwner) {
@@ -550,8 +602,9 @@ router.post('/users', requireRoles(...USER_ACCOUNT_ROLES), async (req, res, next
          username, password_hash, email, full_name, role, staff_code,
          base_salary, salary_change_status, is_first_login, is_active,
          sales_commission_pct, leave_casual_days, leave_annual_days, leave_unpaid_days, manager_id,
-         petty_cash_location, days_off
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,'none',1,1,$8,COALESCE($9,0),COALESCE($10,0),COALESCE($11,0),$12,$13,$14::text[])
+         petty_cash_location, days_off, shift_start, shift_end, pay_basis, weekly_hours, weekly_hours_since
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,'none',1,1,$8,COALESCE($9,0),COALESCE($10,0),COALESCE($11,0),$12,$13,$14::text[],
+                 $15::time,$16::time,$17,$18,$19::date)
        RETURNING ${STAFF_SELECT}`,
       [
         username,
@@ -568,6 +621,11 @@ router.post('/users', requireRoles(...USER_ACCOUNT_ROLES), async (req, res, next
         managerId ?? null,
         pettyCashScope,
         daysOff,
+        shiftPay.shift_start,
+        shiftPay.shift_end,
+        shiftPay.pay_basis,
+        shiftPay.weekly_hours,
+        shiftPay.weekly_hours_since,
       ]
     );
 
@@ -644,7 +702,27 @@ router.patch('/users/:id', requireRoles(...USER_ACCOUNT_ROLES), async (req, res,
       b.leave_unpaid_days != null &&
       b.leave_unpaid_days !== '' &&
       parseInt(b.leave_unpaid_days, 10) !== Number(existing.leave_unpaid_days || 0);
-    if (salaryChanged || casualChanged || annualChanged || unpaidChanged) {
+    const existingShiftPay = {
+      shift_start: existing.shift_start ? String(existing.shift_start).slice(0, 5) : '11:00',
+      shift_end: existing.shift_end ? String(existing.shift_end).slice(0, 5) : '19:00',
+      pay_basis: existing.pay_basis || 'shift',
+      weekly_hours: existing.weekly_hours != null ? Number(existing.weekly_hours) : null,
+      weekly_hours_since: existing.weekly_hours_since
+        ? (existing.weekly_hours_since instanceof Date
+          ? existing.weekly_hours_since.toISOString().slice(0, 10)
+          : String(existing.weekly_hours_since).slice(0, 10))
+        : null,
+    };
+    let shiftPay;
+    try {
+      shiftPay = parseShiftAndPay(b, existingShiftPay);
+    } catch (err) {
+      return res.status(err.status || 400).json({ error: err.message });
+    }
+    const payBasisChanged =
+      shiftPay.pay_basis !== existingShiftPay.pay_basis ||
+      Number(shiftPay.weekly_hours || 0) !== Number(existingShiftPay.weekly_hours || 0);
+    if (salaryChanged || casualChanged || annualChanged || unpaidChanged || payBasisChanged) {
       // HR / HR Manager may change pay and leave for any staff (including themselves).
       if (!isHrTeamRole(req.user.role)) {
         assertCanEditStaffCompensation(req.user, existing.id, 'salary or holiday balances');
@@ -765,6 +843,11 @@ router.patch('/users/:id', requireRoles(...USER_ACCOUNT_ROLES), async (req, res,
          staff_code = $16,
          manager_id = $17,
          days_off = COALESCE($19::text[], days_off),
+         shift_start = $20::time,
+         shift_end = $21::time,
+         pay_basis = $22,
+         weekly_hours = $23,
+         weekly_hours_since = $24::date,
          updated_at = now()
        WHERE id = $18
        RETURNING ${STAFF_SELECT}`,
@@ -788,6 +871,11 @@ router.patch('/users/:id', requireRoles(...USER_ACCOUNT_ROLES), async (req, res,
         nextManagerId,
         req.params.id,
         daysOff,
+        shiftPay.shift_start,
+        shiftPay.shift_end,
+        shiftPay.pay_basis,
+        shiftPay.weekly_hours,
+        shiftPay.weekly_hours_since,
       ]
     );
     if (nextRole !== 'owner' && managerIdsToSync !== null) {
