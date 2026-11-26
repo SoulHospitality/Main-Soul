@@ -1,7 +1,8 @@
 const { namesAreAliases } = require('./salesNameMatch');
 
 const DAYS_IN_MONTH = 30;
-const HOURS_IN_DAY = 24;
+/** Hourly rate = daily rate ÷ 8 (an 8-hour working day; owner decision 2026-11-26, was ÷ 24). */
+const HOURS_IN_DAY = 8;
 const SHIFT_START_MINUTES = 11 * 60;
 const GRACE_END_MINUTES = 11 * 60 + 15;
 const LATE_QUARTER_END = 11 * 60 + 30;
@@ -219,7 +220,7 @@ function isWeeklyHoursStaff(staff) {
 }
 
 function weeklyHourlyRate(baseSalary) {
-  return roundMoney(dailyRate(baseSalary) / WEEKLY_HOURS_PER_DAY);
+  return hourlyRate(baseSalary);
 }
 
 /**

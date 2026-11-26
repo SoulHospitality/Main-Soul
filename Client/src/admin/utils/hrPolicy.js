@@ -1,6 +1,7 @@
 export const PAYROLL_CYCLE_START_DAY = 26;
 export const DAYS_IN_MONTH = 30;
-export const HOURS_IN_DAY = 24;
+/** Hourly rate = daily rate ÷ 8 (same as the server). */
+export const HOURS_IN_DAY = 8;
 export const PAID_EXCUSE_MAX_PER_MONTH = 2;
 export const PAID_EXCUSE_MAX_HOURS = null;
 /** @deprecated */
